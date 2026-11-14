@@ -382,6 +382,1339 @@
           "sha256": "6b6fd37dfca78fa0d5ed5a1a6d4180f390d3bf627818142a8d08d42aa8ff05e9"
         }
       ]
+    },
+    {
+      "id": "kroneum",
+      "repo": "azasypkin/kroneum",
+      "license": "MIT (repository LICENSE)",
+      "purpose": "CNC-milled hardware enclosure (base, cap, buttons) across Rev 0.2\u20130.4 with STEP models, multi-op and two-sided NC programs, plus PCB isolation/drilling/cutout NC",
+      "pairing": "Rev 0.2 and Rev 0.3 pair kroneum.step with cnc/*.nc in the same revision folder; Rev 0.4 provides 16 split base/top/chamfer/cutout NC programs without a co-located Rev 0.4 STEP export.",
+      "commit": "a6af6f91d12d2eb5daeab3a7beddac1410376e57",
+      "source_url": "https://github.com/azasypkin/kroneum/tree/a6af6f91d12d2eb5daeab3a7beddac1410376e57",
+      "files": [
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/kroneum/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/LICENSE",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/LICENSE",
+          "bytes": 1070,
+          "sha256": "c94bdc97db570d383efce5e0b875914f9decd26a87a565502296f85f287c8912"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/kroneum/README.md",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/README.md",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/README.md",
+          "bytes": 6235,
+          "sha256": "d33e07038378165fdbca02a87b7aa68f3c18c3b67339ca3cf9dde5f45f9d0b4f"
+        },
+        {
+          "upstream_path": "hw/enclosure/README.md",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/README.md",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/README.md",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/README.md",
+          "bytes": 694,
+          "sha256": "c067c5704363b60bcc7435f92d918b7fa5aec27da176b224c8e05019016e3632"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/base/base_cutout.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/base/base_cutout.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_cutout.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_cutout.nc",
+          "bytes": 6494,
+          "sha256": "09443483353a7de84ac05e554beef4786d7bb38e6c4883cd3de133125b15ac42"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/base/base_inner-pocket.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/base/base_inner-pocket.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_inner-pocket.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_inner-pocket.nc",
+          "bytes": 53803,
+          "sha256": "2e9504fdabdebedb2653a3a66ea78220d9d6169bb8ed22621e5e19e9f5530b3a"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/base/base_outer-pocket.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/base/base_outer-pocket.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_outer-pocket.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/base/base_outer-pocket.nc",
+          "bytes": 512159,
+          "sha256": "44e07689a6dcff26122a678d41941b028f9302ed4a44192e04569c3de79504d0"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/button.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/button.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/button.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/button.nc",
+          "bytes": 96968,
+          "sha256": "db1369ab9d3d6aa8a12376952b0c64bd1719dd2f82dc16bf529947e341916b6d"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/cap-without-pocket.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/cap-without-pocket.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/cap-without-pocket.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/cap-without-pocket.nc",
+          "bytes": 88820,
+          "sha256": "f1b7626d2f42527d5e9aac4c3b76db9cc58a2473d19ff33cc6648d8d05bcbba2"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/cnc/cap.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/cnc/cap.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/cap.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/cnc/cap.nc",
+          "bytes": 1211546,
+          "sha256": "ff3f530d22ea4ab55b20632c11bca70c99c8b4fc17fca48ee1c03eb6179c00c8"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.2/kroneum.step",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.2/kroneum.step",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/kroneum.step",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.2/kroneum.step",
+          "bytes": 125935,
+          "sha256": "50508884efeca373adc1bf8741e084cdbb0e145eef5fb2e0e3ef9cc58dfca403"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.3/cnc/base.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.3/cnc/base.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/base.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/base.nc",
+          "bytes": 3427994,
+          "sha256": "2eddb31c6e01e9209a6cca880a8d8fc6468f2a90e33cc423d4c00c3fe2bddf06"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.3/cnc/button.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.3/cnc/button.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/button.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/button.nc",
+          "bytes": 229475,
+          "sha256": "f2a745758162b60dc840232e16fafbe8dfad36e46fdcf34d13f4d569222d9530"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.3/cnc/cap.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.3/cnc/cap.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/cap.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/cnc/cap.nc",
+          "bytes": 1968239,
+          "sha256": "98aac1507d6e500c3d136be8837fd5b211fe96e475d5db8cd590cd5a1ff5daab"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.3/kroneum.step",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.3/kroneum.step",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/kroneum.step",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.3/kroneum.step",
+          "bytes": 2127316,
+          "sha256": "63e5b51d5fea5a6e7a0ec4c9064cb2817075a40b0504f6b620d23429e768676b"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_base_clearing.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_base_clearing.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_clearing.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_clearing.nc",
+          "bytes": 321165,
+          "sha256": "d1369fae10ba7fb904b9ddbd2a6168505b5435c52aef128c297bb1d0cf10dfa9"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_base_clearing_finish.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_base_clearing_finish.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_clearing_finish.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_clearing_finish.nc",
+          "bytes": 77206,
+          "sha256": "b333940b538b3d055796bc6532f3d18ce0fd605e88b3179e1ef42c4e0fa61baa"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_base_pocket_finish.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_base_pocket_finish.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_pocket_finish.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_base_pocket_finish.nc",
+          "bytes": 8577,
+          "sha256": "6cb58b2dd85f80496ca104f9fe9a6d36f82d5deaae5f60e2fa240b22ec05ad65"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_chamfer.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_chamfer.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_chamfer.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_chamfer.nc",
+          "bytes": 56668,
+          "sha256": "2c6746bfd58fe6ce874f05c6e630ac6f7acbd3a25016336996f3c0c693b85fc3"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_cutout.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_cutout.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_cutout.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_cutout.nc",
+          "bytes": 7176,
+          "sha256": "206663d9f196cdaefe2387c20808b5492963cfc826a750a14f9f9571487e253e"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/base_slide_pocket.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/base_slide_pocket.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_slide_pocket.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/base_slide_pocket.nc",
+          "bytes": 1157,
+          "sha256": "d58aee05491f62b2a0c202a2340264f49ae42aff042fa541c7a304f874696488"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_i_base_chamfer.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_i_base_chamfer.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_base_chamfer.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_base_chamfer.nc",
+          "bytes": 54993,
+          "sha256": "9f3f72560e4d32307ed6ecc2945f8018bd929e1fd96f44120e3b54f86ce35fd1"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_i_base_clearing.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_i_base_clearing.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_base_clearing.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_base_clearing.nc",
+          "bytes": 18046,
+          "sha256": "4771ae00b4547ba111c13e65b7ebfff07ed7490313e971fba2dd3954116237af"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_i_cutout.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_i_cutout.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_cutout.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_cutout.nc",
+          "bytes": 3834,
+          "sha256": "626885238cc5fefbe5798b4b17d94b3cea994b8522d3edb05cb804b06e1f244e"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_i_top_chamfer.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_i_top_chamfer.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_top_chamfer.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_top_chamfer.nc",
+          "bytes": 36385,
+          "sha256": "6dc94fa6c417fb32e07c949b19f3c5c8a4ec1ab13c367c87287202b00b1edd66"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_i_top_clearing.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_i_top_clearing.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_top_clearing.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_i_top_clearing.nc",
+          "bytes": 13479,
+          "sha256": "1df41afb555e0da57f1caff51c6c46b5b94ccfa0ec5c2034a77299488c98db2d"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_x_base_chamfer.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_x_base_chamfer.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_base_chamfer.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_base_chamfer.nc",
+          "bytes": 54995,
+          "sha256": "c75c57da80969200b0a41b1da3c59b2a4d0f8b191b8fee54010310bab6a95524"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_x_base_clearing.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_x_base_clearing.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_base_clearing.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_base_clearing.nc",
+          "bytes": 18046,
+          "sha256": "4771ae00b4547ba111c13e65b7ebfff07ed7490313e971fba2dd3954116237af"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_x_cutout.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_x_cutout.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_cutout.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_cutout.nc",
+          "bytes": 3834,
+          "sha256": "626885238cc5fefbe5798b4b17d94b3cea994b8522d3edb05cb804b06e1f244e"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_x_top_chamfer.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_x_top_chamfer.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_top_chamfer.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_top_chamfer.nc",
+          "bytes": 90403,
+          "sha256": "684005f319536e63663bbfbb1104d7ac7144ecdfed8a260a843a48b0cb682b03"
+        },
+        {
+          "upstream_path": "hw/enclosure/Rev_0.4/button_x_top_clearing.nc",
+          "local_path": "samples/upstream/kroneum/hw/enclosure/Rev_0.4/button_x_top_clearing.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_top_clearing.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/enclosure/Rev_0.4/button_x_top_clearing.nc",
+          "bytes": 15813,
+          "sha256": "374c236fb39c6f68b6cfd48f02889324bb5349fee827aad5600b54c7bb4da6d9"
+        },
+        {
+          "upstream_path": "hw/pcb/Rev_0.2/cnc/cutout.nc",
+          "local_path": "samples/upstream/kroneum/hw/pcb/Rev_0.2/cnc/cutout.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/cutout.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/cutout.nc",
+          "bytes": 1698,
+          "sha256": "35628d5ae519dcab979fc1e362dd7abd76aa8354a2bdc361fba8106ba6db51f8"
+        },
+        {
+          "upstream_path": "hw/pcb/Rev_0.2/cnc/holes.nc",
+          "local_path": "samples/upstream/kroneum/hw/pcb/Rev_0.2/cnc/holes.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/holes.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/holes.nc",
+          "bytes": 1544,
+          "sha256": "33e40224944339f939e7fa93e15a4ad0d31de39e4ae7db9b8516ac5bf9dc860a"
+        },
+        {
+          "upstream_path": "hw/pcb/Rev_0.2/cnc/isolation.nc",
+          "local_path": "samples/upstream/kroneum/hw/pcb/Rev_0.2/cnc/isolation.nc",
+          "raw_url": "https://raw.githubusercontent.com/azasypkin/kroneum/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/isolation.nc",
+          "source_url": "https://github.com/azasypkin/kroneum/blob/a6af6f91d12d2eb5daeab3a7beddac1410376e57/hw/pcb/Rev_0.2/cnc/isolation.nc",
+          "bytes": 139550,
+          "sha256": "c5bae5b324fdf8c42f2481c24e0094bb331440ccd7f5038951fe07a227f8a0bf"
+        }
+      ]
+    },
+    {
+      "id": "camcraft",
+      "repo": "dan335/camcraft",
+      "license": "MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE, NOTICE)",
+      "purpose": "Fusion-generated STEP fixtures (ops_block, ops_2d, ops_3d, ops_engrave, lego_4x2_01) paired with Masso-posted NC programs across 2D/3D/thread/chamfer/engrave strategies, plus GRBL/Masso/Centroid post-processor golden NC files",
+      "pairing": "Explicitly paired by upstream scripts/fusion/ automation and fixtures/step/README.md; Fusion STEP exports use cm (or inch for lego_4x2_01.step) while posted NC programs use G21 mm.",
+      "commit": "499b18e1d8b2619a94caf1dec9b8e160ec160526",
+      "source_url": "https://github.com/dan335/camcraft/tree/499b18e1d8b2619a94caf1dec9b8e160ec160526",
+      "files": [
+        {
+          "upstream_path": "LICENSE-APACHE",
+          "local_path": "samples/upstream/camcraft/LICENSE-APACHE",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/LICENSE-APACHE",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/LICENSE-APACHE",
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "upstream_path": "LICENSE-MIT",
+          "local_path": "samples/upstream/camcraft/LICENSE-MIT",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/LICENSE-MIT",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/LICENSE-MIT",
+          "bytes": 1063,
+          "sha256": "50101b1bcad7b54a20f2250bd190633361a4670c166a5da98f5edfd06257b46f"
+        },
+        {
+          "upstream_path": "NOTICE",
+          "local_path": "samples/upstream/camcraft/NOTICE",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/NOTICE",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/NOTICE",
+          "bytes": 1115,
+          "sha256": "439ddd4c8349d397485545f387fd1189ed64b3d9c9eacdfd70cf4011d4d6df06"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/camcraft/README.md",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/README.md",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/README.md",
+          "bytes": 9288,
+          "sha256": "2979b193d07ea3882e5263a6409199641dbffd612dd7c695f0e52c59da0533be"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/centroid-avid-inch.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/centroid-avid-inch.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/centroid-avid-inch.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/centroid-avid-inch.nc",
+          "bytes": 486,
+          "sha256": "bff7a0233caaf4b6703ffbec990b66f6e53f5e04aaea04af5d487ff890166a1c"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/centroid-avid.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/centroid-avid.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/centroid-avid.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/centroid-avid.nc",
+          "bytes": 397,
+          "sha256": "f1f5c5af9010c08ee21beb7ace80f1ddb6c2a9980875510fcc83adb5f7a6a304"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/grbl.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/grbl.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/grbl.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/grbl.nc",
+          "bytes": 387,
+          "sha256": "ee7aabd24ca665438d84c06a5a4290d45c699266c4300a359f4186f5f2ed53ca"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/masso-drill.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/masso-drill.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-drill.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-drill.nc",
+          "bytes": 396,
+          "sha256": "17fa4baf7806e26369a1ef067f40994ac66f4fc885b3e7aea98968acf33bd5d2"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/masso-dwell.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/masso-dwell.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-dwell.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-dwell.nc",
+          "bytes": 411,
+          "sha256": "6bda080b4f3cde6ff39da5be80bbfa7025ee6d157d62727bb72d5af6bc10ccbf"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/masso-inch.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/masso-inch.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-inch.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-inch.nc",
+          "bytes": 631,
+          "sha256": "37d377fbd750507a908a3bc02d23b1023915554256d59cfb99e3bb78b2115dae"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/masso-peck.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/masso-peck.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-peck.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso-peck.nc",
+          "bytes": 408,
+          "sha256": "7ac60206f0863bf906176440c8fb252c527e8369f5bcfacb1f26cbb1a4cc357b"
+        },
+        {
+          "upstream_path": "crates/camcraft-post/tests/golden/masso.nc",
+          "local_path": "samples/upstream/camcraft/crates/camcraft-post/tests/golden/masso.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/crates/camcraft-post/tests/golden/masso.nc",
+          "bytes": 563,
+          "sha256": "1bbb7d1a92360a9934a8e97ef7dc27f24ea4de30ff71e4bb350e8edff198ac9a"
+        },
+        {
+          "upstream_path": "fixtures/nc/lego_2d_contour_01.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/lego_2d_contour_01.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/lego_2d_contour_01.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/lego_2d_contour_01.nc",
+          "bytes": 2221,
+          "sha256": "025c3284132e9cdfb972d951222fc7aa346ab561966e6f38a7ce0f885434e620"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_adaptive.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_adaptive.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_adaptive.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_adaptive.nc",
+          "bytes": 46772,
+          "sha256": "fdbd6264a5ed1cbc72baca3f1943c6143cf0bb453e51c4a1def70835c6174080"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_adaptive_open.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_adaptive_open.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_adaptive_open.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_adaptive_open.nc",
+          "bytes": 16113,
+          "sha256": "8f8665a008a986bba7b1c55db920e2a7a5651f284308503337b996a679dc96f0"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_bore.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_bore.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_bore.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_bore.nc",
+          "bytes": 4440,
+          "sha256": "d052f2cae82f4cc93bcbd4c01d88c1d8d610607ed8965ba00708fb222d641a71"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_bore_passes.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_bore_passes.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_bore_passes.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_bore_passes.nc",
+          "bytes": 10864,
+          "sha256": "110a8d84aa16fa6ef84ea4d426d2d76e4b25ca2a24669b7e3dc184502741f3df"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_chamfer_lower.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_chamfer_lower.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_lower.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_lower.nc",
+          "bytes": 540,
+          "sha256": "bddd99ec5dfd83bb71a72156260b91001e154d45cf6051345628ad4ebe87d630"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_chamfer_upper.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_chamfer_upper.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_upper.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_upper.nc",
+          "bytes": 540,
+          "sha256": "58a2692977515852ba29e9d1ddfe0939a9bf66976ca0cc939d0c76e3ac90d439"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_chamfer_width.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_chamfer_width.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_width.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_chamfer_width.nc",
+          "bytes": 407,
+          "sha256": "f2acc94e25f21d060aafb02f2c0e30668e1ceaf4ae5100e1a41fc5417c0a7074"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_circular.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_circular.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_circular.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_circular.nc",
+          "bytes": 2196,
+          "sha256": "36535045866c03b02e42e967956dad493d73824e826db3d6bcbaf6ea438da5e5"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_circular_passes.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_circular_passes.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_circular_passes.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_circular_passes.nc",
+          "bytes": 8141,
+          "sha256": "03d394010c46ae2f89f85ed5943ab737726d9f58bf661adcdbd77b992082ffca"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_slot.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_slot.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_slot.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_slot.nc",
+          "bytes": 1467,
+          "sha256": "0a013a1d417afabeb6d49c8622d745d0d36a2954d4c28647ef9c83f7201e080e"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_slot8.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_slot8.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_slot8.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_slot8.nc",
+          "bytes": 1217,
+          "sha256": "e51def86b5ae2b8882a974b10509b2590a73d7d25c94fd4d4cf0346c15f861f9"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_thread.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_thread.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_thread.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_thread.nc",
+          "bytes": 1686,
+          "sha256": "0ab98d81e34ce676bb679e3b64a65c7c51c045d0383b98486742390bebd534cb"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_thread_cut.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_thread_cut.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_thread_cut.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_thread_cut.nc",
+          "bytes": 1695,
+          "sha256": "1e21935847c8e3d4d412f98cf6cab1c1808124b6c68c53ff351e8e6756a3b3aa"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_2d_trace.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_2d_trace.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_trace.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_2d_trace.nc",
+          "bytes": 1556,
+          "sha256": "8f239fc08e6fdd98c9939e3133a0b1d89e0554f46557932b87d95816917fb9d5"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_3d_ramp.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_3d_ramp.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp.nc",
+          "bytes": 139569,
+          "sha256": "54f153780bd1e906438c0edabb08db3115588cb68fbcfa050c4f6bbe4ed0ab75"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_3d_ramp_angle.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_3d_ramp_angle.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp_angle.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp_angle.nc",
+          "bytes": 184219,
+          "sha256": "706ae8a674682468c27bd3970883bb44fc44c699a54efa37d9fa62555343b5e7"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_3d_ramp_step2.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_3d_ramp_step2.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp_step2.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_3d_ramp_step2.nc",
+          "bytes": 91018,
+          "sha256": "57efa51158f9f3053fa8bab4ef8bf2aeeaa2f7cc829f03dda01218678e624e23"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_block_contour.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_block_contour.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_contour.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_contour.nc",
+          "bytes": 645,
+          "sha256": "a394437dbf29fbab272f0f6471fcbf041d8de5a232e64ae177144e68e9d9efb6"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_block_drill.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_block_drill.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_drill.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_drill.nc",
+          "bytes": 335,
+          "sha256": "7de54027585d4ad8c8829d84d0b2d46eff20518dd52620e6428b78784de65042"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_block_face.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_block_face.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_face.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_face.nc",
+          "bytes": 1225,
+          "sha256": "3ae16ce7075a4d43c1994e046d0e7f1a6108d14f96227eab091724a7400f7dab"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_block_pocket.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_block_pocket.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_pocket.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_block_pocket.nc",
+          "bytes": 5779,
+          "sha256": "8e032c66f8d3d1eb276b59bf427badf78a30edfc37e43157e6d198b1c33f0989"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_engrave_engrave.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_engrave_engrave.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_engrave.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_engrave.nc",
+          "bytes": 2687,
+          "sha256": "0d0e75abfd1622b9ac30f716995506c207cac51239251d60d631d81703afe56a"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_engrave_rectangle.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_engrave_rectangle.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_rectangle.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_rectangle.nc",
+          "bytes": 563,
+          "sha256": "9e08bb883ab8cf014539d33fe055f7535dd344e6f564f1da99be42eb8d89a8c1"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_engrave_stroke.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_engrave_stroke.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_stroke.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_stroke.nc",
+          "bytes": 2158,
+          "sha256": "34b27fb08f5ecad77912bb40f0eda041a44fff7bd393c075b763d79ceec8f584"
+        },
+        {
+          "upstream_path": "fixtures/nc/ops_engrave_triangle.nc",
+          "local_path": "samples/upstream/camcraft/fixtures/nc/ops_engrave_triangle.nc",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_triangle.nc",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/nc/ops_engrave_triangle.nc",
+          "bytes": 503,
+          "sha256": "df3aec53d52837b20a4c5248b7e1fd8be7bf5e81b78e8969412a095ee0138ba6"
+        },
+        {
+          "upstream_path": "fixtures/step/README.md",
+          "local_path": "samples/upstream/camcraft/fixtures/step/README.md",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/README.md",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/README.md",
+          "bytes": 8862,
+          "sha256": "4495dda7d45df361bf01c73f53af9da9f40ca9757a7313434f36165e4a09c7a9"
+        },
+        {
+          "upstream_path": "fixtures/step/lego_4x2_01.step",
+          "local_path": "samples/upstream/camcraft/fixtures/step/lego_4x2_01.step",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/lego_4x2_01.step",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/lego_4x2_01.step",
+          "bytes": 85690,
+          "sha256": "d65709e3aae3e3abfa6d0aa0856f7f3388566ce77120f38a3de6ea7f0a52d9d0"
+        },
+        {
+          "upstream_path": "fixtures/step/ops_2d.step",
+          "local_path": "samples/upstream/camcraft/fixtures/step/ops_2d.step",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_2d.step",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_2d.step",
+          "bytes": 60690,
+          "sha256": "1acb6ea27a84d1e3e961c92c93f446fd6b821b32025181ee440ab6e1fccf4801"
+        },
+        {
+          "upstream_path": "fixtures/step/ops_3d.step",
+          "local_path": "samples/upstream/camcraft/fixtures/step/ops_3d.step",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_3d.step",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_3d.step",
+          "bytes": 25732,
+          "sha256": "a6a2f80a3b3f05dec631f9a54a15900959c61fbfbc8290d972a5745414152aef"
+        },
+        {
+          "upstream_path": "fixtures/step/ops_block.step",
+          "local_path": "samples/upstream/camcraft/fixtures/step/ops_block.step",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_block.step",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_block.step",
+          "bytes": 24523,
+          "sha256": "d698ee91e4dfc67f06b92dad1db541bde00d24c8cc518ee13904622a576e5e00"
+        },
+        {
+          "upstream_path": "fixtures/step/ops_engrave.step",
+          "local_path": "samples/upstream/camcraft/fixtures/step/ops_engrave.step",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_engrave.step",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/fixtures/step/ops_engrave.step",
+          "bytes": 25936,
+          "sha256": "4b0831d1946ec1dd2440fb02d881d77fccfe9fb0b74da5c0178fc4c3ec3b34d5"
+        },
+        {
+          "upstream_path": "scripts/fusion/README.md",
+          "local_path": "samples/upstream/camcraft/scripts/fusion/README.md",
+          "raw_url": "https://raw.githubusercontent.com/dan335/camcraft/499b18e1d8b2619a94caf1dec9b8e160ec160526/scripts/fusion/README.md",
+          "source_url": "https://github.com/dan335/camcraft/blob/499b18e1d8b2619a94caf1dec9b8e160ec160526/scripts/fusion/README.md",
+          "bytes": 5496,
+          "sha256": "ea822872f2fefd4c7b31053342466fcc8f2d6833b3f6d28dda6a83cd33cef0d7"
+        }
+      ]
+    },
+    {
+      "id": "longboard-mark2",
+      "repo": "Daandreev/LongboardMarkII",
+      "license": "MIT (repository LICENSE)",
+      "purpose": "Machined electric-longboard truck hanger, motor mounts, belt cap and battery holder with STEP models and imperial (G20) PathPilot/Mach3 TAP programs",
+      "pairing": "Associated by component names (CustomHangerV2, MotorMountLeft/Right, Belt Cap); MotorMount STEP exports are V5 while TAP programs are V1/v2.",
+      "commit": "88b7584acce766b9bd332482d933c8a2c92c8d93",
+      "source_url": "https://github.com/Daandreev/LongboardMarkII/tree/88b7584acce766b9bd332482d933c8a2c92c8d93",
+      "files": [
+        {
+          "upstream_path": "CAD/MarkII/BatteryPack/Tubular pack/LegacyTubularpack/copper endcapV4T&PAcryl.STEP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/BatteryPack/Tubular pack/LegacyTubularpack/copper endcapV4T&PAcryl.STEP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/BatteryPack/Tubular%20pack/LegacyTubularpack/copper%20endcapV4T%26PAcryl.STEP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/BatteryPack/Tubular%20pack/LegacyTubularpack/copper%20endcapV4T%26PAcryl.STEP",
+          "bytes": 65854,
+          "sha256": "7961f89a4e7f9adf9ed190a2de3d2a8edeb413e783d2ad8a689385cd0a118deb"
+        },
+        {
+          "upstream_path": "CAD/MarkII/CNC/1.tap",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/CNC/1.tap",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/1.tap",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/1.tap",
+          "bytes": 69748,
+          "sha256": "33c8bfb418d5a55bcdc9c4d0ded32b92988a25b54473810aa75d315bd8629b1e"
+        },
+        {
+          "upstream_path": "CAD/MarkII/CNC/2.tap",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/CNC/2.tap",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/2.tap",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/2.tap",
+          "bytes": 50947,
+          "sha256": "c23b2313cf323acf35189cf91faa6222dd415e2c7b35ef8d15e502ab3612f33f"
+        },
+        {
+          "upstream_path": "CAD/MarkII/CNC/3.tap",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/CNC/3.tap",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/3.tap",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/CNC/3.tap",
+          "bytes": 26155,
+          "sha256": "821669e5320eefd6a25232161f37a21a5226a7d484ef4a5b38e331edb03ac8d3"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Caliber trucks fixed/CustomHangerV2.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Caliber trucks fixed/CustomHangerV2.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Caliber%20trucks%20fixed/CustomHangerV2.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Caliber%20trucks%20fixed/CustomHangerV2.TAP",
+          "bytes": 1283441,
+          "sha256": "ecc826c56c3f265f1f9a8c2db56a7ecc030c1496b20da41a5ed0b47f43882c2c"
+        },
+        {
+          "upstream_path": "CAD/MarkII/FullAssembly/LegacyFullAssembly/CustomHangerV2_AP214.STEP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/FullAssembly/LegacyFullAssembly/CustomHangerV2_AP214.STEP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/CustomHangerV2_AP214.STEP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/CustomHangerV2_AP214.STEP",
+          "bytes": 326097,
+          "sha256": "20a31a63f9cf2d85903f45381fd3ebe82e42837b40153f23096d3937d967114f"
+        },
+        {
+          "upstream_path": "CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountLeftV5_AP214.STEP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountLeftV5_AP214.STEP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountLeftV5_AP214.STEP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountLeftV5_AP214.STEP",
+          "bytes": 311610,
+          "sha256": "4a000acdb5c0ce8bd7f4788b83ddf9ceb9e82515ce6bd31a8a61e6930cb93a46"
+        },
+        {
+          "upstream_path": "CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountRightV5_AP214.STEP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountRightV5_AP214.STEP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountRightV5_AP214.STEP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/FullAssembly/LegacyFullAssembly/MotorMountRightV5_AP214.STEP",
+          "bytes": 312374,
+          "sha256": "3c4f5852cc85e9fcc8fcbf883ff2291437e6b2b706ce4144f14cae57cc13306c"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Motor Mount/Belt CapBoreV2.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Motor Mount/Belt CapBoreV2.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/Belt%20CapBoreV2.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/Belt%20CapBoreV2.TAP",
+          "bytes": 2015,
+          "sha256": "4a8460652cf757da2b668f8b52135e934dbec6f58e2961859a91ef0aca0d2521"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Motor Mount/Belt CapV2.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Motor Mount/Belt CapV2.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/Belt%20CapV2.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/Belt%20CapV2.TAP",
+          "bytes": 254645,
+          "sha256": "f735a2238544fdbdd25a37a623f2ff34ca0a0c46466f5447ace9992ffd40fd01"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Motor Mount/MotorMountChambering.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Motor Mount/MotorMountChambering.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountChambering.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountChambering.TAP",
+          "bytes": 1003,
+          "sha256": "301140c64add976d176788018420f80cd29583208e0fca19c0c3d9e2d4b061bd"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Motor Mount/MotorMountLeftV1.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Motor Mount/MotorMountLeftV1.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountLeftV1.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountLeftV1.TAP",
+          "bytes": 1262174,
+          "sha256": "d9332ead145e1b6c6e3576ab4f6c73a9b3181ce62447bd489ba74a0932ceeea2"
+        },
+        {
+          "upstream_path": "CAD/MarkII/Motor Mount/MotorMountRightv2.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/Motor Mount/MotorMountRightv2.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountRightv2.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/Motor%20Mount/MotorMountRightv2.TAP",
+          "bytes": 835571,
+          "sha256": "8d4005e8f4967ff49184ded4e3389e9466b3c349f88ca85caa3311d3daa1d2d4"
+        },
+        {
+          "upstream_path": "CAD/MarkII/PulleyBelts/LargeGear5Holes.TAP",
+          "local_path": "samples/upstream/longboard-mark2/CAD/MarkII/PulleyBelts/LargeGear5Holes.TAP",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/PulleyBelts/LargeGear5Holes.TAP",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/CAD/MarkII/PulleyBelts/LargeGear5Holes.TAP",
+          "bytes": 903,
+          "sha256": "b8613f68017a6f6bb34c147dc9db2770bb6ac9c70edcfc322023487170f9b63c"
+        },
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/longboard-mark2/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/LICENSE",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/LICENSE",
+          "bytes": 1057,
+          "sha256": "afb11426e09da40a1ae4f8fa17ddcc6b6a52d14df04c29bc5bcd06eb8730624d"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/longboard-mark2/README.md",
+          "raw_url": "https://raw.githubusercontent.com/Daandreev/LongboardMarkII/88b7584acce766b9bd332482d933c8a2c92c8d93/README.md",
+          "source_url": "https://github.com/Daandreev/LongboardMarkII/blob/88b7584acce766b9bd332482d933c8a2c92c8d93/README.md",
+          "bytes": 2904,
+          "sha256": "d9e131f95ce1170d7d67f70844bbf98976bfa8eff79d6ccd95e3af734d959e64"
+        }
+      ]
+    },
+    {
+      "id": "laika-cycloid",
+      "repo": "gabriel-bettanin/LAIKA",
+      "license": "MIT (repository LICENSE)",
+      "purpose": "Quadruped robot actuator cycloidal disk STEP model paired with Fusion 360 drilling and 2D adaptive/contour NC programs",
+      "pairing": "Co-located under Actuator/Mechanics/Cycloidal Drive/; geometric registration and stock origin are not independently verified.",
+      "commit": "8b7587a40a2c143639219507e3ac8a769913bf18",
+      "source_url": "https://github.com/gabriel-bettanin/LAIKA/tree/8b7587a40a2c143639219507e3ac8a769913bf18",
+      "files": [
+        {
+          "upstream_path": "Actuator/Mechanics/Cycloidal Drive/CAM/cycloid_1.nc",
+          "local_path": "samples/upstream/laika-cycloid/Actuator/Mechanics/Cycloidal Drive/CAM/cycloid_1.nc",
+          "raw_url": "https://raw.githubusercontent.com/gabriel-bettanin/LAIKA/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/CAM/cycloid_1.nc",
+          "source_url": "https://github.com/gabriel-bettanin/LAIKA/blob/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/CAM/cycloid_1.nc",
+          "bytes": 307,
+          "sha256": "0e742be6df9ca9e676773148f1df87b6c37229546e649128313396fb52e28585"
+        },
+        {
+          "upstream_path": "Actuator/Mechanics/Cycloidal Drive/CAM/cycloid_2.nc",
+          "local_path": "samples/upstream/laika-cycloid/Actuator/Mechanics/Cycloidal Drive/CAM/cycloid_2.nc",
+          "raw_url": "https://raw.githubusercontent.com/gabriel-bettanin/LAIKA/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/CAM/cycloid_2.nc",
+          "source_url": "https://github.com/gabriel-bettanin/LAIKA/blob/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/CAM/cycloid_2.nc",
+          "bytes": 157310,
+          "sha256": "f85cf444883d0cd52e8c1ade2a0dac9fa1273a1efbe69f88b939e07d79a5c36c"
+        },
+        {
+          "upstream_path": "Actuator/Mechanics/Cycloidal Drive/Cycloid v1.5.STEP",
+          "local_path": "samples/upstream/laika-cycloid/Actuator/Mechanics/Cycloidal Drive/Cycloid v1.5.STEP",
+          "raw_url": "https://raw.githubusercontent.com/gabriel-bettanin/LAIKA/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/Cycloid%20v1.5.STEP",
+          "source_url": "https://github.com/gabriel-bettanin/LAIKA/blob/8b7587a40a2c143639219507e3ac8a769913bf18/Actuator/Mechanics/Cycloidal%20Drive/Cycloid%20v1.5.STEP",
+          "bytes": 316611,
+          "sha256": "fd0500fd56e5dd648613ccdde975d63493105b5a90c1855bf9228034e20cc44f"
+        },
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/laika-cycloid/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/gabriel-bettanin/LAIKA/8b7587a40a2c143639219507e3ac8a769913bf18/LICENSE",
+          "source_url": "https://github.com/gabriel-bettanin/LAIKA/blob/8b7587a40a2c143639219507e3ac8a769913bf18/LICENSE",
+          "bytes": 1073,
+          "sha256": "b6c281cb47f6ffbe20e501e9eb2c838c707db7e1ef7ba4eb39febc969c8ccd16"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/laika-cycloid/README.md",
+          "raw_url": "https://raw.githubusercontent.com/gabriel-bettanin/LAIKA/8b7587a40a2c143639219507e3ac8a769913bf18/README.md",
+          "source_url": "https://github.com/gabriel-bettanin/LAIKA/blob/8b7587a40a2c143639219507e3ac8a769913bf18/README.md",
+          "bytes": 57,
+          "sha256": "16700a697e7dd30454ee79ef52c5dbf855a927417efb5129de8db37d4ea63e34"
+        }
+      ]
+    },
+    {
+      "id": "fab2-cnc",
+      "repo": "lpgn/FAB-2.0-Large-CNC",
+      "license": "GPL-2.0 (repository LICENSE)",
+      "purpose": "Large-format CNC structural parts with Y ballscrew motor-support STEP and NC/TAP programs featuring G18 ZX-plane lead-in arcs, Fanuc-style :1248 program headers and custom M1010 macro calls",
+      "pairing": "Co-located in Milling Files/; NC files cover multiple plate thicknesses (19 mm, 30 mm) and spindle support operations rather than a single one-to-one STEP export.",
+      "commit": "ba2d9ba2827462442e66a3f50be94f35a62934bd",
+      "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/tree/ba2d9ba2827462442e66a3f50be94f35a62934bd",
+      "files": [
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/fab2-cnc/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/LICENSE",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/LICENSE",
+          "bytes": 18047,
+          "sha256": "c03cea027b4b40e4402fabd08557736727ec3d5bc54ad64ab6472de432198cad"
+        },
+        {
+          "upstream_path": "Milling Files/4mm.NC",
+          "local_path": "samples/upstream/fab2-cnc/Milling Files/4mm.NC",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/4mm.NC",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/4mm.NC",
+          "bytes": 50766,
+          "sha256": "7d2b8940a1c10e7537c92f51ebbc84133540a695931a6891815e672a50433173"
+        },
+        {
+          "upstream_path": "Milling Files/Y Screw Support motor top b.STEP",
+          "local_path": "samples/upstream/fab2-cnc/Milling Files/Y Screw Support motor top b.STEP",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/Y%20Screw%20Support%20motor%20top%20b.STEP",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/Y%20Screw%20Support%20motor%20top%20b.STEP",
+          "bytes": 114538,
+          "sha256": "46110afbae452a74aa3f5b664fe80a8cef1ef2a243c4c6696be844ecc8fe1691"
+        },
+        {
+          "upstream_path": "Milling Files/gcode/F4_30mm.NC",
+          "local_path": "samples/upstream/fab2-cnc/Milling Files/gcode/F4_30mm.NC",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/gcode/F4_30mm.NC",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/gcode/F4_30mm.NC",
+          "bytes": 156196,
+          "sha256": "9d85eecad002f3c56d1c0600e9ee2e83b1530d5ca5b9b4e806d700a547c47830"
+        },
+        {
+          "upstream_path": "Milling Files/gcode/F8_30mm.NC",
+          "local_path": "samples/upstream/fab2-cnc/Milling Files/gcode/F8_30mm.NC",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/gcode/F8_30mm.NC",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/gcode/F8_30mm.NC",
+          "bytes": 144760,
+          "sha256": "2460334da3604ce60485febb34a8e8890f355992fbc51f42b2d796d34b6d3242"
+        },
+        {
+          "upstream_path": "Milling Files/spindle support.tap",
+          "local_path": "samples/upstream/fab2-cnc/Milling Files/spindle support.tap",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/spindle%20support.tap",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/Milling%20Files/spindle%20support.tap",
+          "bytes": 5157,
+          "sha256": "acfceac194b1cee4365c6515a6227897a3cdc4f769cc6ead711c4376f3ebd230"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/fab2-cnc/README.md",
+          "raw_url": "https://raw.githubusercontent.com/lpgn/FAB-2.0-Large-CNC/ba2d9ba2827462442e66a3f50be94f35a62934bd/README.md",
+          "source_url": "https://github.com/lpgn/FAB-2.0-Large-CNC/blob/ba2d9ba2827462442e66a3f50be94f35a62934bd/README.md",
+          "bytes": 42,
+          "sha256": "3248f5b3d915a775b73102b7ad4aaca0d28dd40529b182b39bd2611a6b0bca62"
+        }
+      ]
+    },
+    {
+      "id": "engiworld-cam",
+      "repo": "Hongcheng-Gao/EngiWorld",
+      "license": "MIT (repository LICENSE)",
+      "purpose": "Curated FreeCAD Path (linuxcnc_post) and SolidCAM/CAMWorks benchmark tasks with paired STEP models, FreeCAD CAM documents, tool tables, fixture/vise check geometry, dogbone slots, holding tags and two-sided (G54/G55) programs",
+      "pairing": "Each task folder pairs init_file/*.step (and optional fixture.step or CSV tool/hole tables) with ground_truth/*.FCStd and ground_truth/*.nc as specified in task-*.json.",
+      "commit": "cab0914a777ce2c2dd9d087302da5c93e0c3e5c7",
+      "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/tree/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7",
+      "files": [
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/engiworld-cam/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/LICENSE",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/LICENSE",
+          "bytes": 1074,
+          "sha256": "f452cbfaca9070fd2564e122ecc17afe911dd681c8a6edf6de13d32f51095f50"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/engiworld-cam/README.md",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/README.md",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/README.md",
+          "bytes": 9779,
+          "sha256": "377378c287d48de790a7a80186cc2226a907439444c9c24ab979c2abaea01adb"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.FCStd",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.FCStd",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.FCStd",
+          "bytes": 39301,
+          "sha256": "310e3148d931d8f63911a5ff58222d2704374c7f83048ed04b2d9b928a9cf200"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/ground_truth/task-04.nc",
+          "bytes": 3011,
+          "sha256": "8c21de296de7f454d466f3b365d8f64caf32f24e4dbd94b940be026c011cf577"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table.csv",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table.csv",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table.csv",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table.csv",
+          "bytes": 203,
+          "sha256": "93e1e080be5a0c30a5cfb426f7ed6aa13d4a4af2bc66b9b79885050a7bc46373"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table_plate.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table_plate.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table_plate.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/init_file/hole_table_plate.step",
+          "bytes": 22310,
+          "sha256": "33f943f0fd08330118deabe9c02daeed5287c199fc6cde7700ed966d77462ece"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-04/task-04.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-04/task-04.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/task-04.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-04/task-04.json",
+          "bytes": 3294,
+          "sha256": "3224a4fbdd8ce6e35ebaa1b5e78f5fce8470d2f24790af96efa7dc4a65c33934"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.FCStd",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.FCStd",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.FCStd",
+          "bytes": 73932,
+          "sha256": "478a199b06fcc734a0fe1b7f75f4d77fa47f3dd9399e8b39e61b8a7e9e64f677"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/ground_truth/task-08.nc",
+          "bytes": 189365,
+          "sha256": "a828ce9e3bdd83c6f435b7cb067aed953117d84607f37302deb684dd07c0a646"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-08/init_file/rest_shape.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-08/init_file/rest_shape.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/init_file/rest_shape.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/init_file/rest_shape.step",
+          "bytes": 31280,
+          "sha256": "6422d10ff940f6e558a26d5b1a85597e103de0a3c36b83774397d5be500abcf7"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-08/task-08.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-08/task-08.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/task-08.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-08/task-08.json",
+          "bytes": 3795,
+          "sha256": "26e72dc1b1714df46b7324567d187ca49018cbbd479f314ddf512d67ad5f168a"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.FCStd",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.FCStd",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.FCStd",
+          "bytes": 18017,
+          "sha256": "721c2d8379c03a415808d8523a1ca84aec5b116e8e7b8bcf737e8fc7f9710da7"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/ground_truth/task-10.nc",
+          "bytes": 2149,
+          "sha256": "0efe0ca53cf93a12dda58e14565404083ab83150186651034db3e648c9af9ce9"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-10/init_file/fixture.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-10/init_file/fixture.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/init_file/fixture.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/init_file/fixture.step",
+          "bytes": 12384,
+          "sha256": "98300ac3a6160094e2c008bdc4760487d3337877fe24dfb14560fcab83907122"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-10/init_file/part.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-10/init_file/part.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/init_file/part.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/init_file/part.step",
+          "bytes": 6922,
+          "sha256": "57e6e748d29109dce6f137ebce5e6b291868c6e2091a1155b5999116c31cf060"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-10/task-10.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-10/task-10.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/task-10.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-10/task-10.json",
+          "bytes": 5677,
+          "sha256": "9aeba284dca2a93d9e97a2b887557240ebef70054b7bc236210b0bc1f71ecef9"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_A.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_A.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_A.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_A.nc",
+          "bytes": 4087,
+          "sha256": "bf3cb2c20c615d729dab94318d544887b2eda3c959586fef9390fa74735ff6b9"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_B.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_B.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_B.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_B.nc",
+          "bytes": 3140,
+          "sha256": "2c471c01d8334f0cc5fd0eef2728a09229015eee82bfe5f5e9cd77569e40ecb5"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_real.fcstd",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_real.fcstd",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_real.fcstd",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/ground_truth/task-17_real.fcstd",
+          "bytes": 39302,
+          "sha256": "592819afaec62f88fdea068fd5d8562bc1800ee8aacffc7d303ff40d11576a2f"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-17/init_file/two_sided_part.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-17/init_file/two_sided_part.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/init_file/two_sided_part.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/init_file/two_sided_part.step",
+          "bytes": 15476,
+          "sha256": "e8595d746534ccf3a477f5e6de54b09a3ebef10e4933b342311b384c97fa70e0"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-17/task-17.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-17/task-17.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/task-17.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-17/task-17.json",
+          "bytes": 3691,
+          "sha256": "da2f6a8ce6b4a42b538d3641b658ee186ca3f565537d29ab80e0e8efa4e4a6a9"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.FCStd",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.FCStd",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.FCStd",
+          "bytes": 66671,
+          "sha256": "ab5189d8eee938ea1f3550beb4b887fd73479afba21e4765bb1cb8d8119d21fb"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/ground_truth/task-19.nc",
+          "bytes": 15007,
+          "sha256": "2b998b4e8790f57ce63257cf313f708a8116f91f59a1df1a498c887330d4c389"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-19/init_file/complex_pockets.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-19/init_file/complex_pockets.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/init_file/complex_pockets.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/init_file/complex_pockets.step",
+          "bytes": 79193,
+          "sha256": "a013a4fe398f51898129934d04c3024f4c01b9c48abf50a1f526c91e7845775e"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-19/init_file/tool_candidates.csv",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-19/init_file/tool_candidates.csv",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/init_file/tool_candidates.csv",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/init_file/tool_candidates.csv",
+          "bytes": 193,
+          "sha256": "1fe9ef157b2642a50dd0140e50acb6f889f226fff1b9b54078eb5f3ff698c366"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/freecad-path/task-19/task-19.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/freecad-path/task-19/task-19.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/task-19.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/freecad-path/task-19/task-19.json",
+          "bytes": 5173,
+          "sha256": "7ca853e588622e3adbcc42fdaee465c1b24c530c000922f20c7c19eb55ce9e5f"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_A.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_A.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_A.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_A.nc",
+          "bytes": 1138,
+          "sha256": "e59344e30d6355827edf647cac984758372ccf108e52773ae7d6469e43bd789d"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_B.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_B.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_B.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/ground_truth/task-17_B.nc",
+          "bytes": 1347,
+          "sha256": "c33ac9f789df43b66c3f3ab79df33ac9f17bd582a3675ffacb7c6e138264521d"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/solidcam/task-17/init_file/tools.csv",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/solidcam/task-17/init_file/tools.csv",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/init_file/tools.csv",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/init_file/tools.csv",
+          "bytes": 165,
+          "sha256": "9c709feeb541c22e8717fef6b6e7a2e6be2e5df3f6143b320c804d014acdf643"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/solidcam/task-17/init_file/two_sided_part.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/solidcam/task-17/init_file/two_sided_part.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/init_file/two_sided_part.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/init_file/two_sided_part.step",
+          "bytes": 71657,
+          "sha256": "1a18563c65140e2bc8cf933faf081adae40b92fe8c9ed73582599de02e831c4d"
+        },
+        {
+          "upstream_path": "task/single-software-execution/cli/solidcam/task-17/task-17.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/cli/solidcam/task-17/task-17.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/task-17.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/cli/solidcam/task-17/task-17.json",
+          "bytes": 2858,
+          "sha256": "36797ed2356d9b7a7f031329ede323cc9702deb8f5607006e2b7d4172952f73f"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-07/ground_truth/task-7.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-07/ground_truth/task-7.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/ground_truth/task-7.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/ground_truth/task-7.nc",
+          "bytes": 6154,
+          "sha256": "3bd26072649299356f87ec868ac37bb8ce78691594679b31409e2a366616bdb1"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-07/init_file/dual_pocket_bracket.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-07/init_file/dual_pocket_bracket.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/init_file/dual_pocket_bracket.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/init_file/dual_pocket_bracket.step",
+          "bytes": 17241,
+          "sha256": "8c49cf6aae317812cab8d2d382911ca6f28606beb13e1776746e2da409880d67"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-07/task-07.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-07/task-07.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/task-07.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-07/task-07.json",
+          "bytes": 2267,
+          "sha256": "96449a8e4007f8081a0d6a91fa4c756b2b0b728b7b422cc94bfe5122d75961c7"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-11/ground_truth/task-11.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-11/ground_truth/task-11.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/ground_truth/task-11.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/ground_truth/task-11.nc",
+          "bytes": 4284,
+          "sha256": "b27f1df98070e5daba9b19b5f140065000210a27eb438aa30efcbce3c57aafa2"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-11/init_file/part_with_vise.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-11/init_file/part_with_vise.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/init_file/part_with_vise.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/init_file/part_with_vise.step",
+          "bytes": 28171,
+          "sha256": "22bfd3591694de28af9d8b3487518ffc5d870363fb65ff917506fc46372360dc"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-11/task-11.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-11/task-11.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/task-11.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-11/task-11.json",
+          "bytes": 2194,
+          "sha256": "af01691227d1c2847d0c1ea3703fc03b5918ac6e4dfb91ef85d25150fab5f661"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-18/ground_truth/task-18.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-18/ground_truth/task-18.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/ground_truth/task-18.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/ground_truth/task-18.nc",
+          "bytes": 5014,
+          "sha256": "6904145cb15225436ca85161c013d27e7130ea9f929891de1ff7b9048fa63ab6"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-18/init_file/dogbone_slots.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-18/init_file/dogbone_slots.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/init_file/dogbone_slots.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/init_file/dogbone_slots.step",
+          "bytes": 26664,
+          "sha256": "a4fe61b36ff749b503644c95ba72a558051774df241ee58620b50c88014522c1"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-18/task-18.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-18/task-18.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/task-18.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-18/task-18.json",
+          "bytes": 2173,
+          "sha256": "ed3259d302b8f5695419978a90f96cf4bede9d142d904b5f6ca08c5b268284e4"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-19/ground_truth/task-19.nc",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-19/ground_truth/task-19.nc",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/ground_truth/task-19.nc",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/ground_truth/task-19.nc",
+          "bytes": 4180,
+          "sha256": "cdf213b4805cacb1f443f36cbcc945780f0b326f20930b094ab65307f9c0aef1"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-19/init_file/tagged_cutout.step",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-19/init_file/tagged_cutout.step",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/init_file/tagged_cutout.step",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/init_file/tagged_cutout.step",
+          "bytes": 15476,
+          "sha256": "733e25b8f19ae82134b01c14e7a2dbd6430b9449d73c77e136e944193f9951f4"
+        },
+        {
+          "upstream_path": "task/single-software-execution/gui/freecad-path/task-19/task-19.json",
+          "local_path": "samples/upstream/engiworld-cam/task/single-software-execution/gui/freecad-path/task-19/task-19.json",
+          "raw_url": "https://raw.githubusercontent.com/Hongcheng-Gao/EngiWorld/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/task-19.json",
+          "source_url": "https://github.com/Hongcheng-Gao/EngiWorld/blob/cab0914a777ce2c2dd9d087302da5c93e0c3e5c7/task/single-software-execution/gui/freecad-path/task-19/task-19.json",
+          "bytes": 2195,
+          "sha256": "165602032178bfd988b365cb5d6a6697eea1e4ed50f1cb7ff4ebccb251d1045f"
+        }
+      ]
+    },
+    {
+      "id": "cam-occ",
+      "repo": "bedna-KU/cam-occ",
+      "license": "GPL-2.0 (trunk/COPYING)",
+      "purpose": "OpenCASCADE CAM test models (handle.step, trigger.step), 3D surface NGC program using numbered parameters (#101) and (MSG, ...), plus arc/spiral NGC test inputs",
+      "pairing": "Co-located under trunk/models/ and trunk/ngc-in/; face.ngc is a 3D surface path rather than a full machining job for handle.step or trigger.step.",
+      "commit": "5e34005725f4295b3d973c0cbf6ea0cab23b6d1f",
+      "source_url": "https://github.com/bedna-KU/cam-occ/tree/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk",
+      "files": [
+        {
+          "upstream_path": "trunk/COPYING",
+          "local_path": "samples/upstream/cam-occ/trunk/COPYING",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/COPYING",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/COPYING",
+          "bytes": 18430,
+          "sha256": "55717646ad7af6992b25b7c54558f85ed40c662eaa810174ba3101eac97da453"
+        },
+        {
+          "upstream_path": "trunk/models/face.ngc",
+          "local_path": "samples/upstream/cam-occ/trunk/models/face.ngc",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/face.ngc",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/face.ngc",
+          "bytes": 124886,
+          "sha256": "a1b8f706045420eb2ea41ac354f9b3ae60750d8017b4bd41116b38527793c4c6"
+        },
+        {
+          "upstream_path": "trunk/models/handle.step",
+          "local_path": "samples/upstream/cam-occ/trunk/models/handle.step",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/handle.step",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/handle.step",
+          "bytes": 710064,
+          "sha256": "2bd4bca61ace5ec0aaba8134481e00dbacf5af1d78510fb0ff8eae392e644f2a"
+        },
+        {
+          "upstream_path": "trunk/models/trigger.step",
+          "local_path": "samples/upstream/cam-occ/trunk/models/trigger.step",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/trigger.step",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/models/trigger.step",
+          "bytes": 78103,
+          "sha256": "851f4fd631c26cfcbac2faa4b0916ec066dac8089194728d17a2ca045e1a2e98"
+        },
+        {
+          "upstream_path": "trunk/ngc-in/arc360test.ngc",
+          "local_path": "samples/upstream/cam-occ/trunk/ngc-in/arc360test.ngc",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/arc360test.ngc",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/arc360test.ngc",
+          "bytes": 280,
+          "sha256": "04d1a931db5975220fa77796b3304d952a067decaea2db752188b1bb9fc11918"
+        },
+        {
+          "upstream_path": "trunk/ngc-in/arcs2.ngc",
+          "local_path": "samples/upstream/cam-occ/trunk/ngc-in/arcs2.ngc",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/arcs2.ngc",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/arcs2.ngc",
+          "bytes": 330,
+          "sha256": "2c589390f83fabcfa75263b0057d82fed5ff22a307ed57a3592018d41db7d2e6"
+        },
+        {
+          "upstream_path": "trunk/ngc-in/m-arcspiral-s-incorrect.ngc",
+          "local_path": "samples/upstream/cam-occ/trunk/ngc-in/m-arcspiral-s-incorrect.ngc",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/m-arcspiral-s-incorrect.ngc",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/m-arcspiral-s-incorrect.ngc",
+          "bytes": 140,
+          "sha256": "b70f7205722ba46a4232483c4ca1f6128221327223f21d3f8a8663fdbcb937c2"
+        },
+        {
+          "upstream_path": "trunk/ngc-in/m-arcspiral.ngc",
+          "local_path": "samples/upstream/cam-occ/trunk/ngc-in/m-arcspiral.ngc",
+          "raw_url": "https://raw.githubusercontent.com/bedna-KU/cam-occ/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/m-arcspiral.ngc",
+          "source_url": "https://github.com/bedna-KU/cam-occ/blob/5e34005725f4295b3d973c0cbf6ea0cab23b6d1f/trunk/ngc-in/m-arcspiral.ngc",
+          "bytes": 31105,
+          "sha256": "729e29a8eaff45b752f6d1df530bf9b990e6081543fc1b8be8d6d06f6de698c1"
+        }
+      ]
     }
   ]
 }

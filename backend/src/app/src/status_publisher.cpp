@@ -1,0 +1,77 @@
+#include <coffeecnc/app/status_publisher.hpp>
+
+#include <coffeecnc/app/messages.hpp>
+
+#include <algorithm>
+#include <string_view>
+#include <utility>
+
+namespace coffeecnc {
+namespace {
+
+auto same_tool(const Tool& a, const Tool& b) -> bool {
+  return a.number == b.number && a.pocket == b.pocket && a.length == b.length &&
+         a.diameter == b.diameter;
+}
+
+// Equal for the path: tool comments do not count.
+auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
+  return a.program_file == b.program_file && a.program_revision == b.program_revision &&
+         a.systems == b.systems && a.g92 == b.g92 && a.block_delete == b.block_delete &&
+         a.start == b.start &&
+         std::ranges::equal(a.tools, b.tools, same_tool);
+}
+
+} // namespace
+
+auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::uint64_t {
+  PreviewInputs now = inputs;
+  if (running && last_)
+    now.start = last_->start;
+  if (!last_ || !same_inputs(now, *last_)) {
+    ++context_;
+    last_ = std::move(now);
+  }
+  return context_;
+}
+
+auto StatusPublisher::publish(const PanelState& state, bool snapshots)
+    -> std::expected<std::vector<std::string>, std::string> {
+  std::vector<std::string> messages;
+  std::string error;
+  const auto add = [&messages, &error](std::string_view type, Encoded encoded) -> bool {
+    if (!encoded) {
+      error = std::string(type) + ": " + encoded.error();
+      return false;
+    }
+    messages.push_back(std::move(*encoded));
+    return true;
+  };
+  const bool tool_table = snapshots || tool_table_ != state.tool_table;
+  const bool work_offsets = snapshots || work_offsets_ != state.work_offsets;
+  const bool program = state.program != nullptr && (snapshots || program_ != *state.program);
+  const bool preview = snapshots || preview_ != state.preview;
+
+  if ((snapshots && !add("hello", encode_hello(state.hello))) ||
+      (tool_table && !add("tool_table", encode_tool_table(state.tool_table))) ||
+      (work_offsets && !add("work_offsets", encode_work_offsets(state.work_offsets))) ||
+      (program && !add("program", encode_program(*state.program))) ||
+      (preview && !add("preview", encode_preview(state.preview))) ||
+      !add("status", encode_status(state.status, seq_ + 1)))
+    return std::unexpected(std::move(error));
+
+  ++seq_;
+  if (tool_table)
+    tool_table_ = state.tool_table;
+  if (work_offsets)
+    work_offsets_ = state.work_offsets;
+  if (program)
+    program_ = *state.program;
+  else if (state.program == nullptr)
+    program_.reset(); // The next program is new even when it equals the one sent last.
+  if (preview)
+    preview_ = state.preview;
+  return messages;
+}
+
+} // namespace coffeecnc

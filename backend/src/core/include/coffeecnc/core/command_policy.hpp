@@ -145,6 +145,7 @@ struct Tool {
   double length{std::numeric_limits<double>::quiet_NaN()};
   double diameter{std::numeric_limits<double>::quiet_NaN()};
   std::string comment;
+  friend auto operator==(const Tool&, const Tool&) -> bool = default;
 };
 struct SetTool {
   Tool tool;

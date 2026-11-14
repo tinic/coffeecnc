@@ -7,14 +7,14 @@
 #include "nml_status.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <numbers>
 #include <span>
 #include <system_error>
@@ -47,6 +47,9 @@ auto failed(std::string_view reason) -> ActionResult {
 }
 auto accepted(const ActionResult& result) -> bool {
   return result.status == ActionStatus::accepted;
+}
+auto withdrawn() -> ActionResult {
+  return {ActionStatus::cancelled, "Cancelled before it was sent."};
 }
 
 // Polls until `done` holds. False when it did not within the timeout.
@@ -82,17 +85,24 @@ struct NmlPort::Impl {
   StatusChannel status;
   Gated<NML> errors;
   int serial{};
+  // Of the action in progress: asked before every write. Null for an action that only stops
+  // something. Set by begin() and used only until that action returns.
+  const Wanted* wanted{};
+  // It has answered no: nothing more is written for this action.
+  bool cancelled{};
   // A command has been written; `serial` is its number.
   bool written{};
-  // The same for other threads; 0 before the first write.
-  std::atomic<std::uint64_t> last_written{};
+  // Every write, for other threads to read.
+  std::mutex trace_mutex;
+  std::vector<Written> trace;
   // The joint or axis of the jog stop that is the last command written, until task echoes it.
   std::optional<int> unanswered_stop;
   std::vector<ControllerMessage> messages;
 
   explicit Impl(MachineConfig machine)
-      : config(std::move(machine)), command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()),
-        status(config.nml_file), errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {}
+      : config(std::move(machine)),
+        command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()), status(config.nml_file),
+        errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {}
 
   [[nodiscard]] auto stat() -> const EMC_STAT* { return status.stat(); }
 
@@ -167,15 +177,52 @@ struct NmlPort::Impl {
     return failed(reason.empty() ? std::string(fallback) : std::move(reason));
   }
 
+  // Ends an action: its `Wanted` is the caller's and is not kept past the call.
+  class Scope {
+  public:
+    explicit Scope(Impl& impl) : impl_(impl) {}
+    Scope(const Scope&) = delete;
+    auto operator=(const Scope&) -> Scope& = delete;
+    ~Scope() { impl_.wanted = nullptr; }
+
+  private:
+    Impl& impl_;
+  };
+
+  // Starts an action: whose it is, and where its messages will begin.
+  [[nodiscard]] auto begin(const Wanted* still_wanted) -> std::size_t {
+    wanted = still_wanted;
+    cancelled = false;
+    return mark();
+  }
+
+  // The action in progress may go on. Once the answer was no it stays no.
+  [[nodiscard]] auto still() -> bool {
+    if (!cancelled && wanted != nullptr && *wanted && !(*wanted)())
+      cancelled = true;
+    return !cancelled;
+  }
+
+  // The one place a command leaves this port. The gate is taken first, then the action is
+  // asked whether it is still wanted, then the command is written: no other NML call and no
+  // change of the answer can fall between the question and the write. Once write() of libnml
+  // has begun the command is committed.
   [[nodiscard]] auto write(RCS_CMD_MSG& message) -> ActionResult {
-    if (command.call([&](RCS_CMD_CHANNEL& channel) -> int { return channel.write(&message); }) != 0)
+    const int wrote = command.call(
+        [&](RCS_CMD_CHANNEL& channel) -> int { return still() ? channel.write(&message) : 0; });
+    if (cancelled)
+      return withdrawn();
+    if (wrote != 0)
       return failed("Cannot write to LinuxCNC's command channel.");
     serial = message.serial_number;
     written = true;
     unanswered_stop.reset();
-    // Type and serial in one word, so that another thread never reads half of a pair.
-    last_written = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(message.type)) << 32U) |
-                   static_cast<std::uint32_t>(message.serial_number);
+    {
+      const std::scoped_lock lock{trace_mutex};
+      if (trace.size() == NmlPort::max_trace)
+        trace.erase(trace.begin());
+      trace.push_back({message.type, message.serial_number, Clock::now()});
+    }
     return {};
   }
 
@@ -287,10 +334,14 @@ struct NmlPort::Impl {
     message.enable = on ? 1 : 0;
     if (auto done = run(message, from); !accepted(done))
       return done;
-    return settled(from,
-                   on ? "LinuxCNC did not enter world mode for an axis jog."
-                      : "LinuxCNC did not enter joint mode.",
-                   [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
+    auto switched = settled(from,
+                            on ? "LinuxCNC did not enter world mode for an axis jog."
+                               : "LinuxCNC did not enter joint mode.",
+                            [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
+    // The wait is over: the command this was the preparation for may not be wanted any more.
+    if (accepted(switched) && !still())
+      return withdrawn();
+    return switched;
   }
 
   [[nodiscard]] auto units_per_second(double millimetres_per_minute) const -> double {
@@ -306,7 +357,8 @@ struct NmlPort::Impl {
     return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
   }
 
-  // Replaces the file in one step, then has LinuxCNC read it.
+  // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
+  // edit can be withdrawn and leaves nothing behind; between them only half of it.
   [[nodiscard]] auto load_tool_table(const std::string& table) -> ActionResult {
     const std::string temporary = config.tool_table + ".coffeecnc";
     {
@@ -317,13 +369,24 @@ struct NmlPort::Impl {
         return failed(std::format("Cannot write tool table {}.", temporary));
     }
     std::error_code error;
+    if (!still()) {
+      std::filesystem::remove(temporary, error);
+      return withdrawn();
+    }
     std::filesystem::rename(temporary, config.tool_table, error);
     if (error)
       return failed(std::format("Cannot replace tool table {}.", config.tool_table));
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;
     std::ranges::fill(message.file, '\0'); // the configured table
-    return run(message, from);
+    auto loaded = run(message, from);
+    // Withdrawn between the two commits. Nothing is rolled back: the file may have been edited
+    // again by now.
+    if (loaded.status == ActionStatus::cancelled)
+      return failed(std::format("The tool table file {} was changed, but the request was "
+                                "cancelled before LinuxCNC was told to load it.",
+                                config.tool_table));
+    return loaded;
   }
 };
 
@@ -346,14 +409,27 @@ NmlPort::~NmlPort() = default;
 
 auto NmlPort::snapshot() -> ControllerState { return status().controller; }
 
-auto NmlPort::last_written() const -> std::optional<Written> {
-  const std::uint64_t word = impl_->last_written;
-  if (word == 0)
-    return {};
-  return Written{static_cast<long>(word >> 32U), static_cast<int>(static_cast<std::uint32_t>(word))};
+auto NmlPort::writes() const -> std::vector<Written> {
+  const std::scoped_lock lock{impl_->trace_mutex};
+  return impl_->trace;
 }
-auto NmlPort::jog_start_type() -> long { return EMC_JOG_CONT_TYPE; }
-auto NmlPort::jog_stop_type() -> long { return EMC_JOG_STOP_TYPE; }
+auto NmlPort::types() -> Types {
+  return {EMC_JOG_CONT_TYPE,
+          EMC_JOG_STOP_TYPE,
+          EMC_JOG_INCR_TYPE,
+          EMC_TRAJ_SET_TELEOP_ENABLE_TYPE,
+          EMC_JOINT_HOME_TYPE,
+          EMC_TASK_PLAN_RUN_TYPE,
+          EMC_TASK_PLAN_EXECUTE_TYPE,
+          EMC_SPINDLE_ON_TYPE,
+          EMC_COOLANT_FLOOD_ON_TYPE,
+          EMC_COOLANT_MIST_ON_TYPE,
+          EMC_TOOL_LOAD_TOOL_TABLE_TYPE,
+          EMC_TASK_ABORT_TYPE};
+}
+
+NmlGateHold::NmlGateHold() : lock_(nml_gate()) {}
+NmlGateHold::~NmlGateHold() = default;
 
 auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();
@@ -369,8 +445,12 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
   return std::exchange(impl_->messages, {});
 }
 
-auto NmlPort::set_machine_state(MachineState state) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {
+  // E-stop and power off are never withdrawn.
+  const auto from = impl_->begin(state == MachineState::on ? &wanted : nullptr);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   const EMC_STAT* s = impl_->stat();
   EMC_TASK_SET_STATE message;
   switch (state) {
@@ -404,8 +484,11 @@ auto NmlPort::set_machine_state(MachineState state) -> ActionResult {
       });
 }
 
-auto NmlPort::set_task_mode(TaskMode mode) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_SET_MODE message;
   message.mode = mode == TaskMode::automatic ? EMC_TASK_MODE_AUTO
                  : mode == TaskMode::mdi     ? EMC_TASK_MODE_MDI
@@ -421,13 +504,16 @@ auto NmlPort::set_task_mode(TaskMode mode) -> ActionResult {
       });
 }
 
-auto NmlPort::home(std::optional<Axis> axis) -> ActionResult {
+auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResult {
   // Motion homes only joints with a HOME_SEQUENCE on "home all" and says nothing about the rest:
   // without one the command would be accepted and do nothing.
   if (!axis && !impl_->config.home_all_configured)
     return failed("Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home "
                   "each axis.");
-  const auto from = impl_->mark();
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   // Task homes joints, and only in joint mode; a homed machine is in world mode.
   if (auto joint_mode = impl_->teleop(false, from); !accepted(joint_mode))
     return joint_mode;
@@ -436,8 +522,12 @@ auto NmlPort::home(std::optional<Axis> axis) -> ActionResult {
   return impl_->pass(message, from);
 }
 
-auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace space) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace space,
+                        const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
   EMC_JOG_CONT message;
@@ -448,7 +538,8 @@ auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace spac
 }
 
 auto NmlPort::stop_jog(Axis axis) -> ActionResult {
-  const auto from = impl_->mark();
+  const auto from = impl_->begin(nullptr);
+  const Impl::Scope scope{*impl_};
   const EMC_STAT* s = impl_->stat();
   const bool answered = impl_->answered(s);
   // Task answers a jog stop with an error unless the machine is on, and nothing jogs outside
@@ -471,9 +562,12 @@ auto NmlPort::stop_jog(Axis axis) -> ActionResult {
   return impl_->finished(from);
 }
 
-auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space)
-    -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space,
+                            const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
   EMC_JOG_INCR message;
@@ -485,16 +579,22 @@ auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpac
   return impl_->pass(message, from);
 }
 
-auto NmlPort::mdi(std::string_view text) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_EXECUTE message;
   if (!put(message.command, text))
     return failed("The MDI block is too long for LinuxCNC.");
   return impl_->start(message, from);
 }
 
-auto NmlPort::open_program(std::string_view path) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_OPEN message;
   if (!put(message.file, path))
     return failed("The program path is too long for LinuxCNC.");
@@ -505,15 +605,21 @@ auto NmlPort::open_program(std::string_view path) -> ActionResult {
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
 }
 
-auto NmlPort::run() -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::run(const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_RUN message;
   message.line = 0; // from the start
   return impl_->start(message, from);
 }
 
-auto NmlPort::pause() -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_PAUSE message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
@@ -521,8 +627,11 @@ auto NmlPort::pause() -> ActionResult {
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused != 0; });
 }
 
-auto NmlPort::resume() -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_RESUME message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
@@ -530,20 +639,27 @@ auto NmlPort::resume() -> ActionResult {
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused == 0; });
 }
 
-auto NmlPort::step() -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::step(const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   EMC_TASK_PLAN_STEP message;
   return impl_->pass(message, from);
 }
 
 auto NmlPort::abort() -> ActionResult {
-  const auto from = impl_->mark();
+  const auto from = impl_->begin(nullptr);
+  const Impl::Scope scope{*impl_};
   EMC_TASK_ABORT message;
   return impl_->run(message, from);
 }
 
-auto NmlPort::set_override(Override which, double value) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   switch (which) {
   case Override::feed: {
     EMC_TRAJ_SET_SCALE message;
@@ -564,8 +680,13 @@ auto NmlPort::set_override(Override which, double value) -> ActionResult {
   return impl_->run(message, from);
 }
 
-auto NmlPort::set_spindle(SpindleDirection direction, double rpm) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_spindle(SpindleDirection direction, double rpm, const Wanted& wanted)
+    -> ActionResult {
+  // A spindle stop is never withdrawn.
+  const auto from = impl_->begin(direction == SpindleDirection::stopped ? nullptr : &wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   if (direction == SpindleDirection::stopped) {
     EMC_SPINDLE_OFF message;
     message.spindle = 0;
@@ -581,8 +702,12 @@ auto NmlPort::set_spindle(SpindleDirection direction, double rpm) -> ActionResul
   return impl_->run(message, from);
 }
 
-auto NmlPort::set_coolant(bool flood, bool mist) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_coolant(bool flood, bool mist, const Wanted& wanted) -> ActionResult {
+  // Coolant off is never withdrawn.
+  const auto from = impl_->begin(flood || mist ? &wanted : nullptr);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   const EMC_STAT* s = impl_->stat();
   // Only what differs from the observed state is sent; without a status, both.
   const bool send_flood = s == nullptr || (s->io.coolant.flood != 0) != flood;
@@ -602,8 +727,12 @@ auto NmlPort::set_coolant(bool flood, bool mist) -> ActionResult {
   return {};
 }
 
-auto NmlPort::set_program_option(ProgramOption option, bool on) -> ActionResult {
-  const auto from = impl_->mark();
+auto NmlPort::set_program_option(ProgramOption option, bool on, const Wanted& wanted)
+    -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   if (option == ProgramOption::optional_stop) {
     EMC_TASK_PLAN_SET_OPTIONAL_STOP message;
     message.state = on;
@@ -614,25 +743,38 @@ auto NmlPort::set_program_option(ProgramOption option, bool on) -> ActionResult 
   return impl_->run(message, from);
 }
 
-auto NmlPort::tool_changed(int tool, std::uint64_t request) -> ActionResult {
+auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted) -> ActionResult {
+  static_cast<void>(impl_->begin(&wanted));
+  const Impl::Scope scope{*impl_};
   if (impl_->hal == nullptr)
     return failed("The CoffeeCNC HAL component is not available.");
   if (!impl_->hal->view(HalShared::Clock::now()))
     return failed("The CoffeeCNC HAL component is not being serviced.");
+  // Asked at the moment the confirmation is handed to the control thread.
+  if (!impl_->still())
+    return withdrawn();
   // The request the decision was made on, not whatever the pins show by now.
   if (!impl_->hal->confirm_tool_changed({request, tool}))
     return failed("LinuxCNC is not waiting for that tool change any more.");
   return {};
 }
 
-auto NmlPort::set_tool(const Tool& tool) -> ActionResult {
+auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
+  static_cast<void>(impl_->begin(&wanted));
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   const auto table = impl_->read_tool_table();
   if (!table)
     return failed(table.error());
   return impl_->load_tool_table(with_tool(*table, tool, impl_->config.millimetres_per_unit));
 }
 
-auto NmlPort::remove_tool(int number) -> ActionResult {
+auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
+  static_cast<void>(impl_->begin(&wanted));
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
   if (const EMC_STAT* s = impl_->stat(); s != nullptr && s->io.tool.toolInSpindle == number)
     return failed(std::format("Tool {} is in the spindle.", number));
   const auto table = impl_->read_tool_table();

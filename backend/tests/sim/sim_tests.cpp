@@ -158,8 +158,9 @@ public:
       const std::lock_guard lock{mutex_};
       results_.clear();
     }
-    runtime = std::make_unique<Runtime>(port, reader, control, config.limits, programs,
-                                        [this](const Outcome& outcome) -> void { absorb(outcome); });
+    runtime =
+        std::make_unique<Runtime>(port, reader, control, config.limits, programs,
+                                  [this](const Outcome& outcome) -> void { absorb(outcome); });
     // The control thread arms the watchdog and lowers the level a stopped runtime left high.
     pump_until(2s, [&]() -> bool { return probe.watchdog_ok() && !probe.jog_stop(); });
     new_page();
@@ -193,8 +194,9 @@ public:
       auto published = port.take_messages();
       {
         const std::lock_guard lock{mutex_};
-        std::ranges::transform(published, std::back_inserter(messages_),
-                               [](auto& message) -> std::string { return std::move(message.text); });
+        std::ranges::transform(
+            published, std::back_inserter(messages_),
+            [](auto& message) -> std::string { return std::move(message.text); });
       }
       if (done())
         return true;
@@ -217,11 +219,12 @@ public:
     return found == results_.end() ? std::nullopt : std::optional<Result>{found->second};
   }
   auto await(RequestId id, std::chrono::milliseconds timeout = 30s) -> Result {
-    std::unique_lock lock{mutex_};
-    const std::pair key{page.value, id};
-    if (!arrived_.wait_for(lock, timeout, [&]() -> bool { return results_.contains(key); }))
-      return {"no_result", "", false};
-    return results_.at(key);
+    for (const auto end = Clock::now() + timeout; Clock::now() < end;) {
+      if (const auto found = result(id))
+        return *found;
+      std::this_thread::sleep_for(500us);
+    }
+    return {"no_result", "", false};
   }
   // A request and its result.
   auto send(std::string_view body) -> Result { return await(post(body)); }
@@ -260,9 +263,7 @@ public:
   auto snapshot() -> ControllerState { return view.read(); }
   auto machine(std::size_t axis) -> double { return status().controller.axes.at(axis).machine; }
   // Joint 0 as motion reports it to HAL, in millimetres: also while task writes no status.
-  [[nodiscard]] auto feedback() const -> double {
-    return probe.x() * config.millimetres_per_unit;
-  }
+  [[nodiscard]] auto feedback() const -> double { return probe.x() * config.millimetres_per_unit; }
   // `link` needs readings a short time apart.
   auto link() -> Link {
     pump(50ms);
@@ -305,11 +306,9 @@ private:
       else if (message.at("type") == "message")
         messages_.push_back(message.at("text").get<std::string>());
     }
-    arrived_.notify_all();
   }
 
   std::mutex mutex_;
-  std::condition_variable arrived_;
   std::map<std::pair<std::uint64_t, RequestId>, Result> results_;
   // Operator messages, from LinuxCNC and from the session, as they arrived.
   std::vector<std::string> messages_;
@@ -334,6 +333,12 @@ public:
 private:
   pid_t pid_;
 };
+
+// For the port used without the session: an action nobody withdraws.
+auto always() -> const Wanted& {
+  static const Wanted yes = []() -> bool { return true; };
+  return yes;
+}
 
 constexpr auto hold_x = R"("type":"jog","axis":"x","direction":1,"velocity":600,"held":true)";
 constexpr auto release_x = R"("type":"jog","axis":"x","direction":1,"velocity":600,"held":false)";
@@ -370,7 +375,7 @@ void power(Rig& rig) {
   check("on_rejected_in_estop", early.outcome == "rejected", early.text());
   // The same request without the policy: task reports it done and stays in E-stop.
   rig.direct([&]() -> void {
-    const auto forced = rig.port.set_machine_state(MachineState::on);
+    const auto forced = rig.port.set_machine_state(MachineState::on, always());
     check("port_on_in_estop_fails", forced.status == ActionStatus::failed, forced.reason);
   });
 
@@ -388,13 +393,13 @@ void unhomed(Rig& rig) {
   check("mdi_rejected_unhomed", mdi.outcome == "rejected", mdi.text());
   // What LinuxCNC itself says when the policy is not in the way.
   rig.direct([&]() -> void {
-    auto mode = rig.port.set_task_mode(TaskMode::mdi);
-    const auto forced = rig.port.mdi("G0 X1");
+    auto mode = rig.port.set_task_mode(TaskMode::mdi, always());
+    const auto forced = rig.port.mdi("G0 X1", always());
     check("port_mdi_unhomed_fails",
           mode.status == ActionStatus::accepted && forced.status == ActionStatus::failed &&
               forced.reason.find("not homed") != std::string::npos,
           forced.reason);
-    mode = rig.port.set_task_mode(TaskMode::manual);
+    mode = rig.port.set_task_mode(TaskMode::manual, always());
     check("mode_back_to_manual",
           mode.status == ActionStatus::accepted && rig.port.snapshot().mode == TaskMode::manual);
   });
@@ -409,8 +414,8 @@ void unhomed(Rig& rig) {
   const double stopped = rig.machine(0);
   rig.pump(150ms);
   check("jog_joint_hold_release",
-        pressed.accepted() && released.accepted() && !rig.status().teleop &&
-            moving - start > 1.5 && near(rig.machine(0), stopped, 0.001),
+        pressed.accepted() && released.accepted() && !rig.status().teleop && moving - start > 1.5 &&
+            near(rig.machine(0), stopped, 0.001),
         std::format("{} moved={:.3f} after_release={:.3f}", pressed.text(), moving - start,
                     rig.machine(0) - stopped));
 
@@ -430,7 +435,7 @@ void unhomed(Rig& rig) {
 
   // The pin alone stops a jog that nothing else ends: port and pin without the session.
   rig.direct([&]() -> void {
-    const auto jog = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint);
+    const auto jog = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint, always());
     rig.direct_pump(150ms);
     const double before = rig.feedback();
     rig.hal.hold_jog_stop(true);
@@ -444,7 +449,7 @@ void unhomed(Rig& rig) {
                       static_cast<int>(jog.status), jog.reason, after - before,
                       rig.feedback() - after));
     // While the level is high a new jog is refused: motion.jog-inhibit follows the same level.
-    const auto refused = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint);
+    const auto refused = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint, always());
     rig.direct_pump(150ms);
     check("no_jog_under_the_level", near(rig.feedback(), after, 0.001),
           std::format("start={} moved={:.4f}", static_cast<int>(refused.status),
@@ -513,7 +518,7 @@ void axis_jogs(Rig& rig) {
 // Port and pin without the session.
 void hal_stop_without_nml(Rig& rig) {
   rig.direct([&]() -> void {
-    const auto pressed = rig.port.start_jog(Axis::x, 1, 600, JogSpace::axis);
+    const auto pressed = rig.port.start_jog(Axis::x, 1, 600, JogSpace::axis, always());
     rig.direct_pump(100ms);
     ActionResult nml;
     double a{};
@@ -556,9 +561,9 @@ void hal_stop_without_nml(Rig& rig) {
     const auto again = rig.port.stop_jog(Axis::x);
     const double rest = rig.feedback();
     rig.direct_pump(100ms);
-    check("recovers_after_task_resumes",
-          again.status == ActionStatus::accepted && rig.port.snapshot().link == Link::live &&
-              near(rig.feedback(), rest, 0.001));
+    check("recovers_after_task_resumes", again.status == ActionStatus::accepted &&
+                                             rig.port.snapshot().link == Link::live &&
+                                             near(rig.feedback(), rest, 0.001));
   });
 }
 
@@ -566,7 +571,7 @@ void hal_stop_without_nml(Rig& rig) {
 // and pins without the runtime, whose threads the test cannot stall.
 void watchdog(Rig& rig) {
   rig.direct([&]() -> void {
-    const auto pressed = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis);
+    const auto pressed = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis, always());
     rig.direct_pump(100ms);
     const double before = rig.port.status().controller.axes[1].machine;
     std::this_thread::sleep_for(450ms); // the stall; the watchdog's timeout is 300 ms
@@ -585,7 +590,7 @@ void watchdog(Rig& rig) {
     const bool armed = rig.hal.watchdog_ok();
     static_cast<void>(rig.port.stop_jog(Axis::y));
     const double y0 = rig.port.status().controller.axes[1].machine;
-    const auto again = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis);
+    const auto again = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis, always());
     rig.direct_pump(200ms);
     const double y1 = rig.port.status().controller.axes[1].machine;
     static_cast<void>(rig.port.stop_jog(Axis::y));
@@ -611,7 +616,8 @@ void delayed_start_unfenced(Rig& rig) {
     double during{};
     {
       const FrozenTask frozen{rig.config.ini_file};
-      std::thread worker{[&]() -> void { start = rig.port.start_jog(Axis::x, 1, 600, JogSpace::axis); }};
+      std::thread worker{
+          [&]() -> void { start = rig.port.start_jog(Axis::x, 1, 600, JogSpace::axis, always()); }};
       for (const auto end = Clock::now() + 400ms; Clock::now() < end;) {
         rig.control.beat();
         std::this_thread::sleep_for(5ms);
@@ -633,40 +639,61 @@ void delayed_start_unfenced(Rig& rig) {
 
 enum class Reason : std::uint8_t { page_end, release, lease_expiry };
 
-// The delayed start with the runtime: the press is in flight in a stopped task when its reason
-// goes. The level must be high from the next control period, stay high without a gap until task
-// has run again and confirmed the stop, and the axis must not move at all.
+// What the port wrote after the first `from` commands of its trace, in order.
+auto written_since(Rig& rig, std::size_t from) -> std::vector<NmlPort::Written> {
+  auto all = rig.port.writes();
+  all.erase(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(std::min(from, all.size())));
+  return all;
+}
+auto listed(const std::vector<NmlPort::Written>& writes) -> std::string {
+  std::string text;
+  for (const auto& written : writes)
+    text += std::format("{}{}#{}", text.empty() ? "" : ",", written.type, written.serial);
+  return text.empty() ? std::string("none") : text;
+}
+auto wrote(const std::vector<NmlPort::Written>& writes, long type) -> bool {
+  return std::ranges::any_of(writes,
+                             [&](const auto& written) -> bool { return written.type == type; });
+}
+
+// The delayed start with the runtime. The order of events is what is checked, each seen on its
+// own evidence: the jog start is written into LinuxCNC's command queue while task is stopped
+// (the port's write trace); its reason goes (page end, release, or the lease running out); the
+// level rises; task runs again and takes the start up (it echoes the start's serial number);
+// the port writes a jog stop after it (the trace); task takes that up and reports it done; and
+// only then does the level fall. The level is sampled all the time and must never be low
+// between its rise and the stop's acceptance; the axis must not move at all.
 void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   rest(rig);
   rig.clear_messages();
+  const auto types = NmlPort::types();
   const double before = rig.feedback();
   double moved = 0;
-  const auto sample = [&]() -> void { moved = std::max(moved, std::fabs(rig.feedback() - before)); };
+  const auto sample = [&]() -> void {
+    moved = std::max(moved, std::fabs(rig.feedback() - before));
+  };
+  const auto trace_from = rig.port.writes().size();
   RequestId press{};
-  bool in_flight = false;
-  bool high_while_frozen = true;
-  // The start as the port wrote it into LinuxCNC's command queue.
-  const auto written_before = rig.port.last_written();
   NmlPort::Written start;
+  bool written_frozen = false;
+  bool low_before_accepted = false;
+  Clock::time_point pressed;
   Clock::time_point decided;
   Clock::time_point raised;
   Clock::time_point resumed;
   {
     const FrozenTask frozen{rig.config.ini_file};
     press = rig.post(hold_x);
-    const auto pressed = Clock::now();
+    pressed = Clock::now();
     // Not "no answer yet", which a worker that waits before writing would also show: the write
-    // itself, a jog start with a new serial number, while task cannot take it up.
-    while (Clock::now() < pressed + 100ms) {
-      if (const auto written = rig.port.last_written();
-          written && written != written_before && written->type == NmlPort::jog_start_type()) {
-        start = *written;
-        break;
-      }
+    // itself, a jog start, while task cannot take it up.
+    while (Clock::now() < pressed + 100ms && start.type != types.jog_start) {
+      if (const auto writes = written_since(rig, trace_from); !writes.empty())
+        start = writes.back();
       std::this_thread::sleep_for(200us);
     }
-    in_flight = start.type == NmlPort::jog_start_type() && !rig.result(press).has_value() &&
-                rig.status().echo_serial - start.serial < 0;
+    written_frozen = start.type == types.jog_start && !rig.result(press).has_value() &&
+                     rig.status().echo_serial - start.serial < 0;
     decided = Clock::now();
     if (reason == Reason::page_end)
       rig.runtime->end_page(rig.page);
@@ -678,28 +705,35 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
       std::this_thread::sleep_for(100us);
     raised = Clock::now();
     for (const auto end = pressed + 500ms; Clock::now() < end;) {
-      high_while_frozen = high_while_frozen && rig.probe.jog_stop();
+      low_before_accepted = low_before_accepted || !rig.probe.jog_stop();
       sample();
       std::this_thread::sleep_for(200us);
     }
     resumed = Clock::now();
   }
-  // Task runs: it takes the written start up now, which its echo of the serial number shows.
-  // The level is watched until it falls.
-  bool fell = false;
-  bool consumed = false;
-  bool high_when_consumed = false;
-  int echoed = 0;
-  Clock::time_point released;
-  for (const auto end = resumed + 10s; Clock::now() < end && !(fell && consumed);) {
-    if (!consumed) {
-      echoed = rig.status().echo_serial;
-      consumed = echoed - start.serial >= 0;
-      high_when_consumed = consumed && !fell && rig.probe.jog_stop();
-    }
-    if (!fell) {
-      fell = !rig.probe.jog_stop();
-      released = Clock::now();
+  // Task runs. In every pass the status is read first and the level after it: a level seen low
+  // in a pass that has not seen the stop accepted fell before the stop was accepted.
+  std::optional<Clock::time_point> start_echoed;
+  std::optional<NmlPort::Written> stop;
+  std::optional<Clock::time_point> stop_accepted;
+  std::optional<Clock::time_point> fell;
+  for (const auto end = resumed + 10s; Clock::now() < end && !fell;) {
+    const auto status = rig.status();
+    const auto now = Clock::now();
+    if (!start_echoed && status.echo_serial - start.serial >= 0)
+      start_echoed = now;
+    if (!stop)
+      for (const auto& written : written_since(rig, trace_from))
+        if (!stop && written.type == types.jog_stop && written.serial - start.serial > 0)
+          stop = written;
+    // Done as task reports it, or left behind by a later command of the port.
+    if (stop && !stop_accepted &&
+        (status.echo_serial - stop->serial > 0 ||
+         (status.echo_serial == stop->serial && status.command_done)))
+      stop_accepted = now;
+    if (!rig.probe.jog_stop()) {
+      fell = Clock::now();
+      low_before_accepted = low_before_accepted || !stop_accepted;
     }
     sample();
     std::this_thread::sleep_for(200us);
@@ -708,19 +742,28 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
     sample();
     std::this_thread::sleep_for(1ms);
   }
-  const double to_level = milliseconds(raised - decided);
-  const double held = milliseconds(released - raised);
-  const double after_resume = milliseconds(released - resumed);
+  const auto ms = [&](const std::optional<Clock::time_point>& at) -> double {
+    return at ? milliseconds(*at - pressed) : -1;
+  };
+  const bool ordered = written_frozen && start.at <= decided + 1ms && decided <= raised &&
+                       start_echoed && *start_echoed >= resumed && stop && stop->at >= resumed &&
+                       stop_accepted && *stop_accepted >= stop->at && fell &&
+                       *fell >= *stop_accepted;
   const auto answer = reason == Reason::page_end ? std::optional<Result>{} : rig.result(press);
   check(std::format("delayed_start_{}", name),
-        in_flight && high_while_frozen && consumed && high_when_consumed && fell &&
-            after_resume > 0 && moved < 0.001 && to_level < 30,
-        std::format("written_while_frozen={} written_type={} jog_start_type={} start_serial={} "
-                    "echoed_serial_after_resume={} level_high_when_consumed={} "
-                    "level_after_decision_ms={:.1f} high_while_frozen={} hold_ms={:.1f} "
-                    "released_ms_after_resume={:.1f} moved_mm={:.5f} start_result={}",
-                    in_flight, start.type, NmlPort::jog_start_type(), start.serial, echoed,
-                    high_when_consumed, to_level, high_while_frozen, held, after_resume, moved,
+        ordered && !low_before_accepted && moved < 0.001 && milliseconds(raised - decided) < 30,
+        std::format("jog_start_type={} start={}#{} stop={}#{} trace={} ms_after_press: "
+                    "start_written={:.1f} decided={:.1f} level_high={:.1f} task_resumed={:.1f} "
+                    "start_echoed={:.1f} stop_written={:.1f} stop_accepted={:.1f} "
+                    "level_low={:.1f} level_low_before_stop_accepted={} hold_ms={:.1f} "
+                    "moved_mm={:.5f} start_result={}",
+                    types.jog_start, start.type, start.serial, stop ? stop->type : 0,
+                    stop ? stop->serial : 0, listed(written_since(rig, trace_from)),
+                    milliseconds(start.at - pressed), milliseconds(decided - pressed),
+                    milliseconds(raised - pressed), milliseconds(resumed - pressed),
+                    ms(start_echoed), stop ? milliseconds(stop->at - pressed) : -1,
+                    ms(stop_accepted), ms(fell), low_before_accepted,
+                    fell ? milliseconds(*fell - raised) : -1, moved,
                     answer ? answer->text() : std::string("none")));
   if (reason == Reason::page_end) {
     check(std::format("delayed_start_{}_not_answered", name), !rig.result(press).has_value());
@@ -733,8 +776,7 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   rig.hold(hold_x, 150ms);
   const double x1 = rig.feedback();
   rest(rig);
-  check(std::format("jog_works_after_delayed_start_{}", name),
-        again.accepted() && x1 - x0 > 0.5,
+  check(std::format("jog_works_after_delayed_start_{}", name), again.accepted() && x1 - x0 > 0.5,
         std::format("{} moved={:.3f}", again.text(), x1 - x0));
 }
 
@@ -946,7 +988,7 @@ void nml_gate(Rig& rig) {
       static_cast<void>(rig.port.take_messages());
       std::this_thread::sleep_for(5ms);
     }
-    const auto after = rig.port.set_override(Override::feed, 1.0);
+    const auto after = rig.port.set_override(Override::feed, 1.0, always());
     stop = true;
     status.join();
     check("nml_gate_concurrent_use",
@@ -958,6 +1000,259 @@ void nml_gate(Rig& rig) {
                       static_cast<int>(abort.status), read_while_frozen, refused.load(),
                       port_refused, static_cast<int>(after.status)));
   });
+}
+
+// The port itself withdraws an action whose answer turns to no while it works: asked after its
+// own waits and, last, inside the NML gate before each write. Port alone, real NML: the answer
+// is made to change at the first, second, third ... time the port asks, and each time nothing
+// of what the action exists for may have been written.
+void adapter_cancellation(Rig& rig) {
+  rig.direct([&]() -> void {
+    const auto types = NmlPort::types();
+    struct Action {
+      std::string name;
+      long forbidden; // the command that must not be written once the answer is no
+      std::function<ActionResult(const Wanted&)> act;
+      std::function<void()> undo; // after the run that was not cancelled
+    };
+    const auto mode = [&](TaskMode wanted) -> void {
+      static_cast<void>(rig.port.set_task_mode(wanted, always()));
+    };
+    const auto rest = [&]() -> void {
+      static_cast<void>(rig.direct_until(20s, [&]() -> bool {
+        const auto state = rig.port.snapshot();
+        return state.interp == InterpState::idle && state.in_position &&
+               std::ranges::none_of(state.axes,
+                                    [](const auto& axis) -> bool { return axis.homing; });
+      }));
+    };
+    const auto table = [&]() -> std::string {
+      std::ifstream in{rig.config.tool_table, std::ios::binary};
+      return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    };
+    Tool tool;
+    tool.number = 9;
+    tool.pocket = 9;
+    tool.length = 10;
+    tool.diameter = 1;
+    const std::vector<Action> actions{
+        {"mdi", types.mdi,
+         [&](const Wanted& wanted) -> ActionResult {
+           mode(TaskMode::mdi);
+           return rig.port.mdi("G4 P0.01", wanted);
+         },
+         rest},
+        {"run", types.run,
+         [&](const Wanted& wanted) -> ActionResult {
+           mode(TaskMode::automatic);
+           return rig.port.run(wanted);
+         },
+         [&]() -> void {
+           static_cast<void>(rig.port.abort());
+           rest();
+         }},
+        {"spindle_on", types.spindle_on,
+         [&](const Wanted& wanted) -> ActionResult {
+           return rig.port.set_spindle(SpindleDirection::forward, 500, wanted);
+         },
+         [&]() -> void {
+           static_cast<void>(rig.port.set_spindle(SpindleDirection::stopped, 0, always()));
+         }},
+        // Two writes: the mist must not follow a flood that was written before the answer changed.
+        {"coolant", types.coolant_mist_on,
+         [&](const Wanted& wanted) -> ActionResult {
+           static_cast<void>(rig.port.set_coolant(false, false, always()));
+           rig.direct_pump(250ms);
+           return rig.port.set_coolant(true, true, wanted);
+         },
+         [&]() -> void {
+           rig.direct_pump(250ms);
+           static_cast<void>(rig.port.set_coolant(false, false, always()));
+         }},
+        // Two writes: leave world mode, then HOME.
+        {"home", types.home,
+         [&](const Wanted& wanted) -> ActionResult {
+           mode(TaskMode::manual);
+           static_cast<void>(rig.port.start_jog(Axis::y, 1, 60, JogSpace::axis, always()));
+           static_cast<void>(rig.port.stop_jog(Axis::y));
+           rest();
+           return rig.port.home(Axis::x, wanted);
+         },
+         [&]() -> void {
+           rig.direct_pump(300ms);
+           rest();
+         }},
+        {"jog_start", types.jog_start,
+         [&](const Wanted& wanted) -> ActionResult {
+           mode(TaskMode::manual);
+           return rig.port.start_jog(Axis::y, 1, 60, JogSpace::axis, wanted);
+         },
+         [&]() -> void {
+           static_cast<void>(rig.port.stop_jog(Axis::y));
+           rest();
+         }},
+        {"tool_table", types.load_tool_table,
+         [&](const Wanted& wanted) -> ActionResult { return rig.port.set_tool(tool, wanted); },
+         [&]() -> void { static_cast<void>(rig.port.remove_tool(9, always())); }},
+    };
+    for (const auto& action : actions) {
+      const std::string table_before = table();
+      bool clean = true;
+      bool partial_commit = false;
+      int cancelled = 0;
+      int asked = 0;
+      std::string detail;
+      for (int deny_at = 1; deny_at < 20; ++deny_at) {
+        asked = 0;
+        const Wanted wanted = [&]() -> bool { return ++asked < deny_at; };
+        const auto from = rig.port.writes().size();
+        const auto result = action.act(wanted);
+        // Everything the attempt wrote, its preparations included.
+        const auto writes = written_since(rig, from);
+        if (result.status == ActionStatus::accepted) {
+          // The port asked fewer times than that: the action went through.
+          clean = clean && wrote(writes, action.forbidden);
+          detail += std::format(" completed_after_{}_questions={}:{}", asked,
+                                static_cast<int>(result.status), word(result.reason));
+          action.undo();
+          break;
+        }
+        ++cancelled;
+        // Nothing of the forbidden kind left the port in this attempt, whatever else did.
+        const bool temporary_left = std::ifstream{rig.config.tool_table + ".coffeecnc"}.good();
+        if (action.name == "tool_table" && result.status == ActionStatus::failed) {
+          // Withdrawn after the file was replaced: said so, not rolled back, not loaded.
+          clean = clean && table() != table_before && !temporary_left &&
+                  result.reason.find("was changed") != std::string::npos;
+          partial_commit = true;
+          static_cast<void>(rig.port.remove_tool(9, always()));
+        } else {
+          clean = clean && result.status == ActionStatus::cancelled &&
+                  (action.name != "tool_table" || (table() == table_before && !temporary_left));
+        }
+        clean = clean && !wrote(writes, action.forbidden);
+        detail += std::format(" no_at_{}:{}:wrote={}", deny_at, static_cast<int>(result.status),
+                              listed(writes));
+      }
+      // The tool table has both sides of its rename among the attempts.
+      check(std::format("adapter_cancels_{}", action.name),
+            clean && cancelled >= 2 && (action.name != "tool_table" || partial_commit),
+            std::format("forbidden_type={} cancelled_attempts={}{}", action.forbidden, cancelled,
+                        detail));
+    }
+    mode(TaskMode::manual);
+
+    // The same while the action waits for the NML gate: on its way into libnml when the
+    // answer turns to no.
+    std::string detail;
+    bool clean = true;
+    for (const auto& action : actions) {
+      if (action.name == "coolant" || action.name == "home" || action.name == "tool_table")
+        continue; // their first steps are other writes of this test's own
+      if (action.name == "mdi")
+        mode(TaskMode::mdi);
+      if (action.name == "run")
+        mode(TaskMode::automatic);
+      if (action.name == "jog_start")
+        mode(TaskMode::manual);
+      std::atomic<bool> still{true};
+      const Wanted wanted = [&]() -> bool { return still; };
+      const auto from = rig.port.writes().size();
+      ActionResult result;
+      std::thread worker;
+      {
+        const NmlGateHold hold;
+        worker = std::thread{[&]() -> void {
+          result = action.name == "mdi"   ? rig.port.mdi("G4 P0.01", wanted)
+                   : action.name == "run" ? rig.port.run(wanted)
+                   : action.name == "spindle_on"
+                       ? rig.port.set_spindle(SpindleDirection::forward, 500, wanted)
+                       : rig.port.start_jog(Axis::y, 1, 60, JogSpace::axis, wanted);
+        }};
+        std::this_thread::sleep_for(50ms);
+        still = false;
+      }
+      worker.join();
+      const auto writes = written_since(rig, from);
+      clean = clean && result.status == ActionStatus::cancelled && writes.empty();
+      detail += std::format(" {}={}:wrote={}", action.name, static_cast<int>(result.status),
+                            listed(writes));
+    }
+    mode(TaskMode::manual);
+    check("adapter_cancels_while_waiting_for_the_gate", clean, detail);
+  });
+}
+
+// Through the runtime, with task frozen inside the wait that precedes HOME: the page ends while
+// the port waits for task to leave world mode; when task runs again that wait ends well, and
+// HOME must not follow.
+void home_withdrawn_in_its_wait(Rig& rig) {
+  rest(rig);
+  const auto types = NmlPort::types();
+  // World mode, so that homing has to leave it first.
+  static_cast<void>(rig.send(hold_x));
+  rig.hold(hold_x, 100ms);
+  rest(rig);
+  const bool world = rig.status().teleop;
+  NmlPort::Written waiting;
+  const auto from = rig.port.writes().size();
+  {
+    const FrozenTask frozen{rig.config.ini_file};
+    static_cast<void>(rig.post(R"("type":"home","axis":"x")"));
+    for (const auto end = Clock::now() + 300ms; Clock::now() < end && waiting.type == 0;) {
+      if (const auto writes = written_since(rig, from); !writes.empty())
+        waiting = writes.back();
+      std::this_thread::sleep_for(200us);
+    }
+    rig.runtime->end_page(rig.page);
+    std::this_thread::sleep_for(200ms);
+  }
+  // Task takes the mode change up; the port's wait ends.
+  const bool taken = rig.pump_until(3s, [&]() -> bool {
+    return rig.status().echo_serial - waiting.serial >= 0 && !rig.status().teleop;
+  });
+  rig.pump(500ms);
+  const auto writes = written_since(rig, from);
+  const auto state = rig.snapshot();
+  check("home_not_sent_after_page_end_in_its_wait",
+        world && waiting.type == types.teleop && taken && !wrote(writes, types.home) &&
+            state.axes[0].homed && !state.axes[0].homing,
+        std::format("in_world_mode={} waited_in_type={} teleop_type={} mode_change_taken={} "
+                    "home_type={} wrote={} homing={}",
+                    world, waiting.type, types.teleop, taken, types.home, listed(writes),
+                    state.axes[0].homing));
+  rig.new_page();
+}
+
+// Through the runtime, with the worker held up on its way into libnml: an abort is asked while
+// an MDI block and a spindle start wait there. Only the abort is written.
+void abort_overtakes_what_waits_for_the_gate(Rig& rig) {
+  rest(rig);
+  const auto types = NmlPort::types();
+  const auto from = rig.port.writes().size();
+  RequestId block{};
+  RequestId spindle{};
+  RequestId abort{};
+  {
+    const NmlGateHold hold;
+    block = rig.post(R"("type":"mdi","text":"G0 X1")");
+    spindle = rig.post(R"("type":"set_spindle","direction":"forward","rpm":500)");
+    std::this_thread::sleep_for(100ms);
+    abort = rig.post(R"("type":"abort")");
+    std::this_thread::sleep_for(50ms);
+  }
+  const auto aborted = rig.await(abort);
+  const auto moved = rig.await(block);
+  const auto spun = rig.await(spindle);
+  rig.pump(200ms);
+  const auto writes = written_since(rig, from);
+  const auto status = rig.status();
+  check("abort_overtakes_what_waits_for_the_gate",
+        aborted.accepted() && moved.outcome != "accepted" && spun.outcome != "accepted" &&
+            writes.size() == 1 && writes.front().type == types.abort &&
+            status.spindle_direction == SpindleDirection::stopped,
+        std::format("mdi={} spindle={} abort={} abort_type={} wrote={}", moved.text(), spun.text(),
+                    aborted.text(), types.abort, listed(writes)));
 }
 
 void mdi(Rig& rig) {
@@ -1137,13 +1432,11 @@ void program(Rig& rig) {
   check("list_program_directory", listed.accepted(), listed.text());
   const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
   check("open_program",
-        open.accepted() && rig.snapshot().program_loaded &&
-            rig.status().program_file == file,
+        open.accepted() && rig.snapshot().program_loaded && rig.status().program_file == file,
         open.text());
   const auto optional =
       rig.send(R"("type":"set_program_option","option":"optional_stop","on":true)");
-  check("optional_stop_on", optional.accepted() && rig.status().optional_stop,
-        optional.text());
+  check("optional_stop_on", optional.accepted() && rig.status().optional_stop, optional.text());
 
   const auto run = rig.send(R"("type":"run")");
   // Into the first feed move (line 3).
@@ -1151,8 +1444,7 @@ void program(Rig& rig) {
     const auto status = rig.status();
     return status.motion_line == 3 && status.work[0] > 3;
   });
-  check("run", run.accepted() && cutting && rig.snapshot().mode == TaskMode::automatic,
-        run.text());
+  check("run", run.accepted() && cutting && rig.snapshot().mode == TaskMode::automatic, run.text());
 
   const auto pause = rig.send(R"("type":"pause")");
   rig.pump(200ms);
@@ -1278,6 +1570,27 @@ void tools(Rig& rig) {
                     hal_pin("iocontrol.0.tool-change")));
   const auto resume = rig.send(R"("type":"resume")");
   check("no_resume_during_tool_change", resume.outcome == "rejected", resume.text());
+  // A confirmation that is withdrawn when the port is about to hand it to the control thread
+  // is not handed over: tool-changed stays low. Port and pins alone.
+  rig.direct([&]() -> void {
+    rig.direct_pump(50ms);
+    const auto pending = rig.shared.view(HalShared::Clock::now());
+    const bool requested = pending && pending->tool_change_request;
+    const auto withdrawn =
+        rig.port.tool_changed(1, requested ? pending->tool_change_request->generation : 0,
+                              []() -> bool { return false; });
+    bool raised_pin = false;
+    for (const auto end = Clock::now() + 200ms; Clock::now() < end;) {
+      rig.control.beat();
+      raised_pin = raised_pin || rig.probe.tool_changed();
+      std::this_thread::sleep_for(1ms);
+    }
+    check("withdrawn_tool_change_confirmation_is_not_raised",
+          requested && withdrawn.status == ActionStatus::cancelled && !raised_pin &&
+              rig.probe.tool_change(),
+          std::format("request_pending={} result={} tool_changed_pin={}", requested,
+                      static_cast<int>(withdrawn.status), raised_pin));
+  });
   // The confirmation is raised by the control thread and must stay on its pin until LinuxCNC
   // has dropped tool-change: the test's own pins watch both signals.
   const auto confirmation = rig.post(R"("type":"tool_changed")");
@@ -1293,8 +1606,7 @@ void tools(Rig& rig) {
     std::this_thread::sleep_for(200us);
   }
   const auto confirmed = rig.await(confirmation);
-  check("tool_changed_pin_held_until_request_drops",
-        raised && !dropped_early && finished_handshake,
+  check("tool_changed_pin_held_until_request_drops", raised && !dropped_early && finished_handshake,
         std::format("raised={} dropped_early={} finished={}", raised, dropped_early,
                     finished_handshake));
   const bool done = rig.pump_until(
@@ -1465,7 +1777,7 @@ void g0759_jogs(Rig& rig) {
   // What an axis (teleop) jog does on the unhomed machine, without the policy in the way.
   rig.direct([&]() -> void {
     const double y0 = rig.port.status().controller.axes[1].machine;
-    const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::axis);
+    const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::axis, always());
     rig.direct_pump(300ms);
     const auto status = rig.port.status();
     static_cast<void>(rig.port.stop_jog(Axis::y));
@@ -1474,9 +1786,8 @@ void g0759_jogs(Rig& rig) {
       return state.interp == InterpState::idle && state.in_position;
     }));
     fact("unhomed_axis_jog",
-         std::format("status={} reason={} teleop={} moved={:.3f}",
-                     static_cast<int>(forced.status), word(forced.reason), status.teleop,
-                     status.controller.axes[1].machine - y0));
+         std::format("status={} reason={} teleop={} moved={:.3f}", static_cast<int>(forced.status),
+                     word(forced.reason), status.teleop, status.controller.axes[1].machine - y0));
   });
 }
 
@@ -1757,6 +2068,9 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   mdi(rig);
   overrides(rig);
   program(rig);
+  adapter_cancellation(rig);
+  home_withdrawn_in_its_wait(rig);
+  abort_overtakes_what_waits_for_the_gate(rig);
   tools(rig);
   stale_link(rig);
   power_off(rig);

@@ -146,12 +146,12 @@ public:
     return state_;
   }
   auto take_messages() -> std::vector<ControllerMessage> override { return {}; }
-  auto set_machine_state(MachineState machine) -> ActionResult override {
+  auto set_machine_state(MachineState machine, const Wanted&) -> ActionResult override {
     return record("set_machine_state", machine == MachineState::on    ? "on"
                                        : machine == MachineState::off ? "off"
                                                                       : "estop");
   }
-  auto set_task_mode(TaskMode mode) -> ActionResult override {
+  auto set_task_mode(TaskMode mode, const Wanted&) -> ActionResult override {
     auto result = record("set_task_mode", mode == TaskMode::manual ? "manual"
                                           : mode == TaskMode::mdi  ? "mdi"
                                                                    : "auto");
@@ -160,45 +160,48 @@ public:
       state_.mode = mode;
     return result;
   }
-  auto home(std::optional<Axis> axis) -> ActionResult override {
+  auto home(std::optional<Axis> axis, const Wanted&) -> ActionResult override {
     return record("home", axis ? name(*axis) : "all");
   }
-  auto start_jog(Axis axis, int direction, double velocity, JogSpace) -> ActionResult override {
+  auto start_jog(Axis axis, int direction, double velocity, JogSpace, const Wanted&)
+      -> ActionResult override {
     return record("start_jog", std::format("{} {} {}", name(axis), direction, velocity));
   }
   auto stop_jog(Axis axis) -> ActionResult override { return record("stop_jog", name(axis)); }
-  auto jog_increment(Axis axis, double distance, double velocity, JogSpace)
+  auto jog_increment(Axis axis, double distance, double velocity, JogSpace, const Wanted&)
       -> ActionResult override {
     return record("jog_increment", std::format("{} {} {}", name(axis), distance, velocity));
   }
-  auto mdi(std::string_view text) -> ActionResult override { return record("mdi", text); }
-  auto open_program(std::string_view path) -> ActionResult override {
+  auto mdi(std::string_view text, const Wanted&) -> ActionResult override {
+    return record("mdi", text);
+  }
+  auto open_program(std::string_view path, const Wanted&) -> ActionResult override {
     return record("open_program", path);
   }
-  auto run() -> ActionResult override { return record("run", ""); }
-  auto pause() -> ActionResult override { return record("pause", ""); }
-  auto resume() -> ActionResult override { return record("resume", ""); }
-  auto step() -> ActionResult override { return record("step", ""); }
+  auto run(const Wanted&) -> ActionResult override { return record("run", ""); }
+  auto pause(const Wanted&) -> ActionResult override { return record("pause", ""); }
+  auto resume(const Wanted&) -> ActionResult override { return record("resume", ""); }
+  auto step(const Wanted&) -> ActionResult override { return record("step", ""); }
   auto abort() -> ActionResult override { return record("abort", ""); }
-  auto set_override(Override, double value) -> ActionResult override {
+  auto set_override(Override, double value, const Wanted&) -> ActionResult override {
     return record("set_override", std::format("{}", value));
   }
-  auto set_spindle(SpindleDirection, double rpm) -> ActionResult override {
+  auto set_spindle(SpindleDirection, double rpm, const Wanted&) -> ActionResult override {
     return record("set_spindle", std::format("{}", rpm));
   }
-  auto set_coolant(bool flood, bool mist) -> ActionResult override {
+  auto set_coolant(bool flood, bool mist, const Wanted&) -> ActionResult override {
     return record("set_coolant", std::format("{} {}", flood, mist));
   }
-  auto set_program_option(ProgramOption, bool on) -> ActionResult override {
+  auto set_program_option(ProgramOption, bool on, const Wanted&) -> ActionResult override {
     return record("set_program_option", std::format("{}", on));
   }
-  auto tool_changed(int tool, std::uint64_t request) -> ActionResult override {
+  auto tool_changed(int tool, std::uint64_t request, const Wanted&) -> ActionResult override {
     return record("tool_changed", std::format("{} {}", tool, request));
   }
-  auto set_tool(const Tool& tool) -> ActionResult override {
+  auto set_tool(const Tool& tool, const Wanted&) -> ActionResult override {
     return record("set_tool", std::to_string(tool.number));
   }
-  auto remove_tool(int number) -> ActionResult override {
+  auto remove_tool(int number, const Wanted&) -> ActionResult override {
     return record("remove_tool", std::to_string(number));
   }
 
@@ -453,7 +456,8 @@ void dead_man_does_not_wait_for_the_worker() {
        }},
       {"machine off",
        [](Bench& bench) -> void {
-         bench.port.change([](ControllerState& state) -> void { state.machine = MachineState::off; });
+         bench.port.change(
+             [](ControllerState& state) -> void { state.machine = MachineState::off; });
        }},
       {"mode changed outside",
        [](Bench& bench) -> void {
@@ -526,9 +530,11 @@ void stale_actions_are_dropped_before_sending() {
     bench.port.release();
     static_cast<void>(working.get());
     bench.drain();
-    bench.port.expect(Calls{"set_coolant true false"}, "Nothing queued by a page that ended is sent");
+    bench.port.expect(Calls{"set_coolant true false"},
+                      "Nothing queued by a page that ended is sent");
     require(bench.delivered.results(press) + bench.delivered.results(move) +
-                    bench.delivered.results(step) == 0,
+                    bench.delivered.results(step) ==
+                0,
             "And none of it is answered");
   }
   {
@@ -541,7 +547,8 @@ void stale_actions_are_dropped_before_sending() {
     bench.port.release();
     static_cast<void>(working.get());
     bench.drain();
-    bench.port.expect(Calls{"set_coolant true false", "stop_jog y"}, "A press and an increment queued before a release are not sent after it");
+    bench.port.expect(Calls{"set_coolant true false", "stop_jog y"},
+                      "A press and an increment queued before a release are not sent after it");
     require(bench.outcome(press) == std::string("rejected:") + stopped_reason &&
                 bench.outcome(step) == std::string("rejected:") + stopped_reason &&
                 bench.outcome(release) == "accepted:",
@@ -583,7 +590,8 @@ void hold_until_reconciled() {
   }
   bench.port.release();
   require(working.get() == WorkStatus::idle, "The start comes back");
-  bench.port.expect(Calls{"start_jog x 1 600", "stop_jog x"}, "The NML stop is sent as soon as the start is back");
+  bench.port.expect(Calls{"start_jog x 1 600", "stop_jog x"},
+                    "The NML stop is sent as soon as the start is back");
   require(bench.delivered.results(press) == 0 && bench.delivered.all().size() == 1,
           "Nothing is delivered to the page that ended");
   require(bench.control(), "The stop was not accepted: the level stays high");
@@ -678,8 +686,9 @@ void stops_have_priority() {
     bench.port.release();
     static_cast<void>(working.get());
     bench.drain();
-    bench.port.expect(Calls{"set_coolant true false", "stop_jog x", "stop_jog y",
-                                             "stop_jog z", "set_override 0.5"}, "A jog stop overtakes the request that waited before it");
+    bench.port.expect(Calls{"set_coolant true false", "stop_jog x", "stop_jog y", "stop_jog z",
+                            "set_override 0.5"},
+                      "A jog stop overtakes the request that waited before it");
     require(bench.outcome(stop) == "accepted:" && bench.outcome(move) == "accepted:",
             "Both are answered");
   }
@@ -721,6 +730,23 @@ void stops_have_priority() {
             "It is failed, not rejected: its mode change was sent");
   }
   {
+    // What only stops something is not dropped with its page, nor by an abort, and keeps its
+    // place among the requests.
+    Bench bench;
+    auto working = bench.block_worker();
+    static_cast<void>(bench.send(R"("type":"set_override","which":"feed","value":0.5)"));
+    static_cast<void>(bench.send(R"("type":"set_spindle","direction":"stopped","rpm":0)"));
+    static_cast<void>(bench.send(R"("type":"set_coolant","flood":false,"mist":false)"));
+    static_cast<void>(bench.send(R"("type":"abort")"));
+    bench.session.end_page(bench.page);
+    bench.port.release();
+    static_cast<void>(working.get());
+    bench.drain();
+    bench.port.expect(
+        {"set_coolant true false", "abort", "set_spindle 0", "set_coolant false false"},
+        "Spindle stop and coolant off are sent after the abort and the page's end");
+  }
+  {
     // A stop outlives its page.
     Bench bench;
     auto working = bench.block_worker();
@@ -750,8 +776,7 @@ void queues_are_bounded() {
             "A request beyond the queue is rejected at once");
   }
   const auto press = bench.send(hold_y);
-  require(bench.outcome(press) == std::string("rejected:") + busy_reason,
-          "So is a jog press");
+  require(bench.outcome(press) == std::string("rejected:") + busy_reason, "So is a jog press");
   for (int i = 0; i < 1000; ++i) {
     const auto id = bench.send(hold_x);
     require(bench.outcome(id) == "accepted:", "Refreshes need no queue");
@@ -782,8 +807,7 @@ void close_stops_once() {
   bench.session.close();
   require(bench.control(), "Closing is a stop decision");
   bench.drain();
-  require(bench.port.take_calls() == Calls{"stop_jog x"} &&
-              bench.delivered.results(waiting) == 0,
+  require(bench.port.take_calls() == Calls{"stop_jog x"} && bench.delivered.results(waiting) == 0,
           "The jog is stopped; what waited is dropped");
   for (int period = 0; period < 3; ++period) {
     require(bench.control(), "The stop failed: the level stays high after the session");
@@ -856,9 +880,9 @@ void threads_keep_the_dead_man_on_time() {
   // 150 ms lease, one 10 ms period, and what a loaded host adds to a sleeping thread.
   require(after >= 149 && after < 150 + 10 + 100,
           std::format("The level rose {:.1f} ms after the last refresh", after));
-  require(longest < 150 && beaten > 100,
-          std::format("The heartbeat never paused: longest gap {:.1f} ms, {} beats", longest,
-                      beaten));
+  require(
+      longest < 150 && beaten > 100,
+      std::format("The heartbeat never paused: longest gap {:.1f} ms, {} beats", longest, beaten));
 }
 
 // Property 8: destroying the runtime with the worker inside a call.
@@ -946,7 +970,8 @@ void threads_survive_a_flood() {
     static_cast<void>(threads.delivered.wait_result(threads.page, id));
     require(threads.delivered.results(id) == 1, "Exactly one result per request");
   }
-  require(threads.port.calls().size() == 1 + Session::max_queued, "Only the queue reached the port");
+  require(threads.port.calls().size() == 1 + Session::max_queued,
+          "Only the queue reached the port");
 }
 
 } // namespace

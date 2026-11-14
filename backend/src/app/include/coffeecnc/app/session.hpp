@@ -89,7 +89,10 @@ struct Work {
 // status reading, the program store, a command) and before every command it sends: a request of
 // an ended page sends nothing more and gets no result; one overtaken by abort, E-stop or power
 // off sends nothing more and is answered as cancelled; a jog start or increment of an earlier
-// epoch is not sent. Stop requests are executed whatever became of their page.
+// epoch is not sent. The port is handed the same question (`Wanted`) with every action and asks
+// it down to the moment it writes each command. Requests that only stop something (abort,
+// E-stop, power off, jog release, stop-all, spindle stop, coolant off) are executed whatever
+// became of their page and are never withdrawn.
 //
 // Limitation: several axes can be held at once, but the jog-stop level is common to all of them,
 // so releasing one stops them all, and each of the others must be released and pressed again.
@@ -233,7 +236,8 @@ private:
     Command command;
     // Something was sent to the controller for it already: a refusal is `failed`, not `rejected`.
     bool sent{};
-    // Abort, E-stop, power off, a jog release or stop-all: executed whatever became of its page.
+    // It only stops something (abort, E-stop, power off, jog release, stop-all, spindle stop,
+    // coolant off): executed whatever became of its page, and never withdrawn.
     bool stop{};
   };
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
@@ -260,8 +264,11 @@ private:
   // Worker only.
   [[nodiscard]] auto run(Queued request, const Clock& clock) -> Work;
   [[nodiscard]] auto wanted(const Queued& request) const -> bool;
-  [[nodiscard]] auto act(const Queued& request, const std::function<ActionResult()>& send) const
-      -> Stage;
+  [[nodiscard]] auto token(const Queued& request) const -> Wanted;
+  [[nodiscard]] auto act(const Queued& request,
+                         const std::function<ActionResult(const Wanted&)>& send) const -> Stage;
+  [[nodiscard]] static auto staged(ActionResult result) -> Stage;
+  void drop_requests();
   [[nodiscard]] auto execute(Queued& request) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;

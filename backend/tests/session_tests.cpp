@@ -72,6 +72,9 @@ public:
   std::function<void()> during_snapshot;
   // The same inside the next action of the given name.
   std::map<std::string, std::function<void()>> during;
+  // What the port was told when it asked, after the hook of the action, whether the action
+  // is still wanted.
+  std::vector<std::pair<std::string, bool>> answers;
   // Handed out by the next take_messages.
   std::vector<ControllerMessage> published;
 
@@ -88,75 +91,83 @@ public:
   auto take_messages() -> std::vector<ControllerMessage> override {
     return std::exchange(published, {});
   }
-  auto set_machine_state(MachineState machine) -> ActionResult override {
+  auto set_machine_state(MachineState machine, const Wanted&) -> ActionResult override {
     return record("set_machine_state", machine == MachineState::on    ? "on"
                                        : machine == MachineState::off ? "off"
                                                                       : "estop");
   }
-  auto set_task_mode(TaskMode mode) -> ActionResult override {
+  auto set_task_mode(TaskMode mode, const Wanted&) -> ActionResult override {
     auto result = record("set_task_mode", name(mode));
     if (result.status == ActionStatus::accepted && follows_mode)
       state.mode = mode;
     return result;
   }
-  auto home(std::optional<Axis> axis) -> ActionResult override {
+  auto home(std::optional<Axis> axis, const Wanted&) -> ActionResult override {
     return record("home", axis ? name(*axis) : "all");
   }
-  auto start_jog(Axis axis, int direction, double velocity, JogSpace space)
+  auto start_jog(Axis axis, int direction, double velocity, JogSpace space, const Wanted&)
       -> ActionResult override {
     return record("start_jog",
                   std::format("{} {} {} {}", name(axis), direction, velocity, name(space)));
   }
   auto stop_jog(Axis axis) -> ActionResult override { return record("stop_jog", name(axis)); }
-  auto jog_increment(Axis axis, double distance, double velocity, JogSpace space)
+  auto jog_increment(Axis axis, double distance, double velocity, JogSpace space, const Wanted&)
       -> ActionResult override {
     return record("jog_increment",
                   std::format("{} {} {} {}", name(axis), distance, velocity, name(space)));
   }
-  auto mdi(std::string_view text) -> ActionResult override { return record("mdi", text); }
-  auto open_program(std::string_view path) -> ActionResult override {
+  auto mdi(std::string_view text, const Wanted& wanted) -> ActionResult override {
+    return asked("mdi", record("mdi", text), wanted);
+  }
+  auto open_program(std::string_view path, const Wanted&) -> ActionResult override {
     return record("open_program", path);
   }
-  auto run() -> ActionResult override { return record("run", ""); }
-  auto pause() -> ActionResult override { return record("pause", ""); }
-  auto resume() -> ActionResult override { return record("resume", ""); }
-  auto step() -> ActionResult override { return record("step", ""); }
+  auto run(const Wanted& wanted) -> ActionResult override {
+    return asked("run", record("run", ""), wanted);
+  }
+  auto pause(const Wanted&) -> ActionResult override { return record("pause", ""); }
+  auto resume(const Wanted&) -> ActionResult override { return record("resume", ""); }
+  auto step(const Wanted&) -> ActionResult override { return record("step", ""); }
   auto abort() -> ActionResult override { return record("abort", ""); }
-  auto set_override(Override which, double value) -> ActionResult override {
+  auto set_override(Override which, double value, const Wanted&) -> ActionResult override {
     return record("set_override", std::format("{} {}",
                                               which == Override::feed    ? "feed"
                                               : which == Override::rapid ? "rapid"
                                                                          : "spindle",
                                               value));
   }
-  auto set_spindle(SpindleDirection direction, double rpm) -> ActionResult override {
+  auto set_spindle(SpindleDirection direction, double rpm, const Wanted&) -> ActionResult override {
     return record("set_spindle", std::format("{} {}",
                                              direction == SpindleDirection::forward   ? "forward"
                                              : direction == SpindleDirection::reverse ? "reverse"
                                                                                       : "stopped",
                                              rpm));
   }
-  auto set_coolant(bool flood, bool mist) -> ActionResult override {
+  auto set_coolant(bool flood, bool mist, const Wanted&) -> ActionResult override {
     return record("set_coolant", std::format("{} {}", flood, mist));
   }
-  auto set_program_option(ProgramOption option, bool on) -> ActionResult override {
+  auto set_program_option(ProgramOption option, bool on, const Wanted&) -> ActionResult override {
     return record(
         "set_program_option",
         std::format("{} {}",
                     option == ProgramOption::optional_stop ? "optional_stop" : "block_delete", on));
   }
-  auto tool_changed(int tool, std::uint64_t request) -> ActionResult override {
+  auto tool_changed(int tool, std::uint64_t request, const Wanted&) -> ActionResult override {
     return record("tool_changed", std::format("tool {} request {}", tool, request));
   }
-  auto set_tool(const Tool& tool) -> ActionResult override {
+  auto set_tool(const Tool& tool, const Wanted&) -> ActionResult override {
     return record("set_tool", std::format("{} {} {} {} {}", tool.number, tool.pocket, tool.length,
                                           tool.diameter, tool.comment));
   }
-  auto remove_tool(int number) -> ActionResult override {
+  auto remove_tool(int number, const Wanted&) -> ActionResult override {
     return record("remove_tool", std::to_string(number));
   }
 
 private:
+  auto asked(const std::string& action, ActionResult result, const Wanted& wanted) -> ActionResult {
+    answers.emplace_back(action, wanted());
+    return result;
+  }
   auto record(const std::string& action, std::string_view detail) -> ActionResult {
     calls.push_back(detail.empty() ? action : action + ' ' + std::string(detail));
     if (auto hook = std::exchange(during[action], {}))
@@ -411,7 +422,7 @@ void ids_strictly_increase() {
   Rig negative{false};
   const auto ready = [&negative](RequestId id) -> auto {
     return negative.handle(negative.page, std::format(R"({{"id":{},"type":"ready"}})", id),
-                                   at(0ms));
+                           at(0ms));
   };
   require(results(ready(-max_request_id)).size() == 1 && results(ready(-3)).size() == 1 &&
               results(ready(0)).size() == 1 && results(ready(-1)).empty(),
@@ -1060,18 +1071,23 @@ void stopped_jogs_need_a_release() {
          rig.port.state.mode = TaskMode::manual;
        },
        {"stop_jog x"}},
-      {"abort", [](Rig& rig) -> void { rig.accepted(R"("type":"abort")"); }, {"abort", "stop_jog x"}},
+      {"abort",
+       [](Rig& rig) -> void { rig.accepted(R"("type":"abort")"); },
+       {"abort", "stop_jog x"}},
       {"E-stop",
        [](Rig& rig) -> void { rig.accepted(R"("type":"set_machine","state":"estop")"); },
        {"set_machine_state estop", "stop_jog x"}},
-      {"stop all", [](Rig& rig) -> void { rig.accepted(R"("type":"jog_stop_all")"); },
+      {"stop all",
+       [](Rig& rig) -> void { rig.accepted(R"("type":"jog_stop_all")"); },
        {"stop_jog x", "stop_jog y", "stop_jog z"}},
-      {"the release of another axis", [](Rig& rig) -> void { rig.accepted(release_y); },
+      {"the release of another axis",
+       [](Rig& rig) -> void { rig.accepted(release_y); },
        {"stop_jog y", "stop_jog x"}},
       // The jog-stop level held over a stop LinuxCNC does not confirm, and its release.
       {"a hold and its release",
        [](Rig& rig) -> void {
-         rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}, {ActionStatus::timed_out, ""}};
+         rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""},
+                                        {ActionStatus::timed_out, ""}};
          rig.clock += 150ms;
          static_cast<void>(rig.tick(at(rig.clock)));
          rig.expect(hold_x, "rejected", release_reason);
@@ -1121,9 +1137,10 @@ void stopped_jogs_need_a_release() {
   rig.acted({}, "No increment is sent under the level");
   // Raised, released, and found low for Session::settled_periods.
   for (int period = 0; period < 2 + Session::settled_periods; ++period) {
-    require(rig.result(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)")
-                    .at("outcome") == "rejected",
-            "Nor before the level has been low for whole periods");
+    require(
+        rig.result(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)").at("outcome") ==
+            "rejected",
+        "Nor before the level has been low for whole periods");
     static_cast<void>(rig.tick(at(rig.clock)));
   }
   rig.accepted(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)");
@@ -1149,42 +1166,49 @@ void stale_requests_send_nothing() {
   };
   const auto in_auto = [](Rig& rig) -> void { rig.port.state.mode = TaskMode::automatic; };
   const std::vector<Wait> waits{
-      {"the first status reading", R"("type":"run")",
+      {"the first status reading",
+       R"("type":"run")",
        [&](Rig& rig, std::function<void()> hook) -> void {
          in_auto(rig);
          rig.port.during_snapshot = std::move(hook);
        },
        {}},
-      {"the mode change", R"("type":"run")",
+      {"the mode change",
+       R"("type":"run")",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.during["set_task_mode"] = std::move(hook);
        },
        {"set_task_mode auto"}},
-      {"the status reading after the mode change", R"("type":"run")",
+      {"the status reading after the mode change",
+       R"("type":"run")",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.during["set_task_mode"] = [&rig, hook = std::move(hook)]() -> void {
            rig.port.during_snapshot = hook;
          };
        },
        {"set_task_mode auto"}},
-      {"the program store", R"("type":"open_program","path":"part.ngc")",
+      {"the program store",
+       R"("type":"open_program","path":"part.ngc")",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.files.during_canonical = std::move(hook);
        },
        {}},
-      {"the first block of a tool touch-off", R"("type":"tool_touch_off","value":1)",
+      {"the first block of a tool touch-off",
+       R"("type":"tool_touch_off","value":1)",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.state.mode = TaskMode::mdi;
          rig.port.during["mdi"] = std::move(hook);
        },
        {"mdi G10 L10 P3 Z1"}},
-      {"the first status reading of an MDI block", R"("type":"mdi","text":"G0 X1")",
+      {"the first status reading of an MDI block",
+       R"("type":"mdi","text":"G0 X1")",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.state.mode = TaskMode::mdi;
          rig.port.during_snapshot = std::move(hook);
        },
        {}},
-      {"the first status reading of homing", R"("type":"home","axis":"x")",
+      {"the first status reading of homing",
+       R"("type":"home","axis":"x")",
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.during_snapshot = std::move(hook);
        },
@@ -1195,7 +1219,8 @@ void stale_requests_send_nothing() {
          rig.port.during_snapshot = std::move(hook);
        },
        {}},
-      {"the first status reading of a jog press", hold_x,
+      {"the first status reading of a jog press",
+       hold_x,
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.during_snapshot = std::move(hook);
        },
@@ -1222,17 +1247,16 @@ void stale_requests_send_nothing() {
       const auto stop_id = id + 1;
       Outcome stopped;
       wait.arm(rig, [&]() -> void {
-        stopped = rig.session.submit(rig.page, std::format("{{\"id\":{},{}}}", stop_id, stop),
-                                     at(0ms));
+        stopped =
+            rig.session.submit(rig.page, std::format("{{\"id\":{},{}}}", stop_id, stop), at(0ms));
       });
       const auto outcome = rig.send(wait.body);
       require(stopped.messages.empty(), "The stop is queued");
       auto expected = wait.sent_before;
-      expected.emplace_back(std::string(stop).find("abort") != std::string::npos
-                                ? "abort"
-                                : std::string(stop).find("estop") != std::string::npos
-                                      ? "set_machine_state estop"
-                                      : "set_machine_state off");
+      expected.emplace_back(std::string(stop).find("abort") != std::string::npos ? "abort"
+                            : std::string(stop).find("estop") != std::string::npos
+                                ? "set_machine_state estop"
+                                : "set_machine_state off");
       rig.acted(expected,
                 std::string(stop) + " during " + wait.name + ": only the stop is sent after it");
       const auto found = results(outcome);
@@ -1243,6 +1267,41 @@ void stale_requests_send_nothing() {
               "The request is answered as cancelled, the stop as accepted: " + wait.name);
     }
   }
+}
+
+// The port is handed the question with every action, and the answer follows the request: a
+// real port asks it down to the moment it writes.
+void port_is_told_when_a_request_goes_stale() {
+  using Answers = std::vector<std::pair<std::string, bool>>;
+  Rig rig;
+  rig.port.state.mode = TaskMode::automatic;
+  rig.accepted(R"("type":"run")");
+  require(rig.port.answers == Answers{{"run", true}}, "A request that stands is wanted");
+  rig.port.answers.clear();
+  rig.port.during["run"] = [&rig]() -> void { rig.session.end_page(rig.page); };
+  static_cast<void>(rig.send(R"("type":"run")"));
+  require(rig.port.answers == Answers{{"run", false}},
+          "The page ended while the port worked: the answer is no");
+
+  for (const auto stop :
+       {R"({"id":900,"type":"abort"})", R"({"id":900,"type":"set_machine","state":"estop"})"}) {
+    Rig stopped;
+    stopped.port.state.mode = TaskMode::mdi;
+    stopped.port.during["mdi"] = [&stopped, stop]() -> void {
+      static_cast<void>(stopped.session.submit(stopped.page, stop, at(0ms)));
+    };
+    static_cast<void>(stopped.send(R"("type":"mdi","text":"G0 X1")"));
+    require(stopped.port.answers == Answers{{"mdi", false}},
+            std::string("A stop was asked while the port worked: the answer is no: ") + stop);
+  }
+  // What only stops something is never withdrawn, whatever happens to its page.
+  Rig spindle;
+  spindle.port.during["set_spindle"] = [&spindle]() -> void {
+    spindle.session.end_page(spindle.page);
+  };
+  spindle.port.calls.clear();
+  static_cast<void>(spindle.send(R"("type":"set_spindle","direction":"stopped","rpm":0)"));
+  spindle.acted({"set_spindle stopped 0"}, "A spindle stop is carried out");
 }
 
 // An increment is motion nobody holds. From the moment it is sent it counts as moving, so a stop
@@ -1256,7 +1315,8 @@ void increments_are_tracked() {
   };
   const std::vector<Row> rows{
       {"page end", [](Rig& rig) -> void { rig.session.end_page(rig.page); }, {"stop_jog x"}},
-      {"page reload", [](Rig& rig) -> void { rig.page = rig.session.begin_page(); },
+      {"page reload",
+       [](Rig& rig) -> void { rig.page = rig.session.begin_page(); },
        {"stop_jog x"}},
       {"abort",
        [](Rig& rig) -> void {
@@ -1385,9 +1445,10 @@ void increments_are_tracked() {
     }
     rig.expect(long_step, "rejected", "A jog stop is in progress.");
     require(std::ranges::count(rig.port.calls, "stop_jog x") > 100 &&
-                std::ranges::count_if(rig.port.calls, [](const std::string& call) -> bool {
-                  return call.starts_with("jog_increment");
-                }) == 0,
+                std::ranges::count_if(rig.port.calls,
+                                      [](const std::string& call) -> bool {
+                                        return call.starts_with("jog_increment");
+                                      }) == 0,
             "Only the stop is retried; no increment is sent under the level");
     // A stop decision in between changes nothing: the level is up and stays up.
     rig.session.end_page(rig.page);
@@ -1518,8 +1579,7 @@ void new_page() {
   const auto old_page = rig.page;
   rig.page = rig.begin_page();
   rig.acted({"stop_jog x"}, "A new page stops the jogs the old page held");
-  require(rig.handle(old_page, R"({"id":1000,"type":"jog_stop_all"})", at(0ms))
-              .messages.empty(),
+  require(rig.handle(old_page, R"({"id":1000,"type":"jog_stop_all"})", at(0ms)).messages.empty(),
           "The old page is dropped");
   static_cast<void>(rig.tick(at(10s)));
   rig.acted({}, "No lease outlives its page");
@@ -1711,6 +1771,7 @@ auto main(int argc, char** argv) -> int {
     outside_changes_stop_held_jogs();
     stopped_jogs_need_a_release();
     stale_requests_send_nothing();
+    port_is_told_when_a_request_goes_stale();
     increments_are_tracked();
     close_holds_the_level();
     end_of_page();

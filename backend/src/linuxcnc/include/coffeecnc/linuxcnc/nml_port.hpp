@@ -8,6 +8,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -48,8 +49,10 @@ struct NmlStatus {
   int motion_line{};
   int queued_mdi{};
   SpindleDirection spindle_direction{SpindleDirection::stopped};
-  // The serial number of the last command task has taken up.
+  // The serial number of the last command task has taken up, and whether task reports that
+  // command done (neither executing nor failed).
   int echo_serial{};
+  bool command_done{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};
@@ -110,14 +113,17 @@ public:
   NmlPort(const NmlPort&) = delete;
   auto operator=(const NmlPort&) -> NmlPort& = delete;
 
-  // The command written last, as it left this port: for tests and logs that must know that a
-  // command is in LinuxCNC's queue, not only that an action was called. Any thread.
+  // One command as it left this port.
   struct Written {
     long type{};  // the NML message type
     int serial{}; // the serial number task echoes once it has taken the command up
+    std::chrono::steady_clock::time_point at{}; // when libnml's write returned
     friend auto operator==(const Written&, const Written&) -> bool = default;
   };
-  [[nodiscard]] auto last_written() const -> std::optional<Written>;
+  // Every command this port has written, in order, the last max_trace of them: for tests and
+  // logs that must know what is, and what is not, in LinuxCNC's command queue. Any thread.
+  static constexpr std::size_t max_trace = 4096;
+  [[nodiscard]] auto writes() const -> std::vector<Written>;
   // The NML types of the commands tests ask about.
   struct Types {
     long jog_start;
@@ -144,15 +150,20 @@ public:
 
   // Cancellation, as ControllerPort asks. Every action asks its `Wanted` after each wait of
   // its own (the collecting of earlier errors, the switch between world and joint mode, a
-  // status it waits for) and then inside the NML gate, immediately before each write: the gate
-  // is taken first, then the question is asked (the session answers under its own mutex, which
-  // is never held across a libnml call), then the command is written, so no other NML call and
-  // no answer change can fall in between. Actions that write twice ask before each write: home
-  // and the jogs (leave or enter world mode, then the command), coolant (flood, then mist). The
-  // boundary that remains: once libnml's write has begun, the command is committed.
-  // The tool table is only replaced, and LinuxCNC only told to load it, while the answer is
-  // still yes: a cancelled edit leaves the table file as it was and removes its temporary file.
-  // The tool change confirmation asks at the moment it is handed to the control thread.
+  // status it waits for) and a last time once it has the NML gate, immediately before each
+  // write. The gate is taken first and the session's mutex is never held across a libnml call:
+  // the session answers under its mutex and lets go of it before the write. So no other NML
+  // call falls between the last question and the write, but the answer may still change in
+  // that moment, and once libnml's write has begun the command is committed; see
+  // ControllerPort for what ends a command that was written too late to withdraw. Actions that
+  // write twice ask before each write: home and the jogs (leave or enter world mode, then the
+  // command), coolant (flood, then mist). `wanted` is used during the call only and not kept.
+  //
+  // The tool table has two commits. Withdrawn before the file is replaced, the edit leaves the
+  // table as it was and removes its temporary file. Withdrawn after that, before LinuxCNC is
+  // told to load the table, it is `failed` with a reason that says so: the file is changed and
+  // LinuxCNC still uses the old table. Nothing is rolled back: that could overwrite a later
+  // edit. The tool change confirmation asks at the moment it is handed to the control thread.
   [[nodiscard]] auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult override;

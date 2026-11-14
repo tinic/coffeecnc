@@ -50,8 +50,7 @@ auto Runtime::submit(PageToken page, std::string_view json) -> Outcome {
 }
 
 auto Runtime::timing() const -> Timing {
-  return {control_periods_.load(),
-          std::chrono::nanoseconds{longest_control_period_.load()}};
+  return {control_periods_.load(), std::chrono::nanoseconds{longest_control_period_.load()}};
 }
 
 void Runtime::reset_timing() {

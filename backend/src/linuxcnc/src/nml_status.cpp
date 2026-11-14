@@ -110,6 +110,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   c.program_units = task.programUnits == CANON_UNITS_INCHES ? LengthUnit::inch : LengthUnit::mm;
 
   out.echo_serial = s.echo_serial_number;
+  out.command_done = s.status == RCS_DONE;
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
   out.wcs = task.g5x_index;
   out.rotation_xy = task.rotation_xy;

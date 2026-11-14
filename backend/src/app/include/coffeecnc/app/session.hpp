@@ -89,6 +89,7 @@ private:
   [[nodiscard]] auto jog(const Jog& request, const Decision& decision, JogLease::Time now)
       -> ActionResult;
   [[nodiscard]] auto stop_all() -> ActionResult;
+  [[nodiscard]] auto tracked_stop(std::size_t index) -> ActionResult;
   [[nodiscard]] auto mdi(const std::string& text) -> Reply;
   void stop(const JogLease::Stops& stops);
   void stop_if_held(Axis axis);

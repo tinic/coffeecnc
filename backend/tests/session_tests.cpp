@@ -749,6 +749,44 @@ void end_of_page() {
           "The next page works and its outcome names it");
 }
 
+void explicit_stop_failures_are_retried() {
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  rig.port.script["stop_jog"] = {{ActionStatus::failed, "Not connected."}};
+  rig.expect(release_x, "failed", "Not connected.");
+  rig.acted({"stop_jog x"}, "The release asks for the stop");
+  auto outcome = rig.session.tick(at(1ms));
+  rig.acted({"stop_jog x"}, "A failed release is retried by tick");
+  require(outcome.messages.empty(), "Its failure was already the result of the release");
+  static_cast<void>(rig.session.tick(at(2ms)));
+  rig.acted({}, "An accepted retry ends it");
+
+  rig.port.script["stop_jog"] = {{}, {ActionStatus::timed_out, ""}, {}};
+  rig.expect(R"("type":"jog_stop_all")", "timed_out", "LinuxCNC did not answer.");
+  rig.acted({"stop_jog x", "stop_jog y", "stop_jog z"}, "Stop-all asks every axis");
+  static_cast<void>(rig.session.tick(at(3ms)));
+  rig.acted({"stop_jog y"}, "Only the axis whose stop failed is retried");
+}
+
+void no_start_over_an_unconfirmed_stop() {
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  rig.port.script["stop_jog"] = {{ActionStatus::failed, "Not connected."},
+                                 {ActionStatus::failed, "Still not connected."}};
+  rig.expect(release_x, "failed", "Not connected.");
+  rig.port.calls.clear();
+  rig.expect(hold_x, "failed",
+             "The previous jog stop on this axis is not confirmed: Still not connected.");
+  rig.acted({"stop_jog x"}, "A new press first retries the stop and does not start");
+  rig.accepted(hold_x);
+  rig.acted({"stop_jog x", "start_jog x 1 600 axis"},
+            "Once the stop is confirmed the press starts the jog");
+  static_cast<void>(rig.session.tick(at(1ms)));
+  rig.acted({}, "The tick does not stop the new jog");
+}
+
 void failed_stop_survives_the_page_and_is_retried() {
   Rig rig;
   rig.accepted(hold_x);
@@ -962,6 +1000,8 @@ auto main(int argc, char** argv) -> int {
     lost_machine_cancels_jogs();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
+    explicit_stop_failures_are_retried();
+    no_start_over_an_unconfirmed_stop();
     outside_changes_stop_held_jogs();
     end_of_page();
     exactly_one_result(seed);

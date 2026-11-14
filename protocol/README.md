@@ -2,6 +2,12 @@
 
 The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). C++ request fixtures are in [`fixtures/commands.json`](fixtures/commands.json). Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
+## Version mismatch
+
+A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
+
+Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
+
 ## Machine-capability additions, 14 November 2026
 
 These are **additive protocol v1 fields**. Existing command bodies and request decoding are unchanged. New native encoders should emit the fields explicitly; optional TypeScript members allow older v1 peers to retain the documented behavior below. Do not use a machine name to infer a capability.

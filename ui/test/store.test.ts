@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Listener, Transport } from '../src/bridge'
 import type { FromMachine, Status, ToMachine } from '../src/protocol'
-import { SimMachine } from '../src/sim/machine'
+import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, describeCommand, staleAfterMs, type Panel } from '../src/store'
 
 interface Rig {
@@ -61,6 +61,58 @@ function rig(): Rig {
 }
 
 describe('commands', () => {
+  it('does not present incompatible status as live or forward new motion', () => {
+    const { panel, sent, receive, status, pass } = rig()
+    receive(hello)
+    receive(status({ link: 'live' }))
+    receive({ ...hello, protocol: hello.protocol + 1 })
+    receive(status({ link: 'live' }))
+    expect(panel.state.link).toBe('incompatible')
+    pass(2000)
+    expect(panel.state.link).toBe('incompatible')
+    expect(panel.state.status).toBeNull()
+    const id = panel.send({ type: 'mdi', text: 'G0 X10' })
+    expect(sent).toEqual([])
+    expect(panel.state.mdi.find((entry) => entry.id === id)?.outcome).toBe('rejected')
+    expect(panel.state.notice?.text).toContain('Protocol mismatch')
+  })
+
+  it('retains stop and reconnect attempts during a mismatch without claiming acceptance', () => {
+    const { panel, sent, receive, pass } = rig()
+    receive({ ...hello, protocol: hello.protocol + 1 })
+    const attempts = [
+      { type: 'ready' }, { type: 'abort' }, { type: 'jog_stop_all' },
+      { type: 'jog', axis: 'z', direction: 1, velocity: 0, held: false },
+      { type: 'set_machine', state: 'estop' },
+    ] satisfies import('../src/protocol').CommandBody[]
+    for (const command of attempts) panel.send(command)
+    expect(sent).toEqual(attempts.map((command, index) => ({ ...command, id: index + 1 })))
+    panel.send({ type: 'set_machine', state: 'off' }) // This could reset E-stop; it is not a stop attempt.
+    panel.send({ type: 'jog', axis: 'z', direction: 1, velocity: 100, held: true })
+    expect(sent).toHaveLength(attempts.length)
+    receive({ type: 'result', id: 2, outcome: 'accepted', reason: '' })
+    pass(answerTimeoutMs + 100)
+    expect(panel.state.log.some((entry) => entry.text === 'No answer from the machine' && entry.context === 'Stop')).toBe(true)
+  })
+
+  it('discards incompatible snapshots and waits for fresh status after a compatible hello', () => {
+    const { panel, receive, status } = rig()
+    const table = { type: 'tool_table', revision: 1, tools: [] } as const
+    receive(hello)
+    receive({ ...table, tools: [] })
+    receive(status({ link: 'live' }))
+    receive({ ...hello, protocol: hello.protocol + 1, machine_units: 'inch' })
+    receive({ ...table, tools: [] })
+    expect(panel.state.hello).toBeNull()
+    expect(panel.state.toolTable).toBeNull()
+    expect(panel.state.unit).toBe('mm')
+    receive(hello)
+    expect(panel.state.link).toBe('connecting')
+    expect(panel.state.status).toBeNull()
+    receive(status({ link: 'live' }))
+    expect(panel.state.link).toBe('live')
+  })
+
   it('get increasing ids, and accepted results stay quiet', () => {
     const { panel, sent, receive } = rig()
     const first = panel.send({ type: 'home', axis: 'all' })

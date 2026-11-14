@@ -1,0 +1,89 @@
+CoffeeCNC AddressSanitizer failure review, 2026-11-14
+Commit: 4588b3baa84a0db6bd6349290c1297e0ff2caf74
+Source directory: playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/4588b3b/asan/
+Execution: Claude; independent log review: Codex.
+Simulation only. Runner now honors actual child exit status.
+
+Each shell test passes 202 behavioral checks, then exits 1 on a 1216-byte/6-allocation LeakSanitizer report. Startup exits 0. The three existing GUI-only exclusions remain Fontconfig, Mesa GLX and JavaScriptCore; no D-Bus exclusion was added. Allocation ownership is unresolved. The same direct D-Bus allocation signature already appears in native-shell-ca88a0a-asan.txt.
+
+--- ctest.out (final summary) ---
+92% tests passed, 2 tests failed out of 24
+
+Label Time Summary:
+linuxcnc    = 307.89 sec*proc (7 tests)
+
+Total Test time (real) = 346.65 sec
+
+The following tests FAILED:
+	 22 - linuxcnc_shell_mm (Failed)                        linuxcnc
+	 23 - linuxcnc_shell_inch (Failed)                      linuxcnc
+Errors while running CTest
+
+--- LastTest.log (real child results) ---
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_sim_mm/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_sim_inch/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_sim_g0759/linuxcnc.log
+sim=done exit=1 printed_exit=0 child_status=1 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_shell_mm/linuxcnc.log
+sim=done exit=1 printed_exit=0 child_status=1 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_shell_inch/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_coffeecnc_start/linuxcnc.log
+
+--- linuxcnc_shell_mm.log (complete LeakSanitizer report) ---
+==2343690==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 368 byte(s) in 2 object(s) allocated from:
+    #0 0x7331d5c2e610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7331c487f9df  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x219df) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 496 byte(s) in 3 object(s) allocated from:
+    #0 0x7331d5c2db58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x7331c4893abe  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x35abe) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 352 byte(s) in 1 object(s) allocated from:
+    #0 0x7331d5c2db58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x7331c489404b in _dbus_string_lengthen (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3604b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+    643      18097 libfontconfig.so
+    481     108124 libGLX_mesa.so
+     15        360 libjavascriptcoregtk-4.1.so
+-----------------------------------------------------
+
+SUMMARY: AddressSanitizer: 1216 byte(s) leaked in 6 allocation(s).
+
+--- linuxcnc_shell_inch.log (complete LeakSanitizer report) ---
+==2344635==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 368 byte(s) in 2 object(s) allocated from:
+    #0 0x7f4464c5a610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7f44538ab9df  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x219df) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 496 byte(s) in 3 object(s) allocated from:
+    #0 0x7f4464c59b58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x7f44538bfabe  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x35abe) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 352 byte(s) in 1 object(s) allocated from:
+    #0 0x7f4464c59b58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x7f44538c004b in _dbus_string_lengthen (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3604b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+    643      18097 libfontconfig.so
+    481     108124 libGLX_mesa.so
+     15        360 libjavascriptcoregtk-4.1.so
+-----------------------------------------------------
+
+SUMMARY: AddressSanitizer: 1216 byte(s) leaked in 6 allocation(s).
+
+--- linuxcnc_coffeecnc_start.log (suppression scope and real startup result) ---
+Suppressions used:
+  count      bytes template
+    643      18049 libfontconfig.so
+    481     108124 libGLX_mesa.so
+     15        360 libjavascriptcoregtk-4.1.so
+-----------------------------------------------------
+
+check=sigterm_exit_code result=pass detail=0
+exit=0

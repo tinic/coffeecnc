@@ -31,13 +31,39 @@ const sections = computed(() => {
 })
 const currentTool = computed(() => selected.value ?? status.value?.tool.in_spindle ?? 0)
 const tool = computed(() => findTool(currentTool.value))
+// LinuxCNC can retain counters after a run, through MDI, or across a new file load.
+// Only present them as current program progress in a fresh AUTO execution context.
+const programExecuting = computed(() => {
+  const s = status.value
+  return live.value && textCurrent.value && s !== null && s.machine === 'on' && s.mode === 'auto' &&
+    !s.axes.some((axis) => axis.homing) && (s.interp !== 'idle' || s.wait.kind !== 'none')
+})
+const currentLine = computed(() => programExecuting.value ? status.value?.program.current_line ?? 0 : 0)
+const motionLine = computed(() => programExecuting.value ? status.value?.program.motion_line ?? 0 : 0)
+function lineInText(line: number): number {
+  return Number.isSafeInteger(line) && line > 0 && line <= (program.value?.lines.length ?? 0) ? line : 0
+}
+const lineLabel = computed(() => {
+  if (!textCurrent.value || program.value === null) return '—'
+  const count = program.value.lines.length
+  const line = currentLine.value
+  if (Number.isSafeInteger(line) && line > 0) {
+    // Do not infer full-file progress from a partial prefix or an out-of-range counter.
+    return `Line ${String(line)}${!program.value.truncated && line <= count ? ` / ${String(count)}` : ''}`
+  }
+  return `${String(count)} ${count === 1 ? 'line' : 'lines'}${program.value.truncated ? ' shown' : ''}`
+})
 const runState = computed(() => {
   const s = status.value
-  if (!live.value) return 'Status unavailable · displayed values may be out of date'
-  if (s?.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
-  if (s?.wait.kind === 'paused') return 'Program paused'
-  if (s?.wait.kind === 'dwell') return 'Dwelling'
-  if (s?.interp !== 'idle') return s?.mode === 'mdi' ? 'MDI command running' : 'Program running'
+  if (!live.value || s === null) return 'Status unavailable · displayed values may be out of date'
+  if (s.machine === 'estop') return 'E-stop active'
+  if (s.machine === 'off') return 'Machine off'
+  if (s.axes.some((axis) => axis.homing)) return 'Homing in progress'
+  if (s.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
+  if (s.wait.kind === 'paused' || s.interp === 'paused') return s.mode === 'mdi' ? 'MDI command paused' : 'Program paused'
+  if (s.wait.kind === 'dwell') return 'Dwelling'
+  if (s.interp !== 'idle') return s.mode === 'mdi' ? 'MDI command running' : 'Program running'
+  if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
 })
 async function showFailure(): Promise<void> {
@@ -59,7 +85,7 @@ async function showFailure(): Promise<void> {
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
-            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="live ? (status?.program.motion_line ?? 0) : 0" :current-line="live ? (status?.program.current_line ?? 0) : 0" :error-line="failure?.line ?? 0" />
+            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failure?.line ?? 0" />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
@@ -86,7 +112,7 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
-    <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent && !program?.truncated"> / {{ program?.lines.length }}</template></span></div>
+    <div class="status-row"><span :class="{ warning: !live || status?.machine === 'estop' }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 

@@ -385,8 +385,8 @@ void program_text() {
               partial.lines.back() == "G1 X1.0 Y2.0 F3",
           "The line the cap falls in is left out, not shown cut");
   const auto one_line = read(std::string(cap + 100, 'X'));
-  require(one_line.truncated && one_line.lines.size() == 1 && one_line.lines.front().size() == cap,
-          "A first line longer than the cap is the one exception");
+  require(one_line.truncated && one_line.lines.empty(),
+          "A first line longer than the cap is left out as well: no cut block is shown");
   for (const auto& call : files.calls)
     require(!call.starts_with("read ") || call == "read " + in_root("p.ngc"),
             "Only the resolved program is read: " + call);

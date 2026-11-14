@@ -143,7 +143,7 @@ struct Status {
   CoolantStatus coolant;
   ToolStatus tool;
   ProgramStatus program;
-  // Changes whenever anything a preview depends on changes; see preview_context().
+  // Changes whenever anything a preview depends on changes; see PreviewContext.
   std::uint64_t preview_context{};
   Wait wait;
   std::vector<std::string> active_codes; // "G1", "G54", "G90", "M3"

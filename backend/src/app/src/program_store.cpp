@@ -205,9 +205,10 @@ auto ProgramStore::read_program(std::string_view path, std::uint64_t revision) c
   if (text.size() > max_program_bytes) {
     program.truncated = true;
     text = text.substr(0, max_program_bytes);
-    // Whole lines only, unless the first line alone is longer than the cap.
-    if (const auto end = text.find_last_of("\r\n"); end != std::string_view::npos)
-      text = text.substr(0, end + 1);
+    // Whole lines only: a block cut short must never read as a source line. When even the
+    // first line is longer than the cap there is no text at all.
+    const auto end = text.find_last_of("\r\n");
+    text = end == std::string_view::npos ? std::string_view{} : text.substr(0, end + 1);
   }
   program.lines = lines(text);
   return program;

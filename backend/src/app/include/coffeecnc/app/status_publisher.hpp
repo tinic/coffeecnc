@@ -12,8 +12,21 @@
 
 namespace coffeecnc {
 
-// Everything the path of a program depends on, as protocol v1 lists it: the program, the work
-// offsets with their rotations, G92 and the tool table.
+// What the interpreter starts a run of the program from. A preview is computed from the same
+// state, so a change of any of it makes the preview stale.
+struct InterpreterStart {
+  int wcs{1}; // active work coordinate system, 1 is G54
+  LengthUnit program_units{LengthUnit::mm};
+  bool block_delete{};
+  int tool_in_spindle{};
+  Vec3 tool_offset{};
+  // Active modal codes as LinuxCNC reports them (distance mode, plane, feed mode, ...).
+  std::vector<std::string> active_codes;
+  friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
+};
+
+// Everything the path of a program depends on: the program, the work offsets with their
+// rotations, G92, the tool table and the interpreter's start state.
 struct PreviewInputs {
   std::optional<std::string> program_file;
   std::uint64_t program_revision{};
@@ -21,13 +34,26 @@ struct PreviewInputs {
   Vec3 g92{};
   // Number, pocket, length and diameter count, in table order. The comment does not.
   std::vector<Tool> tools;
+  InterpreterStart start;
 };
 
-// Status::preview_context for these inputs: a 64-bit FNV-1a hash of their values, folded to 53
-// bits. Equal inputs give the same context in every process and on every host (0.0 and -0.0 are
-// equal). Different inputs give a different context except for a hash collision, one in 2^53 per
-// pair; no 53-bit value can do better without remembering earlier inputs.
-[[nodiscard]] auto preview_context(const PreviewInputs& inputs) -> std::uint64_t;
+// Status::preview_context: a number that changes exactly when the inputs of a preview change.
+// It counts from 1 and goes up by one with every change, so two different sets of inputs never
+// share a context and nothing depends on a hash. 0.0 and -0.0 are the same value.
+//
+// While a program runs the interpreter's state is the program's doing, not a new start state:
+// with `running` the start state seen last before the run stays in force, and a change of it
+// counts once the run has ended. The other inputs count at once in either case.
+//
+// Pure logic, NOT thread-safe.
+class PreviewContext {
+public:
+  [[nodiscard]] auto update(const PreviewInputs& inputs, bool running) -> std::uint64_t;
+
+private:
+  std::optional<PreviewInputs> last_;
+  std::uint64_t context_{};
+};
 
 // The panel's state at one reading. The publisher keeps none of the references.
 struct PanelState {

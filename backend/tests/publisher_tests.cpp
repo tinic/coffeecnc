@@ -192,12 +192,13 @@ void preview_contexts() {
   inputs.g92 = {0, 0, 3.5};
   inputs.tools = {{3, 3, 48.2, 6, "End mill"}, {4, 4, 61.75, 3.175, ""}};
 
-  const auto context = preview_context(inputs);
-  require(context == preview_context(PreviewInputs{inputs}), "Equal inputs give an equal context");
-  require(context <= 9007199254740991, "The context is an integer the panel reads exactly");
-  require(preview_context(PreviewInputs{}) == preview_context(PreviewInputs{}) &&
-              preview_context(PreviewInputs{}) != context,
-          "No program and no offsets have their own context");
+  inputs.start = {1, LengthUnit::mm, false, 3, {0, 0, 48.2}, {"G1", "G17", "G21", "G54", "G90"}};
+
+  PreviewContext counter;
+  const auto context = counter.update(inputs, false);
+  require(context == 1, "The first inputs are context 1");
+  require(counter.update(PreviewInputs{inputs}, false) == context,
+          "Equal inputs keep the context");
 
   const std::vector<std::pair<std::string, std::function<void(PreviewInputs&)>>> changes{
       {"the program is reloaded", [](PreviewInputs& i) -> void { ++i.program_revision; }},
@@ -222,29 +223,49 @@ void preview_contexts() {
        [](PreviewInputs& i) -> void { std::swap(i.tools.at(0), i.tools.at(1)); }},
       {"a value moved between neighbouring fields",
        [](PreviewInputs& i) -> void { std::swap(i.tools.at(0).length, i.tools.at(0).diameter); }},
+      {"the active work system (G54 to G55)", [](PreviewInputs& i) -> void { i.start.wcs = 2; }},
+      {"the program unit",
+       [](PreviewInputs& i) -> void { i.start.program_units = LengthUnit::inch; }},
+      {"block delete", [](PreviewInputs& i) -> void { i.start.block_delete = true; }},
+      {"the loaded tool", [](PreviewInputs& i) -> void { i.start.tool_in_spindle = 4; }},
+      {"the tool offset in effect", [](PreviewInputs& i) -> void { i.start.tool_offset[2] = 0; }},
+      {"the distance mode",
+       [](PreviewInputs& i) -> void { i.start.active_codes.back() = "G91"; }},
   };
-  std::set<std::uint64_t> seen{context};
+  // Each change gives the next context, and going back to the first inputs gives a new one too:
+  // a context is never used for two different sets of inputs.
+  auto expected = context;
   for (const auto& [what, change] : changes) {
     auto changed = inputs;
     change(changed);
-    require(seen.insert(preview_context(changed)).second, "A new context for: " + what);
+    require(counter.update(changed, false) == ++expected, "The next context for: " + what);
+    require(counter.update(changed, false) == expected, "Kept while unchanged: " + what);
+    require(counter.update(inputs, false) == ++expected, "And the next one going back: " + what);
   }
 
   auto renamed = inputs;
   renamed.tools.at(0).comment = "Roughing";
-  require(preview_context(renamed) == context, "A tool comment does not change the path");
+  require(counter.update(renamed, false) == expected, "A tool comment does not change the path");
   auto negative_zero = inputs;
   negative_zero.systems.at(0).offset[0] = -0.0;
-  require(preview_context(negative_zero) == context, "-0.0 is the same offset as 0.0");
+  require(counter.update(negative_zero, false) == expected, "-0.0 is the same offset as 0.0");
 
-  // Many small steps of one input: no context comes twice.
-  std::set<std::uint64_t> stepped;
-  auto moving = inputs;
-  for (std::size_t i = 0; i < 20000; ++i) {
-    moving.systems.at(i % 9).offset.at(i % 3) += 0.001;
-    moving.program_revision += i % 7 == 0 ? 1U : 0U;
-    require(stepped.insert(preview_context(moving)).second, "Every step has its own context");
-  }
+  // While the program runs its own G55, tool change and G91 are not a new start state.
+  auto during = inputs;
+  during.start = {2, LengthUnit::inch, false, 4, {0, 0, 61.75}, {"G1", "G55", "G91"}};
+  require(counter.update(during, true) == expected,
+          "The start state is frozen while the program runs");
+  auto offset_changed = during;
+  offset_changed.systems.at(1).offset[1] = 55;
+  require(counter.update(offset_changed, true) == ++expected,
+          "A work offset written during the run still counts at once");
+  require(counter.update(offset_changed, false) == ++expected,
+          "After the run the state it left is a new start state");
+  require(counter.update(offset_changed, false) == expected, "And then it is kept");
+
+  PreviewContext fresh;
+  require(fresh.update(inputs, true) == 1,
+          "A first reading during a run takes the state it finds");
 }
 } // namespace
 

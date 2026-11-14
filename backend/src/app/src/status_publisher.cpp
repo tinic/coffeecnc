@@ -2,66 +2,36 @@
 
 #include <coffeecnc/app/messages.hpp>
 
-#include <bit>
+#include <algorithm>
 #include <string_view>
 #include <utility>
 
 namespace coffeecnc {
 namespace {
 
-// 64-bit FNV-1a. Every value is fed as eight bytes, least significant first, and every sequence
-// with its length first, so the result does not depend on the host or on where one value ends.
-class Hash {
-public:
-  void integer(std::uint64_t value) {
-    for (unsigned byte = 0; byte < 8; ++byte) {
-      state_ ^= (value >> (8 * byte)) & 0xFFU;
-      state_ *= 1099511628211ULL;
-    }
-  }
-  void signed_integer(int value) { integer(static_cast<std::uint64_t>(std::int64_t{value})); }
-  void real(double value) {
-    // -0.0 equals 0.0 and must hash like it.
-    integer(std::bit_cast<std::uint64_t>(value == 0 ? 0.0 : value));
-  }
-  void vec(const Vec3& value) {
-    for (const auto coordinate : value)
-      real(coordinate);
-  }
-  void text(std::string_view value) {
-    integer(value.size());
-    for (const auto character : value)
-      integer(static_cast<unsigned char>(character));
-  }
-  [[nodiscard]] auto folded() const -> std::uint64_t {
-    constexpr unsigned bits = 53;
-    return (state_ ^ (state_ >> bits)) & ((std::uint64_t{1} << bits) - 1);
-  }
+auto same_tool(const Tool& a, const Tool& b) -> bool {
+  return a.number == b.number && a.pocket == b.pocket && a.length == b.length &&
+         a.diameter == b.diameter;
+}
 
-private:
-  std::uint64_t state_{14695981039346656037ULL};
-};
+// Equal for the path: tool comments do not count.
+auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
+  return a.program_file == b.program_file && a.program_revision == b.program_revision &&
+         a.systems == b.systems && a.g92 == b.g92 && a.start == b.start &&
+         std::ranges::equal(a.tools, b.tools, same_tool);
+}
 
 } // namespace
 
-auto preview_context(const PreviewInputs& inputs) -> std::uint64_t {
-  Hash hash;
-  hash.integer(inputs.program_file ? 1 : 0);
-  hash.text(inputs.program_file ? std::string_view{*inputs.program_file} : std::string_view{});
-  hash.integer(inputs.program_revision);
-  for (const auto& system : inputs.systems) {
-    hash.vec(system.offset);
-    hash.real(system.rotation_xy);
+auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::uint64_t {
+  PreviewInputs now = inputs;
+  if (running && last_)
+    now.start = last_->start;
+  if (!last_ || !same_inputs(now, *last_)) {
+    ++context_;
+    last_ = std::move(now);
   }
-  hash.vec(inputs.g92);
-  hash.integer(inputs.tools.size());
-  for (const auto& tool : inputs.tools) {
-    hash.signed_integer(tool.number);
-    hash.signed_integer(tool.pocket);
-    hash.real(tool.length);
-    hash.real(tool.diameter);
-  }
-  return hash.folded();
+  return context_;
 }
 
 auto StatusPublisher::publish(const PanelState& state, bool snapshots)

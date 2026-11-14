@@ -423,7 +423,10 @@ export class SimMachine {
     const programRunning = this.exec?.source === 'program'
     if (!programRunning) {
       // What a run would start from. Changes a running program makes to it are not a new context.
-      this.startKey = JSON.stringify([m.wcs, m.units, m.absolute, m.tool, m.toolOffset, m.feed])
+      this.startKey = JSON.stringify([
+        this.reported(), m.wcs, m.units, m.absolute, m.motion,
+        this.toolInSpindle, m.prepared, m.toolOffset, m.feed,
+      ])
     }
     const key = JSON.stringify([
       this.program?.revision ?? 0,

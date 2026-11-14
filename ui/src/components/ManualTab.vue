@@ -413,7 +413,7 @@ function coolant(which: 'flood' | 'mist'): void {
           class="btn"
           type="button"
           :disabled="homeBlock !== null"
-          :title="homeBlock ?? 'Home all axes, Z first'"
+          :title="homeBlock ?? 'Home all axes using the configured sequence'"
           @click="send({ type: 'home', axis: 'all' })"
         >
           <AppIcon name="home" />All

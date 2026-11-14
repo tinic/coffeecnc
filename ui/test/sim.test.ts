@@ -793,6 +793,42 @@ describe('preview context', () => {
     expect(r.status().offsets.wcs).toBe(2)
     expect(r.status().preview_context).toBe(context)
   })
+
+  it('recomputes the initial move after jogging changes the program start position', () => {
+    const r = rig()
+    r.home()
+    r.load('G1 X10 F100\nM2')
+    const before = r.preview()
+    expect(r.send({ type: 'jog_step', axis: 'y', distance: 5, velocity: 600 }).outcome).toBe('accepted')
+    r.sim.advance(1000)
+    expect(r.preview().context).toBeGreaterThan(before.context)
+    expect(r.preview().state).toBe('ready')
+    expect(r.preview().segments[0]?.points).toEqual([0, 5, 0, 160, 5, 0])
+  })
+
+  it('recomputes inherited motion mode even when MDI did not move the machine', () => {
+    const r = rig()
+    r.home()
+    r.load('X10 F100\nM2')
+    expect(r.preview().segments[0]?.kind).toBe('feed')
+    const context = r.preview().context
+    expect(r.send({ type: 'mdi', text: 'G0' }).outcome).toBe('accepted')
+    r.sim.advance(400)
+    expect(r.preview().context).toBeGreaterThan(context)
+    expect(r.preview().segments[0]?.kind).toBe('rapid')
+  })
+
+  it('recomputes a program that inherits its prepared tool from MDI', () => {
+    const r = rig()
+    r.home()
+    r.load('M6\nG0 X10\nM2')
+    expect(r.preview().state).toBe('failed')
+    expect(r.send({ type: 'mdi', text: 'T2' }).outcome).toBe('accepted')
+    r.sim.advance(400)
+    expect(r.status().tool).toEqual({ in_spindle: 0, prepared: 2 })
+    expect(r.preview().state).toBe('ready')
+    expect(r.preview().segments[0]?.tool).toBe(2)
+  })
 })
 
 describe('overrides', () => {

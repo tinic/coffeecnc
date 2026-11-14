@@ -25,7 +25,7 @@ const state = computed(() => {
   if (s?.machine === 'off') return { label: 'Machine off', tone: 'warn' }
   if (s?.wait.kind === 'tool_change') return { label: 'Tool change required', tone: 'warn' }
   if (s?.interp === 'paused') return { label: 'Paused', tone: 'warn' }
-  if (s?.interp !== 'idle') return { label: s?.mode === 'mdi' ? 'Executing MDI' : 'Machining', tone: 'go' }
+  if (s?.interp !== 'idle') return { label: s?.mode === 'mdi' ? 'Executing MDI' : 'Program running', tone: 'go' }
   return { label: 'Machine idle', tone: 'go' }
 })
 const title = computed(() => {
@@ -50,7 +50,11 @@ const subtitle = computed(() => {
     <nav class="em-nav" aria-label="Workspace">
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
-    <div class="machine"><span class="connection" :class="{ disconnected: !live }"><i class="dot"></i>{{ linkLabel }}</span><button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button></div>
+    <div class="machine">
+      <span class="connection" :class="{ disconnected: !live }" :title="linkLabel"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
+      <button class="estop" type="button" title="Assert LinuxCNC software E-stop" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
+      <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button>
+    </div>
   </header>
   <section class="jobbar">
     <div class="job">
@@ -71,7 +75,6 @@ const subtitle = computed(() => {
           <button v-if="status?.machine === 'estop'" class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
           <button v-else-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
           <button v-else class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
-          <button class="btn danger" type="button" title="Assert LinuxCNC software E-stop" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
           <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
         </div>
       </div>
@@ -94,6 +97,7 @@ const subtitle = computed(() => {
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { width: 32px; height: 36px; background: none; border: 0; color: var(--text-dim); font-size: 18px; cursor: pointer; }
+.estop { min-height: 44px; padding: 0 10px; background: none; border: 1px solid transparent; border-radius: 7px; color: var(--stop); font-size: 11px; cursor: pointer; }.estop:hover { border-color: var(--stop); background: var(--stop-soft); }
 .jobbar { display: flex; justify-content: space-between; align-items: center; padding: 19px 24px 16px; gap: 20px; }
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-weight: 550; }
@@ -108,4 +112,5 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
 .error { color: var(--stop); font-size: 12px; margin: 6px 0 0; max-width: 70vw; }
 @media (max-height: 760px) { .em-top { padding-block: 12px; }.jobbar { padding-block: 12px; } }
+@media (max-width: 1100px) { .connection-label { display: none; } }
 </style>

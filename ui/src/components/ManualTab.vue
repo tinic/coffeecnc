@@ -420,9 +420,8 @@ function coolant(which: 'flood' | 'mist'): void {
           }}</span>
         </button>
       </div>
-      <p class="hint keys">
-        Keyboard: arrow keys jog X and Y, Page Up and Page Down jog Z, while this workspace is shown and no field has
-        the focus.
+      <p class="hint keys" title="Keyboard jogging is active only in Manual with no input field focused.">
+        Keyboard: arrows X/Y · Page Up/Down Z
       </p>
     </section>
 
@@ -468,7 +467,7 @@ function coolant(which: 'flood' | 'mist'): void {
         <p v-if="mdiBlock" class="blocked">MDI unavailable: {{ mdiBlock }}</p>
       </section>
 
-      <section class="card">
+      <section class="card utilities">
         <h2>Spindle and coolant</h2>
         <div class="line">
           <input
@@ -543,10 +542,12 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .side > .card {
   flex-shrink: 0;
+  padding: 10px 12px;
+  gap: 8px;
 }
 
 .jog {
-  gap: 8px;
+  gap: 6px;
   overflow-y: auto;
 }
 
@@ -562,8 +563,8 @@ function coolant(which: 'flood' | 'mist'): void {
     'xneg stop xpos gap .'
     '. yneg . gap zneg';
   grid-template-columns: 68px 68px 68px 12px 68px;
-  grid-template-rows: 48px 48px 48px;
-  gap: 6px;
+  grid-template-rows: 44px 44px 44px;
+  gap: 4px;
 }
 
 .jogbtn {
@@ -721,4 +722,10 @@ function coolant(which: 'flood' | 'mist'): void {
   padding: 0;
   font-size: 13px;
 }
+.utilities { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
+.utilities h2 { grid-column: 1 / -1; }
+.utilities .line { gap: 6px; }
+.utilities .line .btn { padding: 0 10px; font-size: 12px; }
+.utilities .line > .label { width: auto; }
+@media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
 </style>

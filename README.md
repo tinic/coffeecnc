@@ -6,9 +6,9 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 **Current status: working operator panel and native backend foundation.** The Vue/TypeScript panel runs against a browser simulator. Portable C++ libraries provide command validation, jog leases and protocol decoding; live LinuxCNC integration is still in development.
 
-![Current CoffeeCNC operator panel running the browser simulator](ui/screenshots/concept-light.png)
+![Current CoffeeCNC operator panel with a STEP model overlay](ui/screenshots/step-overlay.jpg)
 
-*Current Machine workspace, using simulated controller state. The preview shows toolpaths; an associated solid part/stock view is not implemented yet.*
+*Current Machine workspace with simulated controller state and a real STEP mesh. The SM-101 sample model is explicitly not paired with the demo program; placement is for demonstrating the overlay. This is part geometry, not simulated stock removal.*
 
 ## Run the operator panel
 
@@ -19,6 +19,14 @@ npm run dev
 ```
 
 Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). Use the theme control for the dark version. See [UI development and checks](ui/README.md) and [native backend build instructions](backend/README.md).
+
+Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity and place it in the current work coordinate system. The simulator includes a sample model. Import and display stay local; model placement does not change machine work offsets.
+
+In **Tools**, open **Model defaults** to configure common cutter families, or **Set model** on a tool to select its family and override physical dimensions. The editor includes a live 3D envelope preview. Defaults persist in this browser; per-tool assignments currently last for the page session. These models are independent of LinuxCNC Z offsets and are not yet placed in the machine view. See [tool model behavior and geometry](docs/design/tool-models.md).
+
+![Configurable ball-nose tool envelope in the CoffeeCNC editor](ui/screenshots/tool-model-defaults.jpg)
+
+*Live parametric tool editor at 1280 × 800. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes.*
 
 ## Explore the concept
 
@@ -37,7 +45,8 @@ The concept established the panel's visual direction: readable coordinates, a pa
 ## Research and design material
 
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
-- [Sample catalog](samples/README.md): 22 NC programs and 3 STEP models from four GitHub projects, with native CAM files, setup information, pinned provenance and upstream licenses.
+- [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
+- [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks and the planned model overlay.
 - [Concept review](docs/design/concept-review.md): what the attractive first screen gets wrong and what the next design needs.
 - [Architecture](docs/architecture.md) and [feasibility](docs/feasibility.md): native/web boundaries, prerequisites and implementation sequence.
 - [Frontend landscape in 2026](docs/research/linuxcnc-frontends-2026.md): the original alternatives research.

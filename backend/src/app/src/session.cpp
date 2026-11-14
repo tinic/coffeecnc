@@ -277,7 +277,16 @@ auto Session::jog(const Jog& request, const Decision& decision, JogLease::Time n
   if (!request.held) {
     // Always stop, with or without a lease: the release may be all that is left of a jog.
     leases_.release(request.axis);
-    return port_.stop_jog(request.axis);
+    return tracked_stop(*index);
+  }
+  // An earlier stop on this axis is not confirmed: nothing new starts until one is, or the
+  // retry in tick would stop the new jog instead of the old one.
+  if (stop_pending_[*index]) {
+    if (auto stopped = tracked_stop(*index); stopped.status != ActionStatus::accepted) {
+      leases_.release(request.axis);
+      return {stopped.status, "The previous jog stop on this axis is not confirmed: " +
+                                  reply(std::move(stopped)).reason};
+    }
   }
   if (!decision.jog_space)
     return {ActionStatus::failed, "Jog space is undecided."};
@@ -303,8 +312,8 @@ auto Session::jog(const Jog& request, const Decision& decision, JogLease::Time n
 auto Session::stop_all() -> ActionResult {
   static_cast<void>(leases_.cancel_all());
   ActionResult result;
-  for (const auto axis : axes) {
-    auto stopped = port_.stop_jog(axis);
+  for (std::size_t i = 0; i < axes.size(); ++i) {
+    auto stopped = tracked_stop(i);
     if (result.status == ActionStatus::accepted && stopped.status != ActionStatus::accepted)
       result = std::move(stopped);
   }
@@ -317,20 +326,23 @@ auto Session::mdi(const std::string& text) -> Reply {
   return reply(port_.mdi(text));
 }
 
+// Every stop goes through here, so a failed one is always left for tick to retry.
+auto Session::tracked_stop(std::size_t index) -> ActionResult {
+  auto stopped = port_.stop_jog(axes.at(index));
+  stop_pending_.at(index) = stopped.status != ActionStatus::accepted;
+  return stopped;
+}
+
 void Session::stop(const JogLease::Stops& stops) {
   for (std::size_t i = 0; i < stops.size(); ++i) {
     if (!stops[i])
       continue;
-    const auto stopped = port_.stop_jog(axes[i]);
-    if (stopped.status == ActionStatus::accepted) {
-      stop_pending_[i] = false;
-      continue;
-    }
+    const bool known = stop_pending_[i];
+    const auto stopped = tracked_stop(i);
     // Reported once; tick keeps retrying without repeating the message.
-    if (!stop_pending_[i])
+    if (stopped.status != ActionStatus::accepted && !known)
       problems_.push_back(std::string("Jog stop failed on ") + letter(axes[i]) + ": " +
                           reply(stopped).reason);
-    stop_pending_[i] = true;
   }
 }
 

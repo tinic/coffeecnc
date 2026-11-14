@@ -10,13 +10,17 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "check:step": "node scripts/check-step-import.js",
     "check": "vue-tsc --noEmit && eslint . --max-warnings=0 && vitest run"
   },
   "dependencies": {
+    "occt-import-js": "0.0.23",
+    "three": "0.187.0",
     "vue": "3.5.45"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@types/three": "0.187.0",
     "@vitejs/plugin-vue": "6.0.10",
     "@vue/test-utils": "2.5.1",
     "eslint": "10.14.0",

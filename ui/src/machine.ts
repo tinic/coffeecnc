@@ -1,7 +1,7 @@
 // The one panel store of the running page, connected to the executable or the simulator, plus
 // the readings of its state that several components share.
 
-import { computed, type ComputedRef } from 'vue'
+import { computed, watch, type ComputedRef } from 'vue'
 
 import { createTransport } from './bridge'
 import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
@@ -30,6 +30,12 @@ export function start(): void {
   const tab = tabs.find((candidate) => candidate === parameters.get('tab'))
   if (tab !== undefined) {
     panel.tab = tab
+  } else {
+    // Choose once from the first controller snapshot; never move the operator's workspace
+    // when later status updates arrive. An explicit URL workspace always wins.
+    watch(() => panel.status, (status) => {
+      if (status?.program.file) panel.tab = 'program'
+    }, { once: true })
   }
   const layout = (['split', 'text', 'path'] as const).find((candidate) => candidate === parameters.get('layout'))
   if (layout !== undefined) {

@@ -6,10 +6,13 @@ import { computed, reactive, ref } from 'vue'
 import { startDialog } from '../dialogs'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
 import type { Tool } from '../protocol'
+import { resolveToolModel, toolDimensionError, toolFamilies } from '../tool-model'
+import { toolModels } from '../tool-models'
 import { formatLength, fromDisplay, parseLength, parseNumber, toDisplay, wcsName } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
+import ToolModelDialog from './ToolModelDialog.vue'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -18,6 +21,13 @@ const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
 const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
+const modelEditor = ref<{ tool: Tool | null } | null>(null)
+function modelLabel(tool: Tool): string {
+  const model = resolveToolModel(tool, toolModels.assignments.get(tool.number), toolModels.defaults)
+  if (model === null) return 'Set model'
+  if (toolDimensionError(model.family, model.dimensions) !== null) return 'Review model'
+  return toolFamilies.find((f) => f.id === model.family)?.name ?? 'Set model'
+}
 
 /** Why the tool table cannot be edited, or null. */
 const editBlock = computed((): string | null => {
@@ -116,6 +126,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         <h2>Tool table</h2>
         <span class="hint">{{ unit }}</span>
         <span class="spacer"></span>
+        <button class="btn" type="button" @click="modelEditor = { tool: null }">Model defaults</button>
         <button class="btn" type="button" :disabled="editBlock !== null" :title="editBlock ?? 'Add a tool'" @click="add">
           <AppIcon name="plus" />Add tool
         </button>
@@ -149,13 +160,14 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         </button>
       </div>
       <p v-if="touchBlock" class="hint reason">Touch-off unavailable: {{ touchBlock }}</p>
+      <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>
 
       <div class="scroll">
         <table>
           <thead>
             <tr>
               <th class="num">Tool</th>
-              <th class="num">Length</th>
+              <th class="num" title="LinuxCNC tool-length offset, not physical tool length">Z offset</th>
               <th class="num">Diameter</th>
               <th>Description</th>
               <th></th>
@@ -169,6 +181,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
               <td class="comment" :title="tool.comment">
                 {{ tool.comment }}
                 <span v-if="tool.number === loaded" class="inspindle">in spindle</span>
+                <button class="model-link" type="button" :aria-label="`Preview model for T${tool.number}`" @click="modelEditor = { tool }">{{ modelLabel(tool) }}</button>
               </td>
               <td class="actions">
                 <button class="btn square" type="button" :disabled="editBlock !== null" :title="editBlock ?? `Edit tool ${tool.number}`" @click="edit(tool)">
@@ -274,6 +287,8 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         <button class="btn danger" type="button" @click="remove">Remove tool</button>
       </template>
     </ModalDialog>
+
+    <ToolModelDialog v-if="modelEditor !== null" :tool="modelEditor.tool" @close="modelEditor = null" />
 
     <NumberDialog
       v-if="touching"
@@ -399,6 +414,9 @@ td.comment {
   text-transform: uppercase;
   color: var(--go);
 }
+
+.model-link { display: block; max-width: 100%; padding: 1px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+.model-link:hover { text-decoration: underline; }
 
 tr.loaded td {
   background: var(--go-soft);

@@ -6,7 +6,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import { openDialogs } from '../dialogs'
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ title: string; size: 'small' | 'medium' | 'large' }>()
+defineProps<{ title: string; size: 'small' | 'medium' | 'large'; contained?: boolean; expanded?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 onMounted(() => {
@@ -18,7 +18,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Teleport defer to="#dialogs">
+  <Teleport defer :to="expanded ? '#workspace-dialogs' : '#dialogs'">
     <div class="scrim" @pointerdown.self="emit('close')" @keydown.esc="emit('close')">
       <section class="dialog" :class="size" role="dialog" :aria-label="title">
         <header>
@@ -27,7 +27,7 @@ onBeforeUnmount(() => {
             <AppIcon name="close" />
           </button>
         </header>
-        <div class="body">
+        <div class="body" :class="{ contained }">
           <slot />
         </div>
         <footer v-if="$slots['footer']">
@@ -98,6 +98,8 @@ h2 {
   padding: 16px;
   overflow: auto;
 }
+
+.body.contained { flex: 1; overflow: hidden; }
 
 footer {
   display: flex;

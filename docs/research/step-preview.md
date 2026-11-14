@@ -56,3 +56,27 @@ These results establish useful display output for these files, not complete BREP
 5. WebGL failure leaves the 2D toolpath available. The target WebKitGTK build still needs local WASM, file-picker, graphics and large-model checks. A worker isolates CPU work from the UI thread; it does not guarantee that webview memory exhaustion cannot affect the page. Native jog/stop handling remains independent.
 
 Keep a future native helper behind the same display-mesh contract if the older WASM kernel proves limiting. The [sample catalog](../../samples/README.md) records the existing model/program provenance and discrepancies.
+
+## Native WebKitGTK qualification
+
+Prepared on 14 November 2026 against CoffeeCNC `275b779`. A read-only `pkg-config` check on playhouse2 reports WebKitGTK **2.54.0** (`webkit2gtk-4.1`) and GTK **3.24.49**. The following checks are pending the native shell; the browser and Node results above do not stand in for them. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
+
+The production bundle preserves a module worker URL relative to the main module. Inside the worker, the hashed WASM URL resolves relative to `self.location.href`. Both therefore belong under `coffeecnc://panel/assets/`. The pinned loader fetches with same-origin credentials, attempts streaming compilation, then has an ArrayBuffer fallback. Keep this asset layout; no blob URL or network service is needed by the current generated code.
+
+The scheme response needs explicit status and MIME handling. Serve WASM as `application/wasm` without a charset suffix: the [WebAssembly streaming API](https://www.w3.org/TR/wasm-web-api-2/#streaming-module-compilation) checks the MIME type, response status and origin before compilation. WebKitGTK exposes response status, content type and headers through [URISchemeResponse](https://webkitgtk.org/reference/webkit2gtk/2.36.8/WebKitURISchemeResponse.html). Its [CORS-enabled scheme registration](https://www.webkitgtk.org/reference/webkit2gtk/stable/method.SecurityManager.register_uri_scheme_as_cors_enabled.html) allows CORS requests; that setting alone is not evidence that module workers or WASM work in this shell. Do not hide a bad MIME response by treating a successful loader fallback as a clean result.
+
+The existing HTML file input can use WebKitGTK's default asynchronous GTK chooser, described by [run-file-chooser](https://webkitgtk.org/reference/webkit2gtk/stable/signal.WebView.run-file-chooser.html). Test that path directly: the native panel deliberately does not expose the simulator's “Load SM-101 sample” button.
+
+| Check | Expected observation |
+| --- | --- |
+| Local asset load | Main module, worker and WASM load from the intended scheme/root with correct status and types; no unexpected network requests or console errors. Missing assets fail instead of returning the HTML entry point. |
+| Actual chooser | With a program loaded in simulation, choose `samples/upstream/instant-machinist/instant-machinist/parts/sm-101/part.step`; cancellation leaves the current attachment alone, and selecting the same file again works. |
+| Known geometry | SM-101 produces 1 mesh, 1,132 triangles and 120 × 80 × 20 mm bounds. It remains labeled as placement unconfirmed; this test does not establish a match to the loaded NC program. |
+| Source units | Choose Camcraft `ops_block.step` and `lego_4x2_01.step` from `samples/upstream/camcraft/fixtures/step/`; expected dimensions are 100 × 70 × 20 mm and 100.584 × 49.784 × 38.1 mm respectively. |
+| Rendering | WebGL2 renders the part and configured tool model. Named views, orbit, pan, zoom, opacity and light/dark themes preserve alignment with the path canvas at 1280 × 800. |
+| Cancellation and failure | Cancel an import, replace it, and try invalid STEP input. A late result cannot replace the newer attachment. A failed import preserves the prior attachment; the panel and native heartbeat remain responsive. |
+| Program/frame changes | A changed program or revision removes an attachment or pending import. A changed work frame hides the existing model until placement is reviewed. |
+| Page lifecycle | Reload, web-process termination and window close end the old page generation; no late import or controller reply reaches a replacement page. Reopening starts with no attachment. Exercise held-jog teardown only against simulation. |
+| Graphics unavailable | Failed WebGL2 creation or a lost context shows the existing explanatory message; the path canvas and operator controls remain usable. Record the graphics backend and any required environment setting. |
+
+Record the tested commit, built asset hashes, WebKit/GTK versions, launch configuration, graphics environment, console output and screenshots with the results. Keep native shell execution, actual chooser interaction and automated fixture injection distinguishable in that record.

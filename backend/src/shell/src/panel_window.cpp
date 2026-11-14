@@ -274,8 +274,15 @@ void PanelWindow::Impl::drain() {
     work.swap(outbox->work);
     outbox->scheduled = false;
   }
-  for (const auto& task : work)
+  // Work that waits behind work that closed the window is dropped, not run.
+  for (const auto& task : work) {
+    {
+      const std::scoped_lock lock{outbox->mutex};
+      if (outbox->closed)
+        break;
+    }
     task();
+  }
   for (const auto& [token, messages] : waiting)
     deliver(token, messages);
 }

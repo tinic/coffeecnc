@@ -40,19 +40,30 @@ using Text = std::expected<std::string, std::string>;
 // Runs `work` on the GTK thread and waits for it. The work and its result cross between the
 // threads through the window's outbox and a promise: under locks of this program's own, never
 // as data of a GLib source.
+//
+// The queued work is the only owner of the promise. When the window refuses the work (it is
+// closed) or drops it (it closes while the work waits), the promise goes with it and the wait
+// ends: WindowClosed is thrown. No caller waits for work that will not run.
 template <typename Result>
 auto on_gtk(PanelWindow& window, std::function<Result()> work) -> Result {
-  auto done = std::make_shared<std::promise<Result>>();
-  auto result = done->get_future();
-  window.internals().on_gtk_thread([done, work = std::move(work)]() -> void {
-    if constexpr (std::is_void_v<Result>) {
-      work();
-      done->set_value();
-    } else {
-      done->set_value(work());
-    }
-  });
-  return result.get();
+  std::future<Result> result;
+  {
+    auto done = std::make_shared<std::promise<Result>>();
+    result = done->get_future();
+    window.internals().on_gtk_thread([done = std::move(done), work = std::move(work)]() -> void {
+      if constexpr (std::is_void_v<Result>) {
+        work();
+        done->set_value();
+      } else {
+        done->set_value(work());
+      }
+    });
+  }
+  try {
+    return result.get();
+  } catch (const std::future_error&) {
+    throw ShellTestHooks::WindowClosed();
+  }
 }
 
 void on_resource(WebKitWebView* /*view*/, WebKitWebResource* /*resource*/,
@@ -418,6 +429,18 @@ auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string
   }
   on_gtk<void>(impl_->window, [&]() -> void { gtk_widget_destroy(report.window); });
   return text;
+}
+
+auto ShellTestHooks::close_with_work_pending() -> bool {
+  // Both are in the queue before this thread waits for either.
+  auto& window = impl_->window;
+  window.internals().on_gtk_thread([&window]() -> void { window.close(); });
+  try {
+    on_gtk<void>(window, []() -> void {});
+  } catch (const WindowClosed&) {
+    return true;
+  }
+  return false;
 }
 
 void ShellTestHooks::deliver_from_page(const std::string& raw) {

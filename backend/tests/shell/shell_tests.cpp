@@ -135,7 +135,7 @@ auto descendants(std::string_view name) -> std::vector<pid_t> {
 // what goes wrong in it, and helps finding its controls. A test's own; the panel has none of it.
 constexpr std::string_view instrumentation = R"js((() => {
   const t = { errors: [], received: [], counts: {}, last: {}, firstSeq: null, lastSeq: null,
-              seqBreaks: 0, sent: [], resultIds: [], lastStatusAt: null, maxGapMs: 0 };
+              seqBreaks: 0, sent: [], resultIds: [], lastStatusAt: null, maxGapMs: 0, gaps: [] };
   window.__t = t;
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.coffeecnc;
   t.handlerAtStart = !!(bridge && typeof bridge.postMessage === 'function');
@@ -155,7 +155,12 @@ constexpr std::string_view instrumentation = R"js((() => {
       else if (m.seq !== t.lastSeq + 1) t.seqBreaks++;
       t.lastSeq = m.seq;
       const now = performance.now();
-      if (t.lastStatusAt !== null) t.maxGapMs = Math.max(t.maxGapMs, now - t.lastStatusAt);
+      if (t.lastStatusAt !== null) {
+        const gap = now - t.lastStatusAt;
+        t.maxGapMs = Math.max(t.maxGapMs, gap);
+        // The statuses come every 50 ms; the panel takes 1000 ms without one for a stale link.
+        if (gap > 150) t.gaps.push(Math.round(gap));
+      }
       t.lastStatusAt = now;
     } else {
       t.received.push(m);
@@ -281,6 +286,14 @@ public:
                    timeout);
   }
 };
+
+// Where the page went without a status for longer than three periods, and for how long: said
+// after each part of the test, for the part it happened in.
+void status_gaps(const Rig& rig, std::string_view part) {
+  const auto gaps = rig.hooks.evaluate(
+      "const g = __t.gaps.slice(); __t.gaps.length = 0; return g;", 10s);
+  fact("status_gaps", std::format("part={} gaps_ms={}", part, gaps ? *gaps : gaps.error()));
+}
 
 void first_page(const Rig& rig) {
   check("page_loads", rig.page_live(30s), rig.hooks.state().uri);
@@ -1355,17 +1368,29 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
           std::format("served_inputs={} served_assets={}", served.value("inputs_digest", "none"),
                       served.value("assets_digest", "none")));
     power_on(rig);
+    status_gaps(rig, "power_on");
     home(rig);
+    status_gaps(rig, "home");
     positions_in_mm(rig);
+    status_gaps(rig, "positions_in_mm");
     jog_by_held_press(rig);
+    status_gaps(rig, "jog_by_held_press");
     reload_mid_jog(rig);
+    status_gaps(rig, "reload_mid_jog");
     web_process_killed_mid_jog(rig);
+    status_gaps(rig, "web_process_killed_mid_jog");
     scheme(rig);
+    status_gaps(rig, "scheme");
     operator_error(rig, programs);
+    status_gaps(rig, "operator_error");
     tool_table(rig);
+    status_gaps(rig, "tool_table");
     program_with_tool_change(rig, programs);
+    status_gaps(rig, "program_with_tool_change");
     platform(rig, ui);
+    status_gaps(rig, "platform");
     estop(rig);
+    status_gaps(rig, "estop");
     const auto state = hooks.state();
     check("no_request_off_the_scheme_at_end", state.foreign_resources.empty(),
           state.foreign_resources.empty() ? std::format("resources={}", state.resources.size())
@@ -1375,8 +1400,29 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }
-  // The operator closes the window: the application ends, and LinuxCNC with it.
-  hooks.close();
+  // The operator closes the window: the application ends, and LinuxCNC with it. Work handed to
+  // the GTK thread behind the close, and after it, is refused: its caller is told and does not
+  // wait for ever.
+  try {
+    const auto asked = Clock::now();
+    const bool told = hooks.close_with_work_pending();
+    const auto pending_ms =
+        std::chrono::duration<double, std::milli>(Clock::now() - asked).count();
+    check("work_pending_at_close_is_refused", told && pending_ms < 5000,
+          std::format("told={} after_ms={:.0f}", told, pending_ms));
+    const auto again = Clock::now();
+    bool refused = false;
+    try {
+      static_cast<void>(hooks.state());
+    } catch (const ShellTestHooks::WindowClosed&) {
+      refused = true;
+    }
+    const auto after_ms = std::chrono::duration<double, std::milli>(Clock::now() - again).count();
+    check("work_after_close_is_refused", refused && after_ms < 1000,
+          std::format("refused={} after_ms={:.0f}", refused, after_ms));
+  } catch (const std::exception& error) {
+    check("close", false, error.what());
+  }
 }
 
 } // namespace

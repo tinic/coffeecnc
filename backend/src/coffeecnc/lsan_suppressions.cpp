@@ -15,7 +15,9 @@
 // fails to release) is hidden as well: with these in place the shell's own use of them is not
 // leak-checked. Nothing else is suppressed: not GTK, not GLib, not the rest of WebKit.
 
-#if defined(__SANITIZE_ADDRESS__)
+// COFFEECNC_ADDRESS_SANITIZER is defined by cmake/ProjectOptions.cmake for builds with
+// -fsanitize=address, whatever the compiler: GCC and Clang name that condition differently.
+#if defined(COFFEECNC_ADDRESS_SANITIZER)
 
 extern "C" auto __lsan_default_suppressions() -> const char*;
 extern "C" auto __lsan_default_suppressions() -> const char* {

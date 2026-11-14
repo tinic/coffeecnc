@@ -8,6 +8,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,12 @@ namespace coffeecnc {
 // so the GTK main loop must be running.
 class ShellTestHooks {
 public:
+  // Thrown by every member below when the window is closed, or closes while the call waits
+  // for the GTK thread: the work was not done.
+  struct WindowClosed : std::runtime_error {
+    WindowClosed() : std::runtime_error("The window is closed.") {}
+  };
+
   struct State {
     std::uint64_t page{};    // the token of the document that shows; 0 for none
     std::uint64_t commits{}; // documents committed so far
@@ -79,6 +86,10 @@ public:
   void reload();
   void load(const std::string& uri);
   void close();
+  // Closes the window with a second piece of work handed over right behind the close, without
+  // waiting in between: that work must be dropped. True when its caller was told so
+  // (WindowClosed) instead of being left to wait.
+  [[nodiscard]] auto close_with_work_pending() -> bool;
   // What WebKit says about its graphics (the text of its webkit://gpu page), from a view of
   // the test's own beside the panel: the panel's window never navigates there.
   [[nodiscard]] auto graphics_report() -> std::expected<std::string, std::string>;

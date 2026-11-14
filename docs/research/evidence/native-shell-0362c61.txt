@@ -1,0 +1,169 @@
+CoffeeCNC native shell final review, 2026-11-14
+Merged PR #12 as ba41d78. Production code tested at 4588b3baa84a0db6bd6349290c1297e0ff2caf74.
+Affected test environment at 0362c61edfce1d744718c3f0b5b71faa3a69d805.
+Execution: Claude on playhouse2; independent source/log review: Codex.
+Scope: LinuxCNC 2.9.4 simulation, GTK 3.24.49 / WebKitGTK 2.54.0, Xvfb.
+NO_AT_BRIDGE=1 is set only by the Xvfb wrapper. Production accessibility is unchanged.
+Existing LSan library exclusions remain; GUI ThreadSanitizer is unqualified.
+
+Source directories: playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/
+  0362c61/{dev,analyze,asan}/
+  4588b3b/asan-dbus/
+
+--- 0362c61/dev/ctest-gui.out (summary) ---
+100% tests passed, 0 tests failed out of 9
+
+Label Time Summary:
+linuxcnc    =  74.17 sec*proc (3 tests)
+
+Total Test time (real) =  80.27 sec
+
+--- dev/LastTest.log (stamp, lifecycle and real child status) ---
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=134
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=679_dropped=1_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_shell_mm/linuxcnc.log
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=163
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=693_dropped=1_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_shell_inch/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_coffeecnc_start/linuxcnc.log
+
+--- 0362c61/analyze/ctest-gui.out (summary) ---
+100% tests passed, 0 tests failed out of 9
+
+Label Time Summary:
+linuxcnc    =  75.20 sec*proc (3 tests)
+
+Total Test time (real) =  81.30 sec
+
+--- analyze/LastTest.log (stamp, lifecycle and real child status) ---
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=184
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=693_dropped=2_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/analyze/sim/linuxcnc_shell_mm/linuxcnc.log
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=183
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=691_dropped=1_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/analyze/sim/linuxcnc_shell_inch/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/analyze/sim/linuxcnc_coffeecnc_start/linuxcnc.log
+
+--- 0362c61/asan/ctest-gui.out (summary) ---
+100% tests passed, 0 tests failed out of 9
+
+Label Time Summary:
+linuxcnc    =  75.81 sec*proc (3 tests)
+
+Total Test time (real) =  82.37 sec
+
+--- asan/LastTest.log (stamp, lifecycle and real child status) ---
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=137
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=693_dropped=2_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_shell_mm/linuxcnc.log
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=0362c61edfce1d744718c3f0b5b71faa3a69d805
+check=status_never_late_on_import_page result=pass detail=longest_gap_ms=153
+check=fresh_page_after_injected_request result=pass detail=commits=4->5_page=5_identified=true_handler_at_start=true_delivered=686_dropped=1_rejected=2_page_state={"counts":{"result":1,"hello":1,"tool_table":1,"work_offsets":1,"program":1,"preview":1,"status":2},"sent":[{"type":"ready","id":1}],"results":[1],"errors":[],"link":"live"}
+check=work_pending_at_close_is_dropped result=pass detail=fate=dropped_after_ms=1
+check=work_after_close_is_refused result=pass detail=refused=true_after_ms=0
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_shell_inch/linuxcnc.log
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/asan/sim/linuxcnc_coffeecnc_start/linuxcnc.log
+
+--- 4588b3b/asan-dbus/shell_mm.log (full-unwind LeakSanitizer report, bridge enabled) ---
+==2356194==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 368 byte(s) in 2 object(s) allocated from:
+    #0 0x7892a0631610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x78928f2829df  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x219df) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #2 0x78928f287e3a in _dbus_message_loader_queue_messages (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x26e3a) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #3 0x78928f29214f  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3114f) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #4 0x78928f292291  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x31291) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #5 0x78928f290482  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x2f482) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #6 0x78928f290c8e  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x2fc8e) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #7 0x78928f292010  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x31010) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #8 0x78928f277b0c  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x16b0c) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #9 0x78928f27847f  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x1747f) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #10 0x78928f278ae5 in dbus_connection_send_with_reply_and_block (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x17ae5) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #11 0x78928f274797 in dbus_bus_register (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x13797) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #12 0x78928f2d9b42 in atspi_get_a11y_bus (/lib/x86_64-linux-gnu/libatspi.so.0+0x1fb42) (BuildId: 5bff996c46414639f75833f1049b6c2a5f031a18)
+    #13 0x78929124ab15 in atk_bridge_adaptor_init (/lib/x86_64-linux-gnu/libatk-bridge-2.0.so.0+0x10b15) (BuildId: 1a019679edcc361cf89962b71539c1d70399c821)
+    #14 0x789297e9a973  (/lib/x86_64-linux-gnu/libgtk-3.so.0+0x3f4973) (BuildId: d54786f1fa09b343b302a9725f239075bbf0d0eb)
+    #15 0x789297cab8cc  (/lib/x86_64-linux-gnu/libgtk-3.so.0+0x2058cc) (BuildId: d54786f1fa09b343b302a9725f239075bbf0d0eb)
+    #16 0x7892973bc94f in g_closure_invoke (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x1794f) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #17 0x7892973d0d42  (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x2bd42) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #18 0x7892973d2768  (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x2d768) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #19 0x7892973d85a5 in g_signal_emit_valist (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x335a5) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #20 0x7892973d8662 in g_signal_emit (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x33662) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #21 0x7892973c0b13  (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x1bb13) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #22 0x7892973c46c8 in g_object_notify (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x1f6c8) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #23 0x7892979d53e7  (/lib/x86_64-linux-gnu/libgdk-3.so.0+0x3f3e7) (BuildId: 943fd0bfcc4de782df82f67ca22a630258235a86)
+    #24 0x7892973bcb80  (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x17b80) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #25 0x7892973d28b7  (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x2d8b7) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #26 0x7892973d886d in g_signal_emit_by_name (/lib/x86_64-linux-gnu/libgobject-2.0.so.0+0x3386d) (BuildId: 765f13ef7fd604fb084c7603dd4c0e101e024d00)
+    #27 0x789297a26dbc  (/lib/x86_64-linux-gnu/libgdk-3.so.0+0x90dbc) (BuildId: 943fd0bfcc4de782df82f67ca22a630258235a86)
+
+Indirect leak of 352 byte(s) in 1 object(s) allocated from:
+    #0 0x7892a0630b58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x78928f29704b in _dbus_string_lengthen (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3604b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #2 0x78928f297293  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x36293) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #3 0x78928f28027b  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x1f27b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #4 0x78928f2806cc in _dbus_type_writer_recurse (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x1f6cc) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #5 0x78928f27e1dc  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x1d1dc) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #6 0x78928f27e854  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x1d854) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #7 0x78928f2837a8 in dbus_message_new_method_call (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x227a8) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #8 0x789291249694  (/lib/x86_64-linux-gnu/libatk-bridge-2.0.so.0+0xf694) (BuildId: 1a019679edcc361cf89962b71539c1d70399c821)
+    #9 0x78928f2799ed in dbus_connection_dispatch (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x189ed) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #10 0x78928f2d6df8  (/lib/x86_64-linux-gnu/libatspi.so.0+0x1cdf8) (BuildId: 5bff996c46414639f75833f1049b6c2a5f031a18)
+    #11 0x78929a3493c4  (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5c3c4) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #12 0x78929a34b5f6  (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5e5f6) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #13 0x78929a34c05e in g_main_loop_run (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5f05e) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #14 0x789297cad05c in gtk_main (/lib/x86_64-linux-gnu/libgtk-3.so.0+0x20705c) (BuildId: d54786f1fa09b343b302a9725f239075bbf0d0eb)
+    #15 0x5d3b11092bd2 in coffeecnc::PanelWindow::run() /home/turo/ai/claudecode-coffeecnc/backend/src/shell/src/panel_window.cpp:462
+    #16 0x5d3b10f1e48d in coffeecnc::run_application(coffeecnc::Options const&, coffeecnc::ApplicationHooks const&) /home/turo/ai/claudecode-coffeecnc/backend/src/coffeecnc/application.cpp:230
+    #17 0x5d3b10d73edb in main /home/turo/ai/claudecode-coffeecnc/backend/tests/shell/shell_tests.cpp:1476
+    #18 0x789296842ca7  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)
+    #19 0x789296842d64 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)
+    #20 0x5d3b10d147e0 in _start (/home/turo/ai/claudecode-coffeecnc/backend/build/asan/coffeecnc_shell_tests+0x10357e0) (BuildId: 027e6889f11548f0523b89249cc90971a2c3d038)
+
+Indirect leak of 80 byte(s) in 1 object(s) allocated from:
+    #0 0x7892a0630b58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x78928f296abe  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x35abe) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #2 0x78928f297c49 in _dbus_string_copy_len (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x36c49) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #3 0x78928f287fea in _dbus_message_loader_queue_messages (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x26fea) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #4 0x78928f29214f  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3114f) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #5 0x78928f292291  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x31291) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #6 0x78928f290482  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x2f482) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #7 0x78928f290d7b  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x2fd7b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #8 0x78928f291f1a  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x30f1a) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #9 0x78928f278020  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x17020) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+    #10 0x78928f2d6dbf  (/lib/x86_64-linux-gnu/libatspi.so.0+0x1cdbf) (BuildId: 5bff996c46414639f75833f1049b6c2a5f031a18)
+    #11 0x78929a3493c4  (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5c3c4) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #12 0x78929a34b5f6  (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5e5f6) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #13 0x78929a34c05e in g_main_loop_run (/lib/x86_64-linux-gnu/libglib-2.0.so.0+0x5f05e) (BuildId: 5a58e82dc26f34f0026f31e03527051f3520a3df)
+    #14 0x789297cad05c in gtk_main (/lib/x86_64-linux-gnu/libgtk-3.so.0+0x20705c) (BuildId: d54786f1fa09b343b302a9725f239075bbf0d0eb)
+    #15 0x5d3b11092bd2 in coffeecnc::PanelWindow::run() /home/turo/ai/claudecode-coffeecnc/backend/src/shell/src/panel_window.cpp:462
+    #16 0x5d3b10f1e48d in coffeecnc::run_application(coffeecnc::Options const&, coffeecnc::ApplicationHooks const&) /home/turo/ai/claudecode-coffeecnc/backend/src/coffeecnc/application.cpp:230
+    #17 0x5d3b10d73edb in main /home/turo/ai/claudecode-coffeecnc/backend/tests/shell/shell_tests.cpp:1476
+    #18 0x789296842ca7  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)
+    #19 0x789296842d64 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)
+    #20 0x5d3b10d147e0 in _start (/home/turo/ai/claudecode-coffeecnc/backend/build/asan/coffeecnc_shell_tests+0x10357e0) (BuildId: 027e6889f11548f0523b89249cc90971a2c3d038)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+    643      18097 libfontconfig.so
+    481     108124 libGLX_mesa.so
+     17        776 libjavascriptcoregtk-4.1.so
+-----------------------------------------------------
+
+SUMMARY: AddressSanitizer: 800 byte(s) leaked in 4 allocation(s).

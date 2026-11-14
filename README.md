@@ -4,7 +4,9 @@ A new milling frontend for LinuxCNC, with a native C++ core and a modern web int
 
 CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
 
-**Current status: working operator panel and native threaded runtime.** The Vue/TypeScript panel runs against a browser simulator. C++ libraries provide command validation, protocol decoding/encoding and a program store restricted to its configured directory. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. The runtime and G0759-shaped profile have passed LinuxCNC simulation tests in development, analysis, AddressSanitizer and ThreadSanitizer builds. The GTK/WebKit executable and live panel wiring are next.
+**Current status: native operator panel running against LinuxCNC simulation.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
+
+Native STEP import and the tool-model editor work; interpreter preview, native STEP/path alignment and persistent job configuration remain in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
 ![Current CoffeeCNC operator panel with a STEP model overlay](ui/screenshots/step-overlay.jpg)
 
@@ -38,7 +40,7 @@ In **Tools**, open **Model defaults** to configure common cutter families, or **
 
 Open [the standalone concept](docs/concepts/coffeecnc-mill.html) in a browser after cloning. [The editable fragment](docs/concepts/coffeecnc-mill.fragment.html) is also included. The prototype uses external font and icon resources; it is not an offline production application.
 
-The concept established the panel's visual direction: readable coordinates, a part/toolpath view, operation context, and persistent run controls. Its displayed geometry, measurements, tool readiness and timing are illustrative. The working panel uses that design with simulator-backed jogging, touch-off, tool changes and execution controls; machine validation and recovery workflows remain ongoing work.
+The concept established the panel's visual direction: readable coordinates, a part/toolpath view, operation context, and persistent run controls. Its displayed geometry, measurements, tool readiness and timing are illustrative. The working panel uses that design with jogging, touch-off, tool changes and execution controls exercised against LinuxCNC simulation; machine validation and recovery workflows remain ongoing work.
 
 ## Direction
 
@@ -52,7 +54,7 @@ The concept established the panel's visual direction: readable coordinates, a pa
 
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
 - [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
-- [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks and the planned model overlay.
+- [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks, browser overlay and native import qualification.
 - [Concept review](docs/design/concept-review.md): what the attractive first screen gets wrong and what the next design needs.
 - [Architecture](docs/architecture.md) and [feasibility](docs/feasibility.md): native/web boundaries, prerequisites and implementation sequence.
 - [Frontend landscape in 2026](docs/research/linuxcnc-frontends-2026.md): the original alternatives research.

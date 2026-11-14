@@ -61,6 +61,23 @@ Keep a future native helper behind the same display-mesh contract if the older W
 
 Prepared on 14 November 2026 against CoffeeCNC `275b779`, with initial native results below from `ca88a0a7a853a152ec3e827d0dd47faef0b28d76` in [PR #12](https://github.com/tinic/coffeecnc/pull/12). The qualification matrix includes checks that are still pending; the browser and Node results above do not stand in for native execution. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
 
+### Merged shell: `ba41d78`
+
+PR #12 merged on 14 November 2026. Its production code is covered by the `4588b3b` runs below; `0362c61` changes only the virtual-display test environment and two comments. Later commits merge documentation and clarify the evidence. Codex independently reviewed the source changes, retained CTest and process-exit logs, leak traces and GUI ThreadSanitizer access stacks.
+
+| Tested commit | Scope | Result |
+| --- | --- | --- |
+| `4588b3b` | Full development / analysis suites | 24/24 each, 324.75 / 325.50 seconds |
+| `4588b3b` | Non-GUI ThreadSanitizer suite | 21/21, 286.19 seconds; no ThreadSanitizer reports in the retained logs |
+| `4588b3b` | Full AddressSanitizer suite | 22/24; the two GUI failures are retained below |
+| `0362c61` | Affected GUI, CLI and panel tests plus fixtures, development / analysis / AddressSanitizer | 9/9 each, 80.27 / 81.30 / 82.37 seconds; all GUI children exited 0, with zero residual simulation processes |
+
+The remaining D-Bus allocations were traced through GTK's AT-SPI accessibility bridge (`atk_bridge_adaptor_init`, `atspi_get_a11y_bus`, `dbus_bus_register`). The Xvfb test wrapper now sets `NO_AT_BRIDGE=1`; the production executable does not. This qualifies the stated test environment, **not leak-free execution with accessibility enabled**. The existing Fontconfig, Mesa GLX and JavaScriptCore exclusions remain, with their limitations below; no D-Bus suppression was added. [Retained final excerpts and the complete deeper leak trace](evidence/native-shell-0362c61.txt) record the change and resulting checks.
+
+The ownership review found matching releases for the shell's context, content manager, script, window/view, timers and per-request response/stream objects. GUI ThreadSanitizer remains **unqualified**: manual `4588b3b` runs produced 133/140/76 reports for mm/inch/startup. Both access origins were in external libraries in every report; that classification does not establish all memory ownership or synchronization. No ThreadSanitizer suppression was added.
+
+Each final mm/inch shell run passed 202 behavioral checks. The ASAN import-page status gaps peaked at 137/153 ms, final reloads established a live bridge, and pending shutdown work was dropped promptly. Native part-overlay rendering and the other untested interactions listed below remain open. The full 24-test suites were not repeated at `0362c61`; unchanged non-GUI results carry forward over the reviewed test-wrapper/comment changes. See the [shell reference](../shell.md) for runtime behavior and further limits.
+
 ### Follow-up checkpoint: `4588b3b`
 
 The runner now checks the actual child exit status and retains separate logs for each test. Development and analysis each passed **24/24 CTests** (324.75 and 325.50 seconds). AddressSanitizer passed **22/24** (346.65 seconds): both shell tests passed their 202 behavioral checks, then correctly failed on a LeakSanitizer report of **1,216 bytes in six allocations**. Startup exited successfully. [Retained failure excerpts](evidence/native-shell-4588b3b-asan.txt) include the real child results and complete remaining leak reports.

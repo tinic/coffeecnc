@@ -24,6 +24,7 @@ import {
   InterpError,
   activeCodes,
   axisIndices,
+  cloneModal,
   interpretLine,
   newModal,
   previewProgram,
@@ -411,7 +412,8 @@ export class SimMachine {
   /** A new preview context whenever something the path depends on has changed. */
   private checkPreview(): void {
     const m = this.modal
-    if (this.exec === null) {
+    const programRunning = this.exec?.source === 'program'
+    if (!programRunning) {
       // What a run would start from. Changes a running program makes to it are not a new context.
       this.startKey = JSON.stringify([m.wcs, m.units, m.absolute, m.tool, m.toolOffset, m.feed])
     }
@@ -438,10 +440,13 @@ export class SimMachine {
       }
       this.emit(this.preview)
     }
-    if (this.previewDue !== null && this.now >= this.previewDue && this.exec === null && this.program !== null) {
+    if (this.previewDue !== null && this.now >= this.previewDue && !programRunning && this.program !== null) {
       this.previewDue = null
-      this.syncModal()
-      this.preview = previewProgram(m, this.program.lines, this.blockDelete, this.previewContext)
+      // From where the machine is, not from where an MDI command in progress will end.
+      const start = cloneModal(m)
+      start.pos = this.reported()
+      start.tool = this.toolInSpindle
+      this.preview = previewProgram(start, this.program.lines, this.blockDelete, this.previewContext)
       this.emit(this.preview)
     }
   }

@@ -4,7 +4,7 @@
 import { computed, type ComputedRef } from 'vue'
 
 import { createTransport } from './bridge'
-import type { AxisStatus, CommandBody, Tool } from './protocol'
+import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
 
 const instance = createPanel({ transport: createTransport() })
@@ -42,7 +42,13 @@ export function start(): void {
 /** The status is from a running LinuxCNC and fresh. Nothing else may be shown as live. */
 export const live: ComputedRef<boolean> = computed(() => panel.link === 'live')
 
-export const axes: ComputedRef<AxisStatus[]> = computed(() => panel.status?.axes ?? [])
+/**
+ * The status, when it says anything about the machine: with the link down every field is a
+ * placeholder, and placeholders are not shown as values.
+ */
+export const reported: ComputedRef<Status | null> = computed(() => (panel.link === 'down' ? null : panel.status))
+
+export const axes: ComputedRef<AxisStatus[]> = computed(() => reported.value?.axes ?? [])
 
 export const allHomed: ComputedRef<boolean> = computed(
   () => axes.value.length > 0 && axes.value.every((axis) => axis.homed),

@@ -80,6 +80,10 @@ export interface PanelState {
   unit: LengthUnit
   programLayout: ProgramLayout
   droDetails: boolean
+  /** Jog step, mm, or null for continuous jogging. */
+  jogIncrement: number | null
+  /** mm/min. */
+  jogVelocity: number
   simulatorFault: LinkFault
 }
 
@@ -202,6 +206,8 @@ export function createPanel(options: PanelOptions): Panel {
     unit: 'mm',
     programLayout: 'split',
     droDetails: true,
+    jogIncrement: null,
+    jogVelocity: 600,
     simulatorFault: transport.simulator?.fault() ?? 'none',
   })
 
@@ -274,6 +280,7 @@ export function createPanel(options: PanelOptions): Panel {
           state.unit = message.machine_units
         }
         state.hello = message
+        state.jogVelocity = Math.min(state.jogVelocity, message.max_jog_velocity)
         if (message.protocol !== protocolVersion) {
           log(
             'error',

@@ -48,6 +48,33 @@ auto failed(std::string_view reason) -> ActionResult {
 auto accepted(const ActionResult& result) -> bool {
   return result.status == ActionStatus::accepted;
 }
+// A command in words for the operator, for the reason of an action that was only half sent.
+auto words(long type) -> std::string_view {
+  switch (type) {
+  case EMC_TRAJ_SET_TELEOP_ENABLE_TYPE:
+    return "the change between world and joint mode";
+  case EMC_JOINT_HOME_TYPE:
+    return "the homing command";
+  case EMC_JOG_CONT_TYPE:
+    return "the jog start";
+  case EMC_JOG_INCR_TYPE:
+    return "the jog increment";
+  case EMC_COOLANT_FLOOD_ON_TYPE:
+    return "flood on";
+  case EMC_COOLANT_FLOOD_OFF_TYPE:
+    return "flood off";
+  case EMC_COOLANT_MIST_ON_TYPE:
+    return "mist on";
+  case EMC_COOLANT_MIST_OFF_TYPE:
+    return "mist off";
+  case EMC_TOOL_LOAD_TOOL_TABLE_TYPE:
+    return "the tool table reload";
+  default:
+    break;
+  }
+  return "another command";
+}
+
 auto withdrawn() -> ActionResult {
   return {ActionStatus::cancelled, "Cancelled before it was sent."};
 }
@@ -90,6 +117,8 @@ struct NmlPort::Impl {
   const Wanted* wanted{};
   // It has answered no: nothing more is written for this action.
   bool cancelled{};
+  // The types of the commands this action has written so far.
+  std::vector<long> written_types;
   // A command has been written; `serial` is its number.
   bool written{};
   // Every write, for other threads to read.
@@ -193,6 +222,7 @@ struct NmlPort::Impl {
   [[nodiscard]] auto begin(const Wanted* still_wanted) -> std::size_t {
     wanted = still_wanted;
     cancelled = false;
+    written_types.clear();
     return mark();
   }
 
@@ -203,17 +233,35 @@ struct NmlPort::Impl {
     return !cancelled;
   }
 
+  // What an action that stops here has to say for itself. `cancelled` means that nothing of
+  // it was written. Once one of its commands has gone out it is `failed`, and the reason names
+  // what was sent and that the rest was not.
+  [[nodiscard]] auto withdraw(long unsent = 0) const -> ActionResult {
+    if (written_types.empty())
+      return withdrawn();
+    std::string done;
+    for (const long type : written_types)
+      done += (done.empty() ? "" : ", ") + std::string(words(type));
+    return failed(unsent == 0 ? std::format("Cancelled after this was sent: {}. The rest of the "
+                                            "action was not sent.",
+                                            done)
+                              : std::format("Cancelled after this was sent: {}. Not sent: {}.",
+                                            done, words(unsent)));
+  }
+
   // The one place a command leaves this port. The gate is taken first, then the action is
-  // asked whether it is still wanted, then the command is written: no other NML call and no
-  // change of the answer can fall between the question and the write. Once write() of libnml
-  // has begun the command is committed.
+  // asked a last time whether it is still wanted, then the command is written. No other NML
+  // call falls between that question and the write; the answer itself can still change in that
+  // moment, since the session is not kept locked while this thread writes. Once write() of
+  // libnml has begun the command is committed.
   [[nodiscard]] auto write(RCS_CMD_MSG& message) -> ActionResult {
     const int wrote = command.call(
         [&](RCS_CMD_CHANNEL& channel) -> int { return still() ? channel.write(&message) : 0; });
     if (cancelled)
-      return withdrawn();
+      return withdraw(message.type);
     if (wrote != 0)
       return failed("Cannot write to LinuxCNC's command channel.");
+    written_types.push_back(message.type);
     serial = message.serial_number;
     written = true;
     unanswered_stop.reset();
@@ -340,7 +388,7 @@ struct NmlPort::Impl {
                             [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
     // The wait is over: the command this was the preparation for may not be wanted any more.
     if (accepted(switched) && !still())
-      return withdrawn();
+      return withdraw();
     return switched;
   }
 

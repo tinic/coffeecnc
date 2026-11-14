@@ -255,11 +255,9 @@ public:
   [[nodiscard]] auto watchdog_ok() const -> bool override { return watchdog_; }
 
   [[nodiscard]] auto beats() const -> std::uint64_t { return beats_; }
-  // Beats counted while waiting this long.
-  [[nodiscard]] auto beats_within(std::chrono::milliseconds time) const -> std::uint64_t {
-    const std::uint64_t before = beats_;
-    std::this_thread::sleep_for(time);
-    return beats_ - before;
+  // How long ago the last beat was.
+  [[nodiscard]] auto since_last_beat() const -> Clock::duration {
+    return Clock::now() - Clock::time_point{Clock::duration{last_beat_.load()}};
   }
   // How often the level fell.
   [[nodiscard]] auto lowered() const -> std::uint64_t { return lowered_; }
@@ -726,8 +724,9 @@ void stops_have_priority() {
     bench.drain();
     require(!bench.port.called("run") && bench.port.calls().size() == 2,
             std::string("The run is not sent after ") + body);
-    require(bench.outcome(run) == std::string("failed:") + cancelled_reason,
-            "It is failed, not rejected: its mode change was sent");
+    require(bench.outcome(run) == "failed:The mode was changed, but a stop request cancelled the "
+                                  "command before it was sent.",
+            "It is failed, not rejected, and says so: its mode change was sent");
   }
   {
     // What only stops something is not dropped with its page, nor by an abort, and keeps its
@@ -909,7 +908,8 @@ void shutdown_is_safe_and_bounded() {
   const auto calls = threads.port.take_calls();
   require(calls.back() == "stop_jog x" && !threads.port.called("mdi"),
           "The jog was stopped over NML; what waited was not sent");
-  require(threads.outputs.beats_within(50ms) == 0 && threads.outputs.jog_stop_high() &&
+  std::this_thread::sleep_for(60ms);
+  require(threads.outputs.since_last_beat() >= 50ms && threads.outputs.jog_stop_high() &&
               threads.outputs.lowered() == 0,
           "No thread is left, and the level is left high without ever having fallen");
   std::cout << std::format("measured shutdown_level_ms={:.1f} shutdown_join_ms={:.1f}\n", raised,

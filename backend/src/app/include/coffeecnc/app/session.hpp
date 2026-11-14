@@ -88,7 +88,9 @@ struct Work {
 // in. The worker asks whether a request is still wanted after every call that can block (a
 // status reading, the program store, a command) and before every command it sends: a request of
 // an ended page sends nothing more and gets no result; one overtaken by abort, E-stop or power
-// off sends nothing more and is answered as cancelled; a jog start or increment of an earlier
+// off sends nothing more and is answered as cancelled: `rejected` when nothing at all was sent
+// for it, `failed` with what was sent and what was not when part of it was (a mode change, the
+// first of two commands); a jog start or increment of an earlier
 // epoch is not sent. The port is handed the same question (`Wanted`) with every action and asks
 // it down to the moment it writes each command. Requests that only stop something (abort,
 // E-stop, power off, jog release, stop-all, spindle stop, coolant off) are executed whatever
@@ -249,7 +251,7 @@ private:
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
   [[nodiscard]] static auto answer(Reply reply) -> Stage;
-  [[nodiscard]] static auto cancelled() -> Stage;
+  [[nodiscard]] static auto cancelled(std::string partial = {}) -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;
   [[nodiscard]] auto current(const Queued& request) const -> bool;

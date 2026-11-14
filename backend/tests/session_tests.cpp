@@ -164,7 +164,8 @@ public:
   }
 
 private:
-  auto asked(const std::string& action, ActionResult result, const Wanted& wanted) -> ActionResult {
+  auto asked(const std::string& action, const ActionResult& result, const Wanted& wanted)
+      -> ActionResult {
     answers.emplace_back(action, wanted());
     return result;
   }
@@ -1163,7 +1164,12 @@ void stale_requests_send_nothing() {
     // Arms the hook that runs inside the blocked call.
     std::function<void(Rig&, std::function<void()>)> arm;
     Calls sent_before; // what the request had sent when it went stale
+    // The result when a stop request cancelled it: what was sent, truthfully.
+    std::string_view outcome{"rejected"};
+    std::string_view reason{"Cancelled by a stop request before it was sent."};
   };
+  constexpr auto mode_changed =
+      "The mode was changed, but a stop request cancelled the command before it was sent.";
   const auto in_auto = [](Rig& rig) -> void { rig.port.state.mode = TaskMode::automatic; };
   const std::vector<Wait> waits{
       {"the first status reading",
@@ -1178,7 +1184,9 @@ void stale_requests_send_nothing() {
        [](Rig& rig, std::function<void()> hook) -> void {
          rig.port.during["set_task_mode"] = std::move(hook);
        },
-       {"set_task_mode auto"}},
+       {"set_task_mode auto"},
+       "failed",
+       mode_changed},
       {"the status reading after the mode change",
        R"("type":"run")",
        [](Rig& rig, std::function<void()> hook) -> void {
@@ -1186,7 +1194,9 @@ void stale_requests_send_nothing() {
            rig.port.during_snapshot = hook;
          };
        },
-       {"set_task_mode auto"}},
+       {"set_task_mode auto"},
+       "failed",
+       mode_changed},
       {"the program store",
        R"("type":"open_program","path":"part.ngc")",
        [](Rig& rig, std::function<void()> hook) -> void {
@@ -1199,7 +1209,10 @@ void stale_requests_send_nothing() {
          rig.port.state.mode = TaskMode::mdi;
          rig.port.during["mdi"] = std::move(hook);
        },
-       {"mdi G10 L10 P3 Z1"}},
+       {"mdi G10 L10 P3 Z1"},
+       "failed",
+       "The tool length was set, but a stop request cancelled the command before it was applied "
+       "(G43 was not sent)."},
       {"the first status reading of an MDI block",
        R"("type":"mdi","text":"G0 X1")",
        [](Rig& rig, std::function<void()> hook) -> void {
@@ -1261,10 +1274,11 @@ void stale_requests_send_nothing() {
                 std::string(stop) + " during " + wait.name + ": only the stop is sent after it");
       const auto found = results(outcome);
       require(found.size() == 2 && found.at(0).at("id") == id && found.at(1).at("id") == stop_id &&
-                  found.at(0).at("outcome") == (wait.sent_before.empty() ? "rejected" : "failed") &&
-                  found.at(0).at("reason") == "Cancelled by a stop request before it was sent." &&
+                  found.at(0).at("outcome") == wait.outcome &&
+                  found.at(0).at("reason") == wait.reason &&
                   found.at(1).at("outcome") == "accepted",
-              "The request is answered as cancelled, the stop as accepted: " + wait.name);
+              "The result says what was sent and what was not; the stop is accepted: " + wait.name +
+                  ": " + found.at(0).dump());
     }
   }
 }
@@ -1294,6 +1308,31 @@ void port_is_told_when_a_request_goes_stale() {
     require(stopped.port.answers == Answers{{"mdi", false}},
             std::string("A stop was asked while the port worked: the answer is no: ") + stop);
   }
+  // An action the port withdrew half way comes back `failed` with what was sent: that, not a
+  // "cancelled before it was sent", is the panel's result.
+  Rig coolant;
+  constexpr auto half = "Cancelled after this was sent: flood on. Not sent: mist on.";
+  coolant.port.script["set_coolant"] = {{ActionStatus::failed, half}};
+  coolant.port.during["set_coolant"] = [&coolant]() -> void {
+    static_cast<void>(
+        coolant.session.submit(coolant.page, R"({"id":900,"type":"abort"})", at(0ms)));
+  };
+  const auto halved = results(coolant.send(R"("type":"set_coolant","flood":true,"mist":true)"));
+  require(halved.size() == 2 && halved.front().at("outcome") == "failed" &&
+              halved.front().at("reason") == half,
+          "A half-sent action is failed with the port's account of it");
+  // And one of which the port wrote nothing is rejected: nothing was sent.
+  Rig nothing;
+  nothing.port.script["set_coolant"] = {{ActionStatus::cancelled, ""}};
+  nothing.port.during["set_coolant"] = [&nothing]() -> void {
+    static_cast<void>(
+        nothing.session.submit(nothing.page, R"({"id":900,"type":"abort"})", at(0ms)));
+  };
+  const auto none = results(nothing.send(R"("type":"set_coolant","flood":true,"mist":true)"));
+  require(none.size() == 2 && none.front().at("outcome") == "rejected" &&
+              none.front().at("reason") == "Cancelled by a stop request before it was sent.",
+          "An action of which nothing was written is rejected");
+
   // What only stops something is never withdrawn, whatever happens to its page.
   Rig spindle;
   spindle.port.during["set_spindle"] = [&spindle]() -> void {

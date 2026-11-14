@@ -27,8 +27,11 @@ namespace coffeecnc {
 // waits for LinuxCNC between calls does not keep the others out. One call can last as long as
 // libnml waits for the buffer's System V semaphore, which a stopped task may hold: the timeout
 // of the `xemc` lines in the NML configuration file, 10 s in LinuxCNC's linuxcnc.nml. That is
-// the longest the gate is held, and it delays every other thread that wants NML by as much. The
-// control thread makes no NML call and never takes the gate.
+// the longest the gate is held, and it delays every other thread that wants NML by as much: the
+// worker's command is that much later, and the status thread's reading that much older. A
+// reading older than 100 ms counts as a stale link for the session, which then stops jogs
+// through the jog-stop level and starts nothing that needs a live link. The control thread
+// makes no NML call and never takes the gate.
 [[nodiscard]] auto nml_gate() -> std::mutex&;
 
 // An NML channel that can only be used through the gate.

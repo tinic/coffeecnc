@@ -57,6 +57,10 @@ auto length(double millimetres, const ControllerState& state) -> std::string {
 
 constexpr auto busy_reason = "Too many requests are waiting for LinuxCNC.";
 constexpr auto cancelled_reason = "Cancelled by a stop request before it was sent.";
+constexpr auto mode_changed_reason =
+    "The mode was changed, but a stop request cancelled the command before it was sent.";
+constexpr auto touch_off_reason = "The tool length was set, but a stop request cancelled the "
+                                  "command before it was applied (G43 was not sent).";
 constexpr auto stopped_reason = "The jog was stopped before it started.";
 constexpr auto release_reason = "Release the jog control before jogging again.";
 constexpr auto hold_reason = "A jog stop is in progress.";
@@ -110,7 +114,10 @@ auto Session::reply(ActionResult result) -> Reply {
 }
 
 auto Session::answer(Reply reply) -> Stage { return {StageKind::reply, std::move(reply), {}}; }
-auto Session::cancelled() -> Stage { return {StageKind::cancelled, {}, {}}; }
+// `partial` says what was sent before the request was cancelled; empty when nothing was.
+auto Session::cancelled(std::string partial) -> Stage {
+  return {StageKind::cancelled, {CommandOutcome::failed, std::move(partial)}, {}};
+}
 // What the port made of an action: its result, or the request's cancellation.
 auto Session::staged(ActionResult result) -> Stage {
   if (result.status == ActionStatus::cancelled)
@@ -403,8 +410,12 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   }
   if (step.kind == StageKind::cancelled) {
     forget_press(request);
-    step.reply = {request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                  cancelled_reason};
+    // `rejected` only when nothing at all was sent for the request; otherwise `failed`, with
+    // what was sent and what was not.
+    if (step.reply.reason.empty() && request.sent)
+      step.reply.reason = mode_changed_reason;
+    if (step.reply.reason.empty())
+      step.reply = {CommandOutcome::rejected, cancelled_reason};
   }
   // Stops decided meanwhile go out before anything else is taken up, except a stop request:
   // abort, E-stop and power off go out first, and a release stops its own axis.
@@ -677,8 +688,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (measured.kind != StageKind::reply ||
               measured.reply.outcome != CommandOutcome::accepted)
             return measured;
-          request.sent = true;
-          return mdi(request, "G43");
+          auto applied = mdi(request, "G43");
+          if (applied.kind == StageKind::cancelled)
+            return cancelled(touch_off_reason);
+          return applied;
         } else if constexpr (std::is_same_v<T, SetTool>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.set_tool(c.tool, still);

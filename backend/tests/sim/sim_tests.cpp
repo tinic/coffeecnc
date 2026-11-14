@@ -640,12 +640,12 @@ void delayed_start_unfenced(Rig& rig) {
 enum class Reason : std::uint8_t { page_end, release, lease_expiry };
 
 // What the port wrote after the first `from` commands of its trace, in order.
-auto written_since(Rig& rig, std::size_t from) -> std::vector<NmlPort::Written> {
+auto written_since(const Rig& rig, std::size_t from) -> std::vector<NmlPort::Written> {
   auto all = rig.port.writes();
   all.erase(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(std::min(from, all.size())));
   return all;
 }
-auto listed(const std::vector<NmlPort::Written>& writes) -> std::string {
+auto trace_text(const std::vector<NmlPort::Written>& writes) -> std::string {
   std::string text;
   for (const auto& written : writes)
     text += std::format("{}{}#{}", text.empty() ? "" : ",", written.type, written.serial);
@@ -758,7 +758,7 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
                     "level_low={:.1f} level_low_before_stop_accepted={} hold_ms={:.1f} "
                     "moved_mm={:.5f} start_result={}",
                     types.jog_start, start.type, start.serial, stop ? stop->type : 0,
-                    stop ? stop->serial : 0, listed(written_since(rig, trace_from)),
+                    stop ? stop->serial : 0, trace_text(written_since(rig, trace_from)),
                     milliseconds(start.at - pressed), milliseconds(decided - pressed),
                     milliseconds(raised - pressed), milliseconds(resumed - pressed),
                     ms(start_echoed), stop ? milliseconds(stop->at - pressed) : -1,
@@ -831,7 +831,7 @@ void heartbeat_under_blocked_command(Rig& rig) {
   rest(rig);
   rig.pump(100ms);
   rig.runtime->reset_timing();
-  bool watchdog = true;
+  bool watchdog_ok = true;
   Result abort;
   double blocked_ms{};
   {
@@ -839,7 +839,7 @@ void heartbeat_under_blocked_command(Rig& rig) {
     const auto started = Clock::now();
     const auto id = rig.post(R"("type":"abort")");
     while (!rig.result(id).has_value() && Clock::now() < started + 20s) {
-      watchdog = watchdog && rig.probe.watchdog_ok();
+      watchdog_ok = watchdog_ok && rig.probe.watchdog_ok();
       std::this_thread::sleep_for(500us);
     }
     blocked_ms = milliseconds(Clock::now() - started);
@@ -850,10 +850,10 @@ void heartbeat_under_blocked_command(Rig& rig) {
   const double period = milliseconds(Runtime::control_period);
   // Stated bound: no control period longer than three, a tenth of the watchdog's timeout.
   check("heartbeat_under_blocked_command",
-        abort.outcome == "timed_out" && blocked_ms > 900 && watchdog && longest < 3 * period,
+        abort.outcome == "timed_out" && blocked_ms > 900 && watchdog_ok && longest < 3 * period,
         std::format("command={} blocked_ms={:.0f} watchdog_ok={} control_periods={} "
                     "longest_period_ms={:.2f} max_jitter_ms={:.2f}",
-                    abort.outcome, blocked_ms, watchdog, timing.control_periods, longest,
+                    abort.outcome, blocked_ms, watchdog_ok, timing.control_periods, longest,
                     longest - period));
   rig.pump(300ms);
 }
@@ -961,11 +961,16 @@ void nml_gate(Rig& rig) {
     missing.nml_file = rig.config.directory + "/no-such-file.nml";
     std::atomic<bool> stop{};
     std::atomic<int> readings{};
+    // Those made while task was stopped and the port waited for it.
+    std::atomic<bool> frozen_now{};
+    std::atomic<int> frozen_readings{};
     std::atomic<int> refused{};
     std::thread status{[&]() -> void {
       while (!stop) {
         static_cast<void>(rig.reader.status());
         ++readings;
+        if (frozen_now)
+          ++frozen_readings;
         if (readings % 50 == 0 && !NmlStatusReader::connect(missing, nullptr))
           ++refused;
       }
@@ -973,15 +978,15 @@ void nml_gate(Rig& rig) {
     int port_refused = 0;
     ActionResult abort;
     ActionResult stopped;
-    int read_while_frozen = 0;
+
     {
       const FrozenTask frozen{rig.config.ini_file};
-      const int before = readings;
+      frozen_now = true;
       abort = rig.port.abort(); // polls the status for the whole echo timeout
       for (int i = 0; i < 5; ++i)
         port_refused += NmlPort::connect(missing, nullptr) ? 0 : 1;
       stopped = rig.port.stop_jog(Axis::x);
-      read_while_frozen = readings - before;
+      frozen_now = false;
     }
     for (const auto end = Clock::now() + 300ms; Clock::now() < end;) {
       rig.control.beat();
@@ -993,11 +998,11 @@ void nml_gate(Rig& rig) {
     status.join();
     check("nml_gate_concurrent_use",
           abort.status == ActionStatus::timed_out && stopped.status == ActionStatus::timed_out &&
-              port_refused == 5 && refused > 0 && read_while_frozen > 100 &&
+              port_refused == 5 && refused > 0 && frozen_readings.load() > 100 &&
               after.status == ActionStatus::accepted && rig.port.snapshot().link == Link::live,
           std::format("abort={} readings_while_port_waited={} reader_error_paths={} "
                       "port_error_paths={} command_after={}",
-                      static_cast<int>(abort.status), read_while_frozen, refused.load(),
+                      static_cast<int>(abort.status), frozen_readings.load(), refused.load(),
                       port_refused, static_cast<int>(after.status)));
   });
 }
@@ -1012,7 +1017,9 @@ void adapter_cancellation(Rig& rig) {
     struct Action {
       std::string name;
       long forbidden; // the command that must not be written once the answer is no
-      std::function<ActionResult(const Wanted&)> act;
+      // Prepares, notes in `from` where the port's trace stands, then acts: what the trace
+      // holds after `from` is the action's own.
+      std::function<ActionResult(const Wanted&, std::size_t&)> act;
       std::function<void()> undo; // after the run that was not cancelled
     };
     const auto mode = [&](TaskMode wanted) -> void {
@@ -1037,14 +1044,16 @@ void adapter_cancellation(Rig& rig) {
     tool.diameter = 1;
     const std::vector<Action> actions{
         {"mdi", types.mdi,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
            mode(TaskMode::mdi);
+           from = rig.port.writes().size();
            return rig.port.mdi("G4 P0.01", wanted);
          },
          rest},
         {"run", types.run,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
            mode(TaskMode::automatic);
+           from = rig.port.writes().size();
            return rig.port.run(wanted);
          },
          [&]() -> void {
@@ -1052,7 +1061,8 @@ void adapter_cancellation(Rig& rig) {
            rest();
          }},
         {"spindle_on", types.spindle_on,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
+           from = rig.port.writes().size();
            return rig.port.set_spindle(SpindleDirection::forward, 500, wanted);
          },
          [&]() -> void {
@@ -1060,9 +1070,10 @@ void adapter_cancellation(Rig& rig) {
          }},
         // Two writes: the mist must not follow a flood that was written before the answer changed.
         {"coolant", types.coolant_mist_on,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
            static_cast<void>(rig.port.set_coolant(false, false, always()));
            rig.direct_pump(250ms);
+           from = rig.port.writes().size();
            return rig.port.set_coolant(true, true, wanted);
          },
          [&]() -> void {
@@ -1071,11 +1082,12 @@ void adapter_cancellation(Rig& rig) {
          }},
         // Two writes: leave world mode, then HOME.
         {"home", types.home,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
            mode(TaskMode::manual);
            static_cast<void>(rig.port.start_jog(Axis::y, 1, 60, JogSpace::axis, always()));
            static_cast<void>(rig.port.stop_jog(Axis::y));
            rest();
+           from = rig.port.writes().size();
            return rig.port.home(Axis::x, wanted);
          },
          [&]() -> void {
@@ -1083,8 +1095,9 @@ void adapter_cancellation(Rig& rig) {
            rest();
          }},
         {"jog_start", types.jog_start,
-         [&](const Wanted& wanted) -> ActionResult {
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
            mode(TaskMode::manual);
+           from = rig.port.writes().size();
            return rig.port.start_jog(Axis::y, 1, 60, JogSpace::axis, wanted);
          },
          [&]() -> void {
@@ -1092,22 +1105,25 @@ void adapter_cancellation(Rig& rig) {
            rest();
          }},
         {"tool_table", types.load_tool_table,
-         [&](const Wanted& wanted) -> ActionResult { return rig.port.set_tool(tool, wanted); },
+         [&](const Wanted& wanted, std::size_t& from) -> ActionResult {
+           from = rig.port.writes().size();
+           return rig.port.set_tool(tool, wanted);
+         },
          [&]() -> void { static_cast<void>(rig.port.remove_tool(9, always())); }},
     };
     for (const auto& action : actions) {
       const std::string table_before = table();
       bool clean = true;
       bool partial_commit = false;
+      std::string half_sent;
       int cancelled = 0;
-      int asked = 0;
       std::string detail;
       for (int deny_at = 1; deny_at < 20; ++deny_at) {
-        asked = 0;
+        int asked = 0;
         const Wanted wanted = [&]() -> bool { return ++asked < deny_at; };
-        const auto from = rig.port.writes().size();
-        const auto result = action.act(wanted);
-        // Everything the attempt wrote, its preparations included.
+        std::size_t from = 0;
+        const auto result = action.act(wanted, from);
+        // Everything the action itself wrote in this attempt.
         const auto writes = written_since(rig, from);
         if (result.status == ActionStatus::accepted) {
           // The port asked fewer times than that: the action went through.
@@ -1126,17 +1142,27 @@ void adapter_cancellation(Rig& rig) {
                   result.reason.find("was changed") != std::string::npos;
           partial_commit = true;
           static_cast<void>(rig.port.remove_tool(9, always()));
+        } else if (!writes.empty()) {
+          // Half sent: not `cancelled`, which would say nothing was written, but `failed` with
+          // what was.
+          clean = clean && result.status == ActionStatus::failed &&
+                  result.reason.find("Cancelled after this was sent") != std::string::npos;
+          half_sent = result.reason;
         } else {
           clean = clean && result.status == ActionStatus::cancelled &&
                   (action.name != "tool_table" || (table() == table_before && !temporary_left));
         }
         clean = clean && !wrote(writes, action.forbidden);
         detail += std::format(" no_at_{}:{}:wrote={}", deny_at, static_cast<int>(result.status),
-                              listed(writes));
+                              trace_text(writes));
       }
-      // The tool table has both sides of its rename among the attempts.
+      // The tool table has both sides of its rename among the attempts; coolant and home an
+      // attempt that stopped between their two commands.
+      const bool two_commands = action.name == "coolant" || action.name == "home";
+      detail += " half_sent_reason=" + word(half_sent);
       check(std::format("adapter_cancels_{}", action.name),
-            clean && cancelled >= 2 && (action.name != "tool_table" || partial_commit),
+            clean && cancelled >= 2 && (action.name != "tool_table" || partial_commit) &&
+                (!two_commands || !half_sent.empty()),
             std::format("forbidden_type={} cancelled_attempts={}{}", action.forbidden, cancelled,
                         detail));
     }
@@ -1176,7 +1202,7 @@ void adapter_cancellation(Rig& rig) {
       const auto writes = written_since(rig, from);
       clean = clean && result.status == ActionStatus::cancelled && writes.empty();
       detail += std::format(" {}={}:wrote={}", action.name, static_cast<int>(result.status),
-                            listed(writes));
+                            trace_text(writes));
     }
     mode(TaskMode::manual);
     check("adapter_cancels_while_waiting_for_the_gate", clean, detail);
@@ -1219,9 +1245,69 @@ void home_withdrawn_in_its_wait(Rig& rig) {
             state.axes[0].homed && !state.axes[0].homing,
         std::format("in_world_mode={} waited_in_type={} teleop_type={} mode_change_taken={} "
                     "home_type={} wrote={} homing={}",
-                    world, waiting.type, types.teleop, taken, types.home, listed(writes),
+                    world, waiting.type, types.teleop, taken, types.home, trace_text(writes),
                     state.axes[0].homing));
   rig.new_page();
+}
+
+// The panel's result for an action that was cancelled between its two commands, through the
+// runtime: flood is on its way when an abort is asked; mist is not sent, and the result says
+// that flood was.
+void half_sent_action_is_reported(Rig& rig) {
+  rest(rig);
+  const auto types = NmlPort::types();
+  static_cast<void>(rig.send(R"("type":"set_coolant","flood":false,"mist":false)"));
+  rig.pump(300ms);
+  const auto from = rig.port.writes().size();
+  const auto coolant = rig.post(R"("type":"set_coolant","flood":true,"mist":true)");
+  // LinuxCNC's io task takes a cycle of 100 ms to finish flood: the abort falls into that wait.
+  const bool flood_written = rig.pump_until(
+      2s, [&]() -> bool { return wrote(written_since(rig, from), types.coolant_flood_on); });
+  const auto abort = rig.post(R"("type":"abort")");
+  const auto result = rig.await(coolant);
+  const auto aborted = rig.await(abort);
+  rig.pump(300ms);
+  const auto writes = written_since(rig, from);
+  const auto status = rig.status();
+  check("half_sent_coolant_is_failed_with_what_was_sent",
+        flood_written && result.outcome == "failed" &&
+            result.reason == "Cancelled after this was sent: flood on. Not sent: mist on." &&
+            aborted.accepted() && !wrote(writes, types.coolant_mist_on) && !status.mist,
+        std::format("{} abort={} wrote={} mist={}", result.text(), aborted.text(),
+                    trace_text(writes), status.mist));
+  static_cast<void>(rig.send(R"("type":"set_coolant","flood":false,"mist":false)"));
+  rig.pump(300ms);
+
+  // Homing: the port leaves world mode, task is stopped in that, an abort is asked. HOME is
+  // not sent, and the result says that the mode change was.
+  static_cast<void>(rig.send(hold_x));
+  rig.hold(hold_x, 100ms);
+  rest(rig);
+  const bool world = rig.status().teleop;
+  const auto home_from = rig.port.writes().size();
+  RequestId home{};
+  RequestId stop{};
+  {
+    const FrozenTask frozen{rig.config.ini_file};
+    home = rig.post(R"("type":"home","axis":"x")");
+    for (const auto end = Clock::now() + 300ms;
+         Clock::now() < end && written_since(rig, home_from).empty();)
+      std::this_thread::sleep_for(200us);
+    stop = rig.post(R"("type":"abort")");
+    std::this_thread::sleep_for(200ms);
+  }
+  const auto homed = rig.await(home);
+  const auto stopped = rig.await(stop);
+  rig.pump(300ms);
+  const auto home_writes = written_since(rig, home_from);
+  check("half_sent_home_is_failed_with_what_was_sent",
+        world && homed.outcome == "failed" &&
+            homed.reason == "Cancelled after this was sent: the change between world and joint "
+                            "mode. The rest of the action was not sent." &&
+            stopped.accepted() && !wrote(home_writes, types.home) && home_writes.size() == 2 &&
+            home_writes.front().type == types.teleop && home_writes.back().type == types.abort,
+        std::format("{} abort={} wrote={} home_type={}", homed.text(), stopped.text(),
+                    trace_text(home_writes), types.home));
 }
 
 // Through the runtime, with the worker held up on its way into libnml: an abort is asked while
@@ -1252,7 +1338,7 @@ void abort_overtakes_what_waits_for_the_gate(Rig& rig) {
             writes.size() == 1 && writes.front().type == types.abort &&
             status.spindle_direction == SpindleDirection::stopped,
         std::format("mdi={} spindle={} abort={} abort_type={} wrote={}", moved.text(), spun.text(),
-                    aborted.text(), types.abort, listed(writes)));
+                    aborted.text(), types.abort, trace_text(writes)));
 }
 
 void mdi(Rig& rig) {
@@ -2070,6 +2156,7 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   program(rig);
   adapter_cancellation(rig);
   home_withdrawn_in_its_wait(rig);
+  half_sent_action_is_reported(rig);
   abort_overtakes_what_waits_for_the_gate(rig);
   tools(rig);
   stale_link(rig);

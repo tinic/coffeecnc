@@ -16,7 +16,9 @@ enum class ActionStatus : std::uint8_t {
   accepted,  // the controller took the command; motion it starts is read from the snapshot
   failed,    // the controller reported an error
   timed_out, // the controller did not answer
-  cancelled, // the caller withdrew the action before its next command was written
+  // The caller withdrew the action and nothing of it was written. An action withdrawn after one
+  // of its commands went out is `failed`, with a reason that says what was sent and what not.
+  cancelled,
 };
 
 struct ActionResult {
@@ -49,10 +51,11 @@ struct ControllerMessage {
 // Cancellation. Every action that is not a stop takes a `Wanted`. An implementation asks it
 // after each step of its own that can block and, last, immediately before each command it
 // writes; an action that writes several commands asks before each. Once the answer is no,
-// nothing further is written and the result is `cancelled`. The actions that only ever stop
-// something take none and cannot be withdrawn: stop_jog and abort; and the stopping values of
-// the others are carried out whatever the answer: E-stop and power off, spindle stop, both
-// coolants off.
+// nothing further is written; the result is `cancelled` when nothing was written at all and
+// `failed`, saying what was sent, when the action was withdrawn half way. The actions that only
+// ever stop something take none and cannot be withdrawn: stop_jog and abort; and the stopping
+// values of the others are carried out whatever the answer: E-stop and power off, spindle stop,
+// both coolants off.
 //
 // What the checks cannot do. The answer can change between the last question and the write:
 // the session does not keep its state locked while a port writes, and its control thread is

@@ -1,5 +1,6 @@
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -16,13 +17,17 @@ struct HalComponent::Pins {
   hal_bit_t* tool_change;
   hal_s32_t* tool_number;
   hal_bit_t* tool_changed;
+  hal_float_t* spindle_rpm;
+  hal_bit_t* spindle_at_speed;
+  hal_bit_t* probe_input;
 };
 
-auto HalComponent::create(const std::string& name) -> std::expected<HalComponent, std::string> {
+auto HalComponent::create(const std::string& name, const HalSignals& wired)
+    -> std::expected<HalComponent, std::string> {
   const int id = hal_init(name.c_str());
   if (id < 0)
     return std::unexpected(std::format("hal_init(\"{}\") failed: {}", name, id));
-  HalComponent component{id, static_cast<Pins*>(hal_malloc(sizeof(Pins)))};
+  HalComponent component{id, static_cast<Pins*>(hal_malloc(sizeof(Pins))), wired};
   auto* pins = component.pins_;
   if (pins == nullptr)
     return std::unexpected(std::string("hal_malloc failed"));
@@ -34,18 +39,22 @@ auto HalComponent::create(const std::string& name) -> std::expected<HalComponent
       !bit("watchdog-ok", HAL_IN, &pins->watchdog_ok) ||
       !bit("tool-change", HAL_IN, &pins->tool_change) ||
       hal_pin_s32_new((name + ".tool-number").c_str(), HAL_IN, &pins->tool_number, id) != 0 ||
-      !bit("tool-changed", HAL_OUT, &pins->tool_changed))
+      !bit("tool-changed", HAL_OUT, &pins->tool_changed) ||
+      hal_pin_float_new((name + ".spindle-rpm").c_str(), HAL_IN, &pins->spindle_rpm, id) != 0 ||
+      !bit("spindle-at-speed", HAL_IN, &pins->spindle_at_speed) ||
+      !bit("probe-input", HAL_IN, &pins->probe_input))
     return std::unexpected(std::format("Creating the HAL pins of {} failed", name));
   if (const int result = hal_ready(id); result != 0)
     return std::unexpected(std::format("hal_ready failed: {}", result));
   return component;
 }
 
-HalComponent::HalComponent(int id, Pins* pins) : id_(id), pins_(pins) {}
+HalComponent::HalComponent(int id, Pins* pins, const HalSignals& wired)
+    : id_(id), pins_(pins), wired_(wired) {}
 
 HalComponent::HalComponent(HalComponent&& other) noexcept
     : id_(std::exchange(other.id_, -1)), pins_(std::exchange(other.pins_, nullptr)),
-      stop_wanted_(other.stop_wanted_), stop_changed_(other.stop_changed_),
+      wired_(other.wired_), stop_wanted_(other.stop_wanted_), stop_changed_(other.stop_changed_),
       enable_changed_(other.enable_changed_) {}
 
 auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
@@ -54,6 +63,7 @@ auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
       hal_exit(id_);
     id_ = std::exchange(other.id_, -1);
     pins_ = std::exchange(other.pins_, nullptr);
+    wired_ = other.wired_;
     stop_wanted_ = other.stop_wanted_;
     stop_changed_ = other.stop_changed_;
     enable_changed_ = other.enable_changed_;
@@ -113,6 +123,25 @@ auto HalComponent::tool_change_request() const -> std::optional<int> {
 void HalComponent::confirm_tool_changed() {
   if (*pins_->tool_change)
     *pins_->tool_changed = true;
+}
+
+auto HalComponent::spindle_rpm() const -> std::optional<double> {
+  const double rpm = *pins_->spindle_rpm;
+  if (!wired_.spindle_rpm || !std::isfinite(rpm))
+    return {};
+  return std::fabs(rpm);
+}
+
+auto HalComponent::spindle_at_speed() const -> std::optional<bool> {
+  if (!wired_.spindle_at_speed)
+    return {};
+  return *pins_->spindle_at_speed != 0;
+}
+
+auto HalComponent::probe_input() const -> std::optional<bool> {
+  if (!wired_.probe)
+    return {};
+  return *pins_->probe_input != 0;
 }
 
 } // namespace coffeecnc

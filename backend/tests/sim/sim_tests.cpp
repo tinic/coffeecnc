@@ -5,6 +5,8 @@
 // Output: one `check=<name> result=pass|fail detail=<text>` line per check, `fact=` lines with
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
+#include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
@@ -86,6 +88,10 @@ auto output_of(const std::string& command) -> std::string {
 }
 
 auto hal_pin(const std::string& pin) -> std::string { return output_of("halcmd getp " + pin); }
+// One halcmd command, such as `sets <signal> <value>` or `setp <pin> <value>`.
+auto halcmd(const std::string& command) -> bool {
+  return std::system(("halcmd " + command).c_str()) == 0;
+}
 auto hal_number(const std::string& pin) -> double { return std::atof(hal_pin(pin).c_str()); }
 
 auto name(Link link) -> std::string_view {
@@ -105,12 +111,15 @@ struct Result {
 class Rig {
 public:
   Rig(const MachineConfig& machine, HalComponent& component, NmlPort& controller)
-      : config(machine), hal(component), port(controller), session(controller, machine.limits),
+      : config(machine), hal(component), port(controller),
+        programs(files, machine.program_prefix), session(controller, machine.limits, programs),
         page(session.begin_page()) {}
 
   MachineConfig config;
   HalComponent& hal;
   NmlPort& port;
+  LocalFileSystem files;
+  ProgramStore programs; // [DISPLAY] PROGRAM_PREFIX of the machine
   Session session;
   PageToken page;
   RequestId next_id{1};
@@ -618,9 +627,16 @@ void program(Rig& rig) {
   const auto paused = [&]() -> bool { return rig.port.status().paused; };
   const auto request = [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); };
 
-  const auto missing = rig.send(R"("type":"open_program","path":"/nonexistent/none.ngc")");
-  check("open_missing_program_fails", missing.outcome == "failed" && !missing.reason.empty(),
+  // The program store decides before LinuxCNC is asked: nothing outside the program directory,
+  // and nothing that is not a file in it.
+  const auto outside = rig.send(R"("type":"open_program","path":"/etc/hostname")");
+  check("open_outside_program_directory_rejected",
+        outside.outcome == "rejected" && !rig.port.snapshot().program_loaded, outside.text());
+  const auto missing = rig.send(R"("type":"open_program","path":"none.ngc")");
+  check("open_missing_program_rejected", missing.outcome == "rejected" && !missing.reason.empty(),
         missing.text());
+  const auto listed = rig.send(R"("type":"list_directory","path":null)");
+  check("list_program_directory", listed.accepted(), listed.text());
   const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
   check("open_program",
         open.accepted() && rig.port.snapshot().program_loaded &&
@@ -803,6 +819,273 @@ void tools(Rig& rig) {
                     absent.text(), loaded.text()));
 }
 
+// The optional input pins exist on every machine; without [COFFEECNC] ..._SIGNAL in the INI file
+// whatever they read is not reported.
+void signals_not_configured(Rig& rig) {
+  const bool driven = halcmd("setp coffeecnc.spindle-rpm 500") &&
+                      halcmd("setp coffeecnc.spindle-at-speed 1") &&
+                      halcmd("setp coffeecnc.probe-input 1");
+  rig.pump(50ms);
+  const auto status = rig.port.status();
+  check("signals_not_configured",
+        driven && hal_number("coffeecnc.spindle-rpm") == 500 && !status.spindle_actual_rpm &&
+            !status.spindle_at_speed && !status.probe_input,
+        std::format("pins_driven={} rpm_pin={}", driven, hal_pin("coffeecnc.spindle-rpm")));
+}
+
+// G0759 profile: the three signals are declared in the INI file and connected by its post-GUI
+// file to the machine's signal names.
+void g0759_signals(Rig& rig) {
+  auto status = rig.port.status();
+  check("signals_at_rest",
+        status.spindle_actual_rpm == 0.0 && status.spindle_at_speed == true &&
+            status.probe_input == false,
+        std::format("rpm={} at_speed={} probe={}", status.spindle_actual_rpm.value_or(-1),
+                    status.spindle_at_speed.value_or(false), status.probe_input.value_or(true)));
+  const bool set = halcmd("sets spindle-vel-fb-rpm-abs 1234.5") &&
+                   halcmd("sets spindle-at-speed 0") && halcmd("sets probe-in 1");
+  rig.pump(50ms);
+  status = rig.port.status();
+  check("signals_report_values",
+        set && status.spindle_actual_rpm == 1234.5 && status.spindle_at_speed == false &&
+            status.probe_input == true,
+        std::format("rpm={} at_speed={} probe={}", status.spindle_actual_rpm.value_or(-1),
+                    status.spindle_at_speed.value_or(true), status.probe_input.value_or(false)));
+  const bool negative = halcmd("sets spindle-vel-fb-rpm-abs -600");
+  rig.pump(50ms);
+  check("spindle_rpm_is_a_magnitude", negative && rig.port.status().spindle_actual_rpm == 600.0);
+  const bool reset = halcmd("sets spindle-vel-fb-rpm-abs 0") && halcmd("sets spindle-at-speed 1") &&
+                     halcmd("sets probe-in 0");
+  rig.pump(50ms);
+  check("signals_reset", reset && rig.port.status().probe_input == false);
+}
+
+auto none_homed(Rig& rig) -> bool {
+  return std::ranges::none_of(rig.port.snapshot().axes,
+                              [](const auto& axis) -> bool { return axis.homed; });
+}
+
+// [TRAJ] NO_FORCE_HOMING = 1: LinuxCNC executes MDI blocks and programs on an unhomed machine.
+void g0759_unhomed(Rig& rig) {
+  check("starts_unhomed", none_homed(rig) && !rig.config.limits.homing_required);
+  fact("unhomed_start", std::format("teleop={}", rig.port.status().teleop));
+
+  const auto move = rig.send(R"("type":"mdi","text":"G21 G90 G54 G0 X2 Y-1")");
+  const bool arrived = rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
+  auto status = rig.port.status();
+  check("mdi_move_unhomed",
+        move.accepted() && arrived && near(status.controller.axes[0].machine, 2) &&
+            near(status.controller.axes[1].machine, -1) && none_homed(rig) &&
+            status.controller.mode == TaskMode::mdi,
+        std::format("{} x={:.3f} y={:.3f} teleop={}", move.text(),
+                    status.controller.axes[0].machine, status.controller.axes[1].machine,
+                    status.teleop));
+
+  const auto touch = rig.send(R"("type":"touch_off","axis":"x","value":10)");
+  rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  status = rig.port.status();
+  check("touch_off_unhomed",
+        touch.accepted() && near(status.work[0], 10) && near(status.g5x[0], -8) && none_homed(rig),
+        std::format("{} work_x={:.3f} g5x_x={:.3f}", touch.text(), status.work[0], status.g5x[0]));
+  const auto g55 = rig.send(R"("type":"select_wcs","wcs":2)");
+  rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  const int second = rig.port.status().wcs;
+  const auto g54 = rig.send(R"("type":"select_wcs","wcs":1)");
+  rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  check("select_wcs_unhomed",
+        g55.accepted() && g54.accepted() && second == 2 && rig.port.status().wcs == 1,
+        std::format("second={} back={}", second, rig.port.status().wcs));
+
+  // LinuxCNC checks MDI targets against the travel limits on an unhomed machine too, in machine
+  // coordinates that then start wherever the machine was switched on.
+  const auto beyond = rig.send(R"("type":"mdi","text":"G1 X1500 F600")");
+  rig.pump(300ms);
+  check("mdi_beyond_travel_fails_unhomed",
+        beyond.outcome == "failed" && beyond.reason.find("exceed") != std::string::npos &&
+            rig.idle(),
+        beyond.text());
+}
+
+// Per-axis jog ceilings: X and Y 1500 mm/min, Z 750 mm/min, and the machine is still unhomed, so
+// every jog is a joint jog.
+void g0759_jogs(Rig& rig) {
+  const auto z_fast =
+      rig.send(R"("type":"jog","axis":"z","direction":1,"velocity":900,"held":true)");
+  check("z_jog_above_axis_ceiling_rejected",
+        z_fast.outcome == "rejected" && z_fast.reason.find("Z axis") != std::string::npos &&
+            z_fast.reason.find("750") != std::string::npos,
+        z_fast.text());
+  const auto z_step = rig.send(R"("type":"jog_step","axis":"z","distance":1,"velocity":751)");
+  check("z_jog_step_above_axis_ceiling_rejected",
+        z_step.outcome == "rejected" && z_step.reason.find("750") != std::string::npos,
+        z_step.text());
+  const auto x_over =
+      rig.send(R"("type":"jog","axis":"x","direction":1,"velocity":1501,"held":true)");
+  check("jog_above_global_ceiling_rejected", x_over.outcome == "rejected", x_over.text());
+
+  constexpr auto fast_x = R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":true)";
+  constexpr auto free_x = R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":false)";
+  const double start = rig.machine(0);
+  const auto pressed = rig.send(fast_x);
+  rig.hold(fast_x, 400ms);
+  const double moving = rig.machine(0);
+  const bool joint_space = !rig.port.status().teleop;
+  const auto released = rig.send(free_x);
+  const bool stopped = rig.pump_until(3s, [&]() -> bool { return rig.idle(); });
+  check("x_jog_at_1500_accepted",
+        pressed.accepted() && released.accepted() && joint_space && stopped &&
+            moving - start > 1.5 && rig.port.snapshot().mode == TaskMode::manual,
+        std::format("{} moved={:.3f} joint_space={}", pressed.text(), moving - start, joint_space));
+
+  const double z0 = rig.machine(2);
+  const auto z_step_ok = rig.send(R"("type":"jog_step","axis":"z","distance":-0.5,"velocity":750)");
+  rig.pump(100ms);
+  const bool z_done = rig.pump_until(3s, [&]() -> bool { return rig.idle(); });
+  check("z_jog_step_at_ceiling",
+        z_step_ok.accepted() && z_done && near(rig.machine(2) - z0, -0.5, 0.001),
+        std::format("{} moved={:.4f}", z_step_ok.text(), rig.machine(2) - z0));
+
+  // What an axis (teleop) jog does on the unhomed machine, without the policy in the way.
+  const double y0 = rig.machine(1);
+  const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::axis);
+  rig.pump(300ms, false);
+  const double y1 = rig.machine(1);
+  const bool teleop = rig.port.status().teleop;
+  static_cast<void>(rig.port.stop_jog(Axis::y));
+  rig.pump_until(3s, [&]() -> bool { return rig.idle(); });
+  fact("unhomed_axis_jog",
+       std::format("status={} reason={} teleop={} moved={:.3f}", static_cast<int>(forced.status),
+                   word(forced.reason), teleop, y1 - y0));
+}
+
+void g0759_limits(Rig& rig) {
+  const auto over = rig.send(R"("type":"set_spindle","direction":"forward","rpm":1501)");
+  check("spindle_above_ceiling_rejected", over.outcome == "rejected", over.text());
+  const auto top = rig.send(R"("type":"set_spindle","direction":"forward","rpm":1500)");
+  rig.pump(100ms);
+  auto status = rig.port.status();
+  const bool runs =
+      status.spindle_direction == SpindleDirection::forward && near(status.spindle_rpm, 1500);
+  const auto stop = rig.send(R"("type":"set_spindle","direction":"stopped","rpm":0)");
+  rig.pump(100ms);
+  check("spindle_at_ceiling",
+        top.accepted() && runs && stop.accepted() &&
+            rig.port.status().spindle_direction == SpindleDirection::stopped,
+        std::format("{} runs={}", top.text(), runs));
+
+  const auto feed = rig.send(R"("type":"set_override","which":"feed","value":2.0)");
+  rig.pump(100ms);
+  const double feed_seen = rig.port.status().feed_override;
+  const auto feed_over = rig.send(R"("type":"set_override","which":"feed","value":2.01)");
+  const auto spindle_over = rig.send(R"("type":"set_override","which":"spindle","value":1.01)");
+  const auto spindle_under = rig.send(R"("type":"set_override","which":"spindle","value":0.49)");
+  const auto spindle_low = rig.send(R"("type":"set_override","which":"spindle","value":0.5)");
+  rig.pump(100ms);
+  status = rig.port.status();
+  check("override_limits",
+        feed.accepted() && near(feed_seen, 2.0, 1e-9) && feed_over.outcome == "rejected" &&
+            spindle_over.outcome == "rejected" && spindle_under.outcome == "rejected" &&
+            spindle_low.accepted() && near(status.spindle_override, 0.5, 1e-9),
+        std::format("feed={} spindle={} {}", feed_seen, status.spindle_override, feed_over.text()));
+  for (const auto which : {"feed", "spindle"})
+    static_cast<void>(
+        rig.send(std::format(R"("type":"set_override","which":"{}","value":1)", which)));
+}
+
+// A program on the unhomed machine, with a change to a tool the table gives no length.
+void g0759_program(Rig& rig) {
+  const std::string file = rig.config.program_prefix + "/coffeecnc_g0759.ngc";
+  {
+    std::ofstream out{file};
+    out << "G21 G90 G54 G49\n" // 1
+           "G0 X12 Y0\n"       // 2
+           "G1 X20 F1200\n"    // 3
+           "T2 M6\n"           // 4
+           "G43\n"             // 5
+           "G1 Y4\n"           // 6
+           "M2\n";             // 7
+  }
+  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  const auto run = rig.send(R"("type":"run")");
+  const bool automatic = rig.port.snapshot().mode == TaskMode::automatic;
+  const bool asked =
+      traced(rig, 30s, [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); });
+  auto status = rig.port.status();
+  check("run_unhomed",
+        open.accepted() && run.accepted() && automatic && asked && none_homed(rig) &&
+            near(status.work[0], 20),
+        std::format("{} {} x={:.3f}", open.text(), run.text(), status.work[0]));
+  check("tool_change_request_t2",
+        status.controller.requested_tool == 2 && status.controller.tool_in_spindle != 2,
+        std::format("requested={} in_spindle={}",
+                    status.controller.requested_tool ? *status.controller.requested_tool : -1,
+                    status.controller.tool_in_spindle));
+  const auto confirmed = rig.send(R"("type":"tool_changed")");
+  const bool finished = traced(rig, 30s, [&]() -> bool {
+    return rig.idle() && !rig.port.status().paused && near(rig.port.status().work[1], 4);
+  });
+  status = rig.port.status();
+  check("tool_without_length_loaded",
+        confirmed.accepted() && finished && status.controller.tool_in_spindle == 2 &&
+            near(status.tool_offset[2], 0, 1e-9) && none_homed(rig),
+        std::format("{} tool={} tool_offset_z={} y={:.3f}", confirmed.text(),
+                    status.controller.tool_in_spindle, status.tool_offset[2], status.work[1]));
+
+  // The length the table lacks is measured: the row gains a Z word.
+  const auto touch = rig.send(R"("type":"tool_touch_off","value":3)");
+  rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  status = rig.port.status();
+  std::ifstream in{rig.config.tool_table};
+  const std::string table{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  check("tool_touch_off_writes_length",
+        touch.accepted() && near(status.work[2], 3) && near(status.tool_offset[2], -3.5) &&
+            table.find("Z-3.5") != std::string::npos,
+        std::format("{} work_z={:.3f} tool_offset_z={:.3f} table={}", touch.text(), status.work[2],
+                    status.tool_offset[2], table));
+}
+
+// No home switches and no HOME_SEARCH_VEL: a joint is homed where it stands.
+void g0759_homing(Rig& rig) {
+  // No joint has a HOME_SEQUENCE. LinuxCNC itself accepts "home all" then, homes nothing and
+  // publishes no message (seen with EMC_JOINT_HOME joint -1 on 2.9.4): the port refuses it.
+  const auto all = rig.send(R"("type":"home","axis":"all")");
+  check("home_all_without_sequence_fails",
+        all.outcome == "failed" && all.reason.find("HOME_SEQUENCE") != std::string::npos &&
+            none_homed(rig) && !rig.config.home_all_configured,
+        all.text());
+  bool each = true;
+  for (const auto axis : {"x", "y", "z"}) {
+    const auto home = rig.send(std::format(R"("type":"home","axis":"{}")", axis));
+    each = each && home.accepted();
+    rig.pump(300ms);
+  }
+  const bool homed = rig.pump_until(5s, [&]() -> bool {
+    return std::ranges::all_of(rig.port.snapshot().axes,
+                               [](const auto& axis) -> bool { return axis.homed && !axis.homing; });
+  });
+  rig.pump(300ms);
+  const auto status = rig.port.status();
+  // The present position becomes HOME (0): machine coordinates change without motion.
+  check("home_each_axis",
+        each && homed && status.teleop && near(status.controller.axes[0].machine, 0),
+        std::format("homed={} teleop={} x={:.3f} y={:.3f} z={:.3f}", homed, status.teleop,
+                    status.controller.axes[0].machine, status.controller.axes[1].machine,
+                    status.controller.axes[2].machine));
+
+  constexpr auto fast_y = R"("type":"jog","axis":"y","direction":1,"velocity":1500,"held":true)";
+  constexpr auto free_y = R"("type":"jog","axis":"y","direction":1,"velocity":1500,"held":false)";
+  const double start = rig.machine(1);
+  const auto pressed = rig.send(fast_y);
+  rig.hold(fast_y, 400ms);
+  const double moving = rig.machine(1);
+  const bool world = rig.port.status().teleop;
+  const auto released = rig.send(free_y);
+  const bool stopped = rig.pump_until(3s, [&]() -> bool { return rig.idle(); });
+  check("axis_jog_after_homing",
+        pressed.accepted() && released.accepted() && world && stopped && moving - start > 1.5,
+        std::format("{} moved={:.3f} teleop={}", pressed.text(), moving - start, world));
+}
+
 void stale_link(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"jog_stop_all")"));
   const bool live = rig.port.snapshot().link == Link::live;
@@ -836,7 +1119,34 @@ void power_off(Rig& rig) {
   rig.session.end_page(rig.page);
 }
 
-auto run(const std::string& ini_file) -> int {
+void sim_config(const MachineConfig& config) {
+  check("config_limits", near(config.limits.max_jog_velocity, 1800, 0.01) &&
+                             near(config.limits.max_axis_jog_velocity[2], 1800, 0.01) &&
+                             near(config.limits.max_feed_override, 1.5) &&
+                             near(config.limits.max_spindle_rpm, 12000) &&
+                             near(config.travel[2].min, -50) && config.limits.homing_required &&
+                             config.home_all_configured && config.jog_increments.empty() &&
+                             !config.signals.spindle_rpm && !config.signals.spindle_at_speed &&
+                             !config.signals.probe);
+}
+
+void g0759_config(const MachineConfig& config) {
+  const std::vector<double> increments{5, 1, 0.5, 0.1, 0.05, 0.01, 0.005};
+  check("config_limits",
+        config.machine_units == LengthUnit::mm && near(config.limits.max_jog_velocity, 1500) &&
+            near(config.limits.max_axis_jog_velocity[0], 1500) &&
+            near(config.limits.max_axis_jog_velocity[1], 1500) &&
+            near(config.limits.max_axis_jog_velocity[2], 750) &&
+            near(config.limits.max_feed_override, 2.0) &&
+            near(config.limits.min_spindle_override, 0.5) &&
+            near(config.limits.max_spindle_override, 1.0) &&
+            near(config.limits.max_spindle_rpm, 1500) && !config.limits.homing_required &&
+            near(config.travel[0].min, -1000) && near(config.travel[2].max, 1000) &&
+            config.jog_increments == increments && config.signals.spindle_rpm &&
+            config.signals.spindle_at_speed && config.signals.probe);
+}
+
+auto run(const std::string& ini_file, bool g0759) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -848,12 +1158,12 @@ auto run(const std::string& ini_file) -> int {
                              config->millimetres_per_unit, config->limits.max_jog_velocity,
                              config->limits.max_feed_override, config->limits.min_spindle_override,
                              config->limits.max_spindle_override, config->limits.max_spindle_rpm));
-  check("config_limits", near(config->limits.max_jog_velocity, 1800, 0.01) &&
-                             near(config->limits.max_feed_override, 1.5) &&
-                             near(config->limits.max_spindle_rpm, 12000) &&
-                             near(config->travel[2].min, -50));
+  if (g0759)
+    g0759_config(*config);
+  else
+    sim_config(*config);
 
-  auto hal = HalComponent::create();
+  auto hal = HalComponent::create("coffeecnc", config->signals);
   check("hal_component", hal.has_value(), hal ? "coffeecnc" : hal.error());
   if (!hal)
     return 1;
@@ -869,6 +1179,19 @@ auto run(const std::string& ini_file) -> int {
   Rig rig{*config, *hal, **port};
   rig.pump(300ms);
   power(rig);
+  if (g0759) {
+    g0759_signals(rig);
+    g0759_unhomed(rig);
+    g0759_jogs(rig);
+    g0759_limits(rig);
+    g0759_program(rig);
+    g0759_homing(rig);
+    power_off(rig);
+    for (const auto& message : rig.messages)
+      fact("operator_message", "text=" + word(message));
+    return failures == 0 ? 0 : 1;
+  }
+  signals_not_configured(rig);
   unhomed(rig);
   homing(rig);
   axis_jogs(rig);
@@ -889,14 +1212,19 @@ auto run(const std::string& ini_file) -> int {
 
 auto main(int argc, char** argv) -> int {
   std::string ini_file;
-  for (int i = 1; i + 1 < argc; ++i)
-    if (std::string_view(argv[i]) == "-ini")
+  bool g0759 = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
+    // The scenario for run.sh -p g0759.
+    g0759 = g0759 || std::string_view(argv[i]) == "g0759";
+  }
   int code = 1;
   try {
     if (ini_file.empty())
-      throw std::runtime_error("usage: coffeecnc_sim_tests -ini <file> (see tests/sim/run.sh)");
-    code = run(ini_file);
+      throw std::runtime_error(
+          "usage: coffeecnc_sim_tests -ini <file> [g0759] (see tests/sim/run.sh)");
+    code = run(ini_file, g0759);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

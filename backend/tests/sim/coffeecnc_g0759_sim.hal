@@ -1,0 +1,31 @@
+# Simulated motion for the G0759-shaped mill: the commanded position is the feedback. Stands in
+# for the machine's main HAL files and loads none of their hardware drivers.
+
+loadrt [KINS]KINEMATICS
+loadrt [EMCMOT]EMCMOT servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
+addf motion-command-handler servo-thread
+addf motion-controller servo-thread
+
+# The logic components the machine loads, as it loads them. A realtime module loads once, so
+# CoffeeCNC's post-GUI file must not load either of them again.
+loadrt not count=3
+loadrt limit1 count=1
+addf not.0 servo-thread
+addf not.1 servo-thread
+addf not.2 servo-thread
+addf limit1.0 servo-thread
+
+net x-pos-cmd joint.0.motor-pos-cmd => joint.0.motor-pos-fb
+net y-pos-cmd joint.1.motor-pos-cmd => joint.1.motor-pos-fb
+net z-pos-cmd joint.2.motor-pos-cmd => joint.2.motor-pos-fb
+
+# No external E-stop input here.
+net estop-out iocontrol.0.user-enable-out => iocontrol.0.emc-enable-in
+
+# The machine's signals for measured spindle speed, at-speed and the probe, without the encoder
+# and input hardware that drives them: a test sets them with `halcmd sets`. The spindle counts
+# as at speed until then.
+newsig spindle-vel-fb-rpm-abs float
+net spindle-at-speed => spindle.0.at-speed
+sets spindle-at-speed TRUE
+net probe-in => motion.probe-input

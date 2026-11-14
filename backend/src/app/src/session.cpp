@@ -1,5 +1,7 @@
 #include <coffeecnc/app/session.hpp>
 
+#include <coffeecnc/app/messages.hpp>
+
 #include <array>
 #include <charconv>
 #include <cstddef>
@@ -52,7 +54,8 @@ auto length(double millimetres, const ControllerState& state) -> std::string {
 
 } // namespace
 
-Session::Session(ControllerPort& port, const Limits& limits) : port_(port), policy_(limits) {}
+Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs)
+    : port_(port), programs_(programs), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -115,6 +118,9 @@ auto Session::handle(PageToken page, std::string_view json, Instant now) -> Outc
     ready_ = true;
     outcome.send_snapshots = true;
   }
+  for (auto& message : produced_)
+    outcome.messages.push_back(std::move(message));
+  produced_.clear();
   outcome.messages.push_back(encode_result(request.id, answer.outcome, answer.reason));
   report(outcome, now);
   return outcome;
@@ -201,8 +207,7 @@ auto Session::perform(const Command& command, const Decision& decision,
         if constexpr (std::is_same_v<T, Ready>) {
           return {};
         } else if constexpr (std::is_same_v<T, ListDirectory>) {
-          // Not a controller action; the program store of a later increment answers it.
-          return Reply{CommandOutcome::rejected, "Directory listing is not available yet."};
+          return list_directory(c);
         } else if constexpr (std::is_same_v<T, SetMachine>) {
           // E-stop and power-off go out first; stops for held jogs follow.
           auto result = port_.set_machine_state(c.state);
@@ -222,7 +227,12 @@ auto Session::perform(const Command& command, const Decision& decision,
         } else if constexpr (std::is_same_v<T, Mdi>) {
           return mdi(c.text);
         } else if constexpr (std::is_same_v<T, OpenProgram>) {
-          return reply(port_.open_program(c.path));
+          // LinuxCNC gets the resolved path. It opens the file itself, later: a path that is
+          // changed between this check and that open is not caught here.
+          const auto file = programs_.resolve_program(c.path);
+          if (!file)
+            return Reply{CommandOutcome::rejected, file.error()};
+          return reply(port_.open_program(*file));
         } else if constexpr (std::is_same_v<T, Run>) {
           return reply(port_.run());
         } else if constexpr (std::is_same_v<T, Pause>) {
@@ -320,6 +330,18 @@ auto Session::stop_all() -> ActionResult {
   return result;
 }
 
+// Not a controller action: nothing is sent to LinuxCNC.
+auto Session::list_directory(const ListDirectory& request) -> Reply {
+  const auto directory = programs_.list(request.path);
+  if (!directory)
+    return {CommandOutcome::rejected, directory.error()};
+  auto message = encode_directory(*directory);
+  if (!message)
+    return {CommandOutcome::rejected, "Directory cannot be sent: " + message.error()};
+  produced_.push_back(std::move(*message)); // `truncated` in it tells the panel of a cut listing.
+  return {};
+}
+
 auto Session::mdi(const std::string& text) -> Reply {
   if (text.size() > max_mdi_bytes)
     return {CommandOutcome::rejected, "MDI requires one block of at most 254 bytes."};
@@ -362,6 +384,9 @@ void Session::report(Outcome& outcome, Instant now) {
   for (const auto& problem : problems_)
     outcome.messages.push_back(encode_message(MessageLevel::error, problem, now.unix_time));
   problems_.clear();
+  for (const auto& notice : notices_)
+    outcome.messages.push_back(encode_message(MessageLevel::info, notice, now.unix_time));
+  notices_.clear();
 }
 
 } // namespace coffeecnc

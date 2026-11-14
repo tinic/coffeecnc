@@ -1,0 +1,123 @@
+# A simulated mill with the values of the G0759's INI file that CoffeeCNC acts on (see
+# docs/machines/g0759.md). No hardware: none of the machine's drivers are loaded, and
+# coffeecnc_g0759_sim.hal loops the commanded position back as feedback.
+# tests/sim/run.sh -p g0759 fills in @DISPLAY@.
+
+[EMC]
+VERSION = 1.1
+MACHINE = CoffeeCNC-sim-G0759
+DEBUG = 0
+
+[DISPLAY]
+# LinuxCNC starts this program and shuts down when it exits.
+DISPLAY = @DISPLAY@
+CYCLE_TIME = 0.100
+MAX_FEED_OVERRIDE = 2.000000
+MAX_SPINDLE_OVERRIDE = 1.000000
+MIN_SPINDLE_OVERRIDE = 0.500000
+INCREMENTS = 5mm 1mm .5mm .1mm .05mm .01mm .005mm
+DEFAULT_LINEAR_VELOCITY = 6.000000
+MAX_LINEAR_VELOCITY = 25.000000
+MIN_LINEAR_VELOCITY = 0.500000
+PROGRAM_PREFIX = nc_files
+
+# CoffeeCNC's own settings. The machine keeps its spindle ceiling in a key of its VFD component,
+# which CoffeeCNC does not read. The three signals are connected in coffeecnc_g0759_postgui.hal.
+[COFFEECNC]
+MAX_SPINDLE_RPM = 1500
+SPINDLE_RPM_SIGNAL = yes
+SPINDLE_AT_SPEED_SIGNAL = yes
+PROBE_SIGNAL = yes
+
+[TASK]
+TASK = milltask
+CYCLE_TIME = 0.010
+
+[RS274NGC]
+PARAMETER_FILE = sim.var
+
+[EMCMOT]
+EMCMOT = motmod
+COMM_TIMEOUT = 1.0
+SERVO_PERIOD = 1000000
+
+[HAL]
+HALUI = halui
+HALFILE = coffeecnc_g0759_sim.hal
+# Run by the DISPLAY program once its HAL component exists.
+POSTGUI_HALFILE = coffeecnc_g0759_postgui.hal
+
+[HALUI]
+
+[KINS]
+JOINTS = 3
+KINEMATICS = trivkins coordinates=XYZ
+
+[TRAJ]
+COORDINATES =  XYZ
+LINEAR_UNITS = mm
+ANGULAR_UNITS = degree
+DEFAULT_LINEAR_VELOCITY = 2.50
+MAX_LINEAR_VELOCITY = 25.00
+NO_FORCE_HOMING = 1
+
+[EMCIO]
+EMCIO = io
+CYCLE_TIME = 0.100
+TOOL_TABLE = tool.tbl
+
+[AXIS_X]
+MAX_VELOCITY = 25.0
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+
+# No HOME_SEARCH_VEL: homing a joint takes its present position as HOME, without motion.
+[JOINT_0]
+TYPE = LINEAR
+HOME = 0.0
+FERROR = 10.0
+MIN_FERROR = 1.0
+MAX_VELOCITY = 25.0
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+HOME_OFFSET = 0.0
+
+[AXIS_Y]
+MAX_VELOCITY = 25.0
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+
+[JOINT_1]
+TYPE = LINEAR
+HOME = 0.0
+FERROR = 10.0
+MIN_FERROR = 1.0
+MAX_VELOCITY = 25.0
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+HOME_OFFSET = 0.0
+
+[AXIS_Z]
+MAX_VELOCITY = 12.5
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+
+[JOINT_2]
+TYPE = LINEAR
+HOME = 0.0
+FERROR = 10.0
+MIN_FERROR = 1.0
+MAX_VELOCITY = 12.5
+MAX_ACCELERATION = 50.0
+MIN_LIMIT = -1000.0
+MAX_LIMIT = 1000.0
+HOME_OFFSET = 0.0
+
+# Speed loop settings of the machine. Not a spindle speed ceiling: MAX_OUTPUT limits a PID.
+[SPINDLE_0]
+MAX_OUTPUT = 2000

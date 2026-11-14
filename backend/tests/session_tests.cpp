@@ -1,5 +1,7 @@
 #include <coffeecnc/app/session.hpp>
 
+#include "fake_file_system.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -34,6 +36,8 @@ void require(bool condition, const std::string& message) {
 
 constexpr auto gate_reason = "Panel has not finished loading.";
 constexpr auto epoch = 1700000000000ms;
+constexpr auto program_directory = "/home/cnc/nc_files";
+constexpr auto outside_reason = "Path is outside the program directory.";
 
 auto at(std::chrono::milliseconds elapsed) -> Instant {
   return {JogLease::Time{} + elapsed, epoch + elapsed};
@@ -181,17 +185,23 @@ auto results(const Outcome& outcome) -> std::vector<Json> {
   return found;
 }
 
-// A session with one page that has sent `ready`, on a homed, idle machine in manual mode.
+// A session with one page that has sent `ready`, on a homed, idle machine in manual mode, with a
+// program directory that holds one program and one directory.
 struct Rig {
   FakePort port;
+  FakeFileSystem files;
+  ProgramStore programs{files, program_directory};
   Session session;
   PageToken page;
   RequestId next_id{1};
   std::chrono::milliseconds clock{};
 
-  explicit Rig(bool ready = true)
-      : session(port, Limits{3000, 1.2, 0.5, 1.2, 24000}), page(session.begin_page()) {
+  explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000})
+      : session(port, limits, programs), page(session.begin_page()) {
     port.state = homed_machine();
+    files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
+    files.directory("/home/cnc/nc_files/fixtures", 1700000000000);
+    files.file("/etc/passwd", "root:x:0:0\n");
     if (ready)
       static_cast<void>(send(R"("type":"ready")"));
     port.calls.clear();
@@ -230,7 +240,9 @@ constexpr auto release_x = R"("type":"jog","axis":"x","direction":1,"velocity":6
 void stale_pages_are_dropped() {
   FakePort port;
   port.state = homed_machine();
-  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}};
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
   const auto ready = R"({"id":1,"type":"ready"})";
   require(session.handle(PageToken{}, ready, at(0ms)).messages.empty() &&
               session.handle(PageToken{1}, ready, at(0ms)).messages.empty(),
@@ -349,6 +361,27 @@ void policy_rejections_pass_through() {
              "Feed override is out of range.");
   rig.acted({}, "A rejected request sends nothing to the controller");
   require(rig.port.snapshots == 5, "Every request is judged on a fresh snapshot");
+}
+
+// A machine that does not force homing and has a slower Z: the session acts on its limits.
+void machine_capabilities() {
+  Rig rig{true, Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false}};
+  for (auto& axis : rig.port.state.axes)
+    axis.homed = false;
+  rig.accepted(R"("type":"mdi","text":"G0 X1")");
+  rig.acted({"set_task_mode mdi", "mdi G0 X1"}, "Unhomed MDI is sent where homing is not forced");
+  rig.accepted(R"("type":"touch_off","axis":"x","value":2.5)");
+  rig.acted({"mdi G10 L20 P0 X2.5"}, "Unhomed touch-off is sent");
+  rig.accepted(R"("type":"run")");
+  rig.acted({"set_task_mode auto", "run"}, "An unhomed run is sent");
+  rig.expect(R"("type":"jog","axis":"z","direction":1,"velocity":900,"held":true)", "rejected",
+             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  rig.expect(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)", "rejected",
+             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  rig.acted({}, "A jog above its axis ceiling sends nothing");
+  rig.accepted(R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":true)");
+  rig.acted({"set_task_mode manual", "start_jog x 1 1500 joint"},
+            "An unhomed jog within its ceiling is a joint jog");
 }
 
 void mode_switching() {
@@ -474,13 +507,130 @@ void every_action() {
     rig.accepted(row.body);
     rig.acted(row.calls, "Controller action for: " + std::string(row.body));
   }
-
-  Rig rig;
-  rig.expect(R"("type":"list_directory","path":null)", "rejected",
-             "Directory listing is not available yet.");
-  rig.acted({}, "Directory listing is not a controller action");
 }
 
+void directory_listing() {
+  Rig rig;
+  const auto listed = rig.send(R"("type":"list_directory","path":null)");
+  require(listed.messages.size() == 2, "A listing is a directory and its result");
+  require(Json::parse(listed.messages.at(0)) == Json{{"type", "directory"},
+                                                     {"path", program_directory},
+                                                     {"parent", nullptr},
+                                                     {"entries",
+                                                      {{{"name", "fixtures"},
+                                                        {"kind", "directory"},
+                                                        {"bytes", 0},
+                                                        {"modified", 1700000000000}},
+                                                       {{"name", "part.ngc"},
+                                                        {"kind", "file"},
+                                                        {"bytes", 9},
+                                                        {"modified", 1700000123456}}}},
+                                                     {"truncated", false}},
+          "A null path lists the program directory: " + listed.messages.at(0));
+  require(Json::parse(listed.messages.at(1)) ==
+              Json{{"type", "result"}, {"id", 2}, {"outcome", "accepted"}, {"reason", ""}},
+          "The accepted result follows the directory");
+  rig.acted({}, "Directory listing is not a controller action");
+
+  for (const auto* path : {"fixtures", "/home/cnc/nc_files/fixtures", "fixtures/../fixtures/"}) {
+    const auto below = rig.send(std::format(R"("type":"list_directory","path":"{}")", path));
+    require(below.messages.size() == 2, "A directory below the root lists");
+    const auto directory = Json::parse(below.messages.front());
+    require(directory.at("path") == "/home/cnc/nc_files/fixtures" &&
+                directory.at("parent") == program_directory && directory.at("entries").empty(),
+            std::string("Resolved path and parent for: ") + path);
+  }
+
+  rig.files.link("/home/cnc/nc_files/escape", "/etc");
+  rig.files.directory("/home/cnc/nc_files/locked");
+  rig.files.unreadable.emplace_back("/home/cnc/nc_files/locked");
+  rig.files.calls.clear();
+  rig.expect(R"("type":"list_directory","path":"..")", "rejected", outside_reason);
+  rig.expect(R"("type":"list_directory","path":"/etc")", "rejected", outside_reason);
+  rig.expect(R"("type":"list_directory","path":"escape")", "rejected", outside_reason);
+  rig.expect(R"("type":"list_directory","path":"/home/cnc/nc_files/escape")", "rejected",
+             outside_reason);
+  for (const auto& call : rig.files.calls)
+    require(!call.starts_with("names "), "A refused directory is not read: " + call);
+  rig.expect(R"("type":"list_directory","path":"missing")", "rejected",
+             "Path is not available: No such file or directory");
+  rig.expect(R"("type":"list_directory","path":"part.ngc")", "rejected",
+             "Path is not a directory.");
+  rig.expect(R"("type":"list_directory","path":"locked")", "rejected",
+             "Directory cannot be read: Permission denied");
+  rig.acted({}, "A refused listing is not a controller action either");
+
+  // The listing does not need the machine.
+  rig.port.state.link = Link::down;
+  rig.port.state.machine = MachineState::estop;
+  require(rig.send(R"("type":"list_directory","path":null)").messages.size() == 2,
+          "The program directory lists without a controller link");
+  rig.port.state = homed_machine();
+
+  // A listing that was cut says so in the directory message itself.
+  for (std::size_t i = 0; i < ProgramStore::max_directory_entries + 1; ++i)
+    rig.files.file(std::format("/home/cnc/nc_files/many/{}.ngc", i), "");
+  rig.clock = 40ms;
+  const auto cut = rig.send(R"("type":"list_directory","path":"many")");
+  require(cut.messages.size() == 2, "A truncated listing is a directory and its result");
+  const auto listing = Json::parse(cut.messages.at(0));
+  require(listing.at("entries").size() == ProgramStore::max_directory_entries &&
+              listing.at("truncated") == true &&
+              Json::parse(cut.messages.at(1)).at("outcome") == "accepted",
+          "The directory message carries the truncation: " + cut.messages.at(1));
+
+  Rig loading{false};
+  loading.expect(R"("type":"list_directory","path":null)", "rejected", gate_reason);
+  require(loading.files.calls.empty(), "Nothing is read before ready");
+}
+
+void program_paths() {
+  Rig rig;
+  for (const auto* path : {"part.ngc", "/home/cnc/nc_files/part.ngc", "fixtures/../part.ngc",
+                           "/home/cnc/nc_files/./fixtures/../part.ngc"}) {
+    rig.accepted(std::format(R"("type":"open_program","path":"{}")", path));
+    rig.acted({"open_program /home/cnc/nc_files/part.ngc"},
+              std::string("LinuxCNC gets the resolved absolute path for: ") + path);
+  }
+  rig.files.link("/home/cnc/nc_files/alias.ngc", "/home/cnc/nc_files/part.ngc");
+  rig.accepted(R"("type":"open_program","path":"alias.ngc")");
+  rig.acted({"open_program /home/cnc/nc_files/part.ngc"}, "A link inside the root is its target");
+
+  rig.files.link("/home/cnc/nc_files/escape.ngc", "/etc/passwd");
+  rig.files.link("/home/cnc/nc_files/escape", "/etc");
+  const std::string long_path = "/home/cnc/nc_files/" + std::string(236, 'n');
+  rig.files.file(long_path, "M2\n");
+  rig.files.link("/home/cnc/nc_files/long.ngc", long_path);
+  require(long_path.size() == 255, "The long program path is one byte too long");
+  const std::vector<std::pair<std::string, std::string>> rows{
+      {"/etc/passwd", outside_reason},
+      {"../../../etc/passwd", outside_reason},
+      {"fixtures/../../secret.ngc", "Path is not available: No such file or directory"},
+      {"escape.ngc", outside_reason},
+      {"escape/passwd", outside_reason},
+      {"/home/cnc/nc_files/escape/passwd", outside_reason},
+      {"fixtures", "Path is not a regular file."},
+      {"/home/cnc/nc_files", "Path is not a regular file."},
+      {"missing.ngc", "Path is not available: No such file or directory"},
+      {"long.ngc", "Program path is longer than 254 bytes."},
+  };
+  for (const auto& [path, reason] : rows) {
+    rig.expect(std::format(R"("type":"open_program","path":"{}")", path), "rejected", reason);
+    rig.acted({}, "A refused path does not reach LinuxCNC: " + path);
+  }
+
+  // The policy's rules come first and are unchanged.
+  rig.port.state.interp = InterpState::reading;
+  rig.expect(R"("type":"open_program","path":"part.ngc")", "rejected",
+             "Stop execution before replacing the program.");
+  rig.acted({}, "A running program is not replaced");
+  rig.port.state = homed_machine();
+  rig.port.script["open_program"] = {{ActionStatus::failed, "File not open."}};
+  rig.expect(R"("type":"open_program","path":"part.ngc")", "failed", "File not open.");
+  rig.acted({"open_program /home/cnc/nc_files/part.ngc"}, "LinuxCNC's own refusal is `failed`");
+}
+
+// The constructor the LinuxCNC simulation tests use.
 void composed_mdi() {
   const std::array<std::string_view, 9> words{"G54", "G55",   "G56",   "G57",  "G58",
                                               "G59", "G59.1", "G59.2", "G59.3"};
@@ -969,8 +1119,11 @@ void exactly_one_result(std::uint32_t seed) {
     ready = ready || outcome.send_snapshots;
     for (const auto& text : outcome.messages)
       if (const auto message = Json::parse(text); message.at("type") != "result")
-        require(message.at("type") == "message" && message.at("level") == "error",
-                "Anything besides the result is an operator error");
+        require((message.at("type") == "message" && message.at("level") == "error") ||
+                    (message.at("type") == "directory" && body == bodies.at(11) &&
+                     verdict == "accepted" && text == outcome.messages.front()),
+                "Besides the result: operator errors, and the directory an accepted listing "
+                "asked for, before its result");
     ++answered;
   }
   require(
@@ -989,9 +1142,12 @@ auto main(int argc, char** argv) -> int {
     ids_strictly_increase();
     decode_errors();
     policy_rejections_pass_through();
+    machine_capabilities();
     mode_switching();
     outcome_mapping();
     every_action();
+    directory_listing();
+    program_paths();
     composed_mdi();
     jog_presses_and_refreshes();
     jog_failures();

@@ -400,8 +400,12 @@ auto NmlPort::status() -> NmlStatus {
   c.in_position = !moving;
   c.program_loaded = task.file[0] != '\0';
   c.tool_in_spindle = s->io.tool.toolInSpindle;
-  if (impl_->hal != nullptr)
+  if (impl_->hal != nullptr) {
     c.requested_tool = impl_->hal->tool_change_request();
+    out.spindle_actual_rpm = impl_->hal->spindle_rpm();
+    out.spindle_at_speed = impl_->hal->spindle_at_speed();
+    out.probe_input = impl_->hal->probe_input();
+  }
   c.program_units = task.programUnits == CANON_UNITS_INCHES ? LengthUnit::inch : LengthUnit::mm;
 
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
@@ -491,6 +495,11 @@ auto NmlPort::set_task_mode(TaskMode mode) -> ActionResult {
 }
 
 auto NmlPort::home(std::optional<Axis> axis) -> ActionResult {
+  // Motion homes only joints with a HOME_SEQUENCE on "home all" and says nothing about the rest:
+  // without one the command would be accepted and do nothing.
+  if (!axis && !impl_->config.home_all_configured)
+    return failed("Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home "
+                  "each axis.");
   const auto from = impl_->mark();
   // Task homes joints, and only in joint mode; a homed machine is in world mode.
   if (auto joint_mode = impl_->teleop(false, from); !accepted(joint_mode))

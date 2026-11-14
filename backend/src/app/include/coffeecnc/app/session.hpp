@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_SESSION_HPP
 #define COFFEECNC_APP_SESSION_HPP
 
+#include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/core/command_policy.hpp>
@@ -34,22 +35,30 @@ struct Outcome {
   // The page the messages are for. The caller posts them only while this is still the page it
   // shows: replies queued across a reload must not reach the next page.
   PageToken page;
-  // Protocol v1 JSON for that page, in order.
+  // Protocol v1 JSON for that page, in order. A `directory` precedes the result of the
+  // `list_directory` that asked for it; when that listing is truncated, an `info` message saying
+  // so follows the result.
   std::vector<std::string> messages;
   // The page sent `ready`: send hello, the tool table, the program and status.
   bool send_snapshots{};
 };
 
 // The single owner of request handling: page generations, the ready gate, request identity,
-// policy, mode switching, controller actions and jog leases. Every request that is executed or
-// rejected gets exactly one CommandResult; stale, duplicate and replayed requests get none.
+// policy, mode switching, controller actions, the program directory and jog leases. Every request
+// that is executed or rejected gets exactly one CommandResult; stale, duplicate and replayed
+// requests get none.
+//
+// `list_directory` is answered from the program store, not the controller. `open_program` reaches
+// the controller only with a path the store resolved: a regular file inside the program
+// directory; anything else is `rejected`.
 //
 // Pure logic: no threads, no I/O, time passed in. NOT thread-safe: every member must be called
 // from one thread. The port blocks in a live build, so a later increment moves it to a worker.
 class Session {
 public:
-  // The port must outlive the session. Throws std::invalid_argument for invalid limits.
-  Session(ControllerPort& port, const Limits& limits);
+  // The port and the store must outlive the session. Throws std::invalid_argument for invalid
+  // limits.
+  Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs);
 
   // Call on every page load. Stops held jogs and forgets the previous page's ready and ID state;
   // messages carrying an earlier token are dropped from here on.
@@ -91,12 +100,14 @@ private:
   [[nodiscard]] auto stop_all() -> ActionResult;
   [[nodiscard]] auto tracked_stop(std::size_t index) -> ActionResult;
   [[nodiscard]] auto mdi(const std::string& text) -> Reply;
+  [[nodiscard]] auto list_directory(const ListDirectory& request) -> Reply;
   void stop(const JogLease::Stops& stops);
   void stop_if_held(Axis axis);
   void cancel_jogs();
   void report(Outcome& outcome, Instant now);
 
   ControllerPort& port_;
+  const ProgramStore& programs_;
   CommandPolicy policy_;
   JogLease leases_;
   // Meaningful only while the axis has an active lease.
@@ -110,6 +121,10 @@ private:
   bool ready_{};
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;
+  // Messages the request in hand produced besides its result: sent before it.
+  std::vector<std::string> produced_;
+  // For the operator, about a request that was accepted: sent after its result.
+  std::vector<std::string> notices_;
 };
 
 } // namespace coffeecnc

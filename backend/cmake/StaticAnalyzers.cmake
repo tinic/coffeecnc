@@ -11,6 +11,6 @@ function(coffeecnc_enable_analyzers target)
   if(COFFEECNC_ENABLE_ANALYZERS)
     set_target_properties(${target} PROPERTIES
       CXX_CLANG_TIDY "${COFFEECNC_CLANG_TIDY};--warnings-as-errors=*"
-      CXX_CPPCHECK "${COFFEECNC_CPPCHECK};--enable=warning,style,performance,portability;--error-exitcode=2;--std=c++20;--suppress=missingIncludeSystem")
+      CXX_CPPCHECK "${COFFEECNC_CPPCHECK};--enable=warning,style,performance,portability;--error-exitcode=2;--std=c++20;--suppress=missingIncludeSystem;--suppress=normalCheckLevelMaxBranches")
   endif()
 endfunction()

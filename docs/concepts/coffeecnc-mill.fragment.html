@@ -1,0 +1,217 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=IBM+Plex+Mono:wght@400;450;500&display=swap');
+#coffeecnc-mill { --em-bg:light-dark(#f5f6f7,#17191b); --em-panel:light-dark(#ffffff,#202326); --em-canvas:light-dark(#edf0f2,#1b1e21); --em-text:light-dark(#20272c,#edf0f2); --em-muted:light-dark(#68747d,#a0aab3); --em-line:light-dark(#dce1e5,#343a40); --em-soft:light-dark(#e8edf0,#2b3035); --em-accent:#377ef2; --em-good:light-dark(#187957,#78d7b3); --em-red:light-dark(#ba393d,#f28d8d); --em-metal:light-dark(#cdd5db,#78838d); --em-metal-side:light-dark(#aab5bf,#525f6b); --em-metal-dark:light-dark(#8997a2,#3a4650); --em-pocket:light-dark(#748591,#303b43); --em-jaw:light-dark(#bec7cd,#414c54); --em-radius:12px; color:var(--em-text); font-family:'DM Sans',sans-serif; font-size:14px; line-height:1.4; background:var(--em-bg); border:1px solid var(--em-line); border-radius:16px; overflow:clip; isolation:isolate; }
+#coffeecnc-mill * {box-sizing:border-box}
+#coffeecnc-mill button,#coffeecnc-mill input,#coffeecnc-mill select {font:inherit}
+#coffeecnc-mill button {color:inherit; background:none; border:0; cursor:default}
+#coffeecnc-mill button:focus-visible,#coffeecnc-mill input:focus-visible {outline:2px solid var(--em-accent);outline-offset:3px}
+#coffeecnc-mill button:disabled {opacity:.42}
+#coffeecnc-mill button:not(:disabled):hover {filter:brightness(.96)}
+#coffeecnc-mill .em-icon {width:18px;height:18px;flex-shrink:0}
+#coffeecnc-mill .em-top {display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 24px;border-bottom:1px solid var(--em-line);background:var(--em-panel)}
+#coffeecnc-mill .em-brand {display:flex;align-items:center;gap:10px;letter-spacing:3px;font-size:17px;font-weight:700;white-space:nowrap}
+#coffeecnc-mill .em-brand-mark {display:grid;grid-template-columns:repeat(3,3px);gap:3px;height:21px;align-items:end}
+#coffeecnc-mill .em-brand-mark span {background:var(--em-accent);height:21px;border-radius:2px}
+#coffeecnc-mill .em-brand-mark span:nth-child(2) {height:14px}
+#coffeecnc-mill .em-brand-mark span:nth-child(3) {height:7px}
+#coffeecnc-mill .em-brand small {font-size:12px;letter-spacing:1px;font-weight:500;color:var(--em-muted);margin-left:4px}
+#coffeecnc-mill .em-nav {display:flex;gap:3px;padding:4px;background:var(--em-bg);border-radius:10px}
+#coffeecnc-mill .em-nav button {padding:9px 19px;border-radius:7px;font-weight:550}
+#coffeecnc-mill .em-nav button[aria-selected=true] {background:var(--em-panel);box-shadow:0 1px 4px #00000010;color:var(--em-text)}
+#coffeecnc-mill .em-nav button[aria-selected=false] {color:var(--em-muted)}
+#coffeecnc-mill .em-machine {display:flex;align-items:center;gap:8px;font-size:12px;color:var(--em-muted);padding-right:78px}
+#coffeecnc-mill .em-dot {width:6px;height:6px;border-radius:50%;background:var(--em-good);display:inline-block;flex:none}
+#coffeecnc-mill .em-jobbar {display:flex;justify-content:space-between;align-items:center;padding:23px 25px 18px;gap:18px}
+#coffeecnc-mill h2 {font-size:23px;line-height:1.2;letter-spacing:-.7px;font-weight:550;margin:0 0 6px}
+#coffeecnc-mill .em-sub {font-size:12px;color:var(--em-muted)}
+#coffeecnc-mill .em-job-state {display:flex;align-items:center;gap:8px;border:1px solid var(--em-line);border-radius:30px;padding:7px 11px;background:var(--em-panel);font-size:12px;white-space:nowrap}
+#coffeecnc-mill .em-readouts {display:grid;grid-template-columns:100px 1fr 1fr 1fr 65px;margin:0 25px 18px;border:1px solid var(--em-line);border-radius:var(--em-radius);background:var(--em-panel);padding:16px 0;align-items:center}
+#coffeecnc-mill .em-coordinate-system {padding:0 18px;font-weight:600;font-size:13px}
+#coffeecnc-mill .em-coordinate-system small {display:block;font-size:11px;font-weight:400;color:var(--em-muted);margin-top:4px}
+#coffeecnc-mill .em-axis {display:flex;gap:15px;align-items:baseline;padding:0 20px;border-left:1px solid var(--em-line);min-width:0}
+#coffeecnc-mill .em-axis-letter {font-size:13px;color:var(--em-muted);font-weight:500}
+#coffeecnc-mill .em-axis-number {font-family:'IBM Plex Mono',monospace;font-size:27px;letter-spacing:-1px;font-weight:450;font-variant-numeric:tabular-nums}
+#coffeecnc-mill .em-units {font-size:12px;color:var(--em-muted);text-align:center}
+#coffeecnc-mill .em-workspace {display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:0;margin:0 25px 20px;border:1px solid var(--em-line);border-radius:var(--em-radius);background:var(--em-panel);overflow:clip}
+#coffeecnc-mill .em-scene {position:relative;min-width:0;min-height:442px;background:var(--em-canvas);display:flex;flex-direction:column}
+#coffeecnc-mill .em-scene-top {display:flex;justify-content:space-between;align-items:center;gap:12px;padding:17px 18px;z-index:1}
+#coffeecnc-mill .em-scene-title {display:flex;gap:8px;align-items:center;font-size:12px;font-weight:500}
+#coffeecnc-mill .em-view-controls {display:flex;gap:2px}
+#coffeecnc-mill .em-icon-button {display:flex;align-items:center;justify-content:center;width:33px;height:33px;border-radius:7px;background:var(--em-panel)}
+#coffeecnc-mill .em-icon-button[aria-pressed=true] {color:var(--em-accent)}
+#coffeecnc-mill .em-scene-svg {display:block;width:100%;height:320px;min-height:0;max-height:340px;flex:1 1 320px;overflow:hidden}
+#coffeecnc-mill .em-scene-bottom {padding:13px 18px 17px;display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--em-muted);font-size:11px}
+#coffeecnc-mill .em-legend {display:flex;gap:13px;flex-wrap:wrap}
+#coffeecnc-mill .em-legend span {display:inline-flex;align-items:center;gap:5px}
+#coffeecnc-mill .em-legend-line {width:17px;height:2px;background:var(--em-accent)}
+#coffeecnc-mill .em-legend-line.rapid {background:var(--em-muted);height:0;border-top:1px dashed var(--em-muted)}
+#coffeecnc-mill .em-inspector {border-left:1px solid var(--em-line);padding:20px;display:flex;flex-direction:column;min-width:0}
+#coffeecnc-mill .em-panel-head {display:flex;align-items:center;justify-content:space-between;margin-bottom:17px}
+#coffeecnc-mill h3 {font-size:14px;font-weight:600;letter-spacing:-.15px;margin:0}
+#coffeecnc-mill .em-kicker {font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--em-muted)}
+#coffeecnc-mill .em-operations {display:flex;flex-direction:column;gap:5px;margin:0 -8px 18px}
+#coffeecnc-mill .em-operation {display:grid;grid-template-columns:26px 1fr auto;gap:9px;align-items:center;text-align:left;padding:11px 8px;border-radius:9px;min-height:57px}
+#coffeecnc-mill .em-operation[aria-pressed=true] {background:color-mix(in srgb,var(--em-accent) 9%,var(--em-panel))}
+#coffeecnc-mill .em-op-number {font:12px 'IBM Plex Mono',monospace;color:var(--em-muted);border:1px solid var(--em-line);width:25px;height:25px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+#coffeecnc-mill .em-operation[aria-pressed=true] .em-op-number {color:var(--em-accent);border-color:color-mix(in srgb,var(--em-accent) 45%,transparent)}
+#coffeecnc-mill .em-op-name {display:block;font-size:13px;font-weight:550}
+#coffeecnc-mill .em-op-detail {display:block;font-size:11px;color:var(--em-muted);margin-top:3px}
+#coffeecnc-mill .em-op-duration {font-size:11px;color:var(--em-muted);font-variant-numeric:tabular-nums}
+#coffeecnc-mill .em-tool {border-top:1px solid var(--em-line);padding-top:16px;margin-top:auto}
+#coffeecnc-mill .em-tool-head {display:flex;gap:10px;align-items:center;margin:10px 0 16px}
+#coffeecnc-mill .em-tool-glyph {background:var(--em-soft);border-radius:8px;padding:10px;display:flex;color:var(--em-muted)}
+#coffeecnc-mill .em-tool-name {font-size:13px;font-weight:550}
+#coffeecnc-mill .em-kv {display:flex;justify-content:space-between;gap:12px;margin:10px 0;font-size:12px;color:var(--em-muted)}
+#coffeecnc-mill .em-kv strong {font-weight:500;color:var(--em-text);font-variant-numeric:tabular-nums}
+#coffeecnc-mill .em-verified {color:var(--em-good);font-size:11px;display:flex;align-items:center;gap:5px;margin-top:15px}
+#coffeecnc-mill .em-status-row {display:flex;justify-content:space-between;align-items:center;gap:16px;margin:0 25px 11px}
+#coffeecnc-mill .em-run-status {font-size:13px;font-weight:500;display:flex;gap:8px;align-items:center}
+#coffeecnc-mill .em-timing {font:11px 'IBM Plex Mono',monospace;color:var(--em-muted)}
+#coffeecnc-mill .em-progress {height:3px;margin:0 25px 20px;background:var(--em-soft);border-radius:2px;overflow:hidden}
+#coffeecnc-mill .em-progress-fill {height:100%;width:0;background:var(--em-accent);transition:width .25s linear}
+#coffeecnc-mill .em-commandbar {display:grid;grid-template-columns:minmax(160px,1fr) minmax(140px,1fr) auto;gap:24px;align-items:center;padding:18px 25px;background:var(--em-panel);border-top:1px solid var(--em-line)}
+#coffeecnc-mill .em-slider-label {display:flex;justify-content:space-between;font-size:12px;gap:8px;margin-bottom:9px}
+#coffeecnc-mill .em-slider-label span {color:var(--em-muted)}
+#coffeecnc-mill .em-slider-label output {font-weight:600;font-variant-numeric:tabular-nums}
+#coffeecnc-mill input[type=range] {accent-color:var(--em-accent);height:16px;width:100%;display:block;margin:0}
+#coffeecnc-mill .em-actions {display:flex;gap:8px}
+#coffeecnc-mill .em-action {display:flex;justify-content:center;align-items:center;gap:9px;min-height:48px;padding:0 17px;border:1px solid var(--em-line);border-radius:9px;font-weight:550;font-size:13px;white-space:nowrap}
+#coffeecnc-mill .em-action.primary {background:var(--em-accent);border-color:var(--em-accent);color:#fff;min-width:148px}
+#coffeecnc-mill .em-action.stop {color:var(--em-red);min-width:82px}
+#coffeecnc-mill .em-foot {display:flex;justify-content:space-between;gap:10px;padding:9px 25px;font-size:11px;letter-spacing:.25px;color:var(--em-muted)}
+#coffeecnc-mill [hidden] {display:none!important}
+#coffeecnc-mill .em-setup-block {margin-bottom:18px}
+#coffeecnc-mill .em-checkrow {display:flex;gap:8px;align-items:center;font-size:12px;padding:10px 0;border-bottom:1px solid var(--em-line)}
+#coffeecnc-mill .em-checkrow .em-icon {color:var(--em-good);width:15px;height:15px}
+#coffeecnc-mill .em-origin {display:grid;grid-template-columns:repeat(3,36px);gap:4px;margin:12px 0}
+#coffeecnc-mill .em-origin button {height:32px;border:1px solid var(--em-line);border-radius:5px;background:var(--em-bg);display:flex;align-items:center;justify-content:center}
+#coffeecnc-mill .em-origin button::after {content:'';width:5px;height:5px;border-radius:50%;background:var(--em-muted)}
+#coffeecnc-mill .em-origin button[aria-pressed=true] {border-color:var(--em-accent);background:color-mix(in srgb,var(--em-accent) 10%,var(--em-panel))}
+#coffeecnc-mill .em-origin button[aria-pressed=true]::after {background:var(--em-accent)}
+#coffeecnc-mill .em-inline-button {padding:8px 12px;border:1px solid var(--em-line);border-radius:7px;font-size:12px}
+#coffeecnc-mill .em-inspection {width:100%;border-collapse:collapse;font-size:12px;margin:15px 0}
+#coffeecnc-mill .em-inspection td {padding:11px 0;border-bottom:1px solid var(--em-line)}
+#coffeecnc-mill .em-inspection td:last-child {text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px}
+#coffeecnc-mill .em-inspection th {text-align:left;font-size:11px;color:var(--em-muted);font-weight:400}
+#coffeecnc-mill .em-inspection th:last-child {text-align:right}
+#coffeecnc-mill.em-touch .em-action {min-height:56px}
+#coffeecnc-mill.em-touch .em-operation {min-height:65px}
+@media(min-width:1200px){#coffeecnc-mill .em-scene-svg {height:380px}}
+@media(max-width:850px){#coffeecnc-mill .em-machine {padding-right:0} #coffeecnc-mill .em-top {padding-right:100px;flex-wrap:wrap;gap:12px} #coffeecnc-mill .em-machine {display:none} #coffeecnc-mill .em-readouts {grid-template-columns:78px 1fr 1fr 1fr 40px} #coffeecnc-mill .em-axis {padding:0 12px;gap:8px} #coffeecnc-mill .em-axis-number {font-size:23px} #coffeecnc-mill .em-workspace {grid-template-columns:minmax(0,1fr) 255px} #coffeecnc-mill .em-inspector {padding:16px} #coffeecnc-mill .em-commandbar {gap:14px} #coffeecnc-mill .em-action {padding:0 12px} #coffeecnc-mill .em-action.primary {min-width:125px}}
+@media(max-width:650px){#coffeecnc-mill {border-radius:12px} #coffeecnc-mill .em-top {padding:16px;gap:15px;align-items:flex-start} #coffeecnc-mill .em-brand {width:100%} #coffeecnc-mill .em-nav {width:100%;justify-content:space-between} #coffeecnc-mill .em-nav button {flex:1;padding:9px 12px} #coffeecnc-mill .em-jobbar {padding:20px 16px 15px;align-items:flex-start;flex-wrap:wrap} #coffeecnc-mill h2 {font-size:21px} #coffeecnc-mill .em-readouts {grid-template-columns:repeat(3,1fr);margin:0 16px 15px;padding:12px 0;row-gap:10px} #coffeecnc-mill .em-coordinate-system {grid-column:1 / 3;padding:0 12px;font-size:11px} #coffeecnc-mill .em-coordinate-system small {display:inline;margin-left:7px;font-size:11px} #coffeecnc-mill .em-units {grid-column:3;grid-row:1;text-align:right;padding-right:12px;font-size:11px} #coffeecnc-mill .em-axis {flex-direction:column;gap:3px;padding:0 12px;grid-row:2} #coffeecnc-mill .em-axis:nth-child(2) {border-left:0} #coffeecnc-mill .em-axis-number {font-size:clamp(18px,5vw,26px)} #coffeecnc-mill .em-workspace {grid-template-columns:1fr;margin:0 16px 18px} #coffeecnc-mill .em-scene {min-height:320px} #coffeecnc-mill .em-scene-svg {height:285px;flex:none} #coffeecnc-mill .em-inspector {border-left:0;border-top:1px solid var(--em-line);padding:18px} #coffeecnc-mill .em-operation {min-height:58px} #coffeecnc-mill .em-tool {margin-top:0} #coffeecnc-mill .em-commandbar {grid-template-columns:1fr 1fr;padding:17px 16px;gap:18px} #coffeecnc-mill .em-actions {grid-column:1 / -1} #coffeecnc-mill .em-action.primary {flex:1} #coffeecnc-mill .em-action.stop {min-width:100px} #coffeecnc-mill .em-status-row {margin:0 16px 10px;flex-wrap:wrap;gap:5px} #coffeecnc-mill .em-progress {margin:0 16px 18px} #coffeecnc-mill .em-foot {padding:10px 16px;flex-wrap:wrap;font-size:11px} #coffeecnc-mill .em-scene-top {padding:14px} #coffeecnc-mill .em-scene-bottom {padding:12px 14px} #coffeecnc-mill .em-scene-bottom>span {display:none}}
+</style>
+<div id="coffeecnc-mill" aria-label="CoffeeCNC milling interface concept">
+  <header class="em-top">
+    <div class="em-brand"><span class="em-brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>CoffeeCNC <small>/ MILL</small></div>
+    <nav class="em-nav" role="tablist" aria-label="Machining workflow">
+      <button type="button" role="tab" id="em-tab-setup" aria-controls="em-setup" aria-selected="false" data-mode="setup">Setup</button>
+      <button type="button" role="tab" id="em-tab-run" aria-controls="em-run" aria-selected="true" data-mode="run">Machine</button>
+      <button type="button" role="tab" id="em-tab-inspect" aria-controls="em-inspect" aria-selected="false" data-mode="inspect">Inspect</button>
+    </nav>
+    <span class="em-machine"><span class="em-dot"></span>3-axis mill · Simulator</span>
+  </header>
+  <section class="em-jobbar">
+    <div><h2>Fixture plate</h2><div class="em-sub">Setup 1 &nbsp; / &nbsp; 6061-T6 aluminium &nbsp; / &nbsp; 140 × 90 × 18 mm</div></div>
+    <div class="em-job-state"><span class="em-dot"></span><span id="em-machine-state">Ready to machine</span></div>
+  </section>
+  <div class="em-readouts" aria-label="Work coordinates">
+    <div class="em-coordinate-system">G54<small>Work position</small></div>
+    <div class="em-axis"><span class="em-axis-letter">X</span><span class="em-axis-number" id="em-x">40.000</span></div>
+    <div class="em-axis"><span class="em-axis-letter">Y</span><span class="em-axis-number" id="em-y">28.000</span></div>
+    <div class="em-axis"><span class="em-axis-letter">Z</span><span class="em-axis-number" id="em-z">8.000</span></div>
+    <span class="em-units">mm</span>
+  </div>
+  <div class="em-workspace">
+    <div class="em-scene">
+      <div class="em-scene-top"><span class="em-scene-title"><i data-lucide="box" class="em-icon" aria-hidden="true"></i><span id="em-view-title">Stock & toolpath</span></span><div class="em-view-controls"><button class="em-icon-button" id="em-path-toggle" aria-label="Show toolpaths" aria-pressed="true" data-tooltip="Show toolpaths"><i data-lucide="route" class="em-icon" aria-hidden="true"></i></button><button class="em-icon-button" id="em-view-toggle" aria-label="Switch to top view" data-tooltip="Top / isometric view"><i data-lucide="view" class="em-icon" aria-hidden="true"></i></button></div></div>
+      <svg class="em-scene-svg" id="em-scene-svg" viewBox="0 0 660 370" role="img" aria-label="Isometric fixture plate in a machine vise, with a recessed pocket, four holes, and the selected toolpath"><defs><filter id="em-shadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter></defs><g id="em-model"></g><g id="em-toolpaths"></g><g id="em-origin-mark"></g><g id="em-cutter"></g></svg>
+      <div class="em-scene-bottom"><div class="em-legend"><span><b class="em-legend-line"></b>Cut</span><span><b class="em-legend-line rapid"></b>Rapid</span></div><span id="em-view-caption">Isometric · Stock transparent above cut</span></div>
+    </div>
+    <aside class="em-inspector">
+      <section id="em-run" role="tabpanel" aria-labelledby="em-tab-run">
+        <div class="em-panel-head"><h3>Operations</h3><span class="em-kicker">3 total</span></div>
+        <div class="em-operations">
+          <button class="em-operation" data-operation="0" aria-pressed="false"><span class="em-op-number">1</span><span><span class="em-op-name">Face stock</span><span class="em-op-detail">T01 · Ø40 face mill</span></span><span class="em-op-duration">0:48</span></button>
+          <button class="em-operation" data-operation="1" aria-pressed="true"><span class="em-op-number">2</span><span><span class="em-op-name">Mill pocket</span><span class="em-op-detail">T02 · Ø8 flat end mill</span></span><span class="em-op-duration">3:42</span></button>
+          <button class="em-operation" data-operation="2" aria-pressed="false"><span class="em-op-number">3</span><span><span class="em-op-name">Drill mounting holes</span><span class="em-op-detail">T03 · Ø6 drill · 4 holes</span></span><span class="em-op-duration">1:16</span></button>
+        </div>
+      </section>
+      <section id="em-setup" role="tabpanel" aria-labelledby="em-tab-setup" hidden>
+        <div class="em-panel-head"><h3>Work setup</h3><span class="em-kicker">G54</span></div>
+        <div class="em-setup-block"><div class="em-sub">Work origin · Top of stock</div><div class="em-origin" aria-label="Choose work origin"><button data-origin="0" aria-label="Back left origin" aria-pressed="false"></button><button data-origin="1" aria-label="Back centre origin" aria-pressed="false"></button><button data-origin="2" aria-label="Back right origin" aria-pressed="false"></button><button data-origin="3" aria-label="Middle left origin" aria-pressed="false"></button><button data-origin="4" aria-label="Centre origin" aria-pressed="false"></button><button data-origin="5" aria-label="Middle right origin" aria-pressed="false"></button><button data-origin="6" aria-label="Front left origin" aria-pressed="true"></button><button data-origin="7" aria-label="Front centre origin" aria-pressed="false"></button><button data-origin="8" aria-label="Front right origin" aria-pressed="false"></button></div><div class="em-sub" id="em-origin-name">Front left · Top face</div></div>
+        <div class="em-checkrow"><i data-lucide="check" class="em-icon" aria-hidden="true"></i>Axes homed</div><div class="em-checkrow"><i data-lucide="check" class="em-icon" aria-hidden="true"></i>Stock & fixture defined</div><div class="em-checkrow"><i data-lucide="check" class="em-icon" aria-hidden="true"></i>3 tools measured</div>
+      </section>
+      <section id="em-inspect" role="tabpanel" aria-labelledby="em-tab-inspect" hidden>
+        <div class="em-panel-head"><h3>Feature inspection</h3><span class="em-kicker">Preview</span></div><div class="em-sub">Pocket · Nominal dimensions</div>
+        <table class="em-inspection"><thead><tr><th>Feature</th><th>Target</th></tr></thead><tbody><tr><td>Length</td><td>88.000 mm</td></tr><tr><td>Width</td><td>48.000 mm</td></tr><tr><td>Depth</td><td>10.000 mm</td></tr><tr><td>Corner radius</td><td>R 12.000</td></tr></tbody></table><div class="em-sub">No measurements recorded</div>
+      </section>
+      <div class="em-tool"><div class="em-kicker" id="em-tool-label">Selected tool</div><div class="em-tool-head"><span class="em-tool-glyph"><i data-lucide="drill" class="em-icon" aria-hidden="true"></i></span><div><div class="em-tool-name" id="em-tool-name">T02 · Ø8 flat end mill</div><div class="em-sub" id="em-tool-description">3 flute · Polished carbide</div></div></div><div class="em-kv"><span>Spindle target</span><strong id="em-rpm">12,000 rpm</strong></div><div class="em-kv"><span>Feed target</span><strong id="em-feed">840 mm/min</strong></div><div class="em-verified"><i data-lucide="circle-check" class="em-icon" aria-hidden="true"></i>Tool length measured</div></div>
+    </aside>
+  </div>
+  <div class="em-status-row"><span class="em-run-status" id="em-run-status" aria-live="polite">Mill pocket · Ready</span><span class="em-timing" id="em-timing">0:00 / 3:42 estimated</span></div>
+  <div class="em-progress" role="progressbar" aria-label="Operation preview progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="em-progress-fill" id="em-progress-fill"></div></div>
+  <div class="em-commandbar">
+    <label><span class="em-slider-label"><span>Feed override</span><output id="em-feed-value">100%</output></span><input id="em-feed-slider" aria-label="Feed override" type="range" min="10" max="150" step="5" value="100"></label>
+    <label><span class="em-slider-label"><span>Spindle override</span><output id="em-spindle-value">100%</output></span><input id="em-spindle-slider" aria-label="Spindle override" type="range" min="50" max="120" step="5" value="100"></label>
+    <div class="em-actions"><button class="em-action stop" id="em-stop" disabled><i data-lucide="square" class="em-icon" aria-hidden="true"></i>Stop</button><button class="em-action primary" id="em-start"><span id="em-play-icon"><i data-lucide="play" class="em-icon" aria-hidden="true"></i></span><span id="em-pause-icon" hidden><i data-lucide="pause" class="em-icon" aria-hidden="true"></i></span><span id="em-start-label">Start preview</span></button></div>
+  </div>
+  <footer class="em-foot"><span>INTERACTIVE CONCEPT · No controller connected</span><span>coffeecnc / mill &nbsp; · &nbsp; Local machine interface</span></footer>
+</div>
+<script>
+(function(){
+const root=document.getElementById('coffeecnc-mill');
+const q=s=>root.querySelector(s), qa=s=>Array.from(root.querySelectorAll(s));
+const ops=[{name:'Face stock',tool:'T01 · Ø40 face mill',detail:'4 inserts · Aluminium geometry',rpm:4200,feed:1200,seconds:48},{name:'Mill pocket',tool:'T02 · Ø8 flat end mill',detail:'3 flute · Polished carbide',rpm:12000,feed:840,seconds:222},{name:'Drill mounting holes',tool:'T03 · Ø6 drill',detail:'Carbide · Through coolant',rpm:6000,feed:360,seconds:76}];
+const state={mode:'run',op:1,origin:6,top:false,paths:true,feed:100,spindle:100,progress:0,running:false,started:false};
+const design={density:'Comfortable',radius:12,accent:'#377ef2'};
+let timer=null, points=[], snapshotKey="";const ownSnapshots=new Set();
+function project(x,y,z){return state.top?[330+x*2.85,185-y*2.85]:[330+x*2.22+y*1.35,210+x*.65-y*1.04-z*2.25];}
+function path(ps,close){return ps.map((v,i)=>(i?'L':'M')+project(v[0],v[1],v[2]).map(n=>n.toFixed(2)).join(',')).join(' ')+(close?'Z':'');}
+function poly(ps,fill,stroke){return '<path d="'+path(ps,true)+'" fill="'+fill+'"'+(stroke?' stroke="'+stroke+'" stroke-width=".7"':'')+'/>';}
+function ring(x,y,r,z){return Array.from({length:49},(_,i)=>[x+Math.cos(i/48*Math.PI*2)*r,y+Math.sin(i/48*Math.PI*2)*r,z]);}
+function roundrect(w,h,r,z){let out=[];[[w-r,h-r,0],[-w+r,h-r,90],[-w+r,-h+r,180],[w-r,-h+r,270]].forEach(c=>{for(let k=0;k<=12;k++){let a=(c[2]+k*7.5)*Math.PI/180;out.push([c[0]+r*Math.cos(a),c[1]+r*Math.sin(a),z]);}});return out;}
+function cuboid(x0,y0,z0,x1,y1,z1,top,side,front){return poly([[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]],front)+poly([[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1]],side)+poly([[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]],top);}
+function scene(){
+let grid=''; for(let x=-120;x<=120;x+=20)grid+='<path d="'+path([[x,-80,-31],[x,80,-31]])+'" fill="none" stroke="var(--em-line)" stroke-width=".6"/>';for(let y=-80;y<=80;y+=20)grid+='<path d="'+path([[-120,y,-31],[120,y,-31]])+'" fill="none" stroke="var(--em-line)" stroke-width=".6"/>';
+let m=grid+poly([[-108,-70,-32],[108,-70,-32],[108,70,-32],[-108,70,-32]],'#00000018');
+m+=cuboid(-101,-64,-27,101,65,-15,'var(--em-jaw)','var(--em-metal-dark)','var(--em-metal-dark)');
+m+=cuboid(-84,45,-15,84,59,24,'var(--em-metal-side)','var(--em-metal-dark)','var(--em-jaw)');
+m+=cuboid(-70,-45,-8,70,45,18,'var(--em-metal)','var(--em-metal-side)','var(--em-metal-dark)');
+let opening=path(roundrect(44,24,12,18),true);m+='<defs><clipPath id="em-pocket-clip"><path d="'+opening+'"/></clipPath></defs><path d="'+opening+'" fill="var(--em-pocket)"/><g clip-path="url(#em-pocket-clip)">'+poly(roundrect(44,24,12,8),'var(--em-metal-side)')+'</g><path d="'+opening+'" fill="none" stroke="var(--em-metal-dark)" stroke-width="1"/>';
+[[-57,-32],[57,-32],[-57,32],[57,32]].forEach(v=>{m+=poly(ring(v[0],v[1],4,18),'var(--em-pocket)')+'<path d="'+path(ring(v[0],v[1],4.8,18),true)+'" fill="none" stroke="var(--em-metal-side)" stroke-width="1.2"/>';});
+m+=cuboid(-84,-59,-15,84,-45,12,'var(--em-jaw)','var(--em-metal-dark)','var(--em-metal-side)');
+if(!state.top){[-65,65].forEach(x=>m+=poly(ring(x,-52,3,12),'var(--em-metal-dark)'));}
+q('#em-model').innerHTML=m;
+let t='';points=[];
+if(state.op===1){[0,5,10].forEach((d,i)=>{const pts=roundrect(39-d,19-d,Math.max(5,9-d/2),8.4);t+='<path d="'+path(pts,true)+'" fill="none" stroke="var(--em-accent)" stroke-width="'+(i===0?'1.7':'1')+'" opacity="'+(i===0?'.95':'.45')+'"/>';if(i===0)points=pts;});}
+if(state.op===0){for(let y=-30;y<=30;y+=15){let ps=[[-62,y,19],[62,y,19]];if((y/15)%2===0)ps.reverse();points.push(...ps);}t='<path d="'+path(points,false)+'" fill="none" stroke="var(--em-accent)" stroke-width="2"/>';}
+if(state.op===2){points=[[-57,-32,18],[57,-32,18],[57,32,18],[-57,32,18]];t='<path d="'+path(points,false)+'" fill="none" stroke="var(--em-muted)" stroke-width="1" stroke-dasharray="5 5"/>';points.forEach(p=>t+='<path d="'+path(ring(p[0],p[1],5.5,p[2]),true)+'" fill="none" stroke="var(--em-accent)" stroke-width="2"/>');}
+q('#em-toolpaths').innerHTML=t;q('#em-toolpaths').setAttribute('clip-path',state.op===1?'url(#em-pocket-clip)':'none');q('#em-toolpaths').style.display=state.paths?'':'none';
+q('#em-view-caption').textContent=state.top?'Top view · XY plane':'Isometric · Finished geometry';
+origin();tool();
+}
+function origin(){let x=(state.origin%3-1)*70,y=(1-Math.floor(state.origin/3))*45;let p=project(x,y,19),px=project(x+16,y,19),py=project(x,y+16,19),pz=project(x,y,35);q('#em-origin-mark').innerHTML='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="var(--em-text)"/><path d="M'+px.join(',')+' L'+p.join(',')+' L'+py.join(',')+' M'+p.join(',')+' L'+pz.join(',')+'" fill="none" stroke="var(--em-text)" stroke-width="1.5"/>';}
+function tool(){if(!points.length)return;let index=Math.min(points.length-1,Math.floor(state.progress/100*(points.length-1)));let p=points[index],xy=project(...p);q('#em-cutter').innerHTML='<circle cx="'+xy[0]+'" cy="'+xy[1]+'" r="10" fill="var(--em-accent)" opacity=".12"/><circle cx="'+xy[0]+'" cy="'+xy[1]+'" r="4" fill="var(--em-accent)" stroke="var(--em-panel)" stroke-width="1.5"/>';
+let ox=(state.origin%3-1)*70,oy=(1-Math.floor(state.origin/3))*45;q('#em-x').textContent=(p[0]-ox).toFixed(3);q('#em-y').textContent=(p[1]-oy).toFixed(3);q('#em-z').textContent=(state.started?p[2]-18:8).toFixed(3);}
+function time(n){return Math.floor(n/60)+':'+String(n%60).padStart(2,'0');}
+function save(){const snapshot={modelContent:{concept:'CoffeeCNC Mill',view:state.mode,operation:ops[state.op].name,design:design},privateContent:{mode:state.mode,op:state.op,origin:state.origin,top:state.top,paths:state.paths,feed:state.feed,spindle:state.spindle,design:design}};snapshotKey=JSON.stringify(snapshot.privateContent);ownSnapshots.add(snapshotKey);if(ownSnapshots.size>100)ownSnapshots.delete(ownSnapshots.values().next().value);if(window.openai&&window.openai.setWidgetState)window.openai.setWidgetState(snapshot).catch(()=>{});}
+function render(){qa('[data-mode]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===state.mode)));['setup','run','inspect'].forEach(m=>q('#em-'+m).hidden=m!==state.mode);qa('[data-operation]').forEach(b=>{b.setAttribute('aria-pressed',String(+b.dataset.operation===state.op));b.disabled=state.running;});qa('[data-origin]').forEach(b=>{b.setAttribute('aria-pressed',String(+b.dataset.origin===state.origin));b.disabled=state.running;});
+const names=['Back left','Back centre','Back right','Middle left','Centre','Middle right','Front left','Front centre','Front right'];q('#em-origin-name').textContent=names[state.origin]+' · Top face';q('#em-path-toggle').setAttribute('aria-pressed',String(state.paths));q('#em-view-toggle').setAttribute('aria-label',state.top?'Switch to isometric view':'Switch to top view');q('#em-view-title').textContent=state.mode==='setup'?'Work origin & stock':state.mode==='inspect'?'Pocket geometry':'Stock & toolpath';
+const op=ops[state.op];q('#em-tool-name').textContent=op.tool;q('#em-tool-description').textContent=op.detail;q('#em-rpm').textContent=Math.round(op.rpm*state.spindle/100).toLocaleString('en-US')+' rpm';q('#em-feed').textContent=Math.round(op.feed*state.feed/100)+' mm/min';q('#em-feed-value').textContent=state.feed+'%';q('#em-spindle-value').textContent=state.spindle+'%';q('#em-feed-slider').value=state.feed;q('#em-spindle-slider').value=state.spindle;
+const status=state.running?'Preview running':state.progress>=100?'Preview complete':state.started?'Paused':'Ready';q('#em-run-status').textContent=op.name+' · '+status;q('#em-machine-state').textContent=state.running?'Simulating cut':state.progress>=100?'Preview complete':state.started?'Feed held':'Ready to machine';q('#em-timing').textContent=time(Math.floor(op.seconds*state.progress/100))+' / '+time(op.seconds)+' estimated';q('#em-progress-fill').style.width=state.progress+'%';q('.em-progress').setAttribute('aria-valuenow',String(Math.round(state.progress)));q('#em-start-label').textContent=state.running?'Feed hold':state.progress>=100?'Replay preview':state.started?'Resume preview':'Start preview';q('#em-stop').disabled=!state.started;q('#em-play-icon').hidden=state.running;q('#em-pause-icon').hidden=!state.running;scene();}
+function halt(){state.running=false;if(timer){clearInterval(timer);timer=null;}}
+function tick(){state.progress=Math.min(100,state.progress+.65*state.feed/100);if(state.progress>=100)halt();q('#em-progress-fill').style.width=state.progress+'%';q('.em-progress').setAttribute('aria-valuenow',String(Math.round(state.progress)));q('#em-timing').textContent=time(Math.floor(ops[state.op].seconds*state.progress/100))+' / '+time(ops[state.op].seconds)+' estimated';tool();if(!state.running)render();}
+qa('[data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;render();save();}));
+qa('[data-operation]').forEach(b=>b.addEventListener('click',()=>{halt();state.op=+b.dataset.operation;state.progress=0;state.started=false;render();save();}));
+qa('[data-origin]').forEach(b=>b.addEventListener('click',()=>{state.origin=+b.dataset.origin;render();save();}));
+q('#em-path-toggle').addEventListener('click',()=>{state.paths=!state.paths;render();save();});q('#em-view-toggle').addEventListener('click',()=>{state.top=!state.top;render();save();});
+['feed','spindle'].forEach(key=>{q('#em-'+key+'-slider').addEventListener('input',e=>{state[key]=+e.target.value;render();});q('#em-'+key+'-slider').addEventListener('change',save);});
+q('#em-start').addEventListener('click',()=>{if(state.running){halt();}else{if(state.progress>=100)state.progress=0;state.running=true;state.started=true;timer=setInterval(tick,150);}render();save();});
+q('#em-stop').addEventListener('click',()=>{halt();state.progress=0;state.started=false;render();save();});
+function applyDesign(){root.style.setProperty('--em-radius',design.radius+'px');root.style.setProperty('--em-accent',design.accent);root.classList.toggle('em-touch',design.density==='Shop floor');}
+function restore(saved){const p=saved&&saved.privateContent;if(!p||JSON.stringify(p)===snapshotKey||ownSnapshots.has(JSON.stringify(p)))return;snapshotKey=JSON.stringify(p);halt();if(['setup','run','inspect'].includes(p.mode))state.mode=p.mode;if(Number.isInteger(p.op)&&p.op>=0&&p.op<3)state.op=p.op;if(Number.isInteger(p.origin)&&p.origin>=0&&p.origin<9)state.origin=p.origin;['top','paths'].forEach(k=>{if(typeof p[k]==='boolean')state[k]=p[k];});if(typeof p.feed==='number')state.feed=Math.max(10,Math.min(150,p.feed));if(typeof p.spindle==='number')state.spindle=Math.max(50,Math.min(120,p.spindle));if(p.design){if(/^#[0-9a-f]{6}$/i.test(p.design.accent))design.accent=p.design.accent;if(['Comfortable','Shop floor'].includes(p.design.density))design.density=p.design.density;if(typeof p.design.radius==='number')design.radius=Math.max(0,Math.min(20,p.design.radius));}applyDesign();render();}
+applyDesign();render();restore(window.openai&&window.openai.widgetState);
+window.addEventListener('openai:set_globals',e=>{if(e.detail&&e.detail.globals&&e.detail.globals.widgetState)restore(e.detail.globals.widgetState);});
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:()=>{applyDesign();save();}});tweak.addSelect(design,'density',{label:'Control spacing',options:['Comfortable','Shop floor']});tweak.addSlider(design,'radius',{label:'Panel corners',min:0,max:20,unit:'px'});tweak.addColorPicker(design,'accent',{label:'Machining accent',reference:'--em-accent'});}
+})();
+</script>

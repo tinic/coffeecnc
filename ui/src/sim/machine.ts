@@ -325,7 +325,7 @@ export class SimMachine {
         programmed_feed: m.feed,
         feed_override: this.overrides.feed,
         rapid_override: this.overrides.rapid,
-        in_position: this.velocity === 0,
+        in_position: this.inPosition(),
       },
       spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle },
       coolant: { flood: m.flood, mist: m.mist },
@@ -456,6 +456,16 @@ export class SimMachine {
   private syncModal(): void {
     this.modal.pos = this.reported()
     this.modal.tool = this.toolInSpindle
+  }
+
+  /** No motion is in progress or interrupted: a move held by a pause is not in position. */
+  private inPosition(): boolean {
+    return (
+      this.jogs.every((jog) => jog === null) &&
+      this.homing === null &&
+      this.homeQueue.length === 0 &&
+      this.exec?.active?.kind !== 'move'
+    )
   }
 
   private allHomed(): boolean {
@@ -950,7 +960,7 @@ export class SimMachine {
     return null
   }
 
-  private jogBlocked(axis: AxisIndex): Rejection | null {
+  private jogBlocked(): Rejection | null {
     const blocked = this.notOn('jog')
     if (blocked !== null) {
       return blocked
@@ -958,8 +968,8 @@ export class SimMachine {
     if (this.exec !== null) {
       return reject(`Can't jog while ${this.exec.source === 'mdi' ? 'an MDI command' : 'a program'} is running`)
     }
-    if (this.homing?.axis === axis || this.homeQueue.includes(axis)) {
-      return reject(`Can't jog ${names[axis] ?? ''} while it is homing`)
+    if (this.homing !== null || this.homeQueue.length > 0) {
+      return reject("Can't jog while an axis is homing")
     }
     return null
   }
@@ -976,7 +986,7 @@ export class SimMachine {
       }
       return null
     }
-    const blocked = this.jogBlocked(axis)
+    const blocked = this.jogBlocked()
     if (blocked !== null) {
       return blocked
     }
@@ -999,17 +1009,18 @@ export class SimMachine {
 
   private jogStep(letter: AxisLetter, distance: number, velocity: number): Rejection | null {
     const axis = letters.indexOf(letter) as AxisIndex
-    const blocked = this.jogBlocked(axis)
+    const blocked = this.jogBlocked()
     if (blocked !== null) {
       return blocked
+    }
+    if (!this.inPosition()) {
+      return reject('Wait for motion to stop before an incremental jog.')
     }
     if (!(velocity > 0) || !Number.isFinite(distance)) {
       return reject('Jog step needs a distance and a speed above zero')
     }
     this.mode = 'manual'
-    const current = this.jogs[axis]
-    const from = current?.kind === 'step' ? current.target : this.phys[axis]
-    this.jogs[axis] = { kind: 'step', target: from + distance, velocity: this.jogVelocity(velocity) }
+    this.jogs[axis] = { kind: 'step', target: this.phys[axis] + distance, velocity: this.jogVelocity(velocity) }
     return null
   }
 

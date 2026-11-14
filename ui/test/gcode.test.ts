@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import type { Tool, Vec3 } from '../src/protocol'
 import { defaultFiles, samplesDirectory, splitLines } from '../src/sim/files'
-import { InterpError, activeCodes, interpretLine, newModal, previewProgram, toWork, type Modal, type Op } from '../src/sim/gcode'
+import {
+  InterpError,
+  activeCodes,
+  interpretLine,
+  newModal,
+  previewProgram,
+  toMachine,
+  toWork,
+  type Modal,
+  type Op,
+} from '../src/sim/gcode'
 
 const tools: Tool[] = [
   { number: 1, pocket: 1, length: 50, diameter: 10, comment: 'end mill' },
@@ -175,6 +185,44 @@ describe('offsets', () => {
     run(m, 'G10 L2 P1 X100 Y100 R90', 'G0 X10 Y0')
     expect(rounded(m.pos)).toEqual([100, 110, 0])
     expect(rounded(toWork(m, m.pos))).toEqual([10, 0, 0])
+  })
+
+  it('applies the tool offset outside the rotation, as LinuxCNC does', () => {
+    // machine = R(work + g92) + g5x + tool. A Z-only tool offset would hide a wrong order.
+    const m = modal()
+    run(m, 'G10 L2 P1 X100 Y50 Z-20 R90')
+    m.g92 = [1, 2, 3]
+    m.toolOffset = [7, -4, 60]
+    // work (10, 0, 5): + g92 = (11, 2, 8); rotated 90° = (-2, 11, 8); + g5x = (98, 61, -12); + tool.
+    expect(rounded(toMachine(m, [10, 0, 5]))).toEqual([105, 57, 48])
+    expect(rounded(toWork(m, [105, 57, 48]))).toEqual([10, 0, 5])
+    run(m, 'G0 X10 Y0 Z5')
+    expect(rounded(m.pos)).toEqual([105, 57, 48])
+  })
+
+  it('work to machine and back is the identity for any offsets', () => {
+    const m = modal()
+    for (const degrees of [0, 90, -37.5, 180]) {
+      run(m, `G10 L2 P1 X12.5 Y-40 Z-7 R${String(degrees)}`)
+      m.g92 = [3, -2, 1]
+      m.toolOffset = [0.75, -1.25, 48.2]
+      for (const p of [[0, 0, 0], [10, -20, 30], [-123.456, 78.9, -0.001]] as Vec3[]) {
+        const back = toWork(m, toMachine(m, p))
+        for (const axis of [0, 1, 2] as const) {
+          expect(back[axis]).toBeCloseTo(p[axis], 9)
+        }
+      }
+    }
+  })
+
+  it('subtracts the tool offset from preview points exactly once', () => {
+    const m = modal()
+    run(m, 'G10 L2 P1 X100 Y50 Z-20 R90')
+    m.toolOffset = [7, -4, 60]
+    m.pos = toMachine(m, [0, 0, 0])
+    const preview = previewProgram(m, ['G1 X10 F100', 'M2'], false, 1)
+    // The tip is at R(work) + g5x whatever the tool offset is.
+    expect(preview.segments[0]?.points.map((v) => Math.round(v * 1000) / 1000 + 0)).toEqual([100, 50, -20, 100, 60, -20])
   })
 
   it('G92 shifts every system', () => {

@@ -18,7 +18,9 @@ Requires CMake 3.25+ and a C++23 compiler. The core has no third-party dependenc
 
 Read-only requests and stop attempts can pass even with unavailable controller state. The adapter must not fabricate successful stops when disconnected. New motion requests need fresh state. The first supported machine profile will be a three-joint XYZ mill with trivial kinematics; nontrivial axis/joint mappings need a separate implementation.
 
-`JogLease` uses monotonic time and tracks held jogs independently for each axis. Refresh it only for submitted jog commands. Poll it from the native application loop and issue a controller stop for each expired lease. Explicit release must issue a stop even if a lease was absent. Cancel active leases on page/session teardown, state loss, incompatible mode changes, abort and shutdown.
+All command limits must be passed explicitly from machine configuration or an explicitly named simulator profile. Unknown axis limits stay invalid, and no axes are implicitly configured. A jog decision includes joint versus axis space: before all axes home, the adapter must use joint jogging; afterward it must observe teleop enabled before axis jogging.
+
+`JogLease` uses monotonic time and tracks held jogs independently for each axis. Refresh it only for submitted jog commands. Own and poll it on the native control thread, independently of GTK/WebKit's event loop, and issue a controller stop for each expired lease. Explicit release must issue a stop even if a lease was absent. Cancel active leases on page/session teardown, state loss, incompatible mode changes, abort and shutdown.
 
 The 150 ms userspace lease cannot protect against a dead or stalled executable. The live implementation also needs a correctly configured independent HAL watchdog. No such wiring or machine behavior has been validated by these portable tests.
 

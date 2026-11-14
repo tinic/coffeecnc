@@ -8,6 +8,7 @@
 
 namespace coffeecnc {
 
+// Owned and polled by the native control thread, never a GTK/GLib UI callback.
 // Tracks only jogs started by this panel. A live adapter still needs an independently
 // scheduled HAL watchdog: this class cannot run when the executable dies or stalls.
 class JogLease {

@@ -8,8 +8,10 @@
 namespace coffeecnc {
 namespace {
 
-Decision allow(std::optional<TaskMode> mode = {}) { return {true, mode, {}}; }
-Decision reject(std::string reason) { return {false, {}, std::move(reason)}; }
+Decision allow(std::optional<TaskMode> mode = {}, std::optional<JogSpace> space = {}) {
+  return {true, mode, {}, space};
+}
+Decision reject(std::string reason) { return {false, {}, std::move(reason), {}}; }
 bool between(double value, double low, double high) {
   return std::isfinite(value) && value >= low && value <= high;
 }
@@ -117,7 +119,7 @@ Decision CommandPolicy::evaluate(const Command& command, const ControllerState& 
             return reject("Incremental jog exceeds configured travel.");
         }
       }
-      return allow(TaskMode::manual);
+      return allow(TaskMode::manual, homed(s) ? JogSpace::axis : JogSpace::joint);
     } else if constexpr (std::is_same_v<T, Mdi>) {
       if (!valid_text(c.text, 254)) return reject("MDI requires one nonempty block of at most 254 bytes.");
       return idle(s, TaskMode::mdi, true);
@@ -142,7 +144,7 @@ Decision CommandPolicy::evaluate(const Command& command, const ControllerState& 
     } else if constexpr (std::is_same_v<T, Step>) {
       if (!s.program_loaded || !homed(s) || s.machine != MachineState::on || s.requested_tool)
         return reject("Single block needs a loaded program, homed axes and no pending tool change.");
-      if (s.interp == InterpState::paused && s.mode == TaskMode::automatic && s.in_position)
+      if (s.interp == InterpState::paused && s.mode == TaskMode::automatic)
         return allow();
       return idle(s, TaskMode::automatic, true);
     } else if constexpr (std::is_same_v<T, SetOverride>) {
@@ -161,7 +163,9 @@ Decision CommandPolicy::evaluate(const Command& command, const ControllerState& 
         return reject("Unknown spindle direction.");
       if (!between(c.rpm, 0, limits_.max_spindle_rpm) || c.rpm == 0)
         return reject("Spindle speed is out of range.");
-      return idle(s, TaskMode::manual);
+      if (s.machine != MachineState::on || s.interp != InterpState::idle || homing(s))
+        return reject("Spindle start needs machine power, an idle interpreter and no active homing.");
+      return allow(); // Spindle control does not require stopping an ongoing manual jog.
     } else if constexpr (std::is_same_v<T, SetCoolant>) {
       if (s.machine != MachineState::on) return reject("Machine power is off.");
       return allow();

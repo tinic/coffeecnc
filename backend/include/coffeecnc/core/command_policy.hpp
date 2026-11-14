@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <limits>
 #include <optional>
 #include <string>
 #include <variant>
@@ -15,15 +16,16 @@ enum class InterpState { idle, reading, paused, waiting };
 enum class SpindleDirection { stopped, forward, reverse };
 enum class Override { feed, rapid, spindle };
 enum class ProgramOption { optional_stop, block_delete };
+enum class JogSpace { joint, axis };
 
 struct AxisState {
-  bool enabled{true};
+  bool enabled{};
   bool homed{};
   bool homing{};
   bool on_hard_limit{};
   double machine{};
-  double min_limit{-1000};
-  double max_limit{1000};
+  double min_limit{std::numeric_limits<double>::quiet_NaN()};
+  double max_limit{std::numeric_limits<double>::quiet_NaN()};
 };
 
 // Input from the controller adapter, never reconstructed from pending UI actions.
@@ -41,11 +43,18 @@ struct ControllerState {
 };
 
 struct Limits {
-  double max_jog_velocity{3000}; // mm/min
-  double max_feed_override{1.2};
-  double min_spindle_override{0.5};
-  double max_spindle_override{1.2};
-  double max_spindle_rpm{24000}; // Must come from machine configuration for a live adapter.
+  Limits() = delete;
+  Limits(double jog_velocity, double feed_override, double spindle_override_min,
+         double spindle_override_max, double spindle_rpm)
+      : max_jog_velocity(jog_velocity), max_feed_override(feed_override),
+        min_spindle_override(spindle_override_min), max_spindle_override(spindle_override_max),
+        max_spindle_rpm(spindle_rpm) {}
+  // All values must be supplied by validated machine configuration or an explicit simulator profile.
+  double max_jog_velocity; // mm/min
+  double max_feed_override;
+  double min_spindle_override;
+  double max_spindle_override;
+  double max_spindle_rpm;
 };
 
 // Typed bodies of protocol v1 requests. Wire parsing and request IDs belong to the app layer.
@@ -85,11 +94,13 @@ struct Decision {
   // The app must request and observe this mode before submitting the action.
   std::optional<TaskMode> required_mode;
   std::string reason;
+  // Joint jog before all axes home; axis jog afterward requires teleop in the adapter.
+  std::optional<JogSpace> jog_space;
 };
 
 class CommandPolicy {
  public:
-  explicit CommandPolicy(Limits limits = {});
+  explicit CommandPolicy(Limits limits);
   // Permission to attempt an action, NOT a protocol CommandResult/acknowledgement.
   [[nodiscard]] Decision evaluate(const Command&, const ControllerState&) const;
 

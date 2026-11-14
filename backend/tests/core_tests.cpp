@@ -12,6 +12,7 @@ using namespace std::chrono_literals;
 
 namespace {
 int checks = 0;
+Limits simulator_limits() { return {3000, 1.2, 0.5, 1.2, 24000}; }
 void require(bool condition, const std::string& message) {
   ++checks;
   if (!condition) throw std::runtime_error(message);
@@ -21,11 +22,16 @@ ControllerState ready() {
   s.link = Link::live;
   s.machine = MachineState::on;
   s.program_loaded = true;
-  for (auto& a : s.axes) a.homed = true;
+  for (auto& a : s.axes) {
+    a.enabled = true;
+    a.homed = true;
+    a.min_limit = -1000;
+    a.max_limit = 1000;
+  }
   return s;
 }
 void execution_gates() {
-  CommandPolicy policy;
+  CommandPolicy policy{simulator_limits()};
   auto s = ready();
   auto d = policy.evaluate(Run{}, s);
   require(d.allowed && d.required_mode == TaskMode::automatic, "run requests AUTO after validation");
@@ -41,6 +47,8 @@ void execution_gates() {
   require(!policy.evaluate(OpenProgram{"part.ngc"}, s).allowed, "cannot replace executing program");
   require(policy.evaluate(Pause{}, s).allowed, "can hold executing program");
   s.interp = InterpState::paused;
+  s.in_position = false;
+  require(policy.evaluate(Step{}, s).allowed, "mid-move feed hold can single-step remaining block");
   require(policy.evaluate(Resume{}, s).allowed, "paused program can resume");
   s.requested_tool = 2;
   require(!policy.evaluate(Resume{}, s).allowed, "tool handshake is not ordinary resume");
@@ -50,7 +58,7 @@ void execution_gates() {
   require(policy.evaluate(ToolChanged{}, s).allowed, "tool zero is a valid unload request");
 }
 void stops_survive_lost_state() {
-  CommandPolicy policy;
+  CommandPolicy policy{simulator_limits()};
   auto s = ready();
   for (const auto link : {Link::stale, Link::down}) {
     s.link = link;
@@ -65,7 +73,7 @@ void stops_survive_lost_state() {
   }
 }
 void jog_constraints() {
-  CommandPolicy policy;
+  CommandPolicy policy{simulator_limits()};
   auto s = ready();
   s.axes[0].machine = 999;
   require(!policy.evaluate(JogStep{Axis::x, 2, 100}, s).allowed, "increment cannot cross travel limit");
@@ -79,11 +87,18 @@ void jog_constraints() {
   s.in_position = false;
   require(!policy.evaluate(JogStep{Axis::x, 2, 100}, s).allowed, "incremental moves cannot accumulate during motion");
   require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed, "held jog refresh remains valid while moving");
+  require(policy.evaluate(SetSpindle{SpindleDirection::forward, 5000}, s).allowed,
+          "spindle may start during a manual jog");
+  require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).jog_space == JogSpace::axis,
+          "homed jog requires axis-space teleop");
+  s.axes[2].homed = false;
+  require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).jog_space == JogSpace::joint,
+          "partial homing keeps all jogs in joint space");
   s.axes[1].homing = true;
   require(!policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed, "other axis homing prevents manual jog");
 }
 void hostile_values() {
-  CommandPolicy policy;
+  CommandPolicy policy{simulator_limits()};
   const auto s = ready();
   for (const auto value : {std::numeric_limits<double>::quiet_NaN(),
                            std::numeric_limits<double>::infinity(), -1.0, 50000.0}) {
@@ -98,9 +113,13 @@ void hostile_values() {
           "tool comment cannot inject an extra row");
   require(!policy.evaluate(ToolTouchOff{0}, s).allowed, "tool length needs a loaded tool");
   bool invalid_limits = false;
-  try { CommandPolicy invalid{Limits{.max_jog_velocity = 0}}; }
+  try { CommandPolicy invalid{Limits{0, 1.2, 0.5, 1.2, 24000}}; }
   catch (const std::invalid_argument&) { invalid_limits = true; }
   require(invalid_limits, "invalid configuration fails construction");
+  auto missing_limits = ready();
+  missing_limits.axes[0].min_limit = std::numeric_limits<double>::quiet_NaN();
+  require(!policy.evaluate(Jog{Axis::x, 1, 100, true}, missing_limits).allowed,
+          "homed axis with missing travel limits cannot jog");
 }
 void independent_jog_leases() {
   JogLease leases;

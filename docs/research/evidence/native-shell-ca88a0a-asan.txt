@@ -1,0 +1,179 @@
+CoffeeCNC AddressSanitizer failure review, 2026-11-14
+Commit: ca88a0a7a853a152ec3e827d0dd47faef0b28d76
+Source directory: playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/ca88a0a/asan/
+Execution: Claude; independent log review: Codex.
+Simulation only. CTest pass labels did not reliably reflect process-exit sanitizer failures.
+
+--- ctest.out (final summary) ---
+check=sigterm_exit_code result=fail detail=1
+exit=1
+sim=done exit=1 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/linuxcnc.log
+
+
+96% tests passed, 1 tests failed out of 24
+
+Label Time Summary:
+linuxcnc    = 335.10 sec*proc (7 tests)
+
+Total Test time (real) = 372.41 sec
+
+The following tests FAILED:
+	 24 - linuxcnc_coffeecnc_start (Failed)                 linuxcnc
+Errors while running CTest
+
+--- under_xvfb.sh-inch.log (from premature exit=0 marker through end) ---
+exit=0
+
+=================================================================
+==2269013==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 2560 byte(s) in 4 object(s) allocated from:
+    #0 0x73181380fb58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x731809792a88  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x25a88) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Direct leak of 604 byte(s) in 1 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x731800121538  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x38538) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Direct leak of 448 byte(s) in 2 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x73180011d52e  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x3452e) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Direct leak of 368 byte(s) in 2 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7318024619df  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x219df) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Direct leak of 336 byte(s) in 14 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x73180cedda43  (/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.1.so.0+0x1a58a43) (BuildId: c93d17f617a5862e09eb0e567a7c164c1c60ac9b)
+
+Direct leak of 256 byte(s) in 1 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x7318097929e1  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x259e1) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Direct leak of 24 byte(s) in 1 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x73180ced5f11  (/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.1.so.0+0x1a50f11) (BuildId: c93d17f617a5862e09eb0e567a7c164c1c60ac9b)
+
+Indirect leak of 107072 byte(s) in 478 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x73180011d52e  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x3452e) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Indirect leak of 7360 byte(s) in 230 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x73180977bcdf  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0xecdf) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 3409 byte(s) in 268 object(s) allocated from:
+    #0 0x73181380ad60 in strdup ../../../../src/libsanitizer/asan/asan_interceptors.cpp:578
+    #1 0x731809792224 in FcValueSave (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x25224) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 2304 byte(s) in 72 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x73180979325c  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x2625c) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 1728 byte(s) in 54 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7318097925c2  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x255c2) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 496 byte(s) in 3 object(s) allocated from:
+    #0 0x73181380fb58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x731802475abe  (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x35abe) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 384 byte(s) in 12 object(s) allocated from:
+    #0 0x731813810610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x73180979246f  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x2546f) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 352 byte(s) in 1 object(s) allocated from:
+    #0 0x73181380fb58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x73180247604b in _dbus_string_lengthen (/lib/x86_64-linux-gnu/libdbus-1.so.3+0x3604b) (BuildId: 2c0f7740ddadac7cff5c4dfe304fbf95c7d5935c)
+
+Indirect leak of 96 byte(s) in 2 object(s) allocated from:
+    #0 0x731813810c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x73180978b9ed in FcLangSetCopy (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x1e9ed) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+SUMMARY: AddressSanitizer: 127797 byte(s) leaked in 1145 allocation(s).
+Shutting down and cleaning up LinuxCNC...
+task: 42266 cycles, min=0.000005, max=0.138341, avg=0.001070, 12 latency excursions (> 10x expected cycle time of 0.001000s)
+Note: Using POSIX non-realtime
+LinuxCNC terminated with an error.  You can find more information in the log:
+    /home/turo/linuxcnc_debug.txt
+and
+    /home/turo/linuxcnc_print.txt
+as well as in the output of the shell command 'dmesg' and in the terminal
+
+--- under_xvfb.sh-mm.log (complete executable-startup log; overwrote mm shell log) ---
+Machine configuration file is 'coffeecnc_sim.ini'
+Starting LinuxCNC...
+linuxcnc TPMOD=tpmod HOMEMOD=homemod EMCMOT=motmod
+Note: Using POSIX non-realtime
+Found file(LIB): /usr/share/linuxcnc/hallib/core_sim.hal
+Found file(REL): ./coffeecnc_sim_home.hal
+link (updating variable file): No such file or directory
+check=program_ran_until_terminated result=pass detail=seconds=12
+
+=================================================================
+==2270108==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 2560 byte(s) in 4 object(s) allocated from:
+    #0 0x706f4c631b58 in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:85
+    #1 0x706f425b4a88  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x25a88) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Direct leak of 604 byte(s) in 1 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f3a5ae538  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x38538) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Direct leak of 448 byte(s) in 2 object(s) allocated from:
+    #0 0x706f4c632610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x706f3a5aa52e  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x3452e) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Direct leak of 336 byte(s) in 14 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f45cffa43  (/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.1.so.0+0x1a58a43) (BuildId: c93d17f617a5862e09eb0e567a7c164c1c60ac9b)
+
+Direct leak of 256 byte(s) in 1 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f425b49e1  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x259e1) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Direct leak of 24 byte(s) in 1 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f45cf7f11  (/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.1.so.0+0x1a50f11) (BuildId: c93d17f617a5862e09eb0e567a7c164c1c60ac9b)
+
+Indirect leak of 107072 byte(s) in 478 object(s) allocated from:
+    #0 0x706f4c632610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x706f3a5aa52e  (/lib/x86_64-linux-gnu/libGLX_mesa.so.0+0x3452e) (BuildId: ee24a708bbbdccc02ee492418cffff2e3c30d2e5)
+
+Indirect leak of 7360 byte(s) in 230 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f4259dcdf  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0xecdf) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 3361 byte(s) in 268 object(s) allocated from:
+    #0 0x706f4c62cd60 in strdup ../../../../src/libsanitizer/asan/asan_interceptors.cpp:578
+    #1 0x706f425b4224 in FcValueSave (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x25224) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 2304 byte(s) in 72 object(s) allocated from:
+    #0 0x706f4c632610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x706f425b525c  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x2625c) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 1728 byte(s) in 54 object(s) allocated from:
+    #0 0x706f4c632610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x706f425b45c2  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x255c2) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 384 byte(s) in 12 object(s) allocated from:
+    #0 0x706f4c632610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x706f425b446f  (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x2546f) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+Indirect leak of 96 byte(s) in 2 object(s) allocated from:
+    #0 0x706f4c632c57 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x706f425ad9ed in FcLangSetCopy (/lib/x86_64-linux-gnu/libfontconfig.so.1+0x1e9ed) (BuildId: ffede8685d668e17caf92e861725683778418f9a)
+
+SUMMARY: AddressSanitizer: 126533 byte(s) leaked in 1139 allocation(s).
+check=sigterm_exit_code result=fail detail=1
+exit=1
+Shutting down and cleaning up LinuxCNC...
+task: 11568 cycles, min=0.000005, max=0.001170, avg=0.001056, 0 latency excursions (> 10x expected cycle time of 0.001000s)
+Note: Using POSIX non-realtime
+LinuxCNC terminated with an error.  You can find more information in the log:
+    /home/turo/linuxcnc_debug.txt
+and
+    /home/turo/linuxcnc_print.txt
+as well as in the output of the shell command 'dmesg' and in the terminal

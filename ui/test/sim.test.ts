@@ -670,6 +670,7 @@ describe('offsets and tools', () => {
     const offsets = r.out.findLast((message) => message.type === 'work_offsets')
     expect(offsets?.type === 'work_offsets' ? offsets.systems[0] : null).toEqual({
       wcs: 1,
+      available: true,
       offset: [200, 60, -62.5],
       rotation_xy: 0,
     })

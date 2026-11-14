@@ -1,0 +1,32 @@
+# Wires the coffeecnc HAL component into LinuxCNC. Run by the executable ([HAL] POSTGUI_HALFILE)
+# once its component is ready.
+
+# Jog stop without the NML command channel. motion.jog-stop acts on a rising edge:
+#   coffeecnc.jog-stop    the executable ends a jog whose dead-man lease expired
+#   watchdog tripped      the executable died or stalled: coffeecnc.heartbeat stopped toggling
+loadrt watchdog num_inputs=1
+loadrt not names=coffeecnc-watchdog-tripped
+loadrt or2 names=coffeecnc-jog-stop
+addf watchdog.process servo-thread
+addf watchdog.set-timeouts servo-thread
+addf coffeecnc-watchdog-tripped servo-thread
+addf coffeecnc-jog-stop servo-thread
+
+# Twice the executable's 150 ms jog lease.
+setp watchdog.timeout-0 0.3
+net coffeecnc-heartbeat coffeecnc.heartbeat => watchdog.input-0
+net coffeecnc-watchdog-enable coffeecnc.watchdog-enable => watchdog.enable-in
+net coffeecnc-watchdog-ok watchdog.ok-out => coffeecnc.watchdog-ok coffeecnc-watchdog-tripped.in
+net coffeecnc-watchdog-tripped coffeecnc-watchdog-tripped.out => coffeecnc-jog-stop.in0
+net coffeecnc-jog-stop-request coffeecnc.jog-stop => coffeecnc-jog-stop.in1
+net coffeecnc-jog-stop coffeecnc-jog-stop.out => motion.jog-stop
+# No jog starts while nothing watches it.
+net coffeecnc-watchdog-tripped => motion.jog-inhibit
+
+# Manual tool change: coffeecnc takes the place of hal_manualtoolchange. A configuration may have
+# looped these pins back already (LinuxCNC's core_sim.hal does).
+unlinkp iocontrol.0.tool-change
+unlinkp iocontrol.0.tool-changed
+net coffeecnc-tool-change iocontrol.0.tool-change => coffeecnc.tool-change
+net coffeecnc-tool-number iocontrol.0.tool-prep-number => coffeecnc.tool-number
+net coffeecnc-tool-changed coffeecnc.tool-changed => iocontrol.0.tool-changed

@@ -12,6 +12,7 @@ option(COFFEECNC_BUILD_APP "Build the app protocol layer (requires nlohmann_json
 if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/app)
 endif()
+add_subdirectory(src/linuxcnc)
 
 include(CTest)
 if(BUILD_TESTING)

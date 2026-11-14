@@ -4,7 +4,7 @@ The user's review of the first running panel on 14 November 2026 was: “this lo
 
 The design reference is [the original CoffeeCNC concept](../concepts/coffeecnc-mill.html), with reusable styles and structure in [its fragment](../concepts/coffeecnc-mill.fragment.html). The [workflow review](concept-review.md) still governs truthful data and practical behavior. Both requirements apply together.
 
-Claude owns the UI correction in PR #1. Codex owns comparison against the reference and review. Hold the UI merge until the revised screens have been visually reviewed. Functional tests alone cannot establish design fidelity.
+Ownership changed after the user's follow-up: Codex owns the UI correction in PR #1, implementing the original concept directly. Claude owns the C++ backend and reviews machine behavior. Hold the UI merge until the revised screens have been visually reviewed. Functional tests alone cannot establish design fidelity.
 
 ## What drifted
 
@@ -43,4 +43,4 @@ Keep actual controller state, stale-link handling, manual tool-change waits, coo
 3. Check running, paused, manual tool-change, E-stop, stale status and failed-preview states. Important state changes must remain conspicuous without destabilizing the layout.
 4. Run UI type, lint, behavioral and build checks after the changes. Then exercise view switching and stop/jog interactions in the rendered application.
 
-The first correction should produce a reviewable Program screenshot before polishing every workspace. Commit and push small increments. Codex will review those screenshots and behavior before approving the UI merge.
+The first correction should produce a reviewable Program screenshot before polishing every workspace. Commit and push small increments. Codex compares the rendered screens against the concept; Claude reviews machine behavior before the UI merge.

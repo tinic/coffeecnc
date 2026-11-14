@@ -1,0 +1,74 @@
+(Plate: face the top, then mill a rounded pocket and a round hole)
+(Stock 100 x 60 mm. Work zero: lower left corner, top face.)
+(T1 face mill 50 mm, T2 end mill 6 mm. Manual tool changes.)
+G17 G21 G90 G94
+G54
+
+(--- Tool 1: face the top, 0.5 mm deep ---)
+T1 M6
+G43
+S1800 M3
+M8
+G0 X-30 Y12
+G0 Z5
+G1 Z-0.5 F300
+G1 X130 F900
+G1 Y48
+G1 X-30
+G0 Z25
+M9
+M5
+
+(MSG, Check the faced surface, then resume)
+M1
+
+(--- Tool 2: pocket 50 x 30, corner radius 8, centred on X50 Y30 ---)
+T2 M6
+G43
+S6000 M3
+M8
+G0 X35 Y30
+G0 Z5
+(first depth)
+G1 Z-2 F150
+G1 X65 F600
+G1 X50 Y18
+G1 X67
+G3 X72 Y23 I0 J5
+G1 Y37
+G3 X67 Y42 I-5 J0
+G1 X33
+G3 X28 Y37 I0 J-5
+G1 Y23
+G3 X33 Y18 I5 J0
+G1 X50
+G1 X35 Y30
+(second depth)
+G1 Z-4 F150
+G1 X65 F600
+G1 X50 Y18
+G1 X67
+G3 X72 Y23 I0 J5
+G1 Y37
+G3 X67 Y42 I-5 J0
+G1 X33
+G3 X28 Y37 I0 J-5
+G1 Y23
+G3 X33 Y18 I5 J0
+G1 X50
+G4 P1.5
+G0 Z5
+
+(--- round hole, diameter 12, at X88 Y30: helix down, then a full circle ---)
+G0 X91 Y30
+G1 Z0.5 F150
+G2 X91 Y30 Z-1.5 I-3 J0 F400
+G2 X91 Y30 Z-3.5 I-3 J0
+G2 I-3
+G1 X88
+G0 Z25
+
+M9
+M5
+G53 G0 Z0
+M30

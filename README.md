@@ -4,13 +4,27 @@ A new milling frontend for LinuxCNC, with a native C++ core and a modern web int
 
 CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
 
-**Current status: design and workflow research.** The interactive concept is a visual prototype with simulated values. There is no CoffeeCNC controller backend yet.
+**Current status: working operator panel and native backend foundation.** The Vue/TypeScript panel runs against a browser simulator. Portable C++ libraries provide command validation, jog leases and protocol decoding; live LinuxCNC integration is still in development.
+
+![Current CoffeeCNC operator panel running the browser simulator](ui/screenshots/concept-light.png)
+
+*Current Machine workspace, using simulated controller state. The preview shows toolpaths; an associated solid part/stock view is not implemented yet.*
+
+## Run the operator panel
+
+```sh
+cd ui
+npm ci
+npm run dev
+```
+
+Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). Use the theme control for the dark version. See [UI development and checks](ui/README.md) and [native backend build instructions](backend/README.md).
 
 ## Explore the concept
 
 Open [the standalone concept](docs/concepts/coffeecnc-mill.html) in a browser after cloning. [The editable fragment](docs/concepts/coffeecnc-mill.fragment.html) is also included. The prototype uses external font and icon resources; it is not an offline production application.
 
-The concept explores readable coordinates, a part/toolpath view, operation context, and persistent run controls. It is a starting point for discussion: real jogging, touch-off, tool changes, proving a program, and recovery still need workflow design. Its displayed geometry, measurements, tool readiness and timing are illustrative.
+The concept established the panel's visual direction: readable coordinates, a part/toolpath view, operation context, and persistent run controls. Its displayed geometry, measurements, tool readiness and timing are illustrative. The working panel uses that design with simulator-backed jogging, touch-off, tool changes and execution controls; machine validation and recovery workflows remain ongoing work.
 
 ## Direction
 

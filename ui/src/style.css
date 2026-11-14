@@ -1,0 +1,276 @@
+@font-face { font-family: 'DM Sans'; src: url('/fonts/DM-Sans-400-700.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBM-Plex-Mono-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBM-Plex-Mono-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+/* Surface, type and spacing values from the original CoffeeCNC concept. */
+:root {
+  color-scheme: light;
+  --bg: #f5f6f7; --bg-sunken: #edf0f2; --panel: #fff; --panel-raised: #fff;
+  --control: #fff; --control-hover: #f1f4f7; --control-active: #e8edf0;
+  --line: #dce1e5; --line-strong: #dce1e5;
+  --text: #20272c; --text-dim: #68747d; --text-faint: #85919a;
+  --accent: #377ef2; --accent-soft: #edf3fe;
+  --go: #187957; --go-soft: #e8f5ef; --warn: #966518; --warn-soft: #fff5df;
+  --stop: #ba393d; --stop-soft: #fff0f0;
+  --radius: 12px; --gap: 12px; --touch: 44px;
+  --sans: 'DM Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', monospace;
+  font-family: var(--sans); font-size: 14px; line-height: 1.4;
+  color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;
+  --control: #202326; --control-hover: #292e33; --control-active: #343a40;
+  --line: #343a40; --line-strong: #3d444b;
+  --text: #edf0f2; --text-dim: #a0aab3; --text-faint: #7d8993;
+  --accent-soft: #28374f; --go: #78d7b3; --go-soft: #233c34;
+  --warn: #e4b466; --warn-soft: #3b3222; --stop: #f28d8d; --stop-soft: #412b2e;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--control);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.btn:active:not(:disabled),
+.btn.held {
+  background: var(--control-active);
+}
+
+.btn:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn:disabled {
+  color: var(--text-faint);
+  background: transparent;
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+.btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.btn.primary:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn.go:not(:disabled) {
+  border-color: var(--go);
+  background: var(--go-soft);
+}
+
+.btn.danger:not(:disabled) {
+  border-color: var(--stop);
+  background: var(--stop-soft);
+}
+
+.btn.quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn.square {
+  padding: 0;
+  width: var(--touch);
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented .btn {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented .btn:first-child {
+  margin-left: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.segmented .btn:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.segmented .btn.on {
+  position: relative;
+  z-index: 1;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.card > h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.field {
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.field:disabled {
+  color: var(--text-faint);
+  border-color: var(--line);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chip.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.chip.stop {
+  border-color: var(--stop);
+  background: var(--stop-soft);
+  color: var(--stop);
+}
+
+.chip.go {
+  border-color: var(--go);
+  background: var(--go-soft);
+  color: var(--go);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.blocked {
+  font-size: 13px;
+  color: var(--warn);
+}
+
+input[type='range'] {
+  min-width: 0;
+  height: var(--touch);
+  margin: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  touch-action: pan-y;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--control-active);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button, summary { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button { touch-action: manipulation; }
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+.popover { position: absolute; z-index: 40; right: 0; width: 310px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #00000018; }
+.popover h3 { font-size: 14px; margin: 0 0 12px; }
+.popover .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.popover .fact { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 12px; color: var(--text-dim); }

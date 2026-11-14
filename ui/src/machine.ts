@@ -4,6 +4,7 @@
 import { computed, watch, type ComputedRef } from 'vue'
 
 import { createTransport } from './bridge'
+import { requiresHoming } from './machine-capabilities'
 import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
 
@@ -61,6 +62,7 @@ export const allHomed: ComputedRef<boolean> = computed(
 )
 
 export const homingActive: ComputedRef<boolean> = computed(() => axes.value.some((axis) => axis.homing))
+export const homingRequired: ComputedRef<boolean> = computed(() => requiresHoming(panel.hello))
 
 export function findTool(number: number): Tool | null {
   return panel.toolTable?.tools.find((tool) => tool.number === number) ?? null
@@ -108,5 +110,5 @@ export const mdiBlock: ComputedRef<string | null> = computed(() => {
   if (homingActive.value) {
     return 'Homing is in progress'
   }
-  return allHomed.value ? null : 'Axes are not homed'
+  return !homingRequired.value || allHomed.value ? null : 'Axes are not homed'
 })

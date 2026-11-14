@@ -3,7 +3,7 @@
 // what the machine reports about feed, spindle and coolant.
 import { computed } from 'vue'
 
-import { allHomed, homingActive, linkBlock, live, panel, reported, send } from '../machine'
+import { allHomed, homingActive, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
 
 import AppIcon from './AppIcon.vue'
 import OverrideControl from './OverrideControl.vue'
@@ -25,7 +25,7 @@ const startBlock = computed((): string | null => {
   if (homingActive.value) {
     return 'Homing is in progress'
   }
-  if (!allHomed.value) {
+  if (homingRequired.value && !allHomed.value) {
     return 'Axes are not homed'
   }
   if (s.program.file === null) {

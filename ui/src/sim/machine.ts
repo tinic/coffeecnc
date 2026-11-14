@@ -19,6 +19,7 @@ import type {
   Wait,
 } from '../protocol'
 import { protocolVersion } from '../protocol'
+import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
 import { defaultFiles, listDirectory, splitLines } from './files'
 import {
   InterpError,
@@ -62,6 +63,8 @@ export const hello: Hello = {
   machine_units: 'mm',
   jog_increments: [0.01, 0.1, 1, 10],
   max_jog_velocity: 3000,
+  axis_max_jog_velocity: { x: 3000, y: 3000, z: 3000 },
+  homing_required: true,
   max_feed_override: 1.5,
   min_spindle_override: 0.5,
   max_spindle_override: 1.5,
@@ -126,6 +129,8 @@ export interface SimOptions {
   clock?: () => number
   /** Replaces the built-in program directory. */
   files?: Map<string, string>
+  /** Policy-only test configuration; this does not model another machine's mechanics. */
+  capabilities?: Partial<Pick<Hello, 'max_jog_velocity' | 'axis_max_jog_velocity' | 'homing_required'>>
 }
 
 export class SimMachine {
@@ -136,6 +141,7 @@ export class SimMachine {
   private readonly emitMessage: (message: FromMachine) => void
   private readonly clock: () => number
   private readonly files: Map<string, string>
+  private readonly configuration: Hello
 
   private machine: MachineState = 'estop'
   private mode: TaskMode = 'manual'
@@ -180,6 +186,7 @@ export class SimMachine {
   }
 
   constructor(options: SimOptions) {
+    this.configuration = structuredClone({ ...hello, ...options.capabilities })
     this.emitMessage = options.emit
     this.clock = options.clock ?? ((): number => Date.now())
     this.files = options.files ?? defaultFiles()
@@ -327,7 +334,8 @@ export class SimMachine {
         rapid_override: this.overrides.rapid,
         in_position: this.inPosition(),
       },
-      spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle },
+      spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle, actual_rpm: null, at_speed: null },
+      probe_input: null,
       coolant: { flood: m.flood, mist: m.mist },
       tool: { in_spindle: this.toolInSpindle, prepared: m.prepared },
       program: {
@@ -754,7 +762,7 @@ export class SimMachine {
   private execute(command: ToMachine): Rejection | null {
     switch (command.type) {
       case 'ready':
-        this.emit(hello)
+        this.emit(this.configuration)
         this.sendTools()
         this.sendOffsets()
         if (this.program !== null) {
@@ -913,13 +921,13 @@ export class SimMachine {
     }
   }
 
-  /** Work offsets are set through MDI (G10), which LinuxCNC refuses before homing. */
+  /** Work offsets use MDI (G10), subject to the configured homing requirement. */
   private offsetCommand(what: string): Rejection | null {
     const blocked = this.notOn(what) ?? this.busy(what)
     if (blocked !== null) {
       return blocked
     }
-    if (!this.allHomed()) {
+    if (requiresHoming(this.configuration) && !this.allHomed()) {
       return reject(`Can't ${what} when not homed`)
     }
     this.mode = 'mdi'
@@ -974,8 +982,8 @@ export class SimMachine {
     return null
   }
 
-  private jogVelocity(velocity: number): number {
-    return Math.min(hello.max_jog_velocity, Math.abs(velocity))
+  private jogVelocity(axis: AxisLetter, velocity: number): number {
+    return axisJogVelocity(this.configuration, axis, velocity)
   }
 
   private jog(letter: AxisLetter, direction: -1 | 1, velocity: number, held: boolean): Rejection | null {
@@ -990,8 +998,8 @@ export class SimMachine {
     if (blocked !== null) {
       return blocked
     }
-    if (!(velocity > 0)) {
-      return reject('Jog speed must be above zero')
+    if (this.jogVelocity(letter, velocity) === 0) {
+      return reject('Jog speed or configured axis limit is unavailable')
     }
     const limit = direction > 0 ? travel.max[axis] : travel.min[axis]
     if (this.phys[axis] === limit) {
@@ -1003,7 +1011,7 @@ export class SimMachine {
       )
     }
     this.mode = 'manual'
-    this.jogs[axis] = { kind: 'continuous', velocity: direction * this.jogVelocity(velocity), refreshed: this.now }
+    this.jogs[axis] = { kind: 'continuous', velocity: direction * this.jogVelocity(letter, velocity), refreshed: this.now }
     return null
   }
 
@@ -1016,11 +1024,11 @@ export class SimMachine {
     if (!this.inPosition()) {
       return reject('Wait for motion to stop before an incremental jog.')
     }
-    if (!(velocity > 0) || !Number.isFinite(distance)) {
+    if (this.jogVelocity(letter, velocity) === 0 || !Number.isFinite(distance)) {
       return reject('Jog step needs a distance and a speed above zero')
     }
     this.mode = 'manual'
-    this.jogs[axis] = { kind: 'step', target: this.phys[axis] + distance, velocity: this.jogVelocity(velocity) }
+    this.jogs[axis] = { kind: 'step', target: this.phys[axis] + distance, velocity: this.jogVelocity(letter, velocity) }
     return null
   }
 
@@ -1029,7 +1037,7 @@ export class SimMachine {
     if (blocked !== null) {
       return blocked
     }
-    if (!this.allHomed()) {
+    if (requiresHoming(this.configuration) && !this.allHomed()) {
       return reject("Can't issue MDI command when not homed")
     }
     if (this.exec !== null) {
@@ -1093,7 +1101,7 @@ export class SimMachine {
     if (blocked !== null) {
       return blocked
     }
-    if (!this.allHomed()) {
+    if (requiresHoming(this.configuration) && !this.allHomed()) {
       return reject(`Can't ${what} when not homed`)
     }
     if (this.program === null) {
@@ -1205,7 +1213,8 @@ function blankStatus(): Status {
       rapid_override: 1,
       in_position: true,
     },
-    spindle: { direction: 'stopped', commanded_rpm: 0, override: 1 },
+    spindle: { direction: 'stopped', commanded_rpm: 0, override: 1, actual_rpm: null, at_speed: null },
+    probe_input: null,
     coolant: { flood: false, mist: false },
     tool: { in_spindle: 0, prepared: null },
     program: { file: null, revision: 0, current_line: 0, motion_line: 0, optional_stop: false, block_delete: false },

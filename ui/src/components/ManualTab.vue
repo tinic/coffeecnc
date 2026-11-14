@@ -8,6 +8,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, wat
 
 import { openDialogs } from '../dialogs'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
+import { axisJogVelocity } from '../machine-capabilities'
 import { axes, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
 import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
@@ -45,7 +46,7 @@ const jogHold = new JogHold<JogKey>(
       } else {
         held.delete(key)
       }
-      send({ type: 'jog', ...jogs[key], velocity: panel.jogVelocity, held: isHeld })
+      send({ type: 'jog', ...jogs[key], velocity: axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity), held: isHeld })
     },
   },
   {
@@ -60,7 +61,7 @@ const keys = new Keys()
 
 /** A press on a jog control: a held jog, or one step when an increment is selected. */
 function begin(key: JogKey, stillHeld: () => boolean): void {
-  if (manualBlock.value !== null) {
+  if (manualBlock.value !== null || axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) === 0) {
     return
   }
   const increment = panel.jogIncrement
@@ -68,7 +69,7 @@ function begin(key: JogKey, stillHeld: () => boolean): void {
     jogHold.press(key, stillHeld)
   } else {
     const jog = jogs[key]
-    send({ type: 'jog_step', axis: jog.axis, distance: jog.direction * increment, velocity: panel.jogVelocity })
+    send({ type: 'jog_step', axis: jog.axis, distance: jog.direction * increment, velocity: axisJogVelocity(panel.hello, jog.axis, panel.jogVelocity) })
   }
 }
 
@@ -193,6 +194,7 @@ const removeResultListener = onResult((command, result) => {
 watch(openDialogs, () => {
   lostAttention()
 })
+watch(() => panel.hello, lostAttention)
 
 onBeforeUnmount(() => {
   window.removeEventListener('touchend', touchesEnded, true)
@@ -223,6 +225,15 @@ const pad: readonly (readonly [JogKey, string, 'up' | 'down' | 'left' | 'right']
   ['z+', 'zpos', 'up'],
   ['z-', 'zneg', 'down'],
 ]
+
+function jogBlock(key: JogKey): string | null {
+  if (manualBlock.value !== null) return manualBlock.value
+  return axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) > 0 ? null : 'Configured jog speed is unavailable'
+}
+const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])
+  .map((axis) => ({ axis, speed: axisJogVelocity(panel.hello, axis, panel.jogVelocity) }))
+  .filter(({ speed }) => speed > 0 && speed < panel.jogVelocity)
+  .map(({ axis, speed }) => `${axis.toUpperCase()} ${formatVelocity(speed, unit.value)} ${velocityUnit(unit.value)}`).join(' · '))
 
 function jogLabel(key: JogKey): string {
   return `${key.charAt(0).toUpperCase()}${key.charAt(1) === '+' ? '+' : '−'}`
@@ -326,8 +337,8 @@ function coolant(which: 'flood' | 'mist'): void {
             type="button"
             :class="{ held: held.has(key) }"
             :style="{ gridArea: area }"
-            :disabled="manualBlock !== null"
-            :title="manualBlock ?? `Jog ${jogLabel(key)}`"
+            :disabled="jogBlock(key) !== null"
+            :title="jogBlock(key) ?? `Jog ${jogLabel(key)}`"
             @touchstart.prevent="jogTouchStart(key, $event)"
             @touchend.prevent="jogTouchEnd(key, $event)"
             @touchcancel="jogTouchEnd(key, $event)"
@@ -393,6 +404,8 @@ function coolant(which: 'flood' | 'mist'): void {
         <span class="speed mono">{{ formatVelocity(panel.jogVelocity, unit) }}</span>
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
+
+      <p v-if="limitedSpeeds" class="hint">Axis limits: {{ limitedSpeeds }}</p>
 
       <div class="line">
         <span class="label">Home</span>

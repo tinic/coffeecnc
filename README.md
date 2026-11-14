@@ -4,7 +4,7 @@ A new milling frontend for LinuxCNC, with a native C++ core and a modern web int
 
 CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
 
-**Current status: working operator panel and native backend foundation.** The Vue/TypeScript panel runs against a browser simulator. Portable C++ libraries provide command validation, jog leases and protocol decoding; live LinuxCNC integration is still in development.
+**Current status: working operator panel and native backend foundation.** The Vue/TypeScript panel runs against a browser simulator. C++ libraries provide command validation, jog leases and protocol decoding. The NML/HAL adapter has passed LinuxCNC simulation tests; live application wiring is still in development.
 
 ![Current CoffeeCNC operator panel with a STEP model overlay](ui/screenshots/step-overlay.jpg)
 

@@ -47,6 +47,10 @@ export interface Hello {
   jog_increments: number[]
   /** Fastest jog, mm/min ([DISPLAY] MAX_LINEAR_VELOCITY). */
   max_jog_velocity: number
+  /** Optional v1 addition, mm/min. When present, includes every configured axis. */
+  axis_max_jog_velocity?: Partial<Record<AxisLetter, number>>
+  /** Whether MDI/program execution requires homing. Absent means true. */
+  homing_required?: boolean
   max_feed_override: number
   min_spindle_override: number
   max_spindle_override: number
@@ -91,12 +95,16 @@ export interface MotionStatus {
   in_position: boolean
 }
 
-/** LinuxCNC reports the commanded speed only; actual speed needs a HAL pin and is not here yet. */
+/** Commanded spindle state plus optional, explicitly configured measurement signals. */
 export interface SpindleStatus {
   direction: SpindleDirection
   /** The S word in effect, before override. */
   commanded_rpm: number
   override: number
+  /** Measured speed magnitude in rpm, not derived from commanded speed. Null/absent = unavailable. */
+  actual_rpm?: number | null
+  /** Configured feedback signal; null/absent is unknown, not false. */
+  at_speed?: boolean | null
 }
 
 export interface ProgramStatus {
@@ -134,6 +142,8 @@ export interface Status {
   motion: MotionStatus
   spindle: SpindleStatus
   coolant: { flood: boolean; mist: boolean }
+  /** Configured probe input: true means tripped. Null/absent = unavailable. */
+  probe_input?: boolean | null
   tool: {
     /** Tool LinuxCNC considers loaded (0 for none). */
     in_spindle: number

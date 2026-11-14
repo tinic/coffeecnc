@@ -22,6 +22,8 @@ These are unmodified research fixtures. None has been executed in LinuxCNC, geom
 
 ## Findings from inspecting the files
 
+The [paired-job workflow review](../docs/research/paired-sample-review.md) examines Camcraft registration candidates and EngiWorld's native flip placements. It distinguishes initial stock from finished-part geometry and identifies interpreter gaps before either becomes an end-to-end demonstration.
+
 ### Kroneum: multi-revision enclosures, two-sided split ops, and implicit units
 
 `kroneum` tracks the physical enclosure and PCB milling files for a hardware device across revisions `Rev_0.2` through `Rev_0.4`:

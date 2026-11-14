@@ -26,11 +26,13 @@ import type { Preview, Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
+import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-preview'
+import { toolModels } from '../tool-models'
 
 const modelError = ref('')
-const StepCanvas = defineAsyncComponent({
-  loader: () => import('./StepCanvas.vue'),
-  onError: (_error, _retry, fail): void => { modelError.value = 'Part renderer could not load; reload the panel'; fail() },
+const SceneCanvas = defineAsyncComponent({
+  loader: () => import('./SceneCanvas.vue'),
+  onError: (_error, _retry, fail): void => { modelError.value = '3D renderer could not load; reload the panel'; fail() },
 })
 const modelPoints = computed((): Vec3[] => {
   const attachment = part.attachment
@@ -113,15 +115,10 @@ const travelBox = computed((): { min: Vec3; max: Vec3 } | null => {
   }
 })
 
-const toolTip = computed((): Vec3 | null => {
-  const [x, y, z] = panel.status?.axes ?? []
-  if (x === undefined || y === undefined || z === undefined || !(x.homed && y.homed && z.homed)) {
-    // Before homing the machine position is not known, so there is nothing to place.
-    return null
-  }
-  const t = toolOffset.value
-  return [x.machine - t[0], y.machine - t[1], z.machine - t[2]]
-})
+const toolTip = computed((): Vec3 | null => reportedToolTip(panel.status))
+const toolBody = computed(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments, toolModels.defaults))
+const showTool = ref(true)
+const visibleTool = computed(() => showTool.value ? toolBody.value : null)
 
 const tools = computed((): number[] => {
   const seen: number[] = []
@@ -153,7 +150,13 @@ function fitTo(what: 'path' | 'machine'): void {
   // The path is fitted to its feed moves; rapids may come from far away.
   const bounds = drawn.value?.bounds ?? null
   let points = what !== 'path' ? [] : bounds !== null ? boxCorners(bounds.min, bounds.max) : pathPoints()
-  if (what === 'path') points = [...points, ...modelPoints.value]
+  if (what === 'path') {
+    points = [...points, ...modelPoints.value]
+    if (visibleTool.value !== null) {
+      const bounds = toolPreviewBounds(visibleTool.value)
+      points.push(...boxCorners(bounds.min, bounds.max))
+    }
+  }
   if (points.length === 0 && travelBox.value !== null) {
     points = boxCorners(travelBox.value.min, travelBox.value.max)
   }
@@ -173,6 +176,7 @@ function setView(name: ViewName): void {
 }
 
 watch(() => part.attachment?.geometry, () => { autoFit.value = true; modelError.value = '' })
+// Live position is not a fit dependency: motion must not make the camera follow the tool.
 watch([drawn, size, modelPoints], () => {
   if (autoFit.value) {
     fitTo('path')
@@ -439,24 +443,25 @@ onBeforeUnmount(() => {
 <template>
   <div class="pathview" :class="{ outdated: drawn !== null && !current }">
     <div class="viewport">
-      <StepCanvas v-if="part.attachment" :camera="camera" :width="size.width" :height="size.height" @error="modelError = $event" />
-      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath and optional part model preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-      <div v-if="banner.text || !live || toolTip === null || part.attachment" class="banners">
+      <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
+      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
+      <div v-if="banner.text || !live || toolTip === null || part.attachment || visibleTool || modelError" class="banners">
         <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
         <span v-if="!live" class="stop">Tool position not live</span>
         <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
-        <span v-if="part.attachment && (partBlock || modelError)" class="warn">{{ partBlock || modelError }}</span>
+        <span v-if="modelError || (part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
         <span v-else-if="showPart && !part.placed" class="warn">Part placement unconfirmed</span>
+        <span v-if="visibleTool">T{{ visibleTool.number }} envelope{{ visibleTool.model.nominalDiameter ? ' · nominal diameter' : '' }} · holder not modeled</span>
         <span v-if="showPart && part.attachment?.note" class="warn">Sample model · not paired with this program</span>
       </div>
     </div>
     <div class="scene-bottom">
-      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
+      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
       <div class="views">
         <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
         <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
         <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
-        <button type="button" title="Fit toolpath and visible model" aria-label="Fit toolpath and visible model" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button type="button" title="Fit toolpath and visible models" aria-label="Fit toolpath and visible models" @click="fitButton('path')"><AppIcon name="fit" /></button>
         <button type="button" title="Show and fit machine travel" @click="fitButton('machine')">Travel</button>
       </div>
     </div>

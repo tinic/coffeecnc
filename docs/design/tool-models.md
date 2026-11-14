@@ -14,7 +14,15 @@ The current envelope constraints require finite positive dimensions, cutting len
 
 The cutting tip is `(0, 0, 0)`; the body extends along **+Z**, in millimetres. `toolProfiles()` supplies radius/height sections independently of the renderer. The Three.js [LatheGeometry](https://threejs.org/docs/pages/LatheGeometry.html) renderer rotates its native +Y axis to +Z. Cutting and shank surfaces use distinct materials. The blue ring is a holder-face datum at `Z = stickout`, not a holder mesh.
 
-The full physical tool is displayed, including the section above that datum. Flutes, individual inserts and holders are not represented. Drill/spot/chamfer tips are ideal sharp cones; ball ends are hemispherical. These are visual envelopes, not collision or material-removal simulation. The existing machine view still uses its tool-tip marker; placing the configured body at the reported tip is a subsequent increment.
+The full physical tool is displayed, including the section above that datum. Flutes, individual inserts and holders are not represented. Drill/spot/chamfer tips are ideal sharp cones; ball ends are hemispherical. These are visual envelopes, not collision or material-removal simulation. The Machine workspace now places the configured loaded-tool envelope at the reported tip in the shared STEP scene. The toolpath and tip marker remain on top, so this is not an occlusion test.
+
+## Placement in the Machine workspace
+
+The body uses `Status.tool.in_spindle`, never a prepared T word or the selected tool-sequence section. Its anchor is `Axis.machine - Status.offsets.tool` in millimetres, exactly once, matching the toolpath's tip convention. G5x, G92 and work rotation do not transform this machine-space point. The model's physical overall length and table Z offset never supply an additional translation. This first renderer assumes the supported XYZ mill with its spindle along machine Z.
+
+The body is hidden when the link is stale/down, an axis is unhomed/homing, a manual tool change is in progress, the loaded row is missing/unassigned, or its dimensions are invalid. The existing tip marker remains available where position is known. **Tool** toggles the envelope independently of **Part**. **Fit**, named views and initial view sizing include the visible body; live motion does not refit the camera. Tool and part share one WebGL renderer and camera. Geometry rebuilds only when its model changes; arriving positions translate the existing mesh.
+
+The banner identifies the loaded T number and absent holder, and flags a nominal diameter if the table has none. The current protocol describes controller coordinates, not an independently measured cutter position. This display does not establish the physical length, offset correctness or collision clearance of the mounted assembly.
 
 ## Storage and lifetime
 
@@ -33,4 +41,4 @@ The expanded corpus supplies useful next cases without justifying automatic tool
 - Trebuchet's `tools.json` includes cutting and shank diameters, flute/overall length and a holder with its own inch units beside metric tools. An importer needs explicit unit conversion and tool/holder assembly handling.
 - SM-101's tool JSON conflicts with its NC revision for T4, as documented in the sample catalog. Metadata import needs conflict review, not silent assignment.
 
-A later native configuration format should persist machine-scoped assignments and setup-specific stick-out, support manufacturer/CAM imports with provenance, and introduce toolholders separately. Rendering an in-spindle tool must use LinuxCNC's reported loaded tool and tip position, rather than a preselected T word or double application of the Z offset.
+A later native configuration format should persist machine-scoped assignments and setup-specific stick-out, support manufacturer/CAM imports with provenance, and introduce toolholders separately. The loaded-tool renderer follows that reported-tool/tip convention; future holders and other machine kinematics must retain explicit coordinate and unit contracts.

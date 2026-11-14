@@ -1,0 +1,246 @@
+#include <coffeecnc/app/request.hpp>
+
+#include <nlohmann/json.hpp>
+
+#include <cmath>
+#include <initializer_list>
+#include <limits>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace coffeecnc {
+namespace {
+using Json = nlohmann::json;
+
+class InvalidRequest : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
+
+auto parse(std::string_view text) -> Json {
+  std::vector<std::set<std::string>> object_keys;
+  const auto callback = [&object_keys](int depth, Json::parse_event_t event, Json& value) -> bool {
+    using Event = Json::parse_event_t;
+    if ((event == Event::object_start || event == Event::array_start) && depth >= max_request_depth)
+      throw InvalidRequest("Request nesting limit exceeded.");
+    if (event == Event::object_start)
+      object_keys.emplace_back();
+    else if (event == Event::object_end)
+      object_keys.pop_back();
+    else if (event == Event::key && !object_keys.back().insert(value.get<std::string>()).second)
+      throw InvalidRequest("Duplicate object key in request.");
+    return true; // Never silently discard an invalid field.
+  };
+  return Json::parse(text.begin(), text.end(), callback);
+}
+
+auto field(const Json& object, std::string_view name) -> const Json& {
+  if (!object.is_object())
+    throw InvalidRequest("Expected a JSON object.");
+  const auto it = object.find(name);
+  if (it == object.end())
+    throw InvalidRequest("Missing required field: " + std::string(name) + '.');
+  return *it;
+}
+
+void fields(const Json& object, std::initializer_list<std::string_view> names) {
+  if (!object.is_object())
+    throw InvalidRequest("Expected a JSON object.");
+  for (const auto name : names)
+    static_cast<void>(field(object, name));
+  if (object.size() != names.size())
+    throw InvalidRequest("Unexpected field in request.");
+}
+
+auto string(const Json& object, std::string_view name) -> std::string {
+  const auto& value = field(object, name);
+  if (!value.is_string())
+    throw InvalidRequest("Expected a string: " + std::string(name) + '.');
+  auto result = value.get<std::string>();
+  if (result.find('\0') != std::string::npos)
+    throw InvalidRequest("NUL is not allowed in request strings.");
+  return result;
+}
+
+auto number(const Json& object, std::string_view name) -> double {
+  const auto& value = field(object, name);
+  if (!value.is_number())
+    throw InvalidRequest("Expected a number: " + std::string(name) + '.');
+  const auto result = value.get<double>();
+  if (!std::isfinite(result))
+    throw InvalidRequest("Expected a finite number: " + std::string(name) + '.');
+  return result;
+}
+
+auto integer(const Json& object, std::string_view name) -> int {
+  const auto value = number(object, name);
+  if (std::trunc(value) != value || value < std::numeric_limits<int>::min() ||
+      value > std::numeric_limits<int>::max())
+    throw InvalidRequest("Expected an in-range integer: " + std::string(name) + '.');
+  return static_cast<int>(value);
+}
+
+auto request_id(const Json& object) -> RequestId {
+  const auto value = number(object, "id");
+  if (std::trunc(value) != value || value < -static_cast<double>(max_request_id) ||
+      value > static_cast<double>(max_request_id))
+    throw InvalidRequest("Request ID must be a JavaScript safe integer.");
+  return static_cast<RequestId>(value);
+}
+
+auto boolean(const Json& object, std::string_view name) -> bool {
+  const auto& value = field(object, name);
+  if (!value.is_boolean())
+    throw InvalidRequest("Expected a boolean: " + std::string(name) + '.');
+  return value.get<bool>();
+}
+
+template <typename T>
+auto choice(const Json& object, std::string_view name,
+            std::initializer_list<std::pair<std::string_view, T>> choices) -> T {
+  const auto value = string(object, name);
+  for (const auto& [label, result] : choices)
+    if (value == label)
+      return result;
+  throw InvalidRequest("Unsupported value for field: " + std::string(name) + '.');
+}
+
+auto axis(const Json& object) -> Axis {
+  return choice<Axis>(object, "axis", {{"x", Axis::x}, {"y", Axis::y}, {"z", Axis::z}});
+}
+
+auto command(const Json& object) -> Command {
+  const auto type = string(object, "type");
+  // Commands with no body still reject stray fields (for example an unsupported run-from-line).
+  if (type == "ready" || type == "jog_stop_all" || type == "run" || type == "pause" ||
+      type == "resume" || type == "step" || type == "abort" || type == "tool_changed") {
+    fields(object, {"id", "type"});
+    if (type == "ready")
+      return Ready{};
+    if (type == "jog_stop_all")
+      return JogStopAll{};
+    if (type == "run")
+      return Run{};
+    if (type == "pause")
+      return Pause{};
+    if (type == "resume")
+      return Resume{};
+    if (type == "step")
+      return Step{};
+    if (type == "abort")
+      return Abort{};
+    return ToolChanged{};
+  }
+  if (type == "set_machine") {
+    fields(object, {"id", "type", "state"});
+    return SetMachine{choice<MachineState>(
+        object, "state",
+        {{"estop", MachineState::estop}, {"off", MachineState::off}, {"on", MachineState::on}})};
+  }
+  if (type == "home") {
+    fields(object, {"id", "type", "axis"});
+    if (string(object, "axis") == "all")
+      return Home{std::nullopt};
+    return Home{axis(object)};
+  }
+  if (type == "jog") {
+    fields(object, {"id", "type", "axis", "direction", "velocity", "held"});
+    const auto direction = integer(object, "direction");
+    if (direction != -1 && direction != 1)
+      throw InvalidRequest("Jog direction must be -1 or 1.");
+    return Jog{axis(object), direction, number(object, "velocity"), boolean(object, "held")};
+  }
+  if (type == "jog_step") {
+    fields(object, {"id", "type", "axis", "distance", "velocity"});
+    return JogStep{axis(object), number(object, "distance"), number(object, "velocity")};
+  }
+  if (type == "mdi") {
+    fields(object, {"id", "type", "text"});
+    return Mdi{string(object, "text")};
+  }
+  if (type == "list_directory") {
+    fields(object, {"id", "type", "path"});
+    if (field(object, "path").is_null())
+      return ListDirectory{std::nullopt};
+    return ListDirectory{string(object, "path")};
+  }
+  if (type == "open_program") {
+    fields(object, {"id", "type", "path"});
+    return OpenProgram{string(object, "path")};
+  }
+  if (type == "set_override") {
+    fields(object, {"id", "type", "which", "value"});
+    return SetOverride{
+        choice<Override>(
+            object, "which",
+            {{"feed", Override::feed}, {"rapid", Override::rapid}, {"spindle", Override::spindle}}),
+        number(object, "value")};
+  }
+  if (type == "set_spindle") {
+    fields(object, {"id", "type", "direction", "rpm"});
+    return SetSpindle{choice<SpindleDirection>(object, "direction",
+                                               {{"stopped", SpindleDirection::stopped},
+                                                {"forward", SpindleDirection::forward},
+                                                {"reverse", SpindleDirection::reverse}}),
+                      number(object, "rpm")};
+  }
+  if (type == "set_coolant") {
+    fields(object, {"id", "type", "flood", "mist"});
+    return SetCoolant{boolean(object, "flood"), boolean(object, "mist")};
+  }
+  if (type == "set_program_option") {
+    fields(object, {"id", "type", "option", "on"});
+    return SetProgramOption{choice<ProgramOption>(object, "option",
+                                                  {{"optional_stop", ProgramOption::optional_stop},
+                                                   {"block_delete", ProgramOption::block_delete}}),
+                            boolean(object, "on")};
+  }
+  if (type == "select_wcs") {
+    fields(object, {"id", "type", "wcs"});
+    return SelectWcs{integer(object, "wcs")};
+  }
+  if (type == "touch_off") {
+    fields(object, {"id", "type", "axis", "value"});
+    return TouchOff{axis(object), number(object, "value")};
+  }
+  if (type == "tool_touch_off") {
+    fields(object, {"id", "type", "value"});
+    return ToolTouchOff{number(object, "value")};
+  }
+  if (type == "set_tool") {
+    fields(object, {"id", "type", "tool"});
+    const auto& tool = field(object, "tool");
+    fields(tool, {"number", "pocket", "length", "diameter", "comment"});
+    return SetTool{Tool{integer(tool, "number"), integer(tool, "pocket"), number(tool, "length"),
+                        number(tool, "diameter"), string(tool, "comment")}};
+  }
+  if (type == "remove_tool") {
+    fields(object, {"id", "type", "number"});
+    return RemoveTool{integer(object, "number")};
+  }
+  throw InvalidRequest("Unknown protocol v1 command.");
+}
+} // namespace
+
+auto decode_request(std::string_view json) -> DecodedRequest {
+  if (json.size() > max_request_bytes)
+    return DecodeError{std::nullopt, "Request exceeds the 16 KiB limit."};
+  if (json.find('\0') != std::string_view::npos)
+    return DecodeError{std::nullopt, "Invalid JSON request."};
+  std::optional<RequestId> id;
+  try {
+    const auto object = parse(json);
+    id = request_id(object);
+    return Request{*id, command(object)};
+  } catch (const InvalidRequest& error) {
+    return DecodeError{id, error.what()};
+  } catch (const Json::exception&) {
+    // Parser diagnostics can contain arbitrary input. Keep the operator message bounded.
+    return DecodeError{id, "Invalid JSON request."};
+  }
+}
+
+} // namespace coffeecnc

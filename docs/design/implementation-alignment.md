@@ -10,7 +10,7 @@ Claude owns the UI correction in PR #1. Codex owns comparison against the refere
 
 | Reference | First implementation | Required correction |
 |---|---|---|
-| Branded header, centered pill navigation, quiet machine identity | Crowded toolbar of task state and machine controls | Restore the header's hierarchy while keeping power/E-stop and connection state visible |
+| Branded header, centered pill navigation, quiet machine identity | Crowded toolbar of task state and machine controls | Restore the header's hierarchy with a concise machine-state control and unambiguous connection indication |
 | Clear job title and secondary setup context | Filename in a narrow utility toolbar | Restore a job/program title region; display only metadata actually available |
 | Horizontal WCS and XYZ readout strip | Permanent 376 px left sidebar with three large boxed DROs | Restore the horizontal strip; retain position basis, units, machine/DTG access and touch-off affordances |
 | Large main scene with a roughly 292 px contextual inspector | Default equal-width NC text and small path view | Make the scene the primary Program view; keep Text/Split as explicit choices |
@@ -25,6 +25,7 @@ Reference screenshots: [concept](reference-concept.png) and [implementation befo
 - Use the concept's DM Sans and IBM Plex Mono, bundled locally with their licenses. Machine operation must not depend on fetching fonts.
 - Preserve its 12 px principal surface radius, approximately 24 px page margins, subtle dividers, neutral canvas and restrained blue accent. Maintain both light and dark versions of this same composition.
 - Keep the job title, positions, principal workspace and main actions visually distinct. Avoid turning every status value into a bordered card or button.
+- Use the reference's small number of visible controls as a design constraint. Secondary mode details, messages, options and settings can use contextual disclosure. Position-basis labels must stay explicit; stop and hold must remain directly available during execution.
 - At 1280 × 800, the primary workspace and essential stop/hold controls must fit without whole-page scrolling. The original concept's extra vertical spacing can compress at this height without replacing its arrangement.
 - Manual motion, MDI and tool/offset editing must use the same design system. They can have task-specific contents while preserving the header, readout and command regions.
 - A toolpath-only fallback still needs a useful camera framing, legible geometry and a calm canvas. Optional model/stock context is part of the product direction, not a reason to paint a fictional vise around arbitrary NC.

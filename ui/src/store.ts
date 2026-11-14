@@ -1,0 +1,373 @@
+// The panel's store: the latest of everything the machine reports, the commands still waiting
+// for their result, and what the operator has been told. The machine is the source of truth; the
+// only state that belongs to the panel is presentation (workspace, display unit).
+
+import { reactive } from 'vue'
+
+import type { Transport } from './bridge'
+import type {
+  CommandBody,
+  CommandResult,
+  Directory,
+  FromMachine,
+  Hello,
+  LengthUnit,
+  Preview,
+  ProgramText,
+  Status,
+  ToolTable,
+  WorkOffsets,
+} from './protocol'
+import { protocolVersion } from './protocol'
+import type { LinkFault } from './sim/machine'
+import { wcsName } from './units'
+
+export type Tab = 'manual' | 'program' | 'tools'
+export const tabs: readonly Tab[] = ['manual', 'program', 'tools']
+export type ProgramLayout = 'split' | 'text' | 'path'
+
+/** Status older than this is not live, whatever its `link` says. */
+export const staleAfterMs = 1000
+/** A command without a result for this long is reported to the operator. */
+export const answerTimeoutMs = 2000
+const watchdogMs = 200
+const maxLogEntries = 500
+const maxMdiEntries = 50
+const collapseWindowMs = 3000
+
+/**
+ * What the panel can say about the link: `silent` is the panel's own finding that no status has
+ * arrived for a second; `stale` and `down` are reported by the executable.
+ */
+export type LinkView = 'connecting' | 'live' | 'silent' | 'stale' | 'down'
+
+export interface LogEntry {
+  id: number
+  level: 'error' | 'info'
+  text: string
+  /** What was asked for, when the entry is the result of a command. */
+  context: string
+  /** Milliseconds since the Unix epoch, of the last occurrence. */
+  time: number
+  /** Identical entries in quick succession are counted, not repeated. */
+  count: number
+}
+
+export interface MdiEntry {
+  id: number
+  text: string
+  outcome: 'pending' | CommandResult['outcome']
+  reason: string
+}
+
+export interface PanelState {
+  simulated: boolean
+  hello: Hello | null
+  status: Status | null
+  link: LinkView
+  /** Milliseconds since the last status arrived; meaningful when `link` is `silent`. */
+  silentFor: number
+  toolTable: ToolTable | null
+  workOffsets: WorkOffsets | null
+  program: ProgramText | null
+  preview: Preview | null
+  directory: Directory | null
+  log: LogEntry[]
+  /** The log entry shown in the status bar, until dismissed. */
+  notice: LogEntry | null
+  mdi: MdiEntry[]
+  tab: Tab
+  unit: LengthUnit
+  programLayout: ProgramLayout
+  droDetails: boolean
+  simulatorFault: LinkFault
+}
+
+export interface PanelTimers {
+  setInterval: (callback: () => void, ms: number) => number
+  clearInterval: (handle: number) => void
+}
+
+export interface PanelOptions {
+  transport: Transport
+  timers?: PanelTimers
+  now?: () => number
+}
+
+export type ResultListener = (command: CommandBody, result: CommandResult) => void
+
+export interface Panel {
+  readonly state: PanelState
+  /** Sends a command and returns its id. */
+  send: (command: CommandBody) => number
+  start: () => void
+  stop: () => void
+  /** Calls `listener` with every command result; returns a function that removes it. */
+  onResult: (listener: ResultListener) => () => void
+  dismissNotice: () => void
+  setSimulatorFault: (fault: LinkFault) => void
+}
+
+/** A few words naming a command, for the log. */
+export function describeCommand(command: CommandBody): string {
+  switch (command.type) {
+    case 'ready':
+      return 'Connect'
+    case 'set_machine':
+      return command.state === 'estop' ? 'E-stop' : command.state === 'on' ? 'Machine on' : 'Machine off'
+    case 'home':
+      return command.axis === 'all' ? 'Home all' : `Home ${command.axis.toUpperCase()}`
+    case 'jog':
+    case 'jog_step':
+      return `Jog ${command.axis.toUpperCase()}`
+    case 'jog_stop_all':
+      return 'Stop jog'
+    case 'mdi':
+      return `MDI ${command.text}`
+    case 'list_directory':
+      return 'List directory'
+    case 'open_program':
+      return `Open ${command.path}`
+    case 'run':
+      return 'Cycle start'
+    case 'pause':
+      return 'Pause'
+    case 'resume':
+      return 'Resume'
+    case 'step':
+      return 'Single step'
+    case 'abort':
+      return 'Stop'
+    case 'set_override':
+      return `Set ${command.which} override`
+    case 'set_spindle':
+      return command.direction === 'stopped' ? 'Spindle stop' : `Spindle ${command.direction}`
+    case 'set_coolant':
+      return 'Coolant'
+    case 'set_program_option':
+      return command.option === 'optional_stop' ? 'Optional stop' : 'Block delete'
+    case 'select_wcs':
+      return `Select ${wcsName(command.wcs)}`
+    case 'touch_off':
+      return `Touch off ${command.axis.toUpperCase()}`
+    case 'tool_touch_off':
+      return 'Tool length touch-off'
+    case 'set_tool':
+      return `Edit tool ${String(command.tool.number)}`
+    case 'remove_tool':
+      return `Remove tool ${String(command.number)}`
+    case 'tool_changed':
+      return 'Confirm tool change'
+  }
+}
+
+function outcomeWords(outcome: CommandResult['outcome']): string {
+  switch (outcome) {
+    case 'accepted':
+      return 'accepted'
+    case 'rejected':
+      return 'not possible now'
+    case 'failed':
+      return 'LinuxCNC reported an error'
+    case 'timed_out':
+      return 'LinuxCNC did not answer'
+  }
+}
+
+export function createPanel(options: PanelOptions): Panel {
+  const transport = options.transport
+  const now = options.now ?? ((): number => Date.now())
+  const timers: PanelTimers = options.timers ?? {
+    setInterval: (callback, ms): number => window.setInterval(callback, ms),
+    clearInterval: (handle): void => {
+      window.clearInterval(handle)
+    },
+  }
+
+  const state = reactive<PanelState>({
+    simulated: transport.simulated,
+    hello: null,
+    status: null,
+    link: 'connecting',
+    silentFor: 0,
+    toolTable: null,
+    workOffsets: null,
+    program: null,
+    preview: null,
+    directory: null,
+    log: [],
+    notice: null,
+    mdi: [],
+    tab: 'manual',
+    unit: 'mm',
+    programLayout: 'split',
+    droDetails: true,
+    simulatorFault: transport.simulator?.fault() ?? 'none',
+  })
+
+  const pending = new Map<number, { command: CommandBody; sent: number }>()
+  const resultListeners = new Set<ResultListener>()
+  let nextId = 1
+  let nextLogId = 1
+  let lastStatusAt = 0
+  let watchdog: number | null = null
+
+  function log(level: 'error' | 'info', text: string, context: string, time: number): void {
+    const last = state.log.at(-1)
+    if (last?.level === level && last.text === text && last.context === context && time - last.time < collapseWindowMs) {
+      last.count += 1
+      last.time = time
+      state.notice = last
+      return
+    }
+    state.log.push({ id: nextLogId, level, text, context, time, count: 1 })
+    nextLogId += 1
+    if (state.log.length > maxLogEntries) {
+      state.log.splice(0, state.log.length - maxLogEntries)
+    }
+    state.notice = state.log.at(-1) ?? null
+  }
+
+  function updateLink(): void {
+    const status = state.status
+    if (status === null) {
+      state.link = 'connecting'
+      return
+    }
+    const age = now() - lastStatusAt
+    if (age > staleAfterMs) {
+      state.link = 'silent'
+      state.silentFor = age
+    } else {
+      state.link = status.link
+      state.silentFor = 0
+    }
+  }
+
+  function result(message: CommandResult): void {
+    const entry = pending.get(message.id)
+    if (entry === undefined) {
+      return
+    }
+    pending.delete(message.id)
+    const command = entry.command
+    if (command.type === 'mdi') {
+      const mdi = state.mdi.find((candidate) => candidate.id === message.id)
+      if (mdi !== undefined) {
+        mdi.outcome = message.outcome
+        mdi.reason = message.reason
+      }
+    }
+    if (message.outcome !== 'accepted') {
+      const reason = message.reason === '' ? outcomeWords(message.outcome) : message.reason
+      log('error', reason, describeCommand(command), now())
+    }
+    for (const listener of resultListeners) {
+      listener(command, message)
+    }
+  }
+
+  function receive(message: FromMachine): void {
+    switch (message.type) {
+      case 'hello':
+        if (state.hello === null) {
+          state.unit = message.machine_units
+        }
+        state.hello = message
+        if (message.protocol !== protocolVersion) {
+          log(
+            'error',
+            `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`,
+            '',
+            now(),
+          )
+        }
+        break
+      case 'status':
+        state.status = message
+        lastStatusAt = now()
+        updateLink()
+        break
+      case 'tool_table':
+        state.toolTable = message
+        break
+      case 'work_offsets':
+        state.workOffsets = message
+        break
+      case 'program':
+        state.program = message
+        break
+      case 'preview':
+        state.preview = message
+        break
+      case 'directory':
+        state.directory = message
+        break
+      case 'message':
+        log(message.level, message.text, '', message.time)
+        break
+      case 'result':
+        result(message)
+        break
+    }
+  }
+
+  function checkPending(): void {
+    const time = now()
+    for (const [id, entry] of pending) {
+      if (time - entry.sent > answerTimeoutMs) {
+        pending.delete(id)
+        const mdi = state.mdi.find((candidate) => candidate.id === id)
+        if (mdi !== undefined) {
+          mdi.outcome = 'timed_out'
+          mdi.reason = 'No answer from the machine'
+        }
+        log('error', 'No answer from the machine', describeCommand(entry.command), time)
+      }
+    }
+  }
+
+  transport.listen(receive)
+
+  return {
+    state,
+    send: (command): number => {
+      const id = nextId
+      nextId += 1
+      pending.set(id, { command, sent: now() })
+      if (command.type === 'mdi') {
+        state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })
+        if (state.mdi.length > maxMdiEntries) {
+          state.mdi.splice(0, state.mdi.length - maxMdiEntries)
+        }
+      }
+      transport.send({ ...command, id })
+      return id
+    },
+    start: (): void => {
+      watchdog ??= timers.setInterval(() => {
+        updateLink()
+        checkPending()
+      }, watchdogMs)
+    },
+    stop: (): void => {
+      if (watchdog !== null) {
+        timers.clearInterval(watchdog)
+        watchdog = null
+      }
+    },
+    onResult: (listener): (() => void) => {
+      resultListeners.add(listener)
+      return () => {
+        resultListeners.delete(listener)
+      }
+    },
+    dismissNotice: (): void => {
+      state.notice = null
+    },
+    setSimulatorFault: (fault): void => {
+      transport.simulator?.setFault(fault)
+      state.simulatorFault = transport.simulator?.fault() ?? 'none'
+    },
+  }
+}

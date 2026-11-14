@@ -40,18 +40,23 @@ namespace coffeecnc {
 // never task's counters passed through. They are what was attributed to the loaded revision,
 // each 0 until something was:
 //
-//   evidence    only a status that is live, was read after this source took the revision up
-//               and after it noticed the last MDI block the port reports, and is newer than
-//               the one judged before. Any other status (stale, older, of another file)
-//               changes nothing: what was attributed last stays reported.
+//   evidence    only a status that is live, was read (TimedStatus::read_at, taken before the
+//               status is acquired) after this source took the revision up and after it
+//               noticed the last MDI block the port reports, and is newer than the one judged
+//               before. Any other status (stale, older, of another file) changes nothing:
+//               what was attributed last stays reported.
 //   executing   such a status with task in auto and the interpreter not idle (reading,
-//               paused, waiting): the program of this revision runs. A counter is attributed
-//               from the first such status of the run in which it differs from what it read
-//               last before the run (in the first status of the run where none was read
-//               before), or in which the machine moves, dwells or waits for a tool change:
-//               at the start of a run the counters still hold what they held before, until
-//               task takes up the first block. From then on, to the end of the run, the
-//               counter is reported as read; paused included.
+//               paused, waiting): the program of this revision runs. At the start of a run
+//               the counters still hold what they held before it, until task takes up the
+//               first block, so each counter has a baseline: what it read in the last
+//               evidence status before the run; where there was none (the revision first
+//               seen executing, or the run first seen after an MDI block the port reports),
+//               the first status of the run supplies the baseline and attributes nothing by
+//               its counters. A counter is attributed from the first status of the run in
+//               which it differs from its baseline, or in which the machine moves (both
+//               counters), dwells or waits for a tool change (the current line). A counter
+//               equal to its baseline stays withheld (0) until then. Once attributed it is
+//               reported as read to the end of the run; paused included.
 //   ended       the first status after the run with task in auto and idle (finished, aborted,
 //               E-stop): the attributed counters are read once more, as the lines the
 //               program stopped at, and kept. Further idle statuses do not move them.

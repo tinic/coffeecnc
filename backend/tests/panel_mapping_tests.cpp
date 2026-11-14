@@ -495,11 +495,24 @@ void source_lines_belong_to_the_revision() {
   require(lines(rig.step(at(automatic, reading, 9, 9, true))) == std::pair{9, 9},
           "The same read after it does");
 
+  // The status thread was held up after it had acquired a status of the run before, and
+  // left it in the mailbox only after the load: it is dated when its acquisition began.
+  static_cast<void>(rig.step(at(automatic, idle, 9, 9)));
+  ++rig.loads.programs;
+  rig.now += 50ms;
+  r = rig.source.read();
+  require(r.status.program.revision == 4 && lines(r) == none, "Loaded again");
+  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now - 1ms);
+  require(lines(rig.source.read()) == none,
+          "A status put after the load but acquired before it is not evidence");
+  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now + 1ms);
+  require(lines(rig.source.read()) == std::pair{6, 6}, "One acquired after it is");
+
   // Another file named by task while it runs (loaded and started by another client).
   auto other = at(automatic, reading, 9, 8, true);
   other.program_file = (scratch / "other.ngc").string();
   r = rig.step(other);
-  require(r.status.program.revision == 4 && lines(r) == none, "First seen: a new revision");
+  require(r.status.program.revision == 5 && lines(r) == none, "First seen: a new revision");
   require(lines(rig.step(other)) == std::pair{9, 8}, "Seen executing after that: its lines");
 }
 

@@ -1709,6 +1709,20 @@ void lines_across_open(Rig& rig) {
   const Pair none{0, 0};
   bool sent = true;
 
+  // How long one status reading takes: a reading is dated when it begins, so this is by how
+  // much the link age of a reading errs on the old side.
+  {
+    std::vector<double> took;
+    for (int i = 0; i < 400; ++i) {
+      const auto begun = Clock::now();
+      static_cast<void>(rig.view.status());
+      took.push_back(std::chrono::duration<double, std::micro>(Clock::now() - begun).count());
+    }
+    std::ranges::sort(took);
+    fact("status_read_us", std::format("median={:.0f} p99={:.0f} max={:.0f}", took[200],
+                                       took[396], took.back()));
+  }
+
   // The first program was run and aborted before this source existed.
   auto task = lines("after_abort_of_first");
   check("lines_of_a_run_not_seen_are_withheld", shown == none && task.first > 0,

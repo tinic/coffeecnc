@@ -15,7 +15,13 @@
 
 namespace coffeecnc {
 
-// One full reading and when it was taken.
+// One full reading and its time. `read_at` is taken BEFORE the reading is acquired from
+// LinuxCNC: the data is of that moment or later, never earlier, however long the acquisition
+// waited or the reading thread was held up before it left the reading here. Whoever orders a
+// reading against an event of its own (a load, a pass over the tool table) may therefore take
+// `read_at` after the event as proof that the data is of after the event; and an age computed
+// from `read_at` is never less than the data's age. A reader, or a test that fills a mailbox
+// itself, must keep that.
 struct TimedStatus {
   NmlStatus status;
   std::chrono::steady_clock::time_point read_at;
@@ -23,7 +29,8 @@ struct TimedStatus {
 
 // Where the thread that owns a status reader leaves each reading for the threads that do not:
 // the publisher takes the panel's status from here and never calls a reader. The time tells an
-// old reading from a new one. Thread-safe; its mutex is held for a copy only.
+// old reading from a new one (see TimedStatus for what it guarantees). Thread-safe; its mutex is
+// held for a copy only.
 class NmlStatusMailbox {
 public:
   void put(const NmlStatus& status, std::chrono::steady_clock::time_point read_at);

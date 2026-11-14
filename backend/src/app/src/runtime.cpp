@@ -21,8 +21,11 @@ auto control_step(Session& session, SafetyOutputs& outputs, Instant now) -> bool
 }
 
 void status_step(Session& session, StatusSource& source) {
+  // Dated before the read: a status is never taken for newer than it is, so a read that was
+  // held up makes the link old, not fresh.
+  const auto begun = JogLease::Clock::now();
   const auto state = source.read();
-  session.observe(state, JogLease::Clock::now());
+  session.observe(state, begun);
 }
 
 Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,

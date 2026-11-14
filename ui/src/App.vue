@@ -25,7 +25,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
       <ManualTab v-if="panel.tab === 'manual'" />
       <ProgramTab v-else-if="panel.tab === 'program'" />
       <ToolsTab v-else />
-      <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" />
+      <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" :class="{ 'with-status-row': panel.tab === 'program' }" />
       <div id="dialogs"></div>
       <LogDialog v-if="logOpen" @close="logOpen = false" />
       <FileBrowser v-if="browsing" @close="browsing = false" />

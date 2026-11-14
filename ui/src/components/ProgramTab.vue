@@ -103,7 +103,7 @@ async function showFailure(): Promise<void> {
 .tool { border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }.tool-title { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; }.tool-title strong { font-size: 13px; font-weight: 500; }.tool-title small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 11px; }.tool-glyph { display: flex; padding: 10px; background: var(--bg-sunken); border-radius: 8px; color: var(--text-dim); }
 .kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
-.status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
+.status-row { flex: none; min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 </style>

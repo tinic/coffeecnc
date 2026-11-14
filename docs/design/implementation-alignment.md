@@ -4,7 +4,7 @@ The user's review of the first running panel on 14 November 2026 was: “this lo
 
 The design reference is [the original CoffeeCNC concept](../concepts/coffeecnc-mill.html), with reusable styles and structure in [its fragment](../concepts/coffeecnc-mill.fragment.html). The [workflow review](concept-review.md) still governs truthful data and practical behavior. Both requirements apply together.
 
-Ownership changed after the user's follow-up: Codex owns the UI correction in PR #1, implementing the original concept directly. Claude owns the C++ backend and reviews machine behavior. Hold the UI merge until the revised screens have been visually reviewed. Functional tests alone cannot establish design fidelity.
+Ownership changed after the user's follow-up: Codex owns UI design and components, implementing the original concept directly. Claude owns the C++ backend and reviews machine behavior. The user subsequently requested merging the current work; the restored panel landed through PR #1. Continue reviewing each increment against the visual reference. Functional tests alone cannot establish design fidelity.
 
 ## What drifted
 
@@ -36,7 +36,7 @@ The concept's illustrative stock, named operations, measured-tool badges and est
 
 Keep actual controller state, stale-link handling, manual tool-change waits, coordinate transforms, jog releases, single block and state-dependent command validation. A scene selection changes inspection context, not machine mode or coordinates. Jog/MDI remain available through the Manual workspace. Persistent stop/hold and software E-stop must remain easy to locate.
 
-## Review before merging
+## Review each UI increment
 
 1. Compare a revised Program screen directly with the concept at the same desktop width, in light and dark themes. Review composition first, then type, spacing, surfaces and controls.
 2. Check Manual and Tools for a consistent visual design and usable touch targets.

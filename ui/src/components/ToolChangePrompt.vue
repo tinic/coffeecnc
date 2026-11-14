@@ -76,11 +76,20 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
   flex-direction: column;
   gap: 10px;
   width: 560px;
+  max-height: 100%;
+  overflow-y: auto;
   padding: 24px 28px;
   border: 2px solid var(--warn);
   border-radius: 12px;
   background: var(--panel-raised);
   box-shadow: 0 18px 50px rgb(0 0 0 / 50%);
+}
+
+.scrim.with-status-row { bottom: 34px; }
+@media (max-height: 850px) {
+  .scrim.with-status-row { bottom: 30px; }
+  .prompt { padding: 16px 24px; gap: 8px; }
+  .prompt h2 { font-size: 30px; }
 }
 
 .label {

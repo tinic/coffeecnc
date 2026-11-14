@@ -163,13 +163,13 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
           </thead>
           <tbody>
             <tr v-for="tool in tools" :key="tool.number" :class="{ loaded: tool.number === loaded }">
-              <td class="num mono">
-                T{{ tool.number }}
-                <span v-if="tool.number === loaded" class="chip go">in spindle</span>
-              </td>
+              <td class="num mono">T{{ tool.number }}</td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
-              <td class="comment" :title="tool.comment">{{ tool.comment }}</td>
+              <td class="comment" :title="tool.comment">
+                {{ tool.comment }}
+                <span v-if="tool.number === loaded" class="inspindle">in spindle</span>
+              </td>
               <td class="actions">
                 <button class="btn square" type="button" :disabled="editBlock !== null" :title="editBlock ?? `Edit tool ${tool.number}`" @click="edit(tool)">
                   <AppIcon name="edit" />
@@ -389,6 +389,15 @@ td.comment {
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.inspindle {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--go);
 }
 
 tr.loaded td {

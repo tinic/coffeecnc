@@ -72,6 +72,19 @@ describe('camera', () => {
     }
   })
 
+  it('fit puts the pivot in the middle of the points, so that orbiting keeps them in view', () => {
+    const cam = fit(camera('iso'), box, width, height)
+    expect(cam.centre.map((v) => Math.round(v * 1000) / 1000 + 0)).toEqual([200, 100, -20])
+    const turned = orbit(cam, 300, -80)
+    for (const p of box) {
+      const [x, y] = project(turned, p, width, height)
+      expect(x).toBeGreaterThan(0)
+      expect(x).toBeLessThan(width)
+      expect(y).toBeGreaterThan(0)
+      expect(y).toBeLessThan(height)
+    }
+  })
+
   it('fit leaves the camera alone without points or without a canvas', () => {
     const cam = camera('iso')
     expect(fit(cam, [], width, height)).toBe(cam)

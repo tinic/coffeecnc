@@ -56,13 +56,24 @@ export function fit(camera: Camera, points: Vec3[], width: number, height: numbe
     return camera
   }
   const { right, up } = basis(camera)
+  // The middle of the points in space becomes the pivot the view orbits about.
+  const low: Vec3 = [Infinity, Infinity, Infinity]
+  const high: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (const p of points) {
+    for (const axis of [0, 1, 2] as const) {
+      low[axis] = Math.min(low[axis], p[axis])
+      high[axis] = Math.max(high[axis], p[axis])
+    }
+  }
+  const middle: Vec3 = [(low[0] + high[0]) / 2, (low[1] + high[1]) / 2, (low[2] + high[2]) / 2]
   let minX = Infinity
   let maxX = -Infinity
   let minY = Infinity
   let maxY = -Infinity
   for (const p of points) {
-    const x = dot(p, right)
-    const y = dot(p, up)
+    const d: Vec3 = [p[0] - middle[0], p[1] - middle[1], p[2] - middle[2]]
+    const x = dot(d, right)
+    const y = dot(d, up)
     minX = Math.min(minX, x)
     maxX = Math.max(maxX, x)
     minY = Math.min(minY, y)
@@ -73,11 +84,14 @@ export function fit(camera: Camera, points: Vec3[], width: number, height: numbe
   const scale = Math.min((width * (1 - 2 * margin)) / spanX, (height * (1 - 2 * margin)) / spanY)
   const cx = (minX + maxX) / 2
   const cy = (minY + maxY) / 2
-  // Any point with these screen coordinates will do; depth does not matter in this projection.
   return {
     ...camera,
     scale,
-    centre: [right[0] * cx + up[0] * cy, right[1] * cx + up[1] * cy, right[2] * cx + up[2] * cy],
+    centre: [
+      middle[0] + right[0] * cx + up[0] * cy,
+      middle[1] + right[1] * cx + up[1] * cy,
+      middle[2] + right[2] * cx + up[2] * cy,
+    ],
   }
 }
 

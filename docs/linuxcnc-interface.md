@@ -1,6 +1,6 @@
 # LinuxCNC interface reference
 
-What CoffeeCNC uses from LinuxCNC and what each item obliges the executable to do. Source lines are LinuxCNC [v2.9.10](https://github.com/LinuxCNC/linuxcnc/tree/v2.9.10); paths are relative to `src/`. Protocol names refer to [`ui/src/protocol.ts`](../ui/src/protocol.ts). Nothing here has run against LinuxCNC from CoffeeCNC yet.
+What CoffeeCNC uses from LinuxCNC and what each item obliges the executable to do. Source lines are LinuxCNC [v2.9.10](https://github.com/LinuxCNC/linuxcnc/tree/v2.9.10); paths are relative to `src/`. Protocol names refer to [`ui/src/protocol.ts`](../ui/src/protocol.ts). The **Observed on 2.9.4** section records what the adapter's integration test measured against LinuxCNC 2.9.4 in a simulation configuration (`backend/tests/sim/run.sh`); no machine has been used.
 
 ## Commands
 
@@ -14,7 +14,7 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | `jog`, held | `EMC_JOG_CONT` | 399 | `jjogmode` 1 before homing (joint), 0 after (axis, needs teleop) |
 | `jog`, released; `jog_stop_all` | `EMC_JOG_STOP` | 440 | |
 | `jog_step` | `EMC_JOG_INCR` | 412 | |
-| (axis jog) | `EMC_TRAJ_SET_TELEOP_ENABLE` | 973 | Required before axis-mode jogging on a homed machine |
+| (jog space) | `EMC_TRAJ_SET_TELEOP_ENABLE` | 973 | Task enables teleop itself once all joints are homed; send it to leave teleop for homing or a joint jog |
 | `mdi`, `select_wcs`, `touch_off`, `tool_touch_off` | `EMC_TASK_PLAN_EXECUTE` | 1335 | `G54`…, `G10 L20 P<n> <axis><value>`, `G10 L10 P<tool> Z<value>` then `G43`; text limited to `LINELEN` (255); refused when not homed (`emctaskmain.cc:2209`) |
 | `open_program` | `EMC_TASK_PLAN_OPEN` | 1300 | Path limited to `LINELEN`; task reads the file itself |
 | `run` | `EMC_TASK_PLAN_RUN` | 1312 | `line` 0 or 1 runs from the start; other values are run-from-line, not used; refused when not homed (`emctaskmain.cc:2296`) |
@@ -57,11 +57,32 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | A continuous jog runs until `EMC_JOG_STOP`; NML has no dead-man | `emc_nml.hh:399` | The executable stops the jog after 150 ms without a panel refresh |
 | That does not cover the executable dying mid-jog | | Its HAL component toggles a heartbeat pin; a HAL `watchdog` drives `motion.jog-stop` (`emc/motion/motion.c:477`) |
 | Reading `emcError` consumes the message | `emc/usr_intf/axis/extensions/emcmodule.cc:1567` uses `read()`, not `peek()` | One reader per machine: CoffeeCNC cannot share a session with another GUI that reads errors |
-| `EMC_STAT.task.heartbeat` stays 0; a dead task leaves the last status readable | Elle `backend/src/core/include/elle/core/task.hpp`, `TaskHeartbeat` | `link` is `live` only while the status buffer's NML write counter advances |
+| A stopped task leaves the last status readable | Write counter delta 0 per 500 ms with task stopped, status still readable (2.9.4) | `link` is `live` only while the status buffer's NML write counter advances |
 | `EMC_STAT` layout changes between LinuxCNC releases | NML passes the struct as bytes | Build against the installed `linuxcnc-uspace-dev`; the package depends on that release series |
 | A manual tool change is a HAL handshake: `iocontrol.0.tool-change` out, `tool-changed` in, `tool-prep-number` | `emc/iotask/ioControl.cc:433`, `443`, `381` | The executable owns a HAL component with `tool-change` (in), `tool-number` (in), `tool-changed` (out) and reports `wait: tool_change`; this replaces `hal_manualtoolchange` (`emc/usr_intf/axis/scripts/hal_manualtoolchange.py:55`) |
 | LinuxCNC starts the `[DISPLAY] DISPLAY` program and stops when it exits | Elle `README.md`, "How it fits together" | `coffeecnc` is the `DISPLAY` program and runs `[HAL] POSTGUI_HALFILE` after its component is ready |
 | Machine and program units differ | `task.programUnits`, `emc_nml.hh:1484` | Convert once in the executable; the protocol is millimetres only |
+
+## Observed on 2.9.4
+
+| Topic | Observation | Consequence in the adapter |
+|---|---|---|
+| `motion.jog-stop` | Stops a jog started over NML in joint and axis mode, within 0.04–0.06 mm at 300 mm/min; level-sensitive: while high, every new jog is aborted; after it falls the next jog needs no reset | The dead-man path needs no command channel. `HalComponent` holds the pin at least 5 ms |
+| `motion.jog-inhibit` | Refuses a new jog; does not stop a running one | Driven by the watchdog together with `jog-stop` |
+| Status write counter | About 945 per second with a 1 ms task cycle | `TaskHeartbeat` ignores an advance seen after a reading gap of 1 s or more |
+| `task.heartbeat` | Counts on 2.9.4 (Elle saw 0 on its build) | Not used |
+| Machine on from E-stop | `EMC_TASK_SET_STATE` ON returns `RCS_DONE`; the state stays ESTOP | Verify the reported state, not the command status |
+| Machine off | Reported as ESTOP_RESET, never as OFF | Protocol `off` |
+| Home all | `EMC_JOINT_HOME` with joint −1; needs joint mode; 2–4 s in simulation | |
+| Teleop | Task enters teleop by itself when all joints are homed; `EMC_TRAJ_SET_TELEOP_ENABLE` is needed to leave it for homing or a joint jog | Corrects the Commands table: the message is for leaving, not entering |
+| Axis jog while unhomed | Moves 0 | Joint jog until all axes are homed |
+| Jog status | Joint jog: `RCS_EXEC`, `inpos` 0. Teleop jog: `RCS_DONE`, `inpos` 1 | `in_position` also checks velocity; jog commands wait for the echo, not completion |
+| Mode change | Refused only in auto with a busy interpreter. During an MDI move it is accepted and aborts the move. During a jog it is ignored with `RCS_DONE` | Verify `task.mode` after every change |
+| Pause and step | At an M0/M1 stop `currentLine` is the line before it. The first step after such a stop only takes up the next block; `task_paused` stays set with the interpreter reading | Report paused whenever `task_paused` is set |
+| Manual tool change | `T1 M6` raises `iocontrol.0.tool-change`, `tool-prep-number` 1; `tool-changed` high releases it; `toolInSpindle` changes afterwards. M6 for the loaded tool asks for nothing | `requested_tool` comes from the HAL pins |
+| Units | `traj.linearUnits` is units per mm; `task.programUnits` 1 is G20, 2 is G21 and stays inch after an abort inside a G20 section | One scale factor from the INI; composed G-code in the program unit |
+| Error channel | Text arrives a few ms after the status, sometimes as several messages. A jog into a soft limit produces no error | All errors of a failed action become its reason |
+| Build | `emc_nml.hh` includes Boost headers; `linuxcnc-uspace-dev` does not depend on `libboost-dev` | The adapter needs Boost headers at build time |
 
 ## Preview
 
@@ -82,4 +103,6 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | Non-trivial kinematics | Joint and axis indexes are assumed equal; reject other configurations at start-up or map them? |
 | Actual spindle speed | Which HAL signal, and is it a pin on the CoffeeCNC component or read by name? |
 | Jog watchdog wiring | Shipped in `postgui.hal` or checked at start-up? |
+| Delayed start | A jog start queued while task is frozen must not move after the page is gone: worker fencing and holding `jog-stop` until starts and stops reconcile |
+| Step and resume around M0/M1 | Observed on one program; confirm before the panel relies on it |
 | Run from line | AXIS warns it is wrong with subroutines; no version 1 command |

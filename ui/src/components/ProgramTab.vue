@@ -7,6 +7,7 @@ import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
+import MachineFeedback from './MachineFeedback.vue'
 
 const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
@@ -85,7 +86,7 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
-    <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent && !program?.truncated"> / {{ program?.lines.length }}</template></span></div>
+    <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent && !program?.truncated"> / {{ program?.lines.length }}</template></span></div>
   </div>
 </template>
 
@@ -108,6 +109,7 @@ async function showFailure(): Promise<void> {
 .kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
 .status-row { flex: none; min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
+.status-row .program-feedback { margin: 0; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }

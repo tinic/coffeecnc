@@ -13,6 +13,7 @@ import { axes, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
 import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
 import AppIcon from './AppIcon.vue'
+import MachineFeedback from './MachineFeedback.vue'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
 
@@ -512,6 +513,7 @@ function coolant(which: 'flood' | 'mist'): void {
             Mist
           </button>
         </div>
+        <MachineFeedback show-probe class="sensor-feedback" />
       </section>
 
       <section class="card">
@@ -737,6 +739,7 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 .utilities { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
 .utilities h2 { grid-column: 1 / -1; }
+.utilities .sensor-feedback { grid-column: 1 / -1; }
 .utilities .line { gap: 6px; }
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }

@@ -1337,7 +1337,9 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   const bool fresh = rig.wait(15s, [&]() -> bool {
     return rig.hooks.state().commits == last.commits + 1 && rig.hooks.state().identified;
   });
-  // With what the shell and the page say about that load, should it not come up.
+  // With what the shell and the page say about that load, should it not come up: it did not
+  // in one ThreadSanitizer run (3186b99), and that was not reproduced after the panel's files
+  // were served as streams; its cause is not established.
   const bool up = fresh && rig.page_live();
   const auto shell = rig.hooks.state();
   const auto page = rig.hooks.evaluate(

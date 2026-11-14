@@ -41,6 +41,12 @@ if ! [ -s "$directory/xvfb.display" ]; then
   exit 125
 fi
 export DISPLAY=:$(cat "$directory/xvfb.display")
+# No accessibility bridge on this display: nothing here reads the screen, and GTK's AT-SPI
+# bridge (atk_bridge_adaptor_init) opens a D-Bus connection whose messages libdbus still holds
+# at exit, which LeakSanitizer reports (4588b3b: 800 to 1216 bytes in 4 to 6 allocations, full
+# stacks in build/sim-history/4588b3b/asan-dbus/). This is the test environment's setting only:
+# the coffeecnc executable does not set it.
+export NO_AT_BRIDGE=1
 
 if [ -z "$terminate_after" ]; then
   # The program prints its own `exit=` line. How the process really ends is this script's

@@ -161,15 +161,15 @@ if(BUILD_TESTING)
         coffeecnc_enable_analyzers(coffeecnc_shell_tests)
         # Not registered under ThreadSanitizer: with the GUI the tests are UNQUALIFIED there, not
         # passing. GLib, GIO, GTK, WebKit and JavaScriptCore are not instrumented, and
-        # ThreadSanitizer reports data races between their own threads. Run by hand at 3c6f37b
-        # (logs and the distinct stacks in build/sim-history/3c6f37b/tsan-gui/): 99 reports in
-        # the mm shell test, 113 in the inch one, 75 in the start-up test; in every one both
-        # accesses are in libglib-2.0, libgio-2.0, libjavascriptcoregtk-4.1, libwebkit2gtk-4.1,
-        # libfontconfig, libpangoft2 or libc, none in CoffeeCNC's code or on memory it handed
-        # over (119 such reports at ca88a0a are gone since data crosses to the GTK thread
-        # through the shell's own queue). Each of these programs then exits 66 on the reports.
-        # All 202 checks of each shell test passed in those runs. No suppression is in place.
-        # The programs still build with the preset.
+        # ThreadSanitizer reports data races between their own threads. Run by hand at 4588b3b
+        # (logs and the distinct stacks in build/sim-history/4588b3b/tsan-gui/): 133 reports in
+        # the mm shell test, 140 in the inch one, 76 in the start-up test. In every one the top
+        # frame of both accesses is in libglib-2.0, libgio-2.0, libjavascriptcoregtk-4.1,
+        # libwebkit2gtk-4.1, libfontconfig, libpangoft2 or libc: no report has an access-origin
+        # stack in CoffeeCNC code. (At ca88a0a 119 reports had one; they went when data began to
+        # cross to the GTK thread through the shell's own queue.) Each of these programs then
+        # exits 66 on the reports. All 202 checks of each shell test passed in those runs. No
+        # suppression is in place. The programs still build with the preset.
         if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

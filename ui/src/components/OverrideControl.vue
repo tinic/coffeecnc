@@ -49,7 +49,7 @@ function slide(event: Event): void {
         step="1"
         :value="percent"
         :disabled="disabled"
-        :aria-label="`${label} override`"
+        :aria-label="label"
         @input="slide"
       />
     </div>

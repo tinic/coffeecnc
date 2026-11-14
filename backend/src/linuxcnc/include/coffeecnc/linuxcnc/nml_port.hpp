@@ -32,6 +32,12 @@ struct NmlStatus {
   double rapid_override{};
   double spindle_rpm{}; // commanded, before override
   double spindle_override{};
+  // From the HAL component's optional input pins. Nothing when the machine does not connect the
+  // pin ([COFFEECNC] ..._SIGNAL in the INI file) or there is no HAL component: never a zero that
+  // was not measured.
+  std::optional<double> spindle_actual_rpm; // magnitude
+  std::optional<bool> spindle_at_speed;
+  std::optional<bool> probe_input;
   double dwell_seconds_left{};
   std::string program_file; // empty when none is loaded
   // Tool table index (not a tool number) prepared by a T word and not yet changed to.
@@ -97,6 +103,7 @@ public:
 
   [[nodiscard]] auto set_machine_state(MachineState state) -> ActionResult override;
   [[nodiscard]] auto set_task_mode(TaskMode mode) -> ActionResult override;
+  // Homing all axes fails, with nothing sent, unless MachineConfig::home_all_configured.
   [[nodiscard]] auto home(std::optional<Axis> axis) -> ActionResult override;
   [[nodiscard]] auto start_jog(Axis axis, int direction, double velocity, JogSpace space)
       -> ActionResult override;

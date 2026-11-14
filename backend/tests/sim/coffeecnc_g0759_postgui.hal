@@ -1,0 +1,17 @@
+# Post-GUI wiring of CoffeeCNC on the G0759-shaped mill. Takes the place of the machine's
+# gmoccapy post-GUI file; only one frontend's handshake pins may be connected at a time.
+
+# Jog stop, watchdog and the manual tool change handshake, the same on every machine:
+#   gmoccapy.toolchange-change   -> coffeecnc.tool-change
+#   gmoccapy.toolchange-number   -> coffeecnc.tool-number
+#   gmoccapy.toolchange-changed  -> coffeecnc.tool-changed
+source coffeecnc_postgui.hal
+
+# Kept from the machine's file: a prepared tool needs no action.
+net tool-prep-loop iocontrol.0.tool-prepare => iocontrol.0.tool-prepared
+
+# Signals the machine's HAL files already carry, declared in the INI file's [COFFEECNC] section.
+# They replace the gmoccapy spindle bar, at-speed LED and the embedded rpm meter.
+net spindle-vel-fb-rpm-abs => coffeecnc.spindle-rpm
+net spindle-at-speed => coffeecnc.spindle-at-speed
+net probe-in => coffeecnc.probe-input

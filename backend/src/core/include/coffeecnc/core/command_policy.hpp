@@ -52,18 +52,31 @@ struct ControllerState {
 
 struct Limits {
   Limits() = delete;
+  // Every axis may jog at the global maximum and homing is required, as on a LinuxCNC machine
+  // that configures neither.
   Limits(double jog_velocity, double feed_override, double spindle_override_min,
          double spindle_override_max, double spindle_rpm)
-      : max_jog_velocity(jog_velocity), max_feed_override(feed_override),
-        min_spindle_override(spindle_override_min), max_spindle_override(spindle_override_max),
-        max_spindle_rpm(spindle_rpm) {}
+      : Limits(jog_velocity, {jog_velocity, jog_velocity, jog_velocity}, feed_override,
+               spindle_override_min, spindle_override_max, spindle_rpm, true) {}
+  Limits(double jog_velocity, const std::array<double, 3>& axis_jog_velocity, double feed_override,
+         double spindle_override_min, double spindle_override_max, double spindle_rpm, bool homing)
+      : max_jog_velocity(jog_velocity), max_axis_jog_velocity(axis_jog_velocity),
+        max_feed_override(feed_override), min_spindle_override(spindle_override_min),
+        max_spindle_override(spindle_override_max), max_spindle_rpm(spindle_rpm),
+        homing_required(homing) {}
   // All values must be supplied by validated machine configuration or an explicit simulator
   // profile.
-  double max_jog_velocity; // mm/min
+  double max_jog_velocity; // mm/min, any axis
+  // mm/min for X, Y, Z. A jog must be within both this and the global maximum.
+  std::array<double, 3> max_axis_jog_velocity;
   double max_feed_override;
   double min_spindle_override;
   double max_spindle_override;
   double max_spindle_rpm;
+  // LinuxCNC refuses MDI and program runs on a machine that is not homed. False for a machine
+  // configured to accept them ([TRAJ] NO_FORCE_HOMING): MDI, run, single block, work coordinate
+  // selection and touch-off are then allowed unhomed. Jog rules do not depend on it.
+  bool homing_required;
 };
 
 // Typed bodies of protocol v1 requests. Wire parsing and request IDs belong to the app layer.

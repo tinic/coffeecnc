@@ -3,18 +3,17 @@
 
 #include "application.hpp"
 
-#include <cstddef>
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
-#include <span>
 #include <string_view>
 #include <vector>
 
 auto main(int argc, char** argv) -> int {
   try {
-    const std::span<char*> raw{argv, static_cast<std::size_t>(argc)};
-    const std::vector<std::string_view> arguments{raw.begin() + (raw.empty() ? 0 : 1), raw.end()};
+    // Without the program name.
+    const std::vector<std::string_view> arguments(argv + std::min(argc, 1), argv + argc);
     const auto options = coffeecnc::parse_options(arguments);
     if (!options) {
       std::cerr << "coffeecnc: " << options.error() << "\n\n" << coffeecnc::usage();

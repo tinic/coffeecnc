@@ -85,9 +85,12 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   if (!messages)
     return messages; // Nothing was sent: what was due still is.
   snapshots_due_ = false;
-  for (const auto& message : waiting_)
-    messages->push_back(encode_message(message.error ? MessageLevel::error : MessageLevel::info,
-                                       message.text, unix_time));
+  std::ranges::transform(waiting_, std::back_inserter(*messages),
+                         [&](const ControllerMessage& message) -> std::string {
+                           return encode_message(message.error ? MessageLevel::error
+                                                               : MessageLevel::info,
+                                                 message.text, unix_time);
+                         });
   waiting_.clear();
   return messages;
 }
@@ -152,11 +155,11 @@ void PanelFeed::loop() {
     next += period;
     if (const auto after = std::chrono::steady_clock::now(); next < after)
       next = after;
+    // Woken before the period is over: a page has become ready, or this is the end, which
+    // the next pass sees.
     std::unique_lock lock{mutex_};
-    if (wake_.wait_until(lock, next, [&]() -> bool { return stop_ || ready_; }) && !stop_)
+    if (wake_.wait_until(lock, next, [&]() -> bool { return stop_ || ready_; }))
       next = std::chrono::steady_clock::now();
-    if (stop_)
-      return;
   }
 }
 

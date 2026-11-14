@@ -413,23 +413,26 @@ void source_tool_table() {
               r.tool_table.tools.size() == 2,
           "A file edited on disk that LinuxCNC has not loaded changes nothing");
 
-  // LinuxCNC loads it. While task executes the load, a table that reads the same twice may
-  // still be half of it: it is not shown, and the prepared index is not resolved in the old.
+  // LinuxCNC loads it. While task has the load in execution, a table that reads the same twice
+  // may still be half of it: it is not shown, and the prepared index is not resolved in the
+  // old one. That holds whatever command task has taken up since: the status says only that
+  // something is in execution, not what.
   auto loading = rig.status();
-  loading.loading_tool_table = true;
+  loading.task_executing = true;
+  loading.command_done = true; // of a later command, taken up and done while io still loads
   rig.loaded = std::vector<LoadedTool>{{1, {1, 1, 99, 9, ""}}};
   r = rig.step(loading);
   require(r.tool_table.revision == 1 && !r.status.tool.prepared,
           "A table that differs from the accepted one: the old one stays shown, and the "
           "prepared tool is unknown rather than a number from the old table");
-  r = rig.step(loading);
+  static_cast<void>(rig.step(loading));
   r = rig.step(loading);
   require(r.tool_table.revision == 1 && r.tool_table.tools.size() == 2 && !r.status.tool.prepared,
           "Two equal passes do not make a table while task is loading: io may stand still "
           "half way");
   rig.loaded = std::vector<LoadedTool>{
       {1, {1, 1, 99, 9, ""}}, {2, {2, 2, 40, 3, ""}}, {3, {8, 3, 0, 0, ""}}};
-  r = rig.step(loading);
+  static_cast<void>(rig.step(loading));
   r = rig.step(loading);
   require(r.tool_table.revision == 1, "Still loading: still the old table");
   r = rig.step();

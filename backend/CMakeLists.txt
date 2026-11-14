@@ -133,12 +133,23 @@ if(BUILD_TESTING)
         add_test(NAME coffeecnc_cli COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/cli_tests.sh
           $<TARGET_FILE:coffeecnc> ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           ${PROJECT_BINARY_DIR}/cli)
+        # The panel the tests below run: ui/dist, built from the ui/ sources of this checkout
+        # and stamped with their hashes (ui/build-stamp.ts). The tests need it, and each checks
+        # the stamp again itself before it does anything.
+        add_test(NAME panel_bundle COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/build_panel.sh
+          ${PROJECT_SOURCE_DIR}/..)
+        set_tests_properties(panel_bundle PROPERTIES FIXTURES_SETUP panel TIMEOUT 600)
+        # The stamp checker refuses a changed source, a changed bundle and an unbuilt source.
+        add_test(NAME panel_stamp COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/panel_stamp_tests.sh
+          ${PROJECT_SOURCE_DIR}/.. ${PROJECT_BINARY_DIR})
+        set_tests_properties(panel_stamp PROPERTIES FIXTURES_REQUIRED panel)
         # The application with the real panel in its window, as LinuxCNC's DISPLAY program on a
         # display of its own (Xvfb): the test drives the page and watches LinuxCNC.
         add_executable(coffeecnc_shell_tests tests/shell/shell_tests.cpp)
         target_compile_definitions(coffeecnc_shell_tests PRIVATE
           COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
           COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist"
+          COFFEECNC_PANEL_STAMP_CHECK="node ${PROJECT_SOURCE_DIR}/tests/sim/check-panel-stamp.mjs ${PROJECT_SOURCE_DIR}/.."
           COFFEECNC_EVIDENCE_DIRECTORY="${PROJECT_SOURCE_DIR}/build/shell-evidence")
         target_link_libraries(coffeecnc_shell_tests PRIVATE coffeecnc_application
           coffeecnc_shell_test_hooks coffeecnc_project_options nlohmann_json::nlohmann_json)
@@ -148,7 +159,7 @@ if(BUILD_TESTING)
             -u ${units} -t 500 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
             $<TARGET_FILE:coffeecnc_shell_tests>)
           set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-            RESOURCE_LOCK linuxcnc TIMEOUT 600)
+            RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
         endforeach()
         # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
         # and SIGTERM ends it and LinuxCNC with no process left.
@@ -156,7 +167,7 @@ if(BUILD_TESTING)
           -t 120 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
           $<TARGET_FILE:coffeecnc>)
         set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-          RESOURCE_LOCK linuxcnc TIMEOUT 200)
+          RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
       endif()
     endif()
   endif()

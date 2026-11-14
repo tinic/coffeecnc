@@ -11,6 +11,7 @@
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -46,27 +47,29 @@ constexpr std::string_view usage_text =
 
 void say(std::string_view reason) { std::cerr << "coffeecnc: " << reason << '\n' << std::flush; }
 
-// Runs a program in `directory` and waits for it, without a shell.
-auto run_program(std::vector<std::string> arguments, const std::string& directory)
+// Runs `halcmd -i <ini> -f <file>` in `directory` and waits for it, without a shell.
+auto run_halcmd(std::string ini, std::string file, const std::string& directory)
     -> std::expected<void, std::string> {
-  std::vector<char*> argv;
-  for (auto& argument : arguments)
-    argv.push_back(argument.data());
-  argv.push_back(nullptr);
+  std::string program{"halcmd"};
+  std::string ini_option{"-i"};
+  std::string file_option{"-f"};
+  // posix_spawnp takes char*, which only a string that is not const gives.
+  std::array<char*, 6> argv{program.data(), ini_option.data(), ini.data(),
+                            file_option.data(), file.data(), nullptr};
   posix_spawn_file_actions_t actions;
   if (posix_spawn_file_actions_init(&actions) != 0)
-    return std::unexpected(std::format("cannot start {}", arguments.front()));
+    return std::unexpected(std::string("cannot start halcmd"));
   int error = posix_spawn_file_actions_addchdir_np(&actions, directory.c_str());
   pid_t child{};
   if (error == 0)
     error = posix_spawnp(&child, argv.front(), &actions, nullptr, argv.data(), environ);
   posix_spawn_file_actions_destroy(&actions);
   if (error != 0)
-    return std::unexpected(std::format("cannot start {}: {}", arguments.front(),
-                                       std::generic_category().message(error)));
+    return std::unexpected(
+        std::format("cannot start halcmd: {}", std::generic_category().message(error)));
   int status{};
   if (waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-    return std::unexpected(std::format("{} failed", arguments.front()));
+    return std::unexpected(std::string("halcmd failed"));
   return {};
 }
 
@@ -155,9 +158,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     return 1;
   }
   if (!config->postgui_halfile.empty()) {
-    const auto wired =
-        run_program({"halcmd", "-i", config->ini_file, "-f", config->postgui_halfile},
-                    config->directory);
+    const auto wired = run_halcmd(config->ini_file, config->postgui_halfile, config->directory);
     if (!wired) {
       say(std::format("[HAL] POSTGUI_HALFILE {}: {}.", config->postgui_halfile, wired.error()));
       return 1;

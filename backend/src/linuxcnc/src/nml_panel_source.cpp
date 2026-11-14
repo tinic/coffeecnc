@@ -47,12 +47,13 @@ struct NmlPanelSource::Impl {
       : config(std::move(machine)), mailbox(readings), tools(std::move(tool_reader)),
         programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
 
-  void show_tools() {
+  void show_tools(const std::vector<LoadedTool>& accepted) {
     if (std::ifstream in{config.tool_table, std::ios::binary}; in && !config.tool_table.empty())
       comments = comments_of(
           std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}});
     std::vector<Tool> shown;
-    for (const auto& entry : *loaded) {
+    shown.reserve(accepted.size());
+    for (const auto& entry : accepted) {
       shown.push_back(entry.tool);
       if (const auto comment = comments.find(entry.tool.number); comment != comments.end())
         shown.back().comment = comment->second;
@@ -82,7 +83,7 @@ struct NmlPanelSource::Impl {
       // A load the port reports with the same numbers: the comments may have changed.
       if (counted != tool_loads_seen) {
         tool_loads_seen = counted;
-        show_tools();
+        show_tools(*pass);
       }
       return;
     }
@@ -91,15 +92,15 @@ struct NmlPanelSource::Impl {
       return;
     }
     // The same table a second time: accepted once a status read after the first pass says
-    // that no load is in progress.
+    // that task has nothing in execution, so no table load either.
     if (!status || status->read_at <= pending->taken_at ||
-        status->status.controller.link == Link::down || status->status.loading_tool_table)
+        status->status.controller.link == Link::down || status->status.task_executing)
       return;
-    loaded = std::move(pending->tools);
+    show_tools(*pass);
+    loaded = std::move(*pass);
     pending.reset();
     loaded_current = true;
     tool_loads_seen = counted;
-    show_tools();
   }
 
   void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
@@ -153,12 +154,12 @@ auto NmlPanelSource::read() -> PanelReading {
   if (latest && status.controller.link == Link::live && impl_->clock() - latest->read_at > max_age)
     status.controller.link = Link::stale;
   const bool loaded = status.program_file == impl_->program_file && !status.program_file.empty();
+  // The prepared index is resolved only in a table that is current.
+  std::span<const LoadedTool> tools;
+  if (const auto& accepted = impl_->loaded; accepted && impl_->loaded_current)
+    tools = *accepted;
   reading.status =
-      to_panel_status(status, impl_->config,
-                      impl_->loaded && impl_->loaded_current
-                          ? std::span<const LoadedTool>{*impl_->loaded}
-                          : std::span<const LoadedTool>{},
-                      loaded ? impl_->program_revision : 0);
+      to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
   if (!loaded)

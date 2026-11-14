@@ -440,7 +440,9 @@ void positions_in_mm(const Rig& rig) {
   check("panel_mdi_history_accepted",
         rig.wait_js("__t.all('section.mdi .history .entry.accepted').length >= 2"),
         rig.js("return __t.all('section.mdi .history .entry').map(__t.text);").dump());
-  rig.wait_js("__t.last.status.interp === 'idle' && __t.last.status.motion.in_position", 5s);
+  const bool at_rest =
+      rig.wait_js("__t.last.status.interp === 'idle' && __t.last.status.motion.in_position", 5s);
+  check("panel_shows_machine_at_rest", at_rest, rig.js("return __t.last.status.motion;").dump());
   const auto status = rig.panel_status();
   check("panel_machine_position_mm",
         near(status.at("axes").at(0).at("machine").get<double>(), 25.4, 0.005) &&
@@ -498,10 +500,12 @@ void positions_in_mm(const Rig& rig) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       return __t.click('section.mdi button[type="submit"]');)");
-  check("back_to_g54", rig.wait_js("__t.last.status.offsets.wcs === 2 || true") &&
-                           rig.wait_js("__t.last.status.offsets.wcs === 1 && "
-                                       "__t.last.status.offsets.g5x[0] === 0 && "
-                                       "__t.last.status.interp === 'idle'"));
+  const bool back = rig.wait_js("__t.last.status.offsets.wcs === 1 && "
+                                "__t.last.status.offsets.g5x[0] === 0 && "
+                                "__t.last.status.interp === 'idle' && "
+                                "__t.last.work_offsets.systems[0].available === true && "
+                                "__t.last.work_offsets.systems[1].available === false");
+  check("back_to_g54", back, rig.js("return __t.last.status.offsets;").dump());
 }
 
 struct Jogging {
@@ -511,11 +515,12 @@ struct Jogging {
 
 // Presses the X+ jog control with the mouse and waits until the axis moves.
 auto press_jog(const Rig& rig, const std::string& name) -> std::optional<Jogging> {
-  rig.wait_js("__t.last.status.interp === 'idle' && !!__t.find('button.jogbtn', 'Jog X+') && "
-              "!__t.find('button.jogbtn', 'Jog X+').disabled",
-              10s);
-  const auto at = rig.point("button.jogbtn", "Jog X+");
-  check(name + "_control_found", at.has_value(),
+  const bool enabled =
+      rig.wait_js("__t.last.status.interp === 'idle' && !!__t.find('button.jogbtn', 'Jog X+') && "
+                  "!__t.find('button.jogbtn', 'Jog X+').disabled",
+                  10s);
+  const auto at = enabled ? rig.point("button.jogbtn", "Jog X+") : std::nullopt;
+  check(name + "_control_enabled", at.has_value(),
         rig.js("return __t.all('button.jogbtn').map((b) => b.title);").dump());
   if (!at)
     return {};
@@ -760,8 +765,24 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
                "__t.text(document.querySelector('.jobbar .error'))];")
             .dump());
   rig.snapshot("operator-error");
-  rig.wait(5s, [&]() -> bool { return rig.status().controller.interp == InterpState::idle; });
-  rig.js("__t.errors.length = 0;");
+  // The error stays in the bar until the operator dismisses it, and stays in the log after.
+  check("panel_dismisses_error", rig.click(".jobbar button.dismiss", "") == "ok");
+  const bool dismissed = rig.wait_js("!document.querySelector('.jobbar .error')");
+  check("dismissed_error_leaves_the_bar", dismissed,
+        rig.js("return __t.text(document.querySelector('.jobbar'));").dump());
+  rig.js("document.querySelector('details.state-menu').open = true;");
+  check("panel_opens_message_log", rig.click("details.state-menu button", "Message log") == "ok");
+  const bool logged = rig.wait_js("/contact/i.test(__t.text(document.querySelector('section.dialog')))");
+  check("dismissed_error_stays_in_the_log", logged,
+        rig.js("return __t.text(document.querySelector('section.dialog')).slice(0, 300);").dump());
+  check("panel_closes_message_log", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
+  rig.js("document.querySelector('details.state-menu').open = false;");
+  const bool idle = rig.wait(5s, [&]() -> bool {
+    return rig.status().controller.interp == InterpState::idle;
+  });
+  check("probe_program_ended", idle);
+  check("no_console_errors_after_operator_error", rig.js("return __t.errors.length;") == 0,
+        rig.errors());
 }
 
 // The table the panel shows is the one LinuxCNC has loaded, not the file.
@@ -782,11 +803,13 @@ void tool_table(const Rig& rig) {
       "print(c.wait_complete(5))'");
   fact("load_tool_table", "rcs=" + loaded);
   const bool followed = rig.wait_js(
-      "__t.last.tool_table.tools.length === 4 && __t.last.tool_table.tools[0].number === 9", 5s);
+      std::format("__t.last.tool_table.tools.length === 4 && "
+                  "__t.last.tool_table.tools[0].number === 9 && __t.last.tool_table.revision > {}",
+                  before.at("revision").dump()),
+      5s);
   const auto table = rig.js("return __t.last.tool_table;");
   fact("loaded_tool_table", table.dump());
-  check("loaded_table_is_shown", followed && table.at("revision") > before.at("revision"),
-        table.dump());
+  check("loaded_table_is_shown", followed, table.dump());
   if (!followed)
     return;
   const auto& tools = table.at("tools");
@@ -815,6 +838,40 @@ void tool_table(const Rig& rig) {
                       rig.status().prepared_pocket.value_or(-1)));
   }
   check("loaded_tool_unchanged_by_prepare", rig.panel_status().at("tool").at("in_spindle") == 0);
+
+  // A reload followed at once by another command, the table read all the while: the panel is
+  // never shown a table that is neither the old nor the new one.
+  rig.js("__t.received = __t.received.filter((m) => m.type !== 'tool_table'); return 1;");
+  for (int round = 0; round < 6; ++round) {
+    const bool three = round % 2 == 0;
+    write(rig.config.tool_table, three ? "T9 P1 ;nine\nT4 P2\nT2 P3 ;two\n"
+                                       : "T9 P1 ;nine\nT0 P4\nT4 P2\nT2 P3 ;two\nT5 P5\nT6 P6\n");
+    const auto done = output_of(
+        "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.load_tool_table(); "
+        "c.set_optional_stop(True); c.set_block_delete(True); print(c.wait_complete(5))'");
+    const bool shown = rig.wait_js(
+        std::format("__t.last.tool_table.tools.length === {}", three ? 3 : 6), 5s);
+    check(std::format("reload_then_command_round_{}", round), shown,
+          std::format("rcs={} tools={}", done,
+                      rig.js("return __t.last.tool_table.tools.map((t) => t.number);").dump()));
+  }
+  const auto tables = rig.js(
+      "return __t.received.filter((m) => m.type === 'tool_table').map((m) => m.tools.map((t) => t.number));");
+  bool whole = true;
+  for (const auto& numbers : tables)
+    whole = whole && (numbers == Json::array({9, 4, 2}) ||
+                      numbers == Json::array({9, 0, 4, 2, 5, 6}));
+  check("no_half_loaded_table_shown", whole && tables.size() >= 6, tables.dump());
+  // Back to the table the program below uses.
+  write(rig.config.tool_table, inch ? "T9 P1 Z0.5 D0.25 ;nine\nT0 P4 ;none\nT4 P2 Z1 D0.5\n"
+                                      "T2 P3 Z2 D0.125 ;eighth inch\n"
+                                    : "T9 P1 Z12.7 D6.35 ;nine\nT0 P4 ;none\nT4 P2 Z25.4 D12.7\n"
+                                      "T2 P3 Z50.8 D3.175 ;eighth inch\n");
+  static_cast<void>(output_of("python3 -c 'import linuxcnc; c = linuxcnc.command(); "
+                              "c.load_tool_table(); print(c.wait_complete(5))'"));
+  check("table_restored", rig.wait_js("__t.last.tool_table.tools.length === 4 && "
+                                      "__t.last.tool_table.tools[3].comment === 'eighth inch'", 5s),
+        rig.js("return __t.last.tool_table;").dump());
 }
 
 void program_with_tool_change(const Rig& rig, const std::filesystem::path& programs) {
@@ -1028,11 +1085,14 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
       return rig.hooks.state().file_choosers == choosers + 1;
     });
     Json result{{"clicked", clicked}, {"chooser", asked}};
+    // The import has ended, one way or the other, with this file's name or an error to show.
     if (!file.empty())
-      rig.wait_js("!document.querySelector('.load-row + .hint[role=\"status\"]') && "
-                  "!__t.find('p.hint', 'Reading and tessellating') && "
-                  "(!!document.querySelector('.identity') || !!__t.find('p.error'))",
-                  timeout);
+      result["finished"] = rig.wait_js(
+          std::format("!__t.find('p.hint', 'Reading and tessellating') && "
+                      "(__t.text(document.querySelector('.identity')).startsWith({}) || "
+                      "!!__t.find('section.dialog p.error'))",
+                      Json(file.filename().string()).dump()),
+          timeout);
     else
       std::this_thread::sleep_for(500ms);
     result["identity"] = rig.js("return __t.text(document.querySelector('.identity'));");
@@ -1043,42 +1103,50 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   };
   auto result = import(sm101, 60s);
   fact("step_sm101", result.dump());
-  check("step_file_chooser_opens", result.at("clicked") == true && result.at("chooser") == true,
-        result.dump());
-  check("step_sm101_imported",
+  // (a) Import only: the panel's file input and WebKit's chooser request, the module worker,
+  // the WebAssembly importer, and the geometry it returns. Nothing here draws the part.
+  check("step_import_file_chooser_opens",
+        result.at("clicked") == true && result.at("chooser") == true, result.dump());
+  check("step_import_sm101_finished", result.value("finished", false), result.dump());
+  check("step_import_sm101_geometry",
         result.at("identity").get<std::string>().find("1 parts") != std::string::npos &&
             result.at("identity").get<std::string>().find("1,132 triangles") != std::string::npos,
         result.at("identity").dump());
-  check("step_sm101_size", result.at("size").get<std::string>().find("120") != std::string::npos &&
+  check("step_import_sm101_size", result.at("size").get<std::string>().find("120") != std::string::npos &&
                                result.at("size").get<std::string>().find("80") != std::string::npos &&
                                result.at("size").get<std::string>().find("20") != std::string::npos,
         result.at("size").dump());
-  // The panel shows a part only over a current toolpath preview, and there is none yet: the
-  // model is attached and hidden, and says why.
-  check("step_model_hidden_without_preview",
+  // (b) Overlay rendering: the panel draws a part only over a current toolpath preview, and
+  // there is none yet. The model is attached and hidden, and says why; no check here sees a
+  // part drawn.
+  check("step_overlay_hidden_without_preview",
         result.at("summary").get<std::string>().find("Part hidden: waiting for the current toolpath") !=
             std::string::npos,
         result.at("summary").dump());
   // Cancelling the chooser leaves the attachment alone; choosing the same file again works.
   const auto cancelled = import({}, 1s);
-  check("step_chooser_cancel_keeps_attachment",
+  check("step_import_chooser_cancel_keeps_attachment",
         cancelled.at("chooser") == true && cancelled.at("identity") == result.at("identity"),
         cancelled.dump());
   const auto same = import(sm101, 60s);
-  check("step_same_file_again", same.at("chooser") == true &&
+  check("step_import_same_file_again", same.value("finished", false) && same.at("chooser") == true &&
                                     same.at("identity") == result.at("identity") &&
                                     same.at("error") == "",
         same.dump());
   const auto block = import(samples / "upstream/camcraft/fixtures/step/ops_block.step", 60s);
   fact("step_ops_block", block.dump());
-  check("step_centimetre_source_units",
-        block.at("size").get<std::string>().find("100") != std::string::npos &&
+  check("step_import_centimetre_source_units",
+        block.value("finished", false) &&
+            block.at("identity").get<std::string>().starts_with("ops_block.step") &&
+            block.at("size").get<std::string>().find("100") != std::string::npos &&
             block.at("size").get<std::string>().find("70") != std::string::npos,
         block.at("size").dump());
   const auto lego = import(samples / "upstream/camcraft/fixtures/step/lego_4x2_01.step", 60s);
   fact("step_lego", lego.dump());
-  check("step_inch_source_units",
-        lego.at("size").get<std::string>().find("100.584") != std::string::npos &&
+  check("step_import_inch_source_units",
+        lego.value("finished", false) &&
+            lego.at("identity").get<std::string>().starts_with("lego_4x2_01.step") &&
+            lego.at("size").get<std::string>().find("100.584") != std::string::npos &&
             lego.at("size").get<std::string>().find("49.784") != std::string::npos &&
             lego.at("size").get<std::string>().find("38.1") != std::string::npos,
         lego.at("size").dump());
@@ -1088,13 +1156,14 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   write(invalid_file, "ISO-10303-21;\nthis is not a model\n");
   const auto invalid = import(invalid_file, 60s);
   fact("step_invalid", invalid.dump());
-  check("step_invalid_file_keeps_attachment",
-        invalid.at("error") != "" && invalid.at("identity") == lego.at("identity"),
+  check("step_import_invalid_file_keeps_attachment",
+        invalid.value("finished", false) && invalid.at("error") != "" &&
+            invalid.at("identity") == lego.at("identity"),
         invalid.dump());
-  rig.js("const close = __t.find('section.dialog button[title=\"Close\"]'); "
-         "if (close) close.click(); return !!close;");
-  std::this_thread::sleep_for(500ms);
-  // The model layer: a WebGL2 canvas of the panel's own with a context, and pixels in it.
+  check("panel_closes_model_dialog", rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+                                         rig.wait_js("!document.querySelector('section.dialog')"));
+  // (b) again: the scene's WebGL2 canvas exists and its context is alive. That is the layer a
+  // part would be drawn in; with the part hidden, nothing of a part is in it.
   const auto layer = rig.js(R"(
       const out = { canvases: [] };
       for (const canvas of document.querySelectorAll('canvas')) {
@@ -1110,22 +1179,56 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   bool rendering = false;
   for (const auto& canvas : layer.at("canvases"))
     rendering = rendering || (canvas.value("webgl2", false) && !canvas.value("lost", true));
-  check("panel_webgl2_layer_alive", rendering, layer.dump());
+  check("step_overlay_scene_context_alive", rendering, layer.dump());
   rig.snapshot("step-model");
   check("no_console_errors_after_step", rig.js("return __t.errors.length;") == 0, rig.errors());
   fact("page_errors_after_step", rig.errors());
 
-  // The tool model of the Tools tab is a WebGL2 canvas of its own.
+  // Tool model rendering: the Tools tab's "Model defaults" opens a tool model in a WebGL2
+  // canvas of its own. The context must be alive and the model must be on the screen: pixels
+  // of the window where the canvas is, read from a snapshot, that are not background.
   check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
-  rig.wait_js("__t.all('canvas').length > 0", 5s);
-  std::this_thread::sleep_for(500ms);
-  const auto tools_tab = rig.js(R"(
-      return __t.all('canvas').map((canvas) => {
-        const gl = canvas.getContext('webgl2');
-        return { class: canvas.className, width: canvas.width, height: canvas.height, webgl2: !!gl, lost: gl ? gl.isContextLost() : null };
-      });)");
-  fact("tools_tab_canvases", tools_tab.dump());
+  check("panel_opens_tool_model", rig.wait_js("!!__t.find('button', 'Model defaults')") &&
+                                      rig.click("button", "Model defaults") == "ok");
+  const bool canvas_shown = rig.wait_js(
+      "!!document.querySelector('.model-canvas canvas') && "
+      "document.querySelector('.model-canvas canvas').getBoundingClientRect().width > 50",
+      5s);
+  check("tool_model_canvas_shown", canvas_shown,
+        rig.js("return __t.text(document.querySelector('section.dialog')).slice(0, 200);").dump());
+  std::this_thread::sleep_for(700ms); // a frame or two for the first drawing
+  const auto model = rig.js(R"(
+      const canvas = document.querySelector('.model-canvas canvas');
+      if (!canvas) return null;
+      const gl = canvas.getContext('webgl2');
+      const box = canvas.getBoundingClientRect();
+      return { webgl2: !!gl, lost: gl ? gl.isContextLost() : null, width: canvas.width, height: canvas.height,
+               box: [Math.ceil(box.left), Math.ceil(box.top), Math.floor(box.width), Math.floor(box.height)],
+               error: __t.text(document.querySelector('.model-canvas .error')) };)");
+  fact("tool_model_canvas", model.dump());
+  check("tool_model_webgl2_context_alive",
+        model.is_object() && model.value("webgl2", false) && model.value("lost", true) == false &&
+            model.value("error", "x").empty(),
+        model.dump());
+  if (model.is_object()) {
+    const auto& box = model.at("box");
+    const auto drawn = rig.hooks.pixels(box.at(0).get<int>(), box.at(1).get<int>(),
+                                        box.at(2).get<int>(), box.at(3).get<int>());
+    // A tool envelope covers a good part of its canvas, and never all of it.
+    check("tool_model_geometry_visible",
+          drawn.has_value() && drawn->drawn * 100 > drawn->total * 3 &&
+              drawn->drawn * 100 < drawn->total * 90,
+          drawn ? std::format("drawn_pixels={}_of_{}", drawn->drawn, drawn->total) : drawn.error());
+  }
+  rig.snapshot("tool-model");
+  check("panel_closes_tool_model", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
   rig.snapshot("tools-tab");
+  // The work offset table of the Tools tab: only the active system has numbers.
+  const auto offsets_text = rig.js("return __t.text(document.querySelector('main.middle'));");
+  check("tools_tab_shows_unavailable_work_systems",
+        offsets_text.get<std::string>().find("Unavailable") != std::string::npos ||
+            offsets_text.get<std::string>().find("unavailable") != std::string::npos,
+        offsets_text.get<std::string>().substr(0, 600));
   check("no_console_errors_in_tools_tab", rig.js("return __t.errors.length;") == 0, rig.errors());
 
   // Another program: the attachment goes with the one it was bound to.
@@ -1152,9 +1255,46 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("new_page_has_no_attachment", none,
         rig.js("return __t.text(document.querySelector('.model-summary'));").dump());
   check("no_console_errors_after_reload", rig.js("return __t.errors.length;") == 0, rig.errors());
+
+  // A request of the old document that arrives after the new one has committed: held here,
+  // released now. It carries the old document's identity, is not executed and gets no result.
+  const auto now = rig.hooks.state();
+  check("document_identities_differ",
+        before.identity.size() == 32 && now.identity.size() == 32 &&
+            before.identity != now.identity &&
+            rig.js("return window.__coffeecncPage;") == now.identity,
+        std::format("old={} new={}", before.identity, now.identity));
+  const std::string late = R"({"id":2,"type":"set_machine","state":"estop"})";
+  rig.hooks.deliver_from_page(before.identity + ":" + late);
+  rig.hooks.deliver_from_page(late); // and one without any identity
+  std::this_thread::sleep_for(700ms);
+  const auto after_late = rig.hooks.state();
+  check("late_request_of_old_document_is_dropped",
+        after_late.rejected == now.rejected + 2 &&
+            rig.status().controller.machine == MachineState::on &&
+            rig.js("return __t.resultIds.includes(2);") == false,
+        std::format("rejected={}->{} machine_on={} results={}", now.rejected, after_late.rejected,
+                    rig.status().controller.machine == MachineState::on,
+                    rig.js("return __t.resultIds;").dump()));
+  // The same request with the present document's identity is the page's own: executed.
+  rig.hooks.deliver_from_page(now.identity + ":" + late);
+  const bool executed = rig.wait(5s, [&]() -> bool {
+    return rig.status().controller.machine == MachineState::estop;
+  });
+  check("request_of_present_document_is_executed",
+        executed && rig.wait_js("__t.resultIds.includes(2)"),
+        rig.js("return __t.resultIds;").dump());
+  // The page's own request numbering is now behind the session's: a fresh page for what follows.
+  const auto last = rig.hooks.state();
+  rig.hooks.reload();
+  const bool fresh = rig.wait(15s, [&]() -> bool {
+    return rig.hooks.state().commits == last.commits + 1 && rig.hooks.state().identified;
+  });
+  check("fresh_page_after_injected_request", fresh && rig.page_live());
 }
 
 void estop(const Rig& rig) {
+  power_on(rig);
   check("panel_estop", rig.click("button.estop", "") == "ok");
   check("linuxcnc_estop", rig.wait(5s, [&]() -> bool {
     return rig.status().controller.machine == MachineState::estop;
@@ -1173,9 +1313,28 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
     const Rig rig{hooks, config, **observer};
     const auto programs = std::filesystem::path(config.program_prefix);
     const auto ui = std::filesystem::path(COFFEECNC_SOURCE_UI_DIRECTORY);
-    fact("panel", std::format("ui={} index_bytes={}", ui.string(),
-                              std::filesystem::file_size(ui / "index.html")));
+    // The panel in the window must be the bundle of the ui/ sources of this checkout: the
+    // checker re-hashes the inputs and the bundle against the stamp the build wrote.
+    const auto stamp = output_of(COFFEECNC_PANEL_STAMP_CHECK);
+    const bool current = stamp.starts_with("panel=match ");
+    check("panel_bundle_matches_sources", current,
+          stamp + (current ? "" : " (run tests/shell/build_panel.sh, or ctest, which does)"));
+    const auto commit =
+        output_of(std::format("git -C {} rev-parse HEAD", ui.parent_path().string()));
+    fact("panel", std::format("ui={} {} commit={}", ui.string(), stamp, commit));
+    if (!current)
+      throw Failure("the panel bundle is not the one of these sources: nothing was tested");
+    const auto evidence = std::filesystem::path(COFFEECNC_EVIDENCE_DIRECTORY);
+    std::filesystem::create_directories(evidence);
+    write(evidence / "panel-stamp.txt", std::format("{}\ncommit={}\n", stamp, commit));
     first_page(rig);
+    // And the application serves that bundle: the stamp it hands the page is the checked one.
+    const auto served = rig.js("return await (await fetch('/build-stamp.json')).json();");
+    check("served_panel_is_the_stamped_one",
+          stamp.find("inputs=" + served.value("inputs_digest", "none") + " ") != std::string::npos &&
+              stamp.find("assets=" + served.value("assets_digest", "none")) != std::string::npos,
+          std::format("served_inputs={} served_assets={}", served.value("inputs_digest", "none"),
+                      served.value("assets_digest", "none")));
     power_on(rig);
     home(rig);
     positions_in_mm(rig);

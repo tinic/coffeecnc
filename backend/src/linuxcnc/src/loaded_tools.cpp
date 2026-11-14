@@ -4,11 +4,11 @@
 
 // libtooldata's interface. linuxcnc-uspace-dev 2.9.4 installs the library and emctool.h but
 // not tooldata.hh (src/emc/tooldata/tooldata.hh), so the three functions used are declared
-// here as that header declares them.
-enum toolidx_t { IDX_OK = 0, IDX_NEW, IDX_FAIL };
+// here. tooldata_get returns that header's enum toolidx_t, whose first value, IDX_OK, is 0; it
+// is declared with int, which the enum is returned as.
 auto tool_mmap_user() -> int;
 auto tooldata_last_index_get() -> int;
-auto tooldata_get(CANON_TOOL_TABLE* pdata, int idx) -> toolidx_t;
+auto tooldata_get(CANON_TOOL_TABLE* pdata, int idx) -> int;
 
 namespace coffeecnc {
 
@@ -28,7 +28,7 @@ auto LoadedToolTable::read() const -> std::vector<LoadedTool> {
   for (int index = 1; index <= last && index < CANON_POCKETS_MAX; ++index) {
     CANON_TOOL_TABLE entry{};
     // An empty entry has tool number -1.
-    if (tooldata_get(&entry, index) != IDX_OK || entry.toolno < 0)
+    if (tooldata_get(&entry, index) != 0 || entry.toolno < 0)
       continue;
     tools.push_back({index,
                      {entry.toolno, entry.pocketno, entry.offset.tran.z * scale_,

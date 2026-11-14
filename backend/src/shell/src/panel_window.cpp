@@ -34,17 +34,32 @@ constexpr const char* content_security_policy =
     "object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'";
 
 // Runs first in every document of the top frame, before any script of the page. The document
-// gives itself an identity that scripts of the page cannot change and tells the shell, together
-// with whether the bridge to the shell was there at that moment.
+// gives itself an identity that scripts of the page cannot change and tells the shell. Then it
+// puts its own function in the place of the `coffeecnc` handler's postMessage: every message
+// the page posts leaves as `<identity>:<text>`, so the shell knows which document sent it.
+// The handler object itself is WebKit's and was there before this ran; the page's check that
+// `window.webkit.messageHandlers.coffeecnc.postMessage` is a function sees the same object with
+// a function in it. The last character tells the shell whether that is in place.
 constexpr const char* document_start_script = R"js((() => {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const identity = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   Object.defineProperty(window, '__coffeecncPage', { value: identity });
   const handlers = window.webkit && window.webkit.messageHandlers;
-  const bridge = !!(handlers && handlers.coffeecnc && typeof handlers.coffeecnc.postMessage === 'function');
+  const native = handlers && handlers.coffeecnc;
+  let bridge = false;
+  if (native && typeof native.postMessage === 'function') {
+    const post = native.postMessage.bind(native);
+    const marked = (text) => post(identity + ':' + String(text));
+    try {
+      Object.defineProperty(native, 'postMessage', { value: marked, writable: true, configurable: true });
+    } catch (error) { /* reported below */ }
+    bridge = native.postMessage === marked;
+  }
   if (handlers && handlers.coffeecncPage) handlers.coffeecncPage.postMessage(identity + (bridge ? ':1' : ':0'));
 })();)js";
+
+constexpr std::size_t identity_digits = 32;
 
 auto text_of(WebKitJavascriptResult* result) -> std::optional<std::string> {
   JSCValue* value = webkit_javascript_result_get_js_value(result);
@@ -104,10 +119,8 @@ void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
 
 void on_message(WebKitUserContentManager* /*manager*/, WebKitJavascriptResult* result,
                 gpointer data) {
-  auto* self = static_cast<PanelWindow::Impl*>(data);
-  const auto text = text_of(result);
-  if (text && self->page && self->events.message)
-    self->events.message(*self->page, *text);
+  if (const auto text = text_of(result))
+    static_cast<PanelWindow::Impl*>(data)->receive(*text);
 }
 
 // The document's identity: 32 hexadecimal digits, then `:1` or `:0` for the bridge.
@@ -115,7 +128,7 @@ void on_identity(WebKitUserContentManager* /*manager*/, WebKitJavascriptResult* 
                  gpointer data) {
   auto* self = static_cast<PanelWindow::Impl*>(data);
   const auto text = text_of(result);
-  constexpr std::size_t digits = 32;
+  constexpr std::size_t digits = identity_digits;
   if (!text || !self->page || !self->identity.empty() || text->size() != digits + 2 ||
       !std::ranges::all_of(text->substr(0, digits), [](unsigned char c) -> bool {
         return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
@@ -233,6 +246,18 @@ auto on_drain(gpointer data) -> gboolean {
 void free_outbox(gpointer data) { delete static_cast<std::shared_ptr<Outbox>*>(data); }
 
 } // namespace
+
+void PanelWindow::Impl::receive(std::string_view raw) {
+  // `<identity>:<text>`, and the identity must be that of the document that shows: a message
+  // of a document that has been replaced is not the present page's, whenever it arrives.
+  if (!page || identity.empty() || raw.size() <= identity_digits ||
+      raw[identity_digits] != ':' || raw.substr(0, identity_digits) != identity) {
+    ++rejected;
+    return;
+  }
+  if (events.message)
+    events.message(*page, raw.substr(identity_digits + 1));
+}
 
 void PanelWindow::Impl::begin_page() {
   identity.clear();

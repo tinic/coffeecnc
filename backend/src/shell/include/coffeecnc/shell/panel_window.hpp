@@ -63,7 +63,11 @@ struct PanelEvents {
 // identity and does nothing. Messages reach the page as objects: window.coffeecncReceive(m).
 //
 // From the page. The script message handler `coffeecnc` exists before any document loads. A
-// message is accepted as a string only and handed on with the token of the page that shows.
+// message is accepted as a string only, and only from the document that shows: the
+// document-start script makes every message leave the page with its document's identity in
+// front, and a message with another identity, or none, is dropped before the session sees it.
+// So a message of a replaced document is never taken for the present page's, whenever it
+// arrives. The rest is handed on with the token of the page that shows.
 //
 // Refused: context menu, back and forward gestures, new windows, every permission request, and
 // navigation anywhere but the panel's origin.
@@ -87,7 +91,7 @@ public:
 
   struct Impl;
   // For the test hooks (shell_test_hooks.hpp) only.
-  [[nodiscard]] auto impl() -> Impl& { return *impl_; }
+  [[nodiscard]] auto internals() -> Impl& { return *impl_; }
 
 private:
   std::unique_ptr<Impl> impl_;

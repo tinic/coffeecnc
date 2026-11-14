@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -51,9 +52,12 @@ struct PanelWindow::Impl {
   std::uint64_t commits{};
   std::uint64_t delivered{}; // messages evaluated in a page
   std::uint64_t dropped{};   // messages of a page that no longer showed
+  std::uint64_t rejected{};  // messages from a document that is not the one that shows
   // The document that shows found the `coffeecnc` handler when its first script ran.
   std::optional<bool> handler_at_start;
 
+  // One message as the `coffeecnc` handler delivers it.
+  void receive(std::string_view raw);
   void begin_page();
   void end_page();
   void reload_later();

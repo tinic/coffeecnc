@@ -61,9 +61,11 @@ struct NmlStatus {
   // command done (neither executing nor failed).
   int echo_serial{};
   bool command_done{};
-  // Task is executing a command to load the tool table (its own or another client's): the
-  // table in LinuxCNC's tool data memory may be half replaced.
-  bool loading_tool_table{};
+  // Task has something in execution: its execution state is not "done" (it waits for motion,
+  // for io, for a delay) or its overall status is "executing". A tool table load sent through
+  // task by any client keeps this set until io has finished it, whatever command task took up
+  // after it: the table in LinuxCNC's tool data memory may be half replaced meanwhile.
+  bool task_executing{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};

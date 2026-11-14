@@ -42,14 +42,24 @@ namespace coffeecnc {
 // reload is in progress (see LoadedToolTable), so a pass is accepted only when all of this
 // holds: a later call has read the same table again (the calls are a publishing period apart);
 // and a status that the status thread read after the first of the two passes says that task
-// is not executing a command to load the tool table. Task executes that command, its own
-// client's or another's, for as long as io replaces the table, so a reload through LinuxCNC is
-// excluded. A program that writes the memory itself, behind LinuxCNC's back, is not: for that
-// the table is as read, twice. Until a pass is accepted the table accepted before stays shown.
+// has nothing in execution (NmlStatus::task_executing). What that is worth:
+//
+//   a load asked for through LinuxCNC's task (set_tool and remove_tool of this executable,
+//   another client's EMC_TOOL_LOAD_TOOL_TABLE, an MDI `G10 L1`, a tool change): task keeps the
+//   command in execution until io has answered it, whatever command it takes up after it, so
+//   a table read during the load is never accepted. The port, on its side, reports
+//   set_tool and remove_tool as accepted only when task reports the load done.
+//
+//   a writer that does not go through task (another program that maps the tool data memory
+//   and writes it): nothing brackets it. The table is then as read, twice, a period apart.
+//
+// The price: while a program or an MDI block executes, a table that has changed (a `G10 L1`
+// in the program) is not shown until execution has ended. Until a pass is accepted the table
+// accepted before stays shown.
 //
 // The prepared tool is resolved only in a table that is current: the pass of this call equals
-// the accepted table. Otherwise (a reload, a table that cannot be read) it is reported as
-// unknown, never as a number from an older table.
+// the accepted table. Otherwise (a reload, a changed table not yet accepted, a table that
+// cannot be read) it is reported as unknown, never as a number from an older table.
 //
 // `link` is decided last, after every read above, from the age of the latest status in the
 // mailbox at that moment: `down` before the first reading and for a reading without a status;

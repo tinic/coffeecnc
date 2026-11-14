@@ -30,6 +30,9 @@ public:
     std::optional<bool> handler_at_start;
     std::uint64_t delivered{};
     std::uint64_t dropped{};
+    std::uint64_t rejected{}; // messages from a document that is not the one that shows
+    // The identity of the document that shows, as it told the shell.
+    std::string identity;
     std::string uri;
     int width{};
     int height{};
@@ -58,6 +61,14 @@ public:
       -> std::expected<std::string, std::string>;
   // A PNG of what the view shows.
   [[nodiscard]] auto snapshot(const std::string& file) -> std::expected<void, std::string>;
+  // What a rectangle of the view shows, from a snapshot: how many of its pixels are not the
+  // colour most of them have (the background), by more than a little.
+  struct Pixels {
+    std::uint64_t total{};
+    std::uint64_t drawn{};
+  };
+  [[nodiscard]] auto pixels(int x, int y, int width, int height)
+      -> std::expected<Pixels, std::string>;
   // The left mouse button at a point of the view, as GDK events the view handles like the
   // operator's own.
   void mouse_move(double x, double y);
@@ -71,6 +82,9 @@ public:
   // What WebKit says about its graphics (the text of its webkit://gpu page), from a view of
   // the test's own beside the panel: the panel's window never navigates there.
   [[nodiscard]] auto graphics_report() -> std::expected<std::string, std::string>;
+  // Hands the shell one message exactly as the `coffeecnc` handler would deliver it now:
+  // `<identity>:<text>`. For a message of an earlier document that arrives late.
+  void deliver_from_page(const std::string& raw);
   // PanelWindow::post from the calling thread.
   void post(std::uint64_t page, std::vector<std::string> messages);
 

@@ -4,10 +4,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -120,8 +122,10 @@ void pages_and_snapshots() {
   const auto again = composer.compose(r, PageToken{2}, true, 1234ms);
   require(again.has_value(), "Composing after a repeated ready succeeds");
   Types types;
-  for (const auto& text : again.value_or(std::vector<std::string>{}))
-    types.push_back(Json::parse(text).at("type").get<std::string>());
+  std::ranges::transform(again.value_or(std::vector<std::string>{}), std::back_inserter(types),
+                         [](const std::string& text) -> std::string {
+                           return Json::parse(text).at("type").get<std::string>();
+                         });
   require(types == Types{"hello", "tool_table", "work_offsets", "program", "preview", "status"} &&
               Json::parse(again->back()).at("seq") == 2,
           "A repeated ready on the same page sends hello and every snapshot again");
@@ -179,7 +183,6 @@ void preview_context_follows_live_inputs() {
   require(compose(composer, r).context() == context + 1, "Block delete counts at once");
   r.status.interp = InterpState::idle;
   require(compose(composer, r).context() == context + 2, "After the run its state is a new start");
-  context += 2;
 
   // The same file loaded again is a new program: its text is sent and the context changes.
   r.program = std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false});
@@ -289,7 +292,7 @@ void feed_thread() {
   Source source;
   Delivered delivered;
   {
-    PanelFeed feed{source, [&](PageToken page, std::vector<std::string> messages) -> void {
+    PanelFeed feed{source, [&](PageToken page, const std::vector<std::string>& messages) -> void {
                      const std::scoped_lock lock{delivered.mutex};
                      for (const auto& text : messages)
                        delivered.messages.emplace_back(page.value, Json::parse(text));

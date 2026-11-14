@@ -1,8 +1,11 @@
 # Wires the coffeecnc HAL component into LinuxCNC. Run by the executable ([HAL] POSTGUI_HALFILE)
 # once its component is ready.
 
-# Jog stop without the NML command channel. motion.jog-stop acts on a rising edge:
-#   coffeecnc.jog-stop    the executable ends a jog whose dead-man lease expired
+# Jog stop without the NML command channel. motion.jog-stop is a level: while it is high every
+# jog in motion is aborted. motion.jog-inhibit refuses a jog before it starts. Both are high
+# while either of these holds:
+#   coffeecnc.jog-stop    the executable has decided to stop jogs and holds the level until
+#                         LinuxCNC's task has confirmed the stop
 #   watchdog tripped      the executable died or stalled: coffeecnc.heartbeat stopped toggling
 #
 # A realtime module loads once per LinuxCNC: a second `loadrt` of a module the machine's own
@@ -22,13 +25,15 @@ addf coffeecnc-jog-inhibit servo-thread
 setp watchdog.timeout-0 0.3
 # in-0 is watchdog ok, in-1 the executable's request: stop = not ok, or request.
 setp coffeecnc-jog-stop.function 0xD
-# inhibit = not ok
-setp coffeecnc-jog-inhibit.function 0x1
+# The same for inhibit: a jog start that LinuxCNC's task delivers late is refused, not started
+# and aborted.
+setp coffeecnc-jog-inhibit.function 0xD
 net coffeecnc-heartbeat coffeecnc.heartbeat => watchdog.input-0
 net coffeecnc-watchdog-enable coffeecnc.watchdog-enable => watchdog.enable-in
 net coffeecnc-watchdog-ok watchdog.ok-out => coffeecnc.watchdog-ok
 net coffeecnc-watchdog-ok => coffeecnc-jog-stop.in-0 coffeecnc-jog-inhibit.in-0
 net coffeecnc-jog-stop-request coffeecnc.jog-stop => coffeecnc-jog-stop.in-1
+net coffeecnc-jog-stop-request => coffeecnc-jog-inhibit.in-1
 net coffeecnc-jog-stop coffeecnc-jog-stop.out => motion.jog-stop
 # No jog starts while nothing watches it.
 net coffeecnc-jog-inhibit coffeecnc-jog-inhibit.out => motion.jog-inhibit

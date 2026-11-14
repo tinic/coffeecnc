@@ -18,7 +18,8 @@ struct HalSignals {
 
 // The executable's own HAL component: the path to LinuxCNC that needs no NML command channel.
 //
-//   <name>.jog-stop         bit out  pulsed; net to motion.jog-stop (acts on its rising edge)
+//   <name>.jog-stop         bit out  a level; drives motion.jog-stop and motion.jog-inhibit
+//                                    (tests/sim/coffeecnc_postgui.hal)
 //   <name>.heartbeat        bit out  toggled by beat(); input of a HAL `watchdog`
 //   <name>.watchdog-enable  bit out  arms that watchdog, and re-arms it after it has tripped
 //   <name>.watchdog-ok      bit in   the watchdog's ok-out
@@ -29,13 +30,22 @@ struct HalSignals {
 //   <name>.spindle-at-speed bit in   the signal that drives spindle.0.at-speed (optional)
 //   <name>.probe-input      bit in   the signal that drives motion.probe-input (optional)
 //
-// Every member only reads or writes pin memory and never blocks. NOT thread-safe: one thread,
-// the control loop, calls all of them.
+// motion.jog-stop is level-sensitive (measured on LinuxCNC 2.9.4, and emc/motion/control.c:542):
+// in every servo period in which it is high, every jog in motion is aborted, so a jog that
+// starts while it is high is aborted in its first period. motion.jog-inhibit refuses a start
+// outright and does not stop a running jog. A stop is therefore a level that is held, never a
+// pulse: a jog start delayed in LinuxCNC's task could run after a pulse has passed.
+//
+// Every member only reads or writes pin memory and never blocks. NOT thread-safe: exactly one
+// thread, the control thread, calls every member, and other threads get what they need from
+// HalShared (hal_control.hpp), which that thread keeps current. The pin memory itself belongs to
+// the HAL signal and is shared with LinuxCNC's realtime thread and with every other component on
+// that signal: each pin access here is a single atomic load or store.
 class HalComponent {
 public:
   using Clock = std::chrono::steady_clock;
-  // Shortest time jog-stop and watchdog-enable keep a level, so that the servo thread (1 ms on a
-  // usual configuration) cannot miss an edge.
+  // Shortest time jog-stop stays high and watchdog-enable keeps a level, so that the servo thread
+  // (1 ms on a usual configuration) cannot miss it.
   static constexpr auto level_time = std::chrono::milliseconds{5};
 
   // Creates the component with its pins and marks it ready. One per process and name. Every pin
@@ -50,15 +60,16 @@ public:
   auto operator=(const HalComponent&) -> HalComponent& = delete;
   ~HalComponent();
 
-  // Stops every jog in motion, whatever the NML command channel is doing. Raises jog-stop at
-  // once, or as soon as beat() has finished the previous pulse; beat() lowers it again.
-  void request_jog_stop();
-  // A requested stop has not been raised yet, or its pulse is not finished.
-  [[nodiscard]] auto jog_stop_busy() const -> bool;
+  // The jog-stop level. `true` drives the pin high at once: every jog in motion stops, whatever
+  // the NML command channel is doing, and none starts while it stays high. `false` lowers it,
+  // at once or, when it rose less than level_time ago, in the beat() that follows that time.
+  void hold_jog_stop(bool on);
+  // The pin is driven high at this moment.
+  [[nodiscard]] auto jog_stop_high() const -> bool;
 
   // Call once per control loop cycle, well inside the watchdog's timeout. Toggles heartbeat,
-  // finishes jog-stop pulses, arms the watchdog and takes tool-changed back once LinuxCNC has
-  // seen it.
+  // lowers a released jog-stop level once it has lasted level_time, arms the watchdog and takes
+  // tool-changed back once LinuxCNC has dropped its request.
   void beat();
   [[nodiscard]] auto watchdog_ok() const -> bool;
 
@@ -81,8 +92,8 @@ private:
   int id_{-1};
   Pins* pins_{};
   HalSignals wired_{};
-  bool stop_wanted_{};
-  Clock::time_point stop_changed_{};
+  bool hold_{};
+  Clock::time_point stop_raised_{};
   Clock::time_point enable_changed_{};
 };
 

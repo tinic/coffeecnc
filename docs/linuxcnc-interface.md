@@ -68,8 +68,12 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 
 | Topic | Observation | Consequence in the adapter |
 |---|---|---|
-| `motion.jog-stop` | Stops a jog started over NML in joint and axis mode, within 0.04–0.06 mm at 300 mm/min; level-sensitive: while high, every new jog is aborted; after it falls the next jog needs no reset | The dead-man path needs no command channel. `HalComponent` holds the pin at least 5 ms |
-| `motion.jog-inhibit` | Refuses a new jog; does not stop a running one | Driven by the watchdog together with `jog-stop` |
+| `motion.jog-stop` | Stops a jog started over NML in joint and axis mode, within 0.04–0.06 mm at 300 mm/min; a level (`emc/motion/control.c:542`): jogs are aborted in every servo period it is high; after it falls the next jog needs no reset | The dead-man path needs no command channel. The runtime holds the level until starts and stops reconcile |
+| `emcCommand` | A queue: commands written while task is stopped are all executed, in order, when it runs again | A jog start written before a stop decision can run afterwards; an accepted stop proves every earlier start was consumed |
+| Late jog start under the hold | Refused with "Cannot jog while jog-inhibit is active"; measured in simulation: start written with task frozen, level high 1–9 ms after the decision, held 370–530 ms until the stop was accepted, axis moved 0.00000 mm. Without the runtime the same start moved 3.2 mm | The post-GUI file feeds the level into `motion.jog-inhibit` as well |
+| Dead-man timing | Last refresh to level 154.5 ms, stopping 22.2 ms, 0.125 mm at 300 mm/min; control period 10 ms with 0.02 ms jitter while a command blocked for 1 s | |
+| libnml and threads | Channels share unlocked state, also on error-free calls (`libnml/cms/shmem.cc:44-57` `not_zero()`, the channel list, the print buffers). Each peek/read/write takes the buffer's semaphore with a 10 s timeout | One process-wide gate around every libnml call; no NML call on the control thread |
+| `motion.jog-inhibit` | Refuses `JOG_CONT`, `JOG_INCR` and `JOG_ABS` (`emc/motion/command.c:781`); does not stop a running jog | Driven by the level and by the watchdog, together with `jog-stop` |
 | Status write counter | About 945 per second with a 1 ms task cycle | `TaskHeartbeat` ignores an advance seen after a reading gap of 1 s or more |
 | `task.heartbeat` | Counts on 2.9.4 (Elle saw 0 on its build) | Not used |
 | Machine on from E-stop | `EMC_TASK_SET_STATE` ON returns `RCS_DONE`; the state stays ESTOP | Verify the reported state, not the command status |
@@ -107,6 +111,5 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | Remaps and `M100`–`M199` | The helper needs the Python plugin and INI `[RS274NGC]` settings; which side effects must it suppress? |
 | Non-trivial kinematics | Joint and axis indexes are assumed equal; reject other configurations at start-up or map them? |
 | Jog watchdog wiring | Shipped in `postgui.hal` or checked at start-up? |
-| Delayed start | A jog start queued while task is frozen must not move after the page is gone: worker fencing and holding `jog-stop` until starts and stops reconcile |
 | Step and resume around M0/M1 | Observed on one program; confirm before the panel relies on it |
 | Run from line | AXIS warns it is wrong with subroutines; no version 1 command |

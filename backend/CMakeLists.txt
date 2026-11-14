@@ -63,6 +63,11 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_session_tests)
     add_test(NAME session_lifecycle COMMAND coffeecnc_session_tests)
+    add_executable(coffeecnc_runtime_tests tests/runtime_tests.cpp)
+    target_link_libraries(coffeecnc_runtime_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_runtime_tests)
+    add_test(NAME runtime_threads COMMAND coffeecnc_runtime_tests)
     if(TARGET coffeecnc_linuxcnc)
       # INI parsing is in the adapter layer, so this exists where the adapter builds. It reads
       # files only: no LinuxCNC runs.
@@ -72,11 +77,21 @@ if(BUILD_TESTING)
       coffeecnc_enable_analyzers(coffeecnc_machine_config_tests)
       add_test(NAME machine_config COMMAND coffeecnc_machine_config_tests
         ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config)
+      # The tool change handshake between the control thread and the others. No HAL runs.
+      add_executable(coffeecnc_hal_control_tests tests/hal_control_tests.cpp)
+      target_link_libraries(coffeecnc_hal_control_tests PRIVATE coffeecnc_linuxcnc
+        coffeecnc_project_options)
+      coffeecnc_enable_analyzers(coffeecnc_hal_control_tests)
+      add_test(NAME hal_control COMMAND coffeecnc_hal_control_tests)
       # The real Session on NmlPort against a running LinuxCNC on a simulated mill. Exists only
       # where the LinuxCNC adapter builds; `ctest -L linuxcnc` selects it, `-LE linuxcnc` skips it.
-      add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp)
+      add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp tests/sim/hal_probe.cpp)
+      # hal_probe.cpp is a HAL component of the test's own and includes hal.h.
+      target_include_directories(coffeecnc_sim_tests SYSTEM PRIVATE
+        ${COFFEECNC_LINUXCNC_INCLUDE_DIR})
+      target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI)
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
-        coffeecnc_project_options nlohmann_json::nlohmann_json)
+        coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
       foreach(units mm inch)
         add_test(NAME linuxcnc_sim_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

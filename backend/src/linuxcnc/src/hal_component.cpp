@@ -8,6 +8,21 @@
 
 namespace coffeecnc {
 
+namespace {
+// Pin memory is shared: LinuxCNC's realtime thread reads and writes it, and so does every other
+// HAL component whose pin is on the same signal, in this process or another. Every access is
+// therefore one atomic load or store of the whole value; nothing here reads a pin twice and
+// expects the same answer.
+template <typename Value> auto get(const volatile Value* pin) -> Value {
+  Value value;
+  __atomic_load(pin, &value, __ATOMIC_RELAXED);
+  return value;
+}
+template <typename Value> void set(volatile Value* pin, Value value) {
+  __atomic_store(pin, &value, __ATOMIC_RELAXED);
+}
+} // namespace
+
 // Where HAL keeps each pin's value. Lives in HAL shared memory.
 struct HalComponent::Pins {
   hal_bit_t* jog_stop;
@@ -54,7 +69,7 @@ HalComponent::HalComponent(int id, Pins* pins, const HalSignals& wired)
 
 HalComponent::HalComponent(HalComponent&& other) noexcept
     : id_(std::exchange(other.id_, -1)), pins_(std::exchange(other.pins_, nullptr)),
-      wired_(other.wired_), stop_wanted_(other.stop_wanted_), stop_changed_(other.stop_changed_),
+      wired_(other.wired_), hold_(other.hold_), stop_raised_(other.stop_raised_),
       enable_changed_(other.enable_changed_) {}
 
 auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
@@ -64,8 +79,8 @@ auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
     id_ = std::exchange(other.id_, -1);
     pins_ = std::exchange(other.pins_, nullptr);
     wired_ = other.wired_;
-    stop_wanted_ = other.stop_wanted_;
-    stop_changed_ = other.stop_changed_;
+    hold_ = other.hold_;
+    stop_raised_ = other.stop_raised_;
     enable_changed_ = other.enable_changed_;
   }
   return *this;
@@ -76,57 +91,50 @@ HalComponent::~HalComponent() {
     hal_exit(id_);
 }
 
-void HalComponent::request_jog_stop() {
+void HalComponent::hold_jog_stop(bool on) {
   const auto now = Clock::now();
-  if (!*pins_->jog_stop && now - stop_changed_ >= level_time) {
-    *pins_->jog_stop = true;
-    stop_changed_ = now;
-    stop_wanted_ = false;
-  } else {
-    // A jog may have started since the pulse in progress rose: it needs an edge of its own.
-    stop_wanted_ = true;
+  hold_ = on;
+  const bool high = get(pins_->jog_stop);
+  if (on && !high) {
+    set(pins_->jog_stop, true);
+    stop_raised_ = now;
+  } else if (!on && high && now - stop_raised_ >= level_time) {
+    set(pins_->jog_stop, false);
   }
 }
 
-auto HalComponent::jog_stop_busy() const -> bool { return stop_wanted_ || *pins_->jog_stop; }
+auto HalComponent::jog_stop_high() const -> bool { return get(pins_->jog_stop); }
 
 void HalComponent::beat() {
   const auto now = Clock::now();
-  *pins_->heartbeat = !*pins_->heartbeat;
-  if (now - stop_changed_ >= level_time) {
-    if (*pins_->jog_stop) {
-      *pins_->jog_stop = false;
-      stop_changed_ = now;
-    } else if (stop_wanted_) {
-      *pins_->jog_stop = true;
-      stop_changed_ = now;
-      stop_wanted_ = false;
-    }
-  }
+  set(pins_->heartbeat, !get(pins_->heartbeat));
+  // A level that was released before the servo thread could have seen it.
+  if (!hold_ && get(pins_->jog_stop) && now - stop_raised_ >= level_time)
+    set(pins_->jog_stop, false);
   // A watchdog that has tripped stays tripped until its enable input falls and rises again.
-  if (!*pins_->watchdog_ok && now - enable_changed_ >= level_time) {
-    *pins_->watchdog_enable = !*pins_->watchdog_enable;
+  if (!get(pins_->watchdog_ok) && now - enable_changed_ >= level_time) {
+    set(pins_->watchdog_enable, !get(pins_->watchdog_enable));
     enable_changed_ = now;
   }
-  if (!*pins_->tool_change)
-    *pins_->tool_changed = false;
+  if (!get(pins_->tool_change))
+    set(pins_->tool_changed, false);
 }
 
-auto HalComponent::watchdog_ok() const -> bool { return *pins_->watchdog_ok; }
+auto HalComponent::watchdog_ok() const -> bool { return get(pins_->watchdog_ok); }
 
 auto HalComponent::tool_change_request() const -> std::optional<int> {
-  if (!*pins_->tool_change || *pins_->tool_changed)
+  if (!get(pins_->tool_change) || get(pins_->tool_changed))
     return {};
-  return *pins_->tool_number;
+  return get(pins_->tool_number);
 }
 
 void HalComponent::confirm_tool_changed() {
-  if (*pins_->tool_change)
-    *pins_->tool_changed = true;
+  if (get(pins_->tool_change))
+    set(pins_->tool_changed, true);
 }
 
 auto HalComponent::spindle_rpm() const -> std::optional<double> {
-  const double rpm = *pins_->spindle_rpm;
+  const double rpm = get(pins_->spindle_rpm);
   if (!wired_.spindle_rpm || !std::isfinite(rpm))
     return {};
   return std::fabs(rpm);
@@ -135,13 +143,13 @@ auto HalComponent::spindle_rpm() const -> std::optional<double> {
 auto HalComponent::spindle_at_speed() const -> std::optional<bool> {
   if (!wired_.spindle_at_speed)
     return {};
-  return *pins_->spindle_at_speed != 0;
+  return get(pins_->spindle_at_speed);
 }
 
 auto HalComponent::probe_input() const -> std::optional<bool> {
   if (!wired_.probe)
     return {};
-  return *pins_->probe_input != 0;
+  return get(pins_->probe_input);
 }
 
 } // namespace coffeecnc

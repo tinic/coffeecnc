@@ -3,13 +3,15 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
-#include <coffeecnc/linuxcnc/hal_component.hpp>
+#include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -47,6 +49,10 @@ struct NmlStatus {
   int motion_line{};
   int queued_mdi{};
   SpindleDirection spindle_direction{SpindleDirection::stopped};
+  // The serial number of the last command task has taken up, and whether task reports that
+  // command done (neither executing nor failed).
+  int echo_serial{};
+  bool command_done{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};
@@ -54,12 +60,6 @@ struct NmlStatus {
   bool optional_stop{};
   bool block_delete{};
   bool paused{};
-};
-
-// An operator error or message LinuxCNC published.
-struct ControllerMessage {
-  bool error{};
-  std::string text;
 };
 
 // LinuxCNC's task controller over its NML channels: the one writer of commands, the reader of
@@ -72,9 +72,28 @@ struct ControllerMessage {
 // When task rejects a command, its operator error text becomes the reason and is not reported a
 // second time by take_messages().
 //
-// Blocking: a single NML command waits at most echo_timeout + completion_timeout. Actions that
-// must first switch teleop (home, jogs) or send two commands (coolant) wait at most twice that.
-// Typical times on a 1 ms task cycle are 2 to 30 ms. NOT thread-safe.
+// Blocking. The waits are polls with deadlines: echo_timeout for the echo, completion_timeout
+// for completion, the windows below for errors and settling. A deadline is checked between
+// libnml calls, and one libnml call (peek, read, write) can itself wait for the buffer's System V
+// semaphore up to the timeout T of the `xemc` lines of the NML file, 10 s in LinuxCNC's
+// linuxcnc.nml; so can the NML gate, while another thread's call waits in it. Bounds:
+//
+//   one libnml call          T, and as much again for the gate
+//   one wait with deadline D D + 2T: its last pass makes at most two calls (status, error)
+//   one NML command          write, echo, completion: at most 4 s + 5T, and about 0.1 s + 4T more
+//                            when it fails and its error text is collected
+//   an action                at most two commands (teleop then jog or home; flood then mist)
+//                            and a settle wait of 1 s + 2T
+//
+// With a task that is stopped but does not hold a semaphore, which is what a stopped task was
+// seen to be, a command returns after echo_timeout, 1 s. Typical times on a 1 ms task cycle are
+// 2 to 30 ms.
+//
+// NOT thread-safe: one thread, the runtime's worker, calls every member. Other threads may use
+// other NML objects (NmlStatusReader) at the same time: every call into LinuxCNC's NML library,
+// which shares unlocked state between all its channels, goes through one process-wide gate
+// (src/nml_gate.hpp), one call at a time. emcCommand is a queue: task executes commands in the
+// order they were written, also those written while it was stopped.
 class NmlPort final : public ControllerPort {
 public:
   static constexpr auto echo_timeout = std::chrono::milliseconds{1000};
@@ -88,51 +107,119 @@ public:
 
   // Opens the channels named by the configuration's NML file. `hal` may be null: there is then
   // no manual tool change. It must outlive the port.
-  [[nodiscard]] static auto connect(const MachineConfig& config, HalComponent* hal)
+  [[nodiscard]] static auto connect(const MachineConfig& config, HalShared* hal)
       -> std::expected<std::unique_ptr<NmlPort>, std::string>;
   ~NmlPort() override;
   NmlPort(const NmlPort&) = delete;
   auto operator=(const NmlPort&) -> NmlPort& = delete;
 
+  // One command as it left this port.
+  struct Written {
+    long type{};  // the NML message type
+    int serial{}; // the serial number task echoes once it has taken the command up
+    std::chrono::steady_clock::time_point at{}; // when libnml's write returned
+    friend auto operator==(const Written&, const Written&) -> bool = default;
+  };
+  // Every command this port has written, in order, the last max_trace of them: for tests and
+  // logs that must know what is, and what is not, in LinuxCNC's command queue. Any thread.
+  static constexpr std::size_t max_trace = 4096;
+  [[nodiscard]] auto writes() const -> std::vector<Written>;
+  // The NML types of the commands tests ask about.
+  struct Types {
+    long jog_start;
+    long jog_stop;
+    long jog_increment;
+    long teleop;
+    long home;
+    long run;
+    long mdi;
+    long spindle_on;
+    long coolant_flood_on;
+    long coolant_mist_on;
+    long load_tool_table;
+    long abort;
+  };
+  [[nodiscard]] static auto types() -> Types;
+
   [[nodiscard]] auto snapshot() -> ControllerState override;
   // The same reading with everything else the panel shows.
   [[nodiscard]] auto status() -> NmlStatus;
-  // Operator messages published since the last call, oldest first. Call it every control cycle:
-  // it is also the regular status reading that keeps `link` meaningful between actions.
-  [[nodiscard]] auto take_messages() -> std::vector<ControllerMessage>;
+  // Also the regular status reading that keeps `link` meaningful between actions: call it at
+  // least a few times per second.
+  [[nodiscard]] auto take_messages() -> std::vector<ControllerMessage> override;
 
-  [[nodiscard]] auto set_machine_state(MachineState state) -> ActionResult override;
-  [[nodiscard]] auto set_task_mode(TaskMode mode) -> ActionResult override;
+  // Cancellation, as ControllerPort asks. Every action asks its `Wanted` after each wait of
+  // its own (the collecting of earlier errors, the switch between world and joint mode, a
+  // status it waits for) and a last time once it has the NML gate, immediately before each
+  // write. The gate is taken first and the session's mutex is never held across a libnml call:
+  // the session answers under its mutex and lets go of it before the write. So no other NML
+  // call falls between the last question and the write, but the answer may still change in
+  // that moment, and once libnml's write has begun the command is committed; see
+  // ControllerPort for what ends a command that was written too late to withdraw. Actions that
+  // write twice ask before each write: home and the jogs (leave or enter world mode, then the
+  // command), coolant (flood, then mist). `wanted` is used during the call only and not kept.
+  //
+  // The tool table has two commits. Withdrawn before the file is replaced, the edit leaves the
+  // table as it was and removes its temporary file. Withdrawn after that, before LinuxCNC is
+  // told to load the table, it is `failed` with a reason that says so: the file is changed and
+  // LinuxCNC still uses the old table. Nothing is rolled back: that could overwrite a later
+  // edit. The tool change confirmation asks at the moment it is handed to the control thread.
+  [[nodiscard]] auto set_machine_state(MachineState state, const Wanted& wanted)
+      -> ActionResult override;
+  [[nodiscard]] auto set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult override;
   // Homing all axes fails, with nothing sent, unless MachineConfig::home_all_configured.
-  [[nodiscard]] auto home(std::optional<Axis> axis) -> ActionResult override;
-  [[nodiscard]] auto start_jog(Axis axis, int direction, double velocity, JogSpace space)
-      -> ActionResult override;
-  // Sends nothing while the machine is observed off or outside manual mode: task refuses jog
-  // commands then and no jog can be running.
+  [[nodiscard]] auto home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto start_jog(Axis axis, int direction, double velocity, JogSpace space,
+                               const Wanted& wanted) -> ActionResult override;
+  // Sends nothing while the machine is observed off or outside manual mode, provided task has
+  // echoed the last command this port wrote: task refuses jog commands then and no jog can be
+  // running. A stop for the same axis that task has not echoed yet is not written again: the
+  // call waits for that one.
   [[nodiscard]] auto stop_jog(Axis axis) -> ActionResult override;
-  [[nodiscard]] auto jog_increment(Axis axis, double distance, double velocity, JogSpace space)
+  [[nodiscard]] auto jog_increment(Axis axis, double distance, double velocity, JogSpace space,
+                                   const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto mdi(std::string_view text, const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto open_program(std::string_view path, const Wanted& wanted)
       -> ActionResult override;
-  [[nodiscard]] auto mdi(std::string_view text) -> ActionResult override;
-  [[nodiscard]] auto open_program(std::string_view path) -> ActionResult override;
-  [[nodiscard]] auto run() -> ActionResult override;
-  [[nodiscard]] auto pause() -> ActionResult override;
-  [[nodiscard]] auto resume() -> ActionResult override;
-  [[nodiscard]] auto step() -> ActionResult override;
+  [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto pause(const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto resume(const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto step(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto abort() -> ActionResult override;
-  [[nodiscard]] auto set_override(Override which, double value) -> ActionResult override;
-  [[nodiscard]] auto set_spindle(SpindleDirection direction, double rpm) -> ActionResult override;
-  [[nodiscard]] auto set_coolant(bool flood, bool mist) -> ActionResult override;
-  [[nodiscard]] auto set_program_option(ProgramOption option, bool on) -> ActionResult override;
-  // Through the HAL component, not NML.
-  [[nodiscard]] auto tool_changed() -> ActionResult override;
+  [[nodiscard]] auto set_override(Override which, double value, const Wanted& wanted)
+      -> ActionResult override;
+  [[nodiscard]] auto set_spindle(SpindleDirection direction, double rpm, const Wanted& wanted)
+      -> ActionResult override;
+  [[nodiscard]] auto set_coolant(bool flood, bool mist, const Wanted& wanted)
+      -> ActionResult override;
+  [[nodiscard]] auto set_program_option(ProgramOption option, bool on, const Wanted& wanted)
+      -> ActionResult override;
+  // Through the HAL component, not NML: asks the control thread to raise tool-changed for
+  // exactly that request. Fails while the control thread does not renew its copy of the pins.
+  [[nodiscard]] auto tool_changed(int tool, std::uint64_t request, const Wanted& wanted)
+      -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
-  [[nodiscard]] auto set_tool(const Tool& tool) -> ActionResult override;
-  [[nodiscard]] auto remove_tool(int number) -> ActionResult override;
+  [[nodiscard]] auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto remove_tool(int number, const Wanted& wanted) -> ActionResult override;
 
 private:
   struct Impl;
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
+};
+
+// Keeps the NML gate for as long as it lives: every NML call of every thread of the process
+// waits. For tests of what a thread does that was held up on its way into LinuxCNC's library;
+// nothing else has a reason to use it.
+class NmlGateHold {
+public:
+  NmlGateHold();
+  ~NmlGateHold();
+  NmlGateHold(const NmlGateHold&) = delete;
+  auto operator=(const NmlGateHold&) -> NmlGateHold& = delete;
+
+private:
+  std::unique_lock<std::mutex> lock_;
 };
 
 } // namespace coffeecnc

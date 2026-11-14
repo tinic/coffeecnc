@@ -46,6 +46,9 @@ struct ControllerState {
   bool program_loaded{};
   int tool_in_spindle{};
   std::optional<int> requested_tool;
+  // Which request of the controller `requested_tool` is: another request, also one for the same
+  // tool, has another number. A confirmation names it, so that it cannot answer a later request.
+  std::uint64_t tool_request{};
   // Protocol values are millimetres; composed G-code must be written in this unit.
   LengthUnit program_units{LengthUnit::mm};
 };

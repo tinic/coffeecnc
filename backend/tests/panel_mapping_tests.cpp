@@ -393,6 +393,80 @@ void source_program_loads() {
   require(r.program && r.program->revision == 5, "Loaded again after none: a new revision");
 }
 
+// Task's line counters belong to task, not to a load: a counter is reported only once the
+// loaded revision produced it.
+void source_lines_belong_to_the_revision() {
+  Rig rig;
+  const auto lines = [](const PanelReading& r) -> std::pair<int, int> {
+    return {r.status.program.current_line, r.status.program.motion_line};
+  };
+  const auto at = [&](TaskMode mode, InterpState interp, int current, int motion) -> NmlStatus {
+    auto s = rig.status();
+    s.controller.mode = mode;
+    s.controller.interp = interp;
+    s.current_line = current;
+    s.motion_line = motion;
+    return s;
+  };
+  const auto automatic = TaskMode::automatic;
+  // Program A runs to line 7 and ends.
+  require(lines(rig.step(at(automatic, InterpState::idle, 0, 0))) == std::pair{0, 0} &&
+              lines(rig.step(at(automatic, InterpState::reading, 7, 6))) == std::pair{7, 6} &&
+              lines(rig.step(at(automatic, InterpState::idle, 7, 7))) == std::pair{7, 7},
+          "The lines of a program that ran are its own, also after it has ended");
+
+  // B is opened: task zeroes the counters. An E-stop then brings A's current line back.
+  ++rig.loads.programs;
+  auto r = rig.step(at(automatic, InterpState::idle, 0, 0));
+  require(r.status.program.revision == 2 && lines(r) == std::pair{0, 0}, "A new revision");
+  require(lines(rig.step(at(automatic, InterpState::idle, 7, 0))) == std::pair{0, 0},
+          "A line the previous program left is not reported for the new revision");
+  // An MDI block is not a start of the program, whatever the counters read meanwhile.
+  require(lines(rig.step(at(TaskMode::mdi, InterpState::reading, 7, 7))) == std::pair{0, 0} &&
+              lines(rig.step(at(TaskMode::mdi, InterpState::idle, 7, 7))) == std::pair{0, 0} &&
+              lines(rig.step(at(TaskMode::manual, InterpState::idle, 7, 7))) == std::pair{0, 0},
+          "An MDI block after the open does not make the old lines valid");
+  // The run of B: the old values are still read until task has taken up B's first block.
+  ++rig.loads.program_starts;
+  require(lines(rig.step(at(automatic, InterpState::reading, 7, 7))) == std::pair{0, 0},
+          "Started, but the counters still hold what they read before the start");
+  require(lines(rig.step(at(automatic, InterpState::reading, 2, 7))) == std::pair{2, 0},
+          "Each counter is reported from its first change after the start");
+  require(lines(rig.step(at(automatic, InterpState::reading, 7, 2))) == std::pair{7, 2} &&
+              lines(rig.step(at(automatic, InterpState::idle, 7, 7))) == std::pair{7, 7},
+          "And from then on as task reports it, the old value included");
+
+  // A run too short for any status to show it: the port's count is what attributes the lines.
+  ++rig.loads.programs;
+  require(lines(rig.step(at(automatic, InterpState::idle, 0, 0))) == std::pair{0, 0}, "Opened");
+  ++rig.loads.program_starts;
+  require(lines(rig.step(at(automatic, InterpState::idle, 4, 3))) == std::pair{4, 3},
+          "Lines after a run the port had accepted are reported though no status showed it");
+
+  // Without the port's count (another client started it) the status must show the execution.
+  ++rig.loads.programs;
+  require(lines(rig.step(at(automatic, InterpState::idle, 0, 0))) == std::pair{0, 0} &&
+              lines(rig.step(at(automatic, InterpState::idle, 4, 3))) == std::pair{0, 0},
+          "Changed counters without a start are withheld");
+  require(lines(rig.step(at(automatic, InterpState::paused, 5, 3))) == std::pair{5, 0} &&
+              lines(rig.step(at(automatic, InterpState::idle, 5, 5))) == std::pair{5, 5},
+          "Task seen executing in auto is a start");
+
+  // A start accepted in the same period as its load is not counted for it.
+  ++rig.loads.programs;
+  ++rig.loads.program_starts;
+  require(lines(rig.step(at(automatic, InterpState::idle, 3, 3))) == std::pair{0, 0} &&
+              lines(rig.step(at(automatic, InterpState::idle, 3, 3))) == std::pair{0, 0},
+          "A start that cannot be told from one before the load attributes nothing");
+
+  // Another file named by task while it runs (loaded and started by another client).
+  auto other = at(automatic, InterpState::reading, 9, 8);
+  other.program_file = (scratch / "other.ngc").string();
+  r = rig.step(other);
+  require(r.status.program.revision == 6 && lines(r) == std::pair{9, 8},
+          "A revision first seen executing reports its lines");
+}
+
 void source_tool_table() {
   Rig rig;
   auto r = rig.step();
@@ -523,6 +597,7 @@ auto main(int argc, char** argv) -> int {
     source_status_and_age();
     source_ages_the_status_after_its_reads();
     source_program_loads();
+    source_lines_belong_to_the_revision();
     source_tool_table();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";

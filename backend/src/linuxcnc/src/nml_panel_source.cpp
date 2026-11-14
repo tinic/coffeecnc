@@ -40,6 +40,16 @@ struct NmlPanelSource::Impl {
   std::uint64_t program_loads_seen{};
   std::uint64_t program_revision{};
   std::shared_ptr<const ProgramText> program;
+  // The line counters of the loaded revision; see the header.
+  struct Lines {
+    std::uint64_t starts_seen{}; // the port's count when the revision began
+    bool started{};
+    int current_before{}; // as read last before the start
+    int motion_before{};
+    bool current_shown{};
+    bool motion_shown{};
+  };
+  Lines lines;
 
   Impl(MachineConfig machine, const NmlStatusMailbox& readings, ToolReader tool_reader,
        ProgramReader program_reader, const NmlLoads* counted,
@@ -103,10 +113,48 @@ struct NmlPanelSource::Impl {
     tool_loads_seen = counted;
   }
 
-  void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
+  // The port's counts, the starts as they were while `programs` had this value.
+  struct Counts {
+    std::uint64_t programs{};
+    std::uint64_t starts{};
+  };
+  [[nodiscard]] auto counts() const -> Counts {
+    if (loads == nullptr)
+      return {};
+    for (auto opened = loads->programs.load();;) {
+      const auto starts = loads->program_starts.load();
+      const auto again = loads->programs.load();
+      if (again == opened)
+        return {opened, starts};
+      opened = again;
+    }
+  }
+
+  // The counters of one status of the loaded revision, each 0 until that revision produced it.
+  void track_lines(const NmlStatus& status, const Counts& now, ProgramStatus& shown) {
+    const auto& controller = status.controller;
+    if (!lines.started) {
+      if (now.starts != lines.starts_seen ||
+          (controller.mode == TaskMode::automatic && controller.interp != InterpState::idle)) {
+        lines.started = true;
+      } else {
+        lines.current_before = status.current_line;
+        lines.motion_before = status.motion_line;
+      }
+    }
+    lines.current_shown =
+        lines.current_shown || (lines.started && status.current_line != lines.current_before);
+    lines.motion_shown =
+        lines.motion_shown || (lines.started && status.motion_line != lines.motion_before);
+    shown.current_line = lines.current_shown ? status.current_line : 0;
+    shown.motion_line = lines.motion_shown ? status.motion_line : 0;
+  }
+
+  void read_program(const NmlStatus& status, const Counts& now,
+                    std::vector<ControllerMessage>& messages) {
     if (status.controller.link == Link::down)
       return; // Nothing is known: what was read last stays.
-    const auto counted = loads != nullptr ? loads->programs.load() : 0;
+    const auto counted = now.programs;
     if (status.program_file.empty()) {
       program_file.clear();
       program_loads_seen = counted;
@@ -118,6 +166,7 @@ struct NmlPanelSource::Impl {
     program_file = status.program_file;
     program_loads_seen = counted;
     ++program_revision;
+    lines = Lines{.starts_seen = now.starts};
     program.reset();
     auto text = programs ? programs(program_file, program_revision)
                          : std::unexpected(std::string("No program directory is configured."));
@@ -142,12 +191,13 @@ auto NmlPanelSource::read() -> PanelReading {
   PanelReading reading;
   // Everything that can take time first: the status is taken after it, and aged last.
   impl_->read_tools(reading.messages);
+  const auto counts = impl_->counts();
   if (const auto before = impl_->mailbox.latest())
-    impl_->read_program(before->status, reading.messages);
+    impl_->read_program(before->status, counts, reading.messages);
   auto latest = impl_->mailbox.latest();
   // Task named another file meanwhile: its text is read now, and the status taken again.
   if (latest && latest->status.program_file != impl_->program_file) {
-    impl_->read_program(latest->status, reading.messages);
+    impl_->read_program(latest->status, counts, reading.messages);
     latest = impl_->mailbox.latest();
   }
   auto status = latest ? latest->status : NmlStatus{};
@@ -162,6 +212,8 @@ auto NmlPanelSource::read() -> PanelReading {
       to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
+  if (loaded && status.controller.link != Link::down)
+    impl_->track_lines(status, counts, reading.status.program);
   if (!loaded)
     reading.status.program = ProgramStatus{.file = {},
                                            .revision = 0,

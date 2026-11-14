@@ -33,6 +33,22 @@ namespace coffeecnc {
 //                 load: when task names another file, and when the port reports that LinuxCNC
 //                 accepted an open_program (NmlLoads::programs), also of the same file
 //
+// Line numbers. Task's current and motion line are counters of task, not of a load: an open
+// zeroes both, and an E-stop or abort with the interpreter idle brings the current line of the
+// program run before back (2.9.4; docs/linuxcnc-interface.md). A counter is therefore reported
+// only when the loaded revision produced it, and is 0 until then:
+//
+//   started   the revision counts as started once the port reports a run or step it had accepted
+//             after the load (NmlLoads::program_starts), or a status shows task in auto with
+//             the interpreter not idle. An MDI block is neither. The port's count also covers a
+//             run too short for any status to show it; the status covers a start by another
+//             client
+//   reported  each counter from the first status, after the start, in which it differs from
+//             what it read last before the start (0 where no status came before it)
+//
+// A run or step accepted in the same publishing period as its load is not counted for it: the
+// status must then show the execution, or the lines stay 0. Withholding is the safe side.
+//
 // Revisions count from 1. The tool table's goes up when the table shown differs; the program's
 // with every load as above. A program text that cannot be read leaves the program without text
 // and is reported once, as an operator message; so is a tool table that cannot be read, which

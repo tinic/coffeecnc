@@ -677,7 +677,10 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
     return withdrawn();
   EMC_TASK_PLAN_RUN message;
   message.line = 0; // from the start
-  return impl_->start(message, from);
+  auto started = impl_->start(message, from);
+  if (accepted(started) && impl_->loads != nullptr)
+    ++impl_->loads->program_starts;
+  return started;
 }
 
 auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
@@ -710,7 +713,10 @@ auto NmlPort::step(const Wanted& wanted) -> ActionResult {
   if (!impl_->still())
     return withdrawn();
   EMC_TASK_PLAN_STEP message;
-  return impl_->pass(message, from);
+  auto stepped = impl_->pass(message, from);
+  if (accepted(stepped) && impl_->loads != nullptr)
+    ++impl_->loads->program_starts;
+  return stepped;
 }
 
 auto NmlPort::abort() -> ActionResult {

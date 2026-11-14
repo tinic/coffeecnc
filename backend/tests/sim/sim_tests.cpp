@@ -1653,6 +1653,76 @@ void program(Rig& rig) {
   traced(rig, 100ms, []() -> bool { return false; });
 }
 
+// What task reports as current and motion line across the load of another program: the facts
+// the panel source's rule rests on (docs/linuxcnc-interface.md, "Observed on 2.9.4").
+void lines_across_open(Rig& rig) {
+  const std::string file = rig.config.program_prefix + "/coffeecnc_sim_second.ngc";
+  {
+    std::ofstream out{file};
+    out << "G21 G90 G54\n"  // 1
+           "G0 X5 Y5\n"     // 2
+           "G1 X8 F600\n"   // 3
+           "M2\n";          // 4
+  }
+  const auto lines = [&](std::string_view at) -> void {
+    const auto status = rig.status();
+    fact("lines", std::format("at={} file={} interp={} mode={} current_line={} motion_line={}", at,
+                              status.program_file.substr(status.program_file.rfind('/') + 1),
+                              static_cast<int>(status.controller.interp),
+                              static_cast<int>(status.controller.mode), status.current_line,
+                              status.motion_line));
+  };
+  rig.pump(100ms);
+  lines("after_abort_of_first");
+  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  rig.pump(20ms);
+  lines("open_second_20ms");
+  rig.pump(1s);
+  lines("open_second_1s");
+  const auto mdi = rig.send(R"("type":"mdi","text":"G21 G0 X1")");
+  traced(rig, 5s, [&]() -> bool { return rig.idle(); });
+  rig.pump(100ms);
+  lines("after_mdi");
+  const auto step = rig.send(R"("type":"step")");
+  traced(rig, 1s, []() -> bool { return false; });
+  lines("after_first_step");
+  static_cast<void>(rig.send(R"("type":"step")"));
+  traced(rig, 2s, []() -> bool { return false; });
+  lines("after_second_step");
+  static_cast<void>(rig.send(R"("type":"resume")"));
+  const bool ended = traced(rig, 10s, [&]() -> bool { return rig.idle() && !rig.status().paused; });
+  rig.pump(100ms);
+  lines("after_end_of_second");
+  const auto reopen = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  rig.pump(200ms);
+  lines("reopen_second");
+  static_cast<void>(rig.send(R"("type":"set_machine","state":"estop")"));
+  traced(rig, 500ms, []() -> bool { return false; });
+  lines("estop_after_reopen");
+  static_cast<void>(rig.send(R"("type":"set_machine","state":"off")"));
+  traced(rig, 500ms, []() -> bool { return false; });
+  lines("off_after_reopen");
+  static_cast<void>(rig.send(R"("type":"set_machine","state":"on")"));
+  traced(rig, 500ms, []() -> bool { return false; });
+  lines("on_after_reopen");
+  fact("homed_after_power_cycle", std::format("x={}", rig.snapshot().axes.at(0).homed));
+  const auto first = rig.send(std::format(R"("type":"open_program","path":"{}")",
+                                          rig.config.program_prefix + "/coffeecnc_sim.ngc"));
+  rig.pump(200ms);
+  lines("open_first_again");
+  const auto run = rig.send(R"("type":"run")");
+  traced(rig, 3s, [&]() -> bool { return rig.status().motion_line >= 3; });
+  lines("run_first_again");
+  static_cast<void>(rig.send(R"("type":"abort")"));
+  rig.pump(500ms);
+  lines("abort_first_again");
+  check("lines_across_open_sequence",
+        open.accepted() && mdi.accepted() && step.accepted() && ended && reopen.accepted() &&
+            first.accepted() && run.accepted(),
+        std::format("open={} mdi={} step={} ended={} reopen={} first={} run={}", open.text(),
+                    mdi.text(), step.text(), ended, reopen.text(), first.text(), run.text()));
+}
+
 void tools(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G49")"));
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
@@ -2169,6 +2239,7 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   mdi(rig);
   overrides(rig);
   program(rig);
+  lines_across_open(rig);
   adapter_cancellation(rig);
   home_withdrawn_in_its_wait(rig);
   half_sent_action_is_reported(rig);

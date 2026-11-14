@@ -99,8 +99,10 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   c.tool_in_spindle = s.io.tool.toolInSpindle;
   // As the control thread read the pins last; nothing of it while that thread has stalled.
   if (const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt) {
-    if (view->tool_change_request)
+    if (view->tool_change_request) {
       c.requested_tool = view->tool_change_request->tool;
+      c.tool_request = view->tool_change_request->generation;
+    }
     out.spindle_actual_rpm = view->spindle_rpm;
     out.spindle_at_speed = view->spindle_at_speed;
     out.probe_input = view->probe_input;

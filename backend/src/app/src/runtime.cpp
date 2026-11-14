@@ -41,8 +41,6 @@ Runtime::~Runtime() {
   status_thread_.join();
   stop_control_ = true;
   control_.join();
-  // This thread is the only one left: the level stays high after the runtime.
-  outputs_.hold_jog_stop(true);
 }
 
 auto Runtime::begin_page() -> PageToken { return session_.begin_page(); }
@@ -78,6 +76,8 @@ void Runtime::control_loop() {
       next = after;
     std::this_thread::sleep_until(next);
   }
+  // The last word on the pin is this thread's: high, and it stays so after the runtime.
+  outputs_.hold_jog_stop(true);
 }
 
 void Runtime::status_loop() {

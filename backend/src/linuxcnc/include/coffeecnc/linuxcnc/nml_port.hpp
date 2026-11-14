@@ -138,10 +138,9 @@ public:
   [[nodiscard]] auto set_spindle(SpindleDirection direction, double rpm) -> ActionResult override;
   [[nodiscard]] auto set_coolant(bool flood, bool mist) -> ActionResult override;
   [[nodiscard]] auto set_program_option(ProgramOption option, bool on) -> ActionResult override;
-  // Through the HAL component, not NML: asks the control thread to raise tool-changed for the
-  // request it shows now, if that is for this tool. Fails while the control thread does not
-  // renew its copy of the pins.
-  [[nodiscard]] auto tool_changed(int tool) -> ActionResult override;
+  // Through the HAL component, not NML: asks the control thread to raise tool-changed for
+  // exactly that request. Fails while the control thread does not renew its copy of the pins.
+  [[nodiscard]] auto tool_changed(int tool, std::uint64_t request) -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto set_tool(const Tool& tool) -> ActionResult override;
   [[nodiscard]] auto remove_tool(int number) -> ActionResult override;

@@ -80,9 +80,10 @@ public:
   [[nodiscard]] virtual auto set_coolant(bool flood, bool mist) -> ActionResult = 0;
   [[nodiscard]] virtual auto set_program_option(ProgramOption option, bool on) -> ActionResult = 0;
 
-  // The operator has put this tool, the one the controller asked for, in the spindle. Fails
-  // when the controller is not, or no longer, asking for it.
-  [[nodiscard]] virtual auto tool_changed(int tool) -> ActionResult = 0;
+  // The operator has put this tool in the spindle, as the controller asked with the request
+  // that a snapshot showed as ControllerState::tool_request. Fails when that request is gone or
+  // was replaced, also by a new one for the same tool.
+  [[nodiscard]] virtual auto tool_changed(int tool, std::uint64_t request) -> ActionResult = 0;
   // Replaces the row with this tool number, or adds it.
   [[nodiscard]] virtual auto set_tool(const Tool& tool) -> ActionResult = 0;
   [[nodiscard]] virtual auto remove_tool(int number) -> ActionResult = 0;

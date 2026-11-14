@@ -598,17 +598,13 @@ auto NmlPort::set_program_option(ProgramOption option, bool on) -> ActionResult 
   return impl_->run(message, from);
 }
 
-auto NmlPort::tool_changed(int tool) -> ActionResult {
+auto NmlPort::tool_changed(int tool, std::uint64_t request) -> ActionResult {
   if (impl_->hal == nullptr)
     return failed("The CoffeeCNC HAL component is not available.");
-  const auto view = impl_->hal->view(HalShared::Clock::now());
-  if (!view)
+  if (!impl_->hal->view(HalShared::Clock::now()))
     return failed("The CoffeeCNC HAL component is not being serviced.");
-  if (!view->tool_change_request)
-    return failed("LinuxCNC is not waiting for a tool change.");
-  if (view->tool_change_request->tool != tool)
-    return failed(std::format("LinuxCNC is now waiting for tool {}.", view->tool_change_request->tool));
-  if (!impl_->hal->confirm_tool_changed(*view->tool_change_request))
+  // The request the decision was made on, not whatever the pins show by now.
+  if (!impl_->hal->confirm_tool_changed({request, tool}))
     return failed("LinuxCNC is not waiting for that tool change any more.");
   return {};
 }

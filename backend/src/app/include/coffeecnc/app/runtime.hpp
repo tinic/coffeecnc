@@ -56,11 +56,15 @@ public:
   // std::invalid_argument for invalid limits.
   Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs, const Limits& limits,
           const ProgramStore& programs, Sink sink);
-  // A stop decision, then: the worker finishes the call it is in, executes waiting stop requests
-  // and stops each jogging axis once; the control thread beats and holds the jog-stop level
-  // meanwhile. Returns when all three threads have ended, which takes as long as those port
-  // calls. The jog-stop level is left high and the heartbeat stops: the watchdog then inhibits
-  // jogs as well.
+  // Shutdown. From the first control period after it begins, at most control_period later, the
+  // jog-stop level is high, with or without a jog, and nothing lowers it again. The worker
+  // finishes the call it is in, executes waiting stop requests and stops each axis that may be
+  // moving, once; the status thread finishes its reading; the control thread beats and holds
+  // the level all that time, writes the level high once more and ends last. The destructor
+  // joins all three: it returns when the port and status calls in progress have returned, which
+  // is bounded by their own bounds (see NmlPort) and not by this class. It never abandons a
+  // thread that is inside LinuxCNC's libraries. The heartbeat stops with the control thread: the
+  // watchdog then inhibits jogs as well.
   ~Runtime();
   Runtime(const Runtime&) = delete;
   auto operator=(const Runtime&) -> Runtime& = delete;

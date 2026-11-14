@@ -84,9 +84,15 @@ struct Work {
 // and stop-all wait in a queue of their own, at most max_queued_stops, that is served first. A
 // request that finds its queue full is `rejected`. Abort, E-stop and power off also reject every
 // request waiting in the ordinary queue: what was asked before a stop must not run after it.
-// Every queued request carries its page and the jog epoch it was queued in. The worker drops a
-// request of an ended page before sending anything (stop requests are still executed, their
-// results dropped), and a jog start or increment of an earlier epoch.
+// Every queued request carries its page, the jog epoch and the count of aborts it was queued
+// in. The worker asks whether a request is still wanted after every call that can block (a
+// status reading, the program store, a command) and before every command it sends: a request of
+// an ended page sends nothing more and gets no result; one overtaken by abort, E-stop or power
+// off sends nothing more and is answered as cancelled; a jog start or increment of an earlier
+// epoch is not sent. Stop requests are executed whatever became of their page.
+//
+// Limitation: several axes can be held at once, but the jog-stop level is common to all of them,
+// so releasing one stops them all, and each of the others must be released and pressed again.
 //
 // Jogs. A held jog has a lease from the moment its press is accepted for queueing; refreshes
 // extend it without the worker. A stop decision is any of: release, stop-all, abort, E-stop,
@@ -97,15 +103,24 @@ struct Work {
 //
 //   - the jog epoch goes up: no start or increment queued before it is sent;
 //   - every lease ends;
-//   - every axis that is jogging, or has a start or increment in flight, needs a jog stop
-//     acknowledged by the controller; a released axis always does;
-//   - while any axis needs one, the jog-stop level is held (`control` returns true).
+//   - every axis that is jogging, has a start or increment in flight, or was sent an increment
+//     that is not known to have ended, needs a jog stop acknowledged by the controller; a
+//     released axis always does. An increment has ended when the controller was seen moving
+//     and then at rest, or at rest for step_settle_periods; while it has not, link loss, machine
+//     off and a tripped watchdog are stop decisions as for a held jog. An increment the
+//     controller did not answer is a stop decision by itself;
+//   - while any axis needs one, the jog-stop level is held (`control` returns true);
+//   - every axis that had a jog or a press, except the one the panel itself released, is
+//     latched: `held: true` for it is `rejected` until the panel has sent `held: false` for that
+//     axis or a new page has begun. The refreshes of a press that was stopped never start it
+//     again. Jog increments are not latched.
 //
 // Hold states, per session:
 //
 //   released   no axis needs a stop; the level is low; jog starts are sent.
 //   held       entered by a stop decision that leaves an axis needing a stop. The level is high.
-//              The worker sends no start and no increment: one that is next waits (`blocked`).
+//              The worker sends no start and no increment: a start that is next waits
+//              (`blocked`), an increment is refused.
 //              The worker stops each such axis as soon as its present call returns. A stop that
 //              fails is reported once as an operator message (or as the result of the request
 //              that asked for it) and retried after every control period. A jog request then
@@ -129,6 +144,8 @@ public:
   static constexpr std::size_t max_queued_stops = 16;
   // An observed state older than this counts as a stale link.
   static constexpr auto status_max_age = std::chrono::milliseconds{100};
+  // Control periods after which an increment that was never seen moving counts as finished.
+  static constexpr int step_settle_periods = 20;
 
   // The port and the store must outlive the session. Throws std::invalid_argument for invalid
   // limits.
@@ -163,7 +180,7 @@ public:
 
   // The end of the session: a stop decision, no page, nothing waiting but stop requests. `work`
   // then still executes those and stops each axis that needs it once; it is finished when it
-  // returns `idle`.
+  // returns `idle`. From here on `control` returns true for good.
   void close();
 
 private:
@@ -193,6 +210,13 @@ private:
     bool stop_failed{};
     // A control period has passed since: the worker tries again.
     bool retry_due{};
+    // An increment was sent and may still be moving the axis.
+    bool stepping{};
+    bool step_seen_moving{};
+    int step_periods{};
+    // A jog or press on this axis was ended by something other than its release: a release
+    // must come before the next start.
+    bool latched{};
   };
   struct Queued {
     PageToken page;
@@ -202,6 +226,8 @@ private:
     Command command;
     // Something was sent to the controller for it already: a refusal is `failed`, not `rejected`.
     bool sent{};
+    // Abort, E-stop, power off, a jog release or stop-all: executed whatever became of its page.
+    bool stop{};
   };
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
   struct Stage {
@@ -214,19 +240,23 @@ private:
   [[nodiscard]] static auto answer(Reply reply) -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;
-  [[nodiscard]] auto refreshes(const Jog& jog, std::size_t index, JogLease::Time now) const
-      -> bool;
   [[nodiscard]] auto current(const Queued& request) const -> bool;
   [[nodiscard]] auto reconciled() const -> bool;
   [[nodiscard]] auto stops_due(bool retries) const -> bool;
-  void stop_jogs(std::optional<std::size_t> keep_press = {});
+  void stop_jogs(std::optional<std::size_t> keep_press = {},
+                 std::optional<std::size_t> released = {});
   void need_stop(std::size_t index);
   void wake();
   void report(Outcome& outcome, std::chrono::milliseconds unix_time);
 
   // Worker only.
-  [[nodiscard]] auto run(Queued request, bool stop_request, const Clock& clock) -> Work;
+  [[nodiscard]] auto run(Queued request, const Clock& clock) -> Work;
+  [[nodiscard]] auto wanted(const Queued& request) const -> bool;
+  [[nodiscard]] auto act(const Queued& request, const std::function<ActionResult()>& send) const
+      -> Stage;
   [[nodiscard]] auto execute(Queued& request) -> Stage;
+  [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
+      -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
                              const ControllerState& state) -> Stage;
   [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision) -> Stage;
@@ -234,7 +264,7 @@ private:
       -> std::optional<Stage>;
   [[nodiscard]] auto stop_all() -> ActionResult;
   [[nodiscard]] auto tracked_stop(std::size_t index) -> ActionResult;
-  [[nodiscard]] auto mdi(const std::string& text) -> Reply;
+  [[nodiscard]] auto mdi(const Queued& request, const std::string& text) const -> Stage;
   [[nodiscard]] auto list_directory(const ListDirectory& request, Stage& step) -> Reply;
   void flush_stops();
   void cancel_jogs(Queued* keep_press);

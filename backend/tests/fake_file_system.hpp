@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <map>
 #include <string>
 #include <string_view>
@@ -30,6 +31,8 @@ public:
   std::vector<std::string> unreadable;
   // Every call, as `<operation> <path>`.
   mutable std::vector<std::string> calls;
+  // Called once inside the next canonical(): what happens while the file system is slow.
+  mutable std::function<void()> during_canonical;
 
   // Each of these makes the directories above the path.
   void directory(const std::string& path, std::int64_t modified = 0) {
@@ -53,6 +56,8 @@ public:
   auto canonical(const std::string& path) const
       -> std::expected<std::string, std::string> override {
     calls.push_back("canonical " + path);
+    if (during_canonical)
+      std::exchange(during_canonical, {})();
     std::string pending = path;
     for (int links = 0; links < 40; ++links) {
       std::string resolved;

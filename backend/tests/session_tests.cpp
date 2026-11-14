@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <deque>
 #include <format>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -66,11 +67,17 @@ public:
   bool follows_mode{true};
   Calls calls;
   int snapshots{};
+  // Called once inside the next snapshot: what happens while the worker waits for LinuxCNC.
+  std::function<void()> during_snapshot;
+  // The same inside the next action of the given name.
+  std::map<std::string, std::function<void()>> during;
   // Handed out by the next take_messages.
   std::vector<ControllerMessage> published;
 
   auto snapshot() -> ControllerState override {
     ++snapshots;
+    if (during_snapshot)
+      std::exchange(during_snapshot, {})();
     if (next_states.empty())
       return state;
     auto next = next_states.front();
@@ -137,8 +144,8 @@ public:
         std::format("{} {}",
                     option == ProgramOption::optional_stop ? "optional_stop" : "block_delete", on));
   }
-  auto tool_changed(int tool) -> ActionResult override {
-    return record("tool_changed", std::to_string(tool));
+  auto tool_changed(int tool, std::uint64_t request) -> ActionResult override {
+    return record("tool_changed", std::format("tool {} request {}", tool, request));
   }
   auto set_tool(const Tool& tool) -> ActionResult override {
     return record("set_tool", std::format("{} {} {} {} {}", tool.number, tool.pocket, tool.length,
@@ -151,6 +158,8 @@ public:
 private:
   auto record(const std::string& action, std::string_view detail) -> ActionResult {
     calls.push_back(detail.empty() ? action : action + ' ' + std::string(detail));
+    if (auto hook = std::exchange(during[action], {}))
+      hook();
     if (auto& scripted = script[action]; !scripted.empty()) {
       auto result = scripted.front();
       scripted.pop_front();
@@ -329,6 +338,8 @@ struct Rig {
 constexpr auto hold_x = R"("type":"jog","axis":"x","direction":1,"velocity":600,"held":true)";
 constexpr auto hold_y = R"("type":"jog","axis":"y","direction":-1,"velocity":600,"held":true)";
 constexpr auto release_x = R"("type":"jog","axis":"x","direction":1,"velocity":600,"held":false)";
+constexpr auto release_y = R"("type":"jog","axis":"y","direction":-1,"velocity":600,"held":false)";
+constexpr auto release_reason = "Release the jog control before jogging again.";
 
 void stale_pages_are_dropped() {
   FakePort port;
@@ -540,6 +551,7 @@ void every_action() {
   reading.interp = InterpState::reading;
   auto changing = paused;
   changing.requested_tool = 4;
+  changing.tool_request = 17;
   auto unhomed = homed_machine();
   unhomed.axes[1].homed = false;
   const auto idle = homed_machine();
@@ -593,7 +605,8 @@ void every_action() {
        {R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":48.2,"diameter":6,"comment":"End mill 6 mm"})",
         {"set_tool 3 3 48.2 6 End mill 6 mm"}}},
       {idle, {R"("type":"remove_tool","number":3)", {"remove_tool 3"}}},
-      {changing, {R"("type":"tool_changed")", {"tool_changed 4"}}},
+      // The confirmation names the request of the snapshot it was decided on.
+      {changing, {R"("type":"tool_changed")", {"tool_changed tool 4 request 17"}}},
   };
   for (const auto& [state, row] : rows) {
     Rig rig;
@@ -803,8 +816,12 @@ void jog_presses_and_refreshes() {
   // The jog-stop level that every stop raises stops all axes: the session stops them all.
   rig.acted({"stop_jog x", "stop_jog y"}, "Release stops the axis, and with it every jog");
   rig.clock += 100ms;
+  rig.expect(hold_y, "rejected", release_reason);
+  rig.acted({}, "The refreshes of a jog that was stopped do not start it again");
+  rig.accepted(release_y);
+  rig.acted({"stop_jog y"}, "Its own release");
   rig.accepted(hold_y);
-  rig.acted({"start_jog y -1 600 axis"}, "The next refresh of another axis is a new press");
+  rig.acted({"start_jog y -1 600 axis"}, "And a new press start it");
   rig.clock += 100ms;
   require(rig.tick(at(rig.clock)).messages.empty(), "Tick has nothing to report");
   rig.acted({}, "A released axis is not stopped again by its old lease");
@@ -823,8 +840,12 @@ void jog_failures() {
   rig.port.script["start_jog"] = {{ActionStatus::failed, "Joint 0 following error."}};
   rig.expect(hold_x, "failed", "Joint 0 following error.");
   rig.acted({"start_jog x 1 600 axis", "stop_jog x"}, "A start that failed is followed by a stop");
+  rig.expect(hold_x, "rejected", release_reason);
+  rig.acted({}, "The refreshes of the press that failed do not try again");
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "The release");
   rig.accepted(hold_x);
-  rig.acted({"start_jog x 1 600 axis"}, "No lease was recorded for the failed start");
+  rig.acted({"start_jog x 1 600 axis"}, "A new press starts; no lease was left by the failed one");
 
   rig.port.script["start_jog"] = {{ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)", "timed_out",
@@ -835,11 +856,17 @@ void jog_failures() {
   static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Its lease is gone");
 
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.port.state.axes[0].machine = 1000;
   rig.expect(hold_x, "rejected", "Jog points beyond the configured travel.");
   rig.acted({"stop_jog x"}, "A refresh that is no longer valid stops its jog at once");
+  rig.expect(hold_x, "rejected", release_reason);
+  rig.acted({}, "The refreshes that follow send nothing");
+  rig.accepted(release_x);
+  rig.port.calls.clear();
+  rig.expect(hold_x, "rejected", "Jog points beyond the configured travel.");
   rig.expect(hold_x, "rejected", "Jog points beyond the configured travel.");
   rig.acted({}, "A rejected press with no jog held sends nothing");
 
@@ -848,9 +875,8 @@ void jog_failures() {
   rig.accepted(hold_x);
   rig.acted({"set_task_mode manual", "start_jog x 1 600 axis"}, "A press switches to manual first");
   rig.port.state.mode = TaskMode::mdi; // changed behind the session's back
-  rig.accepted(hold_x);
-  rig.acted({"stop_jog x", "set_task_mode manual", "start_jog x 1 600 axis"},
-            "A refresh that needs a mode change is a new press");
+  rig.expect(hold_x, "rejected", release_reason);
+  rig.acted({"stop_jog x"}, "A refresh never changes the mode to start its jog again");
 }
 
 void stop_all_and_cancellation() {
@@ -867,16 +893,20 @@ void stop_all_and_cancellation() {
   rig.expect(R"("type":"jog_stop_all")", "failed", "Y did not stop.");
   rig.acted({"stop_jog x", "stop_jog y", "stop_jog z"}, "A failed stop does not skip the others");
 
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.accepted(R"("type":"abort")");
   rig.acted({"abort", "stop_jog x"}, "Abort goes out first, then held jogs are stopped");
+  rig.accepted(release_x);
+  rig.accepted(release_y);
   rig.accepted(hold_x);
   rig.accepted(hold_y);
   rig.port.calls.clear();
   rig.accepted(R"("type":"set_machine","state":"estop")");
   rig.acted({"set_machine_state estop", "stop_jog x", "stop_jog y"},
             "E-stop goes out first, then held jogs are stopped");
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.accepted(R"("type":"mdi","text":"G0 X1")");
@@ -906,6 +936,7 @@ void lease_expiry() {
 
   // A refreshed axis keeps its jog however old the press is.
   rig.clock = 11s;
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.clock = 11s + 140ms;
   rig.accepted(hold_x);
@@ -916,6 +947,7 @@ void lease_expiry() {
   rig.acted({"stop_jog x"}, "And ends 150 ms after it");
 
   rig.clock = 20s;
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}};
@@ -951,8 +983,13 @@ void lost_machine_cancels_jogs() {
     static_cast<void>(rig.tick(at(10ms)));
     rig.acted({"stop_jog z"}, "Leaving machine-on stops held jogs");
     rig.port.state.machine = MachineState::on;
+    rig.expect(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":true)", "rejected",
+               release_reason);
+    rig.acted({}, "Power coming back does not restart a jog whose control is still held");
+    rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":false)");
+    rig.port.calls.clear();
     rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":true)");
-    rig.acted({"start_jog z 1 600 axis"}, "The next press starts again");
+    rig.acted({"start_jog z 1 600 axis"}, "The next press after a release starts again");
   }
 }
 
@@ -985,6 +1022,358 @@ void outside_changes_stop_held_jogs() {
   rig.port.calls.clear();
   static_cast<void>(rig.tick(at(10ms)));
   rig.acted({}, "An unchanged state keeps the jog");
+}
+
+// A jog that was stopped for the operator stays stopped while the panel keeps sending the
+// refreshes of the press that began it: only a release and a new press start it again.
+void stopped_jogs_need_a_release() {
+  struct Row {
+    std::string name;
+    std::function<void(Rig&)> stop;
+    Calls stops;
+  };
+  const std::vector<Row> rows{
+      {"lease expiry",
+       [](Rig& rig) -> void {
+         rig.clock += 150ms;
+         static_cast<void>(rig.tick(at(rig.clock)));
+       },
+       {"stop_jog x"}},
+      {"link loss and recovery",
+       [](Rig& rig) -> void {
+         rig.port.state.link = Link::stale;
+         static_cast<void>(rig.tick(at(rig.clock)));
+         rig.port.state.link = Link::live;
+       },
+       {"stop_jog x"}},
+      {"machine off and on",
+       [](Rig& rig) -> void {
+         rig.port.state.machine = MachineState::off;
+         static_cast<void>(rig.tick(at(rig.clock)));
+         rig.port.state.machine = MachineState::on;
+       },
+       {"stop_jog x"}},
+      {"a mode change outside and back",
+       [](Rig& rig) -> void {
+         rig.port.state.mode = TaskMode::mdi;
+         static_cast<void>(rig.tick(at(rig.clock)));
+         rig.port.state.mode = TaskMode::manual;
+       },
+       {"stop_jog x"}},
+      {"abort", [](Rig& rig) -> void { rig.accepted(R"("type":"abort")"); }, {"abort", "stop_jog x"}},
+      {"E-stop",
+       [](Rig& rig) -> void { rig.accepted(R"("type":"set_machine","state":"estop")"); },
+       {"set_machine_state estop", "stop_jog x"}},
+      {"stop all", [](Rig& rig) -> void { rig.accepted(R"("type":"jog_stop_all")"); },
+       {"stop_jog x", "stop_jog y", "stop_jog z"}},
+      {"the release of another axis", [](Rig& rig) -> void { rig.accepted(release_y); },
+       {"stop_jog y", "stop_jog x"}},
+      // The jog-stop level held over a stop LinuxCNC does not confirm, and its release.
+      {"a hold and its release",
+       [](Rig& rig) -> void {
+         rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}, {ActionStatus::timed_out, ""}};
+         rig.clock += 150ms;
+         static_cast<void>(rig.tick(at(rig.clock)));
+         rig.expect(hold_x, "rejected", release_reason);
+         static_cast<void>(rig.tick(at(rig.clock)));
+         rig.expect(hold_x, "rejected", release_reason);
+         static_cast<void>(rig.tick(at(rig.clock)));
+         require(rig.driver.level, "The stop is accepted; the level was high all the time");
+         static_cast<void>(rig.tick(at(rig.clock)));
+         require(!rig.driver.level, "And is released in the next period");
+       },
+       {"stop_jog x", "stop_jog x", "stop_jog x"}},
+  };
+  for (const auto& row : rows) {
+    Rig rig;
+    rig.accepted(hold_x);
+    rig.port.calls.clear();
+    row.stop(rig);
+    rig.acted(row.stops, "The jog is stopped by " + row.name);
+    for (int i = 0; i < 20; ++i) {
+      rig.clock += 50ms;
+      rig.expect(hold_x, "rejected", release_reason);
+      static_cast<void>(rig.tick(at(rig.clock)));
+    }
+    rig.acted({}, "Refreshes that go on after " + row.name + " send nothing");
+    rig.expect(hold_y, "accepted");
+    rig.acted({"start_jog y -1 600 axis"}, "An axis that was not held is not affected");
+    rig.accepted(release_y);
+    rig.port.calls.clear();
+    rig.expect(hold_x, "rejected", release_reason);
+    rig.acted({}, "The release of another axis does not free it");
+    rig.accepted(release_x);
+    rig.acted({"stop_jog x"}, "Its release is sent as ever");
+    rig.accepted(hold_x);
+    rig.acted({"start_jog x 1 600 axis"}, "And the press after it starts the jog: " + row.name);
+  }
+
+  // A press that was never started is held to the same rule.
+  Rig rig;
+  rig.port.script["start_jog"] = {{ActionStatus::timed_out, ""}};
+  rig.expect(hold_x, "timed_out", "LinuxCNC did not answer.");
+  rig.port.calls.clear();
+  rig.expect(hold_x, "rejected", release_reason);
+  rig.acted({}, "A start that was lost is not sent again by a refresh");
+  // Increments are single commands: not latched, but refused while the jog-stop level is held.
+  rig.expect(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)", "rejected",
+             "A jog stop is in progress.");
+  rig.acted({}, "No increment is sent under the level");
+  static_cast<void>(rig.tick(at(rig.clock)));
+  static_cast<void>(rig.tick(at(rig.clock)));
+  static_cast<void>(rig.tick(at(rig.clock)));
+  rig.accepted(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)");
+  rig.acted({"jog_increment x 1 600 axis"}, "A jog step is not held back by the latch");
+  // A new page has pressed nothing.
+  rig.page = rig.begin_page();
+  rig.acted({"stop_jog x"}, "An increment that may still be moving is stopped with its page");
+  rig.next_id = 1;
+  rig.accepted(R"("type":"ready")");
+  rig.accepted(hold_x);
+  rig.acted({"start_jog x 1 600 axis"}, "A new page starts with every axis free");
+}
+
+// The worker waits inside a status reading, the program store or a command, and meanwhile the
+// request goes stale: nothing more of it is sent, however long the wait was.
+void stale_requests_send_nothing() {
+  struct Wait {
+    std::string name;
+    std::string_view body;
+    // Arms the hook that runs inside the blocked call.
+    std::function<void(Rig&, std::function<void()>)> arm;
+    Calls sent_before; // what the request had sent when it went stale
+  };
+  const auto in_auto = [](Rig& rig) -> void { rig.port.state.mode = TaskMode::automatic; };
+  const std::vector<Wait> waits{
+      {"the first status reading", R"("type":"run")",
+       [&](Rig& rig, std::function<void()> hook) -> void {
+         in_auto(rig);
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+      {"the mode change", R"("type":"run")",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during["set_task_mode"] = std::move(hook);
+       },
+       {"set_task_mode auto"}},
+      {"the status reading after the mode change", R"("type":"run")",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during["set_task_mode"] = [&rig, hook = std::move(hook)]() -> void {
+           rig.port.during_snapshot = hook;
+         };
+       },
+       {"set_task_mode auto"}},
+      {"the program store", R"("type":"open_program","path":"part.ngc")",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.files.during_canonical = std::move(hook);
+       },
+       {}},
+      {"the first block of a tool touch-off", R"("type":"tool_touch_off","value":1)",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.state.mode = TaskMode::mdi;
+         rig.port.during["mdi"] = std::move(hook);
+       },
+       {"mdi G10 L10 P3 Z1"}},
+      {"the first status reading of an MDI block", R"("type":"mdi","text":"G0 X1")",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.state.mode = TaskMode::mdi;
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+      {"the first status reading of homing", R"("type":"home","axis":"x")",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+      {"the first status reading of a spindle start",
+       R"("type":"set_spindle","direction":"forward","rpm":600)",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+      {"the first status reading of a jog press", hold_x,
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+      {"the first status reading of a jog step",
+       R"("type":"jog_step","axis":"x","distance":1,"velocity":600)",
+       [](Rig& rig, std::function<void()> hook) -> void {
+         rig.port.during_snapshot = std::move(hook);
+       },
+       {}},
+  };
+  for (const auto& wait : waits) {
+    {
+      Rig rig;
+      wait.arm(rig, [&rig]() -> void { rig.session.end_page(rig.page); });
+      const auto outcome = rig.send(wait.body);
+      rig.acted(wait.sent_before, "The page ended during " + wait.name + ": nothing more is sent");
+      require(outcome.messages.empty(), "And nobody is answered: " + wait.name);
+    }
+    for (const auto stop : {R"("type":"abort")", R"("type":"set_machine","state":"estop")",
+                            R"("type":"set_machine","state":"off")"}) {
+      Rig rig;
+      const auto id = rig.next_id;
+      const auto stop_id = id + 1;
+      Outcome stopped;
+      wait.arm(rig, [&]() -> void {
+        stopped = rig.session.submit(rig.page, std::format("{{\"id\":{},{}}}", stop_id, stop),
+                                     at(0ms));
+      });
+      const auto outcome = rig.send(wait.body);
+      require(stopped.messages.empty(), "The stop is queued");
+      auto expected = wait.sent_before;
+      expected.emplace_back(std::string(stop).find("abort") != std::string::npos
+                                ? "abort"
+                                : std::string(stop).find("estop") != std::string::npos
+                                      ? "set_machine_state estop"
+                                      : "set_machine_state off");
+      rig.acted(expected,
+                std::string(stop) + " during " + wait.name + ": only the stop is sent after it");
+      const auto found = results(outcome);
+      require(found.size() == 2 && found.at(0).at("id") == id && found.at(1).at("id") == stop_id &&
+                  found.at(0).at("outcome") == (wait.sent_before.empty() ? "rejected" : "failed") &&
+                  found.at(0).at("reason") == "Cancelled by a stop request before it was sent." &&
+                  found.at(1).at("outcome") == "accepted",
+              "The request is answered as cancelled, the stop as accepted: " + wait.name);
+    }
+  }
+}
+
+// An increment is motion nobody holds. From the moment it is sent it counts as moving, so a stop
+// decision raises the jog-stop level for it, until the controller was seen at rest again.
+void increments_are_tracked() {
+  constexpr auto long_step = R"("type":"jog_step","axis":"x","distance":100,"velocity":600)";
+  struct Row {
+    std::string name;
+    std::function<void(Rig&)> stop;
+    Calls sent;
+  };
+  const std::vector<Row> rows{
+      {"page end", [](Rig& rig) -> void { rig.session.end_page(rig.page); }, {"stop_jog x"}},
+      {"page reload", [](Rig& rig) -> void { rig.page = rig.session.begin_page(); },
+       {"stop_jog x"}},
+      {"abort",
+       [](Rig& rig) -> void {
+         static_cast<void>(
+             rig.session.submit(rig.page, R"({"id":500,"type":"abort"})", at(rig.clock)));
+       },
+       {"abort", "stop_jog x"}},
+      {"a stale link",
+       [](Rig& rig) -> void {
+         rig.port.state.link = Link::stale;
+         rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+       },
+       {"stop_jog x"}},
+      {"machine off",
+       [](Rig& rig) -> void {
+         rig.port.state.machine = MachineState::off;
+         rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+       },
+       {"stop_jog x"}},
+  };
+  for (const auto& row : rows) {
+    Rig rig;
+    rig.accepted(long_step);
+    rig.port.state.in_position = false;
+    rig.clock = 1ms;
+    rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+    require(!rig.session.control(at(rig.clock), {false, true}), "An increment needs no level");
+    rig.port.calls.clear();
+    rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}};
+    row.stop(rig);
+    require(rig.session.control(at(rig.clock), {false, true}),
+            "With an increment in motion the level is raised by " + row.name);
+    Outcome outcome;
+    rig.driver.level = true;
+    rig.driver.drain(outcome);
+    rig.acted(row.sent, "And the axis is stopped over NML: " + row.name);
+    for (int period = 0; period < 5; ++period)
+      require(rig.session.control(at(rig.clock), {true, true}),
+              "The stop was not accepted: the level stays high");
+    rig.driver.drain(outcome);
+    rig.acted({"stop_jog x"}, "It is retried");
+    require(!rig.session.control(at(rig.clock), {true, true}),
+            "Accepted: the level is released after " + row.name);
+  }
+
+  // Seen moving and at rest again: the increment is over and stops nothing.
+  {
+    Rig rig;
+    rig.accepted(long_step);
+    rig.port.state.in_position = false;
+    static_cast<void>(rig.tick(at(10ms)));
+    rig.port.state.in_position = true;
+    static_cast<void>(rig.tick(at(20ms)));
+    rig.port.calls.clear();
+    rig.end_page(rig.page);
+    require(!rig.session.control(at(20ms), {false, true}), "A finished increment needs no level");
+    rig.acted({}, "And no stop");
+  }
+  // Never seen moving: over after step_settle_periods at rest, not before.
+  {
+    Rig rig;
+    rig.accepted(long_step);
+    for (int period = 1; period < Session::step_settle_periods; ++period)
+      static_cast<void>(rig.tick(at(period * 10ms)));
+    Rig waited;
+    waited.accepted(long_step);
+    for (int period = 1; period <= Session::step_settle_periods; ++period)
+      static_cast<void>(waited.tick(at(period * 10ms)));
+    rig.port.calls.clear();
+    waited.port.calls.clear();
+    rig.end_page(rig.page);
+    waited.end_page(waited.page);
+    rig.acted({"stop_jog x"}, "An increment that may still begin to move is stopped");
+    waited.acted({}, "One that has been at rest long enough is over");
+  }
+  // An increment LinuxCNC did not answer may be taken up later: fenced like a lost start.
+  {
+    Rig rig;
+    rig.port.script["jog_increment"] = {{ActionStatus::timed_out, ""}};
+    rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}, {ActionStatus::timed_out, ""}};
+    rig.clock = 1ms;
+    const auto outcome = rig.send(long_step);
+    require(results(outcome).front().at("outcome") == "timed_out", "The increment timed out");
+    rig.acted({"jog_increment x 100 600 axis", "stop_jog x"}, "A stop follows it at once");
+    for (int period = 0; period < 3; ++period)
+      require(rig.session.control(at(rig.clock), {true, true}),
+              "The level is held while that stop is not accepted");
+    rig.expect(long_step, "rejected", "A jog stop is in progress.");
+    rig.acted({"stop_jog x"}, "Only the stop is retried; no increment is sent under the level");
+    rig.session.end_page(rig.page);
+    require(rig.session.control(at(rig.clock), {true, true}), "Also across the end of the page");
+    Outcome later;
+    rig.driver.level = true;
+    rig.driver.drain(later);
+    rig.acted({"stop_jog x"}, "The retry after the page ended is accepted");
+    require(!rig.session.control(at(rig.clock), {true, true}), "Then the level is released");
+  }
+}
+
+// From close on the level is high for good, with or without a jog.
+void close_holds_the_level() {
+  Rig rig;
+  rig.session.close();
+  for (int period = 0; period < 5; ++period) {
+    require(rig.session.control(at(period * 10ms), {period > 0, true}),
+            "A closed session holds the level although nothing jogs");
+    Outcome outcome;
+    rig.driver.drain(outcome);
+  }
+  rig.acted({}, "And sends nothing");
+
+  Rig jogging;
+  jogging.accepted(hold_x);
+  jogging.port.calls.clear();
+  jogging.session.close();
+  Outcome outcome;
+  jogging.driver.drain(outcome);
+  jogging.acted({"stop_jog x"}, "A jog is stopped by the close");
+  for (int period = 0; period < 5; ++period)
+    require(jogging.session.control(at(period * 10ms), {true, true}),
+            "The stop was accepted, and the level still stays high");
 }
 
 void end_of_page() {
@@ -1069,6 +1458,7 @@ void new_page() {
   rig.accepted(hold_x);
   rig.accepted(hold_y);
   rig.accepted(R"("type":"abort")");
+  rig.accepted(release_x);
   rig.accepted(hold_x);
   rig.port.calls.clear();
   const auto old_page = rig.page;
@@ -1265,6 +1655,10 @@ auto main(int argc, char** argv) -> int {
     explicit_stop_failures_are_retried();
     no_start_over_an_unconfirmed_stop();
     outside_changes_stop_held_jogs();
+    stopped_jogs_need_a_release();
+    stale_requests_send_nothing();
+    increments_are_tracked();
+    close_holds_the_level();
     end_of_page();
     exactly_one_result(seed);
     std::cout << checks << " session lifecycle checks passed\n";

@@ -58,6 +58,8 @@ auto length(double millimetres, const ControllerState& state) -> std::string {
 constexpr auto busy_reason = "Too many requests are waiting for LinuxCNC.";
 constexpr auto cancelled_reason = "Cancelled by a stop request before it was sent.";
 constexpr auto stopped_reason = "The jog was stopped before it started.";
+constexpr auto release_reason = "Release the jog control before jogging again.";
+constexpr auto hold_reason = "A jog stop is in progress.";
 
 // Abort, E-stop and power off: whatever waits must not run after them.
 auto cancels_requests(const Command& command) -> bool {
@@ -98,6 +100,9 @@ auto Session::begin_page() -> PageToken {
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
+  // Whatever the old page held, the new page has pressed nothing yet.
+  for (auto& axis : jog_)
+    axis.latched = false;
   requests_.clear();
   ready_ = false;
   last_id_.reset();
@@ -164,10 +169,34 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
   bool stop_request = cancels_requests(request.command);
   if (const auto* jog = std::get_if<Jog>(&request.command)) {
     if (const auto index = axis_index(jog->axis); index && jog->held) {
-      // The dead-man is renewed here, not behind whatever the worker is doing.
-      if (refreshes(*jog, *index, now.monotonic)) {
-        leases_.refresh(jog->axis, now.monotonic);
-        result(CommandOutcome::accepted, "");
+      auto& axis = jog_.at(*index);
+      // A jog that was stopped for the operator is not started again by the refreshes of the
+      // press that began it: only a press made after a release starts a jog.
+      if (axis.latched) {
+        result(CommandOutcome::rejected, release_reason);
+        return outcome;
+      }
+      const bool press = axis.pressed && axis.press_direction == jog->direction &&
+                         axis.press_velocity == jog->velocity;
+      const bool held = !axis.pressed && axis.running && axis.held.direction == jog->direction &&
+                        axis.held.velocity == jog->velocity;
+      if (leases_.active(jog->axis) && (press || held)) {
+        // A refresh. The dead-man is renewed here, not behind whatever the worker is doing.
+        const auto state = status(now.monotonic);
+        auto decision = policy_.evaluate(*jog, state);
+        const bool as_it_is =
+            decision.allowed && (!decision.required_mode || *decision.required_mode == state.mode) &&
+            (press || decision.jog_space == axis.held.space);
+        if (as_it_is) {
+          leases_.refresh(jog->axis, now.monotonic);
+          result(CommandOutcome::accepted, "");
+          return outcome;
+        }
+        // The observed state no longer allows the jog as it is: it ends here, not when its
+        // lease expires, and not by starting it anew.
+        stop_jogs();
+        result(CommandOutcome::rejected,
+               decision.allowed ? std::string(release_reason) : std::move(decision.reason));
         return outcome;
       }
       if (requests_.size() >= max_queued) {
@@ -176,14 +205,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
       }
       // A press. Its lease runs from now: a start that has to wait is not sent once the lease
       // has run out.
-      auto& axis = jog_.at(*index);
       axis.pressed = true;
       axis.press_direction = jog->direction;
       axis.press_velocity = jog->velocity;
       leases_.refresh(jog->axis, now.monotonic);
     } else if (index) {
       // Always stop, with or without a lease: the release may be all that is left of a jog.
-      stop_jogs();
+      stop_jogs({}, *index);
       need_stop(*index);
       stop_request = true;
     }
@@ -206,7 +234,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
     result(CommandOutcome::rejected, busy_reason);
     return outcome;
   }
-  queue.push_back({page, epoch_, cancels_, request.id, std::move(request.command), false});
+  queue.push_back(
+      {page, epoch_, cancels_, request.id, std::move(request.command), false, stop_request});
   wake();
   return outcome;
 }
@@ -223,11 +252,13 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   jog_stop_high_ = input.jog_stop_high;
   const bool leased = std::ranges::any_of(
       axes, [&](Axis axis) -> bool { return leases_.active(axis); });
+  const bool stepping = std::ranges::any_of(
+      jog_, [](const AxisJog& axis) -> bool { return axis.stepping || axis.in_flight; });
   // A jog without a lease has nothing that would end it.
   bool stop = false;
   for (std::size_t i = 0; i < axes.size(); ++i)
     stop = stop || (jog_[i].running && !leases_.active(axes[i]));
-  if (leased && !stop) {
+  if ((leased || stepping) && !stop) {
     const auto state = status(now.monotonic);
     stop = !input.watchdog_ok || state.link != Link::live || state.machine != MachineState::on;
     if (!stop) {
@@ -243,6 +274,17 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
           Jog{axes[i], jog_[i].held.direction, jog_[i].held.velocity, true}, state);
       stop = !decision.allowed || decision.jog_space != jog_[i].held.space ||
              (decision.required_mode && *decision.required_mode != state.mode);
+    }
+    // An increment has ended once the controller was seen moving and is at rest again, or was
+    // at rest for step_settle_periods after it was sent.
+    for (auto& axis : jog_) {
+      if (!axis.stepping || stop)
+        continue;
+      ++axis.step_periods;
+      if (!state.in_position)
+        axis.step_seen_moving = true;
+      else if (axis.step_seen_moving || axis.step_periods >= step_settle_periods)
+        axis.stepping = false;
     }
   }
   if (stop)
@@ -261,7 +303,8 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   } else if (!hold_ && !jog_stop_high_ && !requests_.empty()) {
     wake(); // a start may have waited for the level to fall
   }
-  return hold_;
+  // From close on the level is high for good, whatever was reconciled.
+  return hold_ || closing_;
 }
 
 void Session::wait_for_work(std::chrono::milliseconds timeout) {
@@ -272,7 +315,6 @@ void Session::wait_for_work(std::chrono::milliseconds timeout) {
 
 auto Session::work(const Clock& clock) -> Work {
   std::optional<Queued> request;
-  bool stop_request = false;
   bool stopping = false;
   {
     const std::scoped_lock lock{mutex_};
@@ -280,7 +322,6 @@ auto Session::work(const Clock& clock) -> Work {
     if (!stops_.empty()) {
       request = std::move(stops_.front());
       stops_.pop_front();
-      stop_request = true;
     } else if (fresh || (stops_due(true) && (requests_.empty() || !retried_))) {
       // A stop not tried yet goes before every request; retries take turns with them.
       stopping = true;
@@ -292,7 +333,7 @@ auto Session::work(const Clock& clock) -> Work {
     }
   }
   if (request)
-    return run(std::move(*request), stop_request, clock);
+    return run(std::move(*request), clock);
   Work work;
   std::vector<ControllerMessage> published;
   if (stopping) {
@@ -313,7 +354,7 @@ auto Session::work(const Clock& clock) -> Work {
   return work;
 }
 
-auto Session::run(Queued request, bool stop_request, const Clock& clock) -> Work {
+auto Session::run(Queued request, const Clock& clock) -> Work {
   Work work;
   work.status = WorkStatus::done;
   Stage step;
@@ -325,10 +366,10 @@ auto Session::run(Queued request, bool stop_request, const Clock& clock) -> Work
     stale = starts_jog(request.command) && request.epoch != epoch_;
     // Nothing of an ended page is sent, and nothing that a stop decision has overtaken. A stop
     // request is executed whatever became of its page.
-    if (!wanted && !stop_request && !(page_open_ && request.page == PageToken{pages_}))
+    if (!wanted && !request.stop && !(page_open_ && request.page == PageToken{pages_}))
       return work;
   }
-  if (!wanted && !stop_request) {
+  if (!wanted && !request.stop) {
     step.kind = StageKind::cancelled;
   } else if (stale) {
     step = answer({CommandOutcome::rejected, stopped_reason});
@@ -348,8 +389,15 @@ auto Session::run(Queued request, bool stop_request, const Clock& clock) -> Work
     step.reply = {request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
                   cancelled_reason};
   }
-  // Stops decided meanwhile go out before anything else is taken up.
-  flush_stops();
+  // Stops decided meanwhile go out before anything else is taken up, except a stop request:
+  // abort, E-stop and power off go out first, and a release stops its own axis.
+  bool stop_waits = false;
+  {
+    const std::scoped_lock lock{mutex_};
+    stop_waits = !stops_.empty();
+  }
+  if (!stop_waits)
+    flush_stops();
   const auto now = clock();
   const std::scoped_lock lock{mutex_};
   if (!page_open_)
@@ -383,25 +431,6 @@ auto Session::status(JogLease::Time now) const -> ControllerState {
   return state;
 }
 
-// The request repeats a jog that is held or about to start, and the observed state still allows
-// that jog as it is.
-auto Session::refreshes(const Jog& jog, std::size_t index, JogLease::Time now) const -> bool {
-  const auto& axis = jog_.at(index);
-  if (!leases_.active(jog.axis))
-    return false;
-  const bool press = axis.pressed && axis.press_direction == jog.direction &&
-                     axis.press_velocity == jog.velocity;
-  const bool held = !axis.pressed && axis.running && axis.held.direction == jog.direction &&
-                    axis.held.velocity == jog.velocity;
-  if (!press && !held)
-    return false;
-  const auto state = status(now);
-  const auto decision = policy_.evaluate(jog, state);
-  if (!decision.allowed || (decision.required_mode && *decision.required_mode != state.mode))
-    return false;
-  return press || decision.jog_space == axis.held.space;
-}
-
 auto Session::current(const Queued& request) const -> bool {
   return page_open_ && request.page == PageToken{pages_} && request.cancels == cancels_;
 }
@@ -418,8 +447,10 @@ auto Session::stops_due(bool retries) const -> bool {
   });
 }
 
-// The stop decision. With `keep_press` the press on that axis stays wanted in the new epoch.
-void Session::stop_jogs(std::optional<std::size_t> keep_press) {
+// The stop decision. With `keep_press` the press on that axis stays wanted in the new epoch;
+// `released` is the axis the panel itself let go. Every other axis that had a jog or a press
+// must be released before it jogs again.
+void Session::stop_jogs(std::optional<std::size_t> keep_press, std::optional<std::size_t> released) {
   ++epoch_;
   std::optional<JogLease::Time> kept;
   if (keep_press && jog_.at(*keep_press).pressed)
@@ -427,11 +458,16 @@ void Session::stop_jogs(std::optional<std::size_t> keep_press) {
   static_cast<void>(leases_.cancel_all());
   for (std::size_t i = 0; i < jog_.size(); ++i) {
     auto& axis = jog_[i];
-    if (axis.running || axis.in_flight)
+    if (axis.running || axis.in_flight || axis.stepping)
       need_stop(i);
+    axis.stepping = false;
+    if ((axis.running || axis.pressed) && !(kept && i == *keep_press))
+      axis.latched = true;
     axis.running = false;
     axis.pressed = false;
   }
+  if (released)
+    jog_.at(*released).latched = false;
   if (kept) {
     jog_.at(*keep_press).pressed = true;
     leases_.refresh(axes.at(*keep_press), *kept);
@@ -461,29 +497,45 @@ void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
   problems_.clear();
 }
 
+// The request is still to be carried out: its page shows and no abort, E-stop or power off was
+// asked since. A stop request always is. Asked after every call that can block and before every
+// command sent: a request that went stale while the worker waited sends nothing more.
+auto Session::wanted(const Queued& request) const -> bool {
+  const std::scoped_lock lock{mutex_};
+  return request.stop || current(request);
+}
+
+// One command to the controller, unless the request went stale.
+auto Session::act(const Queued& request, const std::function<ActionResult()>& send) const -> Stage {
+  if (!wanted(request))
+    return {StageKind::cancelled, {}, {}};
+  return answer(reply(send()));
+}
+
 auto Session::execute(Queued& request) -> Stage {
   const auto& command = request.command;
-  const auto wanted = [&]() -> bool {
-    const std::scoped_lock lock{mutex_};
-    return current(request) || cancels_requests(command) ||
-           std::holds_alternative<JogStopAll>(command) ||
-           (std::holds_alternative<Jog>(command) && !std::get<Jog>(command).held);
-  };
+  const Stage cancelled{StageKind::cancelled, {}, {}};
   auto state = port_.snapshot();
+  if (!wanted(request))
+    return cancelled;
   auto decision = policy_.evaluate(command, state);
   if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
     // No jog survives a mode change; none is left running if the change fails either.
     cancel_jogs(&request);
+    if (!wanted(request))
+      return cancelled;
     auto switched = reply(port_.set_task_mode(*decision.required_mode));
     request.sent = true;
     if (switched.outcome != CommandOutcome::accepted) {
       forget_press(request);
       return answer(std::move(switched));
     }
-    if (!wanted())
-      return {StageKind::cancelled, {}, {}};
+    if (!wanted(request))
+      return cancelled;
     // The decision was made for the old mode. Decide again for the state now observed.
     state = port_.snapshot();
+    if (!wanted(request))
+      return cancelled;
     decision = policy_.evaluate(command, state);
     if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
       forget_press(request);
@@ -491,7 +543,7 @@ auto Session::execute(Queued& request) -> Stage {
     }
   }
   if (!decision.allowed) {
-    // A refresh that is no longer valid must not leave its jog running until the lease expires.
+    // A press that is not valid must not leave a jog running on its axis.
     reject_press(request);
     // After a mode change was sent this is not `rejected` (nothing sent) any more.
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
@@ -513,87 +565,120 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           return step;
         } else if constexpr (std::is_same_v<T, SetMachine>) {
           // E-stop and power-off go out first; stops for held jogs follow.
-          auto result = port_.set_machine_state(c.state);
+          auto result = act(request,
+                            [&]() -> ActionResult { return port_.set_machine_state(c.state); });
           if (c.state != MachineState::on)
             cancel_jogs(nullptr);
-          return answer(reply(std::move(result)));
+          return result;
         } else if constexpr (std::is_same_v<T, Home>) {
-          return answer(reply(port_.home(c.axis)));
+          return act(request, [&]() -> ActionResult { return port_.home(c.axis); });
         } else if constexpr (std::is_same_v<T, Jog>) {
           return jog(request, c, decision);
         } else if constexpr (std::is_same_v<T, JogStep>) {
-          const auto index = axis_index(c.axis);
-          if (!decision.jog_space || !index)
-            return answer({CommandOutcome::rejected, "Jog space is undecided."});
-          if (auto gate = start_gate(request, *index, false))
-            return std::move(*gate);
-          auto result = port_.jog_increment(c.axis, c.distance, c.velocity, *decision.jog_space);
-          const std::scoped_lock lock{mutex_};
-          // A stop decision made meanwhile has seen it in flight and asks for the stop.
-          jog_.at(*index).in_flight = false;
-          return answer(reply(std::move(result)));
+          return jog_step(request, c, decision);
         } else if constexpr (std::is_same_v<T, JogStopAll>) {
           return answer(reply(stop_all()));
         } else if constexpr (std::is_same_v<T, Mdi>) {
-          return answer(mdi(c.text));
+          return mdi(request, c.text);
         } else if constexpr (std::is_same_v<T, OpenProgram>) {
           // LinuxCNC gets the resolved path. It opens the file itself, later: a path that is
           // changed between this check and that open is not caught here.
           const auto file = programs_.resolve_program(c.path);
           if (!file)
             return answer({CommandOutcome::rejected, file.error()});
-          return answer(reply(port_.open_program(*file)));
+          return act(request, [&]() -> ActionResult { return port_.open_program(*file); });
         } else if constexpr (std::is_same_v<T, Run>) {
-          return answer(reply(port_.run()));
+          return act(request, [&]() -> ActionResult { return port_.run(); });
         } else if constexpr (std::is_same_v<T, Pause>) {
-          return answer(reply(port_.pause()));
+          return act(request, [&]() -> ActionResult { return port_.pause(); });
         } else if constexpr (std::is_same_v<T, Resume>) {
-          return answer(reply(port_.resume()));
+          return act(request, [&]() -> ActionResult { return port_.resume(); });
         } else if constexpr (std::is_same_v<T, Step>) {
-          return answer(reply(port_.step()));
+          return act(request, [&]() -> ActionResult { return port_.step(); });
         } else if constexpr (std::is_same_v<T, Abort>) {
           auto result = port_.abort();
           cancel_jogs(nullptr);
           return answer(reply(std::move(result)));
         } else if constexpr (std::is_same_v<T, SetOverride>) {
-          return answer(reply(port_.set_override(c.which, c.value)));
+          return act(request,
+                     [&]() -> ActionResult { return port_.set_override(c.which, c.value); });
         } else if constexpr (std::is_same_v<T, SetSpindle>) {
-          return answer(reply(port_.set_spindle(c.direction, c.rpm)));
+          return act(request,
+                     [&]() -> ActionResult { return port_.set_spindle(c.direction, c.rpm); });
         } else if constexpr (std::is_same_v<T, SetCoolant>) {
-          return answer(reply(port_.set_coolant(c.flood, c.mist)));
+          return act(request,
+                     [&]() -> ActionResult { return port_.set_coolant(c.flood, c.mist); });
         } else if constexpr (std::is_same_v<T, SetProgramOption>) {
-          return answer(reply(port_.set_program_option(c.option, c.on)));
+          return act(request, [&]() -> ActionResult {
+            return port_.set_program_option(c.option, c.on);
+          });
         } else if constexpr (std::is_same_v<T, SelectWcs>) {
           if (c.wcs < 1 || static_cast<std::size_t>(c.wcs) > wcs_words.size())
             return answer({CommandOutcome::rejected,
                            "Work coordinate system must be G54 through G59.3."});
-          return answer(mdi(std::string(wcs_words[static_cast<std::size_t>(c.wcs) - 1])));
+          return mdi(request, std::string(wcs_words[static_cast<std::size_t>(c.wcs) - 1]));
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
-          return answer(mdi(std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state)));
+          return mdi(request,
+                     std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));
         } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
-          auto measured =
-              mdi("G10 L10 P" + std::to_string(state.tool_in_spindle) + " Z" + length(c.value, state));
-          if (measured.outcome != CommandOutcome::accepted)
-            return answer(std::move(measured));
+          auto measured = mdi(request, "G10 L10 P" + std::to_string(state.tool_in_spindle) + " Z" +
+                                           length(c.value, state));
+          if (measured.kind != StageKind::reply ||
+              measured.reply.outcome != CommandOutcome::accepted)
+            return measured;
           request.sent = true;
-          {
-            const std::scoped_lock lock{mutex_};
-            if (!current(request))
-              return {StageKind::cancelled, {}, {}};
-          }
-          return answer(mdi("G43"));
+          return mdi(request, "G43");
         } else if constexpr (std::is_same_v<T, SetTool>) {
-          return answer(reply(port_.set_tool(c.tool)));
+          return act(request, [&]() -> ActionResult { return port_.set_tool(c.tool); });
         } else if constexpr (std::is_same_v<T, RemoveTool>) {
-          return answer(reply(port_.remove_tool(c.number)));
+          return act(request, [&]() -> ActionResult { return port_.remove_tool(c.number); });
         } else {
           static_assert(std::is_same_v<T, ToolChanged>, "Every command needs an action.");
           // The tool the decision was made for: not another one asked for since.
-          return answer(reply(port_.tool_changed(state.requested_tool.value_or(-1))));
+          return act(request, [&]() -> ActionResult {
+            return port_.tool_changed(state.requested_tool.value_or(-1), state.tool_request);
+          });
         }
       },
       request.command);
+}
+
+// An increment is motion nobody holds: from the moment it is sent the axis counts as moving,
+// until the controller is seen at rest again or a stop decision has stopped it.
+auto Session::jog_step(Queued& request, const JogStep& command, const Decision& decision)
+    -> Stage {
+  const auto index = axis_index(command.axis);
+  if (!decision.jog_space || !index)
+    return answer({CommandOutcome::rejected, "Jog space is undecided."});
+  {
+    // An increment does not wait for a jog stop to finish: it is refused.
+    const std::scoped_lock lock{mutex_};
+    if (hold_ || jog_stop_high_ || !reconciled())
+      return answer(
+          {request.sent ? CommandOutcome::failed : CommandOutcome::rejected, hold_reason});
+  }
+  if (auto gate = start_gate(request, *index, false))
+    return std::move(*gate);
+  auto result =
+      port_.jog_increment(command.axis, command.distance, command.velocity, *decision.jog_space);
+  {
+    const std::scoped_lock lock{mutex_};
+    auto& axis = jog_.at(*index);
+    // A stop decision made meanwhile has seen it in flight and asks for the stop.
+    axis.in_flight = false;
+    if (result.status == ActionStatus::accepted && request.epoch == epoch_) {
+      axis.stepping = true;
+      axis.step_seen_moving = false;
+      axis.step_periods = 0;
+    } else if (result.status == ActionStatus::timed_out && request.epoch == epoch_) {
+      // Not answered: the controller may still take it up. Fenced like a start that was lost.
+      stop_jogs();
+      need_stop(*index);
+    }
+  }
+  flush_stops();
+  return answer(reply(std::move(result)));
 }
 
 auto Session::jog(Queued& request, const Jog& command, const Decision& decision) -> Stage {
@@ -602,6 +687,8 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
     return answer({CommandOutcome::failed, "Unknown axis."});
   if (!command.held)
     return answer(reply(tracked_stop(*index)));
+  if (!wanted(request))
+    return {StageKind::cancelled, {}, {}};
   if (!decision.jog_space) {
     forget_press(request);
     return answer({CommandOutcome::failed, "Jog space is undecided."});
@@ -636,6 +723,7 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
     // The axis may be moving: an earlier jog, or a start that was lost on the way back.
     stop_jogs();
     need_stop(*index);
+    axis.latched = true;
   }
   flush_stops();
   return answer(reply(std::move(started)));
@@ -666,11 +754,13 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
   }
   const std::scoped_lock lock{mutex_};
   auto& axis = jog_.at(index);
-  if (request.epoch != epoch_ || (held && !leases_.active(axes.at(index)))) {
+  if (!current(request))
+    return Stage{StageKind::cancelled, {}, {}};
+  if (request.epoch != epoch_ || (held && (axis.latched || !leases_.active(axes.at(index))))) {
     if (request.epoch == epoch_)
       axis.pressed = false;
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                   stopped_reason});
+                   held && axis.latched ? release_reason : stopped_reason});
   }
   if (hold_ || jog_stop_high_ || !reconciled())
     return Stage{StageKind::blocked, {}, {}};
@@ -700,10 +790,10 @@ auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply
   return {};
 }
 
-auto Session::mdi(const std::string& text) -> Reply {
+auto Session::mdi(const Queued& request, const std::string& text) const -> Stage {
   if (text.size() > max_mdi_bytes)
-    return {CommandOutcome::rejected, "MDI requires one block of at most 254 bytes."};
-  return reply(port_.mdi(text));
+    return answer({CommandOutcome::rejected, "MDI requires one block of at most 254 bytes."});
+  return act(request, [&]() -> ActionResult { return port_.mdi(text); });
 }
 
 // Every stop goes through here, so a failed one is always left to be retried and keeps the

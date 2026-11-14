@@ -22,11 +22,15 @@ Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=
 
 Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity and place it in the current work coordinate system. The simulator includes a sample model. Import and display stay local; model placement does not change machine work offsets.
 
-In **Tools**, open **Model defaults** to configure common cutter families, or **Set model** on a tool to select its family and override physical dimensions. The editor includes a live 3D envelope preview. Defaults persist in this browser; per-tool assignments currently last for the page session. These models are independent of LinuxCNC Z offsets and are not yet placed in the machine view. See [tool model behavior and geometry](docs/design/tool-models.md).
+In **Tools**, open **Model defaults** to configure common cutter families, or **Set model** on a tool to select its family and override physical dimensions. The editor includes a live 3D envelope preview. Defaults persist in this browser; per-tool assignments currently last for the page session. The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
 
 ![Configurable ball-nose tool envelope in the CoffeeCNC editor](ui/screenshots/tool-model-defaults.jpg)
 
 *Live parametric tool editor at 1280 × 800. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes.*
+
+![Configured loaded tool in the CoffeeCNC Machine preview](ui/screenshots/loaded-tool-preview.jpg)
+
+*The T2 envelope follows the reported tool tip in the browser simulator. Its blue ring marks the holder-face datum; no holder or collision simulation is implied.*
 
 ## Explore the concept
 

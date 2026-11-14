@@ -9,13 +9,16 @@ import { syncModelCamera } from '../model-camera'
 import { boxCorners, type Camera } from '../pathview'
 import { part, showPart } from '../step'
 import { modelToMachine } from '../step-model'
+import { ToolMesh } from '../tool-mesh'
+import { toolPreviewBounds, type ToolPreview } from '../tool-preview'
 
-const props = defineProps<{ camera: Camera; width: number; height: number }>()
+const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null }>()
 const emit = defineEmits<{ error: [message: string] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const scene = new Scene()
 const modelCamera = new OrthographicCamera()
 const group = new Group()
+const toolMesh = new ToolMesh()
 const geometries: BufferGeometry[] = []
 const surfaces: MeshStandardMaterial[] = []
 const lines: LineBasicMaterial[] = []
@@ -57,18 +60,34 @@ function build(): void {
   draw()
 }
 
+function buildTool(): void {
+  if (props.tool === null) toolMesh.clear()
+  else toolMesh.build(props.tool.model)
+  draw()
+}
+
 function draw(): void {
+  if (renderer === null || contextLost || props.width <= 0 || props.height <= 0) return
   const attachment = part.attachment
-  if (renderer === null || contextLost || attachment === null || props.width <= 0 || props.height <= 0) return
-  const toWorld = (p: [number, number, number]): [number, number, number] => modelToMachine(p, part.placement, attachment.binding.frame)
-  const o = toWorld([0, 0, 0])
-  const x = toWorld([1, 0, 0]); const y = toWorld([0, 1, 0]); const z = toWorld([0, 0, 1])
-  group.matrixAutoUpdate = false
-  group.matrix.copy(new Matrix4().set(x[0] - o[0], y[0] - o[0], z[0] - o[0], o[0],
-    x[1] - o[1], y[1] - o[1], z[1] - o[1], o[1], x[2] - o[2], y[2] - o[2], z[2] - o[2], o[2], 0, 0, 0, 1))
-  group.visible = showPart.value
-  const corners = boxCorners(attachment.geometry.bounds.min, attachment.geometry.bounds.max).map(toWorld)
-  const extent = Math.max(...corners.map((p) => Math.hypot(p[0] - props.camera.centre[0], p[1] - props.camera.centre[1], p[2] - props.camera.centre[2])))
+  const corners: [number, number, number][] = []
+  group.visible = showPart.value && attachment !== null
+  if (attachment !== null && group.visible) {
+    const toWorld = (p: [number, number, number]): [number, number, number] => modelToMachine(p, part.placement, attachment.binding.frame)
+    const o = toWorld([0, 0, 0])
+    const x = toWorld([1, 0, 0]); const y = toWorld([0, 1, 0]); const z = toWorld([0, 0, 1])
+    group.matrixAutoUpdate = false
+    group.matrix.copy(new Matrix4().set(x[0] - o[0], y[0] - o[0], z[0] - o[0], o[0],
+      x[1] - o[1], y[1] - o[1], z[1] - o[1], o[1], x[2] - o[2], y[2] - o[2], z[2] - o[2], o[2], 0, 0, 0, 1))
+    corners.push(...boxCorners(attachment.geometry.bounds.min, attachment.geometry.bounds.max).map(toWorld))
+  }
+  toolMesh.group.visible = props.tool !== null
+  if (props.tool !== null) {
+    toolMesh.group.position.set(...props.tool.tip)
+    toolMesh.setTheme(theme.value === 'dark')
+    const bounds = toolPreviewBounds(props.tool)
+    corners.push(...boxCorners(bounds.min, bounds.max))
+  }
+  const extent = Math.max(0, ...corners.map((p) => Math.hypot(p[0] - props.camera.centre[0], p[1] - props.camera.centre[1], p[2] - props.camera.centre[2])))
   syncModelCamera(modelCamera, props.camera, props.width, props.height, extent)
   surfaces.forEach((material) => { material.opacity = part.opacity })
   lines.forEach((material) => { material.color.set(theme.value === 'dark' ? '#a2b8c8' : '#526574'); material.opacity = part.opacity * 0.75 })
@@ -77,18 +96,20 @@ function draw(): void {
   renderer.render(scene, modelCamera)
 }
 
-function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', 'Part model unavailable: graphics context lost') }
+function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
 function restored(): void { contextLost = false; emit('error', ''); draw() }
 watch(() => part.attachment?.geometry, build)
+// Status changes move the existing mesh; only changed dimensions rebuild it.
+watch(() => JSON.stringify(props.tool?.model ?? null), buildTool)
 watch([(): unknown => props.camera, (): unknown => props.width, (): unknown => props.height, (): unknown => part.placement, (): unknown => part.attachment?.binding,
-  (): unknown => part.opacity, showPart, theme], draw)
+  (): unknown => part.opacity, (): unknown => props.tool, showPart, theme], draw)
 
 onMounted(() => {
   if (canvas.value === null) return
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
     renderer.setClearColor(0, 0)
-    scene.add(group, new AmbientLight(0xffffff, 1.6))
+    scene.add(group, toolMesh.group, new AmbientLight(0xffffff, 1.6))
     const key = new DirectionalLight(0xffffff, 2.4)
     key.position.set(-100, -200, 350)
     scene.add(key)
@@ -96,21 +117,23 @@ onMounted(() => {
     canvas.value.addEventListener('webglcontextrestored', restored)
     emit('error', '')
     build()
+    buildTool()
   } catch {
-    emit('error', 'Part model needs WebGL 2; the toolpath is still available')
+    emit('error', '3D preview needs WebGL 2; the toolpath is still available')
   }
 })
 onBeforeUnmount(() => {
   canvas.value?.removeEventListener('webglcontextlost', lost)
   canvas.value?.removeEventListener('webglcontextrestored', restored)
   clear()
+  toolMesh.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()
 })
 </script>
 
-<template><canvas ref="canvas" class="part-canvas" aria-hidden="true"></canvas></template>
+<template><canvas ref="canvas" class="scene-canvas" aria-hidden="true"></canvas></template>
 
 <style scoped>
-.part-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 </style>

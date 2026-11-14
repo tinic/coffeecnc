@@ -1,48 +1,25 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { AmbientLight, BufferGeometry, DirectionalLight, Group, LatheGeometry, LineBasicMaterial, LineLoop,
-  Mesh, MeshStandardMaterial, OrthographicCamera, Scene, Vector2, Vector3, WebGLRenderer } from 'three'
+import { AmbientLight, DirectionalLight, OrthographicCamera, Scene, WebGLRenderer } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
-import { toolProfiles, type ToolModel } from '../tool-model'
+import type { ToolModel } from '../tool-model'
+import { ToolMesh } from '../tool-mesh'
 
 const props = defineProps<{ model: ToolModel }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const error = ref<string>('')
 const scene = new Scene()
-const group = new Group()
+const toolMesh = new ToolMesh()
 const camera = new OrthographicCamera()
-const cuttingMaterial = new MeshStandardMaterial({ color: '#bc9954', metalness: 0.5, roughness: 0.36 })
-const shankMaterial = new MeshStandardMaterial({ color: '#a4b2be', metalness: 0.65, roughness: 0.28 })
-const datumMaterial = new LineBasicMaterial({ color: '#377ef2' })
-const geometry: BufferGeometry[] = []
 let renderer: WebGLRenderer | null = null
 let resize: ResizeObserver | null = null
 let view: Camera = { azimuth: -0.6, elevation: 0.3, scale: 1, centre: [0, 0, 0] }
 let drag: { id: number; x: number; y: number } | null = null
 let contextLost = false
 
-function clear(): void { group.clear(); geometry.splice(0).forEach((g) => { g.dispose() }) }
-function build(): void {
-  clear()
-  const profiles = toolProfiles(props.model)
-  for (const [profile, material] of [[profiles.cutting, cuttingMaterial], [profiles.shank, shankMaterial]] as const) {
-    const g = new LatheGeometry(profile.map(([radius, z]) => new Vector2(radius, z)), 64)
-    g.rotateX(Math.PI / 2) // Lathe's +Y axis becomes the tool's +Z axis.
-    geometry.push(g)
-    group.add(new Mesh(g, material))
-  }
-  const d = props.model.dimensions
-  const ring = new BufferGeometry().setFromPoints(Array.from({ length: 96 }, (_, i) => {
-    const angle = i * Math.PI / 48
-    const radius = Math.max(d.shankDiameter * 0.7, d.diameter * 0.6)
-    return new Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, d.stickout)
-  }))
-  geometry.push(ring)
-  group.add(new LineLoop(ring, datumMaterial))
-  draw()
-}
+function build(): void { toolMesh.build(props.model); draw() }
 function draw(): void {
   if (renderer === null || canvas.value === null || contextLost) return
   const width = canvas.value.clientWidth; const height = canvas.value.clientHeight
@@ -52,7 +29,7 @@ function draw(): void {
   const extent = Math.hypot(d.overallLength, diameter)
   view = { ...view, centre: [0, 0, d.overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
   syncModelCamera(camera, view, width, height, extent)
-  datumMaterial.color.set(theme.value === 'dark' ? '#84b1f8' : '#377ef2')
+  toolMesh.setTheme(theme.value === 'dark')
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(width, height, false)
   renderer.render(scene, camera)
@@ -77,7 +54,7 @@ onMounted(() => {
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
     renderer.setClearColor(0, 0)
-    scene.add(group, new AmbientLight(0xffffff, 1.8))
+    scene.add(toolMesh.group, new AmbientLight(0xffffff, 1.8))
     const key = new DirectionalLight(0xffffff, 3)
     key.position.set(-80, -120, 180)
     scene.add(key)
@@ -92,7 +69,7 @@ onBeforeUnmount(() => {
   resize?.disconnect()
   canvas.value?.removeEventListener('webglcontextlost', lost)
   canvas.value?.removeEventListener('webglcontextrestored', restored)
-  clear(); cuttingMaterial.dispose(); shankMaterial.dispose(); datumMaterial.dispose()
+  toolMesh.dispose()
   renderer?.dispose(); renderer?.forceContextLoss()
 })
 </script>

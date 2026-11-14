@@ -14,7 +14,10 @@ export const protocolVersion = 1
 export type AxisLetter = 'x' | 'y' | 'z'
 export type Vec3 = [number, number, number]
 
-/** Whether the status comes from a running LinuxCNC task. */
+/**
+ * Whether the status comes from a running LinuxCNC task. A frozen executable cannot report its
+ * own silence: the panel also treats the status as stale when none has arrived for 1 s.
+ */
 export type Link =
   | 'live' // task wrote this status within the last second
   | 'stale' // the last status task wrote; task has stopped writing
@@ -26,6 +29,7 @@ export type TaskMode = 'manual' | 'mdi' | 'auto'
 export type InterpState = 'idle' | 'reading' | 'paused' | 'waiting'
 export type LengthUnit = 'mm' | 'inch'
 export type SpindleDirection = 'stopped' | 'forward' | 'reverse'
+export type FeedMode = 'per_minute' | 'inverse_time' | 'per_revolution'
 
 // ---- machine to panel -----------------------------------------------------------------------
 
@@ -78,7 +82,9 @@ export interface Offsets {
 export interface MotionStatus {
   /** Current velocity along the path, mm/min. */
   velocity: number
-  /** The F word in effect, mm/min. */
+  /** G94 / G93 / G95. */
+  feed_mode: FeedMode
+  /** The F word in effect, in the unit `feed_mode` gives: mm/min, 1/min, or mm/rev. */
   programmed_feed: number
   feed_override: number
   rapid_override: number
@@ -135,6 +141,8 @@ export interface Status {
     prepared: number | null
   }
   program: ProgramStatus
+  /** Changes whenever anything a preview depends on changes. */
+  preview_context: number
   wait: Wait
   /** Active modal codes as LinuxCNC reports them, for example ["G1", "G54", "G90", "M3"]. */
   active_codes: string[]
@@ -168,20 +176,39 @@ export interface PreviewSegment {
   line: number
   kind: 'rapid' | 'feed'
   tool: number
-  /** Polyline in machine coordinates, flattened x, y, z; arcs arrive tessellated. */
+  /**
+   * Polyline of tool tip positions in machine coordinates (the controlled point less the tool
+   * offset in effect), flattened x, y, z; arcs arrive tessellated.
+   */
   points: number[]
 }
 
-/** The path the loaded program would take with the offsets and tool table at `revision`. */
+/**
+ * The path the loaded program would take. Everything it depends on (program, work offsets, G92,
+ * rotation, tool table) has one revision, `Status.preview_context`; a preview whose `context`
+ * differs from it is out of date.
+ */
 export interface Preview {
   type: 'preview'
-  revision: number
-  /** `failed` carries the interpreter's error; `segments` then end where it stopped. */
-  state: 'ready' | 'failed'
+  /** The `Status.preview_context` this preview was computed for. */
+  context: number
+  /**
+   * `pending`: being computed, `segments` empty. `failed` carries the interpreter's error;
+   * `segments` then end where it stopped. `unavailable`: no program loaded, or no preview possible.
+   */
+  state: 'pending' | 'ready' | 'failed' | 'unavailable'
   error: { line: number; text: string } | null
   segments: PreviewSegment[]
-  /** Extent of the feed moves in machine coordinates, or null without any. */
+  /** Extent of the feed moves (tool tip, machine coordinates), or null without any. */
   bounds: { min: Vec3; max: Vec3 } | null
+}
+
+/** All nine work coordinate systems, sent after `ready` and whenever one of them changes. */
+export interface WorkOffsets {
+  type: 'work_offsets'
+  revision: number
+  /** In order: G54 … G59.3. */
+  systems: { wcs: number; offset: Vec3; rotation_xy: number }[]
 }
 
 /** An operator error or message from LinuxCNC, or from the executable itself. */
@@ -198,11 +225,12 @@ export interface CommandResult {
   type: 'result'
   id: number
   outcome:
-    | 'done' // LinuxCNC accepted the command (motion it started may still be running)
+    // LinuxCNC accepted the command; completion of any motion it starts is read from Status
+    | 'accepted'
     | 'rejected' // not valid in the current state; nothing was sent to LinuxCNC
     | 'failed' // LinuxCNC reported an error
     | 'timed_out' // LinuxCNC did not answer
-  /** Reason for anything but `done`, in words for the operator. */
+  /** Reason for anything but `accepted`, in words for the operator. */
   reason: string
 }
 
@@ -228,6 +256,7 @@ export type FromMachine =
   | ToolTable
   | ProgramText
   | Preview
+  | WorkOffsets
   | OperatorMessage
   | CommandResult
   | Directory

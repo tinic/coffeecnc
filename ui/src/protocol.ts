@@ -179,6 +179,8 @@ export interface ProgramText {
   revision: number
   file: string
   lines: string[]
+  /** True when only a prefix is supplied. This is not the complete program or its line count. */
+  truncated?: boolean
 }
 
 /** One contiguous run of motion from one source line, as the interpreter produced it. */
@@ -196,7 +198,8 @@ export interface PreviewSegment {
 
 /**
  * The path the loaded program would take. Everything it depends on (program, work offsets, G92,
- * rotation, tool table) has one revision, `Status.preview_context`; a preview whose `context`
+ * rotation, tool table, block delete and interpreter start state) has one revision,
+ * `Status.preview_context`; a preview whose `context`
  * differs from it is out of date.
  */
 export interface Preview {
@@ -259,6 +262,8 @@ export interface Directory {
   /** Null at the top of the program directory. */
   parent: string | null
   entries: DirectoryEntry[]
+  /** True when the listing omits entries because a resource limit was reached. */
+  truncated?: boolean
 }
 
 export type FromMachine =

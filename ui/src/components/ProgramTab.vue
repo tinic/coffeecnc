@@ -13,7 +13,7 @@ const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
 const program = computed(() => panel.program)
 watch(() => panel.program?.revision, () => { selected.value = null })
-const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.revision === status.value.program.revision)
+const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.file === status.value.program.file && program.value.revision === status.value.program.revision)
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
 const layouts: readonly [ProgramLayout, string][] = [['path', 'Preview'], ['text', 'Code'], ['split', 'Split']]
@@ -55,6 +55,7 @@ async function showFailure(): Promise<void> {
           <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="panel.programLayout = layout">{{ label }}</button></div>
         </header>
         <div v-if="failure" class="failure" role="status"><AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span><button type="button" @click="showFailure">Show line {{ failure.line }}</button></div>
+        <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
             <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="live ? (status?.program.motion_line ?? 0) : 0" :current-line="live ? (status?.program.current_line ?? 0) : 0" :error-line="failure?.line ?? 0" />
@@ -84,7 +85,7 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
-    <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent"> / {{ program?.lines.length }}</template></span></div>
+    <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent && !program?.truncated"> / {{ program?.lines.length }}</template></span></div>
   </div>
 </template>
 

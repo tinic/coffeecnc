@@ -16,6 +16,7 @@ const linkLabel = computed(() => {
     case 'silent': return 'No status updates'
     case 'stale': return 'Status is stale'
     case 'down': return 'Disconnected'
+    case 'incompatible': return 'Protocol mismatch'
   }
 })
 const state = computed(() => {
@@ -74,7 +75,7 @@ const subtitle = computed(() => {
         <div class="actions">
           <button v-if="status?.machine === 'estop'" class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
           <button v-else-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
-          <button v-else class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
+          <button v-else class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
           <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
         </div>
       </div>

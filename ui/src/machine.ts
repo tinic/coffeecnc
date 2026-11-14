@@ -81,6 +81,8 @@ export const linkBlock: ComputedRef<string | null> = computed(() => {
       return 'LinuxCNC has stopped updating its status'
     case 'down':
       return 'No connection to LinuxCNC'
+    case 'incompatible':
+      return 'Panel and backend protocol versions do not match'
   }
 })
 

@@ -14,7 +14,7 @@ npm run check
 npm run build
 ```
 
-The 190 tests cover the protocol fixtures, simulator, interpreter, store, camera, units, jog lease, STEP mesh validation, model placement/import lifetime, parametric tool envelopes, default inheritance tool-model editor behavior, loaded-tool identity/position gating, and capability-aware jog/execution controls. The visual correction was also exercised in the browser: cycle start, manual tool acknowledgment, hold/resume, Stop, view switching while paused, and a held jog followed by release and zero feed. These are simulator checks, not machine validation.
+The 197 tests cover the protocol fixtures, simulator, interpreter, store, camera, units, jog lease, STEP mesh validation, model placement/import lifetime, parametric tool envelopes, default inheritance tool-model editor behavior, loaded-tool identity/position gating, capability-aware jog/execution controls, protocol-mismatch handling, program unload/reload identity, and partial text/directory presentation. The visual correction was also exercised in the browser: cycle start, manual tool acknowledgment, hold/resume, Stop, view switching while paused, and a held jog followed by release and zero feed. These are simulator checks, not machine validation.
 
 The preview shows toolpaths, an optional STEP part layer and a configured loaded-tool envelope. Stock removal simulation, native WebKitGTK integration and actual LinuxCNC operation remain separate increments. Tool sequence labels come from interpreter segments and the tool table; they are not assumed CAM operations or claims of measurement. Fonts are bundled under `public/fonts/` with their licenses.
 

@@ -37,9 +37,10 @@ const collapseWindowMs = 3000
 
 /**
  * What the panel can say about the link: `silent` is the panel's own finding that no status has
- * arrived for a second; `stale` and `down` are reported by the executable.
+ * arrived for a second; `stale` and `down` are reported by the executable. `incompatible` is a
+ * hello protocol mismatch; incoming snapshots cannot be interpreted as controller state.
  */
-export type LinkView = 'connecting' | 'live' | 'silent' | 'stale' | 'down'
+export type LinkView = 'connecting' | 'live' | 'silent' | 'stale' | 'down' | 'incompatible'
 
 export interface LogEntry {
   id: number
@@ -110,6 +111,12 @@ export interface Panel {
   onResult: (listener: ResultListener) => () => void
   dismissNotice: () => void
   setSimulatorFault: (fault: LinkFault) => void
+}
+
+/** Reconnect and stop attempts remain available; none imply that a mismatched peer accepted them. */
+function allowedWhileIncompatible(command: CommandBody): boolean {
+  return command.type === 'ready' || command.type === 'abort' || command.type === 'jog_stop_all' ||
+    command.type === 'jog' && !command.held || command.type === 'set_machine' && command.state === 'estop'
 }
 
 /** A few words naming a command, for the log. */
@@ -216,6 +223,7 @@ export function createPanel(options: PanelOptions): Panel {
   let nextId = 1
   let nextLogId = 1
   let lastStatusAt = 0
+  let protocolError: string | null = null
   let watchdog: number | null = null
 
   function log(level: 'error' | 'info', text: string, context: string, time: number): void {
@@ -235,6 +243,11 @@ export function createPanel(options: PanelOptions): Panel {
   }
 
   function updateLink(): void {
+    if (protocolError !== null) {
+      state.link = 'incompatible'
+      state.silentFor = 0
+      return
+    }
     const status = state.status
     if (status === null) {
       state.link = 'connecting'
@@ -274,24 +287,40 @@ export function createPanel(options: PanelOptions): Panel {
   }
 
   function receive(message: FromMachine): void {
+    if (protocolError !== null && message.type !== 'hello') return
     switch (message.type) {
       case 'hello':
+        if (message.protocol !== protocolVersion) {
+          protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
+          // These snapshots belong to a protocol we can no longer interpret. Clearing hello
+          // also ends held panel jogs and invalidates page-local tool assignments.
+          state.hello = null
+          state.status = null
+          state.toolTable = null
+          state.workOffsets = null
+          state.program = null
+          state.preview = null
+          state.directory = null
+          updateLink()
+          log('error', protocolError, '', now())
+          break
+        }
+        protocolError = null
         if (state.hello === null) {
           state.unit = message.machine_units
         }
         state.hello = message
         state.jogVelocity = Math.min(state.jogVelocity, message.max_jog_velocity)
-        if (message.protocol !== protocolVersion) {
-          log(
-            'error',
-            `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`,
-            '',
-            now(),
-          )
-        }
+        updateLink()
         break
       case 'status':
         state.status = message
+        // A live status identifies the loaded program. Down/stale placeholders must not erase
+        // text being read as history; snapshots may also arrive before their matching status.
+        if (message.link === 'live' && (message.program.file === null ||
+          state.program?.file !== message.program.file || state.program.revision !== message.program.revision)) {
+          state.program = null
+        }
         lastStatusAt = now()
         updateLink()
         break
@@ -347,6 +376,10 @@ export function createPanel(options: PanelOptions): Panel {
         if (state.mdi.length > maxMdiEntries) {
           state.mdi.splice(0, state.mdi.length - maxMdiEntries)
         }
+      }
+      if (protocolError !== null && !allowedWhileIncompatible(command)) {
+        result({ type: 'result', id, outcome: 'rejected', reason: protocolError })
+        return id
       }
       transport.send({ ...command, id })
       return id

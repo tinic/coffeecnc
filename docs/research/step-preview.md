@@ -61,6 +61,14 @@ Keep a future native helper behind the same display-mesh contract if the older W
 
 Prepared on 14 November 2026 against CoffeeCNC `275b779`, with initial native results below from `ca88a0a7a853a152ec3e827d0dd47faef0b28d76` in [PR #12](https://github.com/tinic/coffeecnc/pull/12). The qualification matrix includes checks that are still pending; the browser and Node results above do not stand in for native execution. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
 
+### Follow-up checkpoint: `4588b3b`
+
+The runner now checks the actual child exit status and retains separate logs for each test. Development and analysis each passed **24/24 CTests** (324.75 and 325.50 seconds). AddressSanitizer passed **22/24** (346.65 seconds): both shell tests passed their 202 behavioral checks, then correctly failed on a LeakSanitizer report of **1,216 bytes in six allocations**. Startup exited successfully. [Retained failure excerpts](evidence/native-shell-4588b3b-asan.txt) include the real child results and complete remaining leak reports.
+
+Those allocation stacks name D-Bus, but are too shallow to establish ownership. The same direct-allocation signature appears in the earlier `ca88a0a` failure. The GUI executables currently exclude leaks matching Fontconfig, Mesa GLX and JavaScriptCore; these exclusions can also hide application-caused leaks through those libraries. No D-Bus exclusion has been added. The remaining allocation investigation, ownership audit and non-GUI ThreadSanitizer run are pending at this checkpoint; it is not clean sanitizer qualification.
+
+Serving the importer's WASM file through a stream replaced a synchronous read on the GTK thread. Development import-page status gaps now peak at 184 ms and 171 ms for the mm/inch tests; both final reloads report an identified page, a working bridge and live status. The earlier reload failure was not reproduced in these runs, but its cause was not isolated. UI input and asset digests remain those recorded below. Native part-overlay rendering still awaits interpreter preview.
+
 ### Recorded native checkpoint: `ca88a0a`
 
 Claude ran the shell on playhouse2 with LinuxCNC 2.9.4, WebKitGTK **2.54.0** (`webkit2gtk-4.1`), GTK **3.24.49**, and an isolated Xvfb display at 1280 × 800. Codex independently read the retained logs, inspected the native screenshots, and built the same panel on macOS. The native and independent panel builds have identical SHA-256 digests:

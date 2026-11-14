@@ -413,9 +413,20 @@ void home(const Rig& rig) {
 // The panel's numbers are LinuxCNC's, once in millimetres: against the joint feedback pins,
 // which are in machine units.
 void positions_in_mm(const Rig& rig) {
+  // The unit first, in a block of its own: an F word in the block that switches to G21 is
+  // still read in the unit before it, and LinuxCNC converts it (F1200 becomes 30480 mm/min).
+  rig.js(R"(
+      const input = __t.find('input[aria-label="MDI command"]');
+      input.value = 'G21';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      return __t.click('section.mdi button[type="submit"]');)");
+  check("panel_mdi_units", rig.wait_js("__t.last.status.program_units === 'mm' && "
+                                       "__t.last.status.interp === 'idle' && "
+                                       "__t.all('section.mdi .history .entry.accepted').length === 1"));
   check("panel_mdi_units_move", rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
-      input.value = 'G21 G90 G1 X25.4 Y-12.7 Z5 F1200';
+      input.value = 'G90 G1 X25.4 Y-12.7 Z5 F1200';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       return __t.click('section.mdi button[type="submit"]');)") == "ok");
@@ -427,7 +438,7 @@ void positions_in_mm(const Rig& rig) {
         std::format("hal_mm={},{},{}", rig.hal_position(0), rig.hal_position(1),
                     rig.hal_position(2)));
   check("panel_mdi_history_accepted",
-        rig.wait_js("__t.all('section.mdi .history .entry.accepted').length >= 1"),
+        rig.wait_js("__t.all('section.mdi .history .entry.accepted').length >= 2"),
         rig.js("return __t.all('section.mdi .history .entry').map(__t.text);").dump());
   rig.wait_js("__t.last.status.interp === 'idle' && __t.last.status.motion.in_position", 5s);
   const auto status = rig.panel_status();
@@ -1103,6 +1114,44 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   rig.snapshot("step-model");
   check("no_console_errors_after_step", rig.js("return __t.errors.length;") == 0, rig.errors());
   fact("page_errors_after_step", rig.errors());
+
+  // The tool model of the Tools tab is a WebGL2 canvas of its own.
+  check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  rig.wait_js("__t.all('canvas').length > 0", 5s);
+  std::this_thread::sleep_for(500ms);
+  const auto tools_tab = rig.js(R"(
+      return __t.all('canvas').map((canvas) => {
+        const gl = canvas.getContext('webgl2');
+        return { class: canvas.className, width: canvas.width, height: canvas.height, webgl2: !!gl, lost: gl ? gl.isContextLost() : null };
+      });)");
+  fact("tools_tab_canvases", tools_tab.dump());
+  rig.snapshot("tools-tab");
+  check("no_console_errors_in_tools_tab", rig.js("return __t.errors.length;") == 0, rig.errors());
+
+  // Another program: the attachment goes with the one it was bound to.
+  check("panel_machine_tab_after_tools", rig.click("nav.em-nav button", "Machine") == "ok");
+  const bool reopened = rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
+                        rig.wait_js("!!__t.find('.entries button.entry', 'probe.ngc')") &&
+                        rig.click(".entries button.entry", "probe.ngc") == "ok";
+  check("panel_opens_other_program", reopened);
+  const bool removed =
+      rig.wait_js("/Part model removed because the program changed/.test("
+                  "__t.text(document.querySelector('.model-summary')))");
+  check("step_attachment_removed_with_program", removed,
+        rig.js("return __t.text(document.querySelector('.model-summary'));").dump());
+
+  // A new page starts without an attachment.
+  const auto before = rig.hooks.state();
+  rig.hooks.reload();
+  const bool replaced = rig.wait(15s, [&]() -> bool {
+    return rig.hooks.state().commits == before.commits + 1 && rig.hooks.state().identified;
+  });
+  check("reload_after_import", replaced && rig.page_live());
+  check("panel_machine_tab_after_reload", rig.click("nav.em-nav button", "Machine") == "ok");
+  const bool none = rig.wait_js("/Attach STEP model/.test(__t.text(document.querySelector('.model-summary')))");
+  check("new_page_has_no_attachment", none,
+        rig.js("return __t.text(document.querySelector('.model-summary'));").dump());
+  check("no_console_errors_after_reload", rig.js("return __t.errors.length;") == 0, rig.errors());
 }
 
 void estop(const Rig& rig) {

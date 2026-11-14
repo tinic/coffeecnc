@@ -72,6 +72,8 @@ assets  b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
 
 Development and analysis presets each passed **24/24 CTests**, in 324.30 and 324.80 seconds respectively. The development mm/inch shell tests each passed 198 checks. [Retained shell-test excerpts](evidence/native-shell-ca88a0a.txt) contain the complete output of those two tests from CTest's `LastTest.log`; the standalone mm log was overwritten by the later executable-startup test. The PR remains under review at this checkpoint, including a publisher shutdown fix and the remaining sanitizer runs.
 
+The subsequent AddressSanitizer run reported **23/24 tests passed**, but that count is not clean sanitizer qualification. Startup failed at process exit with 126,533 leaked bytes in 1,139 allocations. The inch-shell test was incorrectly labeled passed: its log prints `exit=0` before LeakSanitizer reports another 127,797 bytes in 1,145 allocations. The runner trusted that early text marker instead of the actual child exit status. [Retained failure excerpts](evidence/native-shell-ca88a0a-asan.txt) preserve both diagnostics. Fixing the runner and checking the shutdown allocations are required before relying on subsequent sanitizer results. The displayed allocation stacks name Fontconfig, Mesa GLX and JavaScriptCore; library-only stacks do not establish that application ownership is correct.
+
 | Area | Observed in the native shell |
 | --- | --- |
 | Local import pipeline | Module worker and WASM load from `coffeecnc://panel/`; WASM response is HTTP-style status 200 with `application/wasm`, and streaming compilation succeeds. No unexpected resources or captured console errors. |

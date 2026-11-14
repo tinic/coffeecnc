@@ -207,6 +207,7 @@ void on_destroy(GtkWidget* /*widget*/, gpointer data) {
     const std::scoped_lock lock{self->outbox->mutex};
     self->outbox->closed = true;
     self->outbox->waiting.clear();
+    self->outbox->work.clear();
   }
   self->window = nullptr;
   self->view = nullptr;
@@ -229,21 +230,26 @@ auto on_reload(gpointer data) -> gboolean {
   return G_SOURCE_REMOVE;
 }
 
-auto on_drain(gpointer data) -> gboolean {
-  const auto& outbox = *static_cast<std::shared_ptr<Outbox>*>(data);
-  std::vector<std::pair<PageToken, std::vector<std::string>>> waiting;
+// The window of the process, for the wake-up below: one window at a time.
+std::mutex window_mutex;
+PanelWindow::Impl* the_window{};
+
+// The wake-up of the GTK thread. It is given no data: what there is to do is in the outbox.
+auto on_wake(gpointer /*data*/) -> gboolean {
+  PanelWindow::Impl* window = nullptr;
   {
-    const std::scoped_lock lock{outbox->mutex};
-    waiting.swap(outbox->waiting);
-    outbox->scheduled = false;
+    const std::scoped_lock lock{window_mutex};
+    window = the_window;
   }
-  if (outbox->window != nullptr)
-    for (const auto& [page, messages] : waiting)
-      outbox->window->deliver(page, messages);
+  // The GTK thread is the one that makes and destroys the window: it is there for this call.
+  if (window != nullptr)
+    window->drain();
   return G_SOURCE_REMOVE;
 }
 
-void free_outbox(gpointer data) { delete static_cast<std::shared_ptr<Outbox>*>(data); }
+// Any thread. Always through the main loop, never g_main_context_invoke: while no loop runs
+// that would call on this thread, and WebKit is the GTK thread's.
+void wake() { g_idle_add_full(G_PRIORITY_DEFAULT, on_wake, nullptr, nullptr); }
 
 } // namespace
 
@@ -257,6 +263,33 @@ void PanelWindow::Impl::receive(std::string_view raw) {
   }
   if (events.message)
     events.message(*page, raw.substr(identity_digits + 1));
+}
+
+void PanelWindow::Impl::drain() {
+  std::vector<std::pair<PageToken, std::vector<std::string>>> waiting;
+  std::vector<std::function<void()>> work;
+  {
+    const std::scoped_lock lock{outbox->mutex};
+    waiting.swap(outbox->waiting);
+    work.swap(outbox->work);
+    outbox->scheduled = false;
+  }
+  for (const auto& task : work)
+    task();
+  for (const auto& [token, messages] : waiting)
+    deliver(token, messages);
+}
+
+void PanelWindow::Impl::on_gtk_thread(std::function<void()> work) {
+  {
+    const std::scoped_lock lock{outbox->mutex};
+    if (outbox->closed)
+      return;
+    outbox->work.push_back(std::move(work));
+    if (std::exchange(outbox->scheduled, true))
+      return;
+  }
+  wake();
 }
 
 void PanelWindow::Impl::begin_page() {
@@ -306,7 +339,10 @@ PanelWindow::PanelWindow(PanelOptions options, PanelEvents events)
   Impl& impl = *impl_;
   impl.options = std::move(options);
   impl.events = std::move(events);
-  impl.outbox->window = &impl;
+  {
+    const std::scoped_lock lock{window_mutex};
+    the_window = &impl;
+  }
 
   // Nothing of the panel is kept on disk: no cache, no storage.
   impl.context = webkit_web_context_new_ephemeral();
@@ -382,10 +418,12 @@ PanelWindow::~PanelWindow() {
     const std::scoped_lock lock{impl.outbox->mutex};
     impl.outbox->closed = true;
     impl.outbox->waiting.clear();
+    impl.outbox->work.clear();
   }
-  impl.outbox->window = nullptr;
-  // What other threads had already sent on its way to this one.
-  while (g_main_context_iteration(nullptr, FALSE) != FALSE) {
+  // A wake-up that is still on its way finds no window and does nothing.
+  {
+    const std::scoped_lock lock{window_mutex};
+    the_window = nullptr;
   }
   g_object_unref(impl.context);
 }
@@ -421,14 +459,10 @@ void PanelWindow::post(PageToken page, std::vector<std::string> messages) {
     if (outbox->closed)
       return;
     outbox->waiting.emplace_back(page, std::move(messages));
-    if (outbox->scheduled)
+    if (std::exchange(outbox->scheduled, true))
       return;
-    outbox->scheduled = true;
   }
-  // Always through the main loop, whatever thread this is. Not g_main_context_invoke: while
-  // no loop runs it would call on_drain on this thread, and WebKit is the GTK thread's.
-  g_idle_add_full(G_PRIORITY_DEFAULT, on_drain, new std::shared_ptr<Outbox>(outbox),
-                  free_outbox);
+  wake();
 }
 
 } // namespace coffeecnc

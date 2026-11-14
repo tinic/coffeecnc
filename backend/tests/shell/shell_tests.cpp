@@ -135,7 +135,7 @@ auto descendants(std::string_view name) -> std::vector<pid_t> {
 // what goes wrong in it, and helps finding its controls. A test's own; the panel has none of it.
 constexpr std::string_view instrumentation = R"js((() => {
   const t = { errors: [], received: [], counts: {}, last: {}, firstSeq: null, lastSeq: null,
-              seqBreaks: 0, sent: [], resultIds: [] };
+              seqBreaks: 0, sent: [], resultIds: [], lastStatusAt: null, maxGapMs: 0 };
   window.__t = t;
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.coffeecnc;
   t.handlerAtStart = !!(bridge && typeof bridge.postMessage === 'function');
@@ -154,6 +154,9 @@ constexpr std::string_view instrumentation = R"js((() => {
       if (t.firstSeq === null) t.firstSeq = m.seq;
       else if (m.seq !== t.lastSeq + 1) t.seqBreaks++;
       t.lastSeq = m.seq;
+      const now = performance.now();
+      if (t.lastStatusAt !== null) t.maxGapMs = Math.max(t.maxGapMs, now - t.lastStatusAt);
+      t.lastStatusAt = now;
     } else {
       t.received.push(m);
       if (m.type === 'result') t.resultIds.push(m.id);
@@ -1077,6 +1080,12 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         rig.js("return !__t.find('button', 'Load SM-101 sample');") == true);
   const auto import = [&](const std::filesystem::path& file,
                           std::chrono::milliseconds timeout) -> Json {
+    // What the panel itself requires of an import: a live link and a loaded program. Seen
+    // here, not assumed; and how long the page went without a status so far.
+    const bool panel_ready =
+        rig.wait_js("__t.last.status.link === 'live' && !!__t.last.status.program.file && "
+                    "!document.querySelector('.connection.disconnected')",
+                    5s);
     const auto choosers = rig.hooks.state().file_choosers;
     rig.hooks.answer_file_chooser(file.empty() ? std::vector<std::string>{}
                                                : std::vector<std::string>{file.string()});
@@ -1084,7 +1093,9 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
     const bool asked = rig.wait(5s, [&]() -> bool {
       return rig.hooks.state().file_choosers == choosers + 1;
     });
-    Json result{{"clicked", clicked}, {"chooser", asked}};
+    Json result{{"clicked", clicked}, {"chooser", asked}, {"panel_ready", panel_ready}};
+    result["longest_status_gap_ms"] = rig.js("return Math.round(__t.maxGapMs);");
+    result["connection"] = rig.js("return __t.text(document.querySelector('.connection'));");
     // The import has ended, one way or the other, with this file's name or an error to show.
     if (!file.empty())
       result["finished"] = rig.wait_js(
@@ -1105,6 +1116,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   fact("step_sm101", result.dump());
   // (a) Import only: the panel's file input and WebKit's chooser request, the module worker,
   // the WebAssembly importer, and the geometry it returns. Nothing here draws the part.
+  check("step_import_panel_ready", result.at("panel_ready") == true, result.dump());
   check("step_import_file_chooser_opens",
         result.at("clicked") == true && result.at("chooser") == true, result.dump());
   check("step_import_sm101_finished", result.value("finished", false), result.dump());
@@ -1129,7 +1141,9 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         cancelled.at("chooser") == true && cancelled.at("identity") == result.at("identity"),
         cancelled.dump());
   const auto same = import(sm101, 60s);
-  check("step_import_same_file_again", same.value("finished", false) && same.at("chooser") == true &&
+  check("step_import_same_file_again", same.value("finished", false) &&
+                                           same.at("panel_ready") == true &&
+                                           same.at("chooser") == true &&
                                     same.at("identity") == result.at("identity") &&
                                     same.at("error") == "",
         same.dump());
@@ -1242,6 +1256,11 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
                   "__t.text(document.querySelector('.model-summary')))");
   check("step_attachment_removed_with_program", removed,
         rig.js("return __t.text(document.querySelector('.model-summary'));").dump());
+
+  // The STEP imports ran on this page: the panel takes a second without a status for a stale
+  // link, so the longest time between two statuses says whether it ever did.
+  const auto gap = rig.js("return __t.maxGapMs;").get<double>();
+  check("status_never_late_on_import_page", gap < 1000, std::format("longest_gap_ms={:.0f}", gap));
 
   // A new page starts without an attachment.
   const auto before = rig.hooks.state();

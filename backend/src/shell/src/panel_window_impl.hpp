@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -21,16 +22,20 @@
 
 namespace coffeecnc {
 
-// Messages on their way from other threads to the GTK thread.
+// What other threads hand to the GTK thread: messages for the page and, for the test hooks,
+// work to do there. Everything in it is touched under its mutex only, by whatever thread. The
+// GTK main loop is used to wake the GTK thread and for nothing else: the wake-up carries no
+// data, the GTK thread finds this object itself and takes what waits under the mutex. So the
+// order between the thread that hands something over and the GTK thread that takes it is made
+// by this mutex, not by GLib's own locking, which a sanitizer cannot see into.
 struct Outbox {
   std::mutex mutex;
   std::vector<std::pair<PageToken, std::vector<std::string>>> waiting;
-  // A call on the GTK thread is on its way to take what waits.
+  std::vector<std::function<void()>> work;
+  // A wake-up of the GTK thread is on its way.
   bool scheduled{};
   // The window is gone: nothing is taken any more.
   bool closed{};
-  // GTK thread only.
-  PanelWindow::Impl* window{};
 };
 
 struct PanelWindow::Impl {
@@ -62,6 +67,11 @@ struct PanelWindow::Impl {
   void end_page();
   void reload_later();
   void deliver(PageToken token, const std::vector<std::string>& messages);
+  // Any thread: `work` runs on the GTK thread, in the main loop. Dropped once the window is
+  // closed. For the test hooks.
+  void on_gtk_thread(std::function<void()> work);
+  // GTK thread: takes what waits in the outbox.
+  void drain();
 };
 
 } // namespace coffeecnc

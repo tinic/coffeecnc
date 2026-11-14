@@ -37,28 +37,21 @@ namespace {
 
 using Text = std::expected<std::string, std::string>;
 
-// Runs `work` on the GTK thread and waits for it.
-template <typename Result> auto on_gtk(std::function<Result()> work) -> Result {
-  struct Call {
-    std::function<Result()> work;
-    std::promise<Result> done;
-  };
-  Call call{std::move(work), {}};
-  auto result = call.done.get_future();
-  // Through the main loop: g_main_context_invoke would run it on this thread while no loop runs.
-  g_idle_add_full(
-      G_PRIORITY_DEFAULT,
-      [](gpointer data) -> gboolean {
-        auto* self = static_cast<Call*>(data);
-        if constexpr (std::is_void_v<Result>) {
-          self->work();
-          self->done.set_value();
-        } else {
-          self->done.set_value(self->work());
-        }
-        return G_SOURCE_REMOVE;
-      },
-      &call, nullptr);
+// Runs `work` on the GTK thread and waits for it. The work and its result cross between the
+// threads through the window's outbox and a promise: under locks of this program's own, never
+// as data of a GLib source.
+template <typename Result>
+auto on_gtk(PanelWindow& window, std::function<Result()> work) -> Result {
+  auto done = std::make_shared<std::promise<Result>>();
+  auto result = done->get_future();
+  window.internals().on_gtk_thread([done, work = std::move(work)]() -> void {
+    if constexpr (std::is_void_v<Result>) {
+      work();
+      done->set_value();
+    } else {
+      done->set_value(work());
+    }
+  });
   return result.get();
 }
 
@@ -203,7 +196,7 @@ ShellTestHooks::ShellTestHooks(std::unique_ptr<Impl> impl) : impl_(std::move(imp
 ShellTestHooks::~ShellTestHooks() = default;
 
 auto ShellTestHooks::state() -> State {
-  return on_gtk<State>([this]() -> State {
+  return on_gtk<State>(impl_->window, [this]() -> State {
     const auto& window = impl_->window.internals();
     State state;
     state.page = window.page ? window.page->value : 0;
@@ -233,7 +226,7 @@ auto ShellTestHooks::evaluate(const std::string& body, std::chrono::milliseconds
   auto result = pending->done.get_future();
   const std::string script = "const __value = await (async () => {" + body +
                              "\n})(); return JSON.stringify(__value === undefined ? null : __value);";
-  const bool started = on_gtk<bool>([&]() -> bool {
+  const bool started = on_gtk<bool>(impl_->window, [&]() -> bool {
     WebKitWebView* view = impl_->view();
     if (view == nullptr)
       return false;
@@ -253,7 +246,7 @@ auto ShellTestHooks::snapshot(const std::string& file) -> std::expected<void, st
   auto picture = std::make_shared<Picture>();
   picture->file = file;
   auto result = picture->done.get_future();
-  const bool started = on_gtk<bool>([&]() -> bool {
+  const bool started = on_gtk<bool>(impl_->window, [&]() -> bool {
     WebKitWebView* view = impl_->view();
     if (view == nullptr)
       return false;
@@ -281,7 +274,7 @@ auto ShellTestHooks::pixels(int x, int y, int width, int height)
   auto region = std::make_shared<Region>();
   *region = Region{x, y, width, height, {}};
   auto result = region->done.get_future();
-  const bool started = on_gtk<bool>([&]() -> bool {
+  const bool started = on_gtk<bool>(impl_->window, [&]() -> bool {
     WebKitWebView* view = impl_->view();
     if (view == nullptr)
       return false;
@@ -359,35 +352,35 @@ auto ShellTestHooks::pixels(int x, int y, int width, int height)
 }
 
 void ShellTestHooks::mouse_move(double x, double y) {
-  on_gtk<void>([&]() -> void { mouse(*impl_, GDK_MOTION_NOTIFY, x, y); });
+  on_gtk<void>(impl_->window, [&]() -> void { mouse(*impl_, GDK_MOTION_NOTIFY, x, y); });
 }
 void ShellTestHooks::mouse_press(double x, double y) {
-  on_gtk<void>([&]() -> void { mouse(*impl_, GDK_BUTTON_PRESS, x, y); });
+  on_gtk<void>(impl_->window, [&]() -> void { mouse(*impl_, GDK_BUTTON_PRESS, x, y); });
 }
 void ShellTestHooks::mouse_release(double x, double y) {
-  on_gtk<void>([&]() -> void { mouse(*impl_, GDK_BUTTON_RELEASE, x, y); });
+  on_gtk<void>(impl_->window, [&]() -> void { mouse(*impl_, GDK_BUTTON_RELEASE, x, y); });
 }
 
 void ShellTestHooks::answer_file_chooser(std::vector<std::string> files) {
-  on_gtk<void>([&]() -> void { impl_->chooser_answer = std::move(files); });
+  on_gtk<void>(impl_->window, [&]() -> void { impl_->chooser_answer = std::move(files); });
 }
 
 void ShellTestHooks::reload() {
-  on_gtk<void>([this]() -> void {
+  on_gtk<void>(impl_->window, [this]() -> void {
     if (impl_->view() != nullptr)
       webkit_web_view_reload(impl_->view());
   });
 }
 
 void ShellTestHooks::load(const std::string& uri) {
-  on_gtk<void>([&]() -> void {
+  on_gtk<void>(impl_->window, [&]() -> void {
     if (impl_->view() != nullptr)
       webkit_web_view_load_uri(impl_->view(), uri.c_str());
   });
 }
 
 void ShellTestHooks::close() {
-  on_gtk<void>([this]() -> void { impl_->window.close(); });
+  on_gtk<void>(impl_->window, [this]() -> void { impl_->window.close(); });
 }
 
 auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string> {
@@ -395,7 +388,7 @@ auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string
     GtkWidget* window{};
     WebKitWebView* view{};
   };
-  auto report = on_gtk<Report>([]() -> Report {
+  auto report = on_gtk<Report>(impl_->window, []() -> Report {
     Report made;
     made.window = gtk_offscreen_window_new();
     made.view = WEBKIT_WEB_VIEW(webkit_web_view_new());
@@ -409,7 +402,7 @@ auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string
     std::this_thread::sleep_for(std::chrono::milliseconds{100});
     auto pending = std::make_shared<Pending>();
     auto result = pending->done.get_future();
-    on_gtk<void>([&]() -> void {
+    on_gtk<void>(impl_->window, [&]() -> void {
       constexpr std::string_view script =
           "return document.readyState === 'complete' ? document.body.innerText : '';";
       webkit_web_view_call_async_javascript_function(
@@ -423,12 +416,12 @@ auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string
       break;
     }
   }
-  on_gtk<void>([&]() -> void { gtk_widget_destroy(report.window); });
+  on_gtk<void>(impl_->window, [&]() -> void { gtk_widget_destroy(report.window); });
   return text;
 }
 
 void ShellTestHooks::deliver_from_page(const std::string& raw) {
-  on_gtk<void>([&]() -> void { impl_->window.internals().receive(raw); });
+  on_gtk<void>(impl_->window, [&]() -> void { impl_->window.internals().receive(raw); });
 }
 
 void ShellTestHooks::post(std::uint64_t page, std::vector<std::string> messages) {

@@ -32,7 +32,9 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     # One valid example of every panel command, as the panel serialises it.
     target_compile_definitions(coffeecnc_fixture_tests PRIVATE
-      COFFEECNC_COMMAND_FIXTURES="${PROJECT_SOURCE_DIR}/../protocol/fixtures/commands.json")
+      COFFEECNC_COMMAND_FIXTURES="${PROJECT_SOURCE_DIR}/../protocol/fixtures/commands.json"
+      # At least one valid example of every message and variant the panel is sent.
+      COFFEECNC_MESSAGE_FIXTURES="${PROJECT_SOURCE_DIR}/../protocol/fixtures/messages.json")
     coffeecnc_enable_analyzers(coffeecnc_fixture_tests)
     add_test(NAME protocol_fixtures COMMAND coffeecnc_fixture_tests)
     add_executable(coffeecnc_response_tests tests/response_tests.cpp)
@@ -40,6 +42,22 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_response_tests)
     add_test(NAME response_encoding COMMAND coffeecnc_response_tests)
+    add_executable(coffeecnc_message_tests tests/message_tests.cpp)
+    target_link_libraries(coffeecnc_message_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_message_tests)
+    add_test(NAME message_encoding COMMAND coffeecnc_message_tests)
+    add_executable(coffeecnc_publisher_tests tests/publisher_tests.cpp)
+    target_link_libraries(coffeecnc_publisher_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_publisher_tests)
+    add_test(NAME status_publishing COMMAND coffeecnc_publisher_tests)
+    add_executable(coffeecnc_program_store_tests tests/program_store_tests.cpp)
+    target_link_libraries(coffeecnc_program_store_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options)
+    coffeecnc_enable_analyzers(coffeecnc_program_store_tests)
+    # The std::filesystem implementation is tested on a directory the test makes below this one.
+    add_test(NAME program_store COMMAND coffeecnc_program_store_tests ${PROJECT_BINARY_DIR})
     add_executable(coffeecnc_session_tests tests/session_tests.cpp)
     target_link_libraries(coffeecnc_session_tests PRIVATE coffeecnc_app coffeecnc_project_options
       nlohmann_json::nlohmann_json)

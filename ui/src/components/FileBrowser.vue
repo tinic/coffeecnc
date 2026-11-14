@@ -57,8 +57,9 @@ onMounted(() => {
         <span v-if="entry.kind === 'file'" class="meta mono">{{ formatBytes(entry.bytes) }}</span>
         <span class="meta mono">{{ formatDate(entry.modified) }}</span>
       </button>
-      <p v-if="directory !== null && directory.entries.length === 0" class="hint">This directory is empty.</p>
+      <p v-if="directory !== null && directory.entries.length === 0" class="hint">{{ directory.truncated ? 'No entries shown in this partial listing.' : 'This directory is empty.' }}</p>
     </div>
+    <p v-if="directory?.truncated" class="hint" role="status">Partial directory listing · Some entries are not shown.</p>
     <p v-if="panel.status?.interp !== 'idle'" class="blocked">A program is running: the machine will refuse to open another.</p>
   </ModalDialog>
 </template>

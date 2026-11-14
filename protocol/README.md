@@ -37,3 +37,15 @@ Homing policy does not redefine `AxisStatus.homed`, establish a physical origin,
 Signal availability must come from explicit configuration, not the existence/default zero value of an unwired HAL pin. A stale link makes readings stale even when their numeric/bool fields remain populated. The browser simulator emits explicit null for all three feedback fields; it does not synthesize measurements from spindle commands. Sensor UI presentation and native signal mapping are subsequent increments.
 
 The browser simulator supports policy-only capability overrides for tests. They exercise asymmetric jog rates and homing requirements without claiming to simulate G0759 mechanics or its hardware. The real machine-definition review is in [`docs/machines/g0759.md`](../docs/machines/g0759.md).
+
+## Program text and directory completeness
+
+`program.truncated` and `directory.truncated` are additive optional booleans. New native encoders emit them explicitly. True means the supplied text/listing is partial; the panel keeps a visible notice beside the affected view. A partial program's supplied line count is not its total length, and text delivery limits do not shorten the program LinuxCNC executes. Preview generation must use the complete source independently. The existing simulator sends complete snapshots; absent/false retains the complete-snapshot presentation for older v1 peers.
+
+A live `status.program.file: null` means no program is loaded; no separate empty `program` message is needed. The panel clears cached text on live unload or when path/revision differs. Program text may arrive before its matching status. Stale/down placeholder status does not erase historical text, but text is shown as current only when both path and revision match.
+
+Directory paths and parents are canonical paths within the configured program root. Relative requests resolve from that root. A limited listing need not be a globally sorted prefix; entries omitted because of the enumeration limit may sort before those displayed. Canonical pathname validation alone does not establish immutable file identity between validation, preview and LinuxCNC opening the file.
+
+## Preview identity
+
+`preview_context` is an opaque integer token, compared only for equality. It must change when any input used to compute the path changes: program identity/reload, work offsets and rotations, G92, relevant tool data, block delete, and the interpreter's start state. That start snapshot includes active WCS, units, distance mode, loaded tool/active tool offset and any other modal, parameter or initial-position input consumed by the preview interpreter. Freeze the start snapshot while the corresponding program runs; live progress through its modal changes is not a new starting condition. The earlier list in the TypeScript comment was illustrative, not an exhaustive restriction on invalidation inputs.

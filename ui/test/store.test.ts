@@ -261,6 +261,35 @@ describe('link', () => {
 })
 
 describe('what the machine sends', () => {
+  it('clears obsolete text on live unload, replacement and reload, preserving matching snapshots', () => {
+    const { panel, receive, status } = rig()
+    const program = { type: 'program', file: '/parts/a.ngc', revision: 1, lines: ['G0 X1'] } as const
+    const loaded = status({ program: { ...status().program, file: program.file, revision: 1 } })
+    const text = (): void => { receive({ ...program, lines: [...program.lines] }) }
+    text(); receive(loaded)
+    expect(panel.state.program?.lines).toEqual(['G0 X1'])
+    receive({ ...loaded, program: { ...loaded.program, file: null } })
+    expect(panel.state.program).toBeNull()
+    text()
+    receive({ ...loaded, program: { ...loaded.program, file: '/parts/b.ngc' } })
+    expect(panel.state.program).toBeNull()
+    text()
+    receive({ ...loaded, program: { ...loaded.program, revision: 2 } })
+    expect(panel.state.program).toBeNull()
+    receive({ ...program, revision: 2, lines: ['G0 X2'], truncated: true })
+    receive({ ...loaded, program: { ...loaded.program, revision: 2 } })
+    expect(panel.state.program).toMatchObject({ revision: 2, lines: ['G0 X2'], truncated: true })
+  })
+
+  it('keeps historical text when stale/down statuses contain no loaded program', () => {
+    const { panel, receive, status } = rig()
+    receive({ type: 'program', file: '/parts/a.ngc', revision: 1, lines: ['M2'] })
+    for (const link of ['stale', 'down'] as const) {
+      receive(status({ link, program: { ...status().program, file: null, revision: 0 } }))
+      expect(panel.state.program?.file).toBe('/parts/a.ngc')
+    }
+  })
+
   it('is kept: hello, tools, offsets, program, preview, directory, messages', () => {
     const { panel, receive } = rig()
     const sim = new SimMachine({ emit: receive, clock: (): number => 42 })

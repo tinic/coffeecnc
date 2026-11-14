@@ -315,6 +315,12 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'status':
         state.status = message
+        // A live status identifies the loaded program. Down/stale placeholders must not erase
+        // text being read as history; snapshots may also arrive before their matching status.
+        if (message.link === 'live' && (message.program.file === null ||
+          state.program?.file !== message.program.file || state.program.revision !== message.program.revision)) {
+          state.program = null
+        }
         lastStatusAt = now()
         updateLink()
         break

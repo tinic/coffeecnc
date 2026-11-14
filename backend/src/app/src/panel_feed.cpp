@@ -155,11 +155,13 @@ void PanelFeed::loop() {
     next += period;
     if (const auto after = std::chrono::steady_clock::now(); next < after)
       next = after;
-    // Woken before the period is over: a page has become ready, or this is the end, which
-    // the next pass sees.
+    // Woken before the period is over: a page has become ready, or this is the end. After
+    // the end no reading is begun.
     std::unique_lock lock{mutex_};
     if (wake_.wait_until(lock, next, [&]() -> bool { return stop_ || ready_; }))
       next = std::chrono::steady_clock::now();
+    if (stop_)
+      return;
   }
 }
 

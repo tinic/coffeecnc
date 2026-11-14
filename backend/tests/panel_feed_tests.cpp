@@ -348,6 +348,35 @@ void feed_thread() {
   require(delivered.total() == after, "The destructor has ended the thread");
 }
 
+// Ending the feed while it sleeps between two readings begins no further reading: a reading
+// can block in the tool data memory or the file system, and shutdown must not wait for one
+// that nobody needs.
+void feed_stops_without_another_reading() {
+  for (int round = 0; round < 10; ++round) {
+    Source source;
+    int before = 0;
+    std::chrono::steady_clock::duration took{};
+    {
+      const PanelFeed feed{source, [](PageToken, const std::vector<std::string>&) -> void {}};
+      // Just after a reading: the feed now sleeps for most of a period.
+      const int seen = source.reads();
+      while (source.reads() < seen + 2)
+        std::this_thread::sleep_for(1ms);
+      std::this_thread::sleep_for(5ms);
+      before = source.reads();
+      const auto asked = std::chrono::steady_clock::now();
+      // The destructor runs here.
+      took = asked.time_since_epoch();
+    }
+    took = std::chrono::steady_clock::now().time_since_epoch() - took;
+    std::this_thread::sleep_for(60ms);
+    require(source.reads() == before,
+            "No reading is begun once the feed was told to stop: " + std::to_string(before) +
+                " before, " + std::to_string(source.reads()) + " after");
+    require(took < 25ms, "A sleeping feed ends at once, not at the end of its period");
+  }
+}
+
 } // namespace
 
 auto main() -> int {
@@ -357,6 +386,7 @@ auto main() -> int {
     messages_wait_for_a_page();
     a_status_that_cannot_be_sent();
     feed_thread();
+    feed_stops_without_another_reading();
     std::cout << checks << " panel feed checks passed\n";
     return 0;
   } catch (const std::exception& error) {

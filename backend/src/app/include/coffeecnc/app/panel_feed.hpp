@@ -6,6 +6,7 @@
 #include <coffeecnc/core/panel_messages.hpp>
 #include <coffeecnc/core/panel_source.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -98,7 +99,8 @@ public:
 
   // The source must outlive the feed. Starts the thread.
   PanelFeed(PanelSource& source, Deliver deliver);
-  // Joins the thread: returns when the reading in progress has returned.
+  // Joins the thread: returns when the reading in progress has returned. No reading is begun
+  // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
   PanelFeed(const PanelFeed&) = delete;
   auto operator=(const PanelFeed&) -> PanelFeed& = delete;
@@ -119,7 +121,8 @@ private:
   std::optional<PageToken> page_;
   // A `ready` has not been answered with snapshots yet.
   bool ready_{};
-  bool stop_{};
+  // Written under the mutex, so that the sleeping thread cannot miss it.
+  std::atomic<bool> stop_{};
   std::thread thread_;
 };
 

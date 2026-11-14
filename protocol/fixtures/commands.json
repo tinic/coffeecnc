@@ -1,0 +1,130 @@
+[
+  {
+    "id": 1,
+    "type": "ready"
+  },
+  {
+    "id": 2,
+    "type": "set_machine",
+    "state": "on"
+  },
+  {
+    "id": 3,
+    "type": "home",
+    "axis": "all"
+  },
+  {
+    "id": 4,
+    "type": "jog",
+    "axis": "x",
+    "direction": -1,
+    "velocity": 1500,
+    "held": true
+  },
+  {
+    "id": 5,
+    "type": "jog_step",
+    "axis": "z",
+    "distance": -0.1,
+    "velocity": 600
+  },
+  {
+    "id": 6,
+    "type": "jog_stop_all"
+  },
+  {
+    "id": 7,
+    "type": "mdi",
+    "text": "G0 X10 Y-5.5"
+  },
+  {
+    "id": 8,
+    "type": "list_directory",
+    "path": null
+  },
+  {
+    "id": 9,
+    "type": "open_program",
+    "path": "/home/cnc/nc_files/part.ngc"
+  },
+  {
+    "id": 10,
+    "type": "run"
+  },
+  {
+    "id": 11,
+    "type": "pause"
+  },
+  {
+    "id": 12,
+    "type": "resume"
+  },
+  {
+    "id": 13,
+    "type": "step"
+  },
+  {
+    "id": 14,
+    "type": "abort"
+  },
+  {
+    "id": 15,
+    "type": "set_override",
+    "which": "feed",
+    "value": 0.85
+  },
+  {
+    "id": 16,
+    "type": "set_spindle",
+    "direction": "forward",
+    "rpm": 6000
+  },
+  {
+    "id": 17,
+    "type": "set_coolant",
+    "flood": true,
+    "mist": false
+  },
+  {
+    "id": 18,
+    "type": "set_program_option",
+    "option": "optional_stop",
+    "on": true
+  },
+  {
+    "id": 19,
+    "type": "select_wcs",
+    "wcs": 2
+  },
+  {
+    "id": 20,
+    "type": "touch_off",
+    "axis": "y",
+    "value": 0
+  },
+  {
+    "id": 21,
+    "type": "tool_touch_off",
+    "value": 25.4
+  },
+  {
+    "id": 22,
+    "type": "set_tool",
+    "tool": {
+      "number": 3,
+      "pocket": 3,
+      "length": 48.2,
+      "diameter": 6,
+      "comment": "End mill 6 mm"
+    }
+  },
+  {
+    "id": 23,
+    "type": "remove_tool",
+    "number": 3
+  },
+  {
+    "id": 24,
+    "type": "tool_changed"
+  }
+]

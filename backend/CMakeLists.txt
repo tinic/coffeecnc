@@ -24,5 +24,15 @@ if(BUILD_TESTING)
     target_link_libraries(coffeecnc_request_tests PRIVATE coffeecnc_app coffeecnc_project_options)
     coffeecnc_enable_analyzers(coffeecnc_request_tests)
     add_test(NAME request_boundary COMMAND coffeecnc_request_tests)
+    # The tests below read wire text back with the JSON library the app layer keeps private.
+    find_package(nlohmann_json 3.11 REQUIRED)
+    add_executable(coffeecnc_fixture_tests tests/fixture_tests.cpp)
+    target_link_libraries(coffeecnc_fixture_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    # One valid example of every panel command, as the panel serialises it.
+    target_compile_definitions(coffeecnc_fixture_tests PRIVATE
+      COFFEECNC_COMMAND_FIXTURES="${PROJECT_SOURCE_DIR}/../protocol/fixtures/commands.json")
+    coffeecnc_enable_analyzers(coffeecnc_fixture_tests)
+    add_test(NAME protocol_fixtures COMMAND coffeecnc_fixture_tests)
   endif()
 endif()

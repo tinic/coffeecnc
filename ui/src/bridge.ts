@@ -3,7 +3,8 @@
 // Inside the coffeecnc executable the page talks to C++ in-process: commands go out through
 // WebKit's script message handler `coffeecnc`, and the executable calls
 // `window.coffeecncReceive(message)` with every message for the page. There is no network socket.
-// In a plain browser (UI development) the built-in simulator answers instead.
+// In a plain browser (UI development) the built-in simulator answers instead. The native
+// coffeecnc: URL never falls back to simulated machine state if its handler is missing.
 
 import type { FromMachine, ToMachine } from './protocol'
 import { createSimulator, type SimulatorControls } from './sim'
@@ -49,5 +50,20 @@ function webkitTransport(handler: ScriptMessageHandler): Transport {
 
 export function createTransport(): Transport {
   const handler = window.webkit?.messageHandlers?.coffeecnc
-  return handler ? webkitTransport(handler) : createSimulator(new URLSearchParams(window.location.search))
+  if (typeof handler?.postMessage === 'function') return webkitTransport(handler)
+  if (window.location.protocol === 'coffeecnc:') {
+    const listeners: Listener[] = []
+    return {
+      simulated: false,
+      listen: (listener): void => { listeners.push(listener) },
+      send: (message): void => {
+        // A local refusal: no request reached the controller and no machine state is known.
+        for (const listener of listeners) {
+          listener({ type: 'result', id: message.id, outcome: 'rejected',
+            reason: 'CoffeeCNC cannot connect to its native controller. Restart the application.' })
+        }
+      },
+    }
+  }
+  return createSimulator(new URLSearchParams(window.location.search))
 }

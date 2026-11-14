@@ -46,7 +46,6 @@ export class JogHold<K> {
     if (!stillHeld()) {
       return false
     }
-    this.sink.send(key, true)
     const timer = this.timers.setInterval(() => {
       if (stillHeld()) {
         this.sink.send(key, true)
@@ -55,7 +54,10 @@ export class JogHold<K> {
       }
     }, refreshMs)
     this.holds.set(key, timer)
-    return true
+    // A transport can reject synchronously. Register the hold before sending so its result
+    // listener can release it without leaving a refresh timer behind.
+    this.sink.send(key, true)
+    return this.holds.has(key)
   }
 
   release(key: K): void {

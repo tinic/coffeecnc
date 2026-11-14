@@ -75,6 +75,22 @@ function setup(): { hold: JogHold<Key>; timers: FakeTimers; sent: [Key, boolean]
 const never = (): boolean => false
 
 describe('jog hold with a mouse', () => {
+  it('a synchronous refusal cannot leave a refresh timer running', () => {
+    const timers = new FakeTimers()
+    const sent: boolean[] = []
+    const hold = new JogHold<Key>({
+      send: (key, held): void => {
+        sent.push(held)
+        if (held) hold.release(key)
+      },
+    }, timers)
+    expect(hold.press('x+', () => true)).toBe(false)
+    timers.tick()
+    expect(sent).toEqual([true, false])
+    expect(timers.active.size).toBe(0)
+    expect(hold.any).toBe(false)
+  })
+
   it('jogs while the button is held and stops on release', () => {
     const { hold, timers, sent } = setup()
     const stillHeld = capturedPress(new FakeButton(), 1)

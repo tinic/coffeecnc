@@ -107,7 +107,7 @@ export interface Panel {
   send: (command: CommandBody) => number
   start: () => void
   stop: () => void
-  /** Calls `listener` with every command result; returns a function that removes it. */
+  /** Reports command results, including local timeouts; returns a listener removal function. */
   onResult: (listener: ResultListener) => () => void
   dismissNotice: () => void
   setSimulatorFault: (fault: LinkFault) => void
@@ -352,13 +352,9 @@ export function createPanel(options: PanelOptions): Panel {
     const time = now()
     for (const [id, entry] of pending) {
       if (time - entry.sent > answerTimeoutMs) {
-        pending.delete(id)
-        const mdi = state.mdi.find((candidate) => candidate.id === id)
-        if (mdi !== undefined) {
-          mdi.outcome = 'timed_out'
-          mdi.reason = 'No answer from the machine'
-        }
-        log('error', 'No answer from the machine', describeCommand(entry.command), time)
+        // A local deadline must also end held controls through their result listeners. It
+        // does not prove the controller cancelled the command; a release is still necessary.
+        result({ type: 'result', id, outcome: 'timed_out', reason: 'No answer from the machine' })
       }
     }
   }

@@ -176,7 +176,7 @@ struct ProgramText {
   std::uint64_t revision{};
   std::string file;
   std::vector<std::string> lines;
-  // The file is longer than `lines`. Not on the wire: protocol v1 has no field for it.
+  // The file is longer than `lines`. Always sent.
   bool truncated{};
   friend auto operator==(const ProgramText&, const ProgramText&) -> bool = default;
 };
@@ -235,7 +235,7 @@ struct Directory {
   std::string path;
   std::optional<std::string> parent; // empty at the top of the program directory
   std::vector<DirectoryEntry> entries;
-  // The directory holds more than `entries`. Not on the wire: protocol v1 has no field for it.
+  // The directory holds more than `entries`. Always sent.
   bool truncated{};
   friend auto operator==(const Directory&, const Directory&) -> bool = default;
 };

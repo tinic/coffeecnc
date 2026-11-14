@@ -17,7 +17,8 @@ auto same_tool(const Tool& a, const Tool& b) -> bool {
 // Equal for the path: tool comments do not count.
 auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
   return a.program_file == b.program_file && a.program_revision == b.program_revision &&
-         a.systems == b.systems && a.g92 == b.g92 && a.start == b.start &&
+         a.systems == b.systems && a.g92 == b.g92 && a.block_delete == b.block_delete &&
+         a.start == b.start &&
          std::ranges::equal(a.tools, b.tools, same_tool);
 }
 

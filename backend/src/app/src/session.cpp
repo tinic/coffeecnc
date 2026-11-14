@@ -229,7 +229,8 @@ auto Session::perform(const Command& command, const Decision& decision,
         } else if constexpr (std::is_same_v<T, Mdi>) {
           return mdi(c.text);
         } else if constexpr (std::is_same_v<T, OpenProgram>) {
-          // LinuxCNC gets the resolved path: what was checked is what it opens.
+          // LinuxCNC gets the resolved path. It opens the file itself, later: a path that is
+          // changed between this check and that open is not caught here.
           if (programs_ == nullptr)
             return reply(port_.open_program(c.path));
           const auto file = programs_->resolve_program(c.path);

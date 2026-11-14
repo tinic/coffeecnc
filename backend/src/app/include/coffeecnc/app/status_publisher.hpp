@@ -17,11 +17,17 @@ namespace coffeecnc {
 struct InterpreterStart {
   int wcs{1}; // active work coordinate system, 1 is G54
   LengthUnit program_units{LengthUnit::mm};
-  bool block_delete{};
+  Vec3 position{}; // machine position the first move starts from, mm
   int tool_in_spindle{};
+  std::optional<int> tool_prepared;
   Vec3 tool_offset{};
-  // Active modal codes as LinuxCNC reports them (distance mode, plane, feed mode, ...).
+  // Active modal codes as LinuxCNC reports them (motion and distance mode, plane, feed mode, ...).
   std::vector<std::string> active_codes;
+  // Settings the codes do not carry: the F and S words in effect.
+  double feed{};
+  double spindle_speed{};
+  // Identity of the interpreter's parameter file contents (numbered and named parameters).
+  std::uint64_t parameters_revision{};
   friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
 };
 
@@ -34,6 +40,9 @@ struct PreviewInputs {
   Vec3 g92{};
   // Number, pocket, length and diameter count, in table order. The comment does not.
   std::vector<Tool> tools;
+  // Not part of the start state: the operator can change it during a pause, and it changes
+  // which blocks the rest of the program runs.
+  bool block_delete{};
   InterpreterStart start;
 };
 

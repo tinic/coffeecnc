@@ -192,7 +192,8 @@ void preview_contexts() {
   inputs.g92 = {0, 0, 3.5};
   inputs.tools = {{3, 3, 48.2, 6, "End mill"}, {4, 4, 61.75, 3.175, ""}};
 
-  inputs.start = {1, LengthUnit::mm, false, 3, {0, 0, 48.2}, {"G1", "G17", "G21", "G54", "G90"}};
+  inputs.start = {1,     LengthUnit::mm, {10, 20, 30}, 3,    std::nullopt, {0, 0, 48.2},
+                  {"G1", "G17", "G21", "G54", "G90"},  600,  6000,         7};
 
   PreviewContext counter;
   const auto context = counter.update(inputs, false);
@@ -226,7 +227,14 @@ void preview_contexts() {
       {"the active work system (G54 to G55)", [](PreviewInputs& i) -> void { i.start.wcs = 2; }},
       {"the program unit",
        [](PreviewInputs& i) -> void { i.start.program_units = LengthUnit::inch; }},
-      {"block delete", [](PreviewInputs& i) -> void { i.start.block_delete = true; }},
+      {"block delete", [](PreviewInputs& i) -> void { i.block_delete = true; }},
+      {"the start position (a jog)", [](PreviewInputs& i) -> void { i.start.position[0] = 11; }},
+      {"the prepared tool", [](PreviewInputs& i) -> void { i.start.tool_prepared = 4; }},
+      {"the feed in effect", [](PreviewInputs& i) -> void { i.start.feed = 900; }},
+      {"the spindle speed in effect",
+       [](PreviewInputs& i) -> void { i.start.spindle_speed = 8000; }},
+      {"the interpreter parameters",
+       [](PreviewInputs& i) -> void { ++i.start.parameters_revision; }},
       {"the loaded tool", [](PreviewInputs& i) -> void { i.start.tool_in_spindle = 4; }},
       {"the tool offset in effect", [](PreviewInputs& i) -> void { i.start.tool_offset[2] = 0; }},
       {"the distance mode",
@@ -252,9 +260,13 @@ void preview_contexts() {
 
   // While the program runs its own G55, tool change and G91 are not a new start state.
   auto during = inputs;
-  during.start = {2, LengthUnit::inch, false, 4, {0, 0, 61.75}, {"G1", "G55", "G91"}};
+  during.start = {2, LengthUnit::inch, {55, 5, -2}, 4, 5, {0, 0, 61.75}, {"G1", "G55", "G91"},
+                  150, 12000, 8};
   require(counter.update(during, true) == expected,
           "The start state is frozen while the program runs");
+  during.block_delete = true;
+  require(counter.update(during, true) == ++expected,
+          "Block delete switched during a run or a pause counts at once");
   auto offset_changed = during;
   offset_changed.systems.at(1).offset[1] = 55;
   require(counter.update(offset_changed, true) == ++expected,

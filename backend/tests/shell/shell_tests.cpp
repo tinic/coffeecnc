@@ -1013,6 +1013,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         compiled.dump());
   check("wasm_streaming_compilation", compiled.value("streaming", false), compiled.dump());
   check("secure_context", compiled.value("secureContext", false), compiled.dump());
+  status_gaps(rig, "platform.wasm_compile");
 
   const auto gl = rig.js(R"(
       const out = {};
@@ -1033,6 +1034,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
       out.webgl1 = !!document.createElement('canvas').getContext('webgl');
       return out;)");
   fact("webgl", gl.dump());
+  status_gaps(rig, "platform.webgl_context");
   // The graphics libraries the web process has loaded: WebKit hides the renderer's name from
   // the page.
   for (const auto pid : descendants("WebKitWebProcess"))
@@ -1041,6 +1043,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
                                "/proc/{}/maps | sort -u | tr '\\n' ' '",
                                pid)));
   const auto graphics = rig.hooks.graphics_report();
+  status_gaps(rig, "platform.graphics_report");
   fact("webkit_gpu", graphics ? word(*graphics).substr(0, 3000) : "unavailable: " + graphics.error());
   fact("graphics_environment",
        std::format("WEBKIT_DISABLE_DMABUF_RENDERER={} WEBKIT_DISABLE_COMPOSITING_MODE={} "
@@ -1058,6 +1061,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
       for (const face of [...document.fonts]) { try { await face.load(); loads.push(face.family + ' ' + face.weight + ': ' + face.status); } catch (e) { loads.push(face.family + ': ' + String(e)); } }
       return { faces, used, loads, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length };)", 30s);
   fact("fonts", fonts.dump());
+  status_gaps(rig, "platform.fonts");
   check("bundled_fonts_load", fonts.at("faces").empty()
                                   ? false
                                   : fonts.at("loaded").get<std::size_t>() == fonts.at("faces").size(),
@@ -1075,6 +1079,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         worker.postMessage(bytes, [bytes]);
       }});)", worker), 60s);
   fact("module_worker", direct.dump());
+  status_gaps(rig, "platform.module_worker");
   check("module_worker_starts_and_instantiates_wasm",
         direct.contains("reply") && direct.at("reply").at("ok") == false, direct.dump());
 
@@ -1127,6 +1132,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   };
   auto result = import(sm101, 60s);
   fact("step_sm101", result.dump());
+  status_gaps(rig, "platform.import_sm101");
   // (a) Import only: the panel's file input and WebKit's chooser request, the module worker,
   // the WebAssembly importer, and the geometry it returns. Nothing here draws the part.
   check("step_import_panel_ready", result.at("panel_ready") == true, result.dump());
@@ -1150,10 +1156,12 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         result.at("summary").dump());
   // Cancelling the chooser leaves the attachment alone; choosing the same file again works.
   const auto cancelled = import({}, 1s);
+  status_gaps(rig, "platform.import_cancel");
   check("step_import_chooser_cancel_keeps_attachment",
         cancelled.at("chooser") == true && cancelled.at("identity") == result.at("identity"),
         cancelled.dump());
   const auto same = import(sm101, 60s);
+  status_gaps(rig, "platform.import_same");
   check("step_import_same_file_again", same.value("finished", false) &&
                                            same.at("panel_ready") == true &&
                                            same.at("chooser") == true &&
@@ -1162,6 +1170,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         same.dump());
   const auto block = import(samples / "upstream/camcraft/fixtures/step/ops_block.step", 60s);
   fact("step_ops_block", block.dump());
+  status_gaps(rig, "platform.import_ops_block");
   check("step_import_centimetre_source_units",
         block.value("finished", false) &&
             block.at("identity").get<std::string>().starts_with("ops_block.step") &&
@@ -1170,6 +1179,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         block.at("size").dump());
   const auto lego = import(samples / "upstream/camcraft/fixtures/step/lego_4x2_01.step", 60s);
   fact("step_lego", lego.dump());
+  status_gaps(rig, "platform.import_lego");
   check("step_import_inch_source_units",
         lego.value("finished", false) &&
             lego.at("identity").get<std::string>().starts_with("lego_4x2_01.step") &&
@@ -1183,6 +1193,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   write(invalid_file, "ISO-10303-21;\nthis is not a model\n");
   const auto invalid = import(invalid_file, 60s);
   fact("step_invalid", invalid.dump());
+  status_gaps(rig, "platform.import_invalid");
   check("step_import_invalid_file_keeps_attachment",
         invalid.value("finished", false) && invalid.at("error") != "" &&
             invalid.at("identity") == lego.at("identity"),
@@ -1208,6 +1219,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
     rendering = rendering || (canvas.value("webgl2", false) && !canvas.value("lost", true));
   check("step_overlay_scene_context_alive", rendering, layer.dump());
   rig.snapshot("step-model");
+  status_gaps(rig, "platform.snapshot");
   check("no_console_errors_after_step", rig.js("return __t.errors.length;") == 0, rig.errors());
   fact("page_errors_after_step", rig.errors());
 
@@ -1248,6 +1260,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
           drawn ? std::format("drawn_pixels={}_of_{}", drawn->drawn, drawn->total) : drawn.error());
   }
   rig.snapshot("tool-model");
+  status_gaps(rig, "platform.tool_model");
   check("panel_closes_tool_model", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
   rig.snapshot("tools-tab");
   // The work offset table of the Tools tab: only the active system has numbers.

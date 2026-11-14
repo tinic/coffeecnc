@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.25)
+project(coffeecnc_backend VERSION 0.1.0 LANGUAGES CXX)
+
+if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
+  message(FATAL_ERROR "Use an out-of-source build: cmake -S backend -B build/backend")
+endif()
+
+add_library(coffeecnc_core src/core/command_policy.cpp src/core/jog_lease.cpp)
+target_include_directories(coffeecnc_core PUBLIC include)
+target_compile_features(coffeecnc_core PUBLIC cxx_std_23)
+set_target_properties(coffeecnc_core PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(coffeecnc_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(coffeecnc_core_tests tests/core_tests.cpp)
+  target_link_libraries(coffeecnc_core_tests PRIVATE coffeecnc_core)
+  add_test(NAME core_behavior COMMAND coffeecnc_core_tests)
+endif()

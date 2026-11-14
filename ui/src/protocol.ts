@@ -178,7 +178,8 @@ export interface PreviewSegment {
   tool: number
   /**
    * Polyline of tool tip positions in machine coordinates (the controlled point less the tool
-   * offset in effect), flattened x, y, z; arcs arrive tessellated.
+   * offset in effect), flattened x, y, z; arcs arrive tessellated. The executable applies the tool
+   * offset exactly once; the panel never applies offsets to preview points.
    */
   points: number[]
 }

@@ -117,29 +117,33 @@ function rotation(m: Modal): number {
   return ((m.rotations[m.wcs - 1] ?? 0) * Math.PI) / 180
 }
 
-/** Program (work) coordinates to machine coordinates. */
+/**
+ * Program (work) coordinates to machine coordinates, in LinuxCNC's order (emccanon.cc,
+ * rotate_and_offset_pos): add G92, rotate XY, add G5x, then add the tool offset. The tool offset
+ * is outside the rotation.
+ */
 export function toMachine(m: Modal, p: Vec3): Vec3 {
   const g5x = workOffset(m)
   const a = rotation(m)
-  const x = p[0] + m.g92[0] + m.toolOffset[0]
-  const y = p[1] + m.g92[1] + m.toolOffset[1]
+  const x = p[0] + m.g92[0]
+  const y = p[1] + m.g92[1]
   return [
-    x * Math.cos(a) - y * Math.sin(a) + g5x[0],
-    x * Math.sin(a) + y * Math.cos(a) + g5x[1],
-    p[2] + m.g92[2] + m.toolOffset[2] + g5x[2],
+    x * Math.cos(a) - y * Math.sin(a) + g5x[0] + m.toolOffset[0],
+    x * Math.sin(a) + y * Math.cos(a) + g5x[1] + m.toolOffset[1],
+    p[2] + m.g92[2] + g5x[2] + m.toolOffset[2],
   ]
 }
 
-/** Machine coordinates to program (work) coordinates. */
+/** Machine coordinates to program (work) coordinates: the inverse of `toMachine`. */
 export function toWork(m: Modal, p: Vec3): Vec3 {
   const g5x = workOffset(m)
   const a = rotation(m)
-  const x = p[0] - g5x[0]
-  const y = p[1] - g5x[1]
+  const x = p[0] - m.toolOffset[0] - g5x[0]
+  const y = p[1] - m.toolOffset[1] - g5x[1]
   return [
-    x * Math.cos(a) + y * Math.sin(a) - m.g92[0] - m.toolOffset[0],
-    -x * Math.sin(a) + y * Math.cos(a) - m.g92[1] - m.toolOffset[1],
-    p[2] - g5x[2] - m.g92[2] - m.toolOffset[2],
+    x * Math.cos(a) + y * Math.sin(a) - m.g92[0],
+    -x * Math.sin(a) + y * Math.cos(a) - m.g92[1],
+    p[2] - m.toolOffset[2] - g5x[2] - m.g92[2],
   ]
 }
 

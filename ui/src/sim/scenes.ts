@@ -11,7 +11,7 @@
 //   paused         as running, then feed hold
 //   toolchange     demo program waiting for the second tool
 //   optstop        demo program paused at its M1
-//   dwell          drilling program in a G4 dwell
+//   dwell          a long G4 dwell from MDI, after part of the drilling program
 //   failed-preview upstream sample loaded; its preview fails
 //   error          upstream sample started; the interpreter error stopped it
 //   limit          program stopped by a soft limit
@@ -156,8 +156,11 @@ export function applyScene(sim: SimMachine, name: string): void {
       d.until((status) => status.wait.kind === 'paused')
       break
     case 'dwell':
+      // A long dwell from MDI: one in a program is over before anyone looks.
       d.run(drill)
-      d.until((status) => status.wait.kind === 'dwell')
+      d.until((status) => status.program.motion_line >= 13)
+      d.send({ type: 'abort' })
+      d.send({ type: 'mdi', text: 'G4 P600' })
       sim.advance(120)
       break
     case 'failed-preview':

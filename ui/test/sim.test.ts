@@ -195,8 +195,8 @@ describe('jogging', () => {
     const y = r.status().axes[1]?.machine
     r.sim.advance(100)
     expect(r.status().axes[1]?.machine).toBe(y)
-    r.send({ type: 'jog', axis: 'y', direction: 1, velocity: 600, held: true })
     r.send({ type: 'jog_step', axis: 'x', distance: 50, velocity: 600 })
+    r.send({ type: 'jog', axis: 'y', direction: 1, velocity: 600, held: true })
     r.sim.advance(60)
     r.send({ type: 'jog_stop_all' })
     const before = machinePosition(r.status())
@@ -223,6 +223,47 @@ describe('jogging', () => {
     r.send({ type: 'jog_step', axis: 'z', distance: -0.01, velocity: 600 })
     r.sim.advance(1000)
     expect(machinePosition(r.status())).toEqual([1, 0, -0.01])
+  })
+
+  it('refuses an incremental jog while the machine is not in position', () => {
+    const r = rig()
+    r.home()
+    const step = { type: 'jog_step', axis: 'x', distance: 1, velocity: 600 } as const
+    expect(r.send(step).outcome).toBe('accepted')
+    r.sim.advance(40)
+    expect(r.status().motion.in_position).toBe(false)
+    expect(r.send(step)).toMatchObject({
+      outcome: 'rejected',
+      reason: 'Wait for motion to stop before an incremental jog.',
+    })
+    expect(r.send({ ...step, axis: 'y' }).reason).toBe('Wait for motion to stop before an incremental jog.')
+    r.sim.advance(1000)
+    // The refused steps were not queued: one step was made.
+    expect(machinePosition(r.status())).toEqual([1, 0, 0])
+    expect(r.status().motion.in_position).toBe(true)
+    r.send({ type: 'jog', axis: 'y', direction: 1, velocity: 600, held: true })
+    expect(r.send(step).reason).toBe('Wait for motion to stop before an incremental jog.')
+    r.send({ type: 'jog', axis: 'y', direction: 1, velocity: 600, held: false })
+    expect(r.send(step).outcome).toBe('accepted')
+  })
+
+  it('refuses every jog while any axis is homing', () => {
+    const r = rig()
+    r.home()
+    r.send({ type: 'home', axis: 'z' })
+    r.sim.advance(100)
+    expect(r.status().axes[2]?.homing).toBe(true)
+    for (const axis of ['x', 'y', 'z'] as const) {
+      expect(r.send({ type: 'jog', axis, direction: 1, velocity: 600, held: true })).toMatchObject({
+        outcome: 'rejected',
+        reason: "Can't jog while an axis is homing",
+      })
+      expect(r.send({ type: 'jog_step', axis, distance: 1, velocity: 600 }).reason).toBe(
+        "Can't jog while an axis is homing",
+      )
+    }
+    r.sim.advance(3000)
+    expect(r.send({ type: 'jog', axis: 'x', direction: 1, velocity: 600, held: true }).outcome).toBe('accepted')
   })
 
   it('soft limits stop a jog and refuse one that starts on the limit', () => {
@@ -373,6 +414,34 @@ describe('program execution', () => {
     const stopped = machinePosition(r.status())
     r.sim.advance(500)
     expect(machinePosition(r.status())).toEqual(stopped)
+  })
+
+  it('a pause in the middle of a move is not in position, and step finishes that block', () => {
+    const r = rig()
+    r.home()
+    r.load('G53 G1 X60 F600\nG53 G1 X120\nM2')
+    r.send({ type: 'run' })
+    r.sim.advance(1000)
+    r.send({ type: 'pause' })
+    r.sim.advance(200)
+    let status = r.status()
+    expect(status.motion).toMatchObject({ velocity: 0, in_position: false })
+    expect(status.axes[0]?.dtg).toBeCloseTo(50, 0)
+    expect(status.program.motion_line).toBe(1)
+    expect(r.send({ type: 'step' }).outcome).toBe('accepted')
+    r.sim.advance(300)
+    expect(r.status().interp).toBe('reading')
+    r.sim.advance(10_000)
+    status = r.status()
+    // The interrupted block was finished, the next one not started.
+    expect(machinePosition(status)).toEqual([60, 0, 0])
+    expect(status).toMatchObject({ interp: 'paused', wait: { kind: 'paused' } })
+    expect(status.motion).toMatchObject({ velocity: 0, in_position: true })
+    expect(status.program.current_line).toBe(1)
+    r.send({ type: 'step' })
+    r.sim.advance(10_000)
+    expect(machinePosition(r.status())).toEqual([120, 0, 0])
+    expect(r.status().interp).toBe('paused')
   })
 
   it('single step executes one block and pauses, from idle and from a pause', () => {

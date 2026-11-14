@@ -1,6 +1,6 @@
 // From LinuxCNC's view to the panel's messages, on constructed readings: to_hello,
-// to_panel_status, to_work_systems, tools_of and NmlPanelSource on a mailbox the test fills and
-// files it writes. No LinuxCNC runs.
+// to_panel_status, to_work_systems, comments_of and NmlPanelSource on a mailbox, a loaded tool
+// table and load counts the test fills, and files it writes. No LinuxCNC runs.
 //   coffeecnc_panel_mapping_tests <scratch directory>
 
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <map>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -35,12 +36,6 @@ void require(bool condition, const std::string& message) {
   ++checks;
   if (!condition)
     throw std::runtime_error(message);
-}
-
-auto same(const Tool& tool, const Tool& expected) -> bool {
-  return tool.number == expected.number && tool.pocket == expected.pocket &&
-         std::fabs(tool.length - expected.length) < 1e-9 &&
-         std::fabs(tool.diameter - expected.diameter) < 1e-9 && tool.comment == expected.comment;
 }
 
 void write(const std::filesystem::path& file, std::string_view text) {
@@ -110,7 +105,11 @@ auto reading() -> NmlStatus {
   return s;
 }
 
-const std::vector<Tool> table{{5, 1, 50, 6, "first row"}, {9, 2, 40, 3, "second row"}};
+// As LinuxCNC has it loaded: not in ascending order, with a T0 row, and an index without a row.
+const std::vector<LoadedTool> table{{1, {5, 1, 50, 6, ""}},
+                                    {2, {0, 0, 0, 0, ""}},
+                                    {3, {9, 7, 40, 3, ""}},
+                                    {5, {2, 3, 30, 1, ""}}};
 
 void hello_from_the_configuration() {
   const auto hello = to_hello(machine());
@@ -152,8 +151,8 @@ void status_fields() {
               !status.spindle.actual_rpm && !status.spindle.at_speed && !status.probe_input,
           "Spindle as commanded; no measurement where the machine has no signal");
   require(status.coolant == CoolantStatus{true, false}, "Coolant");
-  require(status.tool.in_spindle == 1 && status.tool.prepared == 9,
-          "The prepared tool is the number of the table row LinuxCNC's index names");
+  require(status.tool.in_spindle == 1 && status.tool.prepared == 0,
+          "The prepared tool is the number of the loaded entry LinuxCNC's index names: here T0");
   require(status.program ==
               ProgramStatus{std::string("/nc/part.ngc"), 4, 12, 10, true, true},
           "Program: file, revision, lines, optional stop, block delete");
@@ -180,9 +179,12 @@ void prepared_tool() {
     s.prepared_pocket = index;
     return to_panel_status(s, machine(), table, 1).tool.prepared;
   };
-  require(prepared(1) == 5 && prepared(2) == 9, "Index n is row n of the table");
-  require(!prepared({}) && !prepared(0) && !prepared(3) && !prepared(-1),
-          "No prepared tool without an index, for the spindle's index 0 and beyond the table");
+  require(prepared(1) == 5 && prepared(2) == 0 && prepared(3) == 9 && prepared(5) == 2,
+          "The index names an entry of the loaded table, whatever the order of tool numbers; a "
+          "T0 row is a tool like any other");
+  require(!prepared({}) && !prepared(0) && !prepared(4) && !prepared(6) && !prepared(-1),
+          "No prepared tool without an index, for the spindle's index 0, for an index without "
+          "an entry and beyond the table");
   s.controller.requested_tool = 9;
   s.prepared_pocket = {};
   const auto status = to_panel_status(s, machine(), table, 1);
@@ -243,122 +245,213 @@ void work_systems() {
   require(only(9, {}), "An index outside 1 to 9 names no system");
 }
 
-void tool_table_rows() {
-  const auto tools = tools_of("; a comment line\n"
-                              "T1 P1 Z50 D6 ;6 mm end mill\n"
-                              "\n"
-                              "T0 P0 ;\n"
-                              "t7 p3 z+1.5 d0.25 X1 Q2 ;  spaced  \n"
-                              "T3 P4 Z-2\n"
-                              "P9 Z1 ;no tool number\n",
-                              25.4);
-  require(tools.size() == 4, "A row is a line with a T word");
-  require(same(tools[0], Tool{1, 1, 1270, 152.4, "6 mm end mill"}),
-          "Lengths in the file are machine units");
-  require(same(tools[1], Tool{0, 0, 0, 0, ""}), "A missing length or diameter is 0, as for LinuxCNC");
-  require(same(tools[2], Tool{7, 3, 38.1, 6.35, "spaced"}) &&
-              same(tools[3], Tool{3, 4, -50.8, 0, ""}),
-          "Lower case words, a sign, other words and white space around the comment");
-  require(tools_of("", 1).empty(), "An empty table has no tools");
+void tool_comments() {
+  const auto comments = comments_of("; a comment line\n"
+                                    "T1 P1 Z50 D6 ;6 mm end mill\n"
+                                    "\n"
+                                    "T0 P0 ;\n"
+                                    "t7 p3 z+1.5 ;  spaced  \n"
+                                    "T3 P4 Z-2\n"
+                                    "T1 P9 ;second row for tool 1\n"
+                                    "P9 Z1 ;no tool number\n");
+  require(comments.size() == 2 && comments.at(1) == "6 mm end mill" && comments.at(7) == "spaced",
+          "Comments by tool number: without the white space around them, the first row of a "
+          "tool, none for an empty comment or a line without a T word");
+  require(comments_of("").empty(), "An empty table has no comments");
 }
 
-void source_on_a_mailbox() {
-  const auto config = machine();
-  write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");
-  const auto program = scratch / "part.ngc";
-  write(program, "G0 X1\nM2\n");
+// The source on a mailbox, a loaded table and load counts of the test's own.
+struct Rig {
+  MachineConfig config{machine()};
   NmlStatusMailbox mailbox;
-  auto now = NmlPanelSource::Clock::time_point{} + 1h;
-  int reads = 0;
+  NmlLoads loads;
+  std::optional<std::vector<LoadedTool>> loaded{std::vector<LoadedTool>{
+      {1, {1, 1, 50, 6, ""}}, {2, {2, 2, 40, 3, ""}}}};
+  NmlPanelSource::Clock::time_point now{NmlPanelSource::Clock::time_point{} + 1h};
+  // How long reading one program text takes.
+  std::chrono::milliseconds read_time{};
+  int reads{};
+  std::filesystem::path program{scratch / "part.ngc"};
   NmlPanelSource source{
-      config, mailbox,
-      [&](std::string_view path, std::uint64_t revision)
-          -> std::expected<ProgramText, std::string> {
+      config, mailbox, [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
+      [this](std::string_view path,
+             std::uint64_t revision) -> std::expected<ProgramText, std::string> {
         ++reads;
+        now += read_time;
         if (path.ends_with("refused.ngc"))
           return std::unexpected(std::string("outside the program directory."));
         return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false};
       },
-      [&]() -> NmlPanelSource::Clock::time_point { return now; }};
-  require(source.hello() == to_hello(config), "hello is the configuration's");
+      &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 
-  auto r = source.read();
-  require(r.status.link == Link::down && r.tool_table.revision == 1 &&
-              r.tool_table.tools.size() == 2 && !r.program && r.messages.empty(),
-          "Before the first reading: link down; the tool table is already read");
+  Rig() { write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n"); }
+  // A live status with the program loaded, read just now.
+  auto status() const -> NmlStatus {
+    auto s = reading();
+    s.program_file = program.string();
+    s.prepared_pocket = 2;
+    return s;
+  }
+};
 
-  auto s = reading();
-  s.program_file = program.string();
-  s.prepared_pocket = 2;
-  mailbox.put(s, now);
-  r = source.read();
+void source_status_and_age() {
+  Rig rig;
+  require(rig.source.hello() == to_hello(rig.config), "hello is the configuration's");
+  auto r = rig.source.read();
+  require(r.status.link == Link::down && !r.program && r.messages.empty() &&
+              r.tool_table.revision == 1,
+          "Before the first reading: link down; the loaded tool table is already there");
+
+  rig.mailbox.put(rig.status(), rig.now);
+  r = rig.source.read();
   require(r.status.link == Link::live && r.status.tool.prepared == 2 &&
               r.status.axes[0].machine == 12.5,
-          "A fresh reading is live and mapped with the table read from the file");
-  require(r.program && r.program->revision == 1 && r.status.program.revision == 1 &&
-              r.program->file == program.string() && reads == 1,
-          "A program task names is read, as revision 1");
+          "A fresh reading is live and mapped with the loaded table");
   require(r.work_systems[1] == WorkSystem{{10, 10, 5}, 15, true} &&
               r.work_systems[0] == WorkSystem{{}, 0, false},
           "Only the active work system is available");
 
-  now += 100ms;
-  require(source.read().status.link == Link::live, "A reading 100 ms old is still live");
-  now += 1ms;
-  r = source.read();
-  require(r.status.link == Link::stale && r.status.axes[0].machine == 12.5 && reads == 1,
+  rig.now += 100ms;
+  require(rig.source.read().status.link == Link::live, "A reading 100 ms old is still live");
+  rig.now += 1ms;
+  r = rig.source.read();
+  require(r.status.link == Link::stale && r.status.axes[0].machine == 12.5,
           "Older than that it is stale: the status thread has stopped delivering");
-  auto stale = s;
+  auto stale = rig.status();
   stale.controller.link = Link::stale;
-  mailbox.put(stale, now);
-  require(source.read().status.link == Link::stale, "A stale reading stays stale when fresh");
-  mailbox.put(s, now);
+  rig.mailbox.put(stale, rig.now);
+  require(rig.source.read().status.link == Link::stale, "A stale reading stays stale when fresh");
 
-  // The same file again, unchanged: nothing new. Changed on disk: a new revision.
-  require(source.read().program->revision == 1 && reads == 1, "An unchanged program is kept");
-  write(program, "G0 X2\nG0 X3\nM2\n");
-  r = source.read();
-  require(r.program && r.program->revision == 2 && r.status.program.revision == 2 && reads == 2,
-          "A program that changed on disk is a new revision");
+  rig.mailbox.put(NmlStatus{}, rig.now);
+  r = rig.source.read();
+  require(r.status.link == Link::down && !r.status.program.file,
+          "A reading without a status is link down");
+}
+
+// The age that counts is the one at the end of the call, after every read.
+void source_ages_the_status_after_its_reads() {
+  Rig rig;
+  rig.read_time = 150ms; // longer than the bound
+  rig.mailbox.put(rig.status(), rig.now);
+  auto r = rig.source.read();
+  require(rig.reads == 1 && r.program && r.status.link == Link::stale,
+          "A status that was fresh before a slow file read goes out stale, not live");
+  rig.mailbox.put(rig.status(), rig.now);
+  require(rig.source.read().status.link == Link::live && rig.reads == 1,
+          "Without a read in the way a fresh status is live");
+}
+
+void source_program_loads() {
+  Rig rig;
+  rig.mailbox.put(rig.status(), rig.now);
+  auto r = rig.source.read();
+  require(r.program && r.program->revision == 1 && r.status.program.revision == 1 &&
+              r.program->file == rig.program.string() && rig.reads == 1,
+          "A program task names is read, as revision 1");
+  require(rig.source.read().program->revision == 1 && rig.reads == 1,
+          "And kept while nothing is loaded");
+
+  // The same path again, the same file on disk: LinuxCNC accepted another open_program.
+  ++rig.loads.programs;
+  r = rig.source.read();
+  require(r.program && r.program->revision == 2 && r.status.program.revision == 2 &&
+              r.program->file == rig.program.string() && rig.reads == 2,
+          "A reload of the same unchanged file is a new revision, and its text is read again");
+  require(rig.source.read().program->revision == 2 && rig.reads == 2, "Once per load");
+
+  // Loaded by something else: the status names another file.
+  auto s = rig.status();
+  s.program_file = (scratch / "other.ngc").string();
+  rig.mailbox.put(s, rig.now);
+  r = rig.source.read();
+  require(r.program && r.program->revision == 3 && r.program->file == s.program_file &&
+              r.status.program.file == s.program_file && rig.reads == 3,
+          "Another file named by task is a new revision without a counted load");
+
   s.program_file = (scratch / "refused.ngc").string();
-  write(scratch / "refused.ngc", "M2\n");
-  mailbox.put(s, now);
-  r = source.read();
-  require(!r.program && r.status.program.revision == 3 &&
+  rig.mailbox.put(s, rig.now);
+  r = rig.source.read();
+  require(!r.program && r.status.program.revision == 4 &&
               r.status.program.file == s.program_file && r.messages.size() == 1 &&
               r.messages[0].error &&
               r.messages[0].text.find("outside the program directory") != std::string::npos,
           "A program whose text cannot be read: named in the status, no text, said once");
-  require(source.read().messages.empty() && reads == 3, "And not asked for again");
+  require(rig.source.read().messages.empty() && rig.reads == 4, "And not asked for again");
+
   s.program_file.clear();
-  mailbox.put(s, now);
-  r = source.read();
+  rig.mailbox.put(s, rig.now);
+  r = rig.source.read();
   require(!r.program && !r.status.program.file && r.status.program.revision == 0,
           "No program loaded");
+  rig.mailbox.put(rig.status(), rig.now);
+  r = rig.source.read();
+  require(r.program && r.program->revision == 5, "Loaded again after none: a new revision");
+}
 
-  // The tool table follows the file.
-  write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z41.5 D3\nT3 P3\n");
-  r = source.read();
-  require(r.tool_table.revision == 2 && r.tool_table.tools.size() == 3 &&
-              r.tool_table.tools[1].length == 41.5,
-          "A changed tool table is a new revision");
-  require(source.read().tool_table.revision == 2, "An unchanged one is not");
-  std::filesystem::remove(config.tool_table);
-  r = source.read();
-  require(r.tool_table.revision == 2 && r.tool_table.tools.size() == 3 &&
-              r.messages.size() == 1 &&
-              r.messages[0].text.find("Cannot read tool table") != std::string::npos,
-          "A table that cannot be read: the last one stays, said once");
-  require(source.read().messages.empty(), "Once");
-  write(config.tool_table, "T4 P1\n");
-  r = source.read();
-  require(r.tool_table.revision == 3 && r.tool_table.tools.size() == 1 && r.messages.empty(),
-          "Readable again: read again");
+void source_tool_table() {
+  Rig rig;
+  rig.mailbox.put(rig.status(), rig.now);
+  auto r = rig.source.read();
+  require(r.tool_table.revision == 1 &&
+              r.tool_table.tools ==
+                  std::vector<Tool>{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, ""}},
+          "The table LinuxCNC has loaded, with the file's comments by tool number");
 
-  mailbox.put(NmlStatus{}, now);
-  r = source.read();
-  require(r.status.link == Link::down && !r.status.program.file,
-          "A reading without a status is link down");
+  // The file changes on disk and LinuxCNC has not loaded it: nothing changes.
+  write(rig.config.tool_table, "T1 P1 Z99 D9 ;edited\nT2 P2 Z40 D3 ;also\nT8 P3 ;new\n");
+  r = rig.source.read();
+  require(r.tool_table.revision == 1 && r.tool_table.tools[0] == Tool{1, 1, 50, 6, "end mill"} &&
+              r.tool_table.tools.size() == 2,
+          "A file edited on disk that LinuxCNC has not loaded changes nothing");
+
+  // LinuxCNC loads it: the loaded table changes, and the comments are the file's of now.
+  rig.loaded = std::vector<LoadedTool>{
+      {1, {1, 1, 99, 9, ""}}, {2, {2, 2, 40, 3, ""}}, {3, {8, 3, 0, 0, ""}}};
+  r = rig.source.read();
+  require(r.tool_table.revision == 2 &&
+              r.tool_table.tools == std::vector<Tool>{{1, 1, 99, 9, "edited"},
+                                                      {2, 2, 40, 3, "also"},
+                                                      {8, 3, 0, 0, "new"}},
+          "After the load the panel's table is the loaded one");
+  require(rig.source.read().tool_table.revision == 2, "And is not sent again unchanged");
+
+  // A load the port reports that changed only a comment.
+  write(rig.config.tool_table, "T1 P1 Z99 D9 ;renamed\nT2 P2 Z40 D3 ;also\nT8 P3 ;new\n");
+  require(rig.source.read().tool_table.tools[0].comment == "edited",
+          "A comment is not taken from the file before a load");
+  ++rig.loads.tool_tables;
+  r = rig.source.read();
+  require(r.tool_table.revision == 3 && r.tool_table.tools[0].comment == "renamed",
+          "A load the port reports takes the comments of the file again");
+
+  // A reload in progress reads as nothing: the last table stays, and the mapping with it.
+  rig.loaded.reset();
+  r = rig.source.read();
+  require(r.tool_table.revision == 3 && r.tool_table.tools.size() == 3 &&
+              r.status.tool.prepared == 2 && r.messages.empty(),
+          "While the table cannot be read the last one stays");
+
+  // Non-ascending rows and a T0 row: the prepared index is resolved in the loaded table.
+  rig.loaded = table;
+  auto s = rig.status();
+  s.prepared_pocket = 3;
+  rig.mailbox.put(s, rig.now);
+  r = rig.source.read();
+  require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 4 &&
+              r.tool_table.tools[1].number == 0,
+          "The prepared index names the loaded entry; a T0 row is shown as a row");
+}
+
+void source_without_a_tool_table() {
+  Rig rig;
+  rig.loaded.reset();
+  rig.mailbox.put(rig.status(), rig.now);
+  auto r = rig.source.read();
+  require(r.tool_table.revision == 0 && r.tool_table.tools.empty() && r.messages.size() == 1 &&
+              r.messages[0].text.find("tool table cannot be read") != std::string::npos &&
+              !r.status.tool.prepared,
+          "A table that was never read: none shown, no prepared tool, said once");
+  require(rig.source.read().messages.empty(), "Once");
 }
 
 } // namespace
@@ -376,8 +469,12 @@ auto main(int argc, char** argv) -> int {
     waits();
     no_program_and_no_status();
     work_systems();
-    tool_table_rows();
-    source_on_a_mailbox();
+    tool_comments();
+    source_status_and_age();
+    source_ages_the_status_after_its_reads();
+    source_program_loads();
+    source_tool_table();
+    source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";
     return 0;
   } catch (const std::exception& error) {

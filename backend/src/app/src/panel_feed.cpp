@@ -61,15 +61,16 @@ void PanelComposer::observe(const PanelReading& reading) {
                    waiting_.end() - static_cast<std::ptrdiff_t>(max_waiting));
 }
 
-auto PanelComposer::compose(const PanelReading& reading, PageToken page,
+auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool ready_again,
                             std::chrono::milliseconds unix_time)
     -> std::expected<std::vector<std::string>, std::string> {
   observe(reading);
-  const bool snapshots = page_ != page;
-  if (snapshots) {
+  if (page_ != page) {
     page_ = page;
     publisher_ = StatusPublisher{};
+    snapshots_due_ = true;
   }
+  snapshots_due_ = snapshots_due_ || ready_again;
   Status status = reading.status;
   status.preview_context = context_;
   Preview preview;
@@ -80,11 +81,10 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page,
     work_offsets_ = {work_offsets_.revision + 1, reading.work_systems};
   auto messages = publisher_.publish(
       {hello_, status, reading.tool_table, work_offsets_, reading.program.get(), preview},
-      snapshots);
-  if (!messages) {
-    page_.reset(); // Nothing was sent: the snapshots are still due.
-    return messages;
-  }
+      snapshots_due_);
+  if (!messages)
+    return messages; // Nothing was sent: what was due still is.
+  snapshots_due_ = false;
   for (const auto& message : waiting_)
     messages->push_back(encode_message(message.error ? MessageLevel::error : MessageLevel::info,
                                        message.text, unix_time));
@@ -108,7 +108,7 @@ void PanelFeed::page_ready(PageToken page) {
   {
     const std::scoped_lock lock{mutex_};
     page_ = page;
-    fresh_page_ = true;
+    ready_ = true;
   }
   wake_.notify_all();
 }
@@ -126,15 +126,16 @@ void PanelFeed::loop() {
   for (;;) {
     const auto reading = source_.read();
     std::optional<PageToken> page;
+    bool ready = false;
     {
       const std::scoped_lock lock{mutex_};
       if (stop_)
         return;
       page = page_;
-      fresh_page_ = false;
+      ready = std::exchange(ready_, false);
     }
     if (page) {
-      auto messages = composer.compose(reading, *page, unix_now());
+      auto messages = composer.compose(reading, *page, ready, unix_now());
       if (messages) {
         reported.clear();
         deliver_(*page, std::move(*messages));
@@ -152,7 +153,7 @@ void PanelFeed::loop() {
     if (const auto after = std::chrono::steady_clock::now(); next < after)
       next = after;
     std::unique_lock lock{mutex_};
-    if (wake_.wait_until(lock, next, [&]() -> bool { return stop_ || fresh_page_; }) && !stop_)
+    if (wake_.wait_until(lock, next, [&]() -> bool { return stop_ || ready_; }) && !stop_)
       next = std::chrono::steady_clock::now();
     if (stop_)
       return;

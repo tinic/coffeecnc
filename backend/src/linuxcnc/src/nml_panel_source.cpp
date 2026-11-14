@@ -3,127 +3,85 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
-#include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <format>
 #include <fstream>
-#include <functional>
 #include <iterator>
-#include <memory>
-#include <optional>
-#include <system_error>
+#include <map>
+#include <string>
 #include <utility>
-#include <vector>
 
 namespace coffeecnc {
-namespace {
-
-// What tells one state of a file from the next without reading it.
-struct Stamp {
-  std::uintmax_t bytes{};
-  std::filesystem::file_time_type modified;
-  friend auto operator==(const Stamp&, const Stamp&) -> bool = default;
-};
-
-auto stamp_of(const std::string& file) -> std::optional<Stamp> {
-  std::error_code error;
-  const auto bytes = std::filesystem::file_size(file, error);
-  if (error)
-    return {};
-  const auto modified = std::filesystem::last_write_time(file, error);
-  if (error)
-    return {};
-  return Stamp{bytes, modified};
-}
-
-// A text file that is read again when its stamp changes.
-class Watched {
-public:
-  explicit Watched(std::string file) : file_(std::move(file)) {}
-
-  // The text when it was read again in this call; nothing while the file is as it was, is not
-  // configured or cannot be read.
-  [[nodiscard]] auto changed() -> std::optional<std::string> {
-    if (file_.empty())
-      return {};
-    const auto stamp = stamp_of(file_);
-    if (stamp && stamp_ == stamp)
-      return {};
-    std::ifstream in{file_, std::ios::binary};
-    if (!stamp || !in) {
-      stamp_.reset();
-      failed_ = true;
-      return {};
-    }
-    std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-    // Written while it was read: the next call reads it again.
-    stamp_ = stamp_of(file_) == stamp ? stamp : std::nullopt;
-    failed_ = false;
-    return text;
-  }
-  // The file cannot be read at present; true once per failure.
-  [[nodiscard]] auto newly_failed() -> bool {
-    const bool report = failed_ && !reported_;
-    reported_ = failed_;
-    return report;
-  }
-  [[nodiscard]] auto file() const -> const std::string& { return file_; }
-
-private:
-  std::string file_;
-  std::optional<Stamp> stamp_;
-  bool failed_{};
-  bool reported_{};
-};
-
-} // namespace
 
 struct NmlPanelSource::Impl {
   MachineConfig config;
   const NmlStatusMailbox& mailbox;
+  ToolReader tools;
   ProgramReader programs;
+  const NmlLoads* loads;
   std::function<Clock::time_point()> clock;
-  Watched tool_file;
+
+  // The table LinuxCNC has loaded, as read last, and what the panel is shown of it.
+  std::optional<std::vector<LoadedTool>> loaded;
+  std::uint64_t tool_loads_seen{};
+  std::map<int, std::string> comments;
   ToolTable tool_table;
-  // The program task has open, as it was read last.
+  bool tools_failed{};
+  // The load the program text belongs to.
   std::string program_file;
-  std::optional<Stamp> program_stamp;
+  std::uint64_t program_loads_seen{};
   std::uint64_t program_revision{};
   std::shared_ptr<const ProgramText> program;
 
-  Impl(MachineConfig machine, const NmlStatusMailbox& readings, ProgramReader reader_of_programs,
+  Impl(MachineConfig machine, const NmlStatusMailbox& readings, ToolReader tool_reader,
+       ProgramReader program_reader, const NmlLoads* counted,
        std::function<Clock::time_point()> time)
-      : config(std::move(machine)), mailbox(readings), programs(std::move(reader_of_programs)),
-        clock(std::move(time)),
-        tool_file(config.tool_table) {}
+      : config(std::move(machine)), mailbox(readings), tools(std::move(tool_reader)),
+        programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
 
   void read_tools(std::vector<ControllerMessage>& messages) {
-    if (const auto text = tool_file.changed()) {
-      auto tools = tools_of(*text, config.millimetres_per_unit);
-      if (tool_table.revision == 0 || tools != tool_table.tools) {
-        tool_table.tools = std::move(tools);
-        ++tool_table.revision;
-      }
+    if (!tools)
+      return;
+    auto now = tools();
+    const auto counted = loads != nullptr ? loads->tool_tables.load() : 0;
+    if (!now) {
+      // A reload in progress, usually: the last table stays and the next period asks again.
+      if (!loaded && !std::exchange(tools_failed, true))
+        messages.push_back({true, "LinuxCNC's tool table cannot be read."});
+      return;
     }
-    if (tool_file.newly_failed())
-      messages.push_back({true, std::format("Cannot read tool table {}.", tool_file.file())});
+    tools_failed = false;
+    if (loaded && *now == *loaded && counted == tool_loads_seen)
+      return;
+    loaded = std::move(now);
+    tool_loads_seen = counted;
+    if (std::ifstream in{config.tool_table, std::ios::binary}; in && !config.tool_table.empty())
+      comments = comments_of(
+          std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}});
+    std::vector<Tool> shown;
+    for (const auto& entry : *loaded) {
+      shown.push_back(entry.tool);
+      if (const auto comment = comments.find(entry.tool.number); comment != comments.end())
+        shown.back().comment = comment->second;
+    }
+    if (tool_table.revision == 0 || shown != tool_table.tools)
+      tool_table = {tool_table.revision + 1, std::move(shown)};
   }
 
   void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
     if (status.controller.link == Link::down)
       return; // Nothing is known: what was read last stays.
+    const auto counted = loads != nullptr ? loads->programs.load() : 0;
     if (status.program_file.empty()) {
       program_file.clear();
-      program_stamp.reset();
+      program_loads_seen = counted;
       program.reset();
       return;
     }
-    const auto stamp = stamp_of(status.program_file);
-    if (status.program_file == program_file && stamp == program_stamp)
+    if (status.program_file == program_file && counted == program_loads_seen)
       return;
     program_file = status.program_file;
-    program_stamp = stamp;
+    program_loads_seen = counted;
     ++program_revision;
     program.reset();
     auto text = programs ? programs(program_file, program_revision)
@@ -137,27 +95,47 @@ struct NmlPanelSource::Impl {
 };
 
 NmlPanelSource::NmlPanelSource(const MachineConfig& config, const NmlStatusMailbox& mailbox,
-                               ProgramReader programs, std::function<Clock::time_point()> clock)
-    : impl_(std::make_unique<Impl>(config, mailbox, std::move(programs), std::move(clock))) {}
+                               ToolReader tools, ProgramReader programs, const NmlLoads* loads,
+                               std::function<Clock::time_point()> clock)
+    : impl_(std::make_unique<Impl>(config, mailbox, std::move(tools), std::move(programs), loads,
+                                   std::move(clock))) {}
 NmlPanelSource::~NmlPanelSource() = default;
 
 auto NmlPanelSource::hello() const -> Hello { return to_hello(impl_->config); }
 
 auto NmlPanelSource::read() -> PanelReading {
-  const auto latest = impl_->mailbox.latest();
+  PanelReading reading;
+  // Everything that can take time first: the status is taken after it, and aged last.
+  impl_->read_tools(reading.messages);
+  if (const auto before = impl_->mailbox.latest())
+    impl_->read_program(before->status, reading.messages);
+  auto latest = impl_->mailbox.latest();
+  // Task named another file meanwhile: its text is read now, and the status taken again.
+  if (latest && latest->status.program_file != impl_->program_file) {
+    impl_->read_program(latest->status, reading.messages);
+    latest = impl_->mailbox.latest();
+  }
   auto status = latest ? latest->status : NmlStatus{};
   if (latest && status.controller.link == Link::live && impl_->clock() - latest->read_at > max_age)
     status.controller.link = Link::stale;
-  PanelReading reading;
-  impl_->read_tools(reading.messages);
-  impl_->read_program(status, reading.messages);
-  reading.status = to_panel_status(status, impl_->config, impl_->tool_table.tools,
-                                   status.program_file.empty() ? 0 : impl_->program_revision);
-  if (status.controller.link == Link::down && !impl_->program_file.empty())
-    reading.status.program = {};
+  const bool loaded = status.program_file == impl_->program_file && !status.program_file.empty();
+  reading.status =
+      to_panel_status(status, impl_->config,
+                      impl_->loaded ? std::span<const LoadedTool>{*impl_->loaded}
+                                    : std::span<const LoadedTool>{},
+                      loaded ? impl_->program_revision : 0);
+  // The text goes with the status that names its file; a file task named during this very
+  // call is read in the next period.
+  if (!loaded)
+    reading.status.program = ProgramStatus{.file = {},
+                                           .revision = 0,
+                                           .current_line = 0,
+                                           .motion_line = 0,
+                                           .optional_stop = reading.status.program.optional_stop,
+                                           .block_delete = reading.status.program.block_delete};
   reading.tool_table = impl_->tool_table;
   reading.work_systems = to_work_systems(status);
-  reading.program = impl_->program;
+  reading.program = loaded ? impl_->program : nullptr;
   return reading;
 }
 

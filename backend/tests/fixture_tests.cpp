@@ -200,10 +200,17 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   WorkOffsets offsets;
   offsets.revision = 5;
-  offsets.systems.at(1) = {{100, 100, -100}, 15, {}};
-  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90, {}};
-  offsets.systems.at(8) = {{1, 2, 3}, 0, {}};
+  for (auto& system : offsets.systems)
+    system.available = true;
+  offsets.systems.at(1) = {{100, 100, -100}, 15, true};
+  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90, true};
+  offsets.systems.at(8) = {{1, 2, 3}, 0, true};
   messages.push_back(encode_work_offsets(offsets));
+  // As a controller adapter fills it: only the active system is known.
+  WorkOffsets active_only;
+  active_only.revision = 6;
+  active_only.systems.at(1) = {{100, 100, -100}, 15, true};
+  messages.push_back(encode_work_offsets(active_only));
 
   messages.push_back(
       encode_program({3, part, {"G21 G90 G54", "", "(pièce)", "G0 X0 Y0 Z10", "M2"}, false}));
@@ -288,6 +295,9 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("file", message.at("program").at("file").is_null() ? "null" : "path");
   } else if (type == "tool_table") {
     add("tools", message.at("tools").empty() ? "empty" : "some");
+  } else if (type == "work_offsets") {
+    for (const auto& system : message.at("systems"))
+      add("available", system.at("available").get<bool>() ? "true" : "false");
   } else if (type == "program") {
     add("truncated", message.at("truncated").get<bool>() ? "true" : "false");
   } else if (type == "preview") {
@@ -364,6 +374,8 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "tool_table tools empty",
     "tool_table tools some",
     "work_offsets",
+    "work_offsets available true",
+    "work_offsets available false",
     "program",
     "program truncated false",
     "program truncated true",

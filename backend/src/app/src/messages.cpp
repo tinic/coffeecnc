@@ -305,15 +305,12 @@ auto encode_tool_table(const ToolTable& table) -> Encoded {
 auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded {
   Fields fields;
   auto systems = Json::array();
-  for (std::size_t i = 0; i < offsets.systems.size(); ++i) {
-    Json system{
-        {"wcs", i + 1},
-        {"offset", fields.vec(offsets.systems[i].offset, "systems.offset")},
-        {"rotation_xy", fields.real(offsets.systems[i].rotation_xy, "systems.rotation_xy")}};
-    if (offsets.systems[i].available)
-      system["available"] = *offsets.systems[i].available;
-    systems.push_back(std::move(system));
-  }
+  for (std::size_t i = 0; i < offsets.systems.size(); ++i)
+    systems.push_back(
+        {{"wcs", i + 1},
+         {"offset", fields.vec(offsets.systems[i].offset, "systems.offset")},
+         {"rotation_xy", fields.real(offsets.systems[i].rotation_xy, "systems.rotation_xy")},
+         {"available", offsets.systems[i].available}});
   return fields.finish({{"type", "work_offsets"},
                         {"revision", fields.count(offsets.revision, "revision")},
                         {"systems", std::move(systems)}});

@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_PANEL_MAPPING_HPP
 
 #include <coffeecnc/core/panel_messages.hpp>
+#include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 
@@ -16,10 +17,11 @@ namespace coffeecnc {
 // The protocol `hello` of a machine driven through LinuxCNC.
 [[nodiscard]] auto to_hello(const MachineConfig& config) -> Hello;
 
-// The protocol `status` of one reading. `tools` is the tool table in the order of its rows:
-// LinuxCNC reports the prepared tool as an index into its table, row n being index n (index 0
-// is the spindle), and the panel is told the tool number. An index beyond the rows is reported
-// as no prepared tool. `preview_context` is left 0.
+// The protocol `status` of one reading. `tools` is the table LinuxCNC has loaded: it reports
+// the prepared tool as an index into that table, and the panel is told the tool number of the
+// entry with that index. An index the table does not hold (and index 0, the spindle) is
+// reported as no prepared tool. The loaded tool is task's own report, whatever is prepared or
+// asked for. `preview_context` is left 0.
 //
 // With Link::down the reading holds nothing: the placeholders are zero, with the configured
 // travel as limits and G54 as the work system.
@@ -27,7 +29,8 @@ namespace coffeecnc {
 // `wait` is the first that applies of: a tool change LinuxCNC asks for on the HAL pins, paused,
 // a dwell with time left.
 [[nodiscard]] auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
-                                   std::span<const Tool> tools, std::uint64_t program_revision)
+                                   std::span<const LoadedTool> tools,
+                                   std::uint64_t program_revision)
     -> Status;
 
 // G54 ... G59.3 as one reading knows them: the active system is available, with the offset

@@ -8,8 +8,10 @@
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -68,6 +70,13 @@ struct NmlStatus {
   bool paused{};
 };
 
+// What LinuxCNC has loaded at this port's request, counted at the moment LinuxCNC accepted it.
+// The publisher reads the counts: a load of the same file again is a load. Thread-safe.
+struct NmlLoads {
+  std::atomic<std::uint64_t> programs{};    // open_program accepted
+  std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
+};
+
 // LinuxCNC's task controller over its NML channels: the one writer of commands, the reader of
 // status, and the ONLY reader of the error channel (reading consumes; no second GUI may share the
 // machine).
@@ -112,8 +121,9 @@ public:
   static constexpr auto settle_timeout = std::chrono::milliseconds{1000};
 
   // Opens the channels named by the configuration's NML file. `hal` may be null: there is then
-  // no manual tool change. It must outlive the port.
-  [[nodiscard]] static auto connect(const MachineConfig& config, HalShared* hal)
+  // no manual tool change. `loads` may be null: nothing is counted. Both must outlive the port.
+  [[nodiscard]] static auto connect(const MachineConfig& config, HalShared* hal,
+                                    NmlLoads* loads = nullptr)
       -> std::expected<std::unique_ptr<NmlPort>, std::string>;
   ~NmlPort() override;
   NmlPort(const NmlPort&) = delete;

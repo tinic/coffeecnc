@@ -17,6 +17,7 @@ find_library(COFFEECNC_LINUXCNC_EMC NAMES liblinuxcnc.a linuxcnc)
 find_library(COFFEECNC_LINUXCNC_NML nml)
 find_library(COFFEECNC_LINUXCNC_HAL linuxcnchal)
 find_library(COFFEECNC_LINUXCNC_INI linuxcncini)
+find_library(COFFEECNC_LINUXCNC_TOOLDATA tooldata)
 # LinuxCNC's headers include Boost's, but linuxcnc-uspace-dev does not depend on libboost-dev.
 # Headers unpacked below build/deps (apt-get download libboost1.83-dev; dpkg -x) are accepted
 # where the package cannot be installed.
@@ -24,7 +25,8 @@ find_path(COFFEECNC_BOOST_INCLUDE_DIR boost/noncopyable.hpp
   HINTS "${PROJECT_SOURCE_DIR}/build/deps/usr/include")
 set(missing "")
 if(NOT (COFFEECNC_LINUXCNC_INCLUDE_DIR AND COFFEECNC_LINUXCNC_EMC AND COFFEECNC_LINUXCNC_NML
-        AND COFFEECNC_LINUXCNC_HAL AND COFFEECNC_LINUXCNC_INI))
+        AND COFFEECNC_LINUXCNC_HAL AND COFFEECNC_LINUXCNC_INI
+        AND COFFEECNC_LINUXCNC_TOOLDATA))
   set(missing "LinuxCNC development files not found (linuxcnc-uspace-dev)")
 elseif(NOT COFFEECNC_BOOST_INCLUDE_DIR)
   set(missing "Boost headers not found; LinuxCNC's headers need them (libboost-dev)")
@@ -38,8 +40,8 @@ if(missing)
 endif()
 message(STATUS "LinuxCNC adapter: headers in ${COFFEECNC_LINUXCNC_INCLUDE_DIR}")
 
-add_library(coffeecnc_linuxcnc src/hal_component.cpp src/hal_control.cpp src/machine_config.cpp
-  src/nml_panel_source.cpp src/nml_port.cpp src/nml_status.cpp src/panel_mapping.cpp
+add_library(coffeecnc_linuxcnc src/hal_component.cpp src/hal_control.cpp src/loaded_tools.cpp
+  src/machine_config.cpp src/nml_panel_source.cpp src/nml_port.cpp src/nml_status.cpp src/panel_mapping.cpp
   src/tool_table.cpp)
 target_include_directories(coffeecnc_linuxcnc PUBLIC include)
 target_include_directories(coffeecnc_linuxcnc SYSTEM PRIVATE ${COFFEECNC_LINUXCNC_INCLUDE_DIR}
@@ -49,7 +51,7 @@ target_compile_features(coffeecnc_linuxcnc PUBLIC cxx_std_23)
 target_compile_definitions(coffeecnc_linuxcnc PRIVATE ULAPI)
 target_link_libraries(coffeecnc_linuxcnc PUBLIC coffeecnc_core
   PRIVATE coffeecnc_project_options ${COFFEECNC_LINUXCNC_EMC} ${COFFEECNC_LINUXCNC_NML}
-          ${COFFEECNC_LINUXCNC_HAL} ${COFFEECNC_LINUXCNC_INI})
+          ${COFFEECNC_LINUXCNC_HAL} ${COFFEECNC_LINUXCNC_INI} ${COFFEECNC_LINUXCNC_TOOLDATA})
 coffeecnc_enable_analyzers(coffeecnc_linuxcnc)
 
 # Throwaway-grade tool that records how the installed LinuxCNC behaves; see tests/sim/run.sh.

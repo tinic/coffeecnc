@@ -51,8 +51,6 @@ auto reading() -> PanelReading {
   r.status.offsets.g5x = {10, 20, 30};
   r.status.active_codes = {"G1", "G54"};
   r.tool_table = {1, {{1, 1, 40, 6, "End mill"}}};
-  for (auto& system : r.work_systems)
-    system.available = false;
   r.work_systems.at(0) = WorkSystem{{10, 20, 30}, 0, true};
   return r;
 }
@@ -67,7 +65,7 @@ struct Sent {
 };
 
 auto compose(PanelComposer& composer, const PanelReading& r, std::uint64_t page = 1) -> Sent {
-  const auto messages = composer.compose(r, PageToken{page}, 1234ms);
+  const auto messages = composer.compose(r, PageToken{page}, false, 1234ms);
   require(messages.has_value(), "Composing succeeds: " + messages.error_or(""));
   Sent sent;
   for (const auto& text : messages.value_or(std::vector<std::string>{})) {
@@ -117,6 +115,17 @@ void pages_and_snapshots() {
               sent.last().at("seq") == 1,
           "Another page starts clean: every snapshot again, numbered from 1");
   require(sent.messages.at(2).at("revision") == 1, "Unchanged work offsets keep their revision");
+
+  // A second `ready` of the same page: everything again, the numbering goes on.
+  const auto again = composer.compose(r, PageToken{2}, true, 1234ms);
+  require(again.has_value(), "Composing after a repeated ready succeeds");
+  Types types;
+  for (const auto& text : again.value_or(std::vector<std::string>{}))
+    types.push_back(Json::parse(text).at("type").get<std::string>());
+  require(types == Types{"hello", "tool_table", "work_offsets", "program", "preview", "status"} &&
+              Json::parse(again->back()).at("seq") == 2,
+          "A repeated ready on the same page sends hello and every snapshot again");
+  require(compose(composer, r, 2).types == Types{"status"}, "Once per ready");
 }
 
 void preview_context_follows_live_inputs() {
@@ -172,6 +181,19 @@ void preview_context_follows_live_inputs() {
   require(compose(composer, r).context() == context + 2, "After the run its state is a new start");
   context += 2;
 
+  // The same file loaded again is a new program: its text is sent and the context changes.
+  r.program = std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false});
+  r.status.program.file = "/nc/a.ngc";
+  r.status.program.revision = 1;
+  context = compose(composer, r).context();
+  r.program = std::make_shared<const ProgramText>(ProgramText{2, "/nc/a.ngc", {"G0 X1"}, false});
+  r.status.program.revision = 2;
+  sent = compose(composer, r);
+  require(sent.types == Types{"program", "preview", "status"} && sent.context() == context + 1 &&
+              sent.messages.front().at("revision") == 2,
+          "A reload of the same unchanged file: the text again, and a new context");
+  context += 1;
+
   // Readings without a page count too.
   r.status.tool.in_spindle = 3;
   composer.observe(r);
@@ -209,7 +231,7 @@ void a_status_that_cannot_be_sent() {
   PanelComposer composer{hello()};
   auto r = reading();
   r.status.axes.at(2).machine = std::numeric_limits<double>::quiet_NaN();
-  const auto refused = composer.compose(r, PageToken{1}, 0ms);
+  const auto refused = composer.compose(r, PageToken{1}, false, 0ms);
   require(!refused && refused.error().find("axes.machine") != std::string::npos,
           "A number that is not finite is refused, naming the field");
   r.status.axes.at(2).machine = 0;
@@ -253,6 +275,10 @@ struct Delivered {
         ++found;
     return found;
   }
+  void clear() {
+    const std::scoped_lock lock{mutex};
+    messages.clear();
+  }
   auto total() -> std::size_t {
     const std::scoped_lock lock{mutex};
     return messages.size();
@@ -279,6 +305,15 @@ void feed_thread() {
     const auto waited = std::chrono::steady_clock::now() - asked;
     require(delivered.count(7, "hello") == 1 && waited < 40ms,
             "A ready page gets its snapshots at once, not a period later");
+    // Every ready asks for the snapshots, also a second one on the same page.
+    feed.page_ready(PageToken{7});
+    const auto repeat = std::chrono::steady_clock::now();
+    while (delivered.count(7, "hello") < 2 && std::chrono::steady_clock::now() - repeat < 300ms)
+      std::this_thread::sleep_for(1ms);
+    require(delivered.count(7, "hello") == 2 && delivered.count(7, "tool_table") == 2 &&
+                delivered.count(7, "work_offsets") == 2 && delivered.count(7, "preview") == 2,
+            "A repeated ready on the same page resends hello and the snapshots");
+    delivered.clear();
     std::this_thread::sleep_for(500ms);
     const auto statuses = delivered.count(7, "status");
     require(statuses >= 8 && statuses <= 12,
@@ -295,7 +330,7 @@ void feed_thread() {
 
     feed.page_ready(PageToken{8});
     std::this_thread::sleep_for(120ms);
-    require(delivered.count(8, "hello") == 1 && delivered.count(7, "hello") == 1,
+    require(delivered.count(8, "hello") == 1 && delivered.count(7, "hello") == 0,
             "The next page gets snapshots of its own, under its own token");
 
     auto bad = reading();

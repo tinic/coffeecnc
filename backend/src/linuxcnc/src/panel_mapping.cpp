@@ -1,5 +1,6 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 
+#include <algorithm>
 #include <cstddef>
 
 namespace coffeecnc {
@@ -22,7 +23,8 @@ auto to_hello(const MachineConfig& config) -> Hello {
 }
 
 auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
-                     std::span<const Tool> tools, std::uint64_t program_revision) -> Status {
+                     std::span<const LoadedTool> tools, std::uint64_t program_revision)
+    -> Status {
   const auto& controller = reading.controller;
   const bool known = controller.link != Link::down;
   Status status;
@@ -60,9 +62,11 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
                     .at_speed = reading.spindle_at_speed};
   status.coolant = {.flood = reading.flood, .mist = reading.mist};
   status.tool.in_spindle = controller.tool_in_spindle;
-  if (const auto index = reading.prepared_pocket;
-      index && *index >= 1 && static_cast<std::size_t>(*index) <= tools.size())
-    status.tool.prepared = tools[static_cast<std::size_t>(*index) - 1].number;
+  if (const auto index = reading.prepared_pocket; index && *index >= 1) {
+    const auto found = std::ranges::find(tools, *index, &LoadedTool::index);
+    if (found != tools.end())
+      status.tool.prepared = found->tool.number;
+  }
   if (!reading.program_file.empty())
     status.program.file = reading.program_file;
   status.program.revision = program_revision;
@@ -84,8 +88,6 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
 
 auto to_work_systems(const NmlStatus& reading) -> std::array<WorkSystem, 9> {
   std::array<WorkSystem, 9> systems{};
-  for (auto& system : systems)
-    system.available = false;
   if (reading.controller.link != Link::down && reading.wcs >= 1 &&
       static_cast<std::size_t>(reading.wcs) <= systems.size())
     systems.at(static_cast<std::size_t>(reading.wcs) - 1) = {reading.g5x, reading.rotation_xy,

@@ -188,13 +188,11 @@ void table_rules() {
   for (std::size_t i = 0; i < systems.size(); ++i)
     require(systems.at(i).at("wcs") == i + 1 && systems.at(i).at("offset") == Json{0, 0, 0},
             "Systems are numbered 1 to 9 in order, offsets as three numbers");
-  require(!systems.at(0).contains("available"),
-          "A system that does not say whether it is available has no such field");
+  require(systems.at(0).at("available") == false, "A system is not available unless it says so");
   offsets.systems.at(1) = {{1, 2, 3}, 15, true};
-  offsets.systems.at(2).available = false;
   const auto marked = parsed(encode_work_offsets(offsets)).at("systems");
   require(marked.at(1).at("available") == true && marked.at(2).at("available") == false &&
-              marked.at(2).at("offset") == Json{0, 0, 0} && !marked.at(3).contains("available"),
+              marked.at(2).at("offset") == Json{0, 0, 0},
           "Available and not available are both said; a system that is not keeps finite zeros");
   offsets.systems.at(4).offset[1] = nan;
   refused(encode_work_offsets(offsets), "systems.offset");

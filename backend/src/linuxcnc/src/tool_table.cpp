@@ -3,10 +3,8 @@
 #include <array>
 #include <cctype>
 #include <charconv>
-#include <cmath>
 #include <cstddef>
 #include <system_error>
-#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -110,47 +108,22 @@ auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_
   return joined(lines);
 }
 
-auto tools_of(std::string_view table, double millimetres_per_unit) -> std::vector<Tool> {
-  // The whole word after its letter as a number; nothing for anything else.
-  const auto value = [](std::string_view word) -> std::optional<double> {
-    word.remove_prefix(1);
-    if (!word.empty() && word.front() == '+')
-      word.remove_prefix(1);
-    double number{};
-    const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), number);
-    if (error != std::errc{} || end != word.data() + word.size() || !std::isfinite(number))
-      return {};
-    return number;
-  };
-  std::vector<Tool> tools;
+auto comments_of(std::string_view table) -> std::map<int, std::string> {
+  std::map<int, std::string> comments;
   for (const auto line : lines_of(table)) {
     const auto number = tool_number(line);
-    if (!number)
+    const auto start = line.find(';');
+    if (!number || start == std::string_view::npos)
       continue;
-    Tool tool{*number, 0, 0, 0, {}};
-    for (const auto word : words_of(line)) {
-      const char first = letter(word);
-      const auto given = value(word);
-      if (!given)
-        continue;
-      if (first == 'P')
-        tool.pocket = static_cast<int>(*given);
-      else if (first == 'Z')
-        tool.length = *given * millimetres_per_unit;
-      else if (first == 'D')
-        tool.diameter = *given * millimetres_per_unit;
-    }
-    if (const auto comment = line.find(';'); comment != std::string_view::npos) {
-      auto text = line.substr(comment + 1);
-      while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
-        text.remove_prefix(1);
-      while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0)
-        text.remove_suffix(1);
-      tool.comment = std::string(text);
-    }
-    tools.push_back(std::move(tool));
+    auto text = line.substr(start + 1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
+      text.remove_prefix(1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0)
+      text.remove_suffix(1);
+    if (!text.empty())
+      comments.try_emplace(*number, text);
   }
-  return tools;
+  return comments;
 }
 
 auto without_tool(std::string_view table, int number) -> std::optional<std::string> {

@@ -31,7 +31,8 @@ namespace coffeecnc {
 //
 // Every reading counts for `preview_context`, with or without a page, so the context a page is
 // told is the one a preview of that moment would have. A page gets a StatusPublisher of its own:
-// its first step sends `hello` and every snapshot, and its statuses are numbered from 1.
+// its statuses are numbered from 1. `hello` and every snapshot are sent in a page's first step
+// and again in the step after every further `ready` of that page; the numbering goes on.
 //
 // No interpreter preview exists yet. The `preview` sent is `unavailable` for the current
 // context, with no segments, whatever program is loaded, and carries no_preview_reason as its
@@ -51,9 +52,10 @@ public:
 
   explicit PanelComposer(Hello hello);
 
-  // The messages for `page`, which has sent `ready`. When one of them cannot be encoded the
-  // result is the reason, nothing counts as sent and the same is due on the next step.
-  [[nodiscard]] auto compose(const PanelReading& reading, PageToken page,
+  // The messages for `page`, which has sent `ready`; `ready_again` when it has sent another
+  // since the last step. When one of them cannot be encoded the result is the reason, nothing
+  // counts as sent and the same is due on the next step.
+  [[nodiscard]] auto compose(const PanelReading& reading, PageToken page, bool ready_again,
                              std::chrono::milliseconds unix_time)
       -> std::expected<std::vector<std::string>, std::string>;
   // A reading while no page is ready.
@@ -67,6 +69,8 @@ private:
   std::uint64_t context_{};
   Vec3 rest_position_{};
   std::optional<PageToken> page_;
+  // hello and the snapshots are owed to the page.
+  bool snapshots_due_{};
   StatusPublisher publisher_;
   WorkOffsets work_offsets_;
   std::vector<ControllerMessage> waiting_;
@@ -99,7 +103,8 @@ public:
   PanelFeed(const PanelFeed&) = delete;
   auto operator=(const PanelFeed&) -> PanelFeed& = delete;
 
-  // The page sent `ready` (Outcome::send_snapshots): snapshots at once, then a status per period.
+  // The page sent `ready` (Outcome::send_snapshots): snapshots at once, then a status per
+  // period. Every call asks for the snapshots, also a repeated one for the same page.
   void page_ready(PageToken page);
   // The page is gone. Ignored for a page that is not the one that was ready.
   void page_ended(PageToken page);
@@ -112,7 +117,10 @@ private:
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;
-  bool fresh_page_{};
+  // hello and the snapshots are owed to the page.
+  bool snapshots_due_{};
+  // A `ready` has not been answered with snapshots yet.
+  bool ready_{};
   bool stop_{};
   std::thread thread_;
 };

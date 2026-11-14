@@ -112,9 +112,9 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. Preview and run need an immutable copy before live use |
 | Preview | No interpreter preview: `Preview` is sent as `unavailable`. The panel hides an imported part without one, so the STEP overlay is not qualified |
 | Work offsets | `EMC_STAT` carries only the active system; the other eight are sent `available: false` with zeros |
-| Tool table | Shown from LinuxCNC's tool data memory after two identical passes with task idle between them. A program that writes the memory directly is not bracketed. Comments come from the file at load time |
+| Tool table | Shown from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Comments come from the file at load time |
 | ThreadSanitizer and the GUI | Unqualified: GLib, GTK and WebKit are not instrumented. Run by hand at 4588b3b: 133, 140 and 76 reports, none with an access-origin stack in CoffeeCNC code; no suppression |
-| LeakSanitizer | Suppressed in asan builds: `libfontconfig.so`, `libGLX_mesa.so`, `libjavascriptcoregtk-4.1.so`, nothing else. The GUI tests run with `NO_AT_BRIDGE=1`: with GTK's accessibility bridge on, libdbus holds 800 to 1216 bytes at exit. The executable does not set it; execution with accessibility is unqualified for leaks |
+| LeakSanitizer | Suppressed in asan builds: `libfontconfig.so`, `libGLX_mesa.so`, `libjavascriptcoregtk-4.1.so`, nothing else; a leak this program causes through an allocation in one of them is hidden too. The GUI tests run with `NO_AT_BRIDGE=1`: with GTK's accessibility bridge on, libdbus holds 800 to 1216 bytes at exit. The executable does not set it; execution with accessibility is unqualified for leaks |
 | Start-up signal | SIGTERM before the window runs is not handled; the HAL component is then left to LinuxCNC's shutdown |
 
 ## Coordination

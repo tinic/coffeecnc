@@ -37,7 +37,7 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 |---|---|
 | `link` | Age of the mailbox reading, judged after all file and tool reads; stale past 100 ms |
 | `tool.prepared` | `pocketPrepped` resolved in the loaded table; null while the table shown is not the accepted one |
-| `tool_table` | Tool data memory, shown after two identical passes with task idle between; comments from the file at load time |
+| `tool_table` | Tool data memory, shown after two identical passes with task idle between (a stability check, not an atomic read); comments from the file at load time |
 | `program.revision` | Goes up with every accepted `open_program` and when task names another file |
 | `wait` | Tool change (HAL request) before paused before dwell |
 | `preview` | `unavailable` |

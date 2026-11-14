@@ -1,0 +1,503 @@
+CoffeeCNC native shell checkpoint, 2026-11-14
+Commit: ca88a0a7a853a152ec3e827d0dd47faef0b28d76
+Source: playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/ca88a0a/dev/LastTest.log
+Excerpt: complete CTest records for linuxcnc_shell_mm and linuxcnc_shell_inch.
+Execution: Claude; independent log and screenshot review: Codex.
+Scope: LinuxCNC simulation only. STEP import passes; part overlay remains hidden pending interpreter preview.
+
+22/24 Testing: linuxcnc_shell_mm
+22/24 Test: linuxcnc_shell_mm
+Command: "/home/turo/ai/claudecode-coffeecnc/backend/tests/sim/run.sh" "-u" "mm" "-t" "500" "/home/turo/ai/claudecode-coffeecnc/backend/tests/shell/under_xvfb.sh" "/home/turo/ai/claudecode-coffeecnc/backend/build/dev/coffeecnc_shell_tests"
+Directory: /home/turo/ai/claudecode-coffeecnc/backend/build/dev
+"linuxcnc_shell_mm" start time: Nov 14 21:52 UTC
+Output:
+----------------------------------------------------------
+check=observer_connected result=pass detail=status
+check=panel_bundle_matches_sources result=pass detail=panel=match_inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7_assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=ca88a0a7a853a152ec3e827d0dd47faef0b28d76
+check=page_loads result=pass detail=coffeecnc://panel/index.html
+check=page_url result=pass detail=coffeecnc://panel/index.html
+check=window_size result=pass detail=1280x800
+check=handler_before_page_scripts result=pass detail=shell_script=yes_test_script=true
+check=one_document result=pass detail=commits=1_page=1
+check=no_console_errors result=pass detail=[]
+check=no_request_off_the_scheme result=pass detail=resources=6
+fact=resource coffeecnc://panel/index.html
+fact=resource coffeecnc://panel/assets/index-BtAZ6mdY.js
+fact=resource coffeecnc://panel/assets/index-Cv_V5-cH.css
+fact=resource coffeecnc://panel/fonts/DM-Sans-400-700.woff2
+fact=resource coffeecnc://panel/fonts/IBM-Plex-Mono-500.woff2
+fact=resource coffeecnc://panel/fonts/IBM-Plex-Mono-400.woff2
+fact=hello {"axes":["x","y","z"],"axis_max_jog_velocity":{"x":1800,"y":1800,"z":1800},"homing_required":true,"jog_increments":[],"machine_name":"CoffeeCNC-sim","machine_units":"mm","max_feed_override":1.5,"max_jog_velocity":1800,"max_spindle_override":1.2,"min_spindle_override":0.5,"protocol":1,"simulated":false,"type":"hello"}
+check=hello_machine result=pass detail="CoffeeCNC-sim"
+check=hello_units result=pass detail="mm"
+check=hello_limits_in_mm result=pass detail={"axes":["x","y","z"],"axis_max_jog_velocity":{"x":1800,"y":1800,"z":1800},"homing_required":true,"jog_increments":[],"machine_name":"CoffeeCNC-sim","machine_units":"mm","max_feed_override":1.5,"max_jog_velocity":1800,"max_spindle_override":1.2,"min_spindle_override":0.5,"protocol":1,"simulated":false,"type":"hello"}
+check=panel_is_not_the_simulator result=pass detail="CoffeeCNC_·_Local_machine_interfacecoffeecnc_/_mill"
+fact=first_status {"active_codes":["G80","G17","G40","G21","G90","G94","G54","G49","G99","G64","G97","G91.1","G8","M5","M9","M48","M53","M0"],"axes":[{"axis":"x","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":0},{"axis":"y","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":0},{"axis":"z","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":100,"min_limit":-50,"on_hard_limit":false,"work":0}],"coolant":{"flood":false,"mist":false},"interp":"idle","link":"live","machine":"estop","mode":"manual","motion":{"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":0,"rapid_override":1,"velocity":0},"offsets":{"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1},"preview_context":2,"probe_input":null,"program":{"block_delete":true,"current_line":0,"file":null,"motion_line":0,"optional_stop":true,"revision":0},"program_units":"mm","seq":5,"spindle":{"actual_rpm":null,"at_speed":null,"commanded_rpm":0,"direction":"stopped","override":1},"tool":{"in_spindle":0,"prepared":null},"type":"status","wait":{"kind":"none"}}
+check=status_estop result=pass detail="estop"
+check=status_limits_in_mm result=pass detail=[{"axis":"x","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":0},{"axis":"y","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":0},{"axis":"z","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":100,"min_limit":-50,"on_hard_limit":false,"work":0}]
+check=status_feedback_unavailable result=pass detail={"actual_rpm":null,"at_speed":null,"commanded_rpm":0,"direction":"stopped","override":1}
+check=status_rate result=pass detail=per_second=20
+check=status_numbering result=pass detail=[1,25,0]
+check=work_offsets_only_active_available result=pass detail={"revision":1,"systems":[{"available":true,"offset":[0,0,0],"rotation_xy":0,"wcs":1},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":2},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":3},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":4},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":5},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":6},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":7},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":8},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":9}],"type":"work_offsets"}
+check=preview_unavailable_with_reason result=pass detail={"bounds":null,"context":2,"error":{"line":0,"text":"This_version_of_CoffeeCNC_does_not_compute_a_toolpath_preview."},"segments":[],"state":"unavailable","type":"preview"}
+fact=tool_table {"revision":1,"tools":[{"comment":"6 mm end mill","diameter":6,"length":50,"number":1,"pocket":1},{"comment":"3 mm end mill","diameter":3,"length":40,"number":2,"pocket":2}],"type":"tool_table"}
+check=tool_table_loaded_in_mm result=pass detail={"revision":1,"tools":[{"comment":"6_mm_end_mill","diameter":6,"length":50,"number":1,"pocket":1},{"comment":"3_mm_end_mill","diameter":3,"length":40,"number":2,"pocket":2}],"type":"tool_table"}
+check=snapshot_estop result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/estop-mm.png
+check=served_panel_is_the_stamped_one result=pass detail=served_inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7_served_assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
+check=panel_reset_estop result=pass detail=-
+check=linuxcnc_estop_reset result=pass detail=-
+check=panel_shows_off result=pass detail=-
+check=panel_machine_on result=pass detail=-
+check=linuxcnc_machine_on result=pass detail=-
+check=panel_shows_on result=pass detail="Machine_off"
+check=panel_manual_tab result=pass detail=-
+check=panel_home_all result=pass detail="Home_all_axes_using_the_configured_sequence"
+check=linuxcnc_homed result=pass detail=-
+check=panel_shows_homed result=pass detail=["homing","homed","homed"]
+check=snapshot_machine-on-idle result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/machine-on-idle-mm.png
+check=panel_mdi_units result=pass detail=-
+check=panel_mdi_units_move result=pass detail=-
+check=mdi_from_panel_moves_machine result=pass detail=hal_mm=25.4,-12.7,5
+check=panel_mdi_history_accepted result=pass detail=["G21accepted","G90_G1_X25.4_Y-12.7_Z5_F1200accepted"]
+check=panel_shows_machine_at_rest result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":1200,"rapid_override":1,"velocity":0}
+check=panel_machine_position_mm result=pass detail=[{"axis":"x","dtg":0,"homed":true,"homing":false,"machine":25.400000000000002,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":25.400000000000002},{"axis":"y","dtg":0,"homed":true,"homing":false,"machine":-12.700000000000001,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":-12.700000000000001},{"axis":"z","dtg":0,"homed":true,"homing":false,"machine":5,"max_limit":100,"min_limit":-50,"on_hard_limit":false,"work":5}]
+check=panel_programmed_feed_mm_per_min result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":1200,"rapid_override":1,"velocity":0}
+check=panel_active_codes result=pass detail=["G1","G17","G40","G21","G90","G94","G54","G49","G99","G64","G97","G91.1","G8","M5","M9","M48","M53","M0"]
+check=work_offset_follows result=pass detail=[{"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1},{"axis":"x","dtg":0,"homed":true,"homing":false,"machine":25.400000000000002,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":25.400000000000002}]
+check=offset_change_is_a_new_revision_and_context result=pass detail=revision=1->2_context=6->7
+check=active_system_changes_with_g55 result=pass detail={"revision":2,"systems":[{"available":true,"offset":[5.4,0,0],"rotation_xy":0,"wcs":1},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":2},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":3},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":4},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":5},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":6},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":7},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":8},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":9}],"type":"work_offsets"}
+check=back_to_g54 result=pass detail={"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1}
+check=jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=jog_moves_while_held result=pass detail=x_mm=25.4->25.955
+check=panel_shows_jog result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":false,"programmed_feed":1200,"rapid_override":1,"velocity":540}
+check=snapshot_jog-in-progress result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/jog-in-progress-mm.png
+check=jog_keeps_moving_while_held result=pass detail=x_mm=25.4->33.385
+check=jog_stops_on_release result=pass detail=stopped_after_ms=308.947022_x_mm=33.53_travelled_after_release_mm=0.14500000000000313
+check=panel_shows_new_position result=pass detail={"axis":"x","dtg":0,"homed":true,"homing":false,"machine":33.53000000000074,"max_limit":250,"min_limit":-250,"on_hard_limit":false,"work":33.53000000000074}
+check=snapshot_jog-finished result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/jog-finished-mm.png
+check=no_console_errors_after_jog result=pass detail=[]
+check=reload_jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=reload_jog_moves_while_held result=pass detail=x_mm=33.53->34.125
+check=reload_stops_jog result=pass detail=stopped_after_ms=308.480602_x_mm=34.27
+check=reload_is_a_new_page result=pass detail=page=1->2_commits=1->2_after_ms=614.951389
+check=new_page_live result=pass detail=-
+check=new_page_handler_before_scripts result=pass detail=-
+check=new_page_gets_its_own_messages result=pass detail=-
+check=old_page_messages_not_delivered result=pass detail=dropped=0->1
+check=new_page_starts_clean result=pass detail={"breaks":0,"errors":[],"firstSeq":1,"hello":1,"results":[1],"sent":[1],"stale":false}
+check=new_page_results_are_its_own result=pass detail=old_page_sent=27_new_page={"breaks":0,"errors":[],"firstSeq":1,"hello":1,"results":[1],"sent":[1],"stale":false}
+check=machine_still_on_after_reload result=pass detail=-
+check=axis_did_not_move_after_reload result=pass detail=x_mm=34.27->34.27
+check=panel_manual_tab_again result=pass detail=-
+check=crash_jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=crash_jog_moves_while_held result=pass detail=x_mm=34.27->34.865
+check=web_process_found result=pass detail=count=1
+check=web_process_death_stops_jog result=pass detail=stopped_after_ms=309.375551_x_mm=35.13
+check=web_process_termination_seen result=pass detail=-
+check=panel_loaded_again_after_crash result=pass detail=page=2->3
+check=new_web_process result=pass detail=-
+check=machine_still_on_after_crash result=pass detail=-
+check=page_after_crash_is_clean result=pass detail=[]
+check=panel_manual_tab_after_crash result=pass detail=-
+fact=scheme {"absolute":{"bytes":24,"html":false,"status":403,"type":"text/plain"},"directory":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"http":{"failed":"TypeError: Load failed"},"index":{"bytes":395,"html":true,"status":200,"type":"text/html"},"missing":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"missingPage":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"otherHost":{"failed":"TypeError: Load failed"},"post":405,"traversal":{"bytes":24,"html":false,"status":403,"type":"text/plain"}}
+check=scheme_serves_index result=pass detail={"bytes":395,"html":true,"status":200,"type":"text/html"}
+check=scheme_missing_file_is_404_not_the_entry_page result=pass detail={"bytes":24,"html":false,"status":404,"type":"text/plain"}
+check=scheme_lists_no_directory result=pass detail={"bytes":24,"html":false,"status":404,"type":"text/plain"}
+check=scheme_refuses_traversal result=pass detail={"bytes":24,"html":false,"status":403,"type":"text/plain"}
+check=scheme_refuses_absolute_path result=pass detail={"bytes":24,"html":false,"status":403,"type":"text/plain"}
+check=scheme_has_one_host result=pass detail={"failed":"TypeError:_Load_failed"}
+check=network_is_refused result=pass detail={"failed":"TypeError:_Load_failed"}
+check=scheme_is_read_only result=pass detail=405
+check=navigation_away_is_refused result=pass detail=uri=coffeecnc://panel/index.html_commits=3->3
+check=no_new_window result=pass detail=-
+fact=expected_refusals ["csp: connect-src coffeecnc://other/index.html","csp: connect-src http://127.0.0.1:9/"]
+check=panel_program_tab result=pass detail=-
+check=panel_open_browser result=pass detail=-
+check=browser_lists_program_directory result=pass detail=["/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/nc_files",["probe.ngc"]]
+check=browser_opens_program result=pass detail=-
+check=linuxcnc_program_loaded result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/nc_files/probe.ngc
+check=panel_run_probe_program result=pass detail=["Cycle_start","Cycle_start"]
+check=operator_error_shown_in_panel result=pass detail=[[{"level":"error","text":"G38.2_move_finished_without_making_contact.","time":1794693189504,"type":"message"}],"G38.2_move_finished_without_making_contact."]
+check=snapshot_operator-error result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/operator-error-mm.png
+check=panel_dismisses_error result=pass detail=-
+check=dismissed_error_leaves_the_bar result=pass detail="Probeprobe.ngc_/_G54_/_Program_in_mmMachine_idleMachineConnectionCoffeeCNC-simTaskauto_·_idleActive_codesG38.2_G17_G40_G21_G91_G94_G54_G49_G99_G64_G97_G91.1_G8_M5_M9_M48_M53_M0Machine_offMessage_log_·_1"
+check=panel_opens_message_log result=pass detail=-
+check=dismissed_error_stays_in_the_log result=pass detail="Message_log21:53:09G38.2_move_finished_without_making_contact."
+check=panel_closes_message_log result=pass detail=-
+check=probe_program_ended result=pass detail=-
+check=no_console_errors_after_operator_error result=pass detail=[]
+check=file_edit_without_load_changes_nothing result=pass detail={"revision":1,"tools":[{"comment":"6_mm_end_mill","diameter":6,"length":50,"number":1,"pocket":1},{"comment":"3_mm_end_mill","diameter":3,"length":40,"number":2,"pocket":2}],"type":"tool_table"}
+fact=load_tool_table rcs=1
+fact=loaded_tool_table {"revision":2,"tools":[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}],"type":"tool_table"}
+check=loaded_table_is_shown result=pass detail={"revision":2,"tools":[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth_inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}],"type":"tool_table"}
+check=loaded_table_rows_in_mm result=pass detail=[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth_inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}]
+check=panel_manual_tab_for_tools result=pass detail=-
+check=prepared_tool_T4 result=pass detail=panel=null_linuxcnc_index=-1
+check=prepared_tool_T2 result=pass detail=panel=4_linuxcnc_index=3
+check=prepared_tool_T9 result=pass detail=panel=2_linuxcnc_index=4
+check=loaded_tool_unchanged_by_prepare result=pass detail=-
+check=reload_then_command_round_0 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_1 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=reload_then_command_round_2 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_3 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=reload_then_command_round_4 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_5 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=no_half_loaded_table_shown result=pass detail=[[9,4,2],[9,0,4,2,5,6],[9,4,2],[9,0,4,2,5,6],[9,4,2],[9,0,4,2,5,6]]
+check=table_restored result=pass detail={"revision":8,"tools":[{"comment":"nine","diameter":0,"length":0,"number":9,"pocket":1},{"comment":"","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":0,"length":0,"number":4,"pocket":2},{"comment":"two","diameter":0,"length":0,"number":2,"pocket":3},{"comment":"","diameter":0,"length":0,"number":5,"pocket":5},{"comment":"","diameter":0,"length":0,"number":6,"pocket":6}],"type":"tool_table"}
+check=panel_program_tab_again result=pass detail=-
+check=panel_opens_part_program result=pass detail=-
+check=panel_gets_program_text result=pass detail=[{"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/nc_files/probe.ngc","lines":["G21_G91","G38.2_X3_F200","G90","M2"],"revision":1,"truncated":false,"type":"program"},{"block_delete":true,"current_line":2,"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/nc_files/probe.ngc","motion_line":0,"optional_stop":true,"revision":1}]
+check=panel_code_view result=pass detail=-
+check=panel_shows_program_text result=pass detail="1G21_G90_G542F4003G1_X10_Y04T2_M65G1_X146G4_P1.57G1_X168M2"
+check=panel_opens_same_program_again result=pass detail=-
+check=reload_of_same_file_is_a_new_revision result=pass detail=before=[2,33,2]_after=[3,34,3]
+check=panel_runs_program result=pass detail=["Cycle_start","Cycle_start"]
+check=program_runs result=pass detail=["mdi","idle",{"block_delete":true,"current_line":0,"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/nc_files/part.ngc","motion_line":0,"optional_stop":true,"revision":3}]
+check=snapshot_program-running result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/program-running-mm.png
+check=tool_change_prompt result=pass detail=[{"kind":"tool_change","tool":2},"The_program_is_waiting_for_a_tool_change_Load_T2eighth_inch_Table:_length_50.800_mm_·_diameter_3.175_mm_In_the_spindle_now,_as_LinuxCNC_reports:_no_tool_·_spindle_stoppedTool_is_in_the_spindleThe_program_continues_at_once_when_you_confirm._Stop,_in_the_run_bar,_ends_the_program_instead."]
+check=linuxcnc_waits_for_tool result=pass detail=tool_change/number=TRUE/2_in_spindle=0_x_mm=10
+check=snapshot_tool-change-prompt result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tool-change-prompt-mm.png
+fact=tool_change_prompt_buttons ["Tool is in the spindle"]
+check=panel_confirms_tool_change result=pass detail=-
+check=tool_change_completes result=pass detail=in_spindle=0
+check=prompt_closes result=pass detail=-
+check=panel_shows_dwell result=pass detail={"kind":"none"}
+check=program_finishes result=pass detail=x_mm=14
+check=panel_shows_program_done result=pass detail=-
+check=no_console_errors_after_program result=pass detail=[]
+fact=assets wasm=occt-import-js-BhHfLpto.wasm worker=step.worker-DwKApi0M.js
+fact=versions "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15"
+fact=wasm {"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=wasm_served_as_application_wasm result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=wasm_streaming_compilation result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=secure_context result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+fact=webgl {"maxTexture":16384,"renderer":"WebKit WebGL","unmaskedRenderer":"Apple GPU","unmaskedVendor":"Apple Inc.","vendor":"WebKit","version":"WebGL 2.0","webgl1":true,"webgl2":true}
+fact=web_process_graphics_libraries libEGL.so.1.1.0 libEGL_mesa.so.0.0.0 libGLESv2.so.2.1.0 libGLX.so.0.0.0 libLLVM.so.19.1 libgallium-25.0.7-2.so libxcb-dri3.so.0.1.0
+fact=webkit_gpu Copy_to_clipboardPrint_in_stdout_Version_Information_WebKit_version_WebKitGTK_2.54.0_(tarball)_Operating_system_Linux_6.17.4-1-pve_#1_SMP_PREEMPT_DYNAMIC_PMX_6.17.4-1_(2025-12-03T15:42Z)_x86_64_Desktop_Unknown_GStreamer_version_1.26.2_(build)_GStreamer_1.26.2_(runtime)_GTK_version_3.24.49_(build)_3.24.49_(runtime)_Display_Information_Identifier_1_Type_X11_Screen_geometry_0,0_1280x800_Screen_work_area_0,0_1280x800_Device_scale_1_Depth_24_Bits_per_color_component_8_Font_Scaling_DPI_96_Screen_DPI_95.88971030998809_VBlank_type_Timer_VBlank_refresh_rate_60Hz_View_Information_Size_1x1_State_visible_Hardware_Acceleration_Information_Policy_never_WebGL_enabled_Yes_2D_canvas_Accelerated_Buffer_format_Unknown
+fact=graphics_environment WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE= LIBGL_ALWAYS_SOFTWARE= GDK_BACKEND=x11
+check=webgl2_context result=pass detail={"maxTexture":16384,"renderer":"WebKit_WebGL","unmaskedRenderer":"Apple_GPU","unmaskedVendor":"Apple_Inc.","vendor":"WebKit","version":"WebGL_2.0","webgl1":true,"webgl2":true}
+fact=fonts {"faces":[{"family":"DM Sans","status":"loaded","weight":"400 700"},{"family":"IBM Plex Mono","status":"loaded","weight":"400"},{"family":"IBM Plex Mono","status":"loaded","weight":"500"}],"loaded":3,"loads":["DM Sans 400 700: loaded","IBM Plex Mono 400: loaded","IBM Plex Mono 500: loaded"],"used":"DM Sans, system-ui, sans-serif"}
+check=bundled_fonts_load result=pass detail=["DM_Sans_400_700:_loaded","IBM_Plex_Mono_400:_loaded","IBM_Plex_Mono_500:_loaded"]
+fact=module_worker {"reply":{"error":"Could not read this STEP file","ok":false}}
+check=module_worker_starts_and_instantiates_wasm result=pass detail={"reply":{"error":"Could_not_read_this_STEP_file","ok":false}}
+check=step_sample_exists result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/../samples/upstream/instant-machinist/instant-machinist/parts/sm-101/part.step
+check=panel_program_tab_for_model result=pass detail=-
+check=panel_split_view result=pass detail=-
+check=panel_opens_model_dialog result=pass detail=["◇Attach_STEP_model›"]
+check=sample_shortcut_hidden_in_native_panel result=pass detail=-
+fact=step_sm101 {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1 parts · 1,132 triangles","size":"CAD size: 120.000 × 80.000 × 20.000 mm. Model and placement stay in mm.","summary":"◇part.step›Part hidden: waiting for the current toolpath"}
+check=step_import_file_chooser_opens result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_sm101_finished result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_sm101_geometry result=pass detail="part.step1_parts_·_1,132_triangles"
+check=step_import_sm101_size result=pass detail="CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm."
+check=step_overlay_hidden_without_preview result=pass detail="◇part.step›Part_hidden:_waiting_for_the_current_toolpath"
+check=step_import_chooser_cancel_keeps_attachment result=pass detail={"chooser":true,"clicked":true,"error":"","identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_same_file_again result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+fact=step_ops_block {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"ops_block.step1 parts · 576 triangles","size":"CAD size: 100.000 × 70.000 × 20.000 mm. Model and placement stay in mm.","summary":"◇ops_block.step›Part hidden: waiting for the current toolpath"}
+check=step_import_centimetre_source_units result=pass detail="CAD_size:_100.000_×_70.000_×_20.000_mm._Model_and_placement_stay_in_mm."
+fact=step_lego {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"lego_4x2_01.step1 parts · 3,862 triangles","size":"CAD size: 100.584 × 49.784 × 38.100 mm. Model and placement stay in mm.","summary":"◇lego_4x2_01.step›Part hidden: waiting for the current toolpath"}
+check=step_import_inch_source_units result=pass detail="CAD_size:_100.584_×_49.784_×_38.100_mm._Model_and_placement_stay_in_mm."
+fact=step_invalid {"chooser":true,"clicked":true,"error":"Could not read this STEP file","finished":true,"identity":"lego_4x2_01.step1 parts · 3,862 triangles","size":"CAD size: 100.584 × 49.784 × 38.100 mm. Model and placement stay in mm.","summary":"◇lego_4x2_01.step›Part hidden: waiting for the current toolpath"}
+check=step_import_invalid_file_keeps_attachment result=pass detail={"chooser":true,"clicked":true,"error":"Could_not_read_this_STEP_file","finished":true,"identity":"lego_4x2_01.step1_parts_·_3,862_triangles","size":"CAD_size:_100.584_×_49.784_×_38.100_mm._Model_and_placement_stay_in_mm.","summary":"◇lego_4x2_01.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=panel_closes_model_dialog result=pass detail=-
+fact=model_layer {"canvases":[{"class":"scene-canvas","height":268,"lost":false,"renderer":"WebKit WebGL","webgl2":true,"width":469},{"class":"toolpath-canvas","height":268,"webgl2":false,"width":469}],"sceneError":[]}
+check=step_overlay_scene_context_alive result=pass detail={"canvases":[{"class":"scene-canvas","height":268,"lost":false,"renderer":"WebKit_WebGL","webgl2":true,"width":469},{"class":"toolpath-canvas","height":268,"webgl2":false,"width":469}],"sceneError":[]}
+check=snapshot_step-model result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/step-model-mm.png
+check=no_console_errors_after_step result=pass detail=[]
+fact=page_errors_after_step []
+check=panel_tools_tab result=pass detail=-
+check=panel_opens_tool_model result=pass detail=-
+check=tool_model_canvas_shown result=pass detail="Tool_model_defaultsTool_familyFlat_end_millBall-nose_end_millDrillSpot_drillChamfer_millFace_millGeneric_cylinderLengths_scale_from_the_reference_diameter_to_each_tool's_table_diameter._Tip_angle_stay"
+fact=tool_model_canvas {"box":[649,290,403,226],"error":"","height":226,"lost":false,"webgl2":true,"width":403}
+check=tool_model_webgl2_context_alive result=pass detail={"box":[649,290,403,226],"error":"","height":226,"lost":false,"webgl2":true,"width":403}
+check=tool_model_geometry_visible result=pass detail=drawn_pixels=5772_of_91078
+check=snapshot_tool-model result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tool-model-mm.png
+check=panel_closes_tool_model result=pass detail=-
+check=snapshot_tools-tab result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tools-tab-mm.png
+check=tools_tab_shows_unavailable_work_systems result=pass detail=Tool_tablemmModel_defaultsAdd_tool_In_spindle,_as_reportedT2_eighth_inchNo_tool_length_offset_in_effect_(G49)Touch_off_length_ToolZ_offsetDiameterDescriptionT912.7006.350nine_Set_modelT00.0000.000none_Set_modelT425.40012.700_Set_modelT250.8003.175eighth_inch_in_spindleSet_modelWork_offsetsmm_·_origins,_in_machine_coordinatesSystemXYZG540.0000.0000.000activeG55Unavailable———_Select_G56Unavailable———_Select_G57Unavailable———_Select_G58Unavailable———_Select_G59Unavailable———_Select_G59.1Unavailable———_Select_G59.2Unavailable———_Select_G59.3Unavailable—
+check=no_console_errors_in_tools_tab result=pass detail=[]
+check=panel_machine_tab_after_tools result=pass detail=-
+check=panel_opens_other_program result=pass detail=-
+check=step_attachment_removed_with_program result=pass detail="◇Attach_STEP_model›Part_model_removed_because_the_program_changed"
+check=reload_after_import result=pass detail=-
+check=panel_machine_tab_after_reload result=pass detail=-
+check=new_page_has_no_attachment result=pass detail="◇Attach_STEP_model›Optional_part_geometry"
+check=no_console_errors_after_reload result=pass detail=[]
+check=document_identities_differ result=pass detail=old=79ea05002da9d6515274305b37372c95_new=18fd2ea3cbdf430b58e241293c490f5f
+check=late_request_of_old_document_is_dropped result=pass detail=rejected=0->2_machine_on=true_results=[1]
+check=request_of_present_document_is_executed result=pass detail=[1]
+check=fresh_page_after_injected_request result=pass detail=-
+check=panel_reset_estop result=pass detail=-
+check=linuxcnc_estop_reset result=pass detail=-
+check=panel_shows_off result=pass detail=-
+check=panel_machine_on result=pass detail=-
+check=linuxcnc_machine_on result=pass detail=-
+check=panel_shows_on result=pass detail="Machine_off"
+check=panel_estop result=pass detail=-
+check=linuxcnc_estop result=pass detail=-
+check=panel_shows_estop result=pass detail="Machine_off"
+check=snapshot_estop-after-run result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/estop-after-run-mm.png
+check=no_request_off_the_scheme_at_end result=pass detail=resources=62
+fact=delivery delivered=752 dropped=1 commits=5
+check=application_started result=pass detail=exit=0
+check=application_exit_code result=pass detail=exit=0
+fact=web_processes_at_return web=1 network=2
+exit=0
+sim=done exit=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-mm/linuxcnc.log
+<end of output>
+Test time =  33.50 sec
+----------------------------------------------------------
+Test Passed.
+"linuxcnc_shell_mm" end time: Nov 14 21:53 UTC
+"linuxcnc_shell_mm" time elapsed: 00:00:33
+----------------------------------------------------------
+
+23/24 Testing: linuxcnc_shell_inch
+23/24 Test: linuxcnc_shell_inch
+Command: "/home/turo/ai/claudecode-coffeecnc/backend/tests/sim/run.sh" "-u" "inch" "-t" "500" "/home/turo/ai/claudecode-coffeecnc/backend/tests/shell/under_xvfb.sh" "/home/turo/ai/claudecode-coffeecnc/backend/build/dev/coffeecnc_shell_tests"
+Directory: /home/turo/ai/claudecode-coffeecnc/backend/build/dev
+"linuxcnc_shell_inch" start time: Nov 14 21:53 UTC
+Output:
+----------------------------------------------------------
+check=observer_connected result=pass detail=status
+check=panel_bundle_matches_sources result=pass detail=panel=match_inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7_assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7 assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337 commit=ca88a0a7a853a152ec3e827d0dd47faef0b28d76
+check=page_loads result=pass detail=coffeecnc://panel/index.html
+check=page_url result=pass detail=coffeecnc://panel/index.html
+check=window_size result=pass detail=1280x800
+check=handler_before_page_scripts result=pass detail=shell_script=yes_test_script=true
+check=one_document result=pass detail=commits=1_page=1
+check=no_console_errors result=pass detail=[]
+check=no_request_off_the_scheme result=pass detail=resources=6
+fact=resource coffeecnc://panel/index.html
+fact=resource coffeecnc://panel/assets/index-BtAZ6mdY.js
+fact=resource coffeecnc://panel/assets/index-Cv_V5-cH.css
+fact=resource coffeecnc://panel/fonts/DM-Sans-400-700.woff2
+fact=resource coffeecnc://panel/fonts/IBM-Plex-Mono-500.woff2
+fact=resource coffeecnc://panel/fonts/IBM-Plex-Mono-400.woff2
+fact=hello {"axes":["x","y","z"],"axis_max_jog_velocity":{"x":1799.999448,"y":1799.999448,"z":1799.999448},"homing_required":true,"jog_increments":[],"machine_name":"CoffeeCNC-sim","machine_units":"inch","max_feed_override":1.5,"max_jog_velocity":1799.999448,"max_spindle_override":1.2,"min_spindle_override":0.5,"protocol":1,"simulated":false,"type":"hello"}
+check=hello_machine result=pass detail="CoffeeCNC-sim"
+check=hello_units result=pass detail="inch"
+check=hello_limits_in_mm result=pass detail={"axes":["x","y","z"],"axis_max_jog_velocity":{"x":1799.999448,"y":1799.999448,"z":1799.999448},"homing_required":true,"jog_increments":[],"machine_name":"CoffeeCNC-sim","machine_units":"inch","max_feed_override":1.5,"max_jog_velocity":1799.999448,"max_spindle_override":1.2,"min_spindle_override":0.5,"protocol":1,"simulated":false,"type":"hello"}
+check=panel_is_not_the_simulator result=pass detail="CoffeeCNC_·_Local_machine_interfacecoffeecnc_/_mill"
+fact=first_status {"active_codes":["G80","G17","G40","G20","G90","G94","G54","G49","G99","G64","G97","G91.1","G8","M5","M9","M48","M53","M0"],"axes":[{"axis":"x","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":0},{"axis":"y","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":0},{"axis":"z","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":100.0000032,"min_limit":-50.0000016,"on_hard_limit":false,"work":0}],"coolant":{"flood":false,"mist":false},"interp":"idle","link":"live","machine":"estop","mode":"manual","motion":{"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":0,"rapid_override":1,"velocity":0},"offsets":{"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1},"preview_context":2,"probe_input":null,"program":{"block_delete":true,"current_line":0,"file":null,"motion_line":0,"optional_stop":true,"revision":0},"program_units":"inch","seq":5,"spindle":{"actual_rpm":null,"at_speed":null,"commanded_rpm":0,"direction":"stopped","override":1},"tool":{"in_spindle":0,"prepared":null},"type":"status","wait":{"kind":"none"}}
+check=status_estop result=pass detail="estop"
+check=status_limits_in_mm result=pass detail=[{"axis":"x","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":0},{"axis":"y","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":0},{"axis":"z","dtg":0,"homed":false,"homing":false,"machine":0,"max_limit":100.0000032,"min_limit":-50.0000016,"on_hard_limit":false,"work":0}]
+check=status_feedback_unavailable result=pass detail={"actual_rpm":null,"at_speed":null,"commanded_rpm":0,"direction":"stopped","override":1}
+check=status_rate result=pass detail=per_second=20
+check=status_numbering result=pass detail=[1,25,0]
+check=work_offsets_only_active_available result=pass detail={"revision":1,"systems":[{"available":true,"offset":[0,0,0],"rotation_xy":0,"wcs":1},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":2},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":3},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":4},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":5},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":6},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":7},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":8},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":9}],"type":"work_offsets"}
+check=preview_unavailable_with_reason result=pass detail={"bounds":null,"context":2,"error":{"line":0,"text":"This_version_of_CoffeeCNC_does_not_compute_a_toolpath_preview."},"segments":[],"state":"unavailable","type":"preview"}
+fact=tool_table {"revision":1,"tools":[{"comment":"quarter inch end mill","diameter":6.35,"length":50.8,"number":1,"pocket":1},{"comment":"eighth inch end mill","diameter":3.175,"length":38.099999999999994,"number":2,"pocket":2}],"type":"tool_table"}
+check=tool_table_loaded_in_mm result=pass detail={"revision":1,"tools":[{"comment":"quarter_inch_end_mill","diameter":6.35,"length":50.8,"number":1,"pocket":1},{"comment":"eighth_inch_end_mill","diameter":3.175,"length":38.099999999999994,"number":2,"pocket":2}],"type":"tool_table"}
+check=snapshot_estop result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/estop-inch.png
+check=served_panel_is_the_stamped_one result=pass detail=served_inputs=074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7_served_assets=b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
+check=panel_reset_estop result=pass detail=-
+check=linuxcnc_estop_reset result=pass detail=-
+check=panel_shows_off result=pass detail=-
+check=panel_machine_on result=pass detail=-
+check=linuxcnc_machine_on result=pass detail=-
+check=panel_shows_on result=pass detail="Machine_idle"
+check=panel_manual_tab result=pass detail=-
+check=panel_home_all result=pass detail="Home_all_axes_using_the_configured_sequence"
+check=linuxcnc_homed result=pass detail=-
+check=panel_shows_homed result=pass detail=["homing","homed","homed"]
+check=snapshot_machine-on-idle result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/machine-on-idle-inch.png
+check=panel_mdi_units result=pass detail=-
+check=panel_mdi_units_move result=pass detail=-
+check=mdi_from_panel_moves_machine result=pass detail=hal_mm=25.4,-12.7,5.00000016
+check=panel_mdi_history_accepted result=pass detail=["G21accepted","G90_G1_X25.4_Y-12.7_Z5_F1200accepted"]
+check=panel_shows_machine_at_rest result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":1200,"rapid_override":1,"velocity":0}
+check=panel_machine_position_mm result=pass detail=[{"axis":"x","dtg":0,"homed":true,"homing":false,"machine":25.39999999999999,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":25.39999999999999},{"axis":"y","dtg":0,"homed":true,"homing":false,"machine":-12.699999999999996,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":-12.699999999999996},{"axis":"z","dtg":0,"homed":true,"homing":false,"machine":4.999999999999999,"max_limit":100.0000032,"min_limit":-50.0000016,"on_hard_limit":false,"work":4.999999999999999}]
+check=panel_programmed_feed_mm_per_min result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":true,"programmed_feed":1200,"rapid_override":1,"velocity":0}
+check=panel_active_codes result=pass detail=["G1","G17","G40","G21","G90","G94","G54","G49","G99","G64","G97","G91.1","G8","M5","M9","M48","M53","M0"]
+check=work_offset_follows result=pass detail=[{"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1},{"axis":"x","dtg":0,"homed":true,"homing":false,"machine":25.39999999999999,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":25.39999999999999}]
+check=offset_change_is_a_new_revision_and_context result=pass detail=revision=1->2_context=11->12
+check=active_system_changes_with_g55 result=pass detail={"revision":2,"systems":[{"available":true,"offset":[5.4,0,0],"rotation_xy":0,"wcs":1},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":2},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":3},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":4},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":5},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":6},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":7},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":8},{"available":false,"offset":[0,0,0],"rotation_xy":0,"wcs":9}],"type":"work_offsets"}
+check=back_to_g54 result=pass detail={"g5x":[0,0,0],"g92":[0,0,0],"rotation_xy":0,"tool":[0,0,0],"wcs":1}
+check=jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=jog_moves_while_held result=pass detail=x_mm=25.4->26.0050026
+check=panel_shows_jog result=pass detail={"feed_mode":"per_minute","feed_override":1,"in_position":false,"programmed_feed":1200,"rapid_override":1,"velocity":600}
+check=snapshot_jog-in-progress result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/jog-in-progress-inch.png
+check=jog_keeps_moving_while_held result=pass detail=x_mm=25.4->33.455000399999996
+check=jog_stops_on_release result=pass detail=stopped_after_ms=308.450683_x_mm=33.600009_travelled_after_release_mm=0.14500860000000415
+check=panel_shows_new_position result=pass detail={"axis":"x","dtg":0,"homed":true,"homing":false,"machine":33.59999999999908,"max_limit":250.000008,"min_limit":-250.000008,"on_hard_limit":false,"work":33.59999999999908}
+check=snapshot_jog-finished result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/jog-finished-inch.png
+check=no_console_errors_after_jog result=pass detail=[]
+check=reload_jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=reload_jog_moves_while_held result=pass detail=x_mm=33.600009->34.195004
+check=reload_stops_jog result=pass detail=stopped_after_ms=308.699371_x_mm=34.3499948
+check=reload_is_a_new_page result=pass detail=page=1->2_commits=1->2_after_ms=615.431979
+check=new_page_live result=pass detail=-
+check=new_page_handler_before_scripts result=pass detail=-
+check=new_page_gets_its_own_messages result=pass detail=-
+check=old_page_messages_not_delivered result=pass detail=dropped=0->1
+check=new_page_starts_clean result=pass detail={"breaks":0,"errors":[],"firstSeq":1,"hello":1,"results":[1],"sent":[1],"stale":false}
+check=new_page_results_are_its_own result=pass detail=old_page_sent=27_new_page={"breaks":0,"errors":[],"firstSeq":1,"hello":1,"results":[1],"sent":[1],"stale":false}
+check=machine_still_on_after_reload result=pass detail=-
+check=axis_did_not_move_after_reload result=pass detail=x_mm=34.3499948->34.3499948
+check=panel_manual_tab_again result=pass detail=-
+check=crash_jog_control_enabled result=pass detail=["Jog_Y+","Jog_X−","Jog_X+","Jog_Y−","Jog_Z+","Jog_Z−","Stop_all_jogging"]
+check=crash_jog_moves_while_held result=pass detail=x_mm=34.3499948->34.9549974
+check=web_process_found result=pass detail=count=1
+check=web_process_death_stops_jog result=pass detail=stopped_after_ms=309.67811_x_mm=35.2199956
+check=web_process_termination_seen result=pass detail=-
+check=panel_loaded_again_after_crash result=pass detail=page=2->3
+check=new_web_process result=pass detail=-
+check=machine_still_on_after_crash result=pass detail=-
+check=page_after_crash_is_clean result=pass detail=[]
+check=panel_manual_tab_after_crash result=pass detail=-
+fact=scheme {"absolute":{"bytes":24,"html":false,"status":403,"type":"text/plain"},"directory":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"http":{"failed":"TypeError: Load failed"},"index":{"bytes":395,"html":true,"status":200,"type":"text/html"},"missing":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"missingPage":{"bytes":24,"html":false,"status":404,"type":"text/plain"},"otherHost":{"failed":"TypeError: Load failed"},"post":405,"traversal":{"bytes":24,"html":false,"status":403,"type":"text/plain"}}
+check=scheme_serves_index result=pass detail={"bytes":395,"html":true,"status":200,"type":"text/html"}
+check=scheme_missing_file_is_404_not_the_entry_page result=pass detail={"bytes":24,"html":false,"status":404,"type":"text/plain"}
+check=scheme_lists_no_directory result=pass detail={"bytes":24,"html":false,"status":404,"type":"text/plain"}
+check=scheme_refuses_traversal result=pass detail={"bytes":24,"html":false,"status":403,"type":"text/plain"}
+check=scheme_refuses_absolute_path result=pass detail={"bytes":24,"html":false,"status":403,"type":"text/plain"}
+check=scheme_has_one_host result=pass detail={"failed":"TypeError:_Load_failed"}
+check=network_is_refused result=pass detail={"failed":"TypeError:_Load_failed"}
+check=scheme_is_read_only result=pass detail=405
+check=navigation_away_is_refused result=pass detail=uri=coffeecnc://panel/index.html_commits=3->3
+check=no_new_window result=pass detail=-
+fact=expected_refusals ["csp: connect-src coffeecnc://other/index.html","csp: connect-src http://127.0.0.1:9/"]
+check=panel_program_tab result=pass detail=-
+check=panel_open_browser result=pass detail=-
+check=browser_lists_program_directory result=pass detail=["/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/nc_files",["probe.ngc"]]
+check=browser_opens_program result=pass detail=-
+check=linuxcnc_program_loaded result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/nc_files/probe.ngc
+check=panel_run_probe_program result=pass detail=["Cycle_start","Cycle_start"]
+check=operator_error_shown_in_panel result=pass detail=[[{"level":"error","text":"G38.2_move_finished_without_making_contact.","time":1794693222968,"type":"message"}],"G38.2_move_finished_without_making_contact."]
+check=snapshot_operator-error result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/operator-error-inch.png
+check=panel_dismisses_error result=pass detail=-
+check=dismissed_error_leaves_the_bar result=pass detail="Probeprobe.ngc_/_G54_/_Program_in_mmMachine_idleMachineConnectionCoffeeCNC-simTaskauto_·_idleActive_codesG38.2_G17_G40_G21_G91_G94_G54_G49_G99_G64_G97_G91.1_G8_M5_M9_M48_M53_M0Machine_offMessage_log_·_1"
+check=panel_opens_message_log result=pass detail=-
+check=dismissed_error_stays_in_the_log result=pass detail="Message_log21:53:42G38.2_move_finished_without_making_contact."
+check=panel_closes_message_log result=pass detail=-
+check=probe_program_ended result=pass detail=-
+check=no_console_errors_after_operator_error result=pass detail=[]
+check=file_edit_without_load_changes_nothing result=pass detail={"revision":1,"tools":[{"comment":"quarter_inch_end_mill","diameter":6.35,"length":50.8,"number":1,"pocket":1},{"comment":"eighth_inch_end_mill","diameter":3.175,"length":38.099999999999994,"number":2,"pocket":2}],"type":"tool_table"}
+fact=load_tool_table rcs=1
+fact=loaded_tool_table {"revision":2,"tools":[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}],"type":"tool_table"}
+check=loaded_table_is_shown result=pass detail={"revision":2,"tools":[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth_inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}],"type":"tool_table"}
+check=loaded_table_rows_in_mm result=pass detail=[{"comment":"nine","diameter":6.35,"length":12.7,"number":9,"pocket":1},{"comment":"none","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":12.7,"length":25.4,"number":4,"pocket":2},{"comment":"eighth_inch","diameter":3.175,"length":50.8,"number":2,"pocket":3}]
+check=panel_manual_tab_for_tools result=pass detail=-
+check=prepared_tool_T4 result=pass detail=panel=null_linuxcnc_index=-1
+check=prepared_tool_T2 result=pass detail=panel=4_linuxcnc_index=3
+check=prepared_tool_T9 result=pass detail=panel=2_linuxcnc_index=4
+check=loaded_tool_unchanged_by_prepare result=pass detail=-
+check=reload_then_command_round_0 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_1 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=reload_then_command_round_2 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_3 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=reload_then_command_round_4 result=pass detail=rcs=1_tools=[9,4,2]
+check=reload_then_command_round_5 result=pass detail=rcs=1_tools=[9,0,4,2,5,6]
+check=no_half_loaded_table_shown result=pass detail=[[9,4,2],[9,0,4,2,5,6],[9,4,2],[9,0,4,2,5,6],[9,4,2],[9,0,4,2,5,6]]
+check=table_restored result=pass detail={"revision":8,"tools":[{"comment":"nine","diameter":0,"length":0,"number":9,"pocket":1},{"comment":"","diameter":0,"length":0,"number":0,"pocket":4},{"comment":"","diameter":0,"length":0,"number":4,"pocket":2},{"comment":"two","diameter":0,"length":0,"number":2,"pocket":3},{"comment":"","diameter":0,"length":0,"number":5,"pocket":5},{"comment":"","diameter":0,"length":0,"number":6,"pocket":6}],"type":"tool_table"}
+check=panel_program_tab_again result=pass detail=-
+check=panel_opens_part_program result=pass detail=-
+check=panel_gets_program_text result=pass detail=[{"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/nc_files/probe.ngc","lines":["G21_G91","G38.2_X3_F200","G90","M2"],"revision":1,"truncated":false,"type":"program"},{"block_delete":true,"current_line":2,"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/nc_files/probe.ngc","motion_line":0,"optional_stop":true,"revision":1}]
+check=panel_code_view result=pass detail=-
+check=panel_shows_program_text result=pass detail="1G21_G90_G542F4003G1_X10_Y04T2_M65G1_X146G4_P1.57G1_X168M2"
+check=panel_opens_same_program_again result=pass detail=-
+check=reload_of_same_file_is_a_new_revision result=pass detail=before=[2,38,2]_after=[3,39,3]
+check=panel_runs_program result=pass detail=["Cycle_start","Cycle_start"]
+check=program_runs result=pass detail=["mdi","idle",{"block_delete":true,"current_line":0,"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/nc_files/part.ngc","motion_line":0,"optional_stop":true,"revision":3}]
+check=snapshot_program-running result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/program-running-inch.png
+check=tool_change_prompt result=pass detail=[{"kind":"tool_change","tool":2},"The_program_is_waiting_for_a_tool_change_Load_T2eighth_inch_Table:_length_2.0000_inch_·_diameter_0.1250_inch_In_the_spindle_now,_as_LinuxCNC_reports:_no_tool_·_spindle_stoppedTool_is_in_the_spindleThe_program_continues_at_once_when_you_confirm._Stop,_in_the_run_bar,_ends_the_program_instead."]
+check=linuxcnc_waits_for_tool result=pass detail=tool_change/number=TRUE/2_in_spindle=0_x_mm=10.00000032
+check=snapshot_tool-change-prompt result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tool-change-prompt-inch.png
+fact=tool_change_prompt_buttons ["Tool is in the spindle"]
+check=panel_confirms_tool_change result=pass detail=-
+check=tool_change_completes result=pass detail=in_spindle=0
+check=prompt_closes result=pass detail=-
+check=panel_shows_dwell result=pass detail={"kind":"none"}
+check=program_finishes result=pass detail=x_mm=13.999999939999999
+check=panel_shows_program_done result=pass detail=-
+check=no_console_errors_after_program result=pass detail=[]
+fact=assets wasm=occt-import-js-BhHfLpto.wasm worker=step.worker-DwKApi0M.js
+fact=versions "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15"
+fact=wasm {"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=wasm_served_as_application_wasm result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=wasm_streaming_compilation result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+check=secure_context result=pass detail={"bytes":7604031,"exports":15,"imports":52,"origin":"coffeecnc://panel","secureContext":true,"status":200,"streaming":true,"type":"application/wasm"}
+fact=webgl {"maxTexture":16384,"renderer":"WebKit WebGL","unmaskedRenderer":"Apple GPU","unmaskedVendor":"Apple Inc.","vendor":"WebKit","version":"WebGL 2.0","webgl1":true,"webgl2":true}
+fact=web_process_graphics_libraries libEGL.so.1.1.0 libEGL_mesa.so.0.0.0 libGLESv2.so.2.1.0 libGLX.so.0.0.0 libLLVM.so.19.1 libgallium-25.0.7-2.so libxcb-dri3.so.0.1.0
+fact=webkit_gpu Copy_to_clipboardPrint_in_stdout_Version_Information_WebKit_version_WebKitGTK_2.54.0_(tarball)_Operating_system_Linux_6.17.4-1-pve_#1_SMP_PREEMPT_DYNAMIC_PMX_6.17.4-1_(2025-12-03T15:42Z)_x86_64_Desktop_Unknown_GStreamer_version_1.26.2_(build)_GStreamer_1.26.2_(runtime)_GTK_version_3.24.49_(build)_3.24.49_(runtime)_Display_Information_Identifier_1_Type_X11_Screen_geometry_0,0_1280x800_Screen_work_area_0,0_1280x800_Device_scale_1_Depth_24_Bits_per_color_component_8_Font_Scaling_DPI_96_Screen_DPI_95.88971030998809_VBlank_type_Timer_VBlank_refresh_rate_60Hz_View_Information_Size_1x1_State_visible_Hardware_Acceleration_Information_Policy_never_WebGL_enabled_Yes_2D_canvas_Accelerated_Buffer_format_Unknown
+fact=graphics_environment WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE= LIBGL_ALWAYS_SOFTWARE= GDK_BACKEND=x11
+check=webgl2_context result=pass detail={"maxTexture":16384,"renderer":"WebKit_WebGL","unmaskedRenderer":"Apple_GPU","unmaskedVendor":"Apple_Inc.","vendor":"WebKit","version":"WebGL_2.0","webgl1":true,"webgl2":true}
+fact=fonts {"faces":[{"family":"DM Sans","status":"loaded","weight":"400 700"},{"family":"IBM Plex Mono","status":"loaded","weight":"400"},{"family":"IBM Plex Mono","status":"loaded","weight":"500"}],"loaded":3,"loads":["DM Sans 400 700: loaded","IBM Plex Mono 400: loaded","IBM Plex Mono 500: loaded"],"used":"DM Sans, system-ui, sans-serif"}
+check=bundled_fonts_load result=pass detail=["DM_Sans_400_700:_loaded","IBM_Plex_Mono_400:_loaded","IBM_Plex_Mono_500:_loaded"]
+fact=module_worker {"reply":{"error":"Could not read this STEP file","ok":false}}
+check=module_worker_starts_and_instantiates_wasm result=pass detail={"reply":{"error":"Could_not_read_this_STEP_file","ok":false}}
+check=step_sample_exists result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/../samples/upstream/instant-machinist/instant-machinist/parts/sm-101/part.step
+check=panel_program_tab_for_model result=pass detail=-
+check=panel_split_view result=pass detail=-
+check=panel_opens_model_dialog result=pass detail=["◇Attach_STEP_model›"]
+check=sample_shortcut_hidden_in_native_panel result=pass detail=-
+fact=step_sm101 {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1 parts · 1,132 triangles","size":"CAD size: 120.000 × 80.000 × 20.000 mm. Model and placement stay in mm.","summary":"◇part.step›Part hidden: waiting for the current toolpath"}
+check=step_import_file_chooser_opens result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_sm101_finished result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_sm101_geometry result=pass detail="part.step1_parts_·_1,132_triangles"
+check=step_import_sm101_size result=pass detail="CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm."
+check=step_overlay_hidden_without_preview result=pass detail="◇part.step›Part_hidden:_waiting_for_the_current_toolpath"
+check=step_import_chooser_cancel_keeps_attachment result=pass detail={"chooser":true,"clicked":true,"error":"","identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=step_import_same_file_again result=pass detail={"chooser":true,"clicked":true,"error":"","finished":true,"identity":"part.step1_parts_·_1,132_triangles","size":"CAD_size:_120.000_×_80.000_×_20.000_mm._Model_and_placement_stay_in_mm.","summary":"◇part.step›Part_hidden:_waiting_for_the_current_toolpath"}
+fact=step_ops_block {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"ops_block.step1 parts · 576 triangles","size":"CAD size: 100.000 × 70.000 × 20.000 mm. Model and placement stay in mm.","summary":"◇ops_block.step›Part hidden: waiting for the current toolpath"}
+check=step_import_centimetre_source_units result=pass detail="CAD_size:_100.000_×_70.000_×_20.000_mm._Model_and_placement_stay_in_mm."
+fact=step_lego {"chooser":true,"clicked":true,"error":"","finished":true,"identity":"lego_4x2_01.step1 parts · 3,862 triangles","size":"CAD size: 100.584 × 49.784 × 38.100 mm. Model and placement stay in mm.","summary":"◇lego_4x2_01.step›Part hidden: waiting for the current toolpath"}
+check=step_import_inch_source_units result=pass detail="CAD_size:_100.584_×_49.784_×_38.100_mm._Model_and_placement_stay_in_mm."
+fact=step_invalid {"chooser":true,"clicked":true,"error":"Could not read this STEP file","finished":true,"identity":"lego_4x2_01.step1 parts · 3,862 triangles","size":"CAD size: 100.584 × 49.784 × 38.100 mm. Model and placement stay in mm.","summary":"◇lego_4x2_01.step›Part hidden: waiting for the current toolpath"}
+check=step_import_invalid_file_keeps_attachment result=pass detail={"chooser":true,"clicked":true,"error":"Could_not_read_this_STEP_file","finished":true,"identity":"lego_4x2_01.step1_parts_·_3,862_triangles","size":"CAD_size:_100.584_×_49.784_×_38.100_mm._Model_and_placement_stay_in_mm.","summary":"◇lego_4x2_01.step›Part_hidden:_waiting_for_the_current_toolpath"}
+check=panel_closes_model_dialog result=pass detail=-
+fact=model_layer {"canvases":[{"class":"scene-canvas","height":268,"lost":false,"renderer":"WebKit WebGL","webgl2":true,"width":469},{"class":"toolpath-canvas","height":268,"webgl2":false,"width":469}],"sceneError":[]}
+check=step_overlay_scene_context_alive result=pass detail={"canvases":[{"class":"scene-canvas","height":268,"lost":false,"renderer":"WebKit_WebGL","webgl2":true,"width":469},{"class":"toolpath-canvas","height":268,"webgl2":false,"width":469}],"sceneError":[]}
+check=snapshot_step-model result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/step-model-inch.png
+check=no_console_errors_after_step result=pass detail=[]
+fact=page_errors_after_step []
+check=panel_tools_tab result=pass detail=-
+check=panel_opens_tool_model result=pass detail=-
+check=tool_model_canvas_shown result=pass detail="Tool_model_defaultsTool_familyFlat_end_millBall-nose_end_millDrillSpot_drillChamfer_millFace_millGeneric_cylinderLengths_scale_from_the_reference_diameter_to_each_tool's_table_diameter._Tip_angle_stay"
+fact=tool_model_canvas {"box":[649,290,403,226],"error":"","height":226,"lost":false,"webgl2":true,"width":403}
+check=tool_model_webgl2_context_alive result=pass detail={"box":[649,290,403,226],"error":"","height":226,"lost":false,"webgl2":true,"width":403}
+check=tool_model_geometry_visible result=pass detail=drawn_pixels=5772_of_91078
+check=snapshot_tool-model result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tool-model-inch.png
+check=panel_closes_tool_model result=pass detail=-
+check=snapshot_tools-tab result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/tools-tab-inch.png
+check=tools_tab_shows_unavailable_work_systems result=pass detail=Tool_tableinchModel_defaultsAdd_tool_In_spindle,_as_reportedT2_eighth_inchNo_tool_length_offset_in_effect_(G49)Touch_off_length_ToolZ_offsetDiameterDescriptionT90.50000.2500nine_Set_modelT00.00000.0000none_Set_modelT41.00000.5000_Set_modelT22.00000.1250eighth_inch_in_spindleSet_modelWork_offsetsinch_·_origins,_in_machine_coordinatesSystemXYZG540.00000.00000.0000activeG55Unavailable———_Select_G56Unavailable———_Select_G57Unavailable———_Select_G58Unavailable———_Select_G59Unavailable———_Select_G59.1Unavailable———_Select_G59.2Unavailable———_Select_G59.3Una
+check=no_console_errors_in_tools_tab result=pass detail=[]
+check=panel_machine_tab_after_tools result=pass detail=-
+check=panel_opens_other_program result=pass detail=-
+check=step_attachment_removed_with_program result=pass detail="◇Attach_STEP_model›Part_model_removed_because_the_program_changed"
+check=reload_after_import result=pass detail=-
+check=panel_machine_tab_after_reload result=pass detail=-
+check=new_page_has_no_attachment result=pass detail="◇Attach_STEP_model›Optional_part_geometry"
+check=no_console_errors_after_reload result=pass detail=[]
+check=document_identities_differ result=pass detail=old=0a1ef00a7e8ce0ee6558962c9b3aee53_new=338d57f4bd229dba19b4048dc25c460b
+check=late_request_of_old_document_is_dropped result=pass detail=rejected=0->2_machine_on=true_results=[1]
+check=request_of_present_document_is_executed result=pass detail=[1]
+check=fresh_page_after_injected_request result=pass detail=-
+check=panel_reset_estop result=pass detail=-
+check=linuxcnc_estop_reset result=pass detail=-
+check=panel_shows_off result=pass detail=-
+check=panel_machine_on result=pass detail=-
+check=linuxcnc_machine_on result=pass detail=-
+check=panel_shows_on result=pass detail="Machine_idle"
+check=panel_estop result=pass detail=-
+check=linuxcnc_estop result=pass detail=-
+check=panel_shows_estop result=pass detail="Machine_off"
+check=snapshot_estop-after-run result=pass detail=/home/turo/ai/claudecode-coffeecnc/backend/build/shell-evidence/estop-after-run-inch.png
+check=no_request_off_the_scheme_at_end result=pass detail=resources=62
+fact=delivery delivered=761 dropped=1 commits=5
+check=application_started result=pass detail=exit=0
+check=application_exit_code result=pass detail=exit=0
+fact=web_processes_at_return web=1 network=2
+exit=0
+sim=done exit=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/sim/under_xvfb.sh-inch/linuxcnc.log
+<end of output>
+Test time =  33.50 sec
+----------------------------------------------------------
+Test Passed.
+"linuxcnc_shell_inch" end time: Nov 14 21:54 UTC
+"linuxcnc_shell_inch" time elapsed: 00:00:33
+----------------------------------------------------------
+

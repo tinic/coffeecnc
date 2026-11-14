@@ -2,7 +2,7 @@
 
 Decision, 14 November 2026: use **`occt-import-js` 0.0.23**, pinned through npm in `ui/`. This is a JavaScript interface to C++ OpenCascade compiled as WebAssembly, not a STEP parser written in TypeScript. It provides import and tessellation; CoffeeCNC still needs to render and align the resulting mesh.
 
-The follow-up implements local STEP selection, cancellable worker import, an optional translucent Three.js layer and explicit placement controls. Model state is local to the page; persistent job attachments and native WebKitGTK qualification remain open.
+The follow-up implements local STEP selection, cancellable worker import, an optional translucent Three.js layer and explicit placement controls. Model state is local to the page. The native shell now has recorded STEP-import and tool-editor rendering checks; native part-overlay rendering and persistent job attachments remain open.
 
 ## Candidates
 
@@ -45,7 +45,7 @@ All three initial imports passed. The script checks finite coordinates/normals, 
 
 The expanded corpus check now discovers every STEP file in `samples/manifest.json`: **all 29 models passed** on 2026-11-14. It additionally compares three Camcraft models against the physical dimensions documented in the upstream fixture README. The centimetre-authored `ops_block.step` and `ops_2d.step` import at 100 × 70 × 20 mm and 140 × 100 × 20 mm; the inch-authored `lego_4x2_01.step` imports at 100.584 × 49.784 × 38.1 mm. This checks source-unit conversion independently of the output-unit round trip. Passing mesh integrity and size checks does not establish STEP/NC registration or complete B-rep face coverage.
 
-These results establish useful display output for these files, not complete BREP fidelity or agreement with the paired NC programs. Browser-worker loading and Vite asset bundling are exercised separately in the operator panel. The actual WebKitGTK runtime still needs qualification.
+These results establish useful display output for these files, not complete BREP fidelity or agreement with the paired NC programs. Browser-worker loading and Vite asset bundling are exercised separately in the operator panel. The native WebKitGTK results and remaining checks are recorded below.
 
 ## Implemented overlay and remaining boundaries
 
@@ -53,13 +53,43 @@ These results establish useful display output for these files, not complete BREP
 2. Output is normalized to millimeters. The worker validates finite coordinates, normals, colors and indices before transferring typed buffers. Mesh names and mesh colors are retained; assembly browsing and per-face colors are not exposed in this first renderer. Failed imports retain the previous attachment.
 3. Registration rotates the CAD about X, then Y, then Z, adds an explicit translation in work millimeters, then applies G92, the work frame's XY rotation and G5x. It does not add the tool offset. A captured work frame prevents a changed WCS/origin from silently moving the model. The layer is hidden until the operator reviews placement against the new frame. Neither filenames nor directory proximity establish alignment.
 4. Visibility and opacity are independent of toolpaths. The initial placement is explicitly unconfirmed. Applying placement records an operator declaration, not a verification. The bundled SM-101 example is labeled as not paired with the demo program. Attachments are lost on page reload and removed on program reload/change.
-5. WebGL failure leaves the 2D toolpath available. The target WebKitGTK build still needs local WASM, file-picker, graphics and large-model checks. A worker isolates CPU work from the UI thread; it does not guarantee that webview memory exhaustion cannot affect the page. Native jog/stop handling remains independent.
+5. WebGL failure leaves the 2D toolpath available. Native checks cover local WASM, automated file selection and tool-editor graphics. Manual picker interaction, rendered part alignment, graphics failure and large-model behavior remain to be exercised on the target. A worker isolates CPU work from the UI thread; it does not guarantee that webview memory exhaustion cannot affect the page. Native jog/stop handling remains independent.
 
 Keep a future native helper behind the same display-mesh contract if the older WASM kernel proves limiting. The [sample catalog](../../samples/README.md) records the existing model/program provenance and discrepancies.
 
 ## Native WebKitGTK qualification
 
-Prepared on 14 November 2026 against CoffeeCNC `275b779`. A read-only `pkg-config` check on playhouse2 reports WebKitGTK **2.54.0** (`webkit2gtk-4.1`) and GTK **3.24.49**. The following checks are pending the native shell; the browser and Node results above do not stand in for them. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
+Prepared on 14 November 2026 against CoffeeCNC `275b779`, with initial native results below from `ca88a0a7a853a152ec3e827d0dd47faef0b28d76` in [PR #12](https://github.com/tinic/coffeecnc/pull/12). The qualification matrix includes checks that are still pending; the browser and Node results above do not stand in for native execution. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
+
+### Recorded native checkpoint: `ca88a0a`
+
+Claude ran the shell on playhouse2 with LinuxCNC 2.9.4, WebKitGTK **2.54.0** (`webkit2gtk-4.1`), GTK **3.24.49**, and an isolated Xvfb display at 1280 × 800. Codex independently read the retained logs, inspected the native screenshots, and built the same panel on macOS. The native and independent panel builds have identical SHA-256 digests:
+
+```text
+inputs  074085be307ad9f5d62f5cbb3891d7e7643a4937745c847b3b106a97703d75b7
+assets  b513e5e1363a28162baac5151f9863d07c86b91bedb3c5295f15fdc64f36b337
+```
+
+Development and analysis presets each passed **24/24 CTests**, in 324.30 and 324.80 seconds respectively. The development mm/inch shell tests each passed 198 checks. [Retained shell-test excerpts](evidence/native-shell-ca88a0a.txt) contain the complete output of those two tests from CTest's `LastTest.log`; the standalone mm log was overwritten by the later executable-startup test. The PR remains under review at this checkpoint, including a publisher shutdown fix and the remaining sanitizer runs.
+
+| Area | Observed in the native shell |
+| --- | --- |
+| Local import pipeline | Module worker and WASM load from `coffeecnc://panel/`; WASM response is HTTP-style status 200 with `application/wasm`, and streaming compilation succeeds. No unexpected resources or captured console errors. |
+| File selection | The real WebKit file-input request opens; test hooks select files or cancel it. This exercises the chooser request and resulting file delivery, not manual browsing in the GTK dialog. |
+| STEP geometry | SM-101 imports as 1 mesh, 1,132 triangles, 120 × 80 × 20 mm. Centimetre-authored `ops_block.step` imports at 100 × 70 × 20 mm; inch-authored `lego_4x2_01.step` at 100.584 × 49.784 × 38.1 mm. |
+| Attachment lifetime | Cancelling the chooser keeps the attachment; choosing the same file again succeeds; invalid input retains the preceding model. A changed program removes the attachment, and a replacement page starts without one. |
+| Tool editor | A live WebGL2 context renders the configured tool envelope. The test detects 5,772 drawn pixels in the 91,078-pixel canvas; the screenshot below visibly confirms the geometry. |
+| Part overlay | The scene's WebGL2 context is alive, but the part remains hidden with “waiting for the current toolpath”: the native interpreter preview is unavailable. These runs do **not** qualify rendered STEP/path alignment. |
+
+![Native WebKitGTK tool-model editor in LinuxCNC simulation](../../ui/screenshots/native-tool-model-ca88a0a.png)
+
+*Unmodified native mm-shell capture at `ca88a0a`, with a configured flat end-mill envelope. The blue ring marks the holder-face datum. This is LinuxCNC simulation, not the G0759 hardware.*
+
+WebGL reports `WebKit WebGL`, with an unmasked renderer of `Apple GPU`. WebKit's diagnostic page reports X11, hardware acceleration policy `never`, and WebGL enabled. The shell sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` when absent. These are properties of this test environment, not a guarantee about the G0759's display hardware.
+
+Rendered STEP/path alignment, named views and camera interaction in the native shell, import cancellation during active computation, graphics-loss recovery, large-model limits and manual picker interaction remain open. Full retained run directories are `backend/build/sim-history/ca88a0a/{dev,analyze}/` in the playhouse2 checkout; the stamped bundle identifies the UI that actually ran.
+
+### Qualification matrix
 
 The production bundle preserves a module worker URL relative to the main module. Inside the worker, the hashed WASM URL resolves relative to `self.location.href`. Both therefore belong under `coffeecnc://panel/assets/`. The pinned loader fetches with same-origin credentials, attempts streaming compilation, then has an ArrayBuffer fallback. Keep this asset layout; no blob URL or network service is needed by the current generated code.
 

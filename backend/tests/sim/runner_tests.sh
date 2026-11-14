@@ -33,7 +33,8 @@ check timeout_ends_every_process $? "exit=${code}_seconds=$took"
 [ "$took" -lt 90 ]
 check timeout_is_bounded $? "seconds=$took"
 
-for signal in TERM INT; do
+# Not INT: bash starts background jobs with SIGINT ignored, so it would never arrive.
+for signal in TERM HUP; do
   "$here/run.sh" -t 300 -d "$work/interrupt" "$work/never" >"$work/interrupt.out" 2>&1 &
   runner=$!
   for _ in $(seq 100); do

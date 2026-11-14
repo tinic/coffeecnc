@@ -189,8 +189,8 @@ struct Rig {
   RequestId next_id{1};
   std::chrono::milliseconds clock{};
 
-  explicit Rig(bool ready = true)
-      : session(port, Limits{3000, 1.2, 0.5, 1.2, 24000}), page(session.begin_page()) {
+  explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000})
+      : session(port, limits), page(session.begin_page()) {
     port.state = homed_machine();
     if (ready)
       static_cast<void>(send(R"("type":"ready")"));
@@ -349,6 +349,27 @@ void policy_rejections_pass_through() {
              "Feed override is out of range.");
   rig.acted({}, "A rejected request sends nothing to the controller");
   require(rig.port.snapshots == 5, "Every request is judged on a fresh snapshot");
+}
+
+// A machine that does not force homing and has a slower Z: the session acts on its limits.
+void machine_capabilities() {
+  Rig rig{true, Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false}};
+  for (auto& axis : rig.port.state.axes)
+    axis.homed = false;
+  rig.accepted(R"("type":"mdi","text":"G0 X1")");
+  rig.acted({"set_task_mode mdi", "mdi G0 X1"}, "Unhomed MDI is sent where homing is not forced");
+  rig.accepted(R"("type":"touch_off","axis":"x","value":2.5)");
+  rig.acted({"mdi G10 L20 P0 X2.5"}, "Unhomed touch-off is sent");
+  rig.accepted(R"("type":"run")");
+  rig.acted({"set_task_mode auto", "run"}, "An unhomed run is sent");
+  rig.expect(R"("type":"jog","axis":"z","direction":1,"velocity":900,"held":true)", "rejected",
+             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  rig.expect(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)", "rejected",
+             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  rig.acted({}, "A jog above its axis ceiling sends nothing");
+  rig.accepted(R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":true)");
+  rig.acted({"set_task_mode manual", "start_jog x 1 1500 joint"},
+            "An unhomed jog within its ceiling is a joint jog");
 }
 
 void mode_switching() {
@@ -989,6 +1010,7 @@ auto main(int argc, char** argv) -> int {
     ids_strictly_increase();
     decode_errors();
     policy_rejections_pass_through();
+    machine_capabilities();
     mode_switching();
     outcome_mapping();
     every_action();

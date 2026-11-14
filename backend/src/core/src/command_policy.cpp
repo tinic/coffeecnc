@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -38,6 +39,17 @@ auto idle(const ControllerState& s, TaskMode mode, bool require_homed = false) -
     return reject("Home all configured axes first.");
   return allow(mode);
 }
+auto letter(Axis axis) -> char {
+  switch (axis) {
+  case Axis::x:
+    return 'X';
+  case Axis::y:
+    return 'Y';
+  case Axis::z:
+    return 'Z';
+  }
+  return '?';
+}
 auto axis_state(const ControllerState& s, Axis axis) -> const AxisState* {
   const auto index = axis_index(axis);
   if (!index || !s.axes[*index].enabled)
@@ -61,6 +73,8 @@ auto axis_index(Axis axis) -> std::optional<std::size_t> {
 
 CommandPolicy::CommandPolicy(const Limits& limits) : limits_(limits) {
   if (!std::isfinite(limits.max_jog_velocity) || limits.max_jog_velocity <= 0 ||
+      !std::ranges::all_of(limits.max_axis_jog_velocity,
+                           [](double v) -> bool { return std::isfinite(v) && v > 0; }) ||
       !std::isfinite(limits.max_feed_override) || limits.max_feed_override < 1 ||
       !between(limits.min_spindle_override, 0, 1) || !std::isfinite(limits.max_spindle_override) ||
       limits.max_spindle_override < 1 || !std::isfinite(limits.max_spindle_rpm) ||
@@ -117,6 +131,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("Axis is not configured.");
           if (!between(c.velocity, 0, limits_.max_jog_velocity) || c.velocity == 0)
             return reject("Jog velocity is outside the configured range.");
+          if (const double ceiling =
+                  limits_.max_axis_jog_velocity.at(axis_index(c.axis).value_or(0));
+              c.velocity > ceiling)
+            return reject(std::format("Jog velocity is above the {} axis limit of {} mm/min.",
+                                      letter(c.axis), ceiling));
           if (s.machine != MachineState::on || s.interp != InterpState::idle || homing(s))
             return reject("Jogging needs machine power, an idle interpreter and no active homing.");
           if (a->on_hard_limit)
@@ -147,7 +166,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, Mdi>) {
           if (!valid_text(c.text, 254))
             return reject("MDI requires one nonempty block of at most 254 bytes.");
-          return idle(s, TaskMode::mdi, true);
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, OpenProgram>) {
           if (!valid_text(c.path, 254))
             return reject("Program path is empty, too long or contains control characters.");
@@ -157,7 +176,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, Run>) {
           if (!s.program_loaded)
             return reject("Load a program first.");
-          return idle(s, TaskMode::automatic, true);
+          return idle(s, TaskMode::automatic, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, Pause>) {
           if (s.machine != MachineState::on || s.mode == TaskMode::manual ||
               (s.interp != InterpState::reading && s.interp != InterpState::waiting))
@@ -169,12 +188,13 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("There is no paused execution ready to resume.");
           return allow();
         } else if constexpr (std::is_same_v<T, Step>) {
-          if (!s.program_loaded || !homed(s) || s.machine != MachineState::on || s.requested_tool)
-            return reject(
-                "Single block needs a loaded program, homed axes and no pending tool change.");
+          if (!s.program_loaded || s.machine != MachineState::on || s.requested_tool)
+            return reject("Single block needs a loaded program and no pending tool change.");
+          if (limits_.homing_required && !homed(s))
+            return reject("Home all configured axes first.");
           if (s.interp == InterpState::paused && s.mode == TaskMode::automatic)
             return allow();
-          return idle(s, TaskMode::automatic, true);
+          return idle(s, TaskMode::automatic, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, SetOverride>) {
           switch (c.which) {
           case Override::feed:
@@ -211,15 +231,15 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, SelectWcs>) {
           if (c.wcs < 1 || c.wcs > 9)
             return reject("Work coordinate system must be G54 through G59.3.");
-          return idle(s, TaskMode::mdi, true);
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           if (!axis_state(s, c.axis) || !std::isfinite(c.value))
             return reject("Invalid touch-off axis or value.");
-          return idle(s, TaskMode::mdi, true);
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
           if (s.tool_in_spindle <= 0 || !std::isfinite(c.value))
             return reject("Load a tool and provide a finite touch-off value.");
-          return idle(s, TaskMode::mdi, true);
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
           if (s.interp != InterpState::idle || !s.in_position || s.requested_tool || homing(s))
             return reject("Stop execution and finish tool changes before editing tools.");

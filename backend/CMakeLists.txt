@@ -46,6 +46,14 @@ if(BUILD_TESTING)
     coffeecnc_enable_analyzers(coffeecnc_session_tests)
     add_test(NAME session_lifecycle COMMAND coffeecnc_session_tests)
     if(TARGET coffeecnc_linuxcnc)
+      # INI parsing is in the adapter layer, so this exists where the adapter builds. It reads
+      # files only: no LinuxCNC runs.
+      add_executable(coffeecnc_machine_config_tests tests/machine_config_tests.cpp)
+      target_link_libraries(coffeecnc_machine_config_tests PRIVATE coffeecnc_linuxcnc
+        coffeecnc_project_options)
+      coffeecnc_enable_analyzers(coffeecnc_machine_config_tests)
+      add_test(NAME machine_config COMMAND coffeecnc_machine_config_tests
+        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config)
       # The real Session on NmlPort against a running LinuxCNC on a simulated mill. Exists only
       # where the LinuxCNC adapter builds; `ctest -L linuxcnc` selects it, `-LE linuxcnc` skips it.
       add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp)
@@ -59,10 +67,14 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 400)
       endforeach()
+      # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
+      # ceilings, optional signals.
+      add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p g0759 -t 300 $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
         ${PROJECT_BINARY_DIR})
-      set_tests_properties(linuxcnc_sim_runner PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-        RESOURCE_LOCK linuxcnc TIMEOUT 400)
+      set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
     endif()
   endif()
 endif()

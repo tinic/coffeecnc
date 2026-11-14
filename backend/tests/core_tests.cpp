@@ -2,6 +2,7 @@
 #include <coffeecnc/core/jog_lease.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -60,6 +61,91 @@ void execution_gates() {
   require(policy.evaluate(ToolChanged{}, s).allowed, "requested tool change can be acknowledged");
   s.requested_tool = 0;
   require(policy.evaluate(ToolChanged{}, s).allowed, "tool zero is a valid unload request");
+}
+// A machine LinuxCNC runs unhomed ([TRAJ] NO_FORCE_HOMING): execution is allowed, jog rules stay.
+void homing_capability() {
+  const Limits unforced{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false};
+  CommandPolicy forced{simulator_limits()};
+  CommandPolicy policy{unforced};
+  auto s = ready();
+  for (auto& a : s.axes)
+    a.homed = false;
+  s.tool_in_spindle = 1;
+  const auto mdi = policy.evaluate(Mdi{"G0 X10"}, s);
+  require(mdi.allowed && mdi.required_mode == TaskMode::mdi, "unhomed MDI allowed");
+  const auto run = policy.evaluate(Run{}, s);
+  require(run.allowed && run.required_mode == TaskMode::automatic, "unhomed run allowed");
+  require(policy.evaluate(Step{}, s).allowed, "unhomed single block allowed");
+  require(policy.evaluate(SelectWcs{2}, s).allowed, "unhomed WCS selection allowed");
+  require(policy.evaluate(TouchOff{Axis::x, 0}, s).allowed, "unhomed touch-off allowed");
+  require(policy.evaluate(ToolTouchOff{0}, s).allowed, "unhomed tool touch-off allowed");
+  for (const Command& command :
+       {Command{Mdi{"G0 X10"}}, Command{Run{}}, Command{Step{}}, Command{SelectWcs{2}},
+        Command{TouchOff{Axis::x, 0}}, Command{ToolTouchOff{0}}})
+    require(forced.evaluate(command, s).reason == "Home all configured axes first.",
+            "the same command needs homing where LinuxCNC forces it");
+
+  require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).jog_space == JogSpace::joint,
+          "jogs stay joint jogs until every axis is homed");
+  s.axes[0].machine = 5000;
+  require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed,
+          "an unhomed axis has no soft limit to check");
+  s.axes[0].homed = true;
+  require(!policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed,
+          "a homed axis keeps its soft limit");
+  require(policy.evaluate(Jog{Axis::x, -1, 100, true}, s).jog_space == JogSpace::joint,
+          "partial homing is still joint space");
+
+  s = ready();
+  for (auto& a : s.axes)
+    a.homed = false;
+  s.axes[1].homing = true;
+  require(!policy.evaluate(Mdi{"G0 X10"}, s).allowed, "no MDI while an axis is homing");
+  require(!policy.evaluate(Run{}, s).allowed, "no run while an axis is homing");
+  s.axes[1].homing = false;
+  s.machine = MachineState::off;
+  require(!policy.evaluate(Mdi{"G0 X10"}, s).allowed, "unhomed MDI still needs machine power");
+  s.machine = MachineState::on;
+  s.program_loaded = false;
+  require(!policy.evaluate(Run{}, s).allowed && !policy.evaluate(Step{}, s).allowed,
+          "unhomed run and step still need a program");
+}
+// X and Y 1500 mm/min, Z 750 mm/min, 1500 mm/min overall: the G0759's values.
+void axis_jog_ceilings() {
+  CommandPolicy policy{Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false}};
+  const auto s = ready();
+  require(policy.evaluate(Jog{Axis::x, 1, 1500, true}, s).allowed, "X jogs at its ceiling");
+  require(policy.evaluate(Jog{Axis::z, 1, 750, true}, s).allowed, "Z jogs at its ceiling");
+  const auto z = policy.evaluate(Jog{Axis::z, 1, 750.5, true}, s);
+  require(!z.allowed && z.reason == "Jog velocity is above the Z axis limit of 750 mm/min.",
+          "a Z jog above its ceiling names the axis and the limit");
+  const auto step = policy.evaluate(JogStep{Axis::z, -1, 1500}, s);
+  require(!step.allowed && step.reason == "Jog velocity is above the Z axis limit of 750 mm/min.",
+          "a Z step above its ceiling names the axis and the limit");
+  require(policy.evaluate(JogStep{Axis::y, -1, 1500}, s).allowed, "Y steps at its ceiling");
+  require(policy.evaluate(Jog{Axis::x, 1, 1501, true}, s).reason ==
+              "Jog velocity is outside the configured range.",
+          "the global maximum still applies");
+  require(policy.evaluate(Jog{Axis::z, 1, 0, false}, s).allowed,
+          "a release is never a velocity question");
+  // An axis ceiling above the global maximum cannot raise it.
+  CommandPolicy wide{Limits{1500, {3000, 1500, 750}, 2.0, 0.5, 1.0, 1500, true}};
+  require(!wide.evaluate(Jog{Axis::x, 1, 2000, true}, s).allowed,
+          "the lower of both ceilings decides");
+  // The short form: every axis at the global maximum, homing required.
+  const Limits plain{3000, 1.2, 0.5, 1.2, 24000};
+  require(plain.max_axis_jog_velocity == std::array<double, 3>{3000, 3000, 3000} &&
+              plain.homing_required,
+          "limits without per-axis values use the global maximum and require homing");
+  for (const double bad : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN()}) {
+    bool invalid = false;
+    try {
+      CommandPolicy broken{Limits{1500, {1500, 1500, bad}, 2.0, 0.5, 1.0, 1500, true}};
+    } catch (const std::invalid_argument&) {
+      invalid = true;
+    }
+    require(invalid, "an invalid axis ceiling fails construction");
+  }
 }
 void stops_survive_lost_state() {
   CommandPolicy policy{simulator_limits()};
@@ -187,6 +273,8 @@ void task_heartbeat() {
 auto main() -> int {
   try {
     execution_gates();
+    homing_capability();
+    axis_jog_ceilings();
     stops_survive_lost_state();
     jog_constraints();
     hostile_values();

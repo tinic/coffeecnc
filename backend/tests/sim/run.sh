@@ -2,31 +2,44 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-u mm|inch] [-t seconds] [-d run-directory] <program> [arguments...]
+#   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n] <program> [arguments...]
 #
-# LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_sim.ini [arguments...]`
-# and shuts down when it exits. This script assembles the run directory, waits for the program
-# with a hard timeout, makes sure every process it started is gone, and exits with the program's
-# exit code (124 after a timeout, 125 when LinuxCNC could not be run or did not shut down).
+# Profiles (-p):
+#   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
+#   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
+#
+# LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
+# [arguments...]` and shuts down when it exits. This script assembles the run directory, waits for
+# the program with a hard timeout, makes sure every process it started is gone, and exits with the
+# program's exit code (124 after a timeout, 125 when LinuxCNC could not be run or did not shut
+# down). With -n it only assembles the run directory, prints `sim=assembled ini=<file>` and
+# starts nothing.
 #
 # Output is the program's output followed by `sim=<key> ...` lines of this script.
 set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+profile=sim
 units=mm
 timeout=300
 directory=
-while getopts "u:t:d:" option; do
+assemble_only=
+while getopts "p:u:t:d:n" option; do
   case $option in
+  p) profile=$OPTARG ;;
   u) units=$OPTARG ;;
   t) timeout=$OPTARG ;;
   d) directory=$OPTARG ;;
+  n) assemble_only=1 ;;
   *) exit 125 ;;
   esac
 done
 shift $((OPTIND - 1))
-if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; }; then
-  echo "usage: run.sh [-u mm|inch] [-t seconds] [-d run-directory] <program> [arguments...]" >&2
+if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
+  { [ "$profile" != sim ] && [ "$profile" != g0759 ]; } ||
+  { [ "$profile" = g0759 ] && [ "$units" != mm ]; }; then
+  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n]" \
+    "<program> [arguments...]  (g0759 is millimetres only)" >&2
   exit 125
 fi
 program=$(realpath "$1") || exit 125
@@ -38,7 +51,15 @@ plain() {
   *[!A-Za-z0-9_./+:=,@%-]*) return 1 ;;
   esac
 }
-[ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$units
+if [ "$profile" = sim ]; then
+  flavour=$units
+  fragments="coffeecnc_postgui.hal coffeecnc_sim_home.hal"
+else
+  flavour=$profile
+  fragments="coffeecnc_postgui.hal coffeecnc_${profile}_postgui.hal coffeecnc_${profile}_sim.hal"
+fi
+ini=coffeecnc_$profile.ini
+[ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
 for word in "$program" "$directory" "$@"; do
@@ -47,6 +68,31 @@ for word in "$program" "$directory" "$@"; do
     exit 125
   fi
 done
+
+# The run directory holds only generated files.
+perl -pe '
+  BEGIN { $inch = shift eq "inch"; $display = shift; }
+  s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
+  s/\@DISPLAY\@/$display/g;
+  s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
+' "$units" "$program $*" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+for fragment in $fragments; do
+  cp "$here/$fragment" "$directory/" || exit 125
+done
+rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log"
+# Tool table in machine units: T number, P pocket, Z length, D diameter.
+if [ "$profile" = g0759 ]; then
+  # As the machine's table: no length, no diameter, no description.
+  printf 'T0 P0 ;\nT1 P1 ;\nT2 P2 ;\nT3 P3 ;\n'
+elif [ "$units" = inch ]; then
+  printf 'T1 P1 Z2.0 D0.25 ;quarter inch end mill\nT2 P2 Z1.5 D0.125 ;eighth inch end mill\n'
+else
+  printf 'T1 P1 Z50 D6 ;6 mm end mill\nT2 P2 Z40 D3 ;3 mm end mill\n'
+fi >"$directory/tool.tbl"
+if [ -n "$assemble_only" ]; then
+  echo "sim=assembled ini=$directory/$ini"
+  exit 0
+fi
 
 command -v linuxcnc >/dev/null || { echo "sim=error detail=linuxcnc-not-installed"; exit 125; }
 
@@ -61,22 +107,6 @@ if [ -e /tmp/linuxcnc.lock ]; then
   echo "sim=error detail=linuxcnc-lock-file-exists file=/tmp/linuxcnc.lock"
   exit 125
 fi
-
-# The run directory holds only generated files.
-perl -pe '
-  BEGIN { $inch = shift eq "inch"; $display = shift; }
-  s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
-  s/\@DISPLAY\@/$display/g;
-  s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$program $*" "$here/coffeecnc_sim.ini.in" >"$directory/coffeecnc_sim.ini" || exit 125
-cp "$here/coffeecnc_postgui.hal" "$here/coffeecnc_sim_home.hal" "$directory/" || exit 125
-rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log"
-# Tool table in machine units: T number, P pocket, Z length, D diameter.
-if [ "$units" = inch ]; then
-  printf 'T1 P1 Z2.0 D0.25 ;quarter inch end mill\nT2 P2 Z1.5 D0.125 ;eighth inch end mill\n'
-else
-  printf 'T1 P1 Z50 D6 ;6 mm end mill\nT2 P2 Z40 D3 ;3 mm end mill\n'
-fi >"$directory/tool.tbl"
 
 # Every process of this run carries the marker in its environment, however it detaches.
 export COFFEECNC_SIM_RUN="$directory"
@@ -136,7 +166,7 @@ trap 'echo "sim=interrupted"; finish 130' INT TERM HUP
 cd "$directory" || exit 125
 # No DISPLAY: LinuxCNC's start script must not try to open dialog windows. -r keeps its output
 # and the program's on stdout instead of a temporary file.
-env -u DISPLAY linuxcnc -r "$directory/coffeecnc_sim.ini" >"$directory/linuxcnc.log" 2>&1 &
+env -u DISPLAY linuxcnc -r "$directory/$ini" >"$directory/linuxcnc.log" 2>&1 &
 linuxcnc_pid=$!
 
 status=

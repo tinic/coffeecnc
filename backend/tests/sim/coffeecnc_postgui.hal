@@ -4,24 +4,34 @@
 # Jog stop without the NML command channel. motion.jog-stop acts on a rising edge:
 #   coffeecnc.jog-stop    the executable ends a jog whose dead-man lease expired
 #   watchdog tripped      the executable died or stalled: coffeecnc.heartbeat stopped toggling
+#
+# A realtime module loads once per LinuxCNC: a second `loadrt` of a module the machine's own
+# files load fails, with or without names=. Only two modules are loaded here, chosen because
+# machine files rarely load them. A machine that does load one must ask for these instances in
+# its own loadrt line instead:
+#   watchdog  has no names= and is always the one instance `watchdog`
+#   lut5      two named instances; the logic that `not` and `or2` would otherwise do
 loadrt watchdog num_inputs=1
-loadrt not names=coffeecnc-watchdog-tripped
-loadrt or2 names=coffeecnc-jog-stop
+loadrt lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit
 addf watchdog.process servo-thread
 addf watchdog.set-timeouts servo-thread
-addf coffeecnc-watchdog-tripped servo-thread
 addf coffeecnc-jog-stop servo-thread
+addf coffeecnc-jog-inhibit servo-thread
 
 # Twice the executable's 150 ms jog lease.
 setp watchdog.timeout-0 0.3
+# in-0 is watchdog ok, in-1 the executable's request: stop = not ok, or request.
+setp coffeecnc-jog-stop.function 0xD
+# inhibit = not ok
+setp coffeecnc-jog-inhibit.function 0x1
 net coffeecnc-heartbeat coffeecnc.heartbeat => watchdog.input-0
 net coffeecnc-watchdog-enable coffeecnc.watchdog-enable => watchdog.enable-in
-net coffeecnc-watchdog-ok watchdog.ok-out => coffeecnc.watchdog-ok coffeecnc-watchdog-tripped.in
-net coffeecnc-watchdog-tripped coffeecnc-watchdog-tripped.out => coffeecnc-jog-stop.in0
-net coffeecnc-jog-stop-request coffeecnc.jog-stop => coffeecnc-jog-stop.in1
+net coffeecnc-watchdog-ok watchdog.ok-out => coffeecnc.watchdog-ok
+net coffeecnc-watchdog-ok => coffeecnc-jog-stop.in-0 coffeecnc-jog-inhibit.in-0
+net coffeecnc-jog-stop-request coffeecnc.jog-stop => coffeecnc-jog-stop.in-1
 net coffeecnc-jog-stop coffeecnc-jog-stop.out => motion.jog-stop
 # No jog starts while nothing watches it.
-net coffeecnc-watchdog-tripped => motion.jog-inhibit
+net coffeecnc-jog-inhibit coffeecnc-jog-inhibit.out => motion.jog-inhibit
 
 # Manual tool change: coffeecnc takes the place of hal_manualtoolchange. A configuration may have
 # looped these pins back already (LinuxCNC's core_sim.hal does).

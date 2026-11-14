@@ -4,6 +4,7 @@
 
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -308,10 +309,12 @@ auto assembled(const std::string& options, const std::string& name)
       std::format("'{}' -n {} -d '{}' /bin/true >/dev/null", runner, options, directory.string());
   if (std::system(command.c_str()) != 0)
     return std::unexpected("run.sh -n failed: " + command);
-  for (const auto& entry : std::filesystem::directory_iterator(directory))
-    if (entry.path().extension() == ".ini")
-      return load_machine_config(entry.path().string());
-  return std::unexpected(std::string("run.sh -n wrote no INI file"));
+  const std::filesystem::directory_iterator files{directory};
+  const auto ini = std::ranges::find_if(
+      files, [](const auto& entry) -> bool { return entry.path().extension() == ".ini"; });
+  if (ini == std::ranges::end(files))
+    return std::unexpected(std::string("run.sh -n wrote no INI file"));
+  return load_machine_config(ini->path().string());
 }
 
 void simulation_profiles() {

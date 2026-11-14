@@ -121,7 +121,8 @@ finish() {
   # still here belongs to it; halrun -U unloads the realtime side.
   if pgrep -x rtapi_app >/dev/null; then
     echo "sim=leftover names=rtapi_app"
-    halrun -U >/dev/null 2>&1
+    # Bounded: TERM after 20 s, KILL 5 s later. If rtapi_app survives it is counted below.
+    timeout -k 5 20 halrun -U >/dev/null 2>&1
     sleep 1
     [ "$status" != 0 ] || status=125
   fi

@@ -40,7 +40,7 @@ The adapter needs `linuxcnc-uspace-dev` and `libboost-dev` (LinuxCNC's headers i
 | `response_encoding` | | Result and message JSON |
 | `session_lifecycle` | | Page generations, ready gate, ids, policy, mode switching, jog leases, stop retries |
 | `linuxcnc_sim_mm`, `linuxcnc_sim_inch` | `linuxcnc` | The real `Session` on `NmlPort` against LinuxCNC in simulation, about 31 s each |
-| `linuxcnc_sim_runner` | `linuxcnc` | `tests/sim/run.sh` ends every process after a timeout or a signal, about 110 s |
+| `linuxcnc_sim_runner` | `linuxcnc` | `tests/sim/run.sh` ends every process after a timeout, SIGTERM and SIGHUP, about 110 s. SIGINT is handled by the same trap but not tested: bash starts a background job with it ignored |
 
 `ctest --preset dev -LE linuxcnc` skips the simulation tests; they exist only where the adapter builds. One LinuxCNC runs per host: `run.sh` refuses to start while another instance or `/tmp/linuxcnc.lock` exists. Simulation output is one `check=<name> result=pass|fail detail=…` line per check.
 

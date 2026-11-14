@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/panel_messages.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
@@ -41,6 +42,11 @@ struct NmlStatus {
   std::optional<bool> spindle_at_speed;
   std::optional<bool> probe_input;
   double dwell_seconds_left{};
+  // The F word in effect, in the unit of feed_mode: mm/min, 1/min or mm/rev.
+  double programmed_feed{};
+  FeedMode feed_mode{FeedMode::per_minute};
+  // Active modal codes in the order task reports them, G codes first: "G1", "G59.1", "M5".
+  std::vector<std::string> active_codes;
   std::string program_file; // empty when none is loaded
   // Tool table index (not a tool number) prepared by a T word and not yet changed to.
   std::optional<int> prepared_pocket;

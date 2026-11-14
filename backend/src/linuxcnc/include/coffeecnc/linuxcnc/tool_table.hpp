@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -20,6 +21,12 @@ namespace coffeecnc {
 
 // The table without the row of this tool number; nothing when there is no such row.
 [[nodiscard]] auto without_tool(std::string_view table, int number) -> std::optional<std::string>;
+
+// The tools of the table in the order of its rows, lengths in millimetres. A row is a line with
+// a T word; a missing P, Z or D word is 0, as LinuxCNC reads it. The comment is the text after
+// the first `;`, without the white space around it.
+[[nodiscard]] auto tools_of(std::string_view table, double millimetres_per_unit)
+    -> std::vector<Tool>;
 
 } // namespace coffeecnc
 

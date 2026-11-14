@@ -52,6 +52,16 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_publisher_tests)
     add_test(NAME status_publishing COMMAND coffeecnc_publisher_tests)
+    add_executable(coffeecnc_panel_assets_tests tests/panel_assets_tests.cpp)
+    target_link_libraries(coffeecnc_panel_assets_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options)
+    coffeecnc_enable_analyzers(coffeecnc_panel_assets_tests)
+    add_test(NAME panel_assets COMMAND coffeecnc_panel_assets_tests ${PROJECT_BINARY_DIR})
+    add_executable(coffeecnc_panel_feed_tests tests/panel_feed_tests.cpp)
+    target_link_libraries(coffeecnc_panel_feed_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_panel_feed_tests)
+    add_test(NAME panel_feed COMMAND coffeecnc_panel_feed_tests)
     add_executable(coffeecnc_program_store_tests tests/program_store_tests.cpp)
     target_link_libraries(coffeecnc_program_store_tests PRIVATE coffeecnc_app
       coffeecnc_project_options)
@@ -77,6 +87,12 @@ if(BUILD_TESTING)
       coffeecnc_enable_analyzers(coffeecnc_machine_config_tests)
       add_test(NAME machine_config COMMAND coffeecnc_machine_config_tests
         ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config)
+      # LinuxCNC's status as the panel's messages, on constructed readings. No LinuxCNC runs.
+      add_executable(coffeecnc_panel_mapping_tests tests/panel_mapping_tests.cpp)
+      target_link_libraries(coffeecnc_panel_mapping_tests PRIVATE coffeecnc_linuxcnc
+        coffeecnc_project_options)
+      coffeecnc_enable_analyzers(coffeecnc_panel_mapping_tests)
+      add_test(NAME panel_mapping COMMAND coffeecnc_panel_mapping_tests ${PROJECT_BINARY_DIR})
       # The tool change handshake between the control thread and the others. No HAL runs.
       add_executable(coffeecnc_hal_control_tests tests/hal_control_tests.cpp)
       target_link_libraries(coffeecnc_hal_control_tests PRIVATE coffeecnc_linuxcnc

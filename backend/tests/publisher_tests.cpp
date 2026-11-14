@@ -188,7 +188,7 @@ void preview_contexts() {
   PreviewInputs inputs;
   inputs.program_file = "/nc/part.ngc";
   inputs.program_revision = 3;
-  inputs.systems.at(1) = {{100, 100, -100}, 15};
+  inputs.systems.at(1) = {{100, 100, -100}, 15, {}};
   inputs.g92 = {0, 0, 3.5};
   inputs.tools = {{3, 3, 48.2, 6, "End mill"}, {4, 4, 61.75, 3.175, ""}};
 

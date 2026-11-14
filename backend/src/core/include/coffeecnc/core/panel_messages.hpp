@@ -162,6 +162,10 @@ struct ToolTable {
 struct WorkSystem {
   Vec3 offset{};
   double rotation_xy{}; // degrees
+  // Whether offset and rotation are known. False: they are placeholders, zero, and not to be
+  // shown. Empty: the field is not sent, which a panel reads as known (protocol v1 before the
+  // field existed). A controller adapter always says.
+  std::optional<bool> available;
   friend auto operator==(const WorkSystem&, const WorkSystem&) -> bool = default;
 };
 

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <numbers>
 #include <thread>
 #include <utility>
@@ -135,6 +136,26 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.paused = task.task_paused != 0;
   out.dwell_seconds_left = task.delayLeft;
   out.queued_mdi = task.queuedMDIcommands;
+  // Element 0 of each array is the line number the codes were read at; -1 marks an empty
+  // group. G codes are stored times ten: 540 is G54, 591 is G59.1.
+  for (std::size_t i = 1; i < std::size(task.activeGCodes); ++i) {
+    const int code = task.activeGCodes[i];
+    if (code < 0)
+      continue;
+    out.active_codes.push_back(code % 10 == 0 ? std::format("G{}", code / 10)
+                                              : std::format("G{}.{}", code / 10, code % 10));
+    if (code == 930)
+      out.feed_mode = FeedMode::inverse_time;
+    else if (code == 950)
+      out.feed_mode = FeedMode::per_revolution;
+  }
+  for (std::size_t i = 1; i < std::size(task.activeMCodes); ++i)
+    if (const int code = task.activeMCodes[i]; code >= 0)
+      out.active_codes.push_back(std::format("M{}", code));
+  // The interpreter keeps F in the program's unit; an inverse time feed has no length in it.
+  const double feed_scale =
+      out.feed_mode == FeedMode::inverse_time || c.program_units == LengthUnit::mm ? 1.0 : 25.4;
+  out.programmed_feed = task.activeSettings[1] * feed_scale;
   return out;
 }
 
@@ -175,15 +196,29 @@ auto StatusChannel::stat() -> const EMC_STAT* {
 struct NmlStatusReader::Impl {
   MachineConfig config;
   const HalShared* hal{};
+  NmlStatusMailbox* mailbox{};
   StatusChannel channel;
 
   explicit Impl(MachineConfig machine) : config(std::move(machine)), channel(config.nml_file) {}
 };
 
-auto NmlStatusReader::connect(const MachineConfig& config, const HalShared* hal)
+void NmlStatusMailbox::put(const NmlStatus& status,
+                           std::chrono::steady_clock::time_point read_at) {
+  const std::scoped_lock lock{mutex_};
+  latest_ = TimedStatus{status, read_at};
+}
+
+auto NmlStatusMailbox::latest() const -> std::optional<TimedStatus> {
+  const std::scoped_lock lock{mutex_};
+  return latest_;
+}
+
+auto NmlStatusReader::connect(const MachineConfig& config, const HalShared* hal,
+                              NmlStatusMailbox* mailbox)
     -> std::expected<std::unique_ptr<NmlStatusReader>, std::string> {
   auto impl = std::make_unique<Impl>(config);
   impl->hal = hal;
+  impl->mailbox = mailbox;
   if (!impl->channel.valid())
     return std::unexpected(
         std::format("Cannot open LinuxCNC's status channel from {}.", impl->config.nml_file));
@@ -201,9 +236,13 @@ auto NmlStatusReader::read() -> ControllerState { return status().controller; }
 
 auto NmlStatusReader::status() -> NmlStatus {
   const EMC_STAT* s = impl_->channel.stat();
-  if (s == nullptr)
-    return {}; // link down
-  return to_status(*s, impl_->config, impl_->hal, impl_->channel.link());
+  // Without a status the link is down.
+  auto status =
+      s == nullptr ? NmlStatus{}
+                   : to_status(*s, impl_->config, impl_->hal, impl_->channel.link());
+  if (impl_->mailbox != nullptr)
+    impl_->mailbox->put(status, std::chrono::steady_clock::now());
+  return status;
 }
 
 } // namespace coffeecnc

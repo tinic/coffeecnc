@@ -200,9 +200,9 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   WorkOffsets offsets;
   offsets.revision = 5;
-  offsets.systems.at(1) = {{100, 100, -100}, 15};
-  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90};
-  offsets.systems.at(8) = {{1, 2, 3}, 0};
+  offsets.systems.at(1) = {{100, 100, -100}, 15, {}};
+  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90, {}};
+  offsets.systems.at(8) = {{1, 2, 3}, 0, {}};
   messages.push_back(encode_work_offsets(offsets));
 
   messages.push_back(

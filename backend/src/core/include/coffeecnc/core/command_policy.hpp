@@ -33,6 +33,9 @@ struct AxisState {
 
 // Input from the controller adapter, never reconstructed from pending UI actions.
 // The first machine profile is a three-joint XYZ mill with trivial kinematics.
+// The unit the interpreter reads length words in (G21 / G20).
+enum class LengthUnit : std::uint8_t { mm, inch };
+
 struct ControllerState {
   Link link{Link::down};
   MachineState machine{MachineState::estop};
@@ -43,6 +46,8 @@ struct ControllerState {
   bool program_loaded{};
   int tool_in_spindle{};
   std::optional<int> requested_tool;
+  // Protocol values are millimetres; composed G-code must be written in this unit.
+  LengthUnit program_units{LengthUnit::mm};
 };
 
 struct Limits {

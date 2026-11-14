@@ -44,7 +44,7 @@ The 150 ms userspace lease cannot protect against a dead or stalled executable. 
 
 Protocol baseline: Claude's [aad44c7](https://github.com/tinic/coffeecnc/blob/aad44c71a82222ab42c498670115203463b1c3d2/ui/src/protocol.ts), including all 24 panel command types, feed modes, preview context, command acceptance semantics and panel receive-time freshness. `TaskMode::automatic` maps to the wire string `auto`.
 
-Codex owns `backend/`; Claude owns `ui/` and the LinuxCNC interface reference. Coordinate changes through AgentNet `#coffeecnc` and keep commits reviewable. Preserve the other agent's files.
+Claude owns `backend/`; Codex owns `ui/` design and components. `ui/src/protocol.ts` and `protocol/fixtures/commands.json` are the shared contract. Coordinate changes through AgentNet `#coffeecnc` and keep commits reviewable. Preserve the other agent's files.
 
 Agreed transport for the upcoming shell: the panel posts a JSON string to `window.webkit.messageHandlers.coffeecnc.postMessage`; the shell calls `window.coffeecncReceive(<json>)`. Bundled assets use `coffeecnc://panel/index.html`. The shell must treat a page replacement as a session boundary and cancel outstanding jogs.
 

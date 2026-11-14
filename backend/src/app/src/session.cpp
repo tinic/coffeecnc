@@ -55,9 +55,7 @@ auto length(double millimetres, const ControllerState& state) -> std::string {
 } // namespace
 
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs)
-    : port_(port), programs_(&programs), policy_(limits) {}
-
-Session::Session(ControllerPort& port, const Limits& limits) : port_(port), policy_(limits) {}
+    : port_(port), programs_(programs), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -231,9 +229,7 @@ auto Session::perform(const Command& command, const Decision& decision,
         } else if constexpr (std::is_same_v<T, OpenProgram>) {
           // LinuxCNC gets the resolved path. It opens the file itself, later: a path that is
           // changed between this check and that open is not caught here.
-          if (programs_ == nullptr)
-            return reply(port_.open_program(c.path));
-          const auto file = programs_->resolve_program(c.path);
+          const auto file = programs_.resolve_program(c.path);
           if (!file)
             return Reply{CommandOutcome::rejected, file.error()};
           return reply(port_.open_program(*file));
@@ -336,9 +332,7 @@ auto Session::stop_all() -> ActionResult {
 
 // Not a controller action: nothing is sent to LinuxCNC.
 auto Session::list_directory(const ListDirectory& request) -> Reply {
-  if (programs_ == nullptr)
-    return {CommandOutcome::rejected, "No program directory is configured."};
-  const auto directory = programs_->list(request.path);
+  const auto directory = programs_.list(request.path);
   if (!directory)
     return {CommandOutcome::rejected, directory.error()};
   auto message = encode_directory(*directory);

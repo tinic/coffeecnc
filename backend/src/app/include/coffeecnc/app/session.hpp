@@ -59,9 +59,6 @@ public:
   // The port and the store must outlive the session. Throws std::invalid_argument for invalid
   // limits.
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs);
-  // Without a program store: `list_directory` is rejected and `open_program` passes its path to
-  // the port UNCHECKED. Only for the LinuxCNC simulation tests, which write their own program.
-  Session(ControllerPort& port, const Limits& limits);
 
   // Call on every page load. Stops held jogs and forgets the previous page's ready and ID state;
   // messages carrying an earlier token are dropped from here on.
@@ -110,7 +107,7 @@ private:
   void report(Outcome& outcome, Instant now);
 
   ControllerPort& port_;
-  const ProgramStore* programs_{};
+  const ProgramStore& programs_;
   CommandPolicy policy_;
   JogLease leases_;
   // Meaningful only while the axis has an active lease.

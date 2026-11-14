@@ -240,7 +240,9 @@ constexpr auto release_x = R"("type":"jog","axis":"x","direction":1,"velocity":6
 void stale_pages_are_dropped() {
   FakePort port;
   port.state = homed_machine();
-  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}};
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
   const auto ready = R"({"id":1,"type":"ready"})";
   require(session.handle(PageToken{}, ready, at(0ms)).messages.empty() &&
               session.handle(PageToken{1}, ready, at(0ms)).messages.empty(),
@@ -629,26 +631,6 @@ void program_paths() {
 }
 
 // The constructor the LinuxCNC simulation tests use.
-void without_a_program_store() {
-  FakePort port;
-  port.state = homed_machine();
-  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}};
-  const auto page = session.begin_page();
-  static_cast<void>(session.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
-  const auto listed =
-      session.handle(page, R"({"id":2,"type":"list_directory","path":null})", at(0ms));
-  require(listed.messages.size() == 1 &&
-              Json::parse(listed.messages.front()).at("outcome") == "rejected" &&
-              Json::parse(listed.messages.front()).at("reason") ==
-                  "No program directory is configured.",
-          "Without a program store there is no listing");
-  const auto opened =
-      session.handle(page, R"({"id":3,"type":"open_program","path":"/tmp/x.ngc"})", at(0ms));
-  require(results(opened).front().at("outcome") == "accepted" &&
-              port.calls == Calls{"open_program /tmp/x.ngc"},
-          "Without a program store the path is passed on as it came");
-}
-
 void composed_mdi() {
   const std::array<std::string_view, 9> words{"G54", "G55",   "G56",   "G57",  "G58",
                                               "G59", "G59.1", "G59.2", "G59.3"};
@@ -1166,7 +1148,6 @@ auto main(int argc, char** argv) -> int {
     every_action();
     directory_listing();
     program_paths();
-    without_a_program_store();
     composed_mdi();
     jog_presses_and_refreshes();
     jog_failures();

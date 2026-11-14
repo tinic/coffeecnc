@@ -15,9 +15,9 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | `jog`, released; `jog_stop_all` | `EMC_JOG_STOP` | 440 | |
 | `jog_step` | `EMC_JOG_INCR` | 412 | |
 | (jog space) | `EMC_TRAJ_SET_TELEOP_ENABLE` | 973 | Task enables teleop itself once all joints are homed; send it to leave teleop for homing or a joint jog |
-| `mdi`, `select_wcs`, `touch_off`, `tool_touch_off` | `EMC_TASK_PLAN_EXECUTE` | 1335 | `G54`…, `G10 L20 P<n> <axis><value>`, `G10 L10 P<tool> Z<value>` then `G43`; text limited to `LINELEN` (255); refused when not homed (`emctaskmain.cc:2209`) |
+| `mdi`, `select_wcs`, `touch_off`, `tool_touch_off` | `EMC_TASK_PLAN_EXECUTE` | 1335 | `G54`…, `G10 L20 P<n> <axis><value>`, `G10 L10 P<tool> Z<value>` then `G43`; text limited to `LINELEN` (255); refused when not homed unless `[TRAJ] NO_FORCE_HOMING` is above 0 (`emctaskmain.cc:2209`) |
 | `open_program` | `EMC_TASK_PLAN_OPEN` | 1300 | Path limited to `LINELEN`; task reads the file itself |
-| `run` | `EMC_TASK_PLAN_RUN` | 1312 | `line` 0 or 1 runs from the start; other values are run-from-line, not used; refused when not homed (`emctaskmain.cc:2296`) |
+| `run` | `EMC_TASK_PLAN_RUN` | 1312 | `line` 0 or 1 runs from the start; other values are run-from-line, not used; refused when not homed unless `[TRAJ] NO_FORCE_HOMING` is above 0 (`emctaskmain.cc:2296`) |
 | `pause`, `resume`, `step` | `EMC_TASK_PLAN_PAUSE`, `_RESUME`, `_STEP` | 1348, 1385, 1375 | |
 | `abort` | `EMC_TASK_ABORT` | 1266 | |
 | `set_override` | `EMC_TRAJ_SET_SCALE`, `_RAPID_SCALE`, `_SPINDLE_SCALE` | 661, 673, 685 | |
@@ -48,6 +48,7 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | `wait: paused` | `task.task_paused` | 1518 | Operator pause and M0/M1/M60 are not distinguished |
 | `wait: dwell` | `task.delayLeft` | 1519 | |
 | `wait: tool_change` | HAL pin, see below | | Not in `EMC_STAT` |
+| `spindle.actual_rpm`, `spindle.at_speed`, `probe_input` | HAL pins `coffeecnc.spindle-rpm`, `coffeecnc.spindle-at-speed`, `coffeecnc.probe-input` | | `null` unless `[COFFEECNC] SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL`, `PROBE_SIGNAL` declare them wired |
 | `active_codes` | `task.activeGCodes`, `activeMCodes` | 1511 | |
 
 ## Constraints
@@ -75,7 +76,11 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | Machine off | Reported as ESTOP_RESET, never as OFF | Protocol `off` |
 | Home all | `EMC_JOINT_HOME` with joint −1; needs joint mode; 2–4 s in simulation | |
 | Teleop | Task enters teleop by itself when all joints are homed; `EMC_TRAJ_SET_TELEOP_ENABLE` is needed to leave it for homing or a joint jog | Corrects the Commands table: the message is for leaving, not entering |
-| Axis jog while unhomed | Moves 0 | Joint jog until all axes are homed |
+| Axis jog while unhomed | Moves 0 without teleop; with teleop enabled an unhomed axis jog moves (2.3 mm in 300 ms). Neither task nor motion ties teleop to homing | CoffeeCNC still uses joint jogs until all axes are homed |
+| Unhomed with `NO_FORCE_HOMING = 1` | An MDI move, `G10 L20`, `G55` and a program run with `T2 M6` are accepted; task does not switch mode itself. Soft limits are enforced against the power-up coordinates: `G1 X1500` fails with "would exceed X's positive limit" | `Limits::homing_required` follows the INI |
+| Home all without `HOME_SEQUENCE` | `EMC_JOINT_HOME` joint −1 is accepted, homes nothing, reports nothing | The adapter refuses it; axes are homed one by one |
+| Homing without switches | Immediate: the present position becomes `HOME`, without motion; task enters teleop after the last joint | |
+| One `loadrt` per module | A second `loadrt` of a loaded module fails, with or without `names=`; `watchdog` has no `names=` | The post-GUI fragment loads only `watchdog` and `lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit`; a machine that already loads one of them merges the instances into its own line |
 | Jog status | Joint jog: `RCS_EXEC`, `inpos` 0. Teleop jog: `RCS_DONE`, `inpos` 1 | `in_position` also checks velocity; jog commands wait for the echo, not completion |
 | Mode change | Refused only in auto with a busy interpreter. During an MDI move it is accepted and aborts the move. During a jog it is ignored with `RCS_DONE` | Verify `task.mode` after every change |
 | Pause and step | At an M0/M1 stop `currentLine` is the line before it. The first step after such a stop only takes up the next block; `task_paused` stays set with the interpreter reading | Report paused whenever `task_paused` is set |
@@ -101,7 +106,6 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 |---|---|
 | Remaps and `M100`–`M199` | The helper needs the Python plugin and INI `[RS274NGC]` settings; which side effects must it suppress? |
 | Non-trivial kinematics | Joint and axis indexes are assumed equal; reject other configurations at start-up or map them? |
-| Actual spindle speed | Which HAL signal, and is it a pin on the CoffeeCNC component or read by name? |
 | Jog watchdog wiring | Shipped in `postgui.hal` or checked at start-up? |
 | Delayed start | A jog start queued while task is frozen must not move after the page is gone: worker fencing and holding `jog-stop` until starts and stops reconcile |
 | Step and resume around M0/M1 | Observed on one program; confirm before the panel relies on it |

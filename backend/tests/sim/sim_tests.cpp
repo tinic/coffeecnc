@@ -5,6 +5,8 @@
 // Output: one `check=<name> result=pass|fail detail=<text>` line per check, `fact=` lines with
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
+#include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
@@ -109,12 +111,15 @@ struct Result {
 class Rig {
 public:
   Rig(const MachineConfig& machine, HalComponent& component, NmlPort& controller)
-      : config(machine), hal(component), port(controller), session(controller, machine.limits),
+      : config(machine), hal(component), port(controller),
+        programs(files, machine.program_prefix), session(controller, machine.limits, programs),
         page(session.begin_page()) {}
 
   MachineConfig config;
   HalComponent& hal;
   NmlPort& port;
+  LocalFileSystem files;
+  ProgramStore programs; // [DISPLAY] PROGRAM_PREFIX of the machine
   Session session;
   PageToken page;
   RequestId next_id{1};
@@ -622,9 +627,16 @@ void program(Rig& rig) {
   const auto paused = [&]() -> bool { return rig.port.status().paused; };
   const auto request = [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); };
 
-  const auto missing = rig.send(R"("type":"open_program","path":"/nonexistent/none.ngc")");
-  check("open_missing_program_fails", missing.outcome == "failed" && !missing.reason.empty(),
+  // The program store decides before LinuxCNC is asked: nothing outside the program directory,
+  // and nothing that is not a file in it.
+  const auto outside = rig.send(R"("type":"open_program","path":"/etc/hostname")");
+  check("open_outside_program_directory_rejected",
+        outside.outcome == "rejected" && !rig.port.snapshot().program_loaded, outside.text());
+  const auto missing = rig.send(R"("type":"open_program","path":"none.ngc")");
+  check("open_missing_program_rejected", missing.outcome == "rejected" && !missing.reason.empty(),
         missing.text());
+  const auto listed = rig.send(R"("type":"list_directory","path":null)");
+  check("list_program_directory", listed.accepted(), listed.text());
   const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
   check("open_program",
         open.accepted() && rig.port.snapshot().program_loaded &&

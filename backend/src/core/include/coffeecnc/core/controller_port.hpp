@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -22,12 +23,18 @@ struct ActionResult {
   std::string reason;
 };
 
+// An operator error or message the controller published.
+struct ControllerMessage {
+  bool error{};
+  std::string text;
+};
+
 // The machine as the session acts on it: one call per kind of action CommandPolicy can allow.
 // Callers must have an allowing Decision for a fresh snapshot first; the port validates nothing.
 //
 // A real implementation sends an NML message and blocks until LinuxCNC has answered or its own
-// timeout has passed. A later increment therefore calls it from a worker thread; in this
-// increment the session calls it directly. Implementations need not be thread-safe.
+// timeout has passed. Exactly one thread, the runtime's worker, calls every member: it is the
+// only writer of commands. Implementations need not be thread-safe.
 //
 // Lengths are millimetres, velocities mm/min, spindle speed rpm, overrides factors (1.0 is 100 %).
 class ControllerPort {
@@ -37,6 +44,9 @@ public:
 
   // Observed controller state, never reconstructed from commands sent through this port.
   [[nodiscard]] virtual auto snapshot() -> ControllerState = 0;
+  // Operator messages published since the last call, oldest first; those that became the reason
+  // of a failed action are not among them. Called whenever the worker has nothing else to do.
+  [[nodiscard]] virtual auto take_messages() -> std::vector<ControllerMessage> = 0;
 
   [[nodiscard]] virtual auto set_machine_state(MachineState state) -> ActionResult = 0;
   // Accepted only once the controller reports the mode; the next snapshot shows it.

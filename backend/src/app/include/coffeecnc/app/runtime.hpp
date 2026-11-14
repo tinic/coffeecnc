@@ -1,0 +1,97 @@
+#ifndef COFFEECNC_APP_RUNTIME_HPP
+#define COFFEECNC_APP_RUNTIME_HPP
+
+#include <coffeecnc/app/program_store.hpp>
+#include <coffeecnc/app/session.hpp>
+#include <coffeecnc/core/command_policy.hpp>
+#include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/safety_outputs.hpp>
+#include <coffeecnc/core/status_source.hpp>
+
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <string_view>
+#include <thread>
+
+namespace coffeecnc {
+
+// One control period on the calling thread: heartbeat first, then the dead-man decision, then the
+// jog-stop level. Nothing in it waits for the controller. Returns the level asked for.
+auto control_step(Session& session, SafetyOutputs& outputs, Instant now) -> bool;
+
+// One status reading on the calling thread, handed to the session.
+void status_step(Session& session, StatusSource& source);
+
+// The session on its three threads.
+//
+//   thread    period   owns                         may block on
+//   control   10 ms    SafetyOutputs (heartbeat,    the session mutex only
+//                      jog-stop level), dead-man
+//   status    5 ms     StatusSource                 the controller's status buffer
+//   worker    on work  ControllerPort (commands,    the controller, up to the port's bounds
+//                      error channel)
+//
+// The control period is 10 ms: a tenth of the 150 ms jog lease and a thirtieth of the 300 ms
+// watchdog timeout, twice the 5 ms the jog-stop level is kept at least, and at 3000 mm/min an
+// axis travels 0.5 mm in it.
+//
+// begin_page, end_page and submit are called by the shell's thread, one thread at a time, and
+// return without waiting for the controller. What cannot be answered at once arrives at the sink,
+// called on the worker thread only; it must not block and must not call the runtime.
+class Runtime {
+public:
+  using Sink = std::function<void(const Outcome&)>;
+  static constexpr auto control_period = std::chrono::milliseconds{10};
+  static constexpr auto status_period = std::chrono::milliseconds{5};
+
+  struct Timing {
+    std::uint64_t control_periods{};
+    // Longest time from the start of one control period to the start of the next.
+    std::chrono::nanoseconds longest_control_period{};
+  };
+
+  // Everything passed in must outlive the runtime. Starts the threads. Throws
+  // std::invalid_argument for invalid limits.
+  Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs, const Limits& limits,
+          const ProgramStore& programs, Sink sink);
+  // A stop decision, then: the worker finishes the call it is in, executes waiting stop requests
+  // and stops each jogging axis once; the control thread beats and holds the jog-stop level
+  // meanwhile. Returns when all three threads have ended, which takes as long as those port
+  // calls. The jog-stop level is left high and the heartbeat stops: the watchdog then inhibits
+  // jogs as well.
+  ~Runtime();
+  Runtime(const Runtime&) = delete;
+  auto operator=(const Runtime&) -> Runtime& = delete;
+
+  [[nodiscard]] auto begin_page() -> PageToken;
+  void end_page(PageToken page);
+  // What is answered at once; see Session::submit.
+  [[nodiscard]] auto submit(PageToken page, std::string_view json) -> Outcome;
+
+  // Since the start or the last call of reset_timing.
+  [[nodiscard]] auto timing() const -> Timing;
+  void reset_timing();
+
+private:
+  void control_loop();
+  void status_loop();
+  void work_loop();
+
+  StatusSource& status_;
+  SafetyOutputs& outputs_;
+  Sink sink_;
+  Session session_;
+  std::atomic<bool> stop_control_{};
+  std::atomic<bool> stop_status_{};
+  std::atomic<std::uint64_t> control_periods_{};
+  std::atomic<std::int64_t> longest_control_period_{};
+  std::thread control_;
+  std::thread status_thread_;
+  std::thread worker_;
+};
+
+} // namespace coffeecnc
+
+#endif // COFFEECNC_APP_RUNTIME_HPP

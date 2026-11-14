@@ -27,6 +27,8 @@ public:
   // On panel navigation/disconnect, controller link loss, mode change, abort or shutdown.
   [[nodiscard]] auto cancel_all() -> Stops;
   [[nodiscard]] auto active(Axis) const -> bool;
+  // When the lease was refreshed last; nothing without a lease.
+  [[nodiscard]] auto refreshed(Axis) const -> std::optional<Time>;
 
 private:
   std::array<std::optional<Time>, 3> refreshed_{};

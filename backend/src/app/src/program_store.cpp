@@ -98,9 +98,9 @@ auto listable(std::string_view name) -> bool {
 
 auto folded(std::string_view name) -> std::string {
   std::string lower{name};
-  for (auto& c : lower)
-    if (c >= 'A' && c <= 'Z')
-      c = static_cast<char>(c - 'A' + 'a');
+  std::ranges::transform(lower, lower.begin(), [](char c) -> char {
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+  });
   return lower;
 }
 

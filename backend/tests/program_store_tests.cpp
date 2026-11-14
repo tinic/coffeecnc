@@ -11,6 +11,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -40,8 +41,7 @@ auto in_root(std::string_view name) -> std::string {
 
 auto names(const Directory& directory) -> Lines {
   Lines found;
-  for (const auto& entry : directory.entries)
-    found.push_back(entry.name);
+  std::ranges::transform(directory.entries, std::back_inserter(found), &DirectoryEntry::name);
   return found;
 }
 

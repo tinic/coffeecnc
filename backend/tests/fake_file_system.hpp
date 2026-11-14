@@ -94,13 +94,12 @@ public:
     return FileInfo{node->second.kind, node->second.content.size(), node->second.modified};
   }
 
-  auto names(const std::string& directory, std::size_t limit) const
+  auto names(const std::string& folder, std::size_t limit) const
       -> std::expected<Names, std::string> override {
-    calls.push_back("names " + directory);
-    for (const auto& denied : unreadable)
-      if (denied == directory)
-        return std::unexpected(std::string("Permission denied"));
-    const auto prefix = directory == "/" ? directory : directory + '/';
+    calls.push_back("names " + folder);
+    if (std::ranges::find(unreadable, folder) != unreadable.end())
+      return std::unexpected(std::string("Permission denied"));
+    const auto prefix = folder == "/" ? folder : folder + '/';
     Names found;
     for (const auto& [path, node] : nodes) {
       const std::string_view name{path};

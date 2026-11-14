@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,6 +21,12 @@ namespace coffeecnc {
 
 // The table without the row of this tool number; nothing when there is no such row.
 [[nodiscard]] auto without_tool(std::string_view table, int number) -> std::optional<std::string>;
+
+// The comment of each tool row of the table, by tool number: the text after the first `;`,
+// without the white space around it. LinuxCNC keeps comments only in the file, not with the
+// table it has loaded. Rows without a comment and lines without a T word are left out; of two
+// rows for one tool the first counts.
+[[nodiscard]] auto comments_of(std::string_view table) -> std::map<int, std::string>;
 
 } // namespace coffeecnc
 

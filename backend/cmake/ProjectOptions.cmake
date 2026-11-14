@@ -37,4 +37,7 @@ if(COFFEECNC_SANITIZERS)
   target_compile_options(coffeecnc_project_options INTERFACE
     -fsanitize=${sanitizers} -fno-sanitize-recover=all -fno-omit-frame-pointer)
   target_link_options(coffeecnc_project_options INTERFACE -fsanitize=${sanitizers})
+  if("address" IN_LIST COFFEECNC_SANITIZERS)
+    target_compile_definitions(coffeecnc_project_options INTERFACE COFFEECNC_ADDRESS_SANITIZER)
+  endif()
 endif()

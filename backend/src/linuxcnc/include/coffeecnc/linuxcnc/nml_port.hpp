@@ -3,12 +3,15 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/panel_messages.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -41,6 +44,11 @@ struct NmlStatus {
   std::optional<bool> spindle_at_speed;
   std::optional<bool> probe_input;
   double dwell_seconds_left{};
+  // The F word in effect, in the unit of feed_mode: mm/min, 1/min or mm/rev.
+  double programmed_feed{};
+  FeedMode feed_mode{FeedMode::per_minute};
+  // Active modal codes in the order task reports them, G codes first: "G1", "G59.1", "M5".
+  std::vector<std::string> active_codes;
   std::string program_file; // empty when none is loaded
   // Tool table index (not a tool number) prepared by a T word and not yet changed to.
   std::optional<int> prepared_pocket;
@@ -53,6 +61,11 @@ struct NmlStatus {
   // command done (neither executing nor failed).
   int echo_serial{};
   bool command_done{};
+  // Task has something in execution: its execution state is not "done" (it waits for motion,
+  // for io, for a delay) or its overall status is "executing". A tool table load sent through
+  // task by any client keeps this set until io has finished it, whatever command task took up
+  // after it: the table in LinuxCNC's tool data memory may be half replaced meanwhile.
+  bool task_executing{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};
@@ -60,6 +73,13 @@ struct NmlStatus {
   bool optional_stop{};
   bool block_delete{};
   bool paused{};
+};
+
+// What LinuxCNC has loaded at this port's request, counted at the moment LinuxCNC accepted it.
+// The publisher reads the counts: a load of the same file again is a load. Thread-safe.
+struct NmlLoads {
+  std::atomic<std::uint64_t> programs{};    // open_program accepted
+  std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
 };
 
 // LinuxCNC's task controller over its NML channels: the one writer of commands, the reader of
@@ -106,8 +126,9 @@ public:
   static constexpr auto settle_timeout = std::chrono::milliseconds{1000};
 
   // Opens the channels named by the configuration's NML file. `hal` may be null: there is then
-  // no manual tool change. It must outlive the port.
-  [[nodiscard]] static auto connect(const MachineConfig& config, HalShared* hal)
+  // no manual tool change. `loads` may be null: nothing is counted. Both must outlive the port.
+  [[nodiscard]] static auto connect(const MachineConfig& config, HalShared* hal,
+                                    NmlLoads* loads = nullptr)
       -> std::expected<std::unique_ptr<NmlPort>, std::string>;
   ~NmlPort() override;
   NmlPort(const NmlPort&) = delete;
@@ -179,6 +200,8 @@ public:
   [[nodiscard]] auto jog_increment(Axis axis, double distance, double velocity, JogSpace space,
                                    const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto mdi(std::string_view text, const Wanted& wanted) -> ActionResult override;
+  // Two commands: the program that is open is closed, then this one opened. Withdrawn between
+  // them, the result says that the old program was closed and the new one not opened.
   [[nodiscard]] auto open_program(std::string_view path, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;

@@ -616,7 +616,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 2,
@@ -625,7 +626,8 @@ const examples = [
           100,
           -100
         ],
-        "rotation_xy": 15
+        "rotation_xy": 15,
+        "available": true
       },
       {
         "wcs": 3,
@@ -634,7 +636,8 @@ const examples = [
           0.125,
           0
         ],
-        "rotation_xy": -90
+        "rotation_xy": -90,
+        "available": true
       },
       {
         "wcs": 4,
@@ -643,7 +646,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 5,
@@ -652,7 +656,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 6,
@@ -661,7 +666,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 7,
@@ -670,7 +676,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 8,
@@ -679,7 +686,8 @@ const examples = [
           0,
           0
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
       },
       {
         "wcs": 9,
@@ -688,7 +696,104 @@ const examples = [
           2,
           3
         ],
-        "rotation_xy": 0
+        "rotation_xy": 0,
+        "available": true
+      }
+    ]
+  },
+  {
+    "type": "work_offsets",
+    "revision": 6,
+    "systems": [
+      {
+        "wcs": 1,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 2,
+        "offset": [
+          100,
+          100,
+          -100
+        ],
+        "rotation_xy": 15,
+        "available": true
+      },
+      {
+        "wcs": 3,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 4,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 5,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 6,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 7,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 8,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
+      },
+      {
+        "wcs": 9,
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "rotation_xy": 0,
+        "available": false
       }
     ]
   },

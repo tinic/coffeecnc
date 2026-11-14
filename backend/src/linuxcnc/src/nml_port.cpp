@@ -69,6 +69,10 @@ auto words(long type) -> std::string_view {
     return "mist off";
   case EMC_TOOL_LOAD_TOOL_TABLE_TYPE:
     return "the tool table reload";
+  case EMC_TASK_PLAN_CLOSE_TYPE:
+    return "closing the loaded program";
+  case EMC_TASK_PLAN_OPEN_TYPE:
+    return "opening the program";
   default:
     break;
   }
@@ -108,6 +112,7 @@ auto index_of(Axis axis) -> int { return static_cast<int>(axis_index(axis).value
 struct NmlPort::Impl {
   MachineConfig config;
   HalShared* hal{};
+  NmlLoads* loads{};
   Gated<RCS_CMD_CHANNEL> command;
   StatusChannel status;
   Gated<NML> errors;
@@ -434,14 +439,17 @@ struct NmlPort::Impl {
       return failed(std::format("The tool table file {} was changed, but the request was "
                                 "cancelled before LinuxCNC was told to load it.",
                                 config.tool_table));
+    if (accepted(loaded) && loads != nullptr)
+      ++loads->tool_tables;
     return loaded;
   }
 };
 
-auto NmlPort::connect(const MachineConfig& config, HalShared* hal)
+auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loads)
     -> std::expected<std::unique_ptr<NmlPort>, std::string> {
   auto impl = std::make_unique<Impl>(config);
   impl->hal = hal;
+  impl->loads = loads;
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
       !impl->status.valid() ||
       impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
@@ -646,8 +654,17 @@ auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> Actio
   EMC_TASK_PLAN_OPEN message;
   if (!put(message.file, path))
     return failed("The program path is too long for LinuxCNC.");
+  // The interpreter keeps a program open until it has run to its end or was aborted, and
+  // refuses another while it does ("A file is already open"): close first. Closing with none
+  // open does nothing.
+  EMC_TASK_PLAN_CLOSE close;
+  if (auto closed = impl_->run(close, from); !accepted(closed))
+    return closed;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
+  // LinuxCNC has taken the file up: a load, also of the file that was loaded before.
+  if (impl_->loads != nullptr)
+    ++impl_->loads->programs;
   return impl_->settled(
       from, "LinuxCNC did not open the program.",
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });

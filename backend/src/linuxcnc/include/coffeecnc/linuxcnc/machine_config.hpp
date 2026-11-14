@@ -47,6 +47,9 @@ struct MachineConfig {
   // machine's HAL files connect that pin of the coffeecnc component. Absent means not connected.
   HalSignals signals;
   std::string tool_table;      // [EMCIO] TOOL_TABLE, absolute; empty when not configured
+  // [RS274NGC] PARAMETER_FILE, absolute; empty when not configured. The interpreter keeps the
+  // work coordinate systems in it.
+  std::string parameter_file;
   std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
   std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
 };

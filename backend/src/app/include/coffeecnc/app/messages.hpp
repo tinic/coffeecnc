@@ -18,6 +18,7 @@ namespace coffeecnc {
 //
 // The optional signals (spindle.actual_rpm, spindle.at_speed, probe_input) are always present,
 // `null` when the struct has none. `truncated` of ProgramText and Directory is always sent.
+// `available` of every work system is always sent.
 using Encoded = std::expected<std::string, std::string>;
 
 [[nodiscard]] auto encode_hello(const Hello& hello) -> Encoded;

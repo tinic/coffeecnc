@@ -188,7 +188,7 @@ void preview_contexts() {
   PreviewInputs inputs;
   inputs.program_file = "/nc/part.ngc";
   inputs.program_revision = 3;
-  inputs.systems.at(1) = {{100, 100, -100}, 15};
+  inputs.systems.at(1) = {{100, 100, -100}, 15, true};
   inputs.g92 = {0, 0, 3.5};
   inputs.tools = {{3, 3, 48.2, 6, "End mill"}, {4, 4, 61.75, 3.175, ""}};
 
@@ -254,6 +254,17 @@ void preview_contexts() {
   auto renamed = inputs;
   renamed.tools.at(0).comment = "Roughing";
   require(counter.update(renamed, false) == expected, "A tool comment does not change the path");
+  // Availability is an input of its own: the placeholder zeros of a system that is not
+  // available can equal the numbers it had.
+  auto zero_offset = inputs;
+  zero_offset.systems.at(0) = {{0, 0, 0}, 0, true};
+  const auto with_zero = counter.update(zero_offset, false);
+  auto lost = zero_offset;
+  lost.systems.at(0).available = false;
+  require(counter.update(lost, false) == with_zero + 1,
+          "A system that is no longer available changes the context, also with the same numbers");
+  require(counter.update(zero_offset, false) == with_zero + 2, "And so does one that is again");
+  expected = counter.update(inputs, false);
   auto negative_zero = inputs;
   negative_zero.systems.at(0).offset[0] = -0.0;
   require(counter.update(negative_zero, false) == expected, "-0.0 is the same offset as 0.0");

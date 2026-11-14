@@ -108,6 +108,24 @@ auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_
   return joined(lines);
 }
 
+auto comments_of(std::string_view table) -> std::map<int, std::string> {
+  std::map<int, std::string> comments;
+  for (const auto line : lines_of(table)) {
+    const auto number = tool_number(line);
+    const auto start = line.find(';');
+    if (!number || start == std::string_view::npos)
+      continue;
+    auto text = line.substr(start + 1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
+      text.remove_prefix(1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0)
+      text.remove_suffix(1);
+    if (!text.empty())
+      comments.try_emplace(*number, text);
+  }
+  return comments;
+}
+
 auto without_tool(std::string_view table, int number) -> std::optional<std::string> {
   std::vector<std::string> lines;
   bool found = false;

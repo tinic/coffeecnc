@@ -1,0 +1,122 @@
+#ifndef COFFEECNC_SHELL_TEST_HOOKS_HPP
+#define COFFEECNC_SHELL_TEST_HOOKS_HPP
+
+#include <coffeecnc/shell/panel_window.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <expected>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace coffeecnc {
+
+// What a test does to the window that the application never does: run script in the page,
+// press the mouse, take pictures, answer the file chooser. In a library of its own
+// (coffeecnc_shell_test_hooks) that only tests link; the `coffeecnc` executable has none of it.
+//
+// install() is called on the GTK thread before PanelWindow::run. Every other member may be
+// called from any thread but the GTK thread: it hands its work to that thread and waits for it,
+// so the GTK main loop must be running.
+class ShellTestHooks {
+public:
+  // What became of work handed to the GTK thread.
+  enum class WorkFate : std::uint8_t {
+    ran,
+    dropped, // taken into the queue, and the window closed before its turn
+    refused, // not taken: the window was closed already
+  };
+  // Thrown by every member below when the window is closed, or closes while the call waits
+  // for the GTK thread: the work was not done.
+  struct WindowClosed : std::runtime_error {
+    explicit WindowClosed(WorkFate what)
+        : std::runtime_error(what == WorkFate::dropped
+                                 ? "The window closed before the work was done."
+                                 : "The window is closed."),
+          fate(what) {}
+    WorkFate fate;
+  };
+
+  struct State {
+    std::uint64_t page{};    // the token of the document that shows; 0 for none
+    std::uint64_t commits{}; // documents committed so far
+    bool identified{};       // the document's first script has reported to the shell
+    // The `coffeecnc` handler was there when that script ran; nothing before it has reported.
+    std::optional<bool> handler_at_start;
+    std::uint64_t delivered{};
+    std::uint64_t dropped{};
+    std::uint64_t rejected{}; // messages from a document that is not the one that shows
+    // The identity of the document that shows, as it told the shell.
+    std::string identity;
+    std::string uri;
+    int width{};
+    int height{};
+    // Every resource the view began to load, in order, and those not on the panel's origin
+    // (data: and blob: URLs aside).
+    std::vector<std::string> resources;
+    std::vector<std::string> foreign_resources;
+    std::uint64_t process_terminations{};
+    std::uint64_t file_choosers{}; // requests of the page for a file chooser
+  };
+
+  // Records resource loads and web process terminations, writes the page's console to stdout,
+  // answers file chooser requests itself (no dialog opens), and adds `script` to every
+  // document, run before the page's own scripts.
+  static auto install(PanelWindow& window, const std::string& document_start_script)
+      -> std::unique_ptr<ShellTestHooks>;
+  ~ShellTestHooks();
+  ShellTestHooks(const ShellTestHooks&) = delete;
+  auto operator=(const ShellTestHooks&) -> ShellTestHooks& = delete;
+
+  [[nodiscard]] auto state() -> State;
+  // Runs `body` as the body of an async function in the page and waits for what it returns,
+  // which comes back as JSON text (`null` for nothing). The error text when it throws.
+  [[nodiscard]] auto evaluate(const std::string& body,
+                              std::chrono::milliseconds timeout = std::chrono::seconds{10})
+      -> std::expected<std::string, std::string>;
+  // A PNG of what the view shows.
+  [[nodiscard]] auto snapshot(const std::string& file) -> std::expected<void, std::string>;
+  // What a rectangle of the view shows, from a snapshot: how many of its pixels are not the
+  // colour most of them have (the background), by more than a little.
+  struct Pixels {
+    std::uint64_t total{};
+    std::uint64_t drawn{};
+  };
+  [[nodiscard]] auto pixels(int x, int y, int width, int height)
+      -> std::expected<Pixels, std::string>;
+  // The left mouse button at a point of the view, as GDK events the view handles like the
+  // operator's own.
+  void mouse_move(double x, double y);
+  void mouse_press(double x, double y);
+  void mouse_release(double x, double y);
+  // The files the next file chooser request is answered with; none cancels it.
+  void answer_file_chooser(std::vector<std::string> files);
+  void reload();
+  void load(const std::string& uri);
+  void close();
+  // Closes the window with a second piece of work in the queue behind the close, both handed
+  // over at once. What became of that second piece: it must be `dropped`, and this must
+  // return, not wait for it.
+  [[nodiscard]] auto close_with_work_pending() -> WorkFate;
+  // What WebKit says about its graphics (the text of its webkit://gpu page), from a view of
+  // the test's own beside the panel: the panel's window never navigates there.
+  [[nodiscard]] auto graphics_report() -> std::expected<std::string, std::string>;
+  // Hands the shell one message exactly as the `coffeecnc` handler would deliver it now:
+  // `<identity>:<text>`. For a message of an earlier document that arrives late.
+  void deliver_from_page(const std::string& raw);
+  // PanelWindow::post from the calling thread.
+  void post(std::uint64_t page, std::vector<std::string> messages);
+
+  struct Impl;
+
+private:
+  explicit ShellTestHooks(std::unique_ptr<Impl> impl);
+  std::unique_ptr<Impl> impl_;
+};
+
+} // namespace coffeecnc
+
+#endif // COFFEECNC_SHELL_TEST_HOOKS_HPP

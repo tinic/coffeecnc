@@ -92,6 +92,13 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | Units | `traj.linearUnits` is units per mm; `task.programUnits` 1 is G20, 2 is G21 and stays inch after an abort inside a G20 section | One scale factor from the INI; composed G-code in the program unit |
 | Error channel | Text arrives a few ms after the status, sometimes as several messages. A jog into a soft limit produces no error | All errors of a failed action become its reason |
 | Build | `emc_nml.hh` includes Boost headers; `linuxcnc-uspace-dev` does not depend on `libboost-dev` | The adapter needs Boost headers at build time |
+| Parameter file | Not written within 3 s of MDI `G10 L2`, `G10 L20`, `G55`, `G92` or `#5262=…`. Written when a program ends (M2) and when LinuxCNC exits; values in machine units | Persistence, not a live source |
+| Work offsets | `EMC_STAT` carries only the active system; no live source found for the other eight | Sent `available: false` with zeros |
+| `pocketPrepped` | Row n of the loaded tool table is index n; index 0 is the spindle; a `T0` row is an ordinary entry | `tool.prepared` is that entry's tool number, null while the table shown is not the accepted one |
+| Tool data | The loaded table is shared memory (`$HOME/.tool.mmap`, `libtooldata`): a lock per entry, no sequence number, no load-in-progress mark, no comments. The package ships the library without `tooldata.hh` | A table is shown after two identical passes one period apart with task idle between; comments from the file by tool number at load time |
+| F word | An F in the block that changes unit is read in the old unit and converted: `G21 … F1200` on an inch machine reports 30480 mm/min. `activeSettings[1]` is in the program unit | `programmed_feed` is scaled by 25.4 under G20, not in G93 |
+| Program open | `EMC_TASK_PLAN_OPEN` is refused with "A file is already open" until `EMC_TASK_PLAN_CLOSE` | The port closes first |
+| Start state | Optional stop and block delete both report true at start | |
 
 ## Preview
 

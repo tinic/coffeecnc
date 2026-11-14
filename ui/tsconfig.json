@@ -26,5 +26,5 @@
     "allowUnusedLabels": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "vite.config.ts", "build-stamp.ts", "build-stamp-node.d.ts"]
 }

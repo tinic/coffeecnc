@@ -293,6 +293,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .home_all_configured = home_all,
       .signals = signals,
       .tool_table = path("EMCIO", "TOOL_TABLE"),
+      .parameter_file = path("RS274NGC", "PARAMETER_FILE"),
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
   };

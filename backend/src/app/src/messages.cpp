@@ -309,7 +309,8 @@ auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded {
     systems.push_back(
         {{"wcs", i + 1},
          {"offset", fields.vec(offsets.systems[i].offset, "systems.offset")},
-         {"rotation_xy", fields.real(offsets.systems[i].rotation_xy, "systems.rotation_xy")}});
+         {"rotation_xy", fields.real(offsets.systems[i].rotation_xy, "systems.rotation_xy")},
+         {"available", offsets.systems[i].available}});
   return fields.finish({{"type", "work_offsets"},
                         {"revision", fields.count(offsets.revision, "revision")},
                         {"systems", std::move(systems)}});

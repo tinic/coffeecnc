@@ -7,6 +7,16 @@
 
 namespace coffeecnc {
 
+namespace {
+// As the executable's component reads its own: the memory belongs to the signal and is written
+// by another thread or process.
+template <typename Value> auto get(const volatile Value* pin) -> Value {
+  Value value;
+  __atomic_load(pin, &value, __ATOMIC_RELAXED);
+  return value;
+}
+} // namespace
+
 struct HalProbe::Pins {
   hal_bit_t* jog_stop;
   hal_bit_t* watchdog_ok;
@@ -42,10 +52,10 @@ HalProbe::~HalProbe() {
     hal_exit(id_);
 }
 
-auto HalProbe::jog_stop() const -> bool { return *pins_->jog_stop; }
-auto HalProbe::watchdog_ok() const -> bool { return *pins_->watchdog_ok; }
-auto HalProbe::tool_change() const -> bool { return *pins_->tool_change; }
-auto HalProbe::tool_changed() const -> bool { return *pins_->tool_changed; }
-auto HalProbe::x() const -> double { return *pins_->x; }
+auto HalProbe::jog_stop() const -> bool { return get(pins_->jog_stop); }
+auto HalProbe::watchdog_ok() const -> bool { return get(pins_->watchdog_ok); }
+auto HalProbe::tool_change() const -> bool { return get(pins_->tool_change); }
+auto HalProbe::tool_changed() const -> bool { return get(pins_->tool_changed); }
+auto HalProbe::x() const -> double { return get(pins_->x); }
 
 } // namespace coffeecnc

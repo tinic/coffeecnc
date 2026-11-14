@@ -745,9 +745,12 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   const auto ms = [&](const std::optional<Clock::time_point>& at) -> double {
     return at ? milliseconds(*at - pressed) : -1;
   };
-  const bool ordered = written_frozen && start.at <= decided + 1ms && decided <= raised &&
-                       start_echoed && *start_echoed >= resumed && stop && stop->at >= resumed &&
-                       stop_accepted && *stop_accepted >= stop->at && fell &&
+  // Task resumed while the port still waited for the echo of the start: the start was neither
+  // answered nor given up when the reason for it went.
+  const bool waiting = resumed - start.at < NmlPort::echo_timeout;
+  const bool ordered = written_frozen && waiting && start.at <= decided + 1ms &&
+                       decided <= raised && start_echoed && *start_echoed >= resumed && stop &&
+                       stop->at >= resumed && stop_accepted && *stop_accepted >= stop->at && fell &&
                        *fell >= *stop_accepted;
   const auto answer = reason == Reason::page_end ? std::optional<Result>{} : rig.result(press);
   check(std::format("delayed_start_{}", name),
@@ -1259,11 +1262,21 @@ void half_sent_action_is_reported(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"set_coolant","flood":false,"mist":false)"));
   rig.pump(300ms);
   const auto from = rig.port.writes().size();
-  const auto coolant = rig.post(R"("type":"set_coolant","flood":true,"mist":true)");
-  // LinuxCNC's io task takes a cycle of 100 ms to finish flood: the abort falls into that wait.
-  const bool flood_written = rig.pump_until(
-      2s, [&]() -> bool { return wrote(written_since(rig, from), types.coolant_flood_on); });
-  const auto abort = rig.post(R"("type":"abort")");
+  RequestId coolant{};
+  RequestId abort{};
+  bool flood_written = false;
+  {
+    // Task is stopped: the port writes flood on and then waits for an echo that cannot come.
+    // The abort is asked while it waits there, on the evidence of the write trace and not of
+    // any cycle time; then task runs, the wait ends, and mist on is the next thing to write.
+    const FrozenTask frozen{rig.config.ini_file};
+    coolant = rig.post(R"("type":"set_coolant","flood":true,"mist":true)");
+    for (const auto end = Clock::now() + 500ms; Clock::now() < end && !flood_written;) {
+      flood_written = wrote(written_since(rig, from), types.coolant_flood_on);
+      std::this_thread::sleep_for(200us);
+    }
+    abort = rig.post(R"("type":"abort")");
+  }
   const auto result = rig.await(coolant);
   const auto aborted = rig.await(abort);
   rig.pump(300ms);
@@ -1272,7 +1285,9 @@ void half_sent_action_is_reported(Rig& rig) {
   check("half_sent_coolant_is_failed_with_what_was_sent",
         flood_written && result.outcome == "failed" &&
             result.reason == "Cancelled after this was sent: flood on. Not sent: mist on." &&
-            aborted.accepted() && !wrote(writes, types.coolant_mist_on) && !status.mist,
+            aborted.accepted() && writes.size() == 2 &&
+            writes.front().type == types.coolant_flood_on && writes.back().type == types.abort &&
+            !status.mist,
         std::format("{} abort={} wrote={} mist={}", result.text(), aborted.text(),
                     trace_text(writes), status.mist));
   static_cast<void>(rig.send(R"("type":"set_coolant","flood":false,"mist":false)"));

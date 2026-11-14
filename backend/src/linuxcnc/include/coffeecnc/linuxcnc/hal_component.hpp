@@ -36,9 +36,11 @@ struct HalSignals {
 // outright and does not stop a running jog. A stop is therefore a level that is held, never a
 // pulse: a jog start delayed in LinuxCNC's task could run after a pulse has passed.
 //
-// Every member only reads or writes pin memory and never blocks. NOT thread-safe, and the pins
-// are plain memory: exactly one thread, the control thread, calls every member. Other threads
-// get what they need from HalShared (hal_control.hpp), which that thread keeps current.
+// Every member only reads or writes pin memory and never blocks. NOT thread-safe: exactly one
+// thread, the control thread, calls every member, and other threads get what they need from
+// HalShared (hal_control.hpp), which that thread keeps current. The pin memory itself belongs to
+// the HAL signal and is shared with LinuxCNC's realtime thread and with every other component on
+// that signal: each pin access here is a single atomic load or store.
 class HalComponent {
 public:
   using Clock = std::chrono::steady_clock;

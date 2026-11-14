@@ -4,7 +4,7 @@
 //
 // It is a picture only. Dragging, zooming and the view buttons change the camera and nothing
 // else; no gesture on it sends a command.
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
 import { live, panel } from '../machine'
 import { theme } from '../appearance'
@@ -24,6 +24,20 @@ import {
 } from '../pathview'
 import type { Preview, Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
+import { part, partBlock, showPart } from '../step'
+import { modelToMachine } from '../step-model'
+
+const modelError = ref('')
+const StepCanvas = defineAsyncComponent({
+  loader: () => import('./StepCanvas.vue'),
+  onError: (_error, _retry, fail): void => { modelError.value = 'Part renderer could not load; reload the panel'; fail() },
+})
+const modelPoints = computed((): Vec3[] => {
+  const attachment = part.attachment
+  if (!showPart.value || attachment === null) return []
+  return boxCorners(attachment.geometry.bounds.min, attachment.geometry.bounds.max)
+    .map((point) => modelToMachine(point, part.placement, attachment.binding.frame))
+})
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const size = ref<{ width: number; height: number }>({ width: 0, height: 0 })
@@ -139,6 +153,7 @@ function fitTo(what: 'path' | 'machine'): void {
   // The path is fitted to its feed moves; rapids may come from far away.
   const bounds = drawn.value?.bounds ?? null
   let points = what !== 'path' ? [] : bounds !== null ? boxCorners(bounds.min, bounds.max) : pathPoints()
+  if (what === 'path') points = [...points, ...modelPoints.value]
   if (points.length === 0 && travelBox.value !== null) {
     points = boxCorners(travelBox.value.min, travelBox.value.max)
   }
@@ -157,7 +172,8 @@ function setView(name: ViewName): void {
   fitTo('path')
 }
 
-watch([drawn, size], () => {
+watch(() => part.attachment?.geometry, () => { autoFit.value = true; modelError.value = '' })
+watch([drawn, size, modelPoints], () => {
   if (autoFit.value) {
     fitTo('path')
   }
@@ -422,19 +438,25 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pathview" :class="{ outdated: drawn !== null && !current }">
-    <canvas ref="canvas" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-    <div v-if="banner.text || !live || toolTip === null" class="banners">
-      <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
-      <span v-if="!live" class="stop">Tool position not live</span>
-      <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
+    <div class="viewport">
+      <StepCanvas v-if="part.attachment" :camera="camera" :width="size.width" :height="size.height" @error="modelError = $event" />
+      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath and optional part model preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
+      <div v-if="banner.text || !live || toolTip === null || part.attachment" class="banners">
+        <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
+        <span v-if="!live" class="stop">Tool position not live</span>
+        <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
+        <span v-if="part.attachment && (partBlock || modelError)" class="warn">{{ partBlock || modelError }}</span>
+        <span v-else-if="showPart && !part.placed" class="warn">Part placement unconfirmed</span>
+        <span v-if="showPart && part.attachment?.note" class="warn">Sample model · not paired with this program</span>
+      </div>
     </div>
     <div class="scene-bottom">
-      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span></div>
+      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
       <div class="views">
         <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
         <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
         <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
-        <button type="button" title="Fit toolpath" aria-label="Fit toolpath" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button type="button" title="Fit toolpath and visible model" aria-label="Fit toolpath and visible model" @click="fitButton('path')"><AppIcon name="fit" /></button>
         <button type="button" title="Show and fit machine travel" @click="fitButton('machine')">Travel</button>
       </div>
     </div>
@@ -443,9 +465,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-canvas { display: block; width: 100%; height: calc(100% - 42px); cursor: grab; touch-action: none; }
+.viewport { position: relative; height: calc(100% - 42px); }
+.toolpath-canvas { position: relative; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }
 .legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
+.legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
 .banners { position: absolute; top: 12px; left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); }.banners span { padding: 5px 8px; border-radius: 6px; background: var(--panel); }.banners .stop { color: var(--stop); }.banners .warn { color: var(--warn); }
+.banners { pointer-events: none; max-width: calc(100% - 36px); align-items: flex-start; font-size: 11px; }
 </style>

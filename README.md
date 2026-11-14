@@ -6,9 +6,9 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 **Current status: working operator panel and native backend foundation.** The Vue/TypeScript panel runs against a browser simulator. Portable C++ libraries provide command validation, jog leases and protocol decoding; live LinuxCNC integration is still in development.
 
-![Current CoffeeCNC operator panel running the browser simulator](ui/screenshots/concept-light.png)
+![Current CoffeeCNC operator panel with a STEP model overlay](ui/screenshots/step-overlay.jpg)
 
-*Current Machine workspace, using simulated controller state. The preview shows toolpaths; an associated solid part/stock view is not implemented yet.*
+*Current Machine workspace with simulated controller state and a real STEP mesh. The SM-101 sample model is explicitly not paired with the demo program; placement is for demonstrating the overlay. This is part geometry, not simulated stock removal.*
 
 ## Run the operator panel
 
@@ -19,6 +19,8 @@ npm run dev
 ```
 
 Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). Use the theme control for the dark version. See [UI development and checks](ui/README.md) and [native backend build instructions](backend/README.md).
+
+Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity and place it in the current work coordinate system. The simulator includes a sample model. Import and display stay local; model placement does not change machine work offsets.
 
 ## Explore the concept
 

@@ -6,6 +6,7 @@ import { formatLength, formatVelocity, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
+import PartModel from './PartModel.vue'
 
 const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
@@ -63,22 +64,24 @@ async function showFailure(): Promise<void> {
         </div>
       </section>
       <aside class="inspector">
-        <div class="panel-head"><h2>Tool sequence</h2><span class="kicker">{{ sections.length }} sections</span></div>
-        <div class="sections">
-          <button v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
-            <span class="section-number mono">{{ index + 1 }}</span>
-            <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}</small></span>
-          </button>
-          <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
+        <div class="inspector-body">
+          <div class="panel-head"><h2>Tool sequence</h2><span class="kicker">{{ sections.length }} sections</span></div>
+          <div class="sections">
+            <button v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
+              <span class="section-number mono">{{ index + 1 }}</span>
+              <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}</small></span>
+            </button>
+            <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
+          </div>
+          <div class="tool">
+            <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
+            <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ currentTool === 0 ? 'No tool loaded' : `T${String(currentTool)} · ${tool?.comment || 'Tool not in table'}` }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
+            <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
+            <div class="kv"><span>Spindle command</span><strong>{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
+            <div class="kv"><span>Current feed</span><strong>{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
+          </div>
         </div>
-        <div class="tool">
-          <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
-          <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ currentTool === 0 ? 'No tool loaded' : `T${String(currentTool)} · ${tool?.comment || 'Tool not in table'}` }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
-          <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
-          <div class="kv"><span>Spindle command</span><strong>{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
-          <div class="kv"><span>Current feed</span><strong>{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
-          <p class="context-note">Toolpath only · no part model associated</p>
-        </div>
+        <PartModel />
       </aside>
     </div>
     <div class="status-row"><span :class="{ warning: !live }">{{ runState }}</span><span class="mono">{{ status && status.program.current_line > 0 ? `Line ${String(status.program.current_line)}` : '—' }}<template v-if="textCurrent"> / {{ program?.lines.length }}</template></span></div>
@@ -106,4 +109,17 @@ async function showFailure(): Promise<void> {
 .status-row { flex: none; min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
+.inspector { padding: 0; overflow: hidden; }
+.inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }
+.inspector-body > * { flex-shrink: 0; }
+@media (max-height: 850px) { .inspector-body { padding: 14px 20px; } }
+@media (max-height: 850px) {
+  .inspector-body { padding-block: 10px; }
+  .panel-head { margin-bottom: 6px; }
+  .sections { gap: 0; margin-bottom: 8px; }
+  .section { min-height: 44px; padding-block: 6px; }
+  .tool { padding-top: 8px; }
+  .tool-title { margin-block: 6px; }
+  .kv { margin-block: 4px; }
+}
 </style>

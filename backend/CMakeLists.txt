@@ -59,6 +59,10 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 400)
       endforeach()
+      add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
+        ${PROJECT_BINARY_DIR})
+      set_tests_properties(linuxcnc_sim_runner PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+        RESOURCE_LOCK linuxcnc TIMEOUT 400)
     endif()
   endif()
 endif()

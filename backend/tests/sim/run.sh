@@ -31,9 +31,22 @@ if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; }; then
 fi
 program=$(realpath "$1") || exit 125
 shift
+# LinuxCNC splits [DISPLAY] DISPLAY at white space and its scripts pass paths through the shell,
+# so only plain path characters can work. Refuse anything else instead of failing later.
+plain() {
+  case $1 in
+  *[!A-Za-z0-9_./+:=,@%-]*) return 1 ;;
+  esac
+}
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$units
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
+for word in "$program" "$directory" "$@"; do
+  if ! plain "$word"; then
+    echo "sim=error detail=unsupported-characters-in-path-or-argument"
+    exit 125
+  fi
+done
 
 command -v linuxcnc >/dev/null || { echo "sim=error detail=linuxcnc-not-installed"; exit 125; }
 
@@ -76,6 +89,40 @@ ours() {
   done
 }
 
+linuxcnc_pid=
+# Ends the run: every process it started is gone when this returns, however it is reached
+# (program finished, timeout, or this script interrupted). Bounded: it never waits on a process
+# that may survive.
+finish() {
+  trap - INT TERM HUP
+  local status=$1 left
+  if [ -n "$linuxcnc_pid" ] && kill -0 "$linuxcnc_pid" 2>/dev/null; then
+    # LinuxCNC's start script shuts everything down on SIGTERM.
+    kill -TERM "$linuxcnc_pid" 2>/dev/null
+    for _ in $(seq 150); do
+      kill -0 "$linuxcnc_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+  fi
+  # Whatever is left was not shut down properly: end it, then say so.
+  left=$(ours)
+  if [ -n "$left" ]; then
+    echo "sim=leftover pids=$(echo $left | tr ' ' ',') names=$(ps -o comm= -p $left | tr '\n' ',')"
+    kill -TERM $left 2>/dev/null
+    sleep 2
+    left=$(ours)
+    [ -z "$left" ] || kill -KILL $left 2>/dev/null
+    sleep 1
+    rm -f /tmp/linuxcnc.lock
+    [ "$status" != 0 ] || status=125
+  fi
+  left=$(ours)
+  echo "sim=done exit=$status processes_left=$(echo $left | wc -w) log=$directory/linuxcnc.log"
+  [ -z "$left" ] || status=125
+  exit "$status"
+}
+trap 'echo "sim=interrupted"; finish 130' INT TERM HUP
+
 cd "$directory" || exit 125
 # No DISPLAY: LinuxCNC's start script must not try to open dialog windows. -r keeps its output
 # and the program's on stdout instead of a temporary file.
@@ -86,39 +133,17 @@ status=
 deadline=$((SECONDS + timeout))
 while kill -0 "$linuxcnc_pid" 2>/dev/null; do
   if [ $SECONDS -ge $deadline ]; then
-    status=124
     echo "sim=timeout seconds=$timeout"
-    # LinuxCNC's start script shuts everything down on SIGTERM.
-    kill -TERM "$linuxcnc_pid" 2>/dev/null
-    for _ in $(seq 30); do
-      kill -0 "$linuxcnc_pid" 2>/dev/null || break
-      sleep 1
-    done
-    break
+    grep -E '^(check|fact|exit)=' "$directory/linuxcnc.log"
+    finish 124
   fi
   sleep 0.2
 done
-wait "$linuxcnc_pid" 2>/dev/null
+wait "$linuxcnc_pid" 2>/dev/null # It has exited: this only collects it.
 # The start script ends with its cleanup, so its own exit code says nothing about the program:
 # the program reports its exit code in the log.
-[ -n "$status" ] || status=$(sed -n 's/^exit=\([0-9]*\)$/\1/p' "$directory/linuxcnc.log" | tail -1)
+status=$(sed -n 's/^exit=\([0-9]*\)$/\1/p' "$directory/linuxcnc.log" | tail -1)
 [ -n "$status" ] || status=125
 
 grep -E '^(check|fact|exit)=' "$directory/linuxcnc.log"
-
-# Whatever is left was not shut down properly: end it, then say so.
-left=$(ours)
-if [ -n "$left" ]; then
-  echo "sim=leftover pids=$(echo $left | tr ' ' ',') names=$(ps -o comm= -p $left | tr '\n' ',')"
-  kill -TERM $left 2>/dev/null
-  sleep 2
-  left=$(ours)
-  [ -z "$left" ] || kill -KILL $left 2>/dev/null
-  sleep 1
-  rm -f /tmp/linuxcnc.lock
-  [ "$status" != 0 ] || status=125
-fi
-left=$(ours)
-echo "sim=done exit=$status processes_left=$(echo $left | wc -w) log=$directory/linuxcnc.log"
-[ -z "$left" ] || status=125
-exit "$status"
+finish "$status"

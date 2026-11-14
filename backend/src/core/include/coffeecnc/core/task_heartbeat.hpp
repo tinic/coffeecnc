@@ -11,7 +11,8 @@ namespace coffeecnc {
 
 // Tells a running LinuxCNC task from the last status it left behind. Task writes its status every
 // cycle and each write advances the status buffer's write counter; after task has died the last
-// status stays readable for ever. EMC_STAT's own heartbeat fields are not maintained.
+// status stays readable for ever. EMC_STAT's own task.heartbeat counts on LinuxCNC 2.9.4 but was
+// seen stuck at 0 on another 2.9 build, so the write counter is what is used.
 class TaskHeartbeat {
 public:
   using Clock = std::chrono::steady_clock;

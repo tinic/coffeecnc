@@ -145,7 +145,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .ini_file = file.string(),
       .directory = directory.string(),
       .machine_name = ini.text("EMC", "MACHINE").value_or(""),
-      .nml_file = ini.text("EMC", "NML_FILE").value_or(std::string(default_nml_file)),
+      // Relative to the directory of the INI file, like every other path in it.
+      .nml_file =
+          absolute(directory, ini.text("EMC", "NML_FILE").value_or(std::string(default_nml_file))),
       .machine_units = scale == 1 ? LengthUnit::mm : LengthUnit::inch,
       .millimetres_per_unit = scale,
       .travel = travel,

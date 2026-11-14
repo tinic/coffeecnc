@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). C++ request fixtures are in [`fixtures/commands.json`](fixtures/commands.json). Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 25 cases, including missing feedback versus zero/false and complete versus partial snapshots. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Version mismatch
 

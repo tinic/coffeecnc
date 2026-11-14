@@ -15,7 +15,21 @@
 # down). With -n it only assembles the run directory, prints `sim=assembled ini=<file>` and
 # starts nothing.
 #
-# Output is the program's output followed by `sim=<key> ...` lines of this script.
+# The exit code is the program's real one. LinuxCNC's start script does not pass it on, so the
+# DISPLAY program LinuxCNC is given is a wrapper this script writes into the run directory
+# (display.sh): it runs the program, waits for it and records how it ended in display.status,
+# as `<code>` or `signal_<NAME>`. That record decides. The `exit=<code>` line a test program
+# prints is only compared with it: a program that prints `exit=0` and then fails (a sanitizer's
+# report at exit, a destructor, a signal) has failed. The result is
+#
+#   the recorded exit code            when it is not 0
+#   128 + the signal's number         when the program was ended by a signal
+#   the printed code                  when the program exited 0 but printed another code
+#   125                               when nothing was recorded
+#   0                                 otherwise; a program need not print an `exit=` line
+#
+# Output is the program's output followed by `sim=<key> ...` lines of this script; the last is
+# `sim=done exit=<result> printed_exit=<code|none> child_status=<code|signal_NAME|none> ...`.
 set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -69,13 +83,28 @@ for word in "$program" "$directory" "$@"; do
   fi
 done
 
+# The DISPLAY program LinuxCNC starts: the real one, and a record of how it ended.
+rm -f "$directory/display.status"
+cat >"$directory/display.sh" <<EOF || exit 125
+#!/bin/bash
+"$program" "\$@"
+status=\$?
+if [ \$status -gt 128 ] && name=\$(kill -l \$status 2>/dev/null); then
+  echo "signal_\$name" >"$directory/display.status"
+else
+  echo \$status >"$directory/display.status"
+fi
+exit \$status
+EOF
+chmod +x "$directory/display.sh" || exit 125
+
 # The run directory holds only generated files.
 perl -pe '
   BEGIN { $inch = shift eq "inch"; $display = shift; }
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$program $*" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh $*" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done
@@ -120,6 +149,8 @@ ours() {
 }
 
 linuxcnc_pid=
+printed=
+child=
 # Ends the run: every process it started is gone when this returns, however it is reached
 # (program finished, timeout, or this script interrupted). Bounded: it never waits on a process
 # that may survive.
@@ -157,7 +188,8 @@ finish() {
     [ "$status" != 0 ] || status=125
   fi
   left="$(ours) $(pgrep -x rtapi_app)"
-  echo "sim=done exit=$status processes_left=$(echo $left | wc -w) log=$directory/linuxcnc.log"
+  echo "sim=done exit=$status printed_exit=${printed:-none} child_status=${child:-none}" \
+    "processes_left=$(echo $left | wc -w) log=$directory/linuxcnc.log"
   [ -z "${left// /}" ] || status=125
   exit "$status"
 }
@@ -181,9 +213,16 @@ while kill -0 "$linuxcnc_pid" 2>/dev/null; do
 done
 wait "$linuxcnc_pid" 2>/dev/null # It has exited: this only collects it.
 # The start script ends with its cleanup, so its own exit code says nothing about the program:
-# the program reports its exit code in the log.
-status=$(sed -n 's/^exit=\([0-9]*\)$/\1/p' "$directory/linuxcnc.log" | tail -1)
-[ -n "$status" ] || status=125
+# the wrapper recorded how the program really ended, and that decides. What the program printed
+# as its exit code must agree with it.
+printed=$(sed -n 's/^exit=\([0-9]*\)$/\1/p' "$directory/linuxcnc.log" | tail -1)
+child=$(cat "$directory/display.status" 2>/dev/null)
+case $child in
+"") status=125 ;;
+signal_*) status=$((128 + $(kill -l "${child#signal_}" 2>/dev/null || echo 0))) ;;
+0) status=${printed:-0} ;;
+*) status=$child ;;
+esac
 
 grep -E '^(check|fact|exit)=' "$directory/linuxcnc.log"
 finish "$status"

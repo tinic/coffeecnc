@@ -114,8 +114,11 @@ if(BUILD_TESTING)
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
       foreach(units mm inch)
+        # Every simulation test has a run directory of its own, named after the test: its
+        # linuxcnc.log there is that test's and no other's.
         add_test(NAME linuxcnc_sim_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          -u ${units} -t 300 $<TARGET_FILE:coffeecnc_sim_tests>)
+          -u ${units} -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests>)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 400)
@@ -123,7 +126,8 @@ if(BUILD_TESTING)
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
       add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-        -p g0759 -t 300 $<TARGET_FILE:coffeecnc_sim_tests> g0759)
+        -p g0759 -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_g0759
+        $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
         ${PROJECT_BINARY_DIR})
       set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
@@ -145,7 +149,8 @@ if(BUILD_TESTING)
         set_tests_properties(panel_stamp PROPERTIES FIXTURES_REQUIRED panel)
         # The application with the real panel in its window, as LinuxCNC's DISPLAY program on a
         # display of its own (Xvfb): the test drives the page and watches LinuxCNC.
-        add_executable(coffeecnc_shell_tests tests/shell/shell_tests.cpp)
+        add_executable(coffeecnc_shell_tests tests/shell/shell_tests.cpp
+          ${COFFEECNC_LSAN_SUPPRESSIONS})
         target_compile_definitions(coffeecnc_shell_tests PRIVATE
           COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
           COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist"
@@ -154,20 +159,28 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_shell_tests PRIVATE coffeecnc_application
           coffeecnc_shell_test_hooks coffeecnc_project_options nlohmann_json::nlohmann_json)
         coffeecnc_enable_analyzers(coffeecnc_shell_tests)
-        foreach(units mm inch)
-          add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-            -u ${units} -t 500 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
-            $<TARGET_FILE:coffeecnc_shell_tests>)
-          set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-            RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
-        endforeach()
-        # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
-        # and SIGTERM ends it and LinuxCNC with no process left.
-        add_test(NAME linuxcnc_coffeecnc_start COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          -t 120 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
-          $<TARGET_FILE:coffeecnc>)
-        set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-          RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
+        # Not under ThreadSanitizer: GLib, GTK and WebKit are not instrumented, so every hand-over
+        # through their main loop and every allocation freed on one of their threads is reported
+        # as a data race (ca88a0a: 65 reports in the start test, 248 in one shell test, each with
+        # GLib, GIO, Pango, fontconfig or JavaScriptCore on one side). The programs still build.
+        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+          foreach(units mm inch)
+            add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+              -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}
+              ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+              $<TARGET_FILE:coffeecnc_shell_tests>)
+            set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+              RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
+          endforeach()
+          # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
+          # and SIGTERM ends it and LinuxCNC with no process left.
+          add_test(NAME linuxcnc_coffeecnc_start COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_coffeecnc_start
+            ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
+            $<TARGET_FILE:coffeecnc>)
+          set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+            RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
+        endif()
       endif()
     endif()
   endif()

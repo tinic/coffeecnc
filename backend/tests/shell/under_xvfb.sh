@@ -7,8 +7,9 @@
 # LinuxCNC starts this script as `under_xvfb.sh -ini <file> [--terminate-after=<seconds>]
 # <program> [arguments...]`; the program is started as `<program> -ini <file> [arguments...]`.
 # With --terminate-after the program is sent SIGTERM after that time and this script prints
-# the `exit=<code>` line run.sh reads, with the program's exit code; otherwise the program
-# prints it. Xvfb is started here and ended here, by its process ID.
+# an `exit=<code>` line with the program's exit code; otherwise the program prints it. Either
+# way this script exits with the program's exit code. Xvfb is started here and ended here, by
+# its process ID.
 set -u
 [ "${1:-}" = -ini ] && [ $# -ge 3 ] || { echo "exit=125"; exit 125; }
 ini=$2
@@ -42,6 +43,8 @@ fi
 export DISPLAY=:$(cat "$directory/xvfb.display")
 
 if [ -z "$terminate_after" ]; then
+  # The program prints its own `exit=` line. How the process really ends is this script's
+  # exit code, which run.sh records and goes by.
   "$program" -ini "$ini" "$@"
   code=$?
 else

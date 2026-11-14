@@ -15,7 +15,11 @@ target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linux
   PRIVATE coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
-add_executable(coffeecnc main.cpp)
+# LeakSanitizer's suppressions are looked up in the executable: the file is a source of every
+# program that opens the window, and is empty outside AddressSanitizer builds.
+set(COFFEECNC_LSAN_SUPPRESSIONS "${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.cpp"
+  CACHE INTERNAL "Source with the LeakSanitizer suppressions of the window's libraries")
+add_executable(coffeecnc main.cpp ${COFFEECNC_LSAN_SUPPRESSIONS})
 target_link_libraries(coffeecnc PRIVATE coffeecnc_application coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc)
 

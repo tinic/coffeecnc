@@ -40,16 +40,21 @@ struct NmlPanelSource::Impl {
   std::uint64_t program_loads_seen{};
   std::uint64_t program_revision{};
   std::shared_ptr<const ProgramText> program;
-  // The line counters of the loaded revision; see the header.
+  // What is attributed to the loaded revision of task's line counters; see the header.
   struct Lines {
-    std::uint64_t starts_seen{}; // the port's count when the revision began
-    bool started{};
-    int current_before{}; // as read last before the start
-    int motion_before{};
-    bool current_shown{};
-    bool motion_shown{};
+    // Statuses read up to here are not evidence: the revision or an MDI block came after.
+    Clock::time_point not_before;
+    std::optional<Clock::time_point> judged; // when the status judged last was read
+    bool executing{};                         // that status showed the program running
+    // The counters as read last while it did not run, current then motion.
+    std::optional<std::pair<int, int>> before;
+    bool current_moved{}; // in this run
+    bool motion_moved{};
+    int current{}; // attributed: what is reported
+    int motion{};
   };
   Lines lines;
+  std::uint64_t mdi_blocks_seen{};
 
   Impl(MachineConfig machine, const NmlStatusMailbox& readings, ToolReader tool_reader,
        ProgramReader program_reader, const NmlLoads* counted,
@@ -113,48 +118,55 @@ struct NmlPanelSource::Impl {
     tool_loads_seen = counted;
   }
 
-  // The port's counts, the starts as they were while `programs` had this value.
-  struct Counts {
-    std::uint64_t programs{};
-    std::uint64_t starts{};
-  };
-  [[nodiscard]] auto counts() const -> Counts {
-    if (loads == nullptr)
-      return {};
-    for (auto opened = loads->programs.load();;) {
-      const auto starts = loads->program_starts.load();
-      const auto again = loads->programs.load();
-      if (again == opened)
-        return {opened, starts};
-      opened = again;
+  void track_lines(const NmlStatus& status, Clock::time_point read_at) {
+    if (const auto counted = loads != nullptr ? loads->mdi_blocks.load() : 0;
+        counted != mdi_blocks_seen) {
+      mdi_blocks_seen = counted;
+      lines = Lines{};
+      lines.not_before = clock();
     }
-  }
-
-  // The counters of one status of the loaded revision, each 0 until that revision produced it.
-  void track_lines(const NmlStatus& status, const Counts& now, ProgramStatus& shown) {
     const auto& controller = status.controller;
-    if (!lines.started) {
-      if (now.starts != lines.starts_seen ||
-          (controller.mode == TaskMode::automatic && controller.interp != InterpState::idle)) {
-        lines.started = true;
-      } else {
-        lines.current_before = status.current_line;
-        lines.motion_before = status.motion_line;
-      }
+    if (controller.link != Link::live || read_at <= lines.not_before ||
+        (lines.judged && read_at <= *lines.judged))
+      return;
+    lines.judged = read_at;
+    const std::pair now{status.current_line, status.motion_line};
+    if (controller.mode != TaskMode::automatic) {
+      const auto not_before = lines.not_before;
+      lines = Lines{};
+      lines.not_before = not_before;
+      lines.judged = read_at;
+      lines.before = now;
+      return;
     }
-    lines.current_shown =
-        lines.current_shown || (lines.started && status.current_line != lines.current_before);
-    lines.motion_shown =
-        lines.motion_shown || (lines.started && status.motion_line != lines.motion_before);
-    shown.current_line = lines.current_shown ? status.current_line : 0;
-    shown.motion_line = lines.motion_shown ? status.motion_line : 0;
+    if (controller.interp == InterpState::idle) {
+      // The run has ended: the lines it stopped at.
+      if (std::exchange(lines.executing, false)) {
+        if (lines.current_moved)
+          lines.current = now.first;
+        if (lines.motion_moved)
+          lines.motion = now.second;
+      }
+      lines.before = now;
+      return;
+    }
+    if (!std::exchange(lines.executing, true)) {
+      lines.current_moved = lines.motion_moved = false;
+      if (!lines.before)
+        lines.before = now;
+    }
+    const bool moving = !controller.in_position;
+    lines.current_moved = lines.current_moved || now.first != lines.before->first || moving ||
+                          status.dwell_seconds_left > 0 || controller.requested_tool.has_value();
+    lines.motion_moved = lines.motion_moved || now.second != lines.before->second || moving;
+    lines.current = lines.current_moved ? now.first : 0;
+    lines.motion = lines.motion_moved ? now.second : 0;
   }
 
-  void read_program(const NmlStatus& status, const Counts& now,
-                    std::vector<ControllerMessage>& messages) {
+  void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
     if (status.controller.link == Link::down)
       return; // Nothing is known: what was read last stays.
-    const auto counted = now.programs;
+    const auto counted = loads != nullptr ? loads->programs.load() : 0;
     if (status.program_file.empty()) {
       program_file.clear();
       program_loads_seen = counted;
@@ -166,7 +178,8 @@ struct NmlPanelSource::Impl {
     program_file = status.program_file;
     program_loads_seen = counted;
     ++program_revision;
-    lines = Lines{.starts_seen = now.starts};
+    lines = Lines{};
+    lines.not_before = clock();
     program.reset();
     auto text = programs ? programs(program_file, program_revision)
                          : std::unexpected(std::string("No program directory is configured."));
@@ -191,13 +204,12 @@ auto NmlPanelSource::read() -> PanelReading {
   PanelReading reading;
   // Everything that can take time first: the status is taken after it, and aged last.
   impl_->read_tools(reading.messages);
-  const auto counts = impl_->counts();
   if (const auto before = impl_->mailbox.latest())
-    impl_->read_program(before->status, counts, reading.messages);
+    impl_->read_program(before->status, reading.messages);
   auto latest = impl_->mailbox.latest();
   // Task named another file meanwhile: its text is read now, and the status taken again.
   if (latest && latest->status.program_file != impl_->program_file) {
-    impl_->read_program(latest->status, counts, reading.messages);
+    impl_->read_program(latest->status, reading.messages);
     latest = impl_->mailbox.latest();
   }
   auto status = latest ? latest->status : NmlStatus{};
@@ -212,8 +224,11 @@ auto NmlPanelSource::read() -> PanelReading {
       to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
-  if (loaded && status.controller.link != Link::down)
-    impl_->track_lines(status, counts, reading.status.program);
+  if (loaded) {
+    impl_->track_lines(status, latest->read_at);
+    reading.status.program.current_line = impl_->lines.current;
+    reading.status.program.motion_line = impl_->lines.motion;
+  }
   if (!loaded)
     reading.status.program = ProgramStatus{.file = {},
                                            .revision = 0,

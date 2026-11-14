@@ -79,9 +79,10 @@ struct NmlStatus {
 // The publisher reads the counts: a load of the same file again is a load. Thread-safe.
 struct NmlLoads {
   std::atomic<std::uint64_t> programs{};    // open_program accepted
-  // run or step accepted. Counted after `programs`, by the same thread: a reader that finds
-  // `programs` unchanged around its read of this count knows which load the starts belong to.
-  std::atomic<std::uint64_t> program_starts{};
+  // An MDI block accepted (mdi, select_wcs, touch_off, tool_touch_off): task's line counters
+  // are no longer those of the loaded program, also when the block is over before a status
+  // shows it.
+  std::atomic<std::uint64_t> mdi_blocks{};
   std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
 };
 

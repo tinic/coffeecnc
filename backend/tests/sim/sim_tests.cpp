@@ -15,6 +15,7 @@
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
+#include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
@@ -147,6 +148,10 @@ public:
   const HalProbe& probe;
   LocalFileSystem files;
   ProgramStore programs; // [DISPLAY] PROGRAM_PREFIX of the machine
+  // Where the runtime's status thread leaves its readings, and what the port counts: what the
+  // executable's panel source is made on.
+  const NmlStatusMailbox* mailbox{};
+  const NmlLoads* loads{};
   std::unique_ptr<Runtime> runtime;
   PageToken page;
   RequestId next_id{1};
@@ -1653,74 +1658,143 @@ void program(Rig& rig) {
   traced(rig, 100ms, []() -> bool { return false; });
 }
 
-// What task reports as current and motion line across the load of another program: the facts
-// the panel source's rule rests on (docs/linuxcnc-interface.md, "Observed on 2.9.4").
+// Task's line counters across loads, MDI blocks and an E-stop (fact=lines, `task`: the facts
+// of docs/linuxcnc-interface.md, "Observed on 2.9.4"), and beside them what the executable's
+// panel source reports of them for the loaded revision (`shown`), read every 50 ms as the
+// publisher does.
 void lines_across_open(Rig& rig) {
-  const std::string file = rig.config.program_prefix + "/coffeecnc_sim_second.ngc";
+  const std::string first = rig.config.program_prefix + "/coffeecnc_sim.ngc";
+  const std::string second = rig.config.program_prefix + "/coffeecnc_sim_second.ngc";
   {
-    std::ofstream out{file};
+    std::ofstream out{second};
     out << "G21 G90 G54\n"  // 1
            "G0 X5 Y5\n"     // 2
            "G1 X8 F600\n"   // 3
            "M2\n";          // 4
   }
-  const auto lines = [&](std::string_view at) -> void {
-    const auto status = rig.status();
-    fact("lines", std::format("at={} file={} interp={} mode={} current_line={} motion_line={}", at,
-                              status.program_file.substr(status.program_file.rfind('/') + 1),
-                              static_cast<int>(status.controller.interp),
-                              static_cast<int>(status.controller.mode), status.current_line,
-                              status.motion_line));
+  NmlPanelSource source{rig.config, *rig.mailbox, {},
+                        [&](std::string_view path, std::uint64_t revision)
+                            -> std::expected<ProgramText, std::string> {
+                          return rig.programs.read_program(path, revision);
+                        },
+                        rig.loads};
+  using Pair = std::pair<int, int>;
+  Pair shown;
+  auto next = Clock::now();
+  const auto watch = [&](std::chrono::milliseconds time, const std::function<bool()>& done) -> bool {
+    return traced(rig, time, [&]() -> bool {
+      if (Clock::now() >= next) {
+        const auto program = source.read().status.program;
+        shown = {program.current_line, program.motion_line};
+        next = Clock::now() + 50ms;
+      }
+      return done();
+    });
   };
-  rig.pump(100ms);
-  lines("after_abort_of_first");
-  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
-  rig.pump(20ms);
-  lines("open_second_20ms");
-  rig.pump(1s);
-  lines("open_second_1s");
-  const auto mdi = rig.send(R"("type":"mdi","text":"G21 G0 X1")");
-  traced(rig, 5s, [&]() -> bool { return rig.idle(); });
-  rig.pump(100ms);
-  lines("after_mdi");
-  const auto step = rig.send(R"("type":"step")");
-  traced(rig, 1s, []() -> bool { return false; });
-  lines("after_first_step");
-  static_cast<void>(rig.send(R"("type":"step")"));
-  traced(rig, 2s, []() -> bool { return false; });
-  lines("after_second_step");
-  static_cast<void>(rig.send(R"("type":"resume")"));
-  const bool ended = traced(rig, 10s, [&]() -> bool { return rig.idle() && !rig.status().paused; });
-  rig.pump(100ms);
-  lines("after_end_of_second");
-  const auto reopen = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
-  rig.pump(200ms);
+  const auto never = []() -> bool { return false; };
+  // Task's counters now, and one line of both views.
+  const auto lines = [&](std::string_view at) -> Pair {
+    watch(120ms, never);
+    const auto status = rig.status();
+    fact("lines",
+         std::format("at={} file={} interp={} mode={} task_current_line={} task_motion_line={} "
+                     "shown_current_line={} shown_motion_line={}",
+                     at, status.program_file.substr(status.program_file.rfind('/') + 1),
+                     static_cast<int>(status.controller.interp),
+                     static_cast<int>(status.controller.mode), status.current_line,
+                     status.motion_line, shown.first, shown.second));
+    return {status.current_line, status.motion_line};
+  };
+  const auto send = [&](std::string_view body) -> bool { return rig.send(body).accepted(); };
+  const Pair none{0, 0};
+  bool sent = true;
+
+  // The first program was run and aborted before this source existed.
+  auto task = lines("after_abort_of_first");
+  check("lines_of_a_run_not_seen_are_withheld", shown == none && task.first > 0,
+        std::format("task={},{} shown={},{}", task.first, task.second, shown.first, shown.second));
+
+  sent = send(std::format(R"("type":"open_program","path":"{}")", second)) && sent;
+  lines("open_second");
+  sent = send(R"("type":"mdi","text":"G21 G0 X1")") && sent;
+  watch(5s, [&]() -> bool { return rig.idle(); });
+  lines("mdi_after_open");
+  const bool unrun = shown == none;
+  sent = send(R"("type":"step")") && sent;
+  watch(1s, never);
+  lines("first_step");
+  sent = send(R"("type":"step")") && sent;
+  watch(2s, never);
+  task = lines("second_step");
+  check("lines_paused_in_auto_are_reported",
+        unrun && rig.status().paused && task.first == 2 && shown.first == 2,
+        std::format("task={},{} shown={},{}", task.first, task.second, shown.first, shown.second));
+  sent = send(R"("type":"resume")") && sent;
+  const bool ended = watch(10s, [&]() -> bool { return rig.idle() && !rig.status().paused; });
+  task = lines("end_of_second");
+  check("lines_of_a_finished_program_are_kept", ended && task.first == 3 && shown == task,
+        std::format("task={},{} shown={},{}", task.first, task.second, shown.first, shown.second));
+
+  // An E-stop after a run of this revision: the lines it stopped at stay.
+  const auto ended_at = shown;
+  sent = send(R"("type":"set_machine","state":"estop")") && sent;
+  lines("estop_after_own_run");
+  sent = send(R"("type":"set_machine","state":"off")") && sent;
+  sent = send(R"("type":"set_machine","state":"on")") && sent;
+  lines("on_after_own_run");
+  check("lines_stay_through_estop_after_own_run", shown == ended_at,
+        std::format("shown={},{}", shown.first, shown.second));
+
+  // An MDI block and a jog after the run: the counters are no longer the program's.
+  sent = send(R"("type":"mdi","text":"G0 X2")") && sent;
+  watch(100ms, never);
+  const auto during = shown;
+  watch(5s, [&]() -> bool { return rig.idle(); });
+  task = lines("mdi_after_own_run");
+  const auto after_mdi = shown;
+  sent = send(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)") && sent;
+  watch(3s, [&]() -> bool { return rig.idle(); });
+  lines("jog_after_own_run");
+  check("lines_are_withheld_after_an_mdi_block", during == none && after_mdi == none && shown == none,
+        std::format("during={},{} after={},{} after_jog={},{}", during.first, during.second,
+                    after_mdi.first, after_mdi.second, shown.first, shown.second));
+  // And back with the next run.
+  rig.settle();
+  sent = send(R"("type":"run")") && sent;
+  const bool again = watch(10s, [&]() -> bool { return shown.first > 0; }) &&
+                     watch(10s, [&]() -> bool { return rig.idle(); });
+  task = lines("second_run_again");
+  check("lines_return_with_the_next_run", again && task.first == 3 && shown == task,
+        std::format("task={},{} shown={},{}", task.first, task.second, shown.first, shown.second));
+
+  // Loaded again and not run: the E-stop brings the current line of the run before back.
+  sent = send(std::format(R"("type":"open_program","path":"{}")", second)) && sent;
   lines("reopen_second");
-  static_cast<void>(rig.send(R"("type":"set_machine","state":"estop")"));
-  traced(rig, 500ms, []() -> bool { return false; });
-  lines("estop_after_reopen");
-  static_cast<void>(rig.send(R"("type":"set_machine","state":"off")"));
-  traced(rig, 500ms, []() -> bool { return false; });
+  sent = send(R"("type":"set_machine","state":"estop")") && sent;
+  task = lines("estop_after_reopen");
+  const auto at_estop = shown;
+  sent = send(R"("type":"set_machine","state":"off")") && sent;
   lines("off_after_reopen");
-  static_cast<void>(rig.send(R"("type":"set_machine","state":"on")"));
-  traced(rig, 500ms, []() -> bool { return false; });
+  sent = send(R"("type":"set_machine","state":"on")") && sent;
   lines("on_after_reopen");
   fact("homed_after_power_cycle", std::format("x={}", rig.snapshot().axes.at(0).homed));
-  const auto first = rig.send(std::format(R"("type":"open_program","path":"{}")",
-                                          rig.config.program_prefix + "/coffeecnc_sim.ngc"));
-  rig.pump(200ms);
+  check("lines_of_an_earlier_load_are_withheld", at_estop == none && shown == none,
+        std::format("task_at_estop={},{} shown_at_estop={},{} shown={},{}", task.first,
+                    task.second, at_estop.first, at_estop.second, shown.first, shown.second));
+
+  sent = send(std::format(R"("type":"open_program","path":"{}")", first)) && sent;
   lines("open_first_again");
-  const auto run = rig.send(R"("type":"run")");
-  traced(rig, 3s, [&]() -> bool { return rig.status().motion_line >= 3; });
-  lines("run_first_again");
-  static_cast<void>(rig.send(R"("type":"abort")"));
-  rig.pump(500ms);
-  lines("abort_first_again");
-  check("lines_across_open_sequence",
-        open.accepted() && mdi.accepted() && step.accepted() && ended && reopen.accepted() &&
-            first.accepted() && run.accepted(),
-        std::format("open={} mdi={} step={} ended={} reopen={} first={} run={}", open.text(),
-                    mdi.text(), step.text(), ended, reopen.text(), first.text(), run.text()));
+  sent = send(R"("type":"run")") && sent;
+  watch(3s, [&]() -> bool { return rig.status().motion_line >= 3; });
+  task = lines("run_first_again");
+  const bool running = shown == task && task.second == 3;
+  sent = send(R"("type":"abort")") && sent;
+  watch(500ms, never);
+  task = lines("abort_first_again");
+  check("lines_of_an_aborted_program_are_kept", running && shown == task && task.first > 0,
+        std::format("running={} task={},{} shown={},{}", running, task.first, task.second,
+                    shown.first, shown.second));
+  check("lines_across_open_sequence", sent);
 }
 
 void tools(Rig& rig) {
@@ -2196,10 +2270,12 @@ auto run(const std::string& ini_file, bool g0759) -> int {
                         (g0759 || halcmd("net Xpos coffeecnc-test.x-pos"));
   check("test_pins", watching);
   HalShared shared;
-  auto port = NmlPort::connect(*config, &shared);
+  NmlLoads loads;
+  auto port = NmlPort::connect(*config, &shared, &loads);
   check("nml_connect", port.has_value(), port ? config->nml_file : port.error());
   // One status channel for the runtime's status thread, one for this thread.
-  auto reader = NmlStatusReader::connect(*config, &shared);
+  NmlStatusMailbox mailbox;
+  auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   auto view = NmlStatusReader::connect(*config, &shared);
   check("nml_status_readers", reader.has_value() && view.has_value(),
         reader ? (view ? std::string("two") : view.error()) : reader.error());
@@ -2207,6 +2283,8 @@ auto run(const std::string& ini_file, bool g0759) -> int {
     return 1;
 
   Rig rig{*config, *hal, shared, **port, **reader, **view, *probe};
+  rig.mailbox = &mailbox;
+  rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
   if (g0759) {

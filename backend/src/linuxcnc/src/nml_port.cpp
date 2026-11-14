@@ -643,7 +643,10 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_EXECUTE message;
   if (!put(message.command, text))
     return failed("The MDI block is too long for LinuxCNC.");
-  return impl_->start(message, from);
+  auto started = impl_->start(message, from);
+  if (accepted(started) && impl_->loads != nullptr)
+    ++impl_->loads->mdi_blocks;
+  return started;
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
@@ -677,10 +680,7 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
     return withdrawn();
   EMC_TASK_PLAN_RUN message;
   message.line = 0; // from the start
-  auto started = impl_->start(message, from);
-  if (accepted(started) && impl_->loads != nullptr)
-    ++impl_->loads->program_starts;
-  return started;
+  return impl_->start(message, from);
 }
 
 auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
@@ -713,10 +713,7 @@ auto NmlPort::step(const Wanted& wanted) -> ActionResult {
   if (!impl_->still())
     return withdrawn();
   EMC_TASK_PLAN_STEP message;
-  auto stepped = impl_->pass(message, from);
-  if (accepted(stepped) && impl_->loads != nullptr)
-    ++impl_->loads->program_starts;
-  return stepped;
+  return impl_->pass(message, from);
 }
 
 auto NmlPort::abort() -> ActionResult {

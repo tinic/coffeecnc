@@ -5,7 +5,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   base: './',
   plugins: [vue()],
-  server: { host: '127.0.0.1', port: 5174, strictPort: true },
+  // The simulator imports the upstream samples from ../samples.
+  server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: ['..'] } },
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 600 },
   test: { environment: 'jsdom', include: ['test/**/*.test.ts'] },
 })

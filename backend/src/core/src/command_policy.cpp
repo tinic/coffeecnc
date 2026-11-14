@@ -192,6 +192,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("Single block needs a loaded program and no pending tool change.");
           if (limits_.homing_required && !homed(s))
             return reject("Home all configured axes first.");
+          // Not needing homing never means stepping while an axis is homing.
+          if (homing(s))
+            return reject("Wait for homing to finish.");
           if (s.interp == InterpState::paused && s.mode == TaskMode::automatic)
             return allow();
           return idle(s, TaskMode::automatic, limits_.homing_required);

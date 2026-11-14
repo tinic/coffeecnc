@@ -76,6 +76,21 @@ void homing_capability() {
   const auto run = policy.evaluate(Run{}, s);
   require(run.allowed && run.required_mode == TaskMode::automatic, "unhomed run allowed");
   require(policy.evaluate(Step{}, s).allowed, "unhomed single block allowed");
+  // Permission to work unhomed is not permission to move while an axis is homing.
+  auto paused_homing = s;
+  paused_homing.mode = TaskMode::automatic;
+  paused_homing.interp = InterpState::paused;
+  require(policy.evaluate(Step{}, paused_homing).allowed, "unhomed step from a pause allowed");
+  paused_homing.axes[1].homing = true;
+  const auto stepping = policy.evaluate(Step{}, paused_homing);
+  require(!stepping.allowed && stepping.reason == "Wait for homing to finish.",
+          "no step from a pause while an axis is homing");
+  auto idle_homing = s;
+  idle_homing.axes[2].homing = true;
+  require(!policy.evaluate(Step{}, idle_homing).allowed &&
+              !policy.evaluate(Run{}, idle_homing).allowed &&
+              !policy.evaluate(Mdi{"G0 X1"}, idle_homing).allowed,
+          "no step, run or MDI while an axis is homing, homing required or not");
   require(policy.evaluate(SelectWcs{2}, s).allowed, "unhomed WCS selection allowed");
   require(policy.evaluate(TouchOff{Axis::x, 0}, s).allowed, "unhomed touch-off allowed");
   require(policy.evaluate(ToolTouchOff{0}, s).allowed, "unhomed tool touch-off allowed");

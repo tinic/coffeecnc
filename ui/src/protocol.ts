@@ -1,0 +1,390 @@
+// Messages between the operator panel and the coffeecnc executable.
+//
+// The panel shows state and requests actions; the executable owns the LinuxCNC connection and
+// decides whether an action is valid. Field names match the C++ structs one to one.
+//
+// Units: lengths in millimetres, feeds in mm/min, spindle speed in rpm, overrides as factors
+// (1.0 is 100 %). Conversion to inches happens only for display.
+//
+// The panel never sets LinuxCNC's task mode. A command implies the mode it needs and the
+// executable switches mode when the interpreter is idle, or rejects the command.
+
+export const protocolVersion = 1
+
+export type AxisLetter = 'x' | 'y' | 'z'
+export type Vec3 = [number, number, number]
+
+/** Whether the status comes from a running LinuxCNC task. */
+export type Link =
+  | 'live' // task wrote this status within the last second
+  | 'stale' // the last status task wrote; task has stopped writing
+  | 'down' // no connection; every other field is a placeholder
+
+/** `off` is LinuxCNC's ESTOP_RESET: E-stop cleared, machine power off. */
+export type MachineState = 'estop' | 'off' | 'on'
+export type TaskMode = 'manual' | 'mdi' | 'auto'
+export type InterpState = 'idle' | 'reading' | 'paused' | 'waiting'
+export type LengthUnit = 'mm' | 'inch'
+export type SpindleDirection = 'stopped' | 'forward' | 'reverse'
+
+// ---- machine to panel -----------------------------------------------------------------------
+
+/** Sent once after the panel's `ready`: what does not change while the machine runs. */
+export interface Hello {
+  type: 'hello'
+  protocol: number
+  machine_name: string
+  /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
+  simulated: boolean
+  axes: AxisLetter[]
+  /** The machine's native unit ([TRAJ] LINEAR_UNITS); the default display unit. */
+  machine_units: LengthUnit
+  /** Jog increments offered, mm ([DISPLAY] INCREMENTS). */
+  jog_increments: number[]
+  /** Fastest jog, mm/min ([DISPLAY] MAX_LINEAR_VELOCITY). */
+  max_jog_velocity: number
+  max_feed_override: number
+  min_spindle_override: number
+  max_spindle_override: number
+}
+
+export interface AxisStatus {
+  axis: AxisLetter
+  homed: boolean
+  homing: boolean
+  /** Actual position in machine coordinates. */
+  machine: number
+  /** Actual position in the active work coordinate system, with G92 and tool offset applied. */
+  work: number
+  /** Distance to go in the current move. */
+  dtg: number
+  min_limit: number
+  max_limit: number
+  /** A limit switch is tripped. */
+  on_hard_limit: boolean
+}
+
+export interface Offsets {
+  /** Active work coordinate system: 1 is G54 … 9 is G59.3. */
+  wcs: number
+  g5x: Vec3
+  g92: Vec3
+  /** Tool offset in effect (zero unless G43 is active). */
+  tool: Vec3
+  /** XY rotation of the active system, degrees (G10 L2 R). */
+  rotation_xy: number
+}
+
+export interface MotionStatus {
+  /** Current velocity along the path, mm/min. */
+  velocity: number
+  /** The F word in effect, mm/min. */
+  programmed_feed: number
+  feed_override: number
+  rapid_override: number
+  in_position: boolean
+}
+
+/** LinuxCNC reports the commanded speed only; actual speed needs a HAL pin and is not here yet. */
+export interface SpindleStatus {
+  direction: SpindleDirection
+  /** The S word in effect, before override. */
+  commanded_rpm: number
+  override: number
+}
+
+export interface ProgramStatus {
+  /** Path of the loaded program on the machine, or null. */
+  file: string | null
+  /** Changes whenever a program is loaded or reloaded; matches `ProgramText.revision`. */
+  revision: number
+  /** Line the interpreter is executing (1-based; 0 when none). Reads ahead of motion. */
+  current_line: number
+  /** Line the motion in progress came from (1-based; 0 when none). */
+  motion_line: number
+  optional_stop: boolean
+  block_delete: boolean
+}
+
+/** Why a running program is not moving. The panel shows this instead of guessing. */
+export type Wait =
+  | { kind: 'none' }
+  /** Paused: by the operator (feed hold) or by the program (M0, M1, M60). */
+  | { kind: 'paused' }
+  /** LinuxCNC asks for a manual tool change and waits for `tool_changed`. */
+  | { kind: 'tool_change'; tool: number }
+  | { kind: 'dwell'; seconds_left: number }
+
+export interface Status {
+  type: 'status'
+  /** Increases by one with every status sent. */
+  seq: number
+  link: Link
+  machine: MachineState
+  mode: TaskMode
+  interp: InterpState
+  axes: AxisStatus[]
+  offsets: Offsets
+  motion: MotionStatus
+  spindle: SpindleStatus
+  coolant: { flood: boolean; mist: boolean }
+  tool: {
+    /** Tool LinuxCNC considers loaded (0 for none). */
+    in_spindle: number
+    /** Tool selected by a T word and not yet changed to, or null. */
+    prepared: number | null
+  }
+  program: ProgramStatus
+  wait: Wait
+  /** Active modal codes as LinuxCNC reports them, for example ["G1", "G54", "G90", "M3"]. */
+  active_codes: string[]
+  program_units: LengthUnit
+}
+
+export interface Tool {
+  number: number
+  pocket: number
+  /** Z offset (tool length). */
+  length: number
+  diameter: number
+  comment: string
+}
+
+export interface ToolTable {
+  type: 'tool_table'
+  revision: number
+  tools: Tool[]
+}
+
+export interface ProgramText {
+  type: 'program'
+  revision: number
+  file: string
+  lines: string[]
+}
+
+/** One contiguous run of motion from one source line, as the interpreter produced it. */
+export interface PreviewSegment {
+  line: number
+  kind: 'rapid' | 'feed'
+  tool: number
+  /** Polyline in machine coordinates, flattened x, y, z; arcs arrive tessellated. */
+  points: number[]
+}
+
+/** The path the loaded program would take with the offsets and tool table at `revision`. */
+export interface Preview {
+  type: 'preview'
+  revision: number
+  /** `failed` carries the interpreter's error; `segments` then end where it stopped. */
+  state: 'ready' | 'failed'
+  error: { line: number; text: string } | null
+  segments: PreviewSegment[]
+  /** Extent of the feed moves in machine coordinates, or null without any. */
+  bounds: { min: Vec3; max: Vec3 } | null
+}
+
+/** An operator error or message from LinuxCNC, or from the executable itself. */
+export interface OperatorMessage {
+  type: 'message'
+  level: 'error' | 'info'
+  text: string
+  /** Milliseconds since the Unix epoch. */
+  time: number
+}
+
+/** Final outcome of the command with this `id`. Every command gets exactly one. */
+export interface CommandResult {
+  type: 'result'
+  id: number
+  outcome:
+    | 'done' // LinuxCNC accepted the command (motion it started may still be running)
+    | 'rejected' // not valid in the current state; nothing was sent to LinuxCNC
+    | 'failed' // LinuxCNC reported an error
+    | 'timed_out' // LinuxCNC did not answer
+  /** Reason for anything but `done`, in words for the operator. */
+  reason: string
+}
+
+export interface DirectoryEntry {
+  name: string
+  kind: 'directory' | 'file'
+  bytes: number
+  /** Milliseconds since the Unix epoch. */
+  modified: number
+}
+
+export interface Directory {
+  type: 'directory'
+  path: string
+  /** Null at the top of the program directory. */
+  parent: string | null
+  entries: DirectoryEntry[]
+}
+
+export type FromMachine =
+  | Hello
+  | Status
+  | ToolTable
+  | ProgramText
+  | Preview
+  | OperatorMessage
+  | CommandResult
+  | Directory
+
+// ---- panel to machine -----------------------------------------------------------------------
+// Every command carries an `id` the panel chooses; the matching `CommandResult` reports it.
+
+interface CommandBase {
+  id: number
+}
+
+/** The panel has loaded: send `hello`, the tool table, the program and status. */
+export interface Ready extends CommandBase {
+  type: 'ready'
+}
+/** `estop` asserts LinuxCNC's software E-stop. It is not the machine's E-stop circuit. */
+export interface SetMachine extends CommandBase {
+  type: 'set_machine'
+  state: MachineState
+}
+export interface Home extends CommandBase {
+  type: 'home'
+  axis: AxisLetter | 'all'
+}
+/**
+ * Continuous jog with a dead-man: the panel sends `held: true` every 50 ms while the control is
+ * pressed and `held: false` on release. The executable stops the axis when no refresh arrives
+ * for 150 ms.
+ */
+export interface Jog extends CommandBase {
+  type: 'jog'
+  axis: AxisLetter
+  direction: -1 | 1
+  /** mm/min, at most `Hello.max_jog_velocity`. */
+  velocity: number
+  held: boolean
+}
+export interface JogStep extends CommandBase {
+  type: 'jog_step'
+  axis: AxisLetter
+  /** Signed distance, mm. */
+  distance: number
+  velocity: number
+}
+export interface JogStopAll extends CommandBase {
+  type: 'jog_stop_all'
+}
+export interface Mdi extends CommandBase {
+  type: 'mdi'
+  text: string
+}
+export interface ListDirectory extends CommandBase {
+  type: 'list_directory'
+  /** Null for the program directory ([DISPLAY] PROGRAM_PREFIX). */
+  path: string | null
+}
+export interface OpenProgram extends CommandBase {
+  type: 'open_program'
+  path: string
+}
+/** Runs the loaded program from its first line. */
+export interface Run extends CommandBase {
+  type: 'run'
+}
+export interface Pause extends CommandBase {
+  type: 'pause'
+}
+export interface Resume extends CommandBase {
+  type: 'resume'
+}
+/** Executes one block, then pauses. Starts the program when it is not running. */
+export interface Step extends CommandBase {
+  type: 'step'
+}
+/** Stops the program or MDI command and the spindle. Not an E-stop. */
+export interface Abort extends CommandBase {
+  type: 'abort'
+}
+export interface SetOverride extends CommandBase {
+  type: 'set_override'
+  which: 'feed' | 'rapid' | 'spindle'
+  value: number
+}
+export interface SetSpindle extends CommandBase {
+  type: 'set_spindle'
+  direction: SpindleDirection
+  /** Ignored for `stopped`. */
+  rpm: number
+}
+export interface SetCoolant extends CommandBase {
+  type: 'set_coolant'
+  flood: boolean
+  mist: boolean
+}
+export interface SetProgramOption extends CommandBase {
+  type: 'set_program_option'
+  option: 'optional_stop' | 'block_delete'
+  on: boolean
+}
+/** Makes work coordinate system `wcs` (1 is G54 … 9 is G59.3) active. */
+export interface SelectWcs extends CommandBase {
+  type: 'select_wcs'
+  wcs: number
+}
+/** Sets the work offset so the axis reads `value` at its present position (G10 L20). */
+export interface TouchOff extends CommandBase {
+  type: 'touch_off'
+  axis: AxisLetter
+  value: number
+}
+/**
+ * Sets the loaded tool's length so Z reads `value` at its present position (G10 L10), and
+ * applies it (G43).
+ */
+export interface ToolTouchOff extends CommandBase {
+  type: 'tool_touch_off'
+  value: number
+}
+/** Replaces one tool table row, or adds it. */
+export interface SetTool extends CommandBase {
+  type: 'set_tool'
+  tool: Tool
+}
+export interface RemoveTool extends CommandBase {
+  type: 'remove_tool'
+  number: number
+}
+/** The operator has put the requested tool in the spindle (answers `Wait.tool_change`). */
+export interface ToolChanged extends CommandBase {
+  type: 'tool_changed'
+}
+
+export type ToMachine =
+  | Ready
+  | SetMachine
+  | Home
+  | Jog
+  | JogStep
+  | JogStopAll
+  | Mdi
+  | ListDirectory
+  | OpenProgram
+  | Run
+  | Pause
+  | Resume
+  | Step
+  | Abort
+  | SetOverride
+  | SetSpindle
+  | SetCoolant
+  | SetProgramOption
+  | SelectWcs
+  | TouchOff
+  | ToolTouchOff
+  | SetTool
+  | RemoveTool
+  | ToolChanged
+
+/** A command without its `id`, as callers build it. */
+export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

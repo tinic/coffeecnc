@@ -14,4 +14,4 @@ The concept is HTML/CSS/JavaScript with an authored SVG illustration. It is not 
 
 ## Research
 
-Research documents summarize sources and link to them. They distinguish source observations, proposed product decisions and unverified assumptions. The sample corpus will preserve upstream bytes, commit identifiers, attribution and license files. Presence of a STEP file beside a program is evidence to investigate, not proof of a geometrically verified or machine-ready pairing.
+Research documents summarize sources and link to them. They distinguish source observations, proposed product decisions and unverified assumptions. The [sample corpus](../samples/README.md) preserves upstream bytes, commit identifiers, attribution and license files. Presence of a STEP file beside a program is evidence to investigate, not proof of a geometrically verified or machine-ready pairing.

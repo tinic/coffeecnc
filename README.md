@@ -20,7 +20,22 @@ The concept explores readable coordinates, a part/toolpath view, operation conte
 - Plain G-code is a first-class input. STEP, setup sheets and CAM metadata enrich a job when available.
 - Machine state, operator declarations and preview assumptions remain distinguishable.
 
-See [the product brief](docs/product-brief.md) and [material provenance](docs/provenance.md). Workflow research and a licensed sample corpus are being added in follow-up commits.
+## Research and design material
+
+- [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
+- [Sample catalog](samples/README.md): 22 NC programs and 3 STEP models from four GitHub projects, with native CAM files, setup information, pinned provenance and upstream licenses.
+- [Concept review](docs/design/concept-review.md): what the attractive first screen gets wrong and what the next design needs.
+- [Architecture](docs/architecture.md) and [feasibility](docs/feasibility.md): native/web boundaries, prerequisites and implementation sequence.
+- [Frontend landscape in 2026](docs/research/linuxcnc-frontends-2026.md): the original alternatives research.
+- [Product brief](docs/product-brief.md) and [material provenance](docs/provenance.md): decisions, assumptions and the archived original concept.
+
+The samples are research inputs, not machine-qualified jobs. In particular, related STEP/NC files have not been geometrically validated as matching, and some accompanying material/tool data conflict. Those discrepancies are documented in the catalog.
+
+Validate the collected files with Python 3.9 or newer:
+
+```sh
+python3 scripts/verify-samples.py
+```
 
 ## License status
 

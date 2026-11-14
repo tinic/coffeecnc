@@ -10,6 +10,8 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 *Current Machine workspace with simulated controller state and a real STEP mesh. The SM-101 sample model is explicitly not paired with the demo program; placement is for demonstrating the overlay. This is part geometry, not simulated stock removal.*
 
+The first machine target is the **G0759**, using the definitions in [tinic/linuxcnc](https://github.com/tinic/linuxcnc). Machine settings and HAL integration stay separate from shared application code. See [the configuration review and integration gaps](docs/machines/g0759.md).
+
 ## Run the operator panel
 
 ```sh

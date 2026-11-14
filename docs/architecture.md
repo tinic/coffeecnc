@@ -1,6 +1,6 @@
-# Proposed architecture
+# Architecture
 
-CoffeeCNC is an independent application. The agreed direction is a native C++ core with a GTK-hosted web UI, informed by Elle. This document proposes boundaries; it does not describe an implemented CoffeeCNC backend.
+CoffeeCNC is an independent application. The agreed direction is a native C++ core with a GTK-hosted web UI, informed by Elle. The Vue/TypeScript operator panel and portable C++ core/session libraries are implemented; the LinuxCNC adapter and native shell integration remain in progress. This document records boundaries and remaining design work.
 
 ```mermaid
 flowchart LR
@@ -53,13 +53,16 @@ CAD tessellation and preview computation should run outside the UI event loop. T
 
 For display-only STEP import, the panel now uses a pinned `occt-import-js` package in a cancellable Web Worker. A separate Three.js layer shares the toolpath camera; explicit model placement is tied to a program revision and work frame. Changed work coordinates hide the model for review, and a program reload clears the attachment. See [the library comparison, version tradeoff and integration boundary](research/step-preview.md). This does not move controller responsibilities into the webview.
 
+## Machine configuration
+
+The G0759 is the first integration target, using the owner's separate `tinic/linuxcnc` repository. See [the pinned configuration review](machines/g0759.md). Its XYZ/mm kinematics fit the current scope, but custom spindle settings, manual tool-change HAL, external position feedback and homing policy need explicit integration. Machine profiles should map configuration and optional signals into typed capabilities; UI components must not switch behavior on a machine name. Keep hardware HAL and machine-scoped persistence separate from shared controller logic.
+
 ## Implementation decisions still open
 
 - Exact supported LinuxCNC, GTK and WebKitGTK versions and packaging targets.
-- Web UI framework; Vue/TypeScript is a familiar candidate, not a final selection.
 - Preview/interpreter adapter and its treatment of remaps, macros and probe-dependent code.
 - Persistent model/job associations, native WebKit validation and stronger import memory isolation.
 - Job metadata format and CAM-post integrations.
-- Initial machine capability profile and manual/automatic tool-change protocols.
+- G0759 capability/configuration mapping, optional feedback status and future automatic tool-change support.
 
-The first implementation milestone should be a simulated controller with real mode/command/error states and the [operator walkthroughs](research/machinist-workflows.md). Then integrate a LinuxCNC simulation configuration before machine trials.
+The browser simulator now exercises mode/command/error states and the [operator walkthroughs](research/machinist-workflows.md). Native LinuxCNC simulation, a G0759-shaped fixture and WebKitGTK qualification precede machine trials.

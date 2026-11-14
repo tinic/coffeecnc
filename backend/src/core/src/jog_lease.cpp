@@ -3,22 +3,25 @@
 namespace coffeecnc {
 
 void JogLease::refresh(Axis axis, Time now) {
-  if (const auto i = axis_index(axis)) refreshed_[*i] = now;
+  if (const auto i = axis_index(axis))
+    refreshed_[*i] = now;
 }
 void JogLease::release(Axis axis) {
-  if (const auto i = axis_index(axis)) refreshed_[*i].reset();
+  if (const auto i = axis_index(axis))
+    refreshed_[*i].reset();
 }
-JogLease::Stops JogLease::expired(Time now) {
+auto JogLease::expired(Time now) -> JogLease::Stops {
   Stops stops{};
   for (std::size_t i = 0; i < refreshed_.size(); ++i) {
-    if (refreshed_[i] && now - *refreshed_[i] >= timeout) {
+    auto& refreshed = refreshed_[i];
+    if (refreshed && now - *refreshed >= timeout) {
       stops[i] = true;
-      refreshed_[i].reset();
+      refreshed.reset();
     }
   }
   return stops;
 }
-JogLease::Stops JogLease::cancel_all() {
+auto JogLease::cancel_all() -> JogLease::Stops {
   Stops stops{};
   for (std::size_t i = 0; i < refreshed_.size(); ++i) {
     stops[i] = refreshed_[i].has_value();
@@ -26,7 +29,7 @@ JogLease::Stops JogLease::cancel_all() {
   }
   return stops;
 }
-bool JogLease::active(Axis axis) const {
+auto JogLease::active(Axis axis) const -> bool {
   const auto i = axis_index(axis);
   return i && refreshed_[*i].has_value();
 }

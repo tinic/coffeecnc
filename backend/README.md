@@ -12,6 +12,16 @@ ctest --test-dir backend/build --output-on-failure
 
 Requires CMake 3.25+ and a C++23 compiler. The core has no third-party dependencies. Tests exercise rejected commands during execution, unhomed motion restrictions, stale-state stop requests, invalid numeric inputs, travel limits, manual tool-change waits, and independent jog timeout/release behavior.
 
+Warnings are errors for both the library and tests. Ninja presets provide repeatable builds (run these inside `backend/`):
+
+```sh
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+```
+
+Replace `dev` with `asan` for AddressSanitizer plus UndefinedBehaviorSanitizer, `tsan` for ThreadSanitizer, or `analyze` for clang-tidy and cppcheck. The analyzer preset fails configuration if either tool is missing; it never silently skips a requested check. The core supports Clang for local macOS development and GCC for Linux builds, rather than assuming Elle's GCC-only toolchain. Each layer owns its headers under `src/<layer>/include/coffeecnc/<layer>/`.
+
 ## Boundaries
 
 `CommandPolicy::evaluate` determines whether the app may attempt an action using an observed controller snapshot. A successful decision does **not** mean LinuxCNC accepted it. If a mode change is required, the adapter must request the mode, observe completion, then revalidate before submitting the original action. It must report actual command outcomes using the protocol's request ID.

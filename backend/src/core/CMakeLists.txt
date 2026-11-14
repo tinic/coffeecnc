@@ -1,0 +1,5 @@
+add_library(coffeecnc_core src/command_policy.cpp src/jog_lease.cpp)
+target_include_directories(coffeecnc_core PUBLIC include)
+target_compile_features(coffeecnc_core PUBLIC cxx_std_23)
+target_link_libraries(coffeecnc_core PRIVATE coffeecnc_project_options)
+coffeecnc_enable_analyzers(coffeecnc_core)

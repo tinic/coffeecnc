@@ -21,11 +21,8 @@ namespace coffeecnc {
 // millimetres, mm/min, rpm, factors. Read from one EMC_STAT.
 struct NmlStatus {
   ControllerState controller;
-  // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
-  bool teleop{};
   std::array<double, 3> work{}; // machine position less G5x, G92 and tool offset, rotated
   std::array<double, 3> dtg{};
-  int wcs{}; // 1 is G54 ... 9 is G59.3
   std::array<double, 3> g5x{};
   std::array<double, 3> g92{};
   std::array<double, 3> tool_offset{};
@@ -33,21 +30,24 @@ struct NmlStatus {
   double velocity{};    // mm/min
   double feed_override{};
   double rapid_override{};
-  SpindleDirection spindle_direction{SpindleDirection::stopped};
   double spindle_rpm{}; // commanded, before override
   double spindle_override{};
-  bool flood{};
-  bool mist{};
+  double dwell_seconds_left{};
+  std::string program_file; // empty when none is loaded
   // Tool table index (not a tool number) prepared by a T word and not yet changed to.
   std::optional<int> prepared_pocket;
-  std::string program_file; // empty when none is loaded
+  int wcs{}; // 1 is G54 ... 9 is G59.3
   int current_line{};
   int motion_line{};
+  int queued_mdi{};
+  SpindleDirection spindle_direction{SpindleDirection::stopped};
+  // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
+  bool teleop{};
+  bool flood{};
+  bool mist{};
   bool optional_stop{};
   bool block_delete{};
   bool paused{};
-  double dwell_seconds_left{};
-  int queued_mdi{};
 };
 
 // An operator error or message LinuxCNC published.

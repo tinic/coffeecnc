@@ -37,8 +37,8 @@ constexpr auto error_text_time = std::chrono::milliseconds{50};
 constexpr auto error_companion_time = std::chrono::milliseconds{20};
 constexpr double seconds_per_minute = 60;
 
-auto failed(std::string reason) -> ActionResult {
-  return {ActionStatus::failed, std::move(reason)};
+auto failed(std::string_view reason) -> ActionResult {
+  return {ActionStatus::failed, std::string(reason)};
 }
 auto accepted(const ActionResult& result) -> bool {
   return result.status == ActionStatus::accepted;

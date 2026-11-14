@@ -48,7 +48,8 @@ using Clock = std::chrono::steady_clock;
 int failures = 0;
 
 // Spaces would break the key=value line.
-auto word(std::string text) -> std::string {
+auto word(std::string_view given) -> std::string {
+  std::string text(given);
   std::ranges::replace(text, ' ', '_');
   std::ranges::replace(text, '\n', '_');
   return text.empty() ? std::string("-") : text;
@@ -58,11 +59,12 @@ void check(std::string_view name, bool passed, const std::string& detail = {}) {
   if (!passed)
     ++failures;
   std::cout << "check=" << name << " result=" << (passed ? "pass" : "fail")
-            << " detail=" << word(detail) << std::endl;
+            << " detail=" << word(detail) << '\n'
+            << std::flush;
 }
 
 void fact(std::string_view name, const std::string& detail) {
-  std::cout << "fact=" << name << ' ' << detail << std::endl;
+  std::cout << "fact=" << name << ' ' << detail << '\n' << std::flush;
 }
 
 auto near(double value, double expected, double tolerance = 0.01) -> bool {
@@ -192,12 +194,15 @@ public:
 private:
   void cycle(bool tick) {
     hal.beat();
-    if (tick)
-      for (const auto& text : session.tick(now()).messages)
+    if (tick) {
+      const auto outcome = session.tick(now());
+      for (const auto& text : outcome.messages)
         if (const auto message = Json::parse(text); message.at("type") == "message")
           messages.push_back(message.at("text").get<std::string>());
-    for (auto& message : port.take_messages())
-      messages.push_back(std::move(message.text));
+    }
+    auto published = port.take_messages();
+    std::ranges::transform(published, std::back_inserter(messages),
+                           [](auto& message) -> std::string { return std::move(message.text); });
   }
 };
 
@@ -896,6 +901,6 @@ auto main(int argc, char** argv) -> int {
     check("no_exception", false, error.what());
   }
   // LinuxCNC's start script ends with its own cleanup: this line carries the exit code.
-  std::cout << "exit=" << code << std::endl;
+  std::cout << "exit=" << code << '\n' << std::flush;
   return code;
 }

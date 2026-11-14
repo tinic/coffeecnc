@@ -1119,9 +1119,13 @@ void stopped_jogs_need_a_release() {
   rig.expect(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)", "rejected",
              "A jog stop is in progress.");
   rig.acted({}, "No increment is sent under the level");
-  static_cast<void>(rig.tick(at(rig.clock)));
-  static_cast<void>(rig.tick(at(rig.clock)));
-  static_cast<void>(rig.tick(at(rig.clock)));
+  // Raised, released, and found low for Session::settled_periods.
+  for (int period = 0; period < 2 + Session::settled_periods; ++period) {
+    require(rig.result(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)")
+                    .at("outcome") == "rejected",
+            "Nor before the level has been low for whole periods");
+    static_cast<void>(rig.tick(at(rig.clock)));
+  }
   rig.accepted(R"("type":"jog_step","axis":"x","distance":1,"velocity":600)");
   rig.acted({"jog_increment x 1 600 axis"}, "A jog step is not held back by the latch");
   // A new page has pressed nothing.
@@ -1272,6 +1276,24 @@ void increments_are_tracked() {
          rig.session.observe(rig.port.state, at(rig.clock).monotonic);
        },
        {"stop_jog x"}},
+      {"a mode change outside",
+       [](Rig& rig) -> void {
+         rig.port.state.mode = TaskMode::mdi;
+         rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+       },
+       {"stop_jog x"}},
+      {"homing starting",
+       [](Rig& rig) -> void {
+         rig.port.state.axes[1].homing = true;
+         rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+       },
+       {"stop_jog x"}},
+      {"a program starting",
+       [](Rig& rig) -> void {
+         rig.port.state.interp = InterpState::reading;
+         rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+       },
+       {"stop_jog x"}},
   };
   for (const auto& row : rows) {
     Rig rig;
@@ -1328,27 +1350,48 @@ void increments_are_tracked() {
     rig.acted({"stop_jog x"}, "An increment that may still begin to move is stopped");
     waited.acted({}, "One that has been at rest long enough is over");
   }
-  // An increment LinuxCNC did not answer may be taken up later: fenced like a lost start.
-  {
+  // An increment that came back without being accepted may have been written all the same and
+  // may be taken up later: fenced like a lost start, whatever the port said.
+  for (const auto& lost : {ActionResult{ActionStatus::timed_out, ""},
+                           ActionResult{ActionStatus::failed, "Error after the write."}}) {
     Rig rig;
-    rig.port.script["jog_increment"] = {{ActionStatus::timed_out, ""}};
-    rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}, {ActionStatus::timed_out, ""}};
+    rig.port.script["jog_increment"] = {lost};
+    rig.port.script["stop_jog"] = std::deque<ActionResult>(400, {ActionStatus::timed_out, ""});
     rig.clock = 1ms;
     const auto outcome = rig.send(long_step);
-    require(results(outcome).front().at("outcome") == "timed_out", "The increment timed out");
+    require(results(outcome).front().at("outcome") != "accepted", "The increment was not accepted");
     rig.acted({"jog_increment x 100 600 axis", "stop_jog x"}, "A stop follows it at once");
-    for (int period = 0; period < 3; ++period)
+    // The controller stays at rest for a long time, far beyond any settling time, and never
+    // confirms the stop: the increment is still out there, and the level stays up.
+    for (int period = 1; period <= 300; ++period) {
+      rig.clock = period * 10ms;
+      rig.session.observe(rig.port.state, at(rig.clock).monotonic);
       require(rig.session.control(at(rig.clock), {true, true}),
-              "The level is held while that stop is not accepted");
+              "The level is held for as long as no stop is accepted");
+      Outcome retried;
+      rig.driver.level = true;
+      rig.driver.drain(retried);
+    }
     rig.expect(long_step, "rejected", "A jog stop is in progress.");
-    rig.acted({"stop_jog x"}, "Only the stop is retried; no increment is sent under the level");
+    require(std::ranges::count(rig.port.calls, "stop_jog x") > 100 &&
+                std::ranges::count_if(rig.port.calls, [](const std::string& call) -> bool {
+                  return call.starts_with("jog_increment");
+                }) == 0,
+            "Only the stop is retried; no increment is sent under the level");
+    // A stop decision in between changes nothing: the level is up and stays up.
     rig.session.end_page(rig.page);
     require(rig.session.control(at(rig.clock), {true, true}), "Also across the end of the page");
+    // Then the controller wakes up and the axis moves: the level has been high all along.
+    rig.port.state.in_position = false;
+    rig.session.observe(rig.port.state, at(rig.clock).monotonic);
+    require(rig.session.control(at(rig.clock), {true, true}),
+            "The delayed increment starts under a level that was never released");
+    rig.port.script["stop_jog"].clear();
+    rig.port.calls.clear();
     Outcome later;
-    rig.driver.level = true;
     rig.driver.drain(later);
-    rig.acted({"stop_jog x"}, "The retry after the page ended is accepted");
-    require(!rig.session.control(at(rig.clock), {true, true}), "Then the level is released");
+    rig.acted({"stop_jog x"}, "The stop that is accepted at last was written after the increment");
+    require(!rig.session.control(at(rig.clock), {true, true}), "Only then is the level released");
   }
 }
 

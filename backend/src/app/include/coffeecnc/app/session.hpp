@@ -105,10 +105,12 @@ struct Work {
 //   - every lease ends;
 //   - every axis that is jogging, has a start or increment in flight, or was sent an increment
 //     that is not known to have ended, needs a jog stop acknowledged by the controller; a
-//     released axis always does. An increment has ended when the controller was seen moving
-//     and then at rest, or at rest for step_settle_periods; while it has not, link loss, machine
-//     off and a tripped watchdog are stop decisions as for a held jog. An increment the
-//     controller did not answer is a stop decision by itself;
+//     released axis always does. An increment the controller acknowledged has ended when the
+//     controller was then seen moving and at rest again, or at rest for step_settle_periods;
+//     while it has not, everything that is a stop decision for a held jog but the lease is one
+//     for it. An increment that came back from the port in any other way than accepted may have
+//     been written and may still be taken up: it is a stop decision by itself, and only the
+//     accepted jog stop that follows it ends its tracking;
 //   - while any axis needs one, the jog-stop level is held (`control` returns true);
 //   - every axis that had a jog or a press, except the one the panel itself released, is
 //     latched: `held: true` for it is `rejected` until the panel has sent `held: false` for that
@@ -125,6 +127,8 @@ struct Work {
 //              fails is reported once as an operator message (or as the result of the request
 //              that asked for it) and retried after every control period. A jog request then
 //              retries the stops itself and fails while one is not confirmed.
+//              A start is sent again once the level has been found low in settled_periods
+//              control periods.
 //   released   again once (a) no start or increment is in flight, (b) every axis that needed a
 //              stop has had one accepted, sent after the last start for it returned, and (c) a
 //              control period has seen the level high. The controller executes commands in the
@@ -144,7 +148,11 @@ public:
   static constexpr std::size_t max_queued_stops = 16;
   // An observed state older than this counts as a stale link.
   static constexpr auto status_max_age = std::chrono::milliseconds{100};
-  // Control periods after which an increment that was never seen moving counts as finished.
+  // Control periods the jog-stop level must have been found low before a jog is sent: the first
+  // may be the one in which the pin fell.
+  static constexpr int settled_periods = 2;
+  // Control periods at rest after which an increment that the controller acknowledged, and that
+  // was never seen moving, counts as finished.
   static constexpr int step_settle_periods = 20;
 
   // The port and the store must outlive the session. Throws std::invalid_argument for invalid
@@ -210,8 +218,9 @@ private:
     bool stop_failed{};
     // A control period has passed since: the worker tries again.
     bool retry_due{};
-    // An increment was sent and may still be moving the axis.
+    // An increment was acknowledged by the controller and may still be moving the axis.
     bool stepping{};
+    HeldJog step;
     bool step_seen_moving{};
     int step_periods{};
     // A jog or press on this axis was ended by something other than its release: a release
@@ -296,6 +305,8 @@ private:
   std::uint64_t cancels_{};
   bool hold_{};
   bool jog_stop_high_{};
+  // Consecutive control periods that found the level low, up to settled_periods.
+  int low_periods_{settled_periods};
   // The last thing the worker did was retrying stops: a waiting request is served next.
   bool retried_{};
   std::deque<Queued> stops_;

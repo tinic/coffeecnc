@@ -285,8 +285,14 @@ class Delivered {
 public:
   void add(const Outcome& outcome) {
     const std::scoped_lock lock{mutex_};
-    for (const auto& text : outcome.messages)
+    for (const auto& text : outcome.messages) {
       messages_.emplace_back(outcome.page, Json::parse(text));
+      if (const auto& message = messages_.back().second; message.at("type") == "result") {
+        const auto id = message.at("id").get<RequestId>();
+        results_.emplace(std::pair{outcome.page.value, id}, messages_.size() - 1);
+        ++counts_[id];
+      }
+    }
     changed_.notify_all();
   }
   // The result of the request, if one was delivered to that page.
@@ -303,9 +309,8 @@ public:
   // Results with this ID, whatever page they went to.
   auto results(RequestId id) -> std::size_t {
     const std::scoped_lock lock{mutex_};
-    return static_cast<std::size_t>(std::ranges::count_if(messages_, [&](const auto& m) -> bool {
-      return m.second.at("type") == "result" && m.second.at("id") == id;
-    }));
+    const auto found = counts_.find(id);
+    return found == counts_.end() ? 0 : found->second;
   }
   auto all() -> std::vector<std::pair<PageToken, Json>> {
     const std::scoped_lock lock{mutex_};
@@ -320,15 +325,17 @@ public:
   }
 
 private:
+  // The first result of the request delivered to that page.
   auto find(PageToken page, RequestId id) -> std::optional<Json> {
-    for (const auto& [to, message] : messages_)
-      if (to == page && message.at("type") == "result" && message.at("id") == id)
-        return message;
-    return {};
+    const auto found = results_.find({page.value, id});
+    return found == results_.end() ? std::nullopt
+                                   : std::optional<Json>{messages_.at(found->second).second};
   }
   std::mutex mutex_;
   std::condition_variable changed_;
   std::vector<std::pair<PageToken, Json>> messages_;
+  std::map<std::pair<std::uint64_t, RequestId>, std::size_t> results_;
+  std::map<RequestId, std::size_t> counts_;
 };
 
 // A session with one ready page on a homed machine. The test is the shell, the status thread and

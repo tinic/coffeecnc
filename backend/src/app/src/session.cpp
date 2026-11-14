@@ -250,6 +250,7 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
 auto Session::control(Instant now, const ControlInput& input) -> bool {
   const std::scoped_lock lock{mutex_};
   jog_stop_high_ = input.jog_stop_high;
+  low_periods_ = jog_stop_high_ ? 0 : std::min(low_periods_ + 1, settled_periods);
   const bool leased = std::ranges::any_of(
       axes, [&](Axis axis) -> bool { return leases_.active(axis); });
   const bool stepping = std::ranges::any_of(
@@ -267,16 +268,19 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
     }
     // A change made outside the panel (mode, interpreter, homing, jog space) must not leave a
     // jog running until its lease expires: keep only what the policy would still start.
+    // An increment that may be moving is held to the same rule, as the jog it is.
     for (std::size_t i = 0; i < axes.size() && !stop; ++i) {
-      if (!jog_[i].running)
+      if (!jog_[i].running && !jog_[i].stepping)
         continue;
-      const auto decision = policy_.evaluate(
-          Jog{axes[i], jog_[i].held.direction, jog_[i].held.velocity, true}, state);
-      stop = !decision.allowed || decision.jog_space != jog_[i].held.space ||
+      const auto& jog = jog_[i].running ? jog_[i].held : jog_[i].step;
+      const auto decision =
+          policy_.evaluate(Jog{axes[i], jog.direction, jog.velocity, true}, state);
+      stop = !decision.allowed || decision.jog_space != jog.space ||
              (decision.required_mode && *decision.required_mode != state.mode);
     }
-    // An increment has ended once the controller was seen moving and is at rest again, or was
-    // at rest for step_settle_periods after it was sent.
+    // An increment the controller acknowledged has ended once the controller was seen moving
+    // and is at rest again, or has been at rest for step_settle_periods since. One that was not
+    // acknowledged is never tracked here: it was a stop decision when it came back.
     for (auto& axis : jog_) {
       if (!axis.stepping || stop)
         continue;
@@ -300,7 +304,7 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   if (hold_ && jog_stop_high_ && reconciled()) {
     hold_ = false;
     wake();
-  } else if (!hold_ && !jog_stop_high_ && !requests_.empty()) {
+  } else if (!hold_ && low_periods_ == settled_periods && !requests_.empty()) {
     wake(); // a start may have waited for the level to fall
   }
   // From close on the level is high for good, whatever was reconciled.
@@ -654,7 +658,7 @@ auto Session::jog_step(Queued& request, const JogStep& command, const Decision& 
   {
     // An increment does not wait for a jog stop to finish: it is refused.
     const std::scoped_lock lock{mutex_};
-    if (hold_ || jog_stop_high_ || !reconciled())
+    if (hold_ || low_periods_ < settled_periods || !reconciled())
       return answer(
           {request.sent ? CommandOutcome::failed : CommandOutcome::rejected, hold_reason});
   }
@@ -669,10 +673,13 @@ auto Session::jog_step(Queued& request, const JogStep& command, const Decision& 
     axis.in_flight = false;
     if (result.status == ActionStatus::accepted && request.epoch == epoch_) {
       axis.stepping = true;
+      axis.step = {command.distance < 0 ? -1 : 1, command.velocity, *decision.jog_space};
       axis.step_seen_moving = false;
       axis.step_periods = 0;
-    } else if (result.status == ActionStatus::timed_out && request.epoch == epoch_) {
-      // Not answered: the controller may still take it up. Fenced like a start that was lost.
+    } else if (result.status != ActionStatus::accepted) {
+      // Not acknowledged, or failed after it was written: the controller may still take it up
+      // or be moving. Fenced like a start that was lost: the level is held until a jog stop
+      // written after it is accepted, which proves the controller has consumed it.
       stop_jogs();
       need_stop(*index);
     }
@@ -762,7 +769,9 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
                    held && axis.latched ? release_reason : stopped_reason});
   }
-  if (hold_ || jog_stop_high_ || !reconciled())
+  // Not before the level has been low for whole control periods: LinuxCNC's servo thread, and
+  // the HAL logic between the pin and motion, must have seen it fall.
+  if (hold_ || low_periods_ < settled_periods || !reconciled())
     return Stage{StageKind::blocked, {}, {}};
   axis.in_flight = true;
   return {};

@@ -80,3 +80,5 @@ The existing HTML file input can use WebKitGTK's default asynchronous GTK choose
 | Graphics unavailable | Failed WebGL2 creation or a lost context shows the existing explanatory message; the path canvas and operator controls remain usable. Record the graphics backend and any required environment setting. |
 
 Record the tested commit, built asset hashes, WebKit/GTK versions, launch configuration, graphics environment, console output and screenshots with the results. Keep native shell execution, actual chooser interaction and automated fixture injection distinguishable in that record.
+
+Verify that the built panel matches the source being qualified before running the shell tests. Checking out a new commit does not rebuild `ui/dist`. During the first native shell review, the executable used an older bundle that still displayed unavailable work offsets as zero; those runs were withdrawn as evidence for the current panel. A build stamp should cover actual input contents and output assets, and the test runner should reject missing or mismatched stamps before launching the simulation.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { theme, toggleTheme } from '../appearance'
-import { live, panel, reported, send } from '../machine'
+import { dismissNotice, live, panel, reported, send } from '../machine'
 import { baseName, wcsName } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
@@ -61,7 +61,10 @@ const subtitle = computed(() => {
     <div class="job">
       <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
       <p class="subtitle">{{ subtitle }}</p>
-      <p v-if="panel.notice?.level === 'error'" class="error" role="alert">{{ panel.notice.text }}</p>
+      <div v-if="panel.notice?.level === 'error'" class="error-row">
+        <p class="error" role="alert">{{ panel.notice.text }}</p>
+        <button class="dismiss" type="button" title="Dismiss this message; keep it in the message log" @click="dismissNotice">Dismiss</button>
+      </div>
     </div>
     <details class="state-menu">
       <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
@@ -111,7 +114,10 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
-.error { color: var(--stop); font-size: 12px; margin: 6px 0 0; max-width: 70vw; }
+.error-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; max-width: 70vw; }
+.error { color: var(--stop); font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.dismiss { flex: none; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.dismiss:hover { color: var(--text); background: var(--bg); }
 @media (max-height: 760px) { .em-top { padding-block: 12px; }.jobbar { padding-block: 12px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }
 </style>

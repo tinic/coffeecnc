@@ -117,8 +117,6 @@ private:
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;
-  // hello and the snapshots are owed to the page.
-  bool snapshots_due_{};
   // A `ready` has not been answered with snapshots yet.
   bool ready_{};
   bool stop_{};

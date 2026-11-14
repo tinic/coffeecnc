@@ -22,7 +22,7 @@ auto LoadedToolTable::attach(double millimetres_per_unit)
   return LoadedToolTable{millimetres_per_unit};
 }
 
-auto LoadedToolTable::pass() const -> std::vector<LoadedTool> {
+auto LoadedToolTable::read() const -> std::vector<LoadedTool> {
   std::vector<LoadedTool> tools;
   const int last = tooldata_last_index_get();
   for (int index = 1; index <= last && index < CANON_POCKETS_MAX; ++index) {
@@ -35,13 +35,6 @@ auto LoadedToolTable::pass() const -> std::vector<LoadedTool> {
                       entry.diameter * scale_, {}}});
   }
   return tools;
-}
-
-auto LoadedToolTable::read() const -> std::optional<std::vector<LoadedTool>> {
-  auto first = pass();
-  if (first != pass())
-    return {};
-  return first;
 }
 
 } // namespace coffeecnc

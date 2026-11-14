@@ -285,6 +285,13 @@ struct Rig {
       &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 
   Rig() { write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n"); }
+  // One publishing period: time passes, the status thread has read `s` again, the source reads.
+  auto step(const NmlStatus& s) -> PanelReading {
+    now += 50ms;
+    mailbox.put(s, now);
+    return source.read();
+  }
+  auto step() -> PanelReading { return step(status()); }
   // A live status with the program loaded, read just now.
   auto status() const -> NmlStatus {
     auto s = reading();
@@ -299,11 +306,11 @@ void source_status_and_age() {
   require(rig.source.hello() == to_hello(rig.config), "hello is the configuration's");
   auto r = rig.source.read();
   require(r.status.link == Link::down && !r.program && r.messages.empty() &&
-              r.tool_table.revision == 1,
-          "Before the first reading: link down; the loaded tool table is already there");
+              r.tool_table.revision == 0,
+          "Before the first reading: link down, and no tool table is shown yet");
 
-  rig.mailbox.put(rig.status(), rig.now);
-  r = rig.source.read();
+  static_cast<void>(rig.step());
+  r = rig.step();
   require(r.status.link == Link::live && r.status.tool.prepared == 2 &&
               r.status.axes[0].machine == 12.5,
           "A fresh reading is live and mapped with the loaded table");
@@ -319,11 +326,9 @@ void source_status_and_age() {
           "Older than that it is stale: the status thread has stopped delivering");
   auto stale = rig.status();
   stale.controller.link = Link::stale;
-  rig.mailbox.put(stale, rig.now);
-  require(rig.source.read().status.link == Link::stale, "A stale reading stays stale when fresh");
+  require(rig.step(stale).status.link == Link::stale, "A stale reading stays stale when fresh");
 
-  rig.mailbox.put(NmlStatus{}, rig.now);
-  r = rig.source.read();
+  r = rig.step(NmlStatus{});
   require(r.status.link == Link::down && !r.status.program.file,
           "A reading without a status is link down");
 }
@@ -390,53 +395,96 @@ void source_program_loads() {
 
 void source_tool_table() {
   Rig rig;
-  rig.mailbox.put(rig.status(), rig.now);
-  auto r = rig.source.read();
+  auto r = rig.step();
+  require(r.tool_table.revision == 0 && !r.status.tool.prepared,
+          "One pass over the loaded table is not shown, and resolves no prepared tool");
+  r = rig.step();
   require(r.tool_table.revision == 1 &&
               r.tool_table.tools ==
-                  std::vector<Tool>{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, ""}},
-          "The table LinuxCNC has loaded, with the file's comments by tool number");
+                  std::vector<Tool>{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, ""}} &&
+              r.status.tool.prepared == 2,
+          "Read the same a period later, with a status since that shows no load: the table "
+          "LinuxCNC has loaded, with the file's comments by tool number");
 
   // The file changes on disk and LinuxCNC has not loaded it: nothing changes.
   write(rig.config.tool_table, "T1 P1 Z99 D9 ;edited\nT2 P2 Z40 D3 ;also\nT8 P3 ;new\n");
-  r = rig.source.read();
+  r = rig.step();
   require(r.tool_table.revision == 1 && r.tool_table.tools[0] == Tool{1, 1, 50, 6, "end mill"} &&
               r.tool_table.tools.size() == 2,
           "A file edited on disk that LinuxCNC has not loaded changes nothing");
 
-  // LinuxCNC loads it: the loaded table changes, and the comments are the file's of now.
+  // LinuxCNC loads it. While task executes the load, a table that reads the same twice may
+  // still be half of it: it is not shown, and the prepared index is not resolved in the old.
+  auto loading = rig.status();
+  loading.loading_tool_table = true;
+  rig.loaded = std::vector<LoadedTool>{{1, {1, 1, 99, 9, ""}}};
+  r = rig.step(loading);
+  require(r.tool_table.revision == 1 && !r.status.tool.prepared,
+          "A table that differs from the accepted one: the old one stays shown, and the "
+          "prepared tool is unknown rather than a number from the old table");
+  r = rig.step(loading);
+  r = rig.step(loading);
+  require(r.tool_table.revision == 1 && r.tool_table.tools.size() == 2 && !r.status.tool.prepared,
+          "Two equal passes do not make a table while task is loading: io may stand still "
+          "half way");
   rig.loaded = std::vector<LoadedTool>{
       {1, {1, 1, 99, 9, ""}}, {2, {2, 2, 40, 3, ""}}, {3, {8, 3, 0, 0, ""}}};
-  r = rig.source.read();
+  r = rig.step(loading);
+  r = rig.step(loading);
+  require(r.tool_table.revision == 1, "Still loading: still the old table");
+  r = rig.step();
   require(r.tool_table.revision == 2 &&
               r.tool_table.tools == std::vector<Tool>{{1, 1, 99, 9, "edited"},
                                                       {2, 2, 40, 3, "also"},
-                                                      {8, 3, 0, 0, "new"}},
-          "After the load the panel's table is the loaded one");
-  require(rig.source.read().tool_table.revision == 2, "And is not sent again unchanged");
+                                                      {8, 3, 0, 0, "new"}} &&
+              r.status.tool.prepared == 2,
+          "The load is over and the table reads the same again: it is shown, with the "
+          "comments of the file of now, and the prepared tool resolves again");
+  require(rig.step().tool_table.revision == 2, "And is not sent again unchanged");
+
+  // The status that vouches must have been read after the first pass.
+  rig.loaded = std::vector<LoadedTool>{{1, {7, 1, 1, 1, ""}}};
+  static_cast<void>(rig.step());
+  r = rig.source.read();
+  require(r.tool_table.revision == 2,
+          "A second equal pass without a status read since the first is not enough");
+  r = rig.step();
+  require(r.tool_table.revision == 3 && r.tool_table.tools[0].number == 7,
+          "With one it is");
+  rig.loaded = std::vector<LoadedTool>{
+      {1, {1, 1, 99, 9, ""}}, {2, {2, 2, 40, 3, ""}}, {3, {8, 3, 0, 0, ""}}};
+  static_cast<void>(rig.step());
+  static_cast<void>(rig.step());
 
   // A load the port reports that changed only a comment.
   write(rig.config.tool_table, "T1 P1 Z99 D9 ;renamed\nT2 P2 Z40 D3 ;also\nT8 P3 ;new\n");
-  require(rig.source.read().tool_table.tools[0].comment == "edited",
+  require(rig.step().tool_table.tools[0].comment == "edited",
           "A comment is not taken from the file before a load");
   ++rig.loads.tool_tables;
-  r = rig.source.read();
-  require(r.tool_table.revision == 3 && r.tool_table.tools[0].comment == "renamed",
+  r = rig.step();
+  require(r.tool_table.revision == 5 && r.tool_table.tools[0].comment == "renamed",
           "A load the port reports takes the comments of the file again");
 
-  // A reload in progress reads as nothing: the last table stays, and the mapping with it.
+  // The table cannot be read after the prepared index changed: no number from the old table.
   rig.loaded.reset();
-  r = rig.source.read();
-  require(r.tool_table.revision == 3 && r.tool_table.tools.size() == 3 &&
-              r.status.tool.prepared == 2 && r.messages.empty(),
-          "While the table cannot be read the last one stays");
+  auto s = rig.status();
+  s.prepared_pocket = 3;
+  r = rig.step(s);
+  require(r.tool_table.revision == 5 && r.tool_table.tools.size() == 3 &&
+              !r.status.tool.prepared && r.messages.size() == 1 &&
+              r.messages[0].text.find("tool table cannot be read") != std::string::npos,
+          "While the table cannot be read the last one stays shown, the prepared tool is "
+          "unknown, and it is said once");
+  require(rig.step(s).messages.empty() && !rig.step(s).status.tool.prepared, "Once");
+  rig.loaded = std::vector<LoadedTool>{
+      {1, {1, 1, 99, 9, ""}}, {2, {2, 2, 40, 3, ""}}, {3, {8, 3, 0, 0, ""}}};
+  r = rig.step(s);
+  require(r.status.tool.prepared == 8, "Readable again and the same table: resolved again");
 
   // Non-ascending rows and a T0 row: the prepared index is resolved in the loaded table.
   rig.loaded = table;
-  auto s = rig.status();
-  s.prepared_pocket = 3;
-  rig.mailbox.put(s, rig.now);
-  r = rig.source.read();
+  static_cast<void>(rig.step(s));
+  r = rig.step(s);
   require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 4 &&
               r.tool_table.tools[1].number == 0,
           "The prepared index names the loaded entry; a T0 row is shown as a row");
@@ -445,13 +493,12 @@ void source_tool_table() {
 void source_without_a_tool_table() {
   Rig rig;
   rig.loaded.reset();
-  rig.mailbox.put(rig.status(), rig.now);
-  auto r = rig.source.read();
+  auto r = rig.step();
   require(r.tool_table.revision == 0 && r.tool_table.tools.empty() && r.messages.size() == 1 &&
               r.messages[0].text.find("tool table cannot be read") != std::string::npos &&
               !r.status.tool.prepared,
           "A table that was never read: none shown, no prepared tool, said once");
-  require(rig.source.read().messages.empty(), "Once");
+  require(rig.step().messages.empty(), "Once");
 }
 
 } // namespace

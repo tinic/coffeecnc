@@ -61,6 +61,9 @@ struct NmlStatus {
   // command done (neither executing nor failed).
   int echo_serial{};
   bool command_done{};
+  // Task is executing a command to load the tool table (its own or another client's): the
+  // table in LinuxCNC's tool data memory may be half replaced.
+  bool loading_tool_table{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};
@@ -195,6 +198,8 @@ public:
   [[nodiscard]] auto jog_increment(Axis axis, double distance, double velocity, JogSpace space,
                                    const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto mdi(std::string_view text, const Wanted& wanted) -> ActionResult override;
+  // Two commands: the program that is open is closed, then this one opened. Withdrawn between
+  // them, the result says that the old program was closed and the new one not opened.
   [[nodiscard]] auto open_program(std::string_view path, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;

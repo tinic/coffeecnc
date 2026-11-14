@@ -69,6 +69,10 @@ auto words(long type) -> std::string_view {
     return "mist off";
   case EMC_TOOL_LOAD_TOOL_TABLE_TYPE:
     return "the tool table reload";
+  case EMC_TASK_PLAN_CLOSE_TYPE:
+    return "closing the loaded program";
+  case EMC_TASK_PLAN_OPEN_TYPE:
+    return "opening the program";
   default:
     break;
   }
@@ -650,6 +654,12 @@ auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> Actio
   EMC_TASK_PLAN_OPEN message;
   if (!put(message.file, path))
     return failed("The program path is too long for LinuxCNC.");
+  // The interpreter keeps a program open until it has run to its end or was aborted, and
+  // refuses another while it does ("A file is already open"): close first. Closing with none
+  // open does nothing.
+  EMC_TASK_PLAN_CLOSE close;
+  if (auto closed = impl_->run(close, from); !accepted(closed))
+    return closed;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
   // LinuxCNC has taken the file up: a load, also of the file that was loaded before.

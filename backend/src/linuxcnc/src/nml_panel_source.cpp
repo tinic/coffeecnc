@@ -21,8 +21,16 @@ struct NmlPanelSource::Impl {
   const NmlLoads* loads;
   std::function<Clock::time_point()> clock;
 
-  // The table LinuxCNC has loaded, as read last, and what the panel is shown of it.
+  // The table accepted last, and what the panel is shown of it.
   std::optional<std::vector<LoadedTool>> loaded;
+  // The pass of this call equals it: the prepared index may be resolved in it.
+  bool loaded_current{};
+  // A pass that waits to be read again, and when it was taken.
+  struct Pending {
+    std::vector<LoadedTool> tools;
+    Clock::time_point taken_at;
+  };
+  std::optional<Pending> pending;
   std::uint64_t tool_loads_seen{};
   std::map<int, std::string> comments;
   ToolTable tool_table;
@@ -39,22 +47,7 @@ struct NmlPanelSource::Impl {
       : config(std::move(machine)), mailbox(readings), tools(std::move(tool_reader)),
         programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
 
-  void read_tools(std::vector<ControllerMessage>& messages) {
-    if (!tools)
-      return;
-    auto now = tools();
-    const auto counted = loads != nullptr ? loads->tool_tables.load() : 0;
-    if (!now) {
-      // A reload in progress, usually: the last table stays and the next period asks again.
-      if (!loaded && !std::exchange(tools_failed, true))
-        messages.push_back({true, "LinuxCNC's tool table cannot be read."});
-      return;
-    }
-    tools_failed = false;
-    if (loaded && *now == *loaded && counted == tool_loads_seen)
-      return;
-    loaded = std::move(now);
-    tool_loads_seen = counted;
+  void show_tools() {
     if (std::ifstream in{config.tool_table, std::ios::binary}; in && !config.tool_table.empty())
       comments = comments_of(
           std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}});
@@ -66,6 +59,47 @@ struct NmlPanelSource::Impl {
     }
     if (tool_table.revision == 0 || shown != tool_table.tools)
       tool_table = {tool_table.revision + 1, std::move(shown)};
+  }
+
+  void read_tools(std::vector<ControllerMessage>& messages) {
+    loaded_current = false;
+    if (!tools)
+      return;
+    // The status as it was before this pass: it can vouch for an earlier pass only.
+    const auto status = mailbox.latest();
+    auto pass = tools();
+    if (!pass) {
+      pending.reset();
+      if (!std::exchange(tools_failed, true))
+        messages.push_back({true, "LinuxCNC's tool table cannot be read."});
+      return;
+    }
+    tools_failed = false;
+    const auto counted = loads != nullptr ? loads->tool_tables.load() : 0;
+    if (loaded && *pass == *loaded) {
+      pending.reset();
+      loaded_current = true;
+      // A load the port reports with the same numbers: the comments may have changed.
+      if (counted != tool_loads_seen) {
+        tool_loads_seen = counted;
+        show_tools();
+      }
+      return;
+    }
+    if (!pending || *pass != pending->tools) {
+      pending = Pending{std::move(*pass), clock()};
+      return;
+    }
+    // The same table a second time: accepted once a status read after the first pass says
+    // that no load is in progress.
+    if (!status || status->read_at <= pending->taken_at ||
+        status->status.controller.link == Link::down || status->status.loading_tool_table)
+      return;
+    loaded = std::move(pending->tools);
+    pending.reset();
+    loaded_current = true;
+    tool_loads_seen = counted;
+    show_tools();
   }
 
   void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
@@ -121,8 +155,9 @@ auto NmlPanelSource::read() -> PanelReading {
   const bool loaded = status.program_file == impl_->program_file && !status.program_file.empty();
   reading.status =
       to_panel_status(status, impl_->config,
-                      impl_->loaded ? std::span<const LoadedTool>{*impl_->loaded}
-                                    : std::span<const LoadedTool>{},
+                      impl_->loaded && impl_->loaded_current
+                          ? std::span<const LoadedTool>{*impl_->loaded}
+                          : std::span<const LoadedTool>{},
                       loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.

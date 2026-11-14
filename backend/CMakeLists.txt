@@ -13,6 +13,10 @@ if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/app)
 endif()
 add_subdirectory(src/linuxcnc)
+if(COFFEECNC_BUILD_APP)
+  add_subdirectory(src/shell)
+  add_subdirectory(src/coffeecnc)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -124,6 +128,36 @@ if(BUILD_TESTING)
         ${PROJECT_BINARY_DIR})
       set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+      if(TARGET coffeecnc)
+        # The executable's command line and its start-up refusals. No LinuxCNC and no display.
+        add_test(NAME coffeecnc_cli COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/cli_tests.sh
+          $<TARGET_FILE:coffeecnc> ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          ${PROJECT_BINARY_DIR}/cli)
+        # The application with the real panel in its window, as LinuxCNC's DISPLAY program on a
+        # display of its own (Xvfb): the test drives the page and watches LinuxCNC.
+        add_executable(coffeecnc_shell_tests tests/shell/shell_tests.cpp)
+        target_compile_definitions(coffeecnc_shell_tests PRIVATE
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+          COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist"
+          COFFEECNC_EVIDENCE_DIRECTORY="${PROJECT_SOURCE_DIR}/build/shell-evidence")
+        target_link_libraries(coffeecnc_shell_tests PRIVATE coffeecnc_application
+          coffeecnc_shell_test_hooks coffeecnc_project_options nlohmann_json::nlohmann_json)
+        coffeecnc_enable_analyzers(coffeecnc_shell_tests)
+        foreach(units mm inch)
+          add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -u ${units} -t 500 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+            $<TARGET_FILE:coffeecnc_shell_tests>)
+          set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+            RESOURCE_LOCK linuxcnc TIMEOUT 600)
+        endforeach()
+        # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
+        # and SIGTERM ends it and LinuxCNC with no process left.
+        add_test(NAME linuxcnc_coffeecnc_start COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -t 120 ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
+          $<TARGET_FILE:coffeecnc>)
+        set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+          RESOURCE_LOCK linuxcnc TIMEOUT 200)
+      endif()
     endif()
   endif()
 endif()

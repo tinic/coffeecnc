@@ -112,6 +112,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
 
   out.echo_serial = s.echo_serial_number;
   out.command_done = s.status == RCS_DONE;
+  out.loading_tool_table =
+      s.command_type == EMC_TOOL_LOAD_TOOL_TABLE_TYPE && s.status == RCS_EXEC;
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
   out.wcs = task.g5x_index;
   out.rotation_xy = task.rotation_xy;

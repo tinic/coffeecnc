@@ -24,8 +24,8 @@ namespace coffeecnc {
 //                 same table task's prepared index refers to. The file on disk is not shown: it
 //                 is what set_tool and remove_tool edit before LinuxCNC loads it again. Only the
 //                 comments come from the file, by tool number: LinuxCNC does not keep them with
-//                 the loaded table. They are read when the loaded table is first read, when its
-//                 content changes, and when the port reports a load (NmlLoads::tool_tables)
+//                 the loaded table. They are read when a table is accepted, and when the port
+//                 reports a load (NmlLoads::tool_tables)
 //   work offsets  the active system only, from the status. The interpreter's parameter file is
 //                 not read: it is what LinuxCNC saved last, not what is in force (see
 //                 docs/linuxcnc-interface.md)
@@ -38,6 +38,19 @@ namespace coffeecnc {
 // and is reported once, as an operator message; so is a tool table that cannot be read, which
 // leaves the last one read in place.
 //
+// When a pass over the loaded table is shown. LinuxCNC's tool data memory cannot say whether a
+// reload is in progress (see LoadedToolTable), so a pass is accepted only when all of this
+// holds: a later call has read the same table again (the calls are a publishing period apart);
+// and a status that the status thread read after the first of the two passes says that task
+// is not executing a command to load the tool table. Task executes that command, its own
+// client's or another's, for as long as io replaces the table, so a reload through LinuxCNC is
+// excluded. A program that writes the memory itself, behind LinuxCNC's back, is not: for that
+// the table is as read, twice. Until a pass is accepted the table accepted before stays shown.
+//
+// The prepared tool is resolved only in a table that is current: the pass of this call equals
+// the accepted table. Otherwise (a reload, a table that cannot be read) it is reported as
+// unknown, never as a number from an older table.
+//
 // `link` is decided last, after every read above, from the age of the latest status in the
 // mailbox at that moment: `down` before the first reading and for a reading without a status;
 // `stale` instead of `live` when it is older than `max_age`, the bound the session applies to
@@ -48,6 +61,7 @@ namespace coffeecnc {
 class NmlPanelSource final : public PanelSource {
 public:
   using Clock = std::chrono::steady_clock;
+  // One pass over the loaded table; nothing when it cannot be read.
   using ToolReader = std::function<std::optional<std::vector<LoadedTool>>()>;
   static constexpr auto max_age = std::chrono::milliseconds{100};
 

@@ -696,7 +696,18 @@
       "(pièce)",
       "G0 X0 Y0 Z10",
       "M2"
-    ]
+    ],
+    "truncated": false
+  },
+  {
+    "type": "program",
+    "revision": 4,
+    "file": "/home/cnc/nc_files/huge.ngc",
+    "lines": [
+      "G21",
+      "G0 X0"
+    ],
+    "truncated": true
   },
   {
     "type": "preview",
@@ -844,12 +855,28 @@
         "bytes": 1834,
         "modified": 1700000123456
       }
-    ]
+    ],
+    "truncated": false
   },
   {
     "type": "directory",
     "path": "/home/cnc/nc_files/fixtures",
     "parent": "/home/cnc/nc_files",
-    "entries": []
+    "entries": [],
+    "truncated": false
+  },
+  {
+    "type": "directory",
+    "path": "/home/cnc/nc_files/many",
+    "parent": "/home/cnc/nc_files",
+    "entries": [
+      {
+        "name": "0001.ngc",
+        "kind": "file",
+        "bytes": 12,
+        "modified": 1700000200000
+      }
+    ],
+    "truncated": true
   }
 ]

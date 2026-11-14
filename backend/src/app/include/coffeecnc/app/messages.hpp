@@ -17,7 +17,7 @@ namespace coffeecnc {
 // names the field. Text that is not UTF-8 is replaced, as in encode_result.
 //
 // The optional signals (spindle.actual_rpm, spindle.at_speed, probe_input) are always present,
-// `null` when the struct has none. `truncated` of ProgramText and Directory is not encoded.
+// `null` when the struct has none. `truncated` of ProgramText and Directory is always sent.
 using Encoded = std::expected<std::string, std::string>;
 
 [[nodiscard]] auto encode_hello(const Hello& hello) -> Encoded;

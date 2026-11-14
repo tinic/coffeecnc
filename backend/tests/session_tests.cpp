@@ -501,7 +501,8 @@ void directory_listing() {
                                                        {{"name", "part.ngc"},
                                                         {"kind", "file"},
                                                         {"bytes", 9},
-                                                        {"modified", 1700000123456}}}}},
+                                                        {"modified", 1700000123456}}}},
+                                                     {"truncated", false}},
           "A null path lists the program directory: " + listed.messages.at(0));
   require(Json::parse(listed.messages.at(1)) ==
               Json{{"type", "result"}, {"id", 2}, {"outcome", "accepted"}, {"reason", ""}},
@@ -543,22 +544,17 @@ void directory_listing() {
           "The program directory lists without a controller link");
   rig.port.state = homed_machine();
 
-  // Protocol v1 cannot mark a listing as cut short: the operator is told in words.
+  // A listing that was cut says so in the directory message itself.
   for (std::size_t i = 0; i < ProgramStore::max_directory_entries + 1; ++i)
     rig.files.file(std::format("/home/cnc/nc_files/many/{}.ngc", i), "");
   rig.clock = 40ms;
   const auto cut = rig.send(R"("type":"list_directory","path":"many")");
-  require(cut.messages.size() == 3, "A truncated listing is a directory, its result and a note");
-  const auto note = Json::parse(cut.messages.at(2));
-  require(
-      Json::parse(cut.messages.at(0)).at("entries").size() == ProgramStore::max_directory_entries &&
-          Json::parse(cut.messages.at(1)).at("outcome") == "accepted" &&
-          note ==
-              Json{{"type", "message"},
-                   {"level", "info"},
-                   {"text", "Only the first 1000 entries of /home/cnc/nc_files/many are shown."},
-                   {"time", (epoch + 40ms).count()}},
-      "The note follows the result: " + cut.messages.at(2));
+  require(cut.messages.size() == 2, "A truncated listing is a directory and its result");
+  const auto listing = Json::parse(cut.messages.at(0));
+  require(listing.at("entries").size() == ProgramStore::max_directory_entries &&
+              listing.at("truncated") == true &&
+              Json::parse(cut.messages.at(1)).at("outcome") == "accepted",
+          "The directory message carries the truncation: " + cut.messages.at(1));
 
   Rig loading{false};
   loading.expect(R"("type":"list_directory","path":null)", "rejected", gate_reason);

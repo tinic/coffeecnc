@@ -201,8 +201,11 @@ void table_rules() {
 void program_and_preview_rules() {
   ProgramText program{1, "/nc/part.ngc", {"G0 X1", "(Fr\xE4ser)"}, true};
   const auto text = parsed(encode_program(program));
-  require(text.size() == 4 && !text.contains("truncated"),
-          "ProgramText has the fields of protocol v1; truncation is not on the wire");
+  require(text.size() == 5 && text.at("truncated") == true,
+          "A program that was cut says so on the wire");
+  program.truncated = false;
+  require(parsed(encode_program(program)).at("truncated") == false,
+          "A whole program says so explicitly");
   require(text.at("lines") == Json{"G0 X1", "(Fr\xEF\xBF\xBDser)"},
           "A line that is not UTF-8 is replaced, and the program is still sent");
   program.revision = max_safe_integer + 1;
@@ -237,8 +240,8 @@ void directory_rules() {
   directory.truncated = true;
   directory.entries = {{"caf\xE9.ngc", EntryKind::file, 10, -1}};
   const auto sent = parsed(encode_directory(directory));
-  require(sent.size() == 4 && !sent.contains("truncated"),
-          "Directory has the fields of protocol v1; truncation is not on the wire");
+  require(sent.size() == 5 && sent.at("truncated") == true,
+          "A listing that was cut says so on the wire");
   require(sent.at("parent").is_null(), "The top of the program directory has a null parent");
   const auto& entry = sent.at("entries").at(0);
   require(entry.at("bytes").is_number_integer() && entry.at("modified").is_number_integer() &&

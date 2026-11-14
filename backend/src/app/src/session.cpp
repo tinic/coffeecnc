@@ -343,11 +343,7 @@ auto Session::list_directory(const ListDirectory& request) -> Reply {
   auto message = encode_directory(*directory);
   if (!message)
     return {CommandOutcome::rejected, "Directory cannot be sent: " + message.error()};
-  produced_.push_back(std::move(*message));
-  // Protocol v1 has no field for it; the operator is told in words.
-  if (directory->truncated)
-    notices_.push_back("Only the first " + std::to_string(directory->entries.size()) +
-                       " entries of " + directory->path + " are shown.");
+  produced_.push_back(std::move(*message)); // `truncated` in it tells the panel of a cut listing.
   return {};
 }
 

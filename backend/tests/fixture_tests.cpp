@@ -207,6 +207,7 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   messages.push_back(
       encode_program({3, part, {"G21 G90 G54", "", "(pièce)", "G0 X0 Y0 Z10", "M2"}, false}));
+  messages.push_back(encode_program({4, "/home/cnc/nc_files/huge.ngc", {"G21", "G0 X0"}, true}));
 
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
@@ -245,6 +246,12 @@ auto encoded_messages() -> std::vector<Encoded> {
   below.path = "/home/cnc/nc_files/fixtures";
   below.parent = "/home/cnc/nc_files";
   messages.push_back(encode_directory(below));
+  Directory many;
+  many.path = "/home/cnc/nc_files/many";
+  many.parent = "/home/cnc/nc_files";
+  many.entries = {{"0001.ngc", EntryKind::file, 12, 1700000200000}};
+  many.truncated = true;
+  messages.push_back(encode_directory(many));
   return messages;
 }
 
@@ -281,6 +288,8 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("file", message.at("program").at("file").is_null() ? "null" : "path");
   } else if (type == "tool_table") {
     add("tools", message.at("tools").empty() ? "empty" : "some");
+  } else if (type == "program") {
+    add("truncated", message.at("truncated").get<bool>() ? "true" : "false");
   } else if (type == "preview") {
     add("state", message.at("state").get<std::string>());
     add("error", message.at("error").is_null() ? "null" : "given");
@@ -293,6 +302,7 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("outcome", message.at("outcome").get<std::string>());
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
+    add("truncated", message.at("truncated").get<bool>() ? "true" : "false");
     add("entries", message.at("entries").empty() ? "empty" : "some");
     for (const auto& entry : message.at("entries"))
       add("kind", entry.at("kind").get<std::string>());
@@ -355,6 +365,8 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "tool_table tools some",
     "work_offsets",
     "program",
+    "program truncated false",
+    "program truncated true",
     "preview",
     "preview state pending",
     "preview state ready",
@@ -377,6 +389,8 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "directory",
     "directory parent null",
     "directory parent path",
+    "directory truncated false",
+    "directory truncated true",
     "directory entries empty",
     "directory entries some",
     "directory kind directory",

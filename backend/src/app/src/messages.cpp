@@ -315,7 +315,8 @@ auto encode_program(const ProgramText& program) -> Encoded {
   return fields.finish({{"type", "program"},
                         {"revision", fields.count(program.revision, "revision")},
                         {"file", program.file},
-                        {"lines", program.lines}});
+                        {"lines", program.lines},
+                        {"truncated", program.truncated}});
 }
 
 auto encode_preview(const Preview& preview) -> Encoded {
@@ -361,7 +362,8 @@ auto encode_directory(const Directory& directory) -> Encoded {
   return fields.finish({{"type", "directory"},
                         {"path", directory.path},
                         {"parent", nullable(directory.parent)},
-                        {"entries", std::move(entries)}});
+                        {"entries", std::move(entries)},
+                        {"truncated", directory.truncated}});
 }
 
 } // namespace coffeecnc

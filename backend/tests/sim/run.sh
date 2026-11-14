@@ -116,9 +116,18 @@ finish() {
     rm -f /tmp/linuxcnc.lock
     [ "$status" != 0 ] || status=125
   fi
-  left=$(ours)
+  # rtapi_app is setuid root: its environment cannot be read, so it is never in `ours`, and it
+  # cannot be signalled. No other LinuxCNC was running when this run started, so one that is
+  # still here belongs to it; halrun -U unloads the realtime side.
+  if pgrep -x rtapi_app >/dev/null; then
+    echo "sim=leftover names=rtapi_app"
+    halrun -U >/dev/null 2>&1
+    sleep 1
+    [ "$status" != 0 ] || status=125
+  fi
+  left="$(ours) $(pgrep -x rtapi_app)"
   echo "sim=done exit=$status processes_left=$(echo $left | wc -w) log=$directory/linuxcnc.log"
-  [ -z "$left" ] || status=125
+  [ -z "${left// /}" ] || status=125
   exit "$status"
 }
 trap 'echo "sim=interrupted"; finish 130' INT TERM HUP

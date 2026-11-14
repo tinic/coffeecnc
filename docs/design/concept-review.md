@@ -2,6 +2,8 @@
 
 The [interactive concept](../concepts/coffeecnc-mill.html) established a visual direction. The [workflow research](../research/machinist-workflows.md) identifies where it is not yet a practical operator interface.
 
+**Implementation correction, 14 November 2026:** the user rejected the first panel's visual departure from this concept. Preserve the original composition, typography and surface treatment while correcting workflow behavior. The [implementation alignment brief](implementation-alignment.md) records the required corrections and visual review criteria; the workflow proposals below do not replace the visual reference.
+
 ## Keep as design hypotheses
 
 - Legible coordinate readouts and a stable location for run controls.

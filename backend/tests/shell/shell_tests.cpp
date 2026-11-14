@@ -1337,7 +1337,18 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   const bool fresh = rig.wait(15s, [&]() -> bool {
     return rig.hooks.state().commits == last.commits + 1 && rig.hooks.state().identified;
   });
-  check("fresh_page_after_injected_request", fresh && rig.page_live());
+  // With what the shell and the page say about that load, should it not come up.
+  const bool up = fresh && rig.page_live();
+  const auto shell = rig.hooks.state();
+  const auto page = rig.hooks.evaluate(
+      "return window.__t ? { counts: __t.counts, sent: __t.sent, results: __t.resultIds, "
+      "errors: __t.errors, link: __t.last.status ? __t.last.status.link : null } : null;", 10s);
+  check("fresh_page_after_injected_request", up,
+        std::format("commits={}->{} page={} identified={} handler_at_start={} delivered={} "
+                    "dropped={} rejected={} page_state={}",
+                    last.commits, shell.commits, shell.page, shell.identified,
+                    shell.handler_at_start.value_or(false), shell.delivered, shell.dropped,
+                    shell.rejected, page ? *page : page.error()));
 }
 
 void estop(const Rig& rig) {

@@ -159,10 +159,17 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_shell_tests PRIVATE coffeecnc_application
           coffeecnc_shell_test_hooks coffeecnc_project_options nlohmann_json::nlohmann_json)
         coffeecnc_enable_analyzers(coffeecnc_shell_tests)
-        # Not under ThreadSanitizer: GLib, GTK and WebKit are not instrumented, so every hand-over
-        # through their main loop and every allocation freed on one of their threads is reported
-        # as a data race (ca88a0a: 65 reports in the start test, 248 in one shell test, each with
-        # GLib, GIO, Pango, fontconfig or JavaScriptCore on one side). The programs still build.
+        # Not registered under ThreadSanitizer: with the GUI the tests are UNQUALIFIED there, not
+        # passing. GLib, GIO, GTK, WebKit and JavaScriptCore are not instrumented, and
+        # ThreadSanitizer reports data races between their own threads. Run by hand at 3c6f37b
+        # (logs and the distinct stacks in build/sim-history/3c6f37b/tsan-gui/): 99 reports in
+        # the mm shell test, 113 in the inch one, 75 in the start-up test; in every one both
+        # accesses are in libglib-2.0, libgio-2.0, libjavascriptcoregtk-4.1, libwebkit2gtk-4.1,
+        # libfontconfig, libpangoft2 or libc, none in CoffeeCNC's code or on memory it handed
+        # over (119 such reports at ca88a0a are gone since data crosses to the GTK thread
+        # through the shell's own queue). Each of these programs then exits 66 on the reports.
+        # All 202 checks of each shell test passed in those runs. No suppression is in place.
+        # The programs still build with the preset.
         if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

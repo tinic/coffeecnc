@@ -1,0 +1,318 @@
+{
+    "data": [
+        {
+            "BMC": "carbide",
+            "GRADE": "Mill Generic",
+            "description": "Do drewna",
+            "geometry": {
+                "CSP": false,
+                "DC": 8,
+                "HAND": true,
+                "LB": 42,
+                "LCF": 20,
+                "NOF": 2,
+                "OAL": 52,
+                "SFDM": 6,
+                "assemblyGaugeLength": 104.8396,
+                "shoulder-diameter": 8,
+                "shoulder-length": 20
+            },
+            "guid": "c995b90b-cb0a-412d-bc56-9e832d51d399",
+            "holder": {
+                "description": "Maritool CAT40-ER32-2.35",
+                "gaugeLength": 2.474,
+                "guid": "e800051b-e2d6-4699-a2b6-dad6466a0a0c",
+                "last_modified": 1485790626152,
+                "product-id": "CAT40-ER32-2.35",
+                "product-link": "",
+                "segments": [
+                    {
+                        "height": 0.148,
+                        "lower-diameter": 1.5,
+                        "upper-diameter": 1.97
+                    },
+                    {
+                        "height": 0.836,
+                        "lower-diameter": 1.97,
+                        "upper-diameter": 1.97
+                    },
+                    {
+                        "height": 0.176,
+                        "lower-diameter": 1.57,
+                        "upper-diameter": 1.57
+                    },
+                    {
+                        "height": 0.09,
+                        "lower-diameter": 1.57,
+                        "upper-diameter": 1.75
+                    },
+                    {
+                        "height": 0.425,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.75
+                    },
+                    {
+                        "height": 0.05,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.85
+                    },
+                    {
+                        "height": 0.03,
+                        "lower-diameter": 2.442,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.145,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.079,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.215
+                    },
+                    {
+                        "height": 0.118,
+                        "lower-diameter": 2.215,
+                        "upper-diameter": 2.215
+                    },
+                    {
+                        "height": 0.079,
+                        "lower-diameter": 2.215,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.143,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.03,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.442
+                    },
+                    {
+                        "height": 0.125,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.75
+                    }
+                ],
+                "type": "holder",
+                "unit": "inches",
+                "vendor": "Maritool"
+            },
+            "post-process": {
+                "break-control": false,
+                "comment": "",
+                "diameter-offset": 1,
+                "length-offset": 1,
+                "live": true,
+                "manual-tool-change": false,
+                "number": 1,
+                "turret": 0
+            },
+            "product-id": "",
+            "product-link": "",
+            "start-values": {
+                "presets": [
+                    {
+                        "description": "",
+                        "expressions": {
+                            "tool_feedEntry": "500 mmpm",
+                            "tool_feedExit": "500 mmpm",
+                            "tool_feedPerTooth": "0.035 mm",
+                            "tool_feedPlunge": "1000 mmpm",
+                            "tool_feedRamp": "1000 mmpm",
+                            "tool_rampSpindleSpeed": "18000 rpm",
+                            "tool_spindleSpeed": "18000 rpm"
+                        },
+                        "f_n": 0.05555555555555555,
+                        "f_z": 0.035,
+                        "guid": "d37e7f58-4c28-26b1-566c-d3a8fc9e864a",
+                        "material": {
+                            "category": "all",
+                            "query": "",
+                            "use-hardness": false
+                        },
+                        "n": 18000,
+                        "n_ramp": 18000,
+                        "name": "Default Preset",
+                        "ramp-angle": 2,
+                        "tool-coolant": "flood",
+                        "use-stepdown": false,
+                        "use-stepover": false,
+                        "v_c": 452.3893421169302,
+                        "v_f": 1260,
+                        "v_f_leadIn": 500,
+                        "v_f_leadOut": 500,
+                        "v_f_plunge": 1000,
+                        "v_f_ramp": 1000,
+                        "v_f_transition": 1260
+                    }
+                ]
+            },
+            "type": "flat end mill",
+            "unit": "millimeters",
+            "vendor": ""
+        },
+        {
+            "BMC": "carbide",
+            "GRADE": "Mill Generic",
+            "description": "Do drewna",
+            "expressions": {
+                "tool_diameter": "6 mm"
+            },
+            "geometry": {
+                "CSP": false,
+                "DC": 6,
+                "HAND": true,
+                "LB": 42,
+                "LCF": 20,
+                "NOF": 2,
+                "OAL": 52,
+                "SFDM": 6,
+                "assemblyGaugeLength": 104.8396,
+                "shoulder-diameter": 6,
+                "shoulder-length": 20
+            },
+            "guid": "422bb52f-53b2-4ad4-b240-7b9a39f8c09c",
+            "holder": {
+                "description": "Maritool CAT40-ER32-2.35",
+                "gaugeLength": 2.474,
+                "guid": "e800051b-e2d6-4699-a2b6-dad6466a0a0c",
+                "last_modified": 1485790626152,
+                "product-id": "CAT40-ER32-2.35",
+                "product-link": "",
+                "segments": [
+                    {
+                        "height": 0.148,
+                        "lower-diameter": 1.5,
+                        "upper-diameter": 1.97
+                    },
+                    {
+                        "height": 0.836,
+                        "lower-diameter": 1.97,
+                        "upper-diameter": 1.97
+                    },
+                    {
+                        "height": 0.176,
+                        "lower-diameter": 1.57,
+                        "upper-diameter": 1.57
+                    },
+                    {
+                        "height": 0.09,
+                        "lower-diameter": 1.57,
+                        "upper-diameter": 1.75
+                    },
+                    {
+                        "height": 0.425,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.75
+                    },
+                    {
+                        "height": 0.05,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.85
+                    },
+                    {
+                        "height": 0.03,
+                        "lower-diameter": 2.442,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.145,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.079,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.215
+                    },
+                    {
+                        "height": 0.118,
+                        "lower-diameter": 2.215,
+                        "upper-diameter": 2.215
+                    },
+                    {
+                        "height": 0.079,
+                        "lower-diameter": 2.215,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.143,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.502
+                    },
+                    {
+                        "height": 0.03,
+                        "lower-diameter": 2.502,
+                        "upper-diameter": 2.442
+                    },
+                    {
+                        "height": 0.125,
+                        "lower-diameter": 1.75,
+                        "upper-diameter": 1.75
+                    }
+                ],
+                "type": "holder",
+                "unit": "inches",
+                "vendor": "Maritool"
+            },
+            "post-process": {
+                "break-control": false,
+                "comment": "",
+                "diameter-offset": 1,
+                "length-offset": 1,
+                "live": true,
+                "manual-tool-change": false,
+                "number": 1,
+                "turret": 0
+            },
+            "product-id": "",
+            "product-link": "",
+            "start-values": {
+                "presets": [
+                    {
+                        "description": "",
+                        "expressions": {
+                            "tool_feedEntry": "500 mmpm",
+                            "tool_feedExit": "500 mmpm",
+                            "tool_feedPerTooth": "(0,035) mm",
+                            "tool_feedPlunge": "1000 mmpm",
+                            "tool_feedRamp": "1000 mmpm",
+                            "tool_rampSpindleSpeed": "19000 rpm",
+                            "tool_spindleSpeed": "19000 rpm"
+                        },
+                        "f_n": 0.05263157894736842,
+                        "f_z": 0.035,
+                        "guid": "d37e7f58-4c28-26b1-566c-d3a8fc9e864a",
+                        "material": {
+                            "category": "all",
+                            "query": "",
+                            "use-hardness": false
+                        },
+                        "n": 19000,
+                        "n_ramp": 19000,
+                        "name": "Default Preset",
+                        "ramp-angle": 2,
+                        "tool-coolant": "flood",
+                        "use-stepdown": false,
+                        "use-stepover": false,
+                        "v_c": 358.1415625092364,
+                        "v_f": 1330,
+                        "v_f_leadIn": 500,
+                        "v_f_leadOut": 500,
+                        "v_f_plunge": 1000,
+                        "v_f_ramp": 1000,
+                        "v_f_transition": 1330
+                    }
+                ]
+            },
+            "type": "flat end mill",
+            "unit": "millimeters",
+            "vendor": ""
+        }
+    ],
+    "version": 36
+}

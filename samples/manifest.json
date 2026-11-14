@@ -1,0 +1,387 @@
+{
+  "schema_version": 1,
+  "retrieved_at": "2026-11-14",
+  "purpose": "Research and offline UI/parser fixtures, not machine-qualified production programs",
+  "datasets": [
+    {
+      "id": "trebuchet",
+      "repo": "V3lectronics/Trebuchet",
+      "license": "GPL-3.0 (repository LICENSE; no separate sample notice found)",
+      "purpose": "FreeCAD milling project with left/right layout jobs, STEP exports, split NC files and a setup sheet",
+      "pairing": "Associated by upstream job names and CAM document contents; geometric registration and finished-part equivalence are not verified.",
+      "commit": "0de76c486c1b84ba53aeb93988e54082d0d1331e",
+      "source_url": "https://github.com/V3lectronics/Trebuchet/tree/0de76c486c1b84ba53aeb93988e54082d0d1331e",
+      "files": [
+        {
+          "upstream_path": "CAM/CAM-job-1-left-cut.step",
+          "local_path": "samples/upstream/trebuchet/CAM/CAM-job-1-left-cut.step",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-job-1-left-cut.step",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-job-1-left-cut.step",
+          "bytes": 1538168,
+          "sha256": "86b1c3a8ca80fa94a72cdc9929a064f8a80db898d6826929c04542f4fbc61b68"
+        },
+        {
+          "upstream_path": "CAM/CAM-job-2-right-Cut.step",
+          "local_path": "samples/upstream/trebuchet/CAM/CAM-job-2-right-Cut.step",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-job-2-right-Cut.step",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-job-2-right-Cut.step",
+          "bytes": 334605,
+          "sha256": "f735eb207bacd74e353f862102170f2485888222777a8a6022d0f159f53a32f9"
+        },
+        {
+          "upstream_path": "CAM/CAM-left-job.FCStd",
+          "local_path": "samples/upstream/trebuchet/CAM/CAM-left-job.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-left-job.FCStd",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-left-job.FCStd",
+          "bytes": 2214024,
+          "sha256": "de37edd2cb3984a76dc884daff342050915601478db8804a8895183e426323b6"
+        },
+        {
+          "upstream_path": "CAM/CAM-right-job.FCStd",
+          "local_path": "samples/upstream/trebuchet/CAM/CAM-right-job.FCStd",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-right-job.FCStd",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/CAM-right-job.FCStd",
+          "bytes": 154713,
+          "sha256": "08b3c1bee4f24a45427559e09571d3673de7d041b82bc44343a205c8dba58283"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-Array-8.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-Array-8.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-Array-8.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-Array-8.nc",
+          "bytes": 16601,
+          "sha256": "535b030aeeb9421d8ac038f60ea6b0e185039ad2fcd7cc9f78dbac6ae227c7b5"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-DressupPathBoundary010.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-DressupPathBoundary010.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary010.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary010.nc",
+          "bytes": 3767,
+          "sha256": "5c679076794dd4e2bb474af5206429a3a3dfbbb9d21850123131330edffc9d9a"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-DressupPathBoundary012-9.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-DressupPathBoundary012-9.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary012-9.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary012-9.nc",
+          "bytes": 2579,
+          "sha256": "724e67bf52f6f4950a8465783ecbc9681f66ae20e8e4c2de6672f7e7d79e5900"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-DressupPathBoundary013-5.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-DressupPathBoundary013-5.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary013-5.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary013-5.nc",
+          "bytes": 2752,
+          "sha256": "0afb64a994f21811662c21e50314ff01cdd47f5f5957da6ce0efc2ccc48f29b8"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-DressupPathBoundary014-6.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-DressupPathBoundary014-6.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary014-6.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-DressupPathBoundary014-6.nc",
+          "bytes": 3042,
+          "sha256": "584efeb9e72edea39379093a676637fda2f7159aa4ceb3817306147d913730b7"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-RampEntryDressup003-1.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-RampEntryDressup003-1.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup003-1.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup003-1.nc",
+          "bytes": 3901,
+          "sha256": "a3105061832f462223a75364d10a7805725ba2277215cdb8f773c89a46fc7eae"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-RampEntryDressup004-2.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-RampEntryDressup004-2.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup004-2.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup004-2.nc",
+          "bytes": 4082,
+          "sha256": "3f38a03c01e00aa5fd9d1cd77053fc900ad80a71e0e879875aac05b108c8284e"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-RampEntryDressup005-3.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-RampEntryDressup005-3.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup005-3.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup005-3.nc",
+          "bytes": 12071,
+          "sha256": "af08d9981e69bd89cccfab27b57fab36927ad514d901dedcc876431aa63052d9"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-RampEntryDressup008-7.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-RampEntryDressup008-7.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup008-7.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup008-7.nc",
+          "bytes": 2604,
+          "sha256": "660be15cb371f9c12f6bf75b3223e66b8a78ec7d52bd6e9bae7b2fe17270295e"
+        },
+        {
+          "upstream_path": "CAM/gcode-left/out-RampEntryDressup009-4.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-left/out-RampEntryDressup009-4.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup009-4.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-left/out-RampEntryDressup009-4.nc",
+          "bytes": 2481,
+          "sha256": "5fb0b49fab6e138ec68e2465ae18ead67b50aae42307a39807044b4878f9fe6a"
+        },
+        {
+          "upstream_path": "CAM/gcode-right/CAM-right-job-Array-4.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-right/CAM-right-job-Array-4.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-Array-4.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-Array-4.nc",
+          "bytes": 34767,
+          "sha256": "9d1e89e860f353923c8263ba1269750a1e13a7ff3e901d3d5cddc8d564b3a4d9"
+        },
+        {
+          "upstream_path": "CAM/gcode-right/CAM-right-job-DressupTag011-1.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-right/CAM-right-job-DressupTag011-1.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag011-1.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag011-1.nc",
+          "bytes": 7388,
+          "sha256": "19f95405d239f54498490fe9fcb36a8ec24694bf5514d894d1b5cc22017c1fa4"
+        },
+        {
+          "upstream_path": "CAM/gcode-right/CAM-right-job-DressupTag012.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-right/CAM-right-job-DressupTag012.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag012.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag012.nc",
+          "bytes": 4957,
+          "sha256": "caecfad9ce05c9638e8a5303235241c01f1223848841525599fee1578c4e315c"
+        },
+        {
+          "upstream_path": "CAM/gcode-right/CAM-right-job-DressupTag013-2.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-right/CAM-right-job-DressupTag013-2.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag013-2.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag013-2.nc",
+          "bytes": 6168,
+          "sha256": "220fed9719a8c4a95c3afcd4510ed73dc2228ba4a204ec6d61094330d69540b9"
+        },
+        {
+          "upstream_path": "CAM/gcode-right/CAM-right-job-DressupTag014-3.nc",
+          "local_path": "samples/upstream/trebuchet/CAM/gcode-right/CAM-right-job-DressupTag014-3.nc",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag014-3.nc",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/gcode-right/CAM-right-job-DressupTag014-3.nc",
+          "bytes": 6952,
+          "sha256": "1de8f879ea5c30eddd50c79a88bee455d6a9e7d5625a3a3ba8fd5da998e24463"
+        },
+        {
+          "upstream_path": "CAM/left-job.html",
+          "local_path": "samples/upstream/trebuchet/CAM/left-job.html",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/left-job.html",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/CAM/left-job.html",
+          "bytes": 288262,
+          "sha256": "1712553ee4721215372eab3575528ea277b92007e75ae9e4600867b752b603aa"
+        },
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/trebuchet/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/LICENSE",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/LICENSE",
+          "bytes": 35149,
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/trebuchet/README.md",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/README.md",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/README.md",
+          "bytes": 1329,
+          "sha256": "902ab47411a7273adbdeb749192d049393fdefa8654188edc22ef28d0382fb43"
+        },
+        {
+          "upstream_path": "parts/tools.json",
+          "local_path": "samples/upstream/trebuchet/parts/tools.json",
+          "raw_url": "https://raw.githubusercontent.com/V3lectronics/Trebuchet/0de76c486c1b84ba53aeb93988e54082d0d1331e/parts/tools.json",
+          "source_url": "https://github.com/V3lectronics/Trebuchet/blob/0de76c486c1b84ba53aeb93988e54082d0d1331e/parts/tools.json",
+          "bytes": 11598,
+          "sha256": "3422d11b66d3d23515cdee32034ea2d54da6e36f95adf8e265ae69681ca4076c"
+        }
+      ]
+    },
+    {
+      "id": "camotics",
+      "repo": "CauldronDevelopmentLLC/CAMotics",
+      "license": "GPL-2.0-or-later (LICENSE and COPYING)",
+      "purpose": "Simulation examples with explicit stock/tool definitions; multiple NC files and a generated surface path",
+      "pairing": "CAMotics project files explicitly reference the bundled programs or generator; no STEP model supplied.",
+      "commit": "e84665f2fa9d1151f03282ac7e01320bc65e015b",
+      "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/tree/e84665f2fa9d1151f03282ac7e01320bc65e015b",
+      "files": [
+        {
+          "upstream_path": "COPYING",
+          "local_path": "samples/upstream/camotics/COPYING",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/COPYING",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/COPYING",
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/camotics/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/LICENSE",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/LICENSE",
+          "bytes": 790,
+          "sha256": "412be92f4473bdccb49f47c0c71875ca46f3129e68d0e3b8ba08c38fd08f933c"
+        },
+        {
+          "upstream_path": "examples/heart/cutout.ngc",
+          "local_path": "samples/upstream/camotics/examples/heart/cutout.ngc",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/cutout.ngc",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/cutout.ngc",
+          "bytes": 2713,
+          "sha256": "668528ecc098f70a58b855cf07e2620efe26a7c3452f98b745130f27820b1123"
+        },
+        {
+          "upstream_path": "examples/heart/heart.camotics",
+          "local_path": "samples/upstream/camotics/examples/heart/heart.camotics",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/heart.camotics",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/heart.camotics",
+          "bytes": 703,
+          "sha256": "bf1ef27b4957c76aac8f9cc9af527a706e08d1f3385d749b1abad59af7247d4f"
+        },
+        {
+          "upstream_path": "examples/heart/heart.ngc",
+          "local_path": "samples/upstream/camotics/examples/heart/heart.ngc",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/heart.ngc",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/heart/heart.ngc",
+          "bytes": 7611,
+          "sha256": "986d70d887ad47f39789009917cfe88cf19f3b98e6bb65a97b1258d52eea2aae"
+        },
+        {
+          "upstream_path": "examples/wave/wave.camotics",
+          "local_path": "samples/upstream/camotics/examples/wave/wave.camotics",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.camotics",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.camotics",
+          "bytes": 855,
+          "sha256": "1ab3dcaf2f186164efc838cd86028cbf03858aad7c21ba02be3f3d747cc44af6"
+        },
+        {
+          "upstream_path": "examples/wave/wave.gcode",
+          "local_path": "samples/upstream/camotics/examples/wave/wave.gcode",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.gcode",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.gcode",
+          "bytes": 34278,
+          "sha256": "0ee6b32efdadc50b6a1bc28824bab9b08c5b6c72f0c39ca8bf1e0df5aab1c3e5"
+        },
+        {
+          "upstream_path": "examples/wave/wave.tpl",
+          "local_path": "samples/upstream/camotics/examples/wave/wave.tpl",
+          "raw_url": "https://raw.githubusercontent.com/CauldronDevelopmentLLC/CAMotics/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.tpl",
+          "source_url": "https://github.com/CauldronDevelopmentLLC/CAMotics/blob/e84665f2fa9d1151f03282ac7e01320bc65e015b/examples/wave/wave.tpl",
+          "bytes": 922,
+          "sha256": "59c986b5199783b9951d3b12966ad2fc37260dca23bc5cd865b1841b62b5a2fe"
+        }
+      ]
+    },
+    {
+      "id": "linuxcnc",
+      "repo": "LinuxCNC/linuxcnc",
+      "license": "GPL-2.0 (repository COPYING; per-file notices preserved)",
+      "purpose": "LinuxCNC dialect examples: incremental polar canned drilling, tool changes with compensation, and probing loops",
+      "pairing": "Standalone language examples; no part-model pairing claimed.",
+      "commit": "401f78f696769561aca271d8f4f709f601ae5a7d",
+      "source_url": "https://github.com/LinuxCNC/linuxcnc/tree/401f78f696769561aca271d8f4f709f601ae5a7d",
+      "files": [
+        {
+          "upstream_path": "COPYING",
+          "local_path": "samples/upstream/linuxcnc/COPYING",
+          "raw_url": "https://raw.githubusercontent.com/LinuxCNC/linuxcnc/401f78f696769561aca271d8f4f709f601ae5a7d/COPYING",
+          "source_url": "https://github.com/LinuxCNC/linuxcnc/blob/401f78f696769561aca271d8f4f709f601ae5a7d/COPYING",
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        {
+          "upstream_path": "nc_files/gmoccapy_2_tools_with_cutter_radius_compensation.ngc",
+          "local_path": "samples/upstream/linuxcnc/nc_files/gmoccapy_2_tools_with_cutter_radius_compensation.ngc",
+          "raw_url": "https://raw.githubusercontent.com/LinuxCNC/linuxcnc/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/gmoccapy_2_tools_with_cutter_radius_compensation.ngc",
+          "source_url": "https://github.com/LinuxCNC/linuxcnc/blob/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/gmoccapy_2_tools_with_cutter_radius_compensation.ngc",
+          "bytes": 1234,
+          "sha256": "3bf0812c7c1eed3b93243a8a605d2e3b28903b3318acb78be86173e46968bd92"
+        },
+        {
+          "upstream_path": "nc_files/gridprobe.ngc",
+          "local_path": "samples/upstream/linuxcnc/nc_files/gridprobe.ngc",
+          "raw_url": "https://raw.githubusercontent.com/LinuxCNC/linuxcnc/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/gridprobe.ngc",
+          "source_url": "https://github.com/LinuxCNC/linuxcnc/blob/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/gridprobe.ngc",
+          "bytes": 961,
+          "sha256": "789b1d45e30dc7b9b1acacbe0abdb3cc2bf31dd7f82e06f13e733706bfdc5fa0"
+        },
+        {
+          "upstream_path": "nc_files/hole-circle.ngc",
+          "local_path": "samples/upstream/linuxcnc/nc_files/hole-circle.ngc",
+          "raw_url": "https://raw.githubusercontent.com/LinuxCNC/linuxcnc/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/hole-circle.ngc",
+          "source_url": "https://github.com/LinuxCNC/linuxcnc/blob/401f78f696769561aca271d8f4f709f601ae5a7d/nc_files/hole-circle.ngc",
+          "bytes": 280,
+          "sha256": "58a9165353973e5050810d6a91d66b1ddef5bbbd29baafd901bc3d7c53720c2d"
+        }
+      ]
+    },
+    {
+      "id": "instant-machinist",
+      "repo": "ToukoUrsin/instant-machinist-speedhacks-2026",
+      "license": "MIT (repository LICENSE)",
+      "purpose": "Synthetic SM-101 sensor-mount plate with STEP, drawing, feature/tool metadata and Fusion-posted Haas NC",
+      "pairing": "SM-101 association documented by upstream paths and feature metadata; not an independently verified shop job.",
+      "commit": "a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc",
+      "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/tree/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc",
+      "files": [
+        {
+          "upstream_path": "LICENSE",
+          "local_path": "samples/upstream/instant-machinist/LICENSE",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/LICENSE",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/LICENSE",
+          "bytes": 1087,
+          "sha256": "9d8c39b02fa13a570ed72ced558f2cf42425c754fcf2da89cac8775ce6ec38a2"
+        },
+        {
+          "upstream_path": "README.md",
+          "local_path": "samples/upstream/instant-machinist/README.md",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/README.md",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/README.md",
+          "bytes": 4012,
+          "sha256": "bc38d428e268c7384d7fef7829373c4d89084ce73f8cf82b2ae57332f137016b"
+        },
+        {
+          "upstream_path": "instant-machinist/docs/examples/sm-101-fusion-first-program.nc",
+          "local_path": "samples/upstream/instant-machinist/instant-machinist/docs/examples/sm-101-fusion-first-program.nc",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/docs/examples/sm-101-fusion-first-program.nc",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/docs/examples/sm-101-fusion-first-program.nc",
+          "bytes": 216141,
+          "sha256": "2a144e6e0ff54d80154cede58b652a54516953ae9e404fd564f8802dcf2b4be8"
+        },
+        {
+          "upstream_path": "instant-machinist/parts/sm-101/drawing.pdf",
+          "local_path": "samples/upstream/instant-machinist/instant-machinist/parts/sm-101/drawing.pdf",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/drawing.pdf",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/drawing.pdf",
+          "bytes": 76750,
+          "sha256": "2af61fa75a795887be100510c79d043a973414f7b2050f0efaff8656e7f81b77"
+        },
+        {
+          "upstream_path": "instant-machinist/parts/sm-101/features.json",
+          "local_path": "samples/upstream/instant-machinist/instant-machinist/parts/sm-101/features.json",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/features.json",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/features.json",
+          "bytes": 1124,
+          "sha256": "4f62f05dd0660776de260876e8174df81c34f8c842bad576838c80b6652562b5"
+        },
+        {
+          "upstream_path": "instant-machinist/parts/sm-101/part.step",
+          "local_path": "samples/upstream/instant-machinist/instant-machinist/parts/sm-101/part.step",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/part.step",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/part.step",
+          "bytes": 106308,
+          "sha256": "834656e2bb0f12979bb971429f08432564e9a4b1111d839ad3b88b646af66895"
+        },
+        {
+          "upstream_path": "instant-machinist/parts/sm-101/tools.json",
+          "local_path": "samples/upstream/instant-machinist/instant-machinist/parts/sm-101/tools.json",
+          "raw_url": "https://raw.githubusercontent.com/ToukoUrsin/instant-machinist-speedhacks-2026/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/tools.json",
+          "source_url": "https://github.com/ToukoUrsin/instant-machinist-speedhacks-2026/blob/a85e9de9ac9a92d7ebb8d6f58c1472ff408c54bc/instant-machinist/parts/sm-101/tools.json",
+          "bytes": 673,
+          "sha256": "6b6fd37dfca78fa0d5ed5a1a6d4180f390d3bf627818142a8d08d42aa8ff05e9"
+        }
+      ]
+    }
+  ]
+}

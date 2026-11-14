@@ -9,6 +9,7 @@ import type { Tool } from '../protocol'
 import { resolveToolModel, toolDimensionError, toolFamilies } from '../tool-model'
 import { toolModels } from '../tool-models'
 import { formatLength, fromDisplay, parseLength, parseNumber, toDisplay, wcsName } from '../units'
+import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
@@ -115,8 +116,8 @@ function touchOff(value: number): void {
   touching.value = false
 }
 
-const systems = computed(() => panel.workOffsets?.systems ?? [])
-const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== 0))
+const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, panel.link))
+const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
 </script>
 
 <template>
@@ -222,19 +223,17 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" :class="{ loaded: system.wcs === status?.offsets.wcs }">
-              <td class="mono">{{ wcsName(system.wcs) }}</td>
-              <td class="num mono">{{ formatLength(system.offset[0], unit) }}</td>
-              <td class="num mono">{{ formatLength(system.offset[1], unit) }}</td>
-              <td class="num mono">{{ formatLength(system.offset[2], unit) }}</td>
-              <td v-if="rotated" class="num mono">{{ system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
+            <tr v-for="system in systems" :key="system.wcs" :class="{ loaded: system.active }">
+              <td class="mono">{{ wcsName(system.wcs) }}<small v-if="system.offset === null" class="offset-note">Unavailable</small><small v-else-if="system.stale" class="offset-note stale">Stale</small></td>
+              <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
+              <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
               <td class="actions">
-                <span v-if="system.wcs === status?.offsets.wcs" class="chip go">active</span>
+                <span v-if="system.active" class="chip go">active</span>
                 <button
                   v-else
                   class="btn select"
                   type="button"
-                  :disabled="mdiBlock !== null"
+                  :disabled="mdiBlock !== null || status?.link !== 'live'"
                   :title="mdiBlock ?? `Make ${wcsName(system.wcs)} the active work system. The machine does not move.`"
                   @click="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
@@ -438,6 +437,11 @@ tr.loaded td {
 .offsets td:first-child {
   font-weight: 600;
 }
+
+.offsets th, .offsets td { padding-left: 4px; padding-right: 4px; }
+
+.offset-note { display: block; font: 10px var(--sans); font-weight: 400; color: var(--text-dim); }
+.offset-note.stale { color: var(--warn); }
 
 .entry {
   display: flex;

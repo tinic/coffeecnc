@@ -40,6 +40,14 @@ Signal availability must come from explicit configuration, not the existence/def
 
 The browser simulator supports policy-only capability overrides for tests. They exercise asymmetric jog rates and homing requirements without claiming to simulate G0759 mechanics or its hardware. The real machine-definition review is in [`docs/machines/g0759.md`](../docs/machines/g0759.md).
 
+## Work-coordinate availability
+
+`work_offsets.systems[].available` is an additive optional boolean. New senders explicitly supply it for every one of the nine systems. False means `offset` and `rotation_xy` are finite placeholders, not coordinates: the panel displays dashes and Unavailable, and these fields must not enter preview calculations. An omitted field retains the older complete-table semantics. A real zero with `available: true` remains a known coordinate.
+
+The agreed mapping for the first native shell reports only the active system as available, from the controller's current G5x offset and XY rotation. It marks every inactive system unavailable; it does not substitute saved parameter-file values or issue hidden MDI queries. A change of availability increments the work-offset revision. Status still carries the active offsets independently. A preview must remain unavailable until all state it requires is established.
+
+The operator can select an unavailable system through the existing MDI controls to observe its active values; receiving an unavailable row never issues that command automatically. Stale/silent readings are labeled as history, while down/incompatible/connecting values are withheld. Invalid or duplicate rows are also withheld. The browser simulator knows its full internal table and emits explicit true for all nine entries.
+
 ## Program text and directory completeness
 
 `program.truncated` and `directory.truncated` are additive optional booleans. New native encoders emit them explicitly. True means the supplied text/listing is partial; the panel keeps a visible notice beside the affected view. A partial program's supplied line count is not its total length, and text delivery limits do not shorten the program LinuxCNC executes. Preview generation must use the complete source independently. The existing simulator sends complete snapshots; absent/false retains the complete-snapshot presentation for older v1 peers.

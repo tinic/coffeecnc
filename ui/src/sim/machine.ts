@@ -411,6 +411,7 @@ export class SimMachine {
       revision: this.offsetsRevision,
       systems: this.modal.offsets.map((offset, index) => ({
         wcs: index + 1,
+        available: true,
         offset: [...offset],
         rotation_xy: this.modal.rotations[index] ?? 0,
       })),

@@ -217,12 +217,19 @@ export interface Preview {
   bounds: { min: Vec3; max: Vec3 } | null
 }
 
-/** All nine work coordinate systems, sent after `ready` and whenever one of them changes. */
+/** All nine work coordinate systems, sent after `ready` and whenever values or availability change. */
 export interface WorkOffsets {
   type: 'work_offsets'
   revision: number
   /** In order: G54 … G59.3. */
-  systems: { wcs: number; offset: Vec3; rotation_xy: number }[]
+  systems: {
+    wcs: number
+    offset: Vec3
+    rotation_xy: number
+    /** False means the numeric fields are placeholders, not usable coordinates. Older peers
+     * omit this field and supply a complete table. New senders always set it explicitly. */
+    available?: boolean
+  }[]
 }
 
 /** An operator error or message from LinuxCNC, or from the executable itself. */

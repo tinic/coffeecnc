@@ -50,8 +50,8 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 | Handler before first script | Present in the first script of every load |
 | Module worker, WebAssembly | Worker starts from `/assets/`; the 7.6 MB module is served `application/wasm`, `compileStreaming` succeeds |
 | Status during asset load | Longest time a page went without a status: 184 ms (dev); the panel takes the link for silent at 1 s |
-| WebGL2 | Works on Mesa software rendering; tool model drawn (5772 of 91078 pixels) |
-| STEP import | Real file chooser path: SM-101 1132 triangles, 120 x 80 x 20 mm; cancel, same file again and an invalid file keep the attachment |
+| WebGL2 | Works; WebKit masks the renderer string, the rasteriser in use is not established; tool model drawn (5772 of 91078 pixels) |
+| STEP import | The test answers WebKit's `run-file-chooser` request with the file; no dialog is operated: SM-101 1132 triangles, 120 x 80 x 20 mm; cancel, same file again and an invalid file keep the attachment |
 | Fonts | DM Sans, IBM Plex Mono 400/500 |
 | Tool-table load | File edit without load shows no change; load by another client is shown; six rounds of reload-then-command show no intermediate table |
 

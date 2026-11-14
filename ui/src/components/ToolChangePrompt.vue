@@ -61,7 +61,8 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
 <style scoped>
 .scrim {
   position: absolute;
-  inset: 0 0 0 376px;
+  inset: 0;
+  border-radius: 12px;
   z-index: 10;
   display: flex;
   align-items: center;

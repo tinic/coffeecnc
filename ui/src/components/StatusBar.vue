@@ -1,288 +1,111 @@
 <script setup lang="ts">
-// Always visible: which machine, how fresh its status is, what state it is in, which work system
-// and tool are active, and the last thing the operator was told.
 import { computed } from 'vue'
-
-import { dismissNotice, findTool, live, panel, reported, send } from '../machine'
-import { formatClock, wcsName } from '../units'
+import { theme, toggleTheme } from '../appearance'
+import { live, panel, reported, send } from '../machine'
+import { baseName, wcsName } from '../units'
+import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
-const emit = defineEmits<{ log: [] }>()
-
+const emit = defineEmits<{ log: []; open: [] }>()
 const status = reported
-
-const link = computed((): { text: string; tone: 'go' | 'warn' | 'stop'; title: string } => {
+const tabs: readonly [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
+const linkLabel = computed(() => {
   switch (panel.link) {
-    case 'connecting':
-      return { text: 'Waiting for status', tone: 'warn', title: 'No status has arrived from the machine yet.' }
-    case 'live':
-      return { text: 'Live', tone: 'go', title: 'LinuxCNC is updating its status.' }
-    case 'silent':
-      return {
-        text: `No updates for ${String(Math.floor(panel.silentFor / 1000))} s`,
-        tone: 'stop',
-        title: 'No status has arrived for over a second. What is shown is the last status received, not the present state.',
-      }
-    case 'stale':
-      return {
-        text: 'Status stale',
-        tone: 'stop',
-        title: 'LinuxCNC has stopped updating its status. What is shown is the last status it wrote.',
-      }
-    case 'down':
-      return { text: 'No connection', tone: 'stop', title: 'There is no connection to LinuxCNC.' }
+    case 'live': return panel.simulated ? '3-axis mill · Simulator' : panel.hello?.machine_name ?? 'Connected'
+    case 'connecting': return 'Waiting for connection'
+    case 'silent': return 'No status updates'
+    case 'stale': return 'Status is stale'
+    case 'down': return 'Disconnected'
   }
 })
-
-const machineLabel = computed(() => {
-  switch (status.value?.machine) {
-    case 'estop':
-      return 'E-stop'
-    case 'off':
-      return 'Off'
-    case 'on':
-      return 'On'
-    case undefined:
-      return '—'
-  }
+const state = computed(() => {
+  const s = status.value
+  if (!live.value) return { label: linkLabel.value, tone: 'stop' }
+  if (s?.machine === 'estop') return { label: 'E-stop active', tone: 'stop' }
+  if (s?.machine === 'off') return { label: 'Machine off', tone: 'warn' }
+  if (s?.wait.kind === 'tool_change') return { label: 'Tool change required', tone: 'warn' }
+  if (s?.interp === 'paused') return { label: 'Paused', tone: 'warn' }
+  if (s?.interp !== 'idle') return { label: s?.mode === 'mdi' ? 'Executing MDI' : 'Machining', tone: 'go' }
+  return { label: 'Machine idle', tone: 'go' }
 })
-
-const tool = computed(() => {
-  const number = status.value?.tool.in_spindle ?? 0
-  if (status.value === null) {
-    return { name: '—', detail: '' }
-  }
-  if (number === 0) {
-    return { name: 'No tool', detail: '' }
-  }
-  const row = findTool(number)
-  return { name: `T${String(number)}`, detail: row === null ? 'not in tool table' : row.comment }
+const title = computed(() => {
+  if (panel.tab === 'manual') return 'Manual setup'
+  if (panel.tab === 'tools') return 'Tools & offsets'
+  const file = status.value?.program.file
+  if (!file) return 'No program loaded'
+  const name = baseName(file).replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  return name.charAt(0).toUpperCase() + name.slice(1)
 })
-
-const prepared = computed(() => status.value?.tool.prepared ?? null)
-
-const notice = computed(() => panel.notice)
-const errorCount = computed(() => panel.log.filter((entry) => entry.level === 'error').length)
+const subtitle = computed(() => {
+  if (panel.tab === 'manual') return 'Jog · Home · Touch off · MDI'
+  if (panel.tab === 'tools') return 'Tool table and work coordinate systems'
+  const s = status.value
+  return s?.program.file ? `${baseName(s.program.file)}   /   ${wcsName(s.offsets.wcs)}   /   Program in ${s.program_units}` : 'Open an NC program to inspect its toolpath'
+})
 </script>
 
 <template>
-  <header class="statusbar">
-    <div class="cell brand">
-      <span class="name">{{ panel.hello?.machine_name ?? 'CoffeeCNC' }}</span>
-      <span class="sub">
-        <span v-if="panel.simulated" class="chip warn" title="No LinuxCNC is behind this session.">Simulator</span>
-        <span class="chip" :class="link.tone" :title="link.title"><span class="dot"></span>{{ link.text }}</span>
-      </span>
-    </div>
-
-    <div class="cell machine" :class="{ distrust: !live }">
-      <span class="label">Machine</span>
-      <span class="value state" :class="status?.machine">{{ machineLabel }}</span>
-    </div>
-    <div class="controls">
-      <button
-        v-if="status?.machine === 'estop'"
-        class="btn"
-        type="button"
-        title="Clears LinuxCNC's software E-stop. The machine stays off."
-        @click="send({ type: 'set_machine', state: 'off' })"
-      >
-        Reset E-stop
-      </button>
-      <button
-        v-else-if="status?.machine === 'off'"
-        class="btn go"
-        type="button"
-        @click="send({ type: 'set_machine', state: 'on' })"
-      >
-        <AppIcon name="power" />Machine on
-      </button>
-      <button
-        v-else
-        class="btn"
-        type="button"
-        :disabled="status === null"
-        title="Switches the machine off. Aborts any motion."
-        @click="send({ type: 'set_machine', state: 'off' })"
-      >
-        <AppIcon name="power" />Machine off
-      </button>
-      <button
-        class="btn danger"
-        type="button"
-        :disabled="status?.machine === 'estop'"
-        title="LinuxCNC's software E-stop. It is not the machine's E-stop circuit."
-        @click="send({ type: 'set_machine', state: 'estop' })"
-      >
-        E-stop
-      </button>
-    </div>
-
-    <div class="cell" :class="{ distrust: !live }">
-      <span class="label" title="LinuxCNC task mode and interpreter state, as reported">Task</span>
-      <span class="value">{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span>
-    </div>
-    <div class="cell" :class="{ distrust: !live }">
-      <span class="label" title="Active work coordinate system">WCS</span>
-      <span class="value mono">{{ status ? wcsName(status.offsets.wcs) : '—' }}</span>
-    </div>
-    <div class="cell toolcell" :class="{ distrust: !live }">
-      <span class="label">Tool in spindle<template v-if="prepared !== null"> · T{{ prepared }} prepared</template></span>
-      <span class="value">
-        <span class="mono">{{ tool.name }}</span>
-        <span v-if="tool.detail" class="detail">{{ tool.detail }}</span>
-      </span>
-    </div>
-
-    <div class="message" :class="notice?.level">
-      <template v-if="notice">
-        <AppIcon :name="notice.level === 'error' ? 'warning' : 'info'" />
-        <span class="text" :title="notice.text">
-          <span class="when mono">{{ formatClock(notice.time) }}</span>
-          {{ notice.text }}<template v-if="notice.count > 1"> (×{{ notice.count }})</template>
-        </span>
-        <button class="btn quiet square" type="button" title="Dismiss. The message stays in the log." @click="dismissNotice">
-          <AppIcon name="close" />
-        </button>
-      </template>
-      <span v-else class="none">No message</span>
-      <button class="btn" type="button" title="Open the message log" @click="emit('log')">
-        <AppIcon name="list" />Log<template v-if="errorCount > 0"> · {{ errorCount }}</template>
-      </button>
-    </div>
+  <header class="em-top">
+    <div class="em-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>CoffeeCNC <small>/ MILL</small></div>
+    <nav class="em-nav" aria-label="Workspace">
+      <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
+    </nav>
+    <div class="machine"><span class="connection" :class="{ disconnected: !live }"><i class="dot"></i>{{ linkLabel }}</span><button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button></div>
   </header>
+  <section class="jobbar">
+    <div class="job">
+      <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
+      <p class="subtitle">{{ subtitle }}</p>
+      <p v-if="panel.notice?.level === 'error'" class="error" role="alert">{{ panel.notice.text }}</p>
+    </div>
+    <details class="state-menu">
+      <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
+      <div class="popover">
+        <h3>Machine</h3>
+        <div class="fact"><span>Connection</span><span>{{ linkLabel }}</span></div>
+        <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
+        <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
+        <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
+        <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
+        <div class="actions">
+          <button v-if="status?.machine === 'estop'" class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
+          <button v-else-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
+          <button v-else class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
+          <button class="btn danger" type="button" title="Assert LinuxCNC software E-stop" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
+          <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
+        </div>
+      </div>
+    </details>
+  </section>
 </template>
 
 <style scoped>
-.statusbar {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  height: 60px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-}
-
-.cell {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.cell.distrust .value {
-  color: var(--text-faint);
-}
-
-.brand {
-  flex: none;
-}
-
-.name {
-  font-weight: 600;
-}
-
-.sub {
-  display: flex;
-  gap: 6px;
-}
-
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.value {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.state.estop {
-  color: var(--stop);
-}
-
-.state.off {
-  color: var(--warn);
-}
-
-.state.on {
-  color: var(--go);
-}
-
-.machine {
-  width: 62px;
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.toolcell {
-  flex: 0 1 190px;
-}
-
-.detail {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-dim);
-  text-overflow: ellipsis;
-}
-
-.message {
-  display: flex;
-  flex: 1 1 260px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-}
-
-.message.error {
-  color: var(--stop);
-}
-
-.message .text {
-  display: -webkit-box;
-  flex: 1;
-  overflow: hidden;
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--text);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
-.message.error .text {
-  font-weight: 600;
-}
-
-.message .btn {
-  color: var(--text);
-}
-
-.when {
-  margin-right: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-dim);
-}
-
-.none {
-  flex: 1;
-  color: var(--text-faint);
-}
+.em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.em-brand { display: flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: 3px; font-weight: 700; white-space: nowrap; }
+.em-brand small { font-size: 11px; font-weight: 400; letter-spacing: 1px; color: var(--text-dim); margin-left: 4px; }
+.brand-mark { display: flex; align-items: end; gap: 3px; height: 21px; }
+.brand-mark i { width: 3px; height: 21px; border-radius: 2px; background: var(--accent); }
+.brand-mark i:nth-child(2) { height: 14px; }.brand-mark i:nth-child(3) { height: 7px; }
+.em-nav { display: flex; padding: 4px; gap: 3px; border-radius: 10px; background: var(--bg); }
+.em-nav button { min-width: 94px; min-height: 36px; padding: 8px 19px; border: 0; border-radius: 7px; background: none; font-weight: 500; color: var(--text-dim); cursor: pointer; }
+.em-nav button[aria-current] { background: var(--panel); box-shadow: 0 1px 4px #00000010; color: var(--text); }
+.machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.connection { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
+.disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
+.theme { width: 32px; height: 36px; background: none; border: 0; color: var(--text-dim); font-size: 18px; cursor: pointer; }
+.jobbar { display: flex; justify-content: space-between; align-items: center; padding: 19px 24px 16px; gap: 20px; }
+.job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
+h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-weight: 550; }
+.subtitle { margin: 5px 0 0; font-size: 12px; color: var(--text-dim); }
+.open { display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.open:disabled { opacity: .4; }
+.state-menu { position: relative; flex: none; }
+.state-pill { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 30px; background: var(--panel); font-size: 12px; }
+.state-pill :deep(svg) { width: 12px; height: 12px; color: var(--text-dim); }
+.state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
+.popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
+.modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
+.error { color: var(--stop); font-size: 12px; margin: 6px 0 0; max-width: 70vw; }
+@media (max-height: 760px) { .em-top { padding-block: 12px; }.jobbar { padding-block: 12px; } }
 </style>

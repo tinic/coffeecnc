@@ -6,7 +6,8 @@
 // else; no gesture on it sends a command.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
-import { findTool, live, panel } from '../machine'
+import { live, panel } from '../machine'
+import { theme } from '../appearance'
 import {
   boxCorners,
   boxEdges,
@@ -30,6 +31,7 @@ const camera = shallowRef<Camera>({ ...views.iso, scale: 1, centre: [200, 125, -
 const view = ref<ViewName | null>('iso')
 /** Refit when the path changes, until the operator moves the camera. */
 const autoFit = ref<boolean>(true)
+const showMachine = ref(false)
 
 /** The last preview that had a path, kept so an outdated path can be shown as outdated. */
 const drawn = shallowRef<Preview | null>(null)
@@ -117,13 +119,7 @@ const tools = computed((): number[] => {
   return seen
 })
 
-function toolName(number: number): string {
-  if (number === 0) {
-    return 'No tool'
-  }
-  const comment = findTool(number)?.comment ?? ''
-  return comment === '' ? `T${String(number)}` : `T${String(number)} ${comment}`
-}
+
 
 // ---- camera -------------------------------------------------------------------------------------
 
@@ -151,6 +147,7 @@ function fitTo(what: 'path' | 'machine'): void {
 
 function fitButton(what: 'path' | 'machine'): void {
   autoFit.value = what === 'path'
+  showMachine.value = what === 'machine'
   fitTo(what)
 }
 
@@ -225,9 +222,9 @@ function wheel(event: WheelEvent): void {
 // ---- drawing ------------------------------------------------------------------------------------
 
 const colours = {
-  travel: '#3b434d',
+  travel: '#80909d',
   rapid: '#7b8794',
-  executed: '#f2f4f6',
+  executed: '#377ef2',
   marker: '#f0b64a',
   outdated: '#66707c',
   axes: ['#d97b7b', '#7fbf8a', '#7b9fe0'],
@@ -254,7 +251,7 @@ function draw(): void {
   const status = panel.status
 
   const box = travelBox.value
-  if (box !== null) {
+  if (box !== null && showMachine.value) {
     const corners = boxCorners(box.min, box.max).map(at)
     context.strokeStyle = colours.travel
     context.lineWidth = 1
@@ -397,7 +394,7 @@ function schedule(): void {
   }
 }
 
-watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link, tools], schedule)
+watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link, tools, theme, showMachine], schedule)
 
 let observer: ResizeObserver | null = null
 
@@ -425,163 +422,30 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pathview" :class="{ outdated: drawn !== null && !current }">
-    <canvas
-      ref="canvas"
-      @pointerdown="pointerDown"
-      @pointermove="pointerMove"
-      @pointerup="pointerUp"
-      @pointercancel="pointerUp"
-      @wheel.prevent="wheel"
-      @contextmenu.prevent
-    ></canvas>
-
-    <div class="top">
-      <span class="chip" title="The path comes from the interpreter's dry run of the program. It is not a measurement.">
-        {{ panel.simulated ? 'Simulated preview' : 'Preview' }}
-      </span>
-      <span v-if="banner.text" class="chip" :class="banner.tone">{{ banner.text }}</span>
-      <span v-if="!live" class="chip stop">Tool position not live</span>
-      <span v-else-if="toolTip === null" class="chip warn">Tool position unknown: not homed</span>
+    <canvas ref="canvas" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
+    <div v-if="banner.text || !live || toolTip === null" class="banners">
+      <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
+      <span v-if="!live" class="stop">Tool position not live</span>
+      <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
     </div>
-
-    <div class="views">
-      <div class="segmented">
-        <button class="btn" type="button" :class="{ on: view === 'iso' }" @click="setView('iso')">Iso</button>
-        <button class="btn" type="button" :class="{ on: view === 'top' }" @click="setView('top')">Top</button>
-        <button class="btn" type="button" :class="{ on: view === 'front' }" @click="setView('front')">Front</button>
+    <div class="scene-bottom">
+      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span></div>
+      <div class="views">
+        <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
+        <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
+        <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
+        <button type="button" title="Fit toolpath" aria-label="Fit toolpath" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button type="button" title="Show and fit machine travel" @click="fitButton('machine')">Travel</button>
       </div>
-      <button class="btn" type="button" title="Fit the path in the view" @click="fitButton('path')">
-        <AppIcon name="fit" />Path
-      </button>
-      <button class="btn" type="button" title="Fit the machine travel in the view" @click="fitButton('machine')">
-        <AppIcon name="fit" />Machine
-      </button>
-    </div>
-
-    <div class="legend">
-      <span v-for="(tool, index) in tools" :key="tool" class="key">
-        <span class="swatch" :style="{ background: current ? toolColour(index) : colours.outdated }"></span>
-        {{ toolName(tool) }}
-      </span>
-      <span class="key"><span class="swatch dashed"></span>Rapid</span>
-      <span class="key"><span class="swatch box"></span>Travel of the tool tip</span>
-      <span class="key"><span class="swatch marker"></span>Tool, as reported</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pathview {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-sunken);
-  overflow: hidden;
-}
-
-.pathview.outdated {
-  border-style: dashed;
-  border-color: var(--warn);
-}
-
-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  cursor: grab;
-  touch-action: none;
-}
-
-.top {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex-direction: column;
-  align-items: flex-start;
-  pointer-events: none;
-}
-
-.top .chip {
-  background: var(--panel);
-  pointer-events: auto;
-}
-
-.top .chip.warn {
-  background: #2b2619;
-}
-
-.top .chip.stop {
-  background: #2e1c1d;
-}
-
-.views {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  display: flex;
-  gap: 6px;
-}
-
-.views .btn {
-  padding: 0 10px;
-  background: var(--panel);
-  font-size: 13px;
-}
-
-.views .btn.on {
-  background: #1f2c44;
-}
-
-.legend {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgb(27 31 36 / 85%);
-  font-size: 12px;
-  color: var(--text-dim);
-  pointer-events: none;
-}
-
-.key {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.swatch {
-  width: 18px;
-  height: 3px;
-  border-radius: 2px;
-}
-
-.swatch.dashed {
-  height: 0;
-  border-top: 2px dashed #7b8794;
-  border-radius: 0;
-}
-
-.swatch.box {
-  height: 9px;
-  border: 1px solid #56606c;
-  border-radius: 0;
-}
-
-.swatch.marker {
-  width: 10px;
-  height: 10px;
-  margin: 0 4px;
-  border: 2px solid #f0b64a;
-  border-radius: 50%;
-}
+.pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+canvas { display: block; width: 100%; height: calc(100% - 42px); cursor: grab; touch-action: none; }
+.scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }
+.legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
+.views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
+.banners { position: absolute; top: 12px; left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); }.banners span { padding: 5px 8px; border-radius: 6px; background: var(--panel); }.banners .stop { color: var(--stop); }.banners .warn { color: var(--warn); }
 </style>

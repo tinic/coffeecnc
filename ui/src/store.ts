@@ -204,7 +204,7 @@ export function createPanel(options: PanelOptions): Panel {
     mdi: [],
     tab: 'manual',
     unit: 'mm',
-    programLayout: 'split',
+    programLayout: 'path',
     droDetails: true,
     jogIncrement: null,
     jogVelocity: 600,

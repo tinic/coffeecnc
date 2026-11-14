@@ -526,7 +526,7 @@ function coolant(which: 'flood' | 'mist'): void {
 <style scoped>
 .manual {
   display: grid;
-  grid-template-columns: 404px minmax(0, 1fr);
+  grid-template-columns: 440px minmax(0, 1fr);
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -538,10 +538,16 @@ function coolant(which: 'flood' | 'mist'): void {
   gap: 10px;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+}
+
+.side > .card {
+  flex-shrink: 0;
 }
 
 .jog {
-  gap: 10px;
+  gap: 8px;
+  overflow-y: auto;
 }
 
 .pads {
@@ -555,8 +561,8 @@ function coolant(which: 'flood' | 'mist'): void {
     '. ypos . gap zpos'
     'xneg stop xpos gap .'
     '. yneg . gap zneg';
-  grid-template-columns: 88px 88px 88px 16px 88px;
-  grid-template-rows: 76px 76px 76px;
+  grid-template-columns: 68px 68px 68px 12px 68px;
+  grid-template-rows: 48px 48px 48px;
   gap: 6px;
 }
 
@@ -619,6 +625,7 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .keys {
   margin: 0;
+  font-size: 10px;
 }
 
 .blocked {
@@ -627,6 +634,7 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .mdi {
   flex: 1;
+  min-height: 150px;
 }
 
 .history {

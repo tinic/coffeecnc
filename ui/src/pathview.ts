@@ -25,7 +25,7 @@ export const views: Readonly<Record<ViewName, { azimuth: number; elevation: numb
 }
 
 /** Feed colours by order of appearance of the tools in the program. */
-export const toolColours: readonly string[] = ['#58b8ae', '#d6a35c', '#8ea4e6', '#c78fbb', '#9cc36e', '#de8c7c']
+export const toolColours: readonly string[] = ['#6d93ca', '#377ef2', '#8374b0', '#4f9c95', '#b58b4c', '#b87979']
 
 export function toolColour(index: number): string {
   return toolColours[index % toolColours.length] ?? '#58b8ae'

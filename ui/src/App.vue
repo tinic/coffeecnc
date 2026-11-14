@@ -1,8 +1,5 @@
 <script setup lang="ts">
-// Layout: status bar on top and run bar at the bottom, always; between them the position readout
-// and one workspace. Switching workspace is a change of view only and sends nothing.
 import { computed, ref } from 'vue'
-
 import LogDialog from './components/LogDialog.vue'
 import DroPanel from './components/DroPanel.vue'
 import ManualTab from './components/ManualTab.vue'
@@ -11,121 +8,37 @@ import RunBar from './components/RunBar.vue'
 import StatusBar from './components/StatusBar.vue'
 import ToolChangePrompt from './components/ToolChangePrompt.vue'
 import ToolsTab from './components/ToolsTab.vue'
+import FileBrowser from './components/FileBrowser.vue'
 import { startDialog } from './dialogs'
 import { panel } from './machine'
-import type { Tab } from './store'
 
 const logOpen = ref<boolean>(startDialog === 'log')
-
-const tabNames: readonly (readonly [Tab, string])[] = [
-  ['manual', 'Manual'],
-  ['program', 'Program'],
-  ['tools', 'Tools & offsets'],
-]
-
-const toolChange = computed(() => (panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null))
+const browsing = ref<boolean>(startDialog === 'open')
+const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null)
 </script>
 
 <template>
   <div class="app">
-    <StatusBar @log="logOpen = true" />
+    <StatusBar @log="logOpen = true" @open="browsing = true" />
+    <DroPanel />
     <main class="middle">
-      <DroPanel />
-      <section class="workspace">
-        <nav class="tabs" aria-label="Workspace">
-          <button
-            v-for="[tab, name] in tabNames"
-            :key="tab"
-            class="tab"
-            type="button"
-            :class="{ on: panel.tab === tab }"
-            :aria-current="panel.tab === tab ? 'page' : undefined"
-            @click="panel.tab = tab"
-          >
-            {{ name }}
-          </button>
-        </nav>
-        <div class="content">
-          <ManualTab v-if="panel.tab === 'manual'" />
-          <ProgramTab v-else-if="panel.tab === 'program'" />
-          <ToolsTab v-else />
-        </div>
-      </section>
+      <ManualTab v-if="panel.tab === 'manual'" />
+      <ProgramTab v-else-if="panel.tab === 'program'" />
+      <ToolsTab v-else />
       <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" />
       <div id="dialogs"></div>
       <LogDialog v-if="logOpen" @close="logOpen = false" />
+      <FileBrowser v-if="browsing" @close="browsing = false" />
     </main>
     <RunBar />
+    <footer class="foot"><span>{{ panel.simulated ? 'SIMULATOR · No controller connected' : 'CoffeeCNC · Local machine interface' }}</span><span>coffeecnc / mill</span></footer>
   </div>
 </template>
 
 <style scoped>
-.app {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-}
-
-.middle {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.workspace {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.tabs {
-  display: flex;
-  flex: none;
-  gap: 4px;
-  padding: 8px 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.tab {
-  min-width: 132px;
-  height: 44px;
-  padding: 0 18px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
-  background: none;
-  font-weight: 600;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.on {
-  margin-bottom: -1px;
-  border-color: var(--line);
-  background: var(--bg);
-  box-shadow: inset 0 2px 0 var(--accent);
-  color: var(--text);
-}
-
-.content {
-  flex: 1;
-  min-height: 0;
-  padding: 10px 12px;
-}
-
-/* Dialogs cover the workspace only: the position readout stays in sight. */
-#dialogs {
-  position: absolute;
-  inset: 0 0 0 376px;
-  z-index: 20;
-  pointer-events: none;
-}
+.app { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.middle { position: relative; flex: 1; min-height: 0; margin: 0 24px 14px; }
+#dialogs { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.foot { display: flex; justify-content: space-between; padding: 9px 24px; color: var(--text-dim); font-size: 10px; letter-spacing: .2px; }
+@media (max-height: 760px) { .middle { margin-bottom: 10px; } .foot { padding-block: 5px; } }
 </style>

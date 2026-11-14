@@ -1,40 +1,30 @@
+@font-face { font-family: 'DM Sans'; src: url('/fonts/DM-Sans-400-700.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBM-Plex-Mono-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBM-Plex-Mono-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+/* Surface, type and spacing values from the original CoffeeCNC concept. */
 :root {
+  color-scheme: light;
+  --bg: #f5f6f7; --bg-sunken: #edf0f2; --panel: #fff; --panel-raised: #fff;
+  --control: #fff; --control-hover: #f1f4f7; --control-active: #e8edf0;
+  --line: #dce1e5; --line-strong: #dce1e5;
+  --text: #20272c; --text-dim: #68747d; --text-faint: #85919a;
+  --accent: #377ef2; --accent-soft: #edf3fe;
+  --go: #187957; --go-soft: #e8f5ef; --warn: #966518; --warn-soft: #fff5df;
+  --stop: #ba393d; --stop-soft: #fff0f0;
+  --radius: 12px; --gap: 12px; --touch: 44px;
+  --sans: 'DM Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', monospace;
+  font-family: var(--sans); font-size: 14px; line-height: 1.4;
+  color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
+}
+:root[data-theme='dark'] {
   color-scheme: dark;
-
-  --bg: #13161a;
-  --bg-sunken: #0e1114;
-  --panel: #1b1f24;
-  --panel-raised: #23282f;
-  --control: #2a3038;
-  --control-hover: #333a44;
-  --control-active: #3d4550;
-  --line: #2c333b;
-  --line-strong: #3b434d;
-  --text: #e7eaee;
-  --text-dim: #9aa4af;
-  --text-faint: #66707c;
-  --accent: #4d8ef5;
-  --accent-soft: rgb(77 142 245 / 18%);
-  --go: #3fae6c;
-  --go-soft: rgb(63 174 108 / 16%);
-  --warn: #dfa43c;
-  --warn-soft: rgb(223 164 60 / 15%);
-  --stop: #e25555;
-  --stop-soft: rgb(226 85 85 / 16%);
-
-  --radius: 8px;
-  --gap: 8px;
-  --touch: 44px;
-
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', sans-serif;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'DejaVu Sans Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-
-  font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.3;
-  color: var(--text);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
+  --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;
+  --control: #202326; --control-hover: #292e33; --control-active: #343a40;
+  --line: #343a40; --line-strong: #3d444b;
+  --text: #edf0f2; --text-dim: #a0aab3; --text-faint: #7d8993;
+  --accent-soft: #28374f; --go: #78d7b3; --go-soft: #233c34;
+  --warn: #e4b466; --warn-soft: #3b3222; --stop: #f28d8d; --stop-soft: #412b2e;
 }
 
 *,
@@ -90,7 +80,7 @@ select {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--control);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
@@ -216,7 +206,7 @@ input:focus-visible {
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -274,3 +264,13 @@ table {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+button, summary { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button { touch-action: manipulation; }
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+.popover { position: absolute; z-index: 40; right: 0; width: 310px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #00000018; }
+.popover h3 { font-size: 14px; margin: 0 0 12px; }
+.popover .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.popover .fact { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 12px; color: var(--text-dim); }

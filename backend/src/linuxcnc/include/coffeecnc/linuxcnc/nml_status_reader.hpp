@@ -16,10 +16,11 @@ namespace coffeecnc {
 // touches the command or error channel. `link` comes from the status buffer's write counter as
 // this reader sees it: read at least a few times per second.
 //
-// A read takes the status buffer's semaphore and can block as long as a stopped task holds it
-// (see NmlPort), so it belongs on a thread that may block: the runtime's status thread, not its
-// control thread. NOT thread-safe: one thread calls read and status; connect and destroy as
-// NmlPort says.
+// A read can block for the semaphore timeout of the NML file, 10 s, while a stopped task holds
+// the status buffer's semaphore, and as long again while another thread's NML call waits in the
+// gate (see NmlPort), so it belongs on a thread that may block: the runtime's status thread, not
+// its control thread. A reading that is late is old, and the session treats an old one as a
+// stale link. NOT thread-safe: one thread calls read and status.
 class NmlStatusReader final : public StatusSource {
 public:
   // `hal` may be null: no tool change request and no optional signals are then reported. It

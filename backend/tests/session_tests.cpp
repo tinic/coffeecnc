@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -65,6 +66,8 @@ public:
   bool follows_mode{true};
   Calls calls;
   int snapshots{};
+  // Handed out by the next take_messages.
+  std::vector<ControllerMessage> published;
 
   auto snapshot() -> ControllerState override {
     ++snapshots;
@@ -73,6 +76,9 @@ public:
     auto next = next_states.front();
     next_states.pop_front();
     return next;
+  }
+  auto take_messages() -> std::vector<ControllerMessage> override {
+    return std::exchange(published, {});
   }
   auto set_machine_state(MachineState machine) -> ActionResult override {
     return record("set_machine_state", machine == MachineState::on    ? "on"
@@ -131,7 +137,9 @@ public:
         std::format("{} {}",
                     option == ProgramOption::optional_stop ? "optional_stop" : "block_delete", on));
   }
-  auto tool_changed() -> ActionResult override { return record("tool_changed", ""); }
+  auto tool_changed(int tool) -> ActionResult override {
+    return record("tool_changed", std::to_string(tool));
+  }
   auto set_tool(const Tool& tool) -> ActionResult override {
     return record("set_tool", std::format("{} {} {} {} {}", tool.number, tool.pocket, tool.length,
                                           tool.diameter, tool.comment));
@@ -185,6 +193,83 @@ auto results(const Outcome& outcome) -> std::vector<Json> {
   return found;
 }
 
+// The session's three threads as one: every call observes the controller, takes its own step
+// and then lets the worker finish everything that waits, with control periods where the worker
+// waits for the jog-stop level. What a request or a period leads to is then in one outcome, as
+// it was when the session did everything in the caller's thread.
+struct Driver {
+  Driver(Session& driven, FakePort& controller) : session(driven), port(controller) {}
+  Session& session;
+  FakePort& port;
+  // The jog-stop level: follows what the control step asks for.
+  bool level{};
+  Instant now{};
+  // Messages of work done outside a request or period (page changes): sent with the next.
+  std::vector<std::string> backlog;
+
+  void control() { level = session.control(now, {level, true}); }
+
+  void drain(Outcome& outcome) {
+    for (int steps = 0;; ++steps) {
+      if (steps > 1000)
+        throw std::runtime_error("The worker does not come to rest");
+      auto work = session.work([this]() -> Instant { return now; });
+      if (work.outcome.page != PageToken{})
+        outcome.page = work.outcome.page;
+      for (auto& message : work.outcome.messages)
+        outcome.messages.push_back(std::move(message));
+      if (work.status == WorkStatus::idle)
+        return;
+      if (work.status == WorkStatus::blocked)
+        control();
+    }
+  }
+
+  void later() {
+    Outcome outcome;
+    drain(outcome);
+    for (auto& message : outcome.messages)
+      backlog.push_back(std::move(message));
+  }
+
+  auto begin_page() -> PageToken {
+    backlog.clear();
+    const auto page = session.begin_page();
+    later();
+    return page;
+  }
+  void end_page(PageToken page) {
+    session.end_page(page);
+    later();
+    backlog.clear(); // No page is left to tell.
+  }
+
+  auto handle(PageToken page, std::string_view json, Instant at) -> Outcome {
+    now = at;
+    session.observe(port.state, now.monotonic);
+    auto outcome = session.submit(page, json, now);
+    drain(outcome);
+    // As the session reports: with the result of a request, never to a request it dropped.
+    const bool answered = std::ranges::any_of(outcome.messages, [](const auto& text) -> bool {
+      return Json::parse(text).at("type") == "result";
+    });
+    if (answered)
+      for (auto& message : std::exchange(backlog, {}))
+        outcome.messages.push_back(std::move(message));
+    return outcome;
+  }
+
+  auto tick(Instant at) -> Outcome {
+    now = at;
+    session.observe(port.state, now.monotonic);
+    Outcome outcome;
+    outcome.messages = std::exchange(backlog, {});
+    control();
+    drain(outcome);
+    return outcome;
+  }
+};
+
 // A session with one page that has sent `ready`, on a homed, idle machine in manual mode, with a
 // program directory that holds one program and one directory.
 struct Rig {
@@ -192,12 +277,13 @@ struct Rig {
   FakeFileSystem files;
   ProgramStore programs{files, program_directory};
   Session session;
+  Driver driver{session, port};
   PageToken page;
   RequestId next_id{1};
   std::chrono::milliseconds clock{};
 
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000})
-      : session(port, limits, programs), page(session.begin_page()) {
+      : session(port, limits, programs), page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
     files.directory("/home/cnc/nc_files/fixtures", 1700000000000);
@@ -208,9 +294,16 @@ struct Rig {
     port.snapshots = 0;
   }
 
+  auto begin_page() -> PageToken { return driver.begin_page(); }
+  void end_page(PageToken ended) { driver.end_page(ended); }
+  auto handle(PageToken from, std::string_view json, Instant now) -> Outcome {
+    return driver.handle(from, json, now);
+  }
+  auto tick(Instant now) -> Outcome { return driver.tick(now); }
+
   // `body` is the request without braces and ID. IDs increase by one.
   auto send(std::string_view body) -> Outcome {
-    return session.handle(page, std::format("{{\"id\":{},{}}}", next_id++, body), at(clock));
+    return handle(page, std::format("{{\"id\":{},{}}}", next_id++, body), at(clock));
   }
   // Sends a request that must get exactly one result, for its own ID, and nothing else.
   auto result(std::string_view body) -> Json {
@@ -243,21 +336,22 @@ void stale_pages_are_dropped() {
   const FakeFileSystem files;
   const ProgramStore programs{files, program_directory};
   Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
+  Driver driver{session, port};
   const auto ready = R"({"id":1,"type":"ready"})";
-  require(session.handle(PageToken{}, ready, at(0ms)).messages.empty() &&
-              session.handle(PageToken{1}, ready, at(0ms)).messages.empty(),
+  require(driver.handle(PageToken{}, ready, at(0ms)).messages.empty() &&
+              driver.handle(PageToken{1}, ready, at(0ms)).messages.empty(),
           "No page has begun: nothing is answered");
-  const auto first = session.begin_page();
-  const auto second = session.begin_page();
+  const auto first = driver.begin_page();
+  const auto second = driver.begin_page();
   require(first != second && first != PageToken{} && second != PageToken{},
           "Every page load gets its own token");
   for (const auto wire : {ready, R"({"id":2,"type":"abort"})", "not json", R"({"id":3})"}) {
-    const auto outcome = session.handle(first, wire, at(0ms));
+    const auto outcome = driver.handle(first, wire, at(0ms));
     require(outcome.messages.empty() && !outcome.send_snapshots,
             "A replaced page gets no result and no message");
   }
   require(port.calls.empty() && port.snapshots == 0, "A replaced page reaches no controller");
-  const auto outcome = session.handle(second, ready, at(0ms));
+  const auto outcome = driver.handle(second, ready, at(0ms));
   require(results(outcome).size() == 1 && outcome.send_snapshots,
           "The current page is unaffected by the stale page's IDs");
 }
@@ -280,7 +374,7 @@ void ready_gate() {
   outcome = rig.send(R"("type":"ready")");
   require(outcome.send_snapshots && results(outcome).size() == 1,
           "A repeated ready asks for the snapshots again");
-  const auto replayed = rig.session.handle(rig.page, R"({"id":1,"type":"run"})", at(0ms));
+  const auto replayed = rig.handle(rig.page, R"({"id":1,"type":"run"})", at(0ms));
   require(replayed.messages.empty(), "A repeated ready does not reset the ID state");
   rig.accepted(R"("type":"abort")");
 }
@@ -288,7 +382,7 @@ void ready_gate() {
 void ids_strictly_increase() {
   Rig rig;
   const auto send = [&rig](RequestId id) -> auto {
-    return rig.session.handle(rig.page, std::format(R"({{"id":{},"type":"abort"}})", id), at(0ms));
+    return rig.handle(rig.page, std::format(R"({{"id":{},"type":"abort"}})", id), at(0ms));
   };
   rig.port.calls.clear();
   require(results(send(10)).size() == 1, "A higher ID is handled");
@@ -305,7 +399,7 @@ void ids_strictly_increase() {
 
   Rig negative{false};
   const auto ready = [&negative](RequestId id) -> auto {
-    return negative.session.handle(negative.page, std::format(R"({{"id":{},"type":"ready"}})", id),
+    return negative.handle(negative.page, std::format(R"({{"id":{},"type":"ready"}})", id),
                                    at(0ms));
   };
   require(results(ready(-max_request_id)).size() == 1 && results(ready(-3)).size() == 1 &&
@@ -321,13 +415,13 @@ void decode_errors() {
           "Invalid requests reach no controller");
   const auto seen = rig.next_id - 1;
   const auto replay =
-      rig.session.handle(rig.page, std::format(R"({{"id":{},"type":"abort"}})", seen), at(0ms));
+      rig.handle(rig.page, std::format(R"({{"id":{},"type":"abort"}})", seen), at(0ms));
   require(replay.messages.empty() && rig.port.calls.empty(),
           "The ID of a rejected request counts as seen");
 
   for (const auto wire : {"", "not json", "[]", R"({"type":"abort"})",
                           R"({"id":"7","type":"abort"})", R"({"id":99,"type":"abort","id":99})"}) {
-    const auto outcome = rig.session.handle(rig.page, wire, at(250ms));
+    const auto outcome = rig.handle(rig.page, wire, at(250ms));
     require(outcome.messages.size() == 1 && !outcome.send_snapshots,
             "A request without a usable ID gets one message");
     const auto message = Json::parse(outcome.messages.front());
@@ -499,7 +593,7 @@ void every_action() {
        {R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":48.2,"diameter":6,"comment":"End mill 6 mm"})",
         {"set_tool 3 3 48.2 6 End mill 6 mm"}}},
       {idle, {R"("type":"remove_tool","number":3)", {"remove_tool 3"}}},
-      {changing, {R"("type":"tool_changed")", {"tool_changed"}}},
+      {changing, {R"("type":"tool_changed")", {"tool_changed 4"}}},
   };
   for (const auto& [state, row] : rows) {
     Rig rig;
@@ -693,7 +787,7 @@ void jog_presses_and_refreshes() {
   for (int i = 0; i < 5; ++i) {
     rig.clock += 50ms;
     rig.accepted(hold_x);
-    require(rig.session.tick(at(rig.clock)).messages.empty(), "A refreshed lease does not expire");
+    require(rig.tick(at(rig.clock)).messages.empty(), "A refreshed lease does not expire");
   }
   rig.acted({}, "Refreshes are answered without a controller action");
 
@@ -706,14 +800,16 @@ void jog_presses_and_refreshes() {
   rig.acted({"start_jog y -1 600 axis"}, "Axes are held independently");
 
   rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":false)");
-  rig.acted({"stop_jog x"}, "Release stops the axis");
+  // The jog-stop level that every stop raises stops all axes: the session stops them all.
+  rig.acted({"stop_jog x", "stop_jog y"}, "Release stops the axis, and with it every jog");
   rig.clock += 100ms;
   rig.accepted(hold_y);
+  rig.acted({"start_jog y -1 600 axis"}, "The next refresh of another axis is a new press");
   rig.clock += 100ms;
-  require(rig.session.tick(at(rig.clock)).messages.empty(), "Tick has nothing to report");
+  require(rig.tick(at(rig.clock)).messages.empty(), "Tick has nothing to report");
   rig.acted({}, "A released axis is not stopped again by its old lease");
   rig.accepted(release_x);
-  rig.acted({"stop_jog x"}, "Release without a lease still stops");
+  rig.acted({"stop_jog x", "stop_jog y"}, "Release without a lease still stops");
   rig.port.state.link = Link::down;
   rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":0,"held":false)");
   rig.acted({"stop_jog z"}, "Release is attempted without controller status");
@@ -736,7 +832,7 @@ void jog_failures() {
   rig.acted({"start_jog x -1 600 axis", "stop_jog x"},
             "A lost change of direction does not leave the old jog running");
   rig.clock += 1s;
-  static_cast<void>(rig.session.tick(at(rig.clock)));
+  static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Its lease is gone");
 
   rig.accepted(hold_x);
@@ -765,7 +861,7 @@ void stop_all_and_cancellation() {
   rig.accepted(R"("type":"jog_stop_all")");
   rig.acted({"stop_jog x", "stop_jog y", "stop_jog z"}, "Stop-all stops every axis");
   rig.clock += 1s;
-  static_cast<void>(rig.session.tick(at(rig.clock)));
+  static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Stop-all releases every lease");
   rig.port.script["stop_jog"] = {{}, {ActionStatus::failed, "Y did not stop."}};
   rig.expect(R"("type":"jog_stop_all")", "failed", "Y did not stop.");
@@ -786,7 +882,7 @@ void stop_all_and_cancellation() {
   rig.accepted(R"("type":"mdi","text":"G0 X1")");
   rig.acted({"stop_jog x", "set_task_mode mdi", "mdi G0 X1"}, "No jog survives a mode change");
   rig.clock += 1s;
-  static_cast<void>(rig.session.tick(at(rig.clock)));
+  static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Cancelled leases do not expire later");
 }
 
@@ -797,23 +893,33 @@ void lease_expiry() {
   rig.accepted(hold_y);
   rig.port.calls.clear();
   rig.port.snapshots = 0;
-  require(rig.session.tick(at(149ms)).messages.empty(), "Held before the timeout");
+  require(rig.tick(at(149ms)).messages.empty(), "Held before the timeout");
   rig.acted({}, "Nothing stops at 149 ms");
-  require(rig.session.tick(at(150ms)).messages.empty(), "An expired lease is not an error");
-  rig.acted({"stop_jog x"}, "Only the expired axis stops at exactly 150 ms");
-  static_cast<void>(rig.session.tick(at(249ms)));
-  rig.acted({}, "The other axis keeps its own lease");
-  static_cast<void>(rig.session.tick(at(250ms)));
-  rig.acted({"stop_jog y"}, "It stops when its own lease expires");
-  require(rig.port.snapshots == 4, "Tick reads the controller while a jog is held");
-  static_cast<void>(rig.session.tick(at(10s)));
-  require(rig.port.snapshots == 4 && rig.port.calls.empty(), "Tick is idle without held jogs");
+  require(rig.tick(at(150ms)).messages.empty(), "An expired lease is not an error");
+  // One lease running out is a stop decision, and the jog-stop level stops every axis.
+  rig.acted({"stop_jog x", "stop_jog y"}, "At exactly 150 ms the expired lease stops every jog");
+  static_cast<void>(rig.tick(at(250ms)));
+  rig.acted({}, "Each is stopped once");
+  static_cast<void>(rig.tick(at(10s)));
+  require(rig.port.snapshots == 0 && rig.port.calls.empty(),
+          "The dead-man decides on the observed state and never asks the port");
+
+  // A refreshed axis keeps its jog however old the press is.
+  rig.clock = 11s;
+  rig.accepted(hold_x);
+  rig.clock = 11s + 140ms;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  static_cast<void>(rig.tick(at(11s + 289ms)));
+  rig.acted({}, "The lease runs from the last refresh");
+  static_cast<void>(rig.tick(at(11s + 290ms)));
+  rig.acted({"stop_jog x"}, "And ends 150 ms after it");
 
   rig.clock = 20s;
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}};
-  const auto outcome = rig.session.tick(at(20s + 150ms));
+  const auto outcome = rig.tick(at(20s + 150ms));
   rig.acted({"stop_jog x"}, "The expired jog is stopped");
   require(outcome.messages.size() == 1 && !outcome.send_snapshots,
           "A stop that failed is reported");
@@ -832,9 +938,9 @@ void lost_machine_cancels_jogs() {
     rig.accepted(hold_y);
     rig.port.calls.clear();
     rig.port.state.link = link;
-    static_cast<void>(rig.session.tick(at(10ms)));
+    static_cast<void>(rig.tick(at(10ms)));
     rig.acted({"stop_jog x", "stop_jog y"}, "Link loss stops held jogs before their leases expire");
-    static_cast<void>(rig.session.tick(at(1s)));
+    static_cast<void>(rig.tick(at(1s)));
     rig.acted({}, "Each is stopped once");
   }
   for (const auto machine : {MachineState::off, MachineState::estop}) {
@@ -842,7 +948,7 @@ void lost_machine_cancels_jogs() {
     rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":true)");
     rig.port.calls.clear();
     rig.port.state.machine = machine;
-    static_cast<void>(rig.session.tick(at(10ms)));
+    static_cast<void>(rig.tick(at(10ms)));
     rig.acted({"stop_jog z"}, "Leaving machine-on stops held jogs");
     rig.port.state.machine = MachineState::on;
     rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":true)");
@@ -855,9 +961,9 @@ void stops_held_jog(const ControllerState& changed, const std::string& what) {
   rig.accepted(hold_x);
   rig.port.calls.clear();
   rig.port.state = changed;
-  static_cast<void>(rig.session.tick(at(10ms)));
+  static_cast<void>(rig.tick(at(10ms)));
   rig.acted({"stop_jog x"}, what + " stops the held jog before its lease expires");
-  static_cast<void>(rig.session.tick(at(20ms)));
+  static_cast<void>(rig.tick(at(20ms)));
   rig.acted({}, what + ": stopped once");
 }
 
@@ -877,7 +983,7 @@ void outside_changes_stop_held_jogs() {
   Rig rig;
   rig.accepted(hold_x);
   rig.port.calls.clear();
-  static_cast<void>(rig.session.tick(at(10ms)));
+  static_cast<void>(rig.tick(at(10ms)));
   rig.acted({}, "An unchanged state keeps the jog");
 }
 
@@ -885,16 +991,16 @@ void end_of_page() {
   Rig rig;
   rig.accepted(hold_x);
   rig.port.calls.clear();
-  rig.session.end_page(PageToken{});
+  rig.end_page(PageToken{});
   rig.acted({}, "Ending a page that is not current does nothing");
-  rig.session.end_page(rig.page);
+  rig.end_page(rig.page);
   rig.acted({"stop_jog x"}, "Ending the page stops its jogs");
-  require(rig.session.handle(rig.page, R"({"id":900,"type":"abort"})", at(0ms)).messages.empty() &&
+  require(rig.handle(rig.page, R"({"id":900,"type":"abort"})", at(0ms)).messages.empty() &&
               rig.port.calls.empty(),
           "Nothing is handled after the page ended");
-  require(rig.session.tick(at(1s)).page == PageToken{}, "A tick names no page while none is open");
-  rig.page = rig.session.begin_page();
-  const auto outcome = rig.session.handle(rig.page, R"({"id":1,"type":"ready"})", at(0ms));
+  require(rig.tick(at(1s)).page == PageToken{}, "A tick names no page while none is open");
+  rig.page = rig.begin_page();
+  const auto outcome = rig.handle(rig.page, R"({"id":1,"type":"ready"})", at(0ms));
   require(outcome.page == rig.page && outcome.send_snapshots,
           "The next page works and its outcome names it");
 }
@@ -906,16 +1012,16 @@ void explicit_stop_failures_are_retried() {
   rig.port.script["stop_jog"] = {{ActionStatus::failed, "Not connected."}};
   rig.expect(release_x, "failed", "Not connected.");
   rig.acted({"stop_jog x"}, "The release asks for the stop");
-  auto outcome = rig.session.tick(at(1ms));
+  auto outcome = rig.tick(at(1ms));
   rig.acted({"stop_jog x"}, "A failed release is retried by tick");
   require(outcome.messages.empty(), "Its failure was already the result of the release");
-  static_cast<void>(rig.session.tick(at(2ms)));
+  static_cast<void>(rig.tick(at(2ms)));
   rig.acted({}, "An accepted retry ends it");
 
   rig.port.script["stop_jog"] = {{}, {ActionStatus::timed_out, ""}, {}};
   rig.expect(R"("type":"jog_stop_all")", "timed_out", "LinuxCNC did not answer.");
   rig.acted({"stop_jog x", "stop_jog y", "stop_jog z"}, "Stop-all asks every axis");
-  static_cast<void>(rig.session.tick(at(3ms)));
+  static_cast<void>(rig.tick(at(3ms)));
   rig.acted({"stop_jog y"}, "Only the axis whose stop failed is retried");
 }
 
@@ -933,7 +1039,7 @@ void no_start_over_an_unconfirmed_stop() {
   rig.accepted(hold_x);
   rig.acted({"stop_jog x", "start_jog x 1 600 axis"},
             "Once the stop is confirmed the press starts the jog");
-  static_cast<void>(rig.session.tick(at(1ms)));
+  static_cast<void>(rig.tick(at(1ms)));
   rig.acted({}, "The tick does not stop the new jog");
 }
 
@@ -943,17 +1049,17 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.port.calls.clear();
   rig.port.script["stop_jog"] = {{ActionStatus::failed, "Not connected."},
                                  {ActionStatus::timed_out, ""}};
-  rig.page = rig.session.begin_page();
+  rig.page = rig.begin_page();
   rig.acted({"stop_jog x"}, "The page boundary asks for the stop");
-  auto outcome = rig.session.tick(at(1ms));
+  auto outcome = rig.tick(at(1ms));
   require(outcome.messages.size() == 1 &&
               outcome.messages.front().find("Jog stop failed on X") != std::string::npos,
           "A stop that failed at the page boundary is reported to the new page");
   rig.acted({"stop_jog x"}, "The tick retries the failed stop without a lease");
-  outcome = rig.session.tick(at(2ms));
+  outcome = rig.tick(at(2ms));
   require(outcome.messages.empty(), "A retry that fails again does not repeat the message");
   rig.acted({"stop_jog x"}, "It keeps retrying");
-  outcome = rig.session.tick(at(3ms));
+  outcome = rig.tick(at(3ms));
   require(outcome.messages.empty(), "Nothing to report once the stop is accepted");
   rig.acted({}, "An accepted stop ends the retries");
 }
@@ -966,12 +1072,12 @@ void new_page() {
   rig.accepted(hold_x);
   rig.port.calls.clear();
   const auto old_page = rig.page;
-  rig.page = rig.session.begin_page();
+  rig.page = rig.begin_page();
   rig.acted({"stop_jog x"}, "A new page stops the jogs the old page held");
-  require(rig.session.handle(old_page, R"({"id":1000,"type":"jog_stop_all"})", at(0ms))
+  require(rig.handle(old_page, R"({"id":1000,"type":"jog_stop_all"})", at(0ms))
               .messages.empty(),
           "The old page is dropped");
-  static_cast<void>(rig.session.tick(at(10s)));
+  static_cast<void>(rig.tick(at(10s)));
   rig.acted({}, "No lease outlives its page");
 
   rig.next_id = 1;
@@ -1064,17 +1170,17 @@ void exactly_one_result(std::uint32_t seed) {
     const auto roll = pick(100);
     if (roll < 3) {
       stale = rig.page;
-      rig.page = rig.session.begin_page();
+      rig.page = rig.begin_page();
       last.reset();
       ready = false;
       continue;
     }
     if (roll < 10) {
-      require(results(rig.session.tick(now)).empty(), "Tick never produces a result");
+      require(results(rig.tick(now)).empty(), "Tick never produces a result");
       continue;
     }
     if (roll < 16) {
-      const auto outcome = rig.session.handle(rig.page, without_id.at(pick(4)), now);
+      const auto outcome = rig.handle(rig.page, without_id.at(pick(4)), now);
       require(results(outcome).empty() && outcome.messages.size() == 1 && !outcome.send_snapshots,
               "No result without an ID");
       continue;
@@ -1085,12 +1191,12 @@ void exactly_one_result(std::uint32_t seed) {
     const auto body = bodies.at(pick(bodies.size()));
     const auto wire = std::format("{{\"id\":{},{}}}", id, body);
     if (roll >= 30 && roll < 36 && stale != rig.page) {
-      const auto outcome = rig.session.handle(stale, wire, now);
+      const auto outcome = rig.handle(stale, wire, now);
       require(outcome.messages.empty() && !outcome.send_snapshots, "No result on a replaced page");
       continue;
     }
     const auto before = rig.port.calls.size();
-    const auto outcome = rig.session.handle(rig.page, wire, now);
+    const auto outcome = rig.handle(rig.page, wire, now);
     const auto found = results(outcome);
     if (last && id <= *last) {
       require(outcome.messages.empty() && !outcome.send_snapshots &&

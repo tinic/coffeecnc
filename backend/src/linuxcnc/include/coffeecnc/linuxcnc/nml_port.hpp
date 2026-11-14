@@ -66,18 +66,28 @@ struct NmlStatus {
 // When task rejects a command, its operator error text becomes the reason and is not reported a
 // second time by take_messages().
 //
-// Blocking: a single NML command waits at most echo_timeout + completion_timeout. Actions that
-// must first switch teleop (home, jogs) or send two commands (coolant) wait at most twice that.
-// Typical times on a 1 ms task cycle are 2 to 30 ms.
+// Blocking. The waits are polls with deadlines: echo_timeout for the echo, completion_timeout
+// for completion, the windows below for errors and settling. A deadline is checked between
+// libnml calls, and one libnml call (peek, read, write) can itself wait for the buffer's System V
+// semaphore up to the timeout T of the `xemc` lines of the NML file, 10 s in LinuxCNC's
+// linuxcnc.nml; so can the NML gate, while another thread's call waits in it. Bounds:
 //
-// NOT thread-safe: one thread, the runtime's worker, calls every member. LinuxCNC's NML library
-// keeps a list of all channels of the process without a lock (libnml/nml/nml.cc,
-// NML_Main_Channel_List) and each channel has one read buffer, so: connect and destroy every NML
-// object (NmlPort, NmlStatusReader) on one thread while no other thread is inside an NML call,
-// and use each object from one thread only. Every read of a buffer takes that buffer's System V
-// semaphore with the 10 s timeout of linuxcnc.nml (libnml/buffer/shmem.cc): a task stopped
-// inside its own write blocks every reader that long. emcCommand is a queue: task executes
-// commands in the order they were written, also those written while it was stopped.
+//   one libnml call          T, and as much again for the gate
+//   one wait with deadline D D + 2T: its last pass makes at most two calls (status, error)
+//   one NML command          write, echo, completion: at most 4 s + 5T, and about 0.1 s + 4T more
+//                            when it fails and its error text is collected
+//   an action                at most two commands (teleop then jog or home; flood then mist)
+//                            and a settle wait of 1 s + 2T
+//
+// With a task that is stopped but does not hold a semaphore, which is what a stopped task was
+// seen to be, a command returns after echo_timeout, 1 s. Typical times on a 1 ms task cycle are
+// 2 to 30 ms.
+//
+// NOT thread-safe: one thread, the runtime's worker, calls every member. Other threads may use
+// other NML objects (NmlStatusReader) at the same time: every call into LinuxCNC's NML library,
+// which shares unlocked state between all its channels, goes through one process-wide gate
+// (src/nml_gate.hpp), one call at a time. emcCommand is a queue: task executes commands in the
+// order they were written, also those written while it was stopped.
 class NmlPort final : public ControllerPort {
 public:
   static constexpr auto echo_timeout = std::chrono::milliseconds{1000};
@@ -128,8 +138,10 @@ public:
   [[nodiscard]] auto set_spindle(SpindleDirection direction, double rpm) -> ActionResult override;
   [[nodiscard]] auto set_coolant(bool flood, bool mist) -> ActionResult override;
   [[nodiscard]] auto set_program_option(ProgramOption option, bool on) -> ActionResult override;
-  // Through the HAL component, not NML: asks the control thread to raise tool-changed.
-  [[nodiscard]] auto tool_changed() -> ActionResult override;
+  // Through the HAL component, not NML: asks the control thread to raise tool-changed for the
+  // request it shows now, if that is for this tool. Fails while the control thread does not
+  // renew its copy of the pins.
+  [[nodiscard]] auto tool_changed(int tool) -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto set_tool(const Tool& tool) -> ActionResult override;
   [[nodiscard]] auto remove_tool(int number) -> ActionResult override;

@@ -54,7 +54,7 @@ HalComponent::HalComponent(int id, Pins* pins, const HalSignals& wired)
 
 HalComponent::HalComponent(HalComponent&& other) noexcept
     : id_(std::exchange(other.id_, -1)), pins_(std::exchange(other.pins_, nullptr)),
-      wired_(other.wired_), stop_wanted_(other.stop_wanted_), stop_changed_(other.stop_changed_),
+      wired_(other.wired_), hold_(other.hold_), stop_raised_(other.stop_raised_),
       enable_changed_(other.enable_changed_) {}
 
 auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
@@ -64,8 +64,8 @@ auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
     id_ = std::exchange(other.id_, -1);
     pins_ = std::exchange(other.pins_, nullptr);
     wired_ = other.wired_;
-    stop_wanted_ = other.stop_wanted_;
-    stop_changed_ = other.stop_changed_;
+    hold_ = other.hold_;
+    stop_raised_ = other.stop_raised_;
     enable_changed_ = other.enable_changed_;
   }
   return *this;
@@ -76,33 +76,25 @@ HalComponent::~HalComponent() {
     hal_exit(id_);
 }
 
-void HalComponent::request_jog_stop() {
+void HalComponent::hold_jog_stop(bool on) {
   const auto now = Clock::now();
-  if (!*pins_->jog_stop && now - stop_changed_ >= level_time) {
+  hold_ = on;
+  if (on && !*pins_->jog_stop) {
     *pins_->jog_stop = true;
-    stop_changed_ = now;
-    stop_wanted_ = false;
-  } else {
-    // A jog may have started since the pulse in progress rose: it needs an edge of its own.
-    stop_wanted_ = true;
+    stop_raised_ = now;
+  } else if (!on && *pins_->jog_stop && now - stop_raised_ >= level_time) {
+    *pins_->jog_stop = false;
   }
 }
 
-auto HalComponent::jog_stop_busy() const -> bool { return stop_wanted_ || *pins_->jog_stop; }
+auto HalComponent::jog_stop_high() const -> bool { return *pins_->jog_stop; }
 
 void HalComponent::beat() {
   const auto now = Clock::now();
   *pins_->heartbeat = !*pins_->heartbeat;
-  if (now - stop_changed_ >= level_time) {
-    if (*pins_->jog_stop) {
-      *pins_->jog_stop = false;
-      stop_changed_ = now;
-    } else if (stop_wanted_) {
-      *pins_->jog_stop = true;
-      stop_changed_ = now;
-      stop_wanted_ = false;
-    }
-  }
+  // A level that was released before the servo thread could have seen it.
+  if (!hold_ && *pins_->jog_stop && now - stop_raised_ >= level_time)
+    *pins_->jog_stop = false;
   // A watchdog that has tripped stays tripped until its enable input falls and rises again.
   if (!*pins_->watchdog_ok && now - enable_changed_ >= level_time) {
     *pins_->watchdog_enable = !*pins_->watchdog_enable;

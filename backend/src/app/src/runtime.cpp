@@ -1,0 +1,105 @@
+#include <coffeecnc/app/runtime.hpp>
+
+#include <algorithm>
+#include <utility>
+
+namespace coffeecnc {
+namespace {
+
+auto now() -> Instant {
+  return {JogLease::Clock::now(), std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::system_clock::now().time_since_epoch())};
+}
+
+} // namespace
+
+auto control_step(Session& session, SafetyOutputs& outputs, Instant now) -> bool {
+  outputs.beat();
+  const bool hold = session.control(now, {outputs.jog_stop_high(), outputs.watchdog_ok()});
+  outputs.hold_jog_stop(hold);
+  return hold;
+}
+
+void status_step(Session& session, StatusSource& source) {
+  const auto state = source.read();
+  session.observe(state, JogLease::Clock::now());
+}
+
+Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,
+                 const Limits& limits, const ProgramStore& programs, Sink sink)
+    : status_(status), outputs_(outputs), sink_(std::move(sink)), session_(port, limits, programs),
+      control_([this]() -> void { control_loop(); }),
+      status_thread_([this]() -> void { status_loop(); }),
+      worker_([this]() -> void { work_loop(); }) {}
+
+Runtime::~Runtime() {
+  session_.close();
+  closing_ = true;
+  // The control thread keeps beating and holding the level while the worker stops the jogs.
+  worker_.join();
+  stop_status_ = true;
+  status_thread_.join();
+  stop_control_ = true;
+  control_.join();
+  // This thread is the only one left: the level stays high after the runtime.
+  outputs_.hold_jog_stop(true);
+}
+
+auto Runtime::begin_page() -> PageToken { return session_.begin_page(); }
+void Runtime::end_page(PageToken page) { session_.end_page(page); }
+auto Runtime::submit(PageToken page, std::string_view json) -> Outcome {
+  return session_.submit(page, json, now());
+}
+
+auto Runtime::timing() const -> Timing {
+  return {control_periods_.load(),
+          std::chrono::nanoseconds{longest_control_period_.load()}};
+}
+
+void Runtime::reset_timing() {
+  control_periods_ = 0;
+  longest_control_period_ = 0;
+}
+
+void Runtime::control_loop() {
+  auto next = JogLease::Clock::now();
+  auto last = next;
+  while (!stop_control_) {
+    const auto started = JogLease::Clock::now();
+    const auto period =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(started - last).count();
+    last = started;
+    longest_control_period_ = std::max(longest_control_period_.load(), period);
+    ++control_periods_;
+    static_cast<void>(control_step(session_, outputs_, now()));
+    // On a fixed grid: a late period does not delay the ones after it.
+    next += control_period;
+    if (const auto after = JogLease::Clock::now(); next < after)
+      next = after;
+    std::this_thread::sleep_until(next);
+  }
+}
+
+void Runtime::status_loop() {
+  while (!stop_status_) {
+    status_step(session_, status_);
+    std::this_thread::sleep_for(status_period);
+  }
+}
+
+void Runtime::work_loop() {
+  for (;;) {
+    // Read before the work: after close() one more pass finds everything the close left.
+    const bool closing = closing_;
+    const auto work = session_.work(now);
+    if (sink_ && !work.outcome.messages.empty())
+      sink_(work.outcome);
+    if (work.status == WorkStatus::done)
+      continue;
+    if (closing)
+      return;
+    session_.wait_for_work(control_period);
+  }
+}
+
+} // namespace coffeecnc

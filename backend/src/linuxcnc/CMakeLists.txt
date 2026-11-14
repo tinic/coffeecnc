@@ -38,8 +38,8 @@ if(missing)
 endif()
 message(STATUS "LinuxCNC adapter: headers in ${COFFEECNC_LINUXCNC_INCLUDE_DIR}")
 
-add_library(coffeecnc_linuxcnc src/hal_component.cpp src/machine_config.cpp src/nml_port.cpp
-  src/tool_table.cpp)
+add_library(coffeecnc_linuxcnc src/hal_component.cpp src/hal_control.cpp src/machine_config.cpp
+  src/nml_port.cpp src/nml_status.cpp src/tool_table.cpp)
 target_include_directories(coffeecnc_linuxcnc PUBLIC include)
 target_include_directories(coffeecnc_linuxcnc SYSTEM PRIVATE ${COFFEECNC_LINUXCNC_INCLUDE_DIR}
   ${COFFEECNC_BOOST_INCLUDE_DIR})

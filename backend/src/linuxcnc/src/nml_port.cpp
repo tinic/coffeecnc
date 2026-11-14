@@ -3,6 +3,9 @@
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include "nml_gate.hpp"
+#include "nml_status.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -57,14 +60,6 @@ auto until(std::chrono::milliseconds timeout, Predicate done) -> bool {
   }
 }
 
-// Text of a fixed-size, NUL-terminated NML string field, without trailing white space.
-auto text_of(std::span<const char> field) -> std::string {
-  std::string text(field.begin(), std::ranges::find(field, '\0'));
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' '))
-    text.pop_back();
-  return text;
-}
-
 // False when the text does not fit the field with its terminator.
 auto put(std::span<char> field, std::string_view text) -> bool {
   if (text.size() >= field.size())
@@ -74,46 +69,28 @@ auto put(std::span<char> field, std::string_view text) -> bool {
   return true;
 }
 
-auto xyz(const EmcPose& pose) -> std::array<double, 3> {
-  return {pose.tran.x, pose.tran.y, pose.tran.z};
-}
-
 auto index_of(Axis axis) -> int { return static_cast<int>(axis_index(axis).value_or(0)); }
 
 } // namespace
 
 struct NmlPort::Impl {
   MachineConfig config;
-  HalComponent* hal{};
-  std::unique_ptr<RCS_CMD_CHANNEL> command;
-  std::unique_ptr<RCS_STAT_CHANNEL> status;
-  std::unique_ptr<NML> errors;
-  TaskHeartbeat heartbeat;
-  // From the status buffer's write counter, as of the last stat().
-  Link link{Link::down};
-  // The status channel's buffer holds a task status from an earlier peek.
-  bool have_status{};
+  HalShared* hal{};
+  Gated<RCS_CMD_CHANNEL> command;
+  StatusChannel status;
+  Gated<NML> errors;
   int serial{};
+  // A command has been written; `serial` is its number.
+  bool written{};
+  // The joint or axis of the jog stop that is the last command written, until task echoes it.
+  std::optional<int> unanswered_stop;
   std::vector<ControllerMessage> messages;
 
-  explicit Impl(MachineConfig machine) : config(std::move(machine)) {}
+  explicit Impl(MachineConfig machine)
+      : config(std::move(machine)), command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()),
+        status(config.nml_file), errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {}
 
-  // The latest status task wrote, or null before the first. peek() returns 0 when task wrote
-  // nothing since the last peek; the buffer then still holds the latest status. Whether task is
-  // alive is the heartbeat's question, not this one's.
-  [[nodiscard]] auto stat() -> const EMC_STAT* {
-    const NMLTYPE type = status->peek();
-    if (type == EMC_STAT_TYPE)
-      have_status = true;
-    else if (type != 0)
-      return nullptr; // a channel error
-    if (!have_status)
-      return nullptr;
-    // Every reading feeds the heartbeat, so the waits of an action keep it current.
-    link = heartbeat.observe(status->cms->header.write_id, Clock::now());
-    // NML hands out the base class; the buffer was seen to hold a task status.
-    return static_cast<const EMC_STAT*>(status->get_address());
-  }
+  [[nodiscard]] auto stat() -> const EMC_STAT* { return status.stat(); }
 
   void add(bool error, std::span<const char> field) {
     if (auto text = text_of(field); !text.empty())
@@ -122,9 +99,13 @@ struct NmlPort::Impl {
 
   // Moves everything on the error channel into `messages`. Reading consumes.
   void collect() {
-    for (NMLTYPE type = errors->read(); type > 0; type = errors->read()) {
-      // NML hands out the base class; each downcast follows the type tag just read.
-      NMLmsg* message = errors->get_address();
+    const auto read = [&]() -> NMLTYPE {
+      return errors.call([](NML& channel) -> NMLTYPE { return channel.read(); });
+    };
+    for (NMLTYPE type = read(); type > 0; type = read()) {
+      // NML hands out the base class; each downcast follows the type tag just read. The message
+      // is in this channel's own buffer until the next read.
+      NMLmsg* message = errors.call([](NML& channel) -> NMLmsg* { return channel.get_address(); });
       if (type == EMC_OPERATOR_ERROR_TYPE)
         add(true, static_cast<EMC_OPERATOR_ERROR*>(message)->error);
       else if (type == EMC_OPERATOR_TEXT_TYPE)
@@ -182,18 +163,34 @@ struct NmlPort::Impl {
     return failed(reason.empty() ? std::string(fallback) : std::move(reason));
   }
 
-  // Writes the message and waits until task has echoed its serial number.
-  [[nodiscard]] auto send(RCS_CMD_MSG& message) -> ActionResult {
-    if (command->write(&message) != 0)
+  [[nodiscard]] auto write(RCS_CMD_MSG& message) -> ActionResult {
+    if (command.call([&](RCS_CMD_CHANNEL& channel) -> int { return channel.write(&message); }) != 0)
       return failed("Cannot write to LinuxCNC's command channel.");
     serial = message.serial_number;
-    const bool echoed = until(echo_timeout, [&]() -> bool {
-      const EMC_STAT* s = stat();
-      return s != nullptr && s->echo_serial_number - serial >= 0;
-    });
-    if (!echoed)
-      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command."};
+    written = true;
+    unanswered_stop.reset();
     return {};
+  }
+
+  // Task has echoed the last command written, or none was.
+  [[nodiscard]] auto answered(const EMC_STAT* s) const -> bool {
+    return !written || (s != nullptr && s->echo_serial_number - serial >= 0);
+  }
+
+  // Waits until task has echoed the serial number of the command written last.
+  [[nodiscard]] auto echoed() -> ActionResult {
+    const bool echo = until(echo_timeout, [&]() -> bool { return answered(stat()); });
+    if (!echo)
+      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command."};
+    unanswered_stop.reset();
+    return {};
+  }
+
+  // Writes the message and waits until task has echoed its serial number.
+  [[nodiscard]] auto send(RCS_CMD_MSG& message) -> ActionResult {
+    if (auto wrote = write(message); !accepted(wrote))
+      return wrote;
+    return echoed();
   }
 
   // RCS status of the command sent last once it is no longer executing; RCS_EXEC after `timeout`.
@@ -210,16 +207,23 @@ struct NmlPort::Impl {
     return rcs;
   }
 
-  // Sends and waits until task has finished the command.
-  [[nodiscard]] auto run(RCS_CMD_MSG& message, std::size_t from) -> ActionResult {
-    if (auto sent = send(message); !accepted(sent))
-      return sent;
+  // Waits until task has echoed and finished the command written last.
+  [[nodiscard]] auto finished(std::size_t from) -> ActionResult {
+    if (auto echo = echoed(); !accepted(echo))
+      return echo;
     const int rcs = outcome(completion_timeout);
     if (rcs == RCS_EXEC)
       return {ActionStatus::timed_out, "LinuxCNC did not finish the command."};
     if (rcs == RCS_ERROR)
       return failure(from, "LinuxCNC reported an error.");
     return {};
+  }
+
+  // Sends and waits until task has finished the command.
+  [[nodiscard]] auto run(RCS_CMD_MSG& message, std::size_t from) -> ActionResult {
+    if (auto wrote = write(message); !accepted(wrote))
+      return wrote;
+    return finished(from);
   }
 
   // Sends a command task only passes on (jog, home, step): its refusal arrives as an operator
@@ -316,15 +320,13 @@ struct NmlPort::Impl {
   }
 };
 
-auto NmlPort::connect(const MachineConfig& config, HalComponent* hal)
+auto NmlPort::connect(const MachineConfig& config, HalShared* hal)
     -> std::expected<std::unique_ptr<NmlPort>, std::string> {
   auto impl = std::make_unique<Impl>(config);
   impl->hal = hal;
-  const char* file = impl->config.nml_file.c_str();
-  impl->command = std::make_unique<RCS_CMD_CHANNEL>(emcFormat, "emcCommand", "xemc", file);
-  impl->status = std::make_unique<RCS_STAT_CHANNEL>(emcFormat, "emcStatus", "xemc", file);
-  impl->errors = std::make_unique<NML>(emcFormat, "emcError", "xemc", file);
-  if (impl->command->valid() == 0 || impl->status->valid() == 0 || impl->errors->valid() == 0)
+  if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
+      !impl->status.valid() ||
+      impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
     return std::unexpected(
         std::format("Cannot open LinuxCNC's NML channels from {}.", impl->config.nml_file));
   // The first reading of the write counter: the next can tell whether task is running.
@@ -338,101 +340,10 @@ NmlPort::~NmlPort() = default;
 auto NmlPort::snapshot() -> ControllerState { return status().controller; }
 
 auto NmlPort::status() -> NmlStatus {
-  NmlStatus out;
   const EMC_STAT* s = impl_->stat();
   if (s == nullptr)
-    return out; // link down
-  const double mm = impl_->config.millimetres_per_unit;
-  const auto& task = s->task;
-  const auto& motion = s->motion;
-  auto& c = out.controller;
-  c.link = impl_->link;
-  c.machine = task.state == EMC_TASK_STATE_ON      ? MachineState::on
-              : task.state == EMC_TASK_STATE_ESTOP ? MachineState::estop
-                                                   : MachineState::off;
-  c.mode = task.mode == EMC_TASK_MODE_AUTO  ? TaskMode::automatic
-           : task.mode == EMC_TASK_MODE_MDI ? TaskMode::mdi
-                                            : TaskMode::manual;
-  // Paused is whatever waits for resume or step. After the first step from an M0/M1 stop task
-  // holds the next block with task_paused set while its interpreter state says reading or
-  // waiting; that is still paused for every decision made on this state.
-  c.interp = task.interpState == EMC_TASK_INTERP_IDLE      ? InterpState::idle
-             : task.task_paused != 0                       ? InterpState::paused
-             : task.interpState == EMC_TASK_INTERP_READING ? InterpState::reading
-             : task.interpState == EMC_TASK_INTERP_PAUSED  ? InterpState::paused
-                                                           : InterpState::waiting;
-  const auto machine = xyz(motion.traj.actualPosition);
-  const auto g5x = xyz(task.g5x_offset);
-  const auto g92 = xyz(task.g92_offset);
-  const auto tool = xyz(task.toolOffset);
-  const auto dtg = xyz(motion.traj.dtg);
-  // A teleop jog leaves traj.inpos set; its velocity shows.
-  bool moving = !motion.traj.inpos || motion.traj.current_vel != 0;
-  // As AXIS computes it: less tool offset and G5x, rotated back, less G92.
-  std::array<double, 3> work{};
-  for (std::size_t i = 0; i < work.size(); ++i)
-    work[i] = machine[i] - tool[i] - g5x[i];
-  if (task.rotation_xy != 0) {
-    const double angle = -task.rotation_xy * std::numbers::pi / 180;
-    const double x = work[0] * std::cos(angle) - work[1] * std::sin(angle);
-    const double y = work[0] * std::sin(angle) + work[1] * std::cos(angle);
-    work[0] = x;
-    work[1] = y;
-  }
-  for (std::size_t i = 0; i < c.axes.size(); ++i) {
-    // Trivial kinematics, checked when the configuration was loaded: joint i is axis i.
-    const auto& joint = motion.joint[i];
-    auto& axis = c.axes[i];
-    axis.enabled = true;
-    axis.homed = joint.homed != 0;
-    axis.homing = joint.homing != 0;
-    axis.on_hard_limit = joint.minHardLimit != 0 || joint.maxHardLimit != 0;
-    axis.machine = machine[i] * mm;
-    axis.min_limit = motion.axis[i].minPositionLimit * mm;
-    axis.max_limit = motion.axis[i].maxPositionLimit * mm;
-    moving = moving || motion.axis[i].velocity != 0 || joint.velocity != 0;
-    out.work[i] = (work[i] - g92[i]) * mm;
-    out.dtg[i] = dtg[i] * mm;
-    out.g5x[i] = g5x[i] * mm;
-    out.g92[i] = g92[i] * mm;
-    out.tool_offset[i] = tool[i] * mm;
-  }
-  c.in_position = !moving;
-  c.program_loaded = task.file[0] != '\0';
-  c.tool_in_spindle = s->io.tool.toolInSpindle;
-  if (impl_->hal != nullptr) {
-    c.requested_tool = impl_->hal->tool_change_request();
-    out.spindle_actual_rpm = impl_->hal->spindle_rpm();
-    out.spindle_at_speed = impl_->hal->spindle_at_speed();
-    out.probe_input = impl_->hal->probe_input();
-  }
-  c.program_units = task.programUnits == CANON_UNITS_INCHES ? LengthUnit::inch : LengthUnit::mm;
-
-  out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
-  out.wcs = task.g5x_index;
-  out.rotation_xy = task.rotation_xy;
-  out.velocity = motion.traj.current_vel * mm * seconds_per_minute;
-  out.feed_override = motion.traj.scale;
-  out.rapid_override = motion.traj.rapid_scale;
-  const auto& spindle = motion.spindle[0];
-  out.spindle_direction = spindle.direction > 0   ? SpindleDirection::forward
-                          : spindle.direction < 0 ? SpindleDirection::reverse
-                                                  : SpindleDirection::stopped;
-  out.spindle_rpm = std::fabs(spindle.speed);
-  out.spindle_override = spindle.spindle_scale;
-  out.flood = s->io.coolant.flood != 0;
-  out.mist = s->io.coolant.mist != 0;
-  if (s->io.tool.pocketPrepped >= 0)
-    out.prepared_pocket = s->io.tool.pocketPrepped;
-  out.program_file = text_of(task.file);
-  out.current_line = task.currentLine;
-  out.motion_line = task.motionLine;
-  out.optional_stop = task.optional_stop_state;
-  out.block_delete = task.block_delete_state;
-  out.paused = task.task_paused != 0;
-  out.dwell_seconds_left = task.delayLeft;
-  out.queued_mdi = task.queuedMDIcommands;
-  return out;
+    return {}; // link down
+  return to_status(*s, impl_->config, impl_->hal, impl_->status.link());
 }
 
 auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
@@ -523,15 +434,25 @@ auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace spac
 auto NmlPort::stop_jog(Axis axis) -> ActionResult {
   const auto from = impl_->mark();
   const EMC_STAT* s = impl_->stat();
+  const bool answered = impl_->answered(s);
   // Task answers a jog stop with an error unless the machine is on, and nothing jogs outside
-  // manual mode. Without any status the stop is sent and its real outcome reported.
-  if (s != nullptr && (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
+  // manual mode. That holds for what task has taken up: with a command of this port still
+  // unanswered, or without any status, the stop is sent and its real outcome reported.
+  if (s != nullptr && answered &&
+      (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
     return {};
+  // The stop for this axis is in the command queue already: task will execute it after
+  // everything written before it. Writing it again would only fill the queue.
+  if (!answered && impl_->unanswered_stop == index_of(axis))
+    return impl_->finished(from);
   EMC_JOG_STOP message;
   message.joint_or_axis = index_of(axis);
   // A jog runs in the space motion is in: axis jogs need world mode, joint jogs joint mode.
   message.jjogmode = s != nullptr && s->motion.traj.mode == EMC_TRAJ_MODE_TELEOP ? 0 : 1;
-  return impl_->run(message, from);
+  if (auto wrote = impl_->write(message); !accepted(wrote))
+    return wrote;
+  impl_->unanswered_stop = message.joint_or_axis;
+  return impl_->finished(from);
 }
 
 auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space)
@@ -677,12 +598,18 @@ auto NmlPort::set_program_option(ProgramOption option, bool on) -> ActionResult 
   return impl_->run(message, from);
 }
 
-auto NmlPort::tool_changed() -> ActionResult {
+auto NmlPort::tool_changed(int tool) -> ActionResult {
   if (impl_->hal == nullptr)
     return failed("The CoffeeCNC HAL component is not available.");
-  if (!impl_->hal->tool_change_request())
+  const auto view = impl_->hal->view(HalShared::Clock::now());
+  if (!view)
+    return failed("The CoffeeCNC HAL component is not being serviced.");
+  if (!view->tool_change_request)
     return failed("LinuxCNC is not waiting for a tool change.");
-  impl_->hal->confirm_tool_changed();
+  if (view->tool_change_request->tool != tool)
+    return failed(std::format("LinuxCNC is now waiting for tool {}.", view->tool_change_request->tool));
+  if (!impl_->hal->confirm_tool_changed(*view->tool_change_request))
+    return failed("LinuxCNC is not waiting for that tool change any more.");
   return {};
 }
 

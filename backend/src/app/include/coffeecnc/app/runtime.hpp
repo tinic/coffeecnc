@@ -83,6 +83,7 @@ private:
   SafetyOutputs& outputs_;
   Sink sink_;
   Session session_;
+  std::atomic<bool> closing_{};
   std::atomic<bool> stop_control_{};
   std::atomic<bool> stop_status_{};
   std::atomic<std::uint64_t> control_periods_{};

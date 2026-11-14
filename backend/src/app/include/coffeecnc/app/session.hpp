@@ -203,15 +203,15 @@ private:
     // Something was sent to the controller for it already: a refusal is `failed`, not `rejected`.
     bool sent{};
   };
-  enum class StepKind : std::uint8_t { reply, cancelled, blocked };
-  struct Step {
-    StepKind kind{StepKind::reply};
+  enum class StageKind : std::uint8_t { reply, cancelled, blocked };
+  struct Stage {
+    StageKind kind{StageKind::reply};
     Reply reply;
     std::vector<std::string> produced; // messages sent before the result
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
-  [[nodiscard]] static auto answer(Reply reply) -> Step;
+  [[nodiscard]] static auto answer(Reply reply) -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;
   [[nodiscard]] auto refreshes(const Jog& jog, std::size_t index, JogLease::Time now) const
@@ -226,16 +226,16 @@ private:
 
   // Worker only.
   [[nodiscard]] auto run(Queued request, bool stop_request, const Clock& clock) -> Work;
-  [[nodiscard]] auto execute(Queued& request) -> Step;
+  [[nodiscard]] auto execute(Queued& request) -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
-                             const ControllerState& state) -> Step;
-  [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision) -> Step;
+                             const ControllerState& state) -> Stage;
+  [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision) -> Stage;
   [[nodiscard]] auto start_gate(Queued& request, std::size_t index, bool held)
-      -> std::optional<Step>;
+      -> std::optional<Stage>;
   [[nodiscard]] auto stop_all() -> ActionResult;
   [[nodiscard]] auto tracked_stop(std::size_t index) -> ActionResult;
   [[nodiscard]] auto mdi(const std::string& text) -> Reply;
-  [[nodiscard]] auto list_directory(const ListDirectory& request, Step& step) -> Reply;
+  [[nodiscard]] auto list_directory(const ListDirectory& request, Stage& step) -> Reply;
   void flush_stops();
   void cancel_jogs(Queued* keep_press);
   void forget_press(const Queued& request);

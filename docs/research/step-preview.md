@@ -41,7 +41,9 @@ The check executes the real pinned WASM module in Node. It requests millimeter o
 | Trebuchet left | 17 | 12,700 | 13,076 |
 | Trebuchet right | 9 | 2,330 | 2,208 |
 
-All three imports passed. The script checks finite coordinates/normals, triangle indices and hierarchy references. It repeats SM-101 in inches and compares converted bounds against millimeter output within 0.001 mm, and verifies that invalid input is rejected. SM-101 bounds were `[-60, -40, -20]` to `[60, 40, 0]` mm.
+All three initial imports passed. The script checks finite coordinates/normals, triangle indices and hierarchy references, repeats the first fixture in inches and compares converted bounds against millimeter output within 0.001 mm, and verifies that invalid input is rejected. SM-101 bounds were `[-60, -40, -20]` to `[60, 40, 0]` mm.
+
+The expanded corpus check now discovers every STEP file in `samples/manifest.json`: **all 29 models passed** on 2026-11-14. It additionally compares three Camcraft models against the physical dimensions documented in the upstream fixture README. The centimetre-authored `ops_block.step` and `ops_2d.step` import at 100 × 70 × 20 mm and 140 × 100 × 20 mm; the inch-authored `lego_4x2_01.step` imports at 100.584 × 49.784 × 38.1 mm. This checks source-unit conversion independently of the output-unit round trip. Passing mesh integrity and size checks does not establish STEP/NC registration or complete B-rep face coverage.
 
 These results establish useful display output for these files, not complete BREP fidelity or agreement with the paired NC programs. Browser-worker loading and Vite asset bundling are exercised separately in the operator panel. The actual WebKitGTK runtime still needs qualification.
 

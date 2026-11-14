@@ -10,11 +10,15 @@ import createOcct from 'occt-import-js'
 const require = createRequire(import.meta.url)
 const wasmBinary = await readFile(require.resolve('occt-import-js/dist/occt-import-js.wasm'))
 const occt = await createOcct({ wasmBinary })
-const samples = [
-  'instant-machinist/instant-machinist/parts/sm-101/part.step',
-  'trebuchet/CAM/CAM-job-1-left-cut.step',
-  'trebuchet/CAM/CAM-job-2-right-Cut.step',
-]
+const manifest = JSON.parse(await readFile(new URL('../../samples/manifest.json', import.meta.url), 'utf8'))
+const samples = manifest.datasets.flatMap((dataset) => dataset.files.map((file) => file.local_path))
+  .filter((path) => /\.(step|stp)$/i.test(path))
+// Independently documented physical extents catch input-unit mistakes, not just output scaling.
+const expectedSizes = {
+  'ops_block.step': [100, 70, 20],
+  'ops_2d.step': [140, 100, 20],
+  'lego_4x2_01.step': [100.6, 49.8, 38.1],
+}
 const params = {
   linearUnit: 'millimeter',
   linearDeflectionType: 'absolute_value',
@@ -66,10 +70,17 @@ function inspect(result) {
 }
 
 for (const [index, file] of samples.entries()) {
-  const bytes = await readFile(new URL(`../../samples/upstream/${file}`, import.meta.url))
+  const bytes = await readFile(new URL(`../../${file}`, import.meta.url))
   const started = performance.now()
   const result = inspect(occt.ReadStepFile(bytes, params))
   console.log(JSON.stringify({ file, ...result, milliseconds: Math.round(performance.now() - started) }))
+  const expected = expectedSizes[file.split('/').at(-1)]
+  if (expected !== undefined) {
+    for (let axis = 0; axis < 3; axis++) {
+      assert.ok(Math.abs(result.bounds.max[axis] - result.bounds.min[axis] - expected[axis]) < 0.15,
+        `Wrong physical size for ${file} axis ${axis}; check STEP input units`)
+    }
+  }
 
   // Exercise the importer's unit parameter with the same geometry. Scale the
   // tessellation tolerance too, so it describes the same physical distance.
@@ -87,4 +98,4 @@ for (const [index, file] of samples.entries()) {
 }
 
 assert.equal(occt.ReadStepFile(new TextEncoder().encode('not a STEP file'), params).success, false)
-console.log('STEP corpus import, mesh integrity, output units and invalid-input checks passed.')
+console.log(`${samples.length} STEP models: mesh integrity, cm/inch input units, output units and invalid-input checks passed.`)

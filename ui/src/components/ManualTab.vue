@@ -9,7 +9,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, wat
 import { openDialogs } from '../dialogs'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity } from '../machine-capabilities'
-import { axes, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
+import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
 import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
 import AppIcon from './AppIcon.vue'
@@ -38,6 +38,7 @@ const keyboard: Readonly<Record<string, JogKey>> = {
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
 const held = reactive(new Set<JogKey>())
+const jogUnavailable = computed(() => manualBlock.value ?? (homingActive.value ? 'Homing is in progress' : null))
 
 const jogHold = new JogHold<JogKey>(
   {
@@ -62,12 +63,12 @@ const keys = new Keys()
 
 /** A press on a jog control: a held jog, or one step when an increment is selected. */
 function begin(key: JogKey, stillHeld: () => boolean): void {
-  if (manualBlock.value !== null || axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) === 0) {
+  if (jogUnavailable.value !== null || axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) === 0) {
     return
   }
   const increment = panel.jogIncrement
   if (increment === null) {
-    jogHold.press(key, stillHeld)
+    jogHold.press(key, () => jogUnavailable.value === null && stillHeld())
   } else {
     const jog = jogs[key]
     send({ type: 'jog_step', axis: jog.axis, distance: jog.direction * increment, velocity: axisJogVelocity(panel.hello, jog.axis, panel.jogVelocity) })
@@ -196,6 +197,12 @@ watch(openDialogs, () => {
   lostAttention()
 })
 watch(() => panel.hello, lostAttention)
+// Interrupt the physical gesture, not just the next request. Recovery requires a new press;
+// an old held key or pointer must not restart after stale status, power loss or homing.
+watch(jogUnavailable, (reason) => {
+  if (reason !== null) lostAttention()
+}, { flush: 'sync' })
+watch(allHomed, lostAttention, { flush: 'sync' })
 
 onBeforeUnmount(() => {
   window.removeEventListener('touchend', touchesEnded, true)
@@ -228,7 +235,7 @@ const pad: readonly (readonly [JogKey, string, 'up' | 'down' | 'left' | 'right']
 ]
 
 function jogBlock(key: JogKey): string | null {
-  if (manualBlock.value !== null) return manualBlock.value
+  if (jogUnavailable.value !== null) return jogUnavailable.value
   return axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) > 0 ? null : 'Configured jog speed is unavailable'
 }
 const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])

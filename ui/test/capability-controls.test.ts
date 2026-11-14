@@ -12,7 +12,10 @@ vi.mock('../src/machine', async () => {
   const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1 }) as unknown as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
-    live: computed(() => true), manualBlock: computed(() => null), mdiBlock: computed(() => null), linkBlock: computed(() => null),
+    live: computed(() => panel.link === 'live'),
+    manualBlock: computed(() => panel.link !== 'live' ? 'Link unavailable' :
+      panel.status?.machine !== 'on' ? 'Machine unavailable' : panel.status.interp !== 'idle' ? 'Machine busy' : null),
+    mdiBlock: computed(() => null), linkBlock: computed(() => null),
     allHomed: computed(() => panel.status?.axes.every((axis) => axis.homed) ?? false),
     homingActive: computed(() => panel.status?.axes.some((axis) => axis.homing) ?? false),
     homingRequired: computed(() => requiresHoming(panel.hello)),
@@ -28,6 +31,7 @@ beforeEach(() => {
   panel.hello = { ...hello, max_jog_velocity: 1500, axis_max_jog_velocity: { x: 1500, y: 1500, z: 750 } }
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
+  panel.link = 'live'
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {
@@ -37,6 +41,37 @@ afterEach(() => {
 })
 
 describe('capability-aware controls', () => {
+  it.each(['stale', 'silent', 'off', 'estop', 'busy', 'homing', 'homed'] as const)(
+    'ends a held jog on %s and requires a new physical press after recovery', async (interruption) => {
+      panel.jogIncrement = null
+      wrapper = mount(ManualTab)
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'PageUp' }))
+      vi.advanceTimersByTime(100)
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'jog', held: true }))
+      vi.mocked(send).mockClear()
+      const status = panel.status
+      if (status === null) throw new Error('Missing status')
+      if (interruption === 'stale' || interruption === 'silent') panel.link = interruption
+      else if (interruption === 'off' || interruption === 'estop') status.machine = interruption
+      else if (interruption === 'busy') status.interp = 'reading'
+      else if (interruption === 'homing') status.axes.forEach((axis) => { axis.homing = true })
+      else status.axes.forEach((axis) => { axis.homed = true })
+      // The stop happens immediately, even if a live snapshot follows in the same event turn.
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'jog', held: false }))
+      expect(send).toHaveBeenCalledWith({ type: 'jog_stop_all' })
+      panel.link = 'live'; status.machine = 'on'; status.interp = 'idle'
+      status.axes.forEach((axis) => { axis.homing = false })
+      await nextTick()
+      vi.mocked(send).mockClear()
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'PageUp', repeat: true }))
+      vi.advanceTimersByTime(500)
+      expect(send).not.toHaveBeenCalled()
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'PageUp' }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'PageUp' }))
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'jog', held: true }))
+    },
+  )
+
   it('sends clamped keyboard step/hold requests and releases a hold on a new hello', async () => {
     wrapper = mount(ManualTab)
     expect(wrapper.text()).toContain('Axis limits: Z 750 mm/min')

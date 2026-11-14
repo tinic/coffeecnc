@@ -196,6 +196,24 @@ describe('commands', () => {
     ])
   })
 
+  it('notifies a held control of a local timeout so it can release, and ignores a late answer', () => {
+    const { panel, sent, receive, pass } = rig()
+    const outcomes: string[] = []
+    panel.onResult((command, result) => {
+      outcomes.push(result.outcome)
+      if (command.type === 'jog' && command.held && result.outcome !== 'accepted') {
+        panel.send({ ...command, held: false })
+      }
+    })
+    const id = panel.send({ type: 'jog', axis: 'x', direction: 1, velocity: 100, held: true })
+    pass(answerTimeoutMs + 1)
+    expect(outcomes).toEqual(['timed_out'])
+    expect(sent.at(-1)).toMatchObject({ type: 'jog', held: false })
+    receive({ type: 'result', id, outcome: 'accepted', reason: '' })
+    expect(outcomes).toEqual(['timed_out'])
+    expect(sent).toHaveLength(2)
+  })
+
   it('names every command for the log', () => {
     expect(describeCommand({ type: 'set_machine', state: 'estop' })).toBe('E-stop')
     expect(describeCommand({ type: 'select_wcs', wcs: 7 })).toBe('Select G59.1')

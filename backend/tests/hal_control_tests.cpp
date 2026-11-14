@@ -34,45 +34,58 @@ auto asking(std::optional<int> tool) -> HalInputs {
   return inputs;
 }
 
+// What the other threads are shown; the test fails where they would be shown nothing.
+auto view(const HalShared& shared, std::chrono::milliseconds elapsed) -> HalView {
+  const auto shown = shared.view(at(elapsed));
+  if (!shown)
+    throw std::runtime_error("No current copy of the pins");
+  return *shown;
+}
+auto request(const HalShared& shared, std::chrono::milliseconds elapsed) -> ToolChangeRequest {
+  const auto asked = view(shared, elapsed).tool_change_request;
+  if (!asked)
+    throw std::runtime_error("No tool change request is shown");
+  return *asked;
+}
+auto asked(const HalShared& shared, std::chrono::milliseconds elapsed) -> bool {
+  return view(shared, elapsed).tool_change_request.has_value();
+}
+
 void handshake_completes() {
   HalShared shared;
   require(!shared.view(at(0ms)), "Nothing is known before the control thread has read the pins");
   require(!shared.exchange(asking({}), at(0ms)), "Nothing to raise without a request");
-  require(shared.view(at(0ms)).has_value() && !shared.view(at(0ms))->tool_change_request,
-          "No request is shown");
+  require(!asked(shared, 0ms), "No request is shown");
   require(!shared.exchange(asking(2), at(10ms)), "A request alone raises nothing");
-  const auto request = shared.view(at(10ms))->tool_change_request;
-  require(request.has_value() && request->tool == 2, "The request is shown with its tool");
-  require(shared.confirm_tool_changed(*request), "The operator confirms it");
-  require(!shared.view(at(10ms))->tool_change_request, "It is answered: not shown any more");
-  require(!shared.confirm_tool_changed(*request), "It cannot be confirmed twice");
+  const auto first = request(shared, 10ms);
+  require(first.tool == 2, "The request is shown with its tool");
+  require(shared.confirm_tool_changed(first), "The operator confirms it");
+  require(!asked(shared, 10ms), "It is answered: not shown any more");
+  require(!shared.confirm_tool_changed(first), "It cannot be confirmed twice");
   require(shared.exchange(asking(2), at(20ms)),
           "The next period finds the request still on the pins: tool-changed is raised");
   require(!shared.exchange(asking(2), at(30ms)), "Once");
-  require(!shared.view(at(30ms))->tool_change_request, "It stays answered while LinuxCNC reacts");
+  require(!asked(shared, 30ms), "It stays answered while LinuxCNC reacts");
   require(!shared.exchange(asking({}), at(40ms)), "LinuxCNC drops its request");
   require(!shared.exchange(asking(2), at(50ms)), "It asks for the same tool again later");
-  const auto again = shared.view(at(50ms))->tool_change_request;
-  require(again.has_value() && again->tool == 2 && again->generation != request->generation,
-          "That is another request");
+  const auto again = request(shared, 50ms);
+  require(again.tool == 2 && again.generation != first.generation, "That is another request");
 }
 
 void withdrawn_request_is_not_confirmed() {
   HalShared shared;
   static_cast<void>(shared.exchange(asking(2), at(0ms)));
-  const auto request = *shared.view(at(0ms))->tool_change_request;
-  require(shared.confirm_tool_changed(request), "Confirmed");
+  require(shared.confirm_tool_changed(request(shared, 0ms)), "Confirmed");
   // Abort or E-stop: the request is gone before the control thread comes to the confirmation.
   require(!shared.exchange(asking({}), at(10ms)), "Withdrawn: tool-changed is not raised");
   require(!shared.exchange(asking(2), at(20ms)),
           "Nor for the request that follows, although it asks for the same tool");
-  require(shared.view(at(20ms))->tool_change_request.has_value(),
-          "The new request waits for its own confirmation");
+  require(asked(shared, 20ms), "The new request waits for its own confirmation");
 
   // The other order: withdrawn before the operator's confirmation arrives.
   HalShared late;
   static_cast<void>(late.exchange(asking(2), at(0ms)));
-  const auto decided_on = *late.view(at(0ms))->tool_change_request;
+  const auto decided_on = request(late, 0ms);
   static_cast<void>(late.exchange(asking({}), at(10ms)));
   require(!late.confirm_tool_changed(decided_on), "Nothing is asked: the confirmation is refused");
   static_cast<void>(late.exchange(asking(2), at(20ms)));
@@ -84,18 +97,18 @@ void withdrawn_request_is_not_confirmed() {
 void replaced_request_is_not_confirmed() {
   HalShared shared;
   static_cast<void>(shared.exchange(asking(2), at(0ms)));
-  const auto first = *shared.view(at(0ms))->tool_change_request;
+  const auto first = request(shared, 0ms);
   require(shared.confirm_tool_changed(first), "Confirmed for tool 2");
   require(!shared.exchange(asking(3), at(10ms)),
           "LinuxCNC asks for tool 3 instead: the confirmation of tool 2 is not applied");
-  const auto second = shared.view(at(10ms))->tool_change_request;
-  require(second.has_value() && second->tool == 3 && second->generation != first.generation,
+  const auto second = request(shared, 10ms);
+  require(second.tool == 3 && second.generation != first.generation,
           "Request N + 1 is shown, unanswered");
   require(!shared.confirm_tool_changed(first), "The old request cannot be confirmed any more");
-  require(!shared.confirm_tool_changed({second->generation, 2}) &&
+  require(!shared.confirm_tool_changed({second.generation, 2}) &&
               !shared.confirm_tool_changed({first.generation, 3}),
           "Generation and tool must both be those of the request");
-  require(shared.confirm_tool_changed(*second) && shared.exchange(asking(3), at(20ms)),
+  require(shared.confirm_tool_changed(second) && shared.exchange(asking(3), at(20ms)),
           "Its own confirmation is applied");
 }
 
@@ -104,8 +117,7 @@ void old_copy_is_not_handed_out() {
   auto inputs = asking(4);
   inputs.spindle_rpm = 1200.0;
   static_cast<void>(shared.exchange(inputs, at(0ms)));
-  require(shared.view(at(100ms)).has_value() && shared.view(at(100ms))->spindle_rpm == 1200.0,
-          "A copy of max_age is still current");
+  require(view(shared, 100ms).spindle_rpm == 1200.0, "A copy of max_age is still current");
   require(!shared.view(at(101ms)),
           "An older one is not handed out: the control thread has stalled");
   static_cast<void>(shared.exchange(inputs, at(500ms)));
@@ -123,9 +135,9 @@ void threads_share_it() {
   }};
   std::thread confirmer{[&]() -> void {
     while (!stop)
-      if (const auto view = shared.view(HalShared::Clock::now());
-          view && view->tool_change_request)
-        static_cast<void>(shared.confirm_tool_changed(*view->tool_change_request));
+      if (const auto shown = shared.view(HalShared::Clock::now()))
+        if (const auto wanted = shown->tool_change_request)
+          static_cast<void>(shared.confirm_tool_changed(*wanted));
   }};
   for (int period = 0; period < 20000; ++period) {
     // A request every other eight periods, each for another tool.

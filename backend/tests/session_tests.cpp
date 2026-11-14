@@ -13,6 +13,7 @@
 #include <format>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <random>
@@ -237,8 +238,7 @@ struct Driver {
   void later() {
     Outcome outcome;
     drain(outcome);
-    for (auto& message : outcome.messages)
-      backlog.push_back(std::move(message));
+    std::ranges::move(outcome.messages, std::back_inserter(backlog));
   }
 
   auto begin_page() -> PageToken {
@@ -1320,35 +1320,46 @@ void increments_are_tracked() {
             "Accepted: the level is released after " + row.name);
   }
 
-  // Seen moving and at rest again: the increment is over and stops nothing.
-  {
+  // Nothing but an accepted jog stop ends the tracking: not a long time at rest, with the
+  // increment never seen moving, and not the controller having moved and come to rest. The
+  // status cannot tell a finished increment from one the controller has yet to take up.
+  for (const bool moved : {false, true}) {
     Rig rig;
     rig.accepted(long_step);
-    rig.port.state.in_position = false;
-    static_cast<void>(rig.tick(at(10ms)));
-    rig.port.state.in_position = true;
-    static_cast<void>(rig.tick(at(20ms)));
     rig.port.calls.clear();
-    rig.end_page(rig.page);
-    require(!rig.session.control(at(20ms), {false, true}), "A finished increment needs no level");
-    rig.acted({}, "And no stop");
-  }
-  // Never seen moving: over after step_settle_periods at rest, not before.
-  {
-    Rig rig;
-    rig.accepted(long_step);
-    for (int period = 1; period < Session::step_settle_periods; ++period)
+    if (moved) {
+      rig.port.state.in_position = false;
+      static_cast<void>(rig.tick(at(10ms)));
+      rig.port.state.in_position = true;
+      rig.port.state.axes[0].machine = 100;
+    }
+    for (int period = 2; period <= 500; ++period)
       static_cast<void>(rig.tick(at(period * 10ms)));
-    Rig waited;
-    waited.accepted(long_step);
-    for (int period = 1; period <= Session::step_settle_periods; ++period)
-      static_cast<void>(waited.tick(at(period * 10ms)));
+    rig.acted({}, "A tracked increment by itself asks for nothing");
+    rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}};
+    rig.session.end_page(rig.page);
+    require(rig.session.control(at(5s), {false, true}),
+            "Five seconds later the increment is still tracked: the page end raises the level");
+    Outcome outcome;
+    rig.driver.level = true;
+    rig.driver.drain(outcome);
+    rig.acted({"stop_jog x"}, "And stops the axis over NML");
+    require(rig.session.control(at(5s), {true, true}), "The level is kept until that is accepted");
+    rig.driver.drain(outcome);
+    rig.acted({"stop_jog x"}, "The retry");
+    require(!rig.session.control(at(5s), {true, true}), "Accepted: released");
+    rig.page = rig.begin_page();
+    rig.acted({}, "The accepted stop ended the tracking: the next page change stops nothing");
+  }
+  // A new increment on the axis takes the place of the one before.
+  {
+    Rig rig;
+    rig.accepted(long_step);
+    rig.accepted(R"("type":"jog_step","axis":"x","distance":-1,"velocity":300)");
+    rig.accepted(R"("type":"jog_step","axis":"z","distance":1,"velocity":300)");
     rig.port.calls.clear();
-    waited.port.calls.clear();
     rig.end_page(rig.page);
-    waited.end_page(waited.page);
-    rig.acted({"stop_jog x"}, "An increment that may still begin to move is stopped");
-    waited.acted({}, "One that has been at rest long enough is over");
+    rig.acted({"stop_jog x", "stop_jog z"}, "One stop for each axis that was stepped");
   }
   // An increment that came back without being accepted may have been written all the same and
   // may be taken up later: fenced like a lost start, whatever the port said.

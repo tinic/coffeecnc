@@ -2,8 +2,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -203,8 +205,9 @@ auto encode_hello(const Hello& hello) -> Encoded {
     axis_velocity[std::string(name(axis))] = fields.real(*velocity, "axis_max_jog_velocity");
   }
   auto increments = Json::array();
-  for (const auto increment : hello.jog_increments)
-    increments.push_back(fields.real(increment, "jog_increments"));
+  std::ranges::transform(
+      hello.jog_increments, std::back_inserter(increments),
+      [&](double increment) -> Json { return fields.real(increment, "jog_increments"); });
   return fields.finish(
       {{"type", "hello"},
        {"protocol", protocol_version},
@@ -224,16 +227,17 @@ auto encode_hello(const Hello& hello) -> Encoded {
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
   Fields fields;
   auto axes = Json::array();
-  for (const auto& axis : status.axes)
-    axes.push_back({{"axis", name(axis.axis)},
-                    {"homed", axis.homed},
-                    {"homing", axis.homing},
-                    {"machine", fields.real(axis.machine, "axes.machine")},
-                    {"work", fields.real(axis.work, "axes.work")},
-                    {"dtg", fields.real(axis.dtg, "axes.dtg")},
-                    {"min_limit", fields.real(axis.min_limit, "axes.min_limit")},
-                    {"max_limit", fields.real(axis.max_limit, "axes.max_limit")},
-                    {"on_hard_limit", axis.on_hard_limit}});
+  std::ranges::transform(status.axes, std::back_inserter(axes), [&](const AxisStatus& axis) -> Json {
+    return {{"axis", name(axis.axis)},
+            {"homed", axis.homed},
+            {"homing", axis.homing},
+            {"machine", fields.real(axis.machine, "axes.machine")},
+            {"work", fields.real(axis.work, "axes.work")},
+            {"dtg", fields.real(axis.dtg, "axes.dtg")},
+            {"min_limit", fields.real(axis.min_limit, "axes.min_limit")},
+            {"max_limit", fields.real(axis.max_limit, "axes.max_limit")},
+            {"on_hard_limit", axis.on_hard_limit}};
+  });
   const auto& spindle = status.spindle;
   Json actual_rpm = nullptr;
   if (spindle.actual_rpm) {
@@ -290,8 +294,8 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
 auto encode_tool_table(const ToolTable& table) -> Encoded {
   Fields fields;
   auto tools = Json::array();
-  for (const auto& t : table.tools)
-    tools.push_back(tool(fields, t));
+  std::ranges::transform(table.tools, std::back_inserter(tools),
+                         [&](const Tool& t) -> Json { return tool(fields, t); });
   return fields.finish({{"type", "tool_table"},
                         {"revision", fields.count(table.revision, "revision")},
                         {"tools", std::move(tools)}});
@@ -325,8 +329,9 @@ auto encode_preview(const Preview& preview) -> Encoded {
   for (const auto& segment : preview.segments) {
     auto points = Json::array();
     for (const auto& point : segment.points)
-      for (const auto coordinate : point)
-        points.push_back(fields.real(coordinate, "segments.points"));
+      std::ranges::transform(
+          point, std::back_inserter(points),
+          [&](double coordinate) -> Json { return fields.real(coordinate, "segments.points"); });
     segments.push_back({{"line", segment.line},
                         {"kind", segment.kind == MoveKind::feed ? "feed" : "rapid"},
                         {"tool", segment.tool},

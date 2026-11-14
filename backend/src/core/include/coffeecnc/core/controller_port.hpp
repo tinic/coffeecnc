@@ -4,6 +4,7 @@
 #include <coffeecnc/core/command_policy.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@ enum class ActionStatus : std::uint8_t {
   accepted,  // the controller took the command; motion it starts is read from the snapshot
   failed,    // the controller reported an error
   timed_out, // the controller did not answer
+  cancelled, // the caller withdrew the action before its next command was written
 };
 
 struct ActionResult {
@@ -22,6 +24,12 @@ struct ActionResult {
   // In words for the operator. Empty when accepted.
   std::string reason;
 };
+
+// Asked by a port while it carries out an action: is the action still wanted? The session
+// answers for the request behind it: false once its page has ended or an abort, E-stop or power
+// off was asked for. Cheap, callable from the port's thread at any time, and it may be asked
+// while the port holds its own locks, so it must not call back into the port.
+using Wanted = std::function<bool()>;
 
 // An operator error or message the controller published.
 struct ControllerMessage {
@@ -36,6 +44,19 @@ struct ControllerMessage {
 // timeout has passed. Exactly one thread, the runtime's worker, calls every member: it is the
 // only writer of commands. Implementations need not be thread-safe.
 //
+// Cancellation. Every action that is not a stop takes a `Wanted`. An implementation asks it
+// after each step of its own that can block and, last, immediately before each command it
+// writes, in a way that no stop decision can fall between the answer and the write; an action
+// that writes several commands asks before each. Once the answer is no, nothing further is
+// written and the result is `cancelled`. The actions that only ever stop something take none
+// and cannot be withdrawn: stop_jog and abort; and the stopping values of the others are
+// carried out whatever the answer: E-stop and power off, spindle stop, both coolants off.
+//
+// What no check can undo: a command that is being written, or was written, when the stop is
+// decided. For a jog start or increment the session's jog-stop level covers that. For every
+// other command, the abort, E-stop or power off that the same decision queues is written
+// behind it, and the controller executes commands in order: that stop is what ends it.
+//
 // Lengths are millimetres, velocities mm/min, spindle speed rpm, overrides factors (1.0 is 100 %).
 class ControllerPort {
 public:
@@ -48,45 +69,47 @@ public:
   // of a failed action are not among them. Called whenever the worker has nothing else to do.
   [[nodiscard]] virtual auto take_messages() -> std::vector<ControllerMessage> = 0;
 
-  [[nodiscard]] virtual auto set_machine_state(MachineState state) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult = 0;
   // Accepted only once the controller reports the mode; the next snapshot shows it.
-  [[nodiscard]] virtual auto set_task_mode(TaskMode mode) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult = 0;
   // No axis homes all configured axes.
-  [[nodiscard]] virtual auto home(std::optional<Axis> axis) -> ActionResult = 0;
+  [[nodiscard]] virtual auto home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResult = 0;
 
   // Runs until stop_jog. Axis space needs teleop; the port enables it.
-  [[nodiscard]] virtual auto start_jog(Axis axis, int direction, double velocity, JogSpace space)
-      -> ActionResult = 0;
-  // Stops a jog in whichever space it was started. Valid with no jog running.
+  [[nodiscard]] virtual auto start_jog(Axis axis, int direction, double velocity, JogSpace space,
+                                       const Wanted& wanted) -> ActionResult = 0;
+  // Stops a jog in whichever space it was started. Valid with no jog running. Never withdrawn.
   [[nodiscard]] virtual auto stop_jog(Axis axis) -> ActionResult = 0;
   // Signed distance.
   [[nodiscard]] virtual auto jog_increment(Axis axis, double distance, double velocity,
-                                           JogSpace space) -> ActionResult = 0;
+                                           JogSpace space, const Wanted& wanted)
+      -> ActionResult = 0;
 
   // One block. Accepted once a following block may be submitted.
-  [[nodiscard]] virtual auto mdi(std::string_view text) -> ActionResult = 0;
-  [[nodiscard]] virtual auto open_program(std::string_view path) -> ActionResult = 0;
+  [[nodiscard]] virtual auto mdi(std::string_view text, const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto open_program(std::string_view path, const Wanted& wanted) -> ActionResult = 0;
   // From the first line of the loaded program.
-  [[nodiscard]] virtual auto run() -> ActionResult = 0;
-  [[nodiscard]] virtual auto pause() -> ActionResult = 0;
-  [[nodiscard]] virtual auto resume() -> ActionResult = 0;
-  [[nodiscard]] virtual auto step() -> ActionResult = 0;
+  [[nodiscard]] virtual auto run(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto pause(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto resume(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto step(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto abort() -> ActionResult = 0;
 
-  [[nodiscard]] virtual auto set_override(Override which, double value) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_override(Override which, double value, const Wanted& wanted) -> ActionResult = 0;
   // The speed is ignored for SpindleDirection::stopped.
-  [[nodiscard]] virtual auto set_spindle(SpindleDirection direction, double rpm)
-      -> ActionResult = 0;
-  [[nodiscard]] virtual auto set_coolant(bool flood, bool mist) -> ActionResult = 0;
-  [[nodiscard]] virtual auto set_program_option(ProgramOption option, bool on) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_spindle(SpindleDirection direction, double rpm,
+                                         const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_coolant(bool flood, bool mist, const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_program_option(ProgramOption option, bool on,
+                                                const Wanted& wanted) -> ActionResult = 0;
 
   // The operator has put this tool in the spindle, as the controller asked with the request
   // that a snapshot showed as ControllerState::tool_request. Fails when that request is gone or
   // was replaced, also by a new one for the same tool.
-  [[nodiscard]] virtual auto tool_changed(int tool, std::uint64_t request) -> ActionResult = 0;
+  [[nodiscard]] virtual auto tool_changed(int tool, std::uint64_t request, const Wanted& wanted) -> ActionResult = 0;
   // Replaces the row with this tool number, or adds it.
-  [[nodiscard]] virtual auto set_tool(const Tool& tool) -> ActionResult = 0;
-  [[nodiscard]] virtual auto remove_tool(int number) -> ActionResult = 0;
+  [[nodiscard]] virtual auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto remove_tool(int number, const Wanted& wanted) -> ActionResult = 0;
 
 protected:
   ControllerPort(const ControllerPort&) = default;

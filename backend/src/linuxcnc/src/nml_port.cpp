@@ -7,7 +7,9 @@
 #include "nml_status.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstddef>
 #include <filesystem>
 #include <format>
@@ -82,6 +84,8 @@ struct NmlPort::Impl {
   int serial{};
   // A command has been written; `serial` is its number.
   bool written{};
+  // The same for other threads; 0 before the first write.
+  std::atomic<std::uint64_t> last_written{};
   // The joint or axis of the jog stop that is the last command written, until task echoes it.
   std::optional<int> unanswered_stop;
   std::vector<ControllerMessage> messages;
@@ -169,6 +173,9 @@ struct NmlPort::Impl {
     serial = message.serial_number;
     written = true;
     unanswered_stop.reset();
+    // Type and serial in one word, so that another thread never reads half of a pair.
+    last_written = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(message.type)) << 32U) |
+                   static_cast<std::uint32_t>(message.serial_number);
     return {};
   }
 
@@ -338,6 +345,15 @@ NmlPort::NmlPort(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 NmlPort::~NmlPort() = default;
 
 auto NmlPort::snapshot() -> ControllerState { return status().controller; }
+
+auto NmlPort::last_written() const -> std::optional<Written> {
+  const std::uint64_t word = impl_->last_written;
+  if (word == 0)
+    return {};
+  return Written{static_cast<long>(word >> 32U), static_cast<int>(static_cast<std::uint32_t>(word))};
+}
+auto NmlPort::jog_start_type() -> long { return EMC_JOG_CONT_TYPE; }
+auto NmlPort::jog_stop_type() -> long { return EMC_JOG_STOP_TYPE; }
 
 auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();

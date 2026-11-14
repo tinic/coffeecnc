@@ -33,7 +33,7 @@ auto JogLease::active(Axis axis) const -> bool {
   const auto i = axis_index(axis);
   return i && refreshed_[*i].has_value();
 }
-auto JogLease::refreshed(Axis axis) const -> std::optional<Time> {
+auto JogLease::last_refresh(Axis axis) const -> std::optional<Time> {
   const auto i = axis_index(axis);
   return i ? refreshed_[*i] : std::nullopt;
 }

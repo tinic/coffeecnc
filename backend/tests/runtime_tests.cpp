@@ -76,7 +76,7 @@ auto homed_machine() -> ControllerState {
   return s;
 }
 
-auto text(const Calls& calls) -> std::string {
+auto listed(const Calls& calls) -> std::string {
   std::string all;
   for (const auto& call : calls)
     all += "[" + call + "]";
@@ -127,7 +127,7 @@ public:
   // The calls since the last look are exactly these.
   void expect(const Calls& expected, const std::string& message) {
     const auto got = take_calls();
-    require(got == expected, message + ": " + text(got));
+    require(got == expected, message + ": " + listed(got));
   }
   auto called(std::string_view action) -> bool {
     const std::scoped_lock lock{mutex_};
@@ -252,6 +252,12 @@ public:
   [[nodiscard]] auto watchdog_ok() const -> bool override { return watchdog_; }
 
   [[nodiscard]] auto beats() const -> std::uint64_t { return beats_; }
+  // Beats counted while waiting this long.
+  [[nodiscard]] auto beats_within(std::chrono::milliseconds time) const -> std::uint64_t {
+    const std::uint64_t before = beats_;
+    std::this_thread::sleep_for(time);
+    return beats_ - before;
+  }
   // How often the level fell.
   [[nodiscard]] auto lowered() const -> std::uint64_t { return lowered_; }
   [[nodiscard]] auto longest_gap() const -> std::chrono::nanoseconds {
@@ -302,9 +308,14 @@ public:
   }
   auto wait_result(PageToken page, RequestId id) -> Json {
     std::unique_lock lock{mutex_};
-    if (!changed_.wait_for(lock, 20s, [&]() -> bool { return find(page, id).has_value(); }))
+    std::optional<Json> found;
+    changed_.wait_for(lock, 20s, [&]() -> bool {
+      found = find(page, id);
+      return found.has_value();
+    });
+    if (!found)
       throw std::runtime_error(std::format("No result for request {}", id));
-    return *find(page, id);
+    return *found;
   }
   // Results with this ID, whatever page they went to.
   auto results(RequestId id) -> std::size_t {
@@ -728,6 +739,7 @@ void queues_are_bounded() {
   Bench bench;
   bench.jog_x();
   std::vector<RequestId> queued;
+  queued.reserve(Session::max_queued);
   for (std::size_t i = 0; i < Session::max_queued; ++i)
     queued.push_back(bench.send(R"("type":"set_override","which":"feed","value":0.5)"));
   for (const auto id : queued)
@@ -745,6 +757,7 @@ void queues_are_bounded() {
     require(bench.outcome(id) == "accepted:", "Refreshes need no queue");
   }
   std::vector<RequestId> stops;
+  stops.reserve(Session::max_queued_stops);
   for (std::size_t i = 0; i < Session::max_queued_stops; ++i)
     stops.push_back(bench.send(R"("type":"jog_stop_all")"));
   const auto late = bench.send(R"("type":"jog_stop_all")");
@@ -872,9 +885,7 @@ void shutdown_is_safe_and_bounded() {
   const auto calls = threads.port.take_calls();
   require(calls.back() == "stop_jog x" && !threads.port.called("mdi"),
           "The jog was stopped over NML; what waited was not sent");
-  const auto last = threads.outputs.beats();
-  std::this_thread::sleep_for(50ms);
-  require(threads.outputs.beats() == last && threads.outputs.jog_stop_high() &&
+  require(threads.outputs.beats_within(50ms) == 0 && threads.outputs.jog_stop_high() &&
               threads.outputs.lowered() == 0,
           "No thread is left, and the level is left high without ever having fallen");
   std::cout << std::format("measured shutdown_level_ms={:.1f} shutdown_join_ms={:.1f}\n", raised,
@@ -919,6 +930,7 @@ void threads_survive_a_flood() {
   const auto first = threads.send(slow);
   threads.port.wait_blocked();
   std::vector<RequestId> ids;
+  ids.reserve(5000);
   for (int i = 0; i < 5000; ++i)
     ids.push_back(threads.send(R"("type":"set_override","which":"feed","value":0.5)"));
   std::size_t rejected = 0;

@@ -155,7 +155,7 @@ public:
   void start() {
     {
       // A new runtime counts its pages from one again.
-      const std::scoped_lock lock{mutex_};
+      const std::lock_guard lock{mutex_};
       results_.clear();
     }
     runtime = std::make_unique<Runtime>(port, reader, control, config.limits, programs,
@@ -192,7 +192,7 @@ public:
       control.beat();
       auto published = port.take_messages();
       {
-        const std::scoped_lock lock{mutex_};
+        const std::lock_guard lock{mutex_};
         std::ranges::transform(published, std::back_inserter(messages_),
                                [](auto& message) -> std::string { return std::move(message.text); });
       }
@@ -212,7 +212,7 @@ public:
   }
   // The result of a request of the current page, if it has arrived.
   auto result(RequestId id) -> std::optional<Result> {
-    const std::scoped_lock lock{mutex_};
+    const std::lock_guard lock{mutex_};
     const auto found = results_.find({page.value, id});
     return found == results_.end() ? std::nullopt : std::optional<Result>{found->second};
   }
@@ -276,16 +276,16 @@ public:
   }
 
   auto has_message(std::string_view part) -> bool {
-    const std::scoped_lock lock{mutex_};
+    const std::lock_guard lock{mutex_};
     return std::ranges::any_of(
         messages_, [&](const auto& text) -> bool { return text.find(part) != std::string::npos; });
   }
   void clear_messages() {
-    const std::scoped_lock lock{mutex_};
+    const std::lock_guard lock{mutex_};
     messages_.clear();
   }
   auto all_messages() -> std::vector<std::string> {
-    const std::scoped_lock lock{mutex_};
+    const std::lock_guard lock{mutex_};
     return messages_;
   }
 
@@ -295,7 +295,7 @@ public:
 private:
   // Called by the worker thread (the sink) and by this one (what submit answers at once).
   void absorb(const Outcome& outcome) {
-    const std::scoped_lock lock{mutex_};
+    const std::lock_guard lock{mutex_};
     for (const auto& text : outcome.messages) {
       const auto message = Json::parse(text);
       if (message.at("type") == "result")
@@ -645,6 +645,9 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   RequestId press{};
   bool in_flight = false;
   bool high_while_frozen = true;
+  // The start as the port wrote it into LinuxCNC's command queue.
+  const auto written_before = rig.port.last_written();
+  NmlPort::Written start;
   Clock::time_point decided;
   Clock::time_point raised;
   Clock::time_point resumed;
@@ -652,9 +655,18 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
     const FrozenTask frozen{rig.config.ini_file};
     press = rig.post(hold_x);
     const auto pressed = Clock::now();
-    std::this_thread::sleep_for(60ms);
-    // Not answered: the worker is inside the port, waiting for task's echo of the start.
-    in_flight = !rig.result(press).has_value();
+    // Not "no answer yet", which a worker that waits before writing would also show: the write
+    // itself, a jog start with a new serial number, while task cannot take it up.
+    while (Clock::now() < pressed + 100ms) {
+      if (const auto written = rig.port.last_written();
+          written && written != written_before && written->type == NmlPort::jog_start_type()) {
+        start = *written;
+        break;
+      }
+      std::this_thread::sleep_for(200us);
+    }
+    in_flight = start.type == NmlPort::jog_start_type() && !rig.result(press).has_value() &&
+                rig.status().echo_serial - start.serial < 0;
     decided = Clock::now();
     if (reason == Reason::page_end)
       rig.runtime->end_page(rig.page);
@@ -672,12 +684,23 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
     }
     resumed = Clock::now();
   }
-  // Task runs: it takes the start up now. The level is watched until it falls.
+  // Task runs: it takes the written start up now, which its echo of the serial number shows.
+  // The level is watched until it falls.
   bool fell = false;
+  bool consumed = false;
+  bool high_when_consumed = false;
+  int echoed = 0;
   Clock::time_point released;
-  for (const auto end = resumed + 10s; Clock::now() < end && !fell;) {
-    fell = !rig.probe.jog_stop();
-    released = Clock::now();
+  for (const auto end = resumed + 10s; Clock::now() < end && !(fell && consumed);) {
+    if (!consumed) {
+      echoed = rig.status().echo_serial;
+      consumed = echoed - start.serial >= 0;
+      high_when_consumed = consumed && !fell && rig.probe.jog_stop();
+    }
+    if (!fell) {
+      fell = !rig.probe.jog_stop();
+      released = Clock::now();
+    }
     sample();
     std::this_thread::sleep_for(200us);
   }
@@ -690,11 +713,14 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   const double after_resume = milliseconds(released - resumed);
   const auto answer = reason == Reason::page_end ? std::optional<Result>{} : rig.result(press);
   check(std::format("delayed_start_{}", name),
-        in_flight && high_while_frozen && fell && after_resume > 0 && moved < 0.001 &&
-            to_level < 30,
-        std::format("in_flight={} level_after_decision_ms={:.1f} high_while_frozen={} "
-                    "hold_ms={:.1f} released_ms_after_resume={:.1f} moved_mm={:.5f} start_result={}",
-                    in_flight, to_level, high_while_frozen, held, after_resume, moved,
+        in_flight && high_while_frozen && consumed && high_when_consumed && fell &&
+            after_resume > 0 && moved < 0.001 && to_level < 30,
+        std::format("written_while_frozen={} written_type={} jog_start_type={} start_serial={} "
+                    "echoed_serial_after_resume={} level_high_when_consumed={} "
+                    "level_after_decision_ms={:.1f} high_while_frozen={} hold_ms={:.1f} "
+                    "released_ms_after_resume={:.1f} moved_mm={:.5f} start_result={}",
+                    in_flight, start.type, NmlPort::jog_start_type(), start.serial, echoed,
+                    high_when_consumed, to_level, high_while_frozen, held, after_resume, moved,
                     answer ? answer->text() : std::string("none")));
   if (reason == Reason::page_end) {
     check(std::format("delayed_start_{}_not_answered", name), !rig.result(press).has_value());

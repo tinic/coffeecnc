@@ -28,7 +28,7 @@ public:
   [[nodiscard]] auto cancel_all() -> Stops;
   [[nodiscard]] auto active(Axis) const -> bool;
   // When the lease was refreshed last; nothing without a lease.
-  [[nodiscard]] auto refreshed(Axis) const -> std::optional<Time>;
+  [[nodiscard]] auto last_refresh(Axis) const -> std::optional<Time>;
 
 private:
   std::array<std::optional<Time>, 3> refreshed_{};

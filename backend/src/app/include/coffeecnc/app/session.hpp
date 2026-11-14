@@ -105,12 +105,14 @@ struct Work {
 //   - every lease ends;
 //   - every axis that is jogging, has a start or increment in flight, or was sent an increment
 //     that is not known to have ended, needs a jog stop acknowledged by the controller; a
-//     released axis always does. An increment the controller acknowledged has ended when the
-//     controller was then seen moving and at rest again, or at rest for step_settle_periods;
-//     while it has not, everything that is a stop decision for a held jog but the lease is one
-//     for it. An increment that came back from the port in any other way than accepted may have
-//     been written and may still be taken up: it is a stop decision by itself, and only the
-//     accepted jog stop that follows it ends its tracking;
+//     released axis always does. An increment the controller acknowledged stays tracked until
+//     a jog stop is accepted after it, and by nothing else: neither time nor the status can
+//     tell a finished increment from one the controller has not taken up. So after a jog
+//     increment the next stop decision raises the level and stops that axis over NML, however
+//     long ago the increment ended; and while it is tracked, everything that is a stop decision
+//     for a held jog but the lease is one for it. An increment that came back from the port in
+//     any other way than accepted may have been written and may still be taken up: it is a
+//     stop decision by itself;
 //   - while any axis needs one, the jog-stop level is held (`control` returns true);
 //   - every axis that had a jog or a press, except the one the panel itself released, is
 //     latched: `held: true` for it is `rejected` until the panel has sent `held: false` for that
@@ -151,9 +153,6 @@ public:
   // Control periods the jog-stop level must have been found low before a jog is sent: the first
   // may be the one in which the pin fell.
   static constexpr int settled_periods = 2;
-  // Control periods at rest after which an increment that the controller acknowledged, and that
-  // was never seen moving, counts as finished.
-  static constexpr int step_settle_periods = 20;
 
   // The port and the store must outlive the session. Throws std::invalid_argument for invalid
   // limits.
@@ -218,11 +217,10 @@ private:
     bool stop_failed{};
     // A control period has passed since: the worker tries again.
     bool retry_due{};
-    // An increment was acknowledged by the controller and may still be moving the axis.
+    // An increment was acknowledged by the controller and no jog stop was accepted since: the
+    // axis may be moving, or may yet begin to. A later increment takes its place.
     bool stepping{};
     HeldJog step;
-    bool step_seen_moving{};
-    int step_periods{};
     // A jog or press on this axis was ended by something other than its release: a release
     // must come before the next start.
     bool latched{};
@@ -247,6 +245,7 @@ private:
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
   [[nodiscard]] static auto answer(Reply reply) -> Stage;
+  [[nodiscard]] static auto cancelled() -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;
   [[nodiscard]] auto current(const Queued& request) const -> bool;
@@ -280,37 +279,37 @@ private:
   void forget_press(const Queued& request);
   void reject_press(const Queued& request);
 
+  // Ordered by size: the analyzer counts padding.
   ControllerPort& port_;
   const ProgramStore& programs_;
-  const CommandPolicy policy_;
-
-  mutable std::mutex mutex_;
-  std::condition_variable work_ready_;
-  bool woken_{};
-  bool closing_{};
   std::uint64_t pages_{};
-  bool page_open_{};
-  std::optional<RequestId> last_id_;
-  bool ready_{};
-  // Failed stops that are not the result of a request; sent as operator messages.
-  std::vector<std::string> problems_;
-  ControllerState status_;
   JogLease::Time status_at_{};
-  bool have_status_{};
-  JogLease leases_;
-  std::array<AxisJog, 3> jog_{};
   // Goes up with every stop decision.
   std::uint64_t epoch_{};
   // Goes up with every abort, E-stop and power off.
   std::uint64_t cancels_{};
-  bool hold_{};
-  bool jog_stop_high_{};
-  // Consecutive control periods that found the level low, up to settled_periods.
-  int low_periods_{settled_periods};
-  // The last thing the worker did was retrying stops: a waiting request is served next.
-  bool retried_{};
+  std::optional<RequestId> last_id_;
+  // Failed stops that are not the result of a request; sent as operator messages.
+  std::vector<std::string> problems_;
+  mutable std::mutex mutex_;
+  std::condition_variable work_ready_;
+  JogLease leases_;
+  const CommandPolicy policy_;
   std::deque<Queued> stops_;
   std::deque<Queued> requests_;
+  ControllerState status_;
+  std::array<AxisJog, 3> jog_{};
+  // Consecutive control periods that found the level low, up to settled_periods.
+  int low_periods_{settled_periods};
+  bool woken_{};
+  bool closing_{};
+  bool page_open_{};
+  bool ready_{};
+  bool have_status_{};
+  bool hold_{};
+  bool jog_stop_high_{};
+  // The last thing the worker did was retrying stops: a waiting request is served next.
+  bool retried_{};
 };
 
 } // namespace coffeecnc

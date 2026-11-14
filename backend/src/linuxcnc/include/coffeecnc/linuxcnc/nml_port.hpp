@@ -91,7 +91,8 @@ public:
   [[nodiscard]] auto snapshot() -> ControllerState override;
   // The same reading with everything else the panel shows.
   [[nodiscard]] auto status() -> NmlStatus;
-  // Operator messages published since the last call, oldest first.
+  // Operator messages published since the last call, oldest first. Call it every control cycle:
+  // it is also the regular status reading that keeps `link` meaningful between actions.
   [[nodiscard]] auto take_messages() -> std::vector<ControllerMessage>;
 
   [[nodiscard]] auto set_machine_state(MachineState state) -> ActionResult override;

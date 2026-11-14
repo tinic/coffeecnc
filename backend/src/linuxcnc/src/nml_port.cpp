@@ -34,6 +34,7 @@ using Clock = std::chrono::steady_clock;
 constexpr auto poll_interval = std::chrono::milliseconds{1};
 // An operator error is published a few task cycles after the status that reports the failure.
 constexpr auto error_text_time = std::chrono::milliseconds{50};
+constexpr auto error_companion_time = std::chrono::milliseconds{20};
 constexpr double seconds_per_minute = 60;
 
 auto failed(std::string reason) -> ActionResult {
@@ -44,7 +45,8 @@ auto accepted(const ActionResult& result) -> bool {
 }
 
 // Polls until `done` holds. False when it did not within the timeout.
-template <typename Predicate> auto until(std::chrono::milliseconds timeout, Predicate done) -> bool {
+template <typename Predicate>
+auto until(std::chrono::milliseconds timeout, Predicate done) -> bool {
   const auto deadline = Clock::now() + timeout;
   for (;;) {
     if (done())
@@ -87,6 +89,8 @@ struct NmlPort::Impl {
   std::unique_ptr<RCS_STAT_CHANNEL> status;
   std::unique_ptr<NML> errors;
   TaskHeartbeat heartbeat;
+  // From the status buffer's write counter, as of the last stat().
+  Link link{Link::down};
   // The status channel's buffer holds a task status from an earlier peek.
   bool have_status{};
   int serial{};
@@ -105,6 +109,8 @@ struct NmlPort::Impl {
       return nullptr; // a channel error
     if (!have_status)
       return nullptr;
+    // Every reading feeds the heartbeat, so the waits of an action keep it current.
+    link = heartbeat.observe(status->cms->header.write_id, Clock::now());
     // NML hands out the base class; the buffer was seen to hold a task status.
     return static_cast<const EMC_STAT*>(status->get_address());
   }
@@ -166,6 +172,11 @@ struct NmlPort::Impl {
     static_cast<void>(until(error_text_time, [&]() -> bool {
       collect();
       return error_since(from);
+    }));
+    // One failure can publish several errors (the axis, the joint, the rejected command).
+    static_cast<void>(until(error_companion_time, [&]() -> bool {
+      collect();
+      return false;
     }));
     auto reason = take_errors(from);
     return failed(reason.empty() ? std::string(fallback) : std::move(reason));
@@ -316,10 +327,8 @@ auto NmlPort::connect(const MachineConfig& config, HalComponent* hal)
   if (impl->command->valid() == 0 || impl->status->valid() == 0 || impl->errors->valid() == 0)
     return std::unexpected(
         std::format("Cannot open LinuxCNC's NML channels from {}.", impl->config.nml_file));
-  // The first reading of the write counter: the next snapshot can tell whether task is running.
-  if (until(echo_timeout, [&]() -> bool { return impl->stat() != nullptr; }))
-    static_cast<void>(
-        impl->heartbeat.observe(impl->status->cms->header.write_id, Clock::now()));
+  // The first reading of the write counter: the next can tell whether task is running.
+  static_cast<void>(until(echo_timeout, [&]() -> bool { return impl->stat() != nullptr; }));
   return std::unique_ptr<NmlPort>(new NmlPort(std::move(impl)));
 }
 
@@ -337,17 +346,21 @@ auto NmlPort::status() -> NmlStatus {
   const auto& task = s->task;
   const auto& motion = s->motion;
   auto& c = out.controller;
-  c.link = impl_->heartbeat.observe(impl_->status->cms->header.write_id, Clock::now());
+  c.link = impl_->link;
   c.machine = task.state == EMC_TASK_STATE_ON      ? MachineState::on
               : task.state == EMC_TASK_STATE_ESTOP ? MachineState::estop
                                                    : MachineState::off;
   c.mode = task.mode == EMC_TASK_MODE_AUTO  ? TaskMode::automatic
            : task.mode == EMC_TASK_MODE_MDI ? TaskMode::mdi
                                             : TaskMode::manual;
-  c.interp = task.interpState == EMC_TASK_INTERP_READING   ? InterpState::reading
+  // Paused is whatever waits for resume or step. After the first step from an M0/M1 stop task
+  // holds the next block with task_paused set while its interpreter state says reading or
+  // waiting; that is still paused for every decision made on this state.
+  c.interp = task.interpState == EMC_TASK_INTERP_IDLE      ? InterpState::idle
+             : task.task_paused != 0                       ? InterpState::paused
+             : task.interpState == EMC_TASK_INTERP_READING ? InterpState::reading
              : task.interpState == EMC_TASK_INTERP_PAUSED  ? InterpState::paused
-             : task.interpState == EMC_TASK_INTERP_WAITING ? InterpState::waiting
-                                                           : InterpState::idle;
+                                                           : InterpState::waiting;
   const auto machine = xyz(motion.traj.actualPosition);
   const auto g5x = xyz(task.g5x_offset);
   const auto g92 = xyz(task.g92_offset);
@@ -419,6 +432,8 @@ auto NmlPort::status() -> NmlStatus {
 }
 
 auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
+  // Called every control cycle: also the regular reading the heartbeat needs.
+  static_cast<void>(impl_->stat());
   impl_->collect();
   return std::exchange(impl_->messages, {});
 }
@@ -444,19 +459,18 @@ auto NmlPort::set_machine_state(MachineState state) -> ActionResult {
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
   // Task reports the command done even when it left the state as it was (on from E-stop).
-  return impl_->settled(from, "LinuxCNC did not change the machine state.",
-                        [&](const EMC_STAT& now) -> bool {
-                          switch (state) {
-                          case MachineState::estop:
-                            return now.task.state == EMC_TASK_STATE_ESTOP;
-                          case MachineState::on:
-                            return now.task.state == EMC_TASK_STATE_ON;
-                          case MachineState::off:
-                            break;
-                          }
-                          return now.task.state == EMC_TASK_STATE_ESTOP_RESET ||
-                                 now.task.state == EMC_TASK_STATE_OFF;
-                        });
+  return impl_->settled(
+      from, "LinuxCNC did not change the machine state.", [&](const EMC_STAT& now) -> bool {
+        switch (state) {
+        case MachineState::estop:
+          return now.task.state == EMC_TASK_STATE_ESTOP;
+        case MachineState::on:
+          return now.task.state == EMC_TASK_STATE_ON;
+        case MachineState::off:
+          break;
+        }
+        return now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF;
+      });
 }
 
 auto NmlPort::set_task_mode(TaskMode mode) -> ActionResult {
@@ -469,12 +483,11 @@ auto NmlPort::set_task_mode(TaskMode mode) -> ActionResult {
     return sent;
   // Task ignores a mode change during a jog and refuses one while a program runs, in both cases
   // with an operator error only: the mode itself is the evidence.
-  return impl_->settled(from, "LinuxCNC did not change the task mode.",
-                        [&](const EMC_STAT& now) -> bool {
-                          return now.task.mode == message.mode &&
-                                 (now.echo_serial_number != impl_->serial ||
-                                  now.status != RCS_EXEC);
-                        });
+  return impl_->settled(
+      from, "LinuxCNC did not change the task mode.", [&](const EMC_STAT& now) -> bool {
+        return now.task.mode == message.mode &&
+               (now.echo_serial_number != impl_->serial || now.status != RCS_EXEC);
+      });
 }
 
 auto NmlPort::home(std::optional<Axis> axis) -> ActionResult {
@@ -503,8 +516,7 @@ auto NmlPort::stop_jog(Axis axis) -> ActionResult {
   const EMC_STAT* s = impl_->stat();
   // Task answers a jog stop with an error unless the machine is on, and nothing jogs outside
   // manual mode. Without any status the stop is sent and its real outcome reported.
-  if (s != nullptr &&
-      (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
+  if (s != nullptr && (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
     return {};
   EMC_JOG_STOP message;
   message.joint_or_axis = index_of(axis);
@@ -542,8 +554,9 @@ auto NmlPort::open_program(std::string_view path) -> ActionResult {
     return failed("The program path is too long for LinuxCNC.");
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
-  return impl_->settled(from, "LinuxCNC did not open the program.",
-                        [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
+  return impl_->settled(
+      from, "LinuxCNC did not open the program.",
+      [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
 }
 
 auto NmlPort::run() -> ActionResult {

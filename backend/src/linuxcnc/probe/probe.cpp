@@ -64,16 +64,16 @@ void show(const char* tag) {
   const EMC_STAT* s = st();
   const auto& t = s->task;
   const auto& m = s->motion;
-  std::printf("fact=stat at=%s rcs=%d state=%d mode=%d interp=%d exec=%d paused=%d mline=%d cline=%d "
-              "qmdi=%d tmode=%d inpos=%d queue=%d pos=%.3f,%.3f,%.3f homed=%d%d%d homing=%d%d%d "
-              "vel=%.2f units=%d tool=%d prep=%d delay=%.2f\n",
-              tag, s->status, t.state, t.mode, t.interpState, t.execState, t.task_paused,
-              t.motionLine, t.currentLine, t.queuedMDIcommands, m.traj.mode, int{m.traj.inpos},
-              m.traj.queue, m.traj.actualPosition.tran.x, m.traj.actualPosition.tran.y,
-              m.traj.actualPosition.tran.z, m.joint[0].homed, m.joint[1].homed, m.joint[2].homed,
-              m.joint[0].homing, m.joint[1].homing, m.joint[2].homing, m.traj.current_vel,
-              static_cast<int>(t.programUnits), s->io.tool.toolInSpindle, s->io.tool.pocketPrepped,
-              t.delayLeft);
+  std::printf(
+      "fact=stat at=%s rcs=%d state=%d mode=%d interp=%d exec=%d paused=%d mline=%d cline=%d "
+      "qmdi=%d tmode=%d inpos=%d queue=%d pos=%.3f,%.3f,%.3f homed=%d%d%d homing=%d%d%d "
+      "vel=%.2f units=%d tool=%d prep=%d delay=%.2f\n",
+      tag, s->status, t.state, t.mode, t.interpState, t.execState, t.task_paused, t.motionLine,
+      t.currentLine, t.queuedMDIcommands, m.traj.mode, int{m.traj.inpos}, m.traj.queue,
+      m.traj.actualPosition.tran.x, m.traj.actualPosition.tran.y, m.traj.actualPosition.tran.z,
+      m.joint[0].homed, m.joint[1].homed, m.joint[2].homed, m.joint[0].homing, m.joint[1].homing,
+      m.joint[2].homing, m.traj.current_vel, static_cast<int>(t.programUnits),
+      s->io.tool.toolInSpindle, s->io.tool.pocketPrepped, t.delayLeft);
   std::fflush(stdout);
 }
 
@@ -221,9 +221,9 @@ void jog_stop_pin(const char* pin, int joint_mode) {
   nap(100ms);
   const double k = pos();
   hal(std::string("setp ") + pin + " 0");
-  std::printf("fact=jog_pin_edges pin=%s space=%s moving_after_fall=%d moving_after_second_rise=%d\n",
-              pin, joint_mode ? "joint" : "axis", int{std::fabs(h - g) > 0.1},
-              int{std::fabs(k - i) > 0.001});
+  std::printf(
+      "fact=jog_pin_edges pin=%s space=%s moving_after_fall=%d moving_after_second_rise=%d\n", pin,
+      joint_mode ? "joint" : "axis", int{std::fabs(h - g) > 0.1}, int{std::fabs(k - i) > 0.001});
   // With the pin low again and no NML stop in between: does the next jog simply work?
   jog(0, -velocity, joint_mode);
   nap(300ms);
@@ -594,11 +594,11 @@ auto main(int argc, char** argv) -> int {
       nap(100ms);
     const auto request = component->tool_change_request();
     show("tool_change_waiting");
-    std::printf("fact=q7_request present=%d tool=%d iocontrol_tool_change=%s prep_number=%s "
-                "tool_number_pin=%s\n",
-                int{request.has_value()}, request.value_or(-1),
-                getp("iocontrol.0.tool-change").c_str(), getp("iocontrol.0.tool-prep-number").c_str(),
-                getp("iocontrol.0.tool-number").c_str());
+    std::printf(
+        "fact=q7_request present=%d tool=%d iocontrol_tool_change=%s prep_number=%s "
+        "tool_number_pin=%s\n",
+        int{request.has_value()}, request.value_or(-1), getp("iocontrol.0.tool-change").c_str(),
+        getp("iocontrol.0.tool-prep-number").c_str(), getp("iocontrol.0.tool-number").c_str());
     component->confirm_tool_changed();
     for (int i = 0; i < 50 && getp("iocontrol.0.tool-change") == "TRUE"; ++i)
       nap(50ms);
@@ -625,8 +625,7 @@ auto main(int argc, char** argv) -> int {
     EMC_TASK_PLAN_OPEN open;
     std::strncpy(open.file, program.c_str(), sizeof(open.file) - 1);
     const int result = go("open", open);
-    std::printf("fact=q6_open mode=%d result=%d file=\"%s\"\n", task_mode, result,
-                st()->task.file);
+    std::printf("fact=q6_open mode=%d result=%d file=\"%s\"\n", task_mode, result, st()->task.file);
   }
   {
     EMC_TASK_PLAN_SET_OPTIONAL_STOP optional;

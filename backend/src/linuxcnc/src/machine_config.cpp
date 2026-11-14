@@ -21,8 +21,9 @@ constexpr double millimetres_per_inch = 25.4;
 constexpr std::string_view default_nml_file = "/usr/share/linuxcnc/linuxcnc.nml";
 
 auto upper(std::string text) -> std::string {
-  std::ranges::transform(text, text.begin(),
-                         [](unsigned char c) -> char { return static_cast<char>(std::toupper(c)); });
+  std::ranges::transform(text, text.begin(), [](unsigned char c) -> char {
+    return static_cast<char>(std::toupper(c));
+  });
   return text;
 }
 
@@ -92,8 +93,8 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
 
   const auto coordinates = upper(without_spaces(ini.text("TRAJ", "COORDINATES").value_or("")));
   if (coordinates != "XYZ")
-    return std::unexpected(std::format(
-        "[TRAJ] COORDINATES is \"{}\": only an X Y Z mill is supported.", coordinates));
+    return std::unexpected(
+        std::format("[TRAJ] COORDINATES is \"{}\": only an X Y Z mill is supported.", coordinates));
   // Joint n must be axis n. trivkins is that only with its default or the same coordinates and
   // without kinstype=both, which makes the kinematics non-identity for LinuxCNC.
   const auto kinematics = upper(ini.text("KINS", "KINEMATICS").value_or(""));
@@ -112,8 +113,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     const auto low = ini.real(sections[i], "MIN_LIMIT");
     const auto high = ini.real(sections[i], "MAX_LIMIT");
     if (!low || !high || *low >= *high)
-      return std::unexpected(
-          std::format("[{}] needs MIN_LIMIT below MAX_LIMIT.", sections[i]));
+      return std::unexpected(std::format("[{}] needs MIN_LIMIT below MAX_LIMIT.", sections[i]));
     travel[i] = {*low * scale, *high * scale};
   }
 
@@ -132,9 +132,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   const double spindle_min = ini.real("DISPLAY", "MIN_SPINDLE_OVERRIDE").value_or(0.5);
   const double spindle_max = ini.real("DISPLAY", "MAX_SPINDLE_OVERRIDE").value_or(1.0);
   if (feed < 1 || spindle_min < 0 || spindle_min > 1 || spindle_max < 1)
-    return std::unexpected(std::string(
-        "[DISPLAY] MAX_FEED_OVERRIDE and MAX_SPINDLE_OVERRIDE must be at least 1, "
-        "MIN_SPINDLE_OVERRIDE between 0 and 1."));
+    return std::unexpected(
+        std::string("[DISPLAY] MAX_FEED_OVERRIDE and MAX_SPINDLE_OVERRIDE must be at least 1, "
+                    "MIN_SPINDLE_OVERRIDE between 0 and 1."));
 
   const auto path = [&](const char* section, const char* key) -> std::string {
     const auto value = ini.text(section, key);

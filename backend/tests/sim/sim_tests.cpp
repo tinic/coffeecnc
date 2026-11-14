@@ -122,6 +122,11 @@ public:
 
   // One request as the panel sends it; `body` is the JSON without braces and ID.
   auto send(std::string_view body) -> Result {
+    // A request that blocked in the port starved the heartbeat (the session runs on the control
+    // thread in this increment). The executable beats on; so does the rig before the next one.
+    hal.beat();
+    if (!hal.watchdog_ok())
+      pump_until(200ms, [&]() -> bool { return hal.watchdog_ok(); });
     const auto id = next_id++;
     const auto outcome = session.handle(page, std::format("{{\"id\":{},{}}}", id, body), now());
     Result result;
@@ -169,7 +174,9 @@ public:
     }
   }
 
-  auto machine(std::size_t axis) -> double { return port.status().controller.axes.at(axis).machine; }
+  auto machine(std::size_t axis) -> double {
+    return port.status().controller.axes.at(axis).machine;
+  }
 
   // The machine is at rest with nothing left to execute.
   auto idle() -> bool {
@@ -178,9 +185,8 @@ public:
   }
 
   auto has_message(std::string_view part) const -> bool {
-    return std::ranges::any_of(messages, [&](const auto& text) -> bool {
-      return text.find(part) != std::string::npos;
-    });
+    return std::ranges::any_of(
+        messages, [&](const auto& text) -> bool { return text.find(part) != std::string::npos; });
   }
 
 private:
@@ -231,8 +237,7 @@ void tool_table_text() {
             "T1 P1 Z50 D6 ;6 mm end mill\nT2 P5 Z1 D0.5 I30 ;half inch\n",
         with_tool(table, tool, 25.4));
   tool.number = 7;
-  check("tool_table_add",
-        with_tool(table, tool, 1) == table + "T7 P5 Z25.4 D12.7 ;half inch\n");
+  check("tool_table_add", with_tool(table, tool, 1) == table + "T7 P5 Z25.4 D12.7 ;half inch\n");
   check("tool_table_remove", without_tool(table, 1) == "T2 P2 Z40 D3 I30 ;drill\n" &&
                                  !without_tool(table, 9).has_value());
 }
@@ -269,8 +274,8 @@ void unhomed(Rig& rig) {
             forced.reason.find("not homed") != std::string::npos,
         forced.reason);
   mode = rig.port.set_task_mode(TaskMode::manual);
-  check("mode_back_to_manual", mode.status == ActionStatus::accepted &&
-                                   rig.port.snapshot().mode == TaskMode::manual);
+  check("mode_back_to_manual",
+        mode.status == ActionStatus::accepted && rig.port.snapshot().mode == TaskMode::manual);
 
   // Joint jog, held by refreshes, ended by the release.
   const double start = rig.machine(0);
@@ -362,8 +367,7 @@ void axis_jogs(Rig& rig) {
   check("jog_step", step.accepted() && near(rig.machine(2) - z0, -0.5, 0.001),
         std::format("{} moved={:.4f}", step.text(), rig.machine(2) - z0));
 
-  const auto beyond =
-      rig.send(R"("type":"jog_step","axis":"z","distance":500,"velocity":600)");
+  const auto beyond = rig.send(R"("type":"jog_step","axis":"z","distance":500,"velocity":600)");
   check("jog_step_beyond_travel_rejected", beyond.outcome == "rejected", beyond.text());
 }
 
@@ -387,23 +391,26 @@ void hal_stop_without_nml(Rig& rig) {
         std::this_thread::sleep_for(5ms);
       }
     };
-    a = hal_number("joint.0.pos-fb");
+    // Motion's own feedback pin, in machine units: status is not written while task is stopped.
+    const auto feedback = [&]() -> double {
+      return hal_number("joint.0.pos-fb") * rig.config.millimetres_per_unit;
+    };
+    a = feedback();
     beat(100ms);
-    b = hal_number("joint.0.pos-fb");
+    b = feedback();
     rig.hal.request_jog_stop();
     beat(150ms);
-    c = hal_number("joint.0.pos-fb");
+    c = feedback();
     beat(100ms);
-    d = hal_number("joint.0.pos-fb");
+    d = feedback();
     active = hal_pin("motion.jog-is-active");
     worker.join();
   }
   check("hal_jog_stop_during_nml_wait",
         pressed.accepted() && b - a > 0.5 && near(d, c, 0.0001) && active == "FALSE" &&
             nml.status == ActionStatus::timed_out,
-        std::format("moving_before={:.3f} moved_after_stop={:.4f} jog_active={} nml_stop={}",
-                    b - a, d - c, active,
-                    nml.status == ActionStatus::timed_out ? "timed_out" : "other"));
+        std::format("moving_before={:.3f} moved_after_stop={:.4f} jog_active={} nml_stop={}", b - a,
+                    d - c, active, nml.status == ActionStatus::timed_out ? "timed_out" : "other"));
   // Task runs again: the session's own stop for the expired lease now gets through.
   rig.pump(300ms);
   const double rest = rig.machine(0);
@@ -482,8 +489,7 @@ void mdi(Rig& rig) {
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
   status = rig.port.status();
   check("touch_off_in_inch_program_units",
-        inches && inch_touch.accepted() && near(status.work[1], 25.4) &&
-            near(status.g5x[1], -30.9),
+        inches && inch_touch.accepted() && near(status.work[1], 25.4) && near(status.g5x[1], -30.9),
         std::format("units_inch={} work_y={:.3f} g5x_y={:.3f}", inches, status.work[1],
                     status.g5x[1]));
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21")"));
@@ -500,7 +506,7 @@ void mdi(Rig& rig) {
   const auto syntax = rig.send(R"("type":"mdi","text":"G1 Q")");
   check("mdi_syntax_error_fails_with_text", syntax.outcome == "failed" && !syntax.reason.empty(),
         syntax.text());
-  const auto message = rig.send(R"("type":"mdi","text":"(MSG, coffeecnc says hello)")");
+  const auto message = rig.send(R"j("type":"mdi","text":"(MSG, coffeecnc says hello)")j");
   rig.pump(300ms);
   check("operator_message_arrives", message.accepted() && rig.has_message("coffeecnc says hello"));
 }
@@ -576,11 +582,11 @@ auto traced(Rig& rig, std::chrono::milliseconds timeout, const std::function<boo
   static std::string last;
   return rig.pump_until(timeout, [&]() -> bool {
     if (auto line = trace_line(rig.port.status()); line != last) {
-      fact("trace", std::format("t_ms={} {}",
-                                std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    Clock::now() - origin)
-                                    .count(),
-                                line));
+      fact("trace",
+           std::format(
+               "t_ms={} {}",
+               std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - origin).count(),
+               line));
       last = std::move(line);
     }
     return done();
@@ -591,18 +597,18 @@ void program(Rig& rig) {
   const std::string file = rig.config.program_prefix + "/coffeecnc_sim.ngc";
   {
     std::ofstream out{file};
-    out << "G21 G90 G54\n"      // 1
-           "G0 X0 Y0 Z10\n"     // 2
-           "G1 X30 F1200\n"     // 3
-           "M1\n"               // 4
-           "G1 Y20\n"           // 5
-           "M0\n"               // 6
-           "G4 P0.5\n"          // 7
-           "T2 M6\n"            // 8
-           "G20\n"              // 9
-           "G1 X0 F50\n"        // 10
-           "G21\n"              // 11
-           "M2\n";              // 12
+    out << "G21 G90 G54\n"  // 1
+           "G0 X0 Y0 Z10\n" // 2
+           "G1 X30 F1200\n" // 3
+           "M1\n"           // 4
+           "G1 Y20\n"       // 5
+           "M0\n"           // 6
+           "G4 P0.5\n"      // 7
+           "T2 M6\n"        // 8
+           "G20\n"          // 9
+           "G1 X0 F50\n"    // 10
+           "G21\n"          // 11
+           "M2\n";          // 12
   }
   const auto paused = [&]() -> bool { return rig.port.status().paused; };
   const auto request = [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); };
@@ -615,7 +621,8 @@ void program(Rig& rig) {
         open.accepted() && rig.port.snapshot().program_loaded &&
             rig.port.status().program_file == file,
         open.text());
-  const auto optional = rig.send(R"("type":"set_program_option","option":"optional_stop","on":true)");
+  const auto optional =
+      rig.send(R"("type":"set_program_option","option":"optional_stop","on":true)");
   check("optional_stop_on", optional.accepted() && rig.port.status().optional_stop,
         optional.text());
 
@@ -649,7 +656,8 @@ void program(Rig& rig) {
         std::format("{} x={:.3f} y={:.3f} current_line={}", resume.text(), status.work[0],
                     status.work[1], status.current_line));
 
-  // Single block from the stop: line 5 only, then waiting again before M0 and the rest.
+  // Single block from the stop: line 5 only, then waiting again before M0 and the rest. The
+  // first step after an M0/M1 stop only takes up the next block; the second one moves.
   int steps = 0;
   bool moved = false;
   while (steps < 4 && !moved) {
@@ -665,7 +673,7 @@ void program(Rig& rig) {
   traced(rig, 800ms, []() -> bool { return false; });
   status = rig.port.status();
   check("step_executes_one_block",
-        moved && near(status.work[1], 20) && near(status.work[0], 30) &&
+        moved && steps == 2 && near(status.work[1], 20) && near(status.work[0], 30) &&
             status.controller.interp != InterpState::idle && !status.controller.requested_tool &&
             status.dwell_seconds_left <= 0,
         std::format("steps_sent={} x={:.3f} y={:.3f} interp={} paused={}", steps, status.work[0],
@@ -700,8 +708,7 @@ void program(Rig& rig) {
                     status.work[0]));
 
   // Optional stop off: M1 is passed, M0 still stops. Then abort in the move after it.
-  static_cast<void>(
-      rig.send(R"("type":"set_program_option","option":"optional_stop","on":false)"));
+  static_cast<void>(rig.send(R"("type":"set_program_option","option":"optional_stop","on":false)"));
   const auto rerun = rig.send(R"("type":"run")");
   const bool at_m0 = traced(rig, 20s, [&]() -> bool {
     const auto now = rig.port.status();
@@ -710,10 +717,16 @@ void program(Rig& rig) {
   check("m1_skipped_m0_stops", rerun.accepted() && at_m0, rerun.text());
   static_cast<void>(rig.send(R"("type":"resume")"));
   // The tool is in the spindle already, so line 8 asks for nothing; line 10 moves slowly.
+  bool asked_again = false;
   const bool last_move = traced(rig, 20s, [&]() -> bool {
+    if (request()) {
+      asked_again = true;
+      static_cast<void>(rig.send(R"("type":"tool_changed")"));
+    }
     const auto now = rig.port.status();
     return now.motion_line == 10 && now.work[0] < 29.5;
   });
+  fact("m6_for_the_loaded_tool", std::format("asks_again={}", asked_again));
   const bool inch_program = rig.port.snapshot().program_units == LengthUnit::inch;
   const auto abort = rig.send(R"("type":"abort")");
   rig.pump(300ms);
@@ -732,8 +745,8 @@ void tools(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G49")"));
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
   const auto change = rig.send(R"("type":"mdi","text":"T1 M6")");
-  const bool asked = rig.pump_until(
-      10s, [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); });
+  const bool asked =
+      rig.pump_until(10s, [&]() -> bool { return rig.port.snapshot().requested_tool.has_value(); });
   const auto waiting = rig.port.status();
   check("mdi_tool_change_request",
         change.accepted() && asked && waiting.controller.requested_tool == 1 &&
@@ -747,9 +760,8 @@ void tools(Rig& rig) {
   const auto resume = rig.send(R"("type":"resume")");
   check("no_resume_during_tool_change", resume.outcome == "rejected", resume.text());
   const auto confirmed = rig.send(R"("type":"tool_changed")");
-  const bool done = rig.pump_until(10s, [&]() -> bool {
-    return rig.idle() && rig.port.snapshot().tool_in_spindle == 1;
-  });
+  const bool done = rig.pump_until(
+      10s, [&]() -> bool { return rig.idle() && rig.port.snapshot().tool_in_spindle == 1; });
   const auto after = rig.port.status();
   check("tool_changed",
         confirmed.accepted() && done && !after.controller.requested_tool &&
@@ -800,8 +812,7 @@ void stale_link(Rig& rig) {
     // Never gated by stale state: it is attempted, and its real outcome reported.
     abort = rig.send(R"("type":"abort")");
   }
-  check("stale_link_detected", live && frozen_link == Link::stale,
-        std::string(name(frozen_link)));
+  check("stale_link_detected", live && frozen_link == Link::stale, std::string(name(frozen_link)));
   check("no_jog_on_stale_link", jog.outcome == "rejected", jog.text());
   check("abort_on_dead_task_times_out", abort.outcome == "timed_out", abort.text());
   rig.pump(300ms);
@@ -826,17 +837,16 @@ auto run(const std::string& ini_file) -> int {
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
   if (!config)
     return 1;
-  fact("config",
-       std::format("units={} mm_per_unit={} max_jog_mm_min={} max_feed_override={} "
-                   "spindle_override={}..{} max_rpm={}",
-                   config->machine_units == LengthUnit::inch ? "inch" : "mm",
-                   config->millimetres_per_unit, config->limits.max_jog_velocity,
-                   config->limits.max_feed_override, config->limits.min_spindle_override,
-                   config->limits.max_spindle_override, config->limits.max_spindle_rpm));
-  check("config_limits",
-        near(config->limits.max_jog_velocity, 1800, 0.01) &&
-            near(config->limits.max_feed_override, 1.5) &&
-            near(config->limits.max_spindle_rpm, 12000) && near(config->travel[2].min, -50));
+  fact("config", std::format("units={} mm_per_unit={} max_jog_mm_min={} max_feed_override={} "
+                             "spindle_override={}..{} max_rpm={}",
+                             config->machine_units == LengthUnit::inch ? "inch" : "mm",
+                             config->millimetres_per_unit, config->limits.max_jog_velocity,
+                             config->limits.max_feed_override, config->limits.min_spindle_override,
+                             config->limits.max_spindle_override, config->limits.max_spindle_rpm));
+  check("config_limits", near(config->limits.max_jog_velocity, 1800, 0.01) &&
+                             near(config->limits.max_feed_override, 1.5) &&
+                             near(config->limits.max_spindle_rpm, 12000) &&
+                             near(config->travel[2].min, -50));
 
   auto hal = HalComponent::create();
   check("hal_component", hal.has_value(), hal ? "coffeecnc" : hal.error());

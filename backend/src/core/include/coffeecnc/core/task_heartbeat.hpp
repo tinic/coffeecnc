@@ -20,11 +20,14 @@ public:
 
   // Records one reading of the write counter. `live` only once the counter has been seen to
   // advance, and only while its last advance is less than `stale_after` old; otherwise `stale`.
-  // The first reading proves nothing. Never `down`: that is the absence of any status.
+  // The first reading proves nothing, and neither does an advance since a reading `stale_after`
+  // or more ago (task may have died right after it): read at least a few times per second.
+  // Never `down`: that is the absence of any status.
   [[nodiscard]] auto observe(std::int64_t writes, Clock::time_point now) -> Link;
 
 private:
   std::optional<std::int64_t> last_;
+  Clock::time_point read_at_{};
   Clock::time_point advanced_at_{};
   bool advanced_{};
 };

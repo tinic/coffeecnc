@@ -1,5 +1,6 @@
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
+#include <coffeecnc/core/task_heartbeat.hpp>
 
 #include <cmath>
 #include <iostream>
@@ -165,6 +166,22 @@ void independent_jog_leases() {
   require(!leases.active(Axis::y), "new panel starts without old held jog");
   require(!leases.expired(start + 10s)[1], "cancel does not replay old jog intent");
 }
+
+void task_heartbeat() {
+  TaskHeartbeat heartbeat;
+  const TaskHeartbeat::Clock::time_point start{};
+  require(heartbeat.observe(7, start) == Link::stale, "one reading proves nothing");
+  require(heartbeat.observe(7, start + 10ms) == Link::stale,
+          "an unchanged counter is not a running task");
+  require(heartbeat.observe(8, start + 20ms) == Link::live, "an advancing counter is");
+  require(heartbeat.observe(8, start + 1019ms) == Link::live,
+          "live for a second after the last write");
+  require(heartbeat.observe(8, start + 1020ms) == Link::stale, "stale from then on");
+  require(heartbeat.observe(9, start + 1030ms) == Link::live, "task writes again");
+  require(heartbeat.observe(10, start + 5s) == Link::stale,
+          "an advance since a reading seconds ago may be seconds old");
+  require(heartbeat.observe(11, start + 5s + 10ms) == Link::live, "the next reading settles it");
+}
 } // namespace
 
 auto main() -> int {
@@ -174,6 +191,7 @@ auto main() -> int {
     jog_constraints();
     hostile_values();
     independent_jog_leases();
+    task_heartbeat();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << "Check " << checks << " failed: " << error.what() << '\n';

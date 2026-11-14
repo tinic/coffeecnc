@@ -45,5 +45,20 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_session_tests)
     add_test(NAME session_lifecycle COMMAND coffeecnc_session_tests)
+    if(TARGET coffeecnc_linuxcnc)
+      # The real Session on NmlPort against a running LinuxCNC on a simulated mill. Exists only
+      # where the LinuxCNC adapter builds; `ctest -L linuxcnc` selects it, `-LE linuxcnc` skips it.
+      add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp)
+      target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
+        coffeecnc_project_options nlohmann_json::nlohmann_json)
+      coffeecnc_enable_analyzers(coffeecnc_sim_tests)
+      foreach(units mm inch)
+        add_test(NAME linuxcnc_sim_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 300 $<TARGET_FILE:coffeecnc_sim_tests>)
+        # One LinuxCNC per host at a time.
+        set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+          RESOURCE_LOCK linuxcnc TIMEOUT 400)
+      endforeach()
+    endif()
   endif()
 endif()

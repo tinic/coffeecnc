@@ -43,6 +43,13 @@ auto real(double value) -> std::string {
   return {buffer.data(), end};
 }
 
+// A protocol length (millimetres) as the interpreter will read it.
+auto length(double millimetres, const ControllerState& state) -> std::string {
+  constexpr double millimetres_per_inch = 25.4;
+  return real(state.program_units == LengthUnit::inch ? millimetres / millimetres_per_inch
+                                                      : millimetres);
+}
+
 } // namespace
 
 Session::Session(ControllerPort& port, const Limits& limits) : port_(port), policy_(limits) {}
@@ -62,16 +69,28 @@ auto Session::reply(ActionResult result) -> Reply {
 }
 
 auto Session::begin_page() -> PageToken {
-  cancel_jogs();
   problems_.clear(); // The page they were for is gone.
+  cancel_jogs();     // A stop that fails here is reported to the new page and retried by tick.
   ready_ = false;
   last_id_.reset();
+  page_open_ = true;
   return PageToken{++pages_};
+}
+
+void Session::end_page(PageToken page) {
+  if (!page_open_ || page != PageToken{pages_})
+    return;
+  problems_.clear();
+  cancel_jogs();
+  ready_ = false;
+  last_id_.reset();
+  page_open_ = false;
 }
 
 auto Session::handle(PageToken page, std::string_view json, Instant now) -> Outcome {
   Outcome outcome;
-  if (pages_ == 0 || page != PageToken{pages_})
+  outcome.page = page;
+  if (!page_open_ || page != PageToken{pages_})
     return outcome;
   const auto decoded = decode_request(json);
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
@@ -103,16 +122,33 @@ auto Session::handle(PageToken page, std::string_view json, Instant now) -> Outc
 
 auto Session::tick(Instant now) -> Outcome {
   Outcome outcome;
+  if (page_open_)
+    outcome.page = PageToken{pages_};
+  // A jog whose stop failed earlier has no lease any more but may still be moving: ask again.
+  const auto retry = stop_pending_;
+  stop(retry);
   bool held = false;
   for (const auto axis : axes)
     held = held || leases_.active(axis);
-  if (!held)
-    return outcome;
-  const auto state = port_.snapshot();
-  if (state.link != Link::live || state.machine != MachineState::on)
-    cancel_jogs();
-  else
-    stop(leases_.expired(now.monotonic));
+  if (held) {
+    const auto state = port_.snapshot();
+    if (state.link != Link::live || state.machine != MachineState::on) {
+      cancel_jogs();
+    } else {
+      stop(leases_.expired(now.monotonic));
+      // A change made outside the panel (mode, interpreter, homing, jog space) must not leave a
+      // jog running until its lease expires: keep only what the policy would still start.
+      for (std::size_t i = 0; i < axes.size(); ++i) {
+        if (!leases_.active(axes[i]))
+          continue;
+        const auto decision = policy_.evaluate(
+            Jog{axes[i], held_[i].direction, held_[i].velocity, true}, state);
+        if (!decision.allowed || decision.jog_space != held_[i].space ||
+            (decision.required_mode && *decision.required_mode != state.mode))
+          stop_if_held(axes[i]);
+      }
+    }
+  }
   report(outcome, now);
   return outcome;
 }
@@ -141,6 +177,12 @@ auto Session::execute(const Command& command, JogLease::Time now) -> Reply {
     decision = policy_.evaluate(command, state);
     if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode)
       return {CommandOutcome::failed, "LinuxCNC did not enter the required mode."};
+    // A mode change was sent, so this is not `rejected` (nothing sent) any more.
+    if (!decision.allowed) {
+      if (jog_command != nullptr)
+        stop_if_held(jog_command->axis);
+      return {CommandOutcome::failed, std::move(decision.reason)};
+    }
   }
   if (!decision.allowed) {
     // A refresh that is no longer valid must not leave its jog running until the lease expires.
@@ -208,10 +250,10 @@ auto Session::perform(const Command& command, const Decision& decision,
           return mdi(std::string(wcs_words[static_cast<std::size_t>(c.wcs) - 1]));
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
-          return mdi(std::string("G10 L20 P0 ") + letter(c.axis) + real(c.value));
+          return mdi(std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));
         } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
           auto measured =
-              mdi("G10 L10 P" + std::to_string(state.tool_in_spindle) + " Z" + real(c.value));
+              mdi("G10 L10 P" + std::to_string(state.tool_in_spindle) + " Z" + length(c.value, state));
           if (measured.outcome != CommandOutcome::accepted)
             return measured;
           return mdi("G43");
@@ -280,9 +322,15 @@ void Session::stop(const JogLease::Stops& stops) {
     if (!stops[i])
       continue;
     const auto stopped = port_.stop_jog(axes[i]);
-    if (stopped.status != ActionStatus::accepted)
+    if (stopped.status == ActionStatus::accepted) {
+      stop_pending_[i] = false;
+      continue;
+    }
+    // Reported once; tick keeps retrying without repeating the message.
+    if (!stop_pending_[i])
       problems_.push_back(std::string("Jog stop failed on ") + letter(axes[i]) + ": " +
                           reply(stopped).reason);
+    stop_pending_[i] = true;
   }
 }
 

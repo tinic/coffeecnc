@@ -380,7 +380,8 @@ void mode_switching() {
   busy.mode = TaskMode::automatic;
   busy.interp = InterpState::reading;
   rig.port.next_states = {rig.port.state, busy};
-  rig.expect(R"("type":"run")", "rejected", "Wait for the interpreter and motion to become idle.");
+  // A mode change went out, so the refusal that follows is `failed`, not `rejected`.
+  rig.expect(R"("type":"run")", "failed", "Wait for the interpreter and motion to become idle.");
   rig.acted({"set_task_mode auto"}, "The request is judged again on the state after the change");
 }
 
@@ -510,6 +511,12 @@ void composed_mdi() {
   rig.acted({"set_task_mode mdi", "mdi G10 L20 P0 X12.5"}, "Touch-off of the active system");
   rig.accepted(R"("type":"touch_off","axis":"z","value":-0.05)");
   rig.acted({"mdi G10 L20 P0 Z-0.05"}, "Axis letter follows the request");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(R"("type":"touch_off","axis":"x","value":25.4)");
+  rig.acted({"mdi G10 L20 P0 X1"}, "A G20 interpreter is given inches for the protocol's mm");
+  rig.accepted(R"("type":"tool_touch_off","value":50.8)");
+  rig.acted({"mdi G10 L10 P3 Z2", "mdi G43"}, "Tool touch-off converts as well");
+  rig.port.state.program_units = LengthUnit::mm;
 
   rig.accepted(R"("type":"tool_touch_off","value":25.4)");
   rig.acted({"mdi G10 L10 P3 Z25.4", "mdi G43"},
@@ -691,6 +698,76 @@ void lost_machine_cancels_jogs() {
     rig.accepted(R"("type":"jog","axis":"z","direction":1,"velocity":600,"held":true)");
     rig.acted({"start_jog z 1 600 axis"}, "The next press starts again");
   }
+}
+
+void stops_held_jog(const ControllerState& changed, const std::string& what) {
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  rig.port.state = changed;
+  static_cast<void>(rig.session.tick(at(10ms)));
+  rig.acted({"stop_jog x"}, what + " stops the held jog before its lease expires");
+  static_cast<void>(rig.session.tick(at(20ms)));
+  rig.acted({}, what + ": stopped once");
+}
+
+void outside_changes_stop_held_jogs() {
+  auto state = homed_machine();
+  state.mode = TaskMode::mdi;
+  stops_held_jog(state, "A mode change");
+  state = homed_machine();
+  state.interp = InterpState::reading;
+  stops_held_jog(state, "A started interpreter");
+  state = homed_machine();
+  state.axes[1].homing = true;
+  stops_held_jog(state, "Homing");
+  state = homed_machine();
+  state.axes[2].homed = false;
+  stops_held_jog(state, "A change of jog space");
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  static_cast<void>(rig.session.tick(at(10ms)));
+  rig.acted({}, "An unchanged state keeps the jog");
+}
+
+void end_of_page() {
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  rig.session.end_page(PageToken{});
+  rig.acted({}, "Ending a page that is not current does nothing");
+  rig.session.end_page(rig.page);
+  rig.acted({"stop_jog x"}, "Ending the page stops its jogs");
+  require(rig.session.handle(rig.page, R"({"id":900,"type":"abort"})", at(0ms)).messages.empty() &&
+              rig.port.calls.empty(),
+          "Nothing is handled after the page ended");
+  require(rig.session.tick(at(1s)).page == PageToken{}, "A tick names no page while none is open");
+  rig.page = rig.session.begin_page();
+  const auto outcome = rig.session.handle(rig.page, R"({"id":1,"type":"ready"})", at(0ms));
+  require(outcome.page == rig.page && outcome.send_snapshots,
+          "The next page works and its outcome names it");
+}
+
+void failed_stop_survives_the_page_and_is_retried() {
+  Rig rig;
+  rig.accepted(hold_x);
+  rig.port.calls.clear();
+  rig.port.script["stop_jog"] = {{ActionStatus::failed, "Not connected."},
+                                 {ActionStatus::timed_out, ""}};
+  rig.page = rig.session.begin_page();
+  rig.acted({"stop_jog x"}, "The page boundary asks for the stop");
+  auto outcome = rig.session.tick(at(1ms));
+  require(outcome.messages.size() == 1 &&
+              outcome.messages.front().find("Jog stop failed on X") != std::string::npos,
+          "A stop that failed at the page boundary is reported to the new page");
+  rig.acted({"stop_jog x"}, "The tick retries the failed stop without a lease");
+  outcome = rig.session.tick(at(2ms));
+  require(outcome.messages.empty(), "A retry that fails again does not repeat the message");
+  rig.acted({"stop_jog x"}, "It keeps retrying");
+  outcome = rig.session.tick(at(3ms));
+  require(outcome.messages.empty(), "Nothing to report once the stop is accepted");
+  rig.acted({}, "An accepted stop ends the retries");
 }
 
 void new_page() {
@@ -884,6 +961,9 @@ auto main(int argc, char** argv) -> int {
     lease_expiry();
     lost_machine_cancels_jogs();
     new_page();
+    failed_stop_survives_the_page_and_is_retried();
+    outside_changes_stop_held_jogs();
+    end_of_page();
     exactly_one_result(seed);
     std::cout << checks << " session lifecycle checks passed\n";
     return 0;

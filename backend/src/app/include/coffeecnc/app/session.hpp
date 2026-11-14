@@ -31,7 +31,10 @@ struct Instant {
 
 // What one call asks of the caller.
 struct Outcome {
-  // Protocol v1 JSON for the current page, in order.
+  // The page the messages are for. The caller posts them only while this is still the page it
+  // shows: replies queued across a reload must not reach the next page.
+  PageToken page;
+  // Protocol v1 JSON for that page, in order.
   std::vector<std::string> messages;
   // The page sent `ready`: send hello, the tool table, the program and status.
   bool send_snapshots{};
@@ -52,10 +55,18 @@ public:
   // messages carrying an earlier token are dropped from here on.
   [[nodiscard]] auto begin_page() -> PageToken;
 
+  // Call when the page unloads or the window closes without a replacement. Stops held jogs;
+  // every message is dropped until the next begin_page. Ignored for a token that is not current.
+  void end_page(PageToken page);
+
   [[nodiscard]] auto handle(PageToken page, std::string_view json, Instant now) -> Outcome;
 
   // Call from the control loop, well inside JogLease::timeout. Stops jogs whose lease expired,
-  // and every held jog once the controller link is not live or the machine is not on.
+  // every held jog once the controller link is not live or the machine is not on, and each held
+  // jog the policy would no longer start in the observed state (mode, interpreter, homing or
+  // jog space changed outside the panel). Retries every stop that failed earlier.
+  // The port blocks in a live build: before live use the lease/stop path must be serviced
+  // independently of a port call in progress (worker increment).
   [[nodiscard]] auto tick(Instant now) -> Outcome;
 
 private:
@@ -89,7 +100,11 @@ private:
   JogLease leases_;
   // Meaningful only while the axis has an active lease.
   std::array<HeldJog, 3> held_{};
+  // Axes whose last stop failed. Not a lease: nothing renews it, and tick retries the stop
+  // until the controller accepts one.
+  JogLease::Stops stop_pending_{};
   std::uint64_t pages_{};
+  bool page_open_{};
   std::optional<RequestId> last_id_;
   bool ready_{};
   // Failed stops that are not the result of a request; sent as operator messages.

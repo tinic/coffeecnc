@@ -51,12 +51,14 @@ Preview generation must honor the relevant LinuxCNC interpreter semantics and co
 
 CAD tessellation and preview computation should run outside the UI event loop. Treat these outputs separately: intended part geometry, starting stock, commanded toolpath, executed backplot and simulated remaining stock. STEP alone supplies none of the missing fixture/tool/registration evidence.
 
+For the initial display-only STEP importer, `occt-import-js` is now pinned through npm and validated against the sample corpus. The planned import boundary is a cancellable Web Worker with explicit model registration; the operator panel does not load it yet. See [the library comparison, version tradeoff and integration plan](research/step-preview.md). This does not move controller responsibilities into the webview.
+
 ## Implementation decisions still open
 
 - Exact supported LinuxCNC, GTK and WebKitGTK versions and packaging targets.
 - Web UI framework; Vue/TypeScript is a familiar candidate, not a final selection.
 - Preview/interpreter adapter and its treatment of remaps, macros and probe-dependent code.
-- STEP import/tessellation library and process/resource isolation.
+- STEP overlay renderer, registration workflow and import resource limits.
 - Job metadata format and CAM-post integrations.
 - Initial machine capability profile and manual/automatic tool-change protocols.
 

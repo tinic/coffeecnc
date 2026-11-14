@@ -38,6 +38,7 @@ The concept established the panel's visual direction: readable coordinates, a pa
 
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
 - [Sample catalog](samples/README.md): 22 NC programs and 3 STEP models from four GitHub projects, with native CAM files, setup information, pinned provenance and upstream licenses.
+- [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks and the planned model overlay.
 - [Concept review](docs/design/concept-review.md): what the attractive first screen gets wrong and what the next design needs.
 - [Architecture](docs/architecture.md) and [feasibility](docs/feasibility.md): native/web boundaries, prerequisites and implementation sequence.
 - [Frontend landscape in 2026](docs/research/linuxcnc-frontends-2026.md): the original alternatives research.

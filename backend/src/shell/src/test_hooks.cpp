@@ -42,27 +42,30 @@ using Text = std::expected<std::string, std::string>;
 // as data of a GLib source.
 //
 // The queued work is the only owner of the promise. When the window refuses the work (it is
-// closed) or drops it (it closes while the work waits), the promise goes with it and the wait
-// ends: WindowClosed is thrown. No caller waits for work that will not run.
+// closed) the caller is told at once; when it drops it (the window closes while the work
+// waits) the promise goes with the work and the wait ends. Either way WindowClosed is thrown,
+// with which of the two it was. No caller waits for work that will not run.
 template <typename Result>
 auto on_gtk(PanelWindow& window, std::function<Result()> work) -> Result {
-  std::future<Result> result;
-  {
-    auto done = std::make_shared<std::promise<Result>>();
-    result = done->get_future();
-    window.internals().on_gtk_thread([done = std::move(done), work = std::move(work)]() -> void {
-      if constexpr (std::is_void_v<Result>) {
-        work();
-        done->set_value();
-      } else {
-        done->set_value(work());
-      }
-    });
-  }
+  auto done = std::make_shared<std::promise<Result>>();
+  auto result = done->get_future();
+  std::vector<std::function<void()>> pieces;
+  // The promise is moved into the work: nothing here keeps it alive.
+  pieces.emplace_back([done = std::move(done), work = std::move(work)]() -> void {
+    if constexpr (std::is_void_v<Result>) {
+      work();
+      done->set_value();
+    } else {
+      done->set_value(work());
+    }
+  });
+  const bool taken = window.internals().on_gtk_thread(std::move(pieces));
+  if (!taken)
+    throw ShellTestHooks::WindowClosed(ShellTestHooks::WorkFate::refused);
   try {
     return result.get();
   } catch (const std::future_error&) {
-    throw ShellTestHooks::WindowClosed();
+    throw ShellTestHooks::WindowClosed(ShellTestHooks::WorkFate::dropped);
   }
 }
 
@@ -431,16 +434,23 @@ auto ShellTestHooks::graphics_report() -> std::expected<std::string, std::string
   return text;
 }
 
-auto ShellTestHooks::close_with_work_pending() -> bool {
-  // Both are in the queue before this thread waits for either.
+auto ShellTestHooks::close_with_work_pending() -> WorkFate {
+  // The close and the work behind it are handed over together, under one hold of the outbox's
+  // mutex: the work is in the queue, behind the close, whenever the GTK thread comes to it.
   auto& window = impl_->window;
-  window.internals().on_gtk_thread([&window]() -> void { window.close(); });
+  auto done = std::make_shared<std::promise<void>>();
+  auto result = done->get_future();
+  std::vector<std::function<void()>> pieces;
+  pieces.emplace_back([&window]() -> void { window.close(); });
+  pieces.emplace_back([done = std::move(done)]() -> void { done->set_value(); });
+  if (!window.internals().on_gtk_thread(std::move(pieces)))
+    return WorkFate::refused;
   try {
-    on_gtk<void>(window, []() -> void {});
-  } catch (const WindowClosed&) {
-    return true;
+    result.get();
+  } catch (const std::future_error&) {
+    return WorkFate::dropped;
   }
-  return false;
+  return WorkFate::ran;
 }
 
 void ShellTestHooks::deliver_from_page(const std::string& raw) {

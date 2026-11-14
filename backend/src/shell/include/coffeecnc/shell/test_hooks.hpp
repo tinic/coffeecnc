@@ -23,10 +23,21 @@ namespace coffeecnc {
 // so the GTK main loop must be running.
 class ShellTestHooks {
 public:
+  // What became of work handed to the GTK thread.
+  enum class WorkFate : std::uint8_t {
+    ran,
+    dropped, // taken into the queue, and the window closed before its turn
+    refused, // not taken: the window was closed already
+  };
   // Thrown by every member below when the window is closed, or closes while the call waits
   // for the GTK thread: the work was not done.
   struct WindowClosed : std::runtime_error {
-    WindowClosed() : std::runtime_error("The window is closed.") {}
+    explicit WindowClosed(WorkFate what)
+        : std::runtime_error(what == WorkFate::dropped
+                                 ? "The window closed before the work was done."
+                                 : "The window is closed."),
+          fate(what) {}
+    WorkFate fate;
   };
 
   struct State {
@@ -86,10 +97,10 @@ public:
   void reload();
   void load(const std::string& uri);
   void close();
-  // Closes the window with a second piece of work handed over right behind the close, without
-  // waiting in between: that work must be dropped. True when its caller was told so
-  // (WindowClosed) instead of being left to wait.
-  [[nodiscard]] auto close_with_work_pending() -> bool;
+  // Closes the window with a second piece of work in the queue behind the close, both handed
+  // over at once. What became of that second piece: it must be `dropped`, and this must
+  // return, not wait for it.
+  [[nodiscard]] auto close_with_work_pending() -> WorkFate;
   // What WebKit says about its graphics (the text of its webkit://gpu page), from a view of
   // the test's own beside the panel: the panel's window never navigates there.
   [[nodiscard]] auto graphics_report() -> std::expected<std::string, std::string>;

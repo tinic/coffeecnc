@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <csignal>
 #include <cstddef>
-#include <fstream>
-#include <ios>
 #include <iterator>
 #include <string_view>
 
@@ -73,12 +71,10 @@ auto text_of(WebKitJavascriptResult* result) -> std::optional<std::string> {
   return copy;
 }
 
+// Answers a request with `length` bytes that WebKit reads from `stream` when it wants them.
 void respond(WebKitURISchemeRequest* request, int status, std::string_view content_type,
-             const std::string& body) {
-  GBytes* bytes = g_bytes_new(body.data(), body.size());
-  GInputStream* stream = g_memory_input_stream_new_from_bytes(bytes);
-  WebKitURISchemeResponse* response =
-      webkit_uri_scheme_response_new(stream, static_cast<gint64>(body.size()));
+             GInputStream* stream, gint64 length) {
+  WebKitURISchemeResponse* response = webkit_uri_scheme_response_new(stream, length);
   webkit_uri_scheme_response_set_status(response, static_cast<guint>(status), nullptr);
   webkit_uri_scheme_response_set_content_type(response, std::string(content_type).c_str());
   SoupMessageHeaders* headers = soup_message_headers_new(SOUP_MESSAGE_HEADERS_RESPONSE);
@@ -91,30 +87,47 @@ void respond(WebKitURISchemeRequest* request, int status, std::string_view conte
   webkit_uri_scheme_response_set_http_headers(response, headers); // takes the headers
   webkit_uri_scheme_request_finish_with_response(request, response);
   g_object_unref(response);
+}
+
+// A refusal: a status and a line of text.
+void refuse(WebKitURISchemeRequest* request, int status, std::string_view text) {
+  GBytes* bytes = g_bytes_new(text.data(), text.size());
+  GInputStream* stream = g_memory_input_stream_new_from_bytes(bytes);
+  respond(request, status, "text/plain", stream, static_cast<gint64>(text.size()));
   g_object_unref(stream);
   g_bytes_unref(bytes);
 }
 
+// On the GTK thread, like every signal. The file is only opened here: WebKit reads the stream
+// in pieces, off this thread, so that a large file (the STEP importer's WebAssembly is 7.6 MB)
+// does not keep the main loop from delivering the machine's status to the page.
 void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
   const auto* self = static_cast<PanelWindow::Impl*>(data);
   const std::string_view method = webkit_uri_scheme_request_get_http_method(request);
   if (method != "GET") {
-    respond(request, method_not_allowed, "text/plain", "Only GET.");
+    refuse(request, method_not_allowed, "Only GET.");
     return;
   }
   const auto asset =
       resolve_asset(self->options.ui_directory, webkit_uri_scheme_request_get_uri(request));
   if (!asset) {
-    respond(request, asset.error(), "text/plain", "Not a file of the panel.");
+    refuse(request, asset.error(), "Not a file of the panel.");
     return;
   }
-  std::ifstream in{asset->file, std::ios::binary};
-  if (!in) {
-    respond(request, not_found, "text/plain", "Not a file of the panel.");
-    return;
+  GFile* file = g_file_new_for_path(asset->file.c_str());
+  GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE,
+                                      nullptr, nullptr);
+  GFileInputStream* stream = info != nullptr ? g_file_read(file, nullptr, nullptr) : nullptr;
+  if (stream == nullptr) {
+    refuse(request, not_found, "Not a file of the panel.");
+  } else {
+    respond(request, ok, asset->content_type, G_INPUT_STREAM(stream),
+            static_cast<gint64>(g_file_info_get_size(info)));
+    g_object_unref(stream);
   }
-  const std::string body{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-  respond(request, ok, asset->content_type, body);
+  if (info != nullptr)
+    g_object_unref(info);
+  g_object_unref(file);
 }
 
 void on_message(WebKitUserContentManager* /*manager*/, WebKitJavascriptResult* result,
@@ -287,16 +300,17 @@ void PanelWindow::Impl::drain() {
     deliver(token, messages);
 }
 
-void PanelWindow::Impl::on_gtk_thread(std::function<void()> work) {
+auto PanelWindow::Impl::on_gtk_thread(std::vector<std::function<void()>> work) -> bool {
   {
     const std::scoped_lock lock{outbox->mutex};
     if (outbox->closed)
-      return;
-    outbox->work.push_back(std::move(work));
+      return false;
+    std::ranges::move(work, std::back_inserter(outbox->work));
     if (std::exchange(outbox->scheduled, true))
-      return;
+      return true;
   }
   wake();
+  return true;
 }
 
 void PanelWindow::Impl::begin_page() {

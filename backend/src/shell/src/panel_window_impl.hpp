@@ -67,9 +67,12 @@ struct PanelWindow::Impl {
   void end_page();
   void reload_later();
   void deliver(PageToken token, const std::vector<std::string>& messages);
-  // Any thread: `work` runs on the GTK thread, in the main loop. Dropped once the window is
-  // closed. For the test hooks.
-  void on_gtk_thread(std::function<void()> work);
+  // Any thread: the pieces of `work` run on the GTK thread, in the main loop, in this order
+  // and in one drain: they are handed over under one hold of the outbox's mutex. False, and
+  // nothing is kept, when the window is closed. Work that still waits when the window closes
+  // (also work behind the piece that closes it) is dropped without being run. For the test
+  // hooks.
+  [[nodiscard]] auto on_gtk_thread(std::vector<std::function<void()>> work) -> bool;
   // GTK thread: takes what waits in the outbox.
   void drain();
 };

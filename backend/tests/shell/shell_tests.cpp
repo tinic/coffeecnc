@@ -1285,6 +1285,8 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
 
   // The STEP imports ran on this page: the panel takes a second without a status for a stale
   // link, so the longest time between two statuses says whether it ever did.
+  // Serving the 7.6 MB WebAssembly file once kept the GTK thread, and with it every status,
+  // for 350 ms in a debug build and 2.5 s under ThreadSanitizer: the file was read there.
   const auto gap = rig.js("return __t.maxGapMs;").get<double>();
   check("status_never_late_on_import_page", gap < 1000, std::format("longest_gap_ms={:.0f}", gap));
 
@@ -1418,17 +1420,22 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
   // wait for ever.
   try {
     const auto asked = Clock::now();
-    const bool told = hooks.close_with_work_pending();
+    const auto fate = hooks.close_with_work_pending();
     const auto pending_ms =
         std::chrono::duration<double, std::milli>(Clock::now() - asked).count();
-    check("work_pending_at_close_is_refused", told && pending_ms < 5000,
-          std::format("told={} after_ms={:.0f}", told, pending_ms));
+    check("work_pending_at_close_is_dropped",
+          fate == ShellTestHooks::WorkFate::dropped && pending_ms < 5000,
+          std::format("fate={} after_ms={:.0f}",
+                      fate == ShellTestHooks::WorkFate::dropped
+                          ? "dropped"
+                          : fate == ShellTestHooks::WorkFate::refused ? "refused" : "ran",
+                      pending_ms));
     const auto again = Clock::now();
     bool refused = false;
     try {
       static_cast<void>(hooks.state());
-    } catch (const ShellTestHooks::WindowClosed&) {
-      refused = true;
+    } catch (const ShellTestHooks::WindowClosed& closed) {
+      refused = closed.fate == ShellTestHooks::WorkFate::refused;
     }
     const auto after_ms = std::chrono::duration<double, std::milli>(Clock::now() - again).count();
     check("work_after_close_is_refused", refused && after_ms < 1000,

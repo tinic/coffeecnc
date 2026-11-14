@@ -1,6 +1,6 @@
 # Architecture
 
-CoffeeCNC is an independent application. The agreed direction is a native C++ core with a GTK-hosted web UI, informed by Elle. The Vue/TypeScript operator panel and portable C++ core/session libraries are implemented; the LinuxCNC adapter and native shell integration remain in progress. This document records boundaries and remaining design work.
+CoffeeCNC is an independent application. The agreed direction is a native C++ core with a GTK-hosted web UI, informed by Elle. The Vue/TypeScript operator panel and portable C++ core/session libraries are implemented; the LinuxCNC adapter and the GTK/WebKit shell run the panel against LinuxCNC in simulation ([`shell.md`](shell.md)); the interpreter preview and operation of a machine remain. This document records boundaries and remaining design work.
 
 ```mermaid
 flowchart LR

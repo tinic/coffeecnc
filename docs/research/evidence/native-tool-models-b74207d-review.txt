@@ -22,7 +22,8 @@ actions. Clicking Reset must send exactly one set_machine/off command and
 receive an accepted result with the matching ID. It samples LinuxCNC OFF
 25 times at 20 ms intervals and checks the panel remains OFF, before a
 separate Machine on action. These are sampled assertions, not proof of
-continuous state between samples. Native execution remains pending.
+continuous state between samples. Native execution was pending at this
+source review; the completed development run below now covers the check.
 
 Test file readers use the bounded read_text_file helper. The panel mapping
 regression's messages use std::format after an analyzer finding on string
@@ -87,6 +88,51 @@ The panel bundle check matches the latest production inputs and assets:
   assets 617e2e6f0f08ba2febbf9d5d62e4342ea3828cec38884349f669fdc8995924d9
 This confirms the bundle present for these checks, not a native shell run.
 
-No integrated simulation, native shell, sanitizer or fresh Release-package
-qualification is claimed here. The current G0759 has no DATA_DIRECTORY
-override, but the generic runner's guard still needs the parser fix.
+Completed full development run, inspected at 04:27-04:29 UTC
+
+Copied the completed backend/build/dev/Testing/Temporary/LastTest.log to
+/tmp/coffeecnc-store-b74207d-review/dev/LastTest-full.log. It ends at 04:27
+with all 38 tests passed and no failed check lines. The remote checkout was
+observed tracked-clean at b74207d both during this run and after completion.
+This adds runtime evidence; it does not make the incremental build above
+a fresh whole-project build or supply missing configure provenance.
+
+All 12 top-level runner summaries report child_status=0 and processes_left=0.
+The separate runner-harness test passes its intentional timeout, signal,
+contention and child-failure cases. Frozen-task E-stop confirmation checks
+pass in metric, inch, G0759-profile and actual-machine simulation scenarios.
+
+The actual G0759 INI/HAL simulation identifies machine repository e11000c,
+dirty=0. Assembly records the same two substitutions and one addition in
+the INI, 56 driver-pin lines and 19 custom HAL lines removed, unchanged
+post-GUI/shutdown/tool files, and 22 post-GUI commands retained in order.
+Its storage checks find g0759 under the run directory's xdg-data/coffeecnc,
+available at revision 0 with a lock and no saved JSON. The normal home
+settings directory was absent before and remains absent. This is a
+simulation of the machine's configuration, not hardware commissioning.
+
+The native millimetre and inch shells each pass the OFF -> Reset checks
+three times across their scenarios. Both actions are offered, Reset sends
+only set_machine/off, the result is accepted, and the sampled machine and
+panel states remain OFF before the explicit Machine on action.
+
+The native tool-model editor saves default end-mill stick-out 35 -> 36.5
+and a T1 Drill assignment. Snapshots precede the accepted results at indices
+6/7 and 8/9; the file contains both changes. A second LinuxCNC/application
+run restores the snapshot, shows Drill in the table and 36.5 in the editor,
+and leaves the file unchanged by reading it. Both runs have no console
+errors and clean child/process summaries. Controller tool data and offsets
+remain unchanged by the model edits. This is still a full LinuxCNC plus
+application restart, not the previously unqualified application-only case.
+Reported status gaps of 238 ms and 253 ms are not a real-time guarantee.
+
+Both general shell runs and both tool-model runs report and serve the
+current UI inputs/assets listed above, with stamp commit b74207d. Thus this
+run exercises the integrated persistence and OFF-Reset UI, unlike the old
+61fdc34 native evidence. Prefix and unpacked-package startup tests also pass
+in this development run; this does not replace a fresh Release package run.
+
+Sanitizer and fresh Release-package validation of the integration remain
+pending. The current G0759 has no DATA_DIRECTORY override, so the known
+parser mismatch is not triggered by that input. The generic runner still
+needs its parser fix and focused follow-up checks before integration closes.

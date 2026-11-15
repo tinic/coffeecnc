@@ -1,0 +1,61 @@
+CoffeeCNC install/package review, 2026-11-15 02:49 UTC
+
+Reviewed source: 128b40405a763ec64d2451e2cc4e3d3b8bc39963 on claude/packaging.
+Codex read the complete 16-file delta against main0489e83 and independently
+copied/read retained development and Release package logs from playhouse2.
+This checkpoint has not merged. No hardware or host package installation.
+
+Development configuration
+
+Clean source; configure/build/CTest exit0. Full suite31/31 in466.04s. Includes
+portable/native tests, G0759 simulation, runner, both shell units, install_tree,
+package_deb, normal application startup and both installed startup paths.
+Eight top-level simulation DISPLAY children exit0 with processes_left=0.
+The runner's long-argument regression passes with a520-character argument.
+
+Install prefix and dpkg-deb -x package each run their installed executable,
+without --ui and with no COFFEECNC_* environment except the run marker. Logs
+name that tree's own panel and preview helper. A sample program produces a
+ready six-segment computation before termination; actual child exit0 and no
+residual processes. This is helper computation/startup evidence, not a visual
+inspection of the installed window or proof of physical operation.
+
+Package: coffeecnc_0.1.0_amd64.deb, 4,119,818 bytes, Installed-Size10,983KiB.
+Generated dependencies include linuxcnc-uspace >=1:2.9.4 and <<1:2.10 plus
+dpkg-shlibdeps' library/runtime dependencies. Both trees'23 panel files match
+ui/dist; HAL and example INI match source. No group/world-writable package
+entries are reported. Geometry licenses/source references and font notices are
+already under ui/public and included through the built panel. Project-wide
+license selection remains undecided; no new license choice is made here.
+
+This is the pre-persistence UI bundle (6b1eb88), not codex/native-tool-models:
+inputs a1cd52cfb90eec6626b810d7a9e001f0b57e6bef1c871b70cba2cb8aa626b60d
+assets ff90e920d574813037ed865390c45f5ed4d7dd96ebbf7a5147f9505fd679cca1
+
+Release configuration failure, retained separately
+
+The package preset configures successfully, then build exits1. Actual compile
+flags include -O3 -DNDEBUG with warnings as errors. GCC14 diagnoses potential
+null dereferences in libstdc++ streambuf iterator string construction used by
+preview_helper.cpp (664/804), nml_panel_source.cpp:76 and nml_port.cpp:410.
+No Release CTest or Release-package execution completed on this checkpoint.
+Do not describe the development-build package above as a Release qualification.
+Claude is fixing the source without globally disabling these warnings.
+
+Review finding still open at this checkpoint
+
+under_xvfb.sh --terminate-after prints result=fail when a child exits0 before
+the wait finishes, but checked remains0, wait returns0 and the wrapper exits0.
+Likewise its new alive-after-check failure only changes printed text. run.sh
+does not parse result=fail; it trusts the actual wrapper exit. Therefore CTest
+can pass these failure paths. The retained128b404 installed runs did execute
+their checks and remain valid for the observed cases, but the wrapper must
+return nonzero for both early-death cases. Claude acknowledged the finding and
+is adding short-lived exit0 regressions plus auditing the new check scripts.
+
+Pending: corrected wrapper regressions; reviewed Release source fixes and
+Release installed/package tests with development fallbacks disabled; package
+documentation and separately reviewed G0759 launch files/derived simulation.
+
+Host: backend/build/sim-history/128b404/{dev,package}/ on playhouse2.
+Local: /tmp/coffeecnc-packaging-128b404-review/{dev,package}/.

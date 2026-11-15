@@ -491,3 +491,27 @@ accuracy, collision checking, GUI TSan and accessibility-enabled leak behavior
 remain outside the verified scope. The G0759 and runner simulations were not
 rerun for this preview PR; sim inch and executable startup were last checked at
 5a04f40. Existing sanitizer exclusions remain explicitly documented.
+
+Post-merge full development run: 9892a42, 2026-11-15 02:20 UTC
+
+Claude's complete dev suite on clean main 9892a42 passes 25/27 in 448.15 s.
+Both native shell tests fail paired_sample_b_previewed_while_g55_is_active;
+each reports the G54-start refusal at line 24, context 36, no segments. Both
+actual shell children exit 1, with zero residual processes. This failed full
+run is retained separately from the earlier passing focused runs. Codex copied
+and read CTest, LastTest, provenance and both shell logs.
+
+Independent source review confirms a test synchronization defect: select()
+sends external MDI, then waits only for a non-pending preview matching the
+panel's current context. The already displayed G54 status/preview pair satisfies
+that predicate before the newly requested G55 status reaches the panel. The
+report's active=G55 is the caller's label, not an observation of status.offsets.
+The failing logs do not establish which WCS the panel had observed at assertion.
+
+Claude was asked to require the observed target WCS and its matching updated
+preview context, and record actual status/WCS/context rather than sleep. This
+source finding does not by itself rule out a product defect; corrected test
+results remain pending. No hardware run or additional sanitizer pass is implied.
+
+Host: backend/build/sim-history/9892a42/dev/ on playhouse2.
+Local: /tmp/coffeecnc-main-9892a42-review/dev/.

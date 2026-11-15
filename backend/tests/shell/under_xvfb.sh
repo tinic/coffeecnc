@@ -2,27 +2,43 @@
 # Runs a DISPLAY program of LinuxCNC on an X display of its own (Xvfb, 1280x800): for
 # tests/sim/run.sh, which starts LinuxCNC without one.
 #
-#   run.sh [...] under_xvfb.sh [--terminate-after=<seconds>] <program> [arguments...]
+#   run.sh [...] under_xvfb.sh [--terminate-after=<seconds>] [--check=<script>[,<word>]]
+#     <program> [arguments...]
 #
-# LinuxCNC starts this script as `under_xvfb.sh -ini <file> [--terminate-after=<seconds>]
-# <program> [arguments...]`; the program is started as `<program> -ini <file> [arguments...]`.
+# LinuxCNC starts this script as `under_xvfb.sh -ini <file> [options] <program>
+# [arguments...]`; the program is started as `<program> -ini <file> [arguments...]`.
 # With --terminate-after the program is sent SIGTERM after that time and this script prints
 # an `exit=<code>` line with the program's exit code; otherwise the program prints it. Either
-# way this script exits with the program's exit code. Xvfb is started here and ended here, by
-# its process ID.
+# way this script exits with the program's exit code. With --check (and --terminate-after) the
+# script is run as `<script> <process ID> <INI file> <program> [<word>]` while the program
+# still runs, just before the SIGTERM. --check without --terminate-after is refused (125).
+#
+# tests/sim/run.sh goes by this script's exit code and reads no `result=fail` line. So every
+# failure printed here is a nonzero exit code too: 1 where the program's own was 0, for a
+# program that ended by itself before the SIGTERM, a check script that failed, and a program
+# that was gone when its check script returned. Then the `exit=` line carries 1 as well.
+# Xvfb is started here and ended here, by its process ID.
 set -u
 [ "${1:-}" = -ini ] && [ $# -ge 3 ] || { echo "exit=125"; exit 125; }
 ini=$2
 shift 2
 terminate_after=
-case $1 in
---terminate-after=*)
-  terminate_after=${1#--terminate-after=}
+check=
+while :; do
+  case $1 in
+  --terminate-after=*) terminate_after=${1#--terminate-after=} ;;
+  --check=*) check=${1#--check=} ;;
+  *) break ;;
+  esac
   shift
-  ;;
-esac
+done
 program=$1
 shift
+if [ -n "$check" ] && [ -z "$terminate_after" ]; then
+  echo "check=options result=fail detail=check-needs-terminate-after"
+  echo "exit=125"
+  exit 125
+fi
 directory=$(dirname "$ini")
 
 rm -f "$directory/xvfb.display"
@@ -57,11 +73,26 @@ else
   "$program" -ini "$ini" "$@" &
   pid=$!
   sleep "$terminate_after"
+  checked=0
+  lifecycle=0
   if kill -0 "$pid" 2>/dev/null; then
     echo "check=program_ran_until_terminated result=pass detail=seconds=$terminate_after"
+    if [ -n "$check" ]; then
+      # shellcheck disable=SC2086  # <script>,<word>: two words on purpose.
+      "${check%%,*}" "$pid" "$ini" "$program" $(case $check in *,*) echo "${check#*,}" ;; esac)
+      checked=$?
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "check=program_ran_through_its_checks result=pass detail=checks_exit=$checked"
+      else
+        echo "check=program_ran_through_its_checks result=fail detail=ended-by-itself_checks_exit=$checked"
+        lifecycle=1
+      fi
+      [ "$checked" = 0 ] || echo "check=checks_passed result=fail detail=checks_exit=$checked"
+    fi
     kill -TERM "$pid"
   else
     echo "check=program_ran_until_terminated result=fail detail=ended-by-itself"
+    lifecycle=1
   fi
   wait "$pid"
   code=$?
@@ -69,6 +100,10 @@ else
     echo "check=sigterm_exit_code result=pass detail=0"
   else
     echo "check=sigterm_exit_code result=fail detail=$code"
+  fi
+  # A failure printed above with a program that exited 0 is still a failure of this script.
+  if [ "$code" = 0 ] && { [ "$checked" != 0 ] || [ "$lifecycle" != 0 ]; }; then
+    code=1
   fi
   echo "exit=$code"
 fi

@@ -6,9 +6,18 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 include(cmake/ProjectOptions.cmake)
+# Directories an installation or package creates: not writable by the group, whatever the
+# umask of the build is.
+set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+  GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 include(cmake/StaticAnalyzers.cmake)
 add_subdirectory(src/core)
 option(COFFEECNC_BUILD_APP "Build the app protocol layer (requires nlohmann_json)" ON)
+# ON: an executable that finds no panel or preview helper installed beside it uses the panel of
+# this checkout (ui/dist) and the helper of this build tree; both paths are compiled in. OFF,
+# for a build that is packaged: only the installed places are looked at.
+option(COFFEECNC_DEVELOPMENT_PATHS
+  "Compile in this checkout's panel and this build tree's preview helper as fallbacks" ON)
 if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/app)
 endif()
@@ -17,6 +26,9 @@ if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/shell)
   add_subdirectory(src/coffeecnc)
 endif()
+if(TARGET coffeecnc)
+  include(cmake/Packaging.cmake)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -24,6 +36,11 @@ if(BUILD_TESTING)
   target_link_libraries(coffeecnc_core_tests PRIVATE coffeecnc_core coffeecnc_project_options)
   coffeecnc_enable_analyzers(coffeecnc_core_tests)
   add_test(NAME core_behavior COMMAND coffeecnc_core_tests)
+  # The one way a file is taken into memory: whole, bounded, read in blocks.
+  add_executable(coffeecnc_text_file_tests tests/text_file_tests.cpp)
+  target_link_libraries(coffeecnc_text_file_tests PRIVATE coffeecnc_core coffeecnc_project_options)
+  coffeecnc_enable_analyzers(coffeecnc_text_file_tests)
+  add_test(NAME text_file COMMAND coffeecnc_text_file_tests ${PROJECT_BINARY_DIR})
   if(COFFEECNC_BUILD_APP)
     add_executable(coffeecnc_request_tests tests/request_tests.cpp)
     target_link_libraries(coffeecnc_request_tests PRIVATE coffeecnc_app coffeecnc_project_options)
@@ -111,7 +128,8 @@ if(BUILD_TESTING)
         coffeecnc_project_options)
       coffeecnc_enable_analyzers(coffeecnc_machine_config_tests)
       add_test(NAME machine_config COMMAND coffeecnc_machine_config_tests
-        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config)
+        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config
+        ${PROJECT_SOURCE_DIR}/share/coffeecnc.ini.example)
       # LinuxCNC's status as the panel's messages, on constructed readings. No LinuxCNC runs.
       add_executable(coffeecnc_panel_mapping_tests tests/panel_mapping_tests.cpp)
       target_link_libraries(coffeecnc_panel_mapping_tests PRIVATE coffeecnc_linuxcnc
@@ -151,6 +169,8 @@ if(BUILD_TESTING)
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
+      # The TIMEOUT of every simulation test includes 300 s it may wait for the host's
+      # simulation lock (run.sh -w): another checkout may be running one.
       foreach(units mm inch)
         # Every simulation test has a run directory of its own, named after the test: its
         # linuxcnc.log there is that test's and no other's.
@@ -159,7 +179,7 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests>)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-          RESOURCE_LOCK linuxcnc TIMEOUT 400)
+          RESOURCE_LOCK linuxcnc TIMEOUT 700)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
@@ -169,12 +189,31 @@ if(BUILD_TESTING)
       add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
         ${PROJECT_BINARY_DIR})
       set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
-        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      # The G0759 scenario on the machine's own INI and HAL files, hardware simulated (run.sh
+      # -m). The files are in a checkout of the machine configurations (tinic/linuxcnc), which
+      # this repository does not carry: without one the tests are skipped.
+      set(COFFEECNC_MACHINES_DIRECTORY "" CACHE PATH
+        "Checkout of the machine configurations for the tests on a machine's own files; the environment variable of the same name at ctest time when empty")
+      set(machine_g0759 ${PROJECT_SOURCE_DIR}/tests/sim/with_machine.sh
+        machines=${COFFEECNC_MACHINES_DIRECTORY} configs/G0759/G0759-coffeecnc.ini
+        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -s ${PROJECT_SOURCE_DIR}/tests/sim/coffeecnc_g0759_machine_hardware.hal)
+      add_test(NAME linuxcnc_machine_g0759 COMMAND ${machine_g0759}
+        -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_machine_g0759
+        $<TARGET_FILE:coffeecnc_sim_tests> g0759-machine)
+      set_tests_properties(linuxcnc_machine_g0759 PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+        RESOURCE_LOCK linuxcnc TIMEOUT 700 SKIP_RETURN_CODE 77)
       if(TARGET coffeecnc)
+        set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.
         add_test(NAME coffeecnc_cli COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/cli_tests.sh
           $<TARGET_FILE:coffeecnc> ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          ${PROJECT_BINARY_DIR}/cli)
+          ${PROJECT_BINARY_DIR}/cli ${paths_kind})
+        # The Xvfb wrapper of the tests below: each failure it prints is a nonzero exit code.
+        add_test(NAME xvfb_wrapper COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/wrapper_tests.sh
+          ${PROJECT_BINARY_DIR})
+        set_tests_properties(xvfb_wrapper PROPERTIES TIMEOUT 120)
         # The panel the tests below run: ui/dist, built from the ui/ sources of this checkout
         # and stamped with their hashes (ui/build-stamp.ts). The tests need it, and each checks
         # the stamp again itself before it does anything.
@@ -208,17 +247,36 @@ if(BUILD_TESTING)
         # cross to the GTK thread through the shell's own queue.) Each of these programs then
         # exits 66 on the reports. All 202 checks of each shell test passed in those runs. No
         # suppression is in place. The programs still build with the preset.
-        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+        # `cmake --install` into a prefix below the build directory: the layout, the one HAL
+        # fragment, nothing else installed.
+        set(installed ${PROJECT_BINARY_DIR}/installed)
+        add_test(NAME install_tree COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/install_tree.sh
+          ${PROJECT_BINARY_DIR} ${installed}/prefix ${PROJECT_SOURCE_DIR} ${paths_kind})
+        set_tests_properties(install_tree PROPERTIES FIXTURES_REQUIRED panel
+          FIXTURES_SETUP installed_prefix TIMEOUT 300)
+        set(installed_programs prefix:${installed}/prefix/bin/coffeecnc)
+        if(CPACK_GENERATOR)
+          # The Debian package: control fields, dependencies, contents; unpacked with
+          # dpkg-deb -x below the build directory, never installed.
+          add_test(NAME package_deb COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/package_deb.sh
+            ${PROJECT_BINARY_DIR} ${installed}/package ${PROJECT_SOURCE_DIR} ${PROJECT_VERSION}
+            ${paths_kind})
+          set_tests_properties(package_deb PROPERTIES FIXTURES_REQUIRED panel
+            FIXTURES_SETUP installed_package TIMEOUT 600)
+          list(APPEND installed_programs package:${installed}/package/root/usr/bin/coffeecnc)
+        endif()
+        # The build tree's GUI tests need the fallbacks: the test program is not installed.
+        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS AND COFFEECNC_DEVELOPMENT_PATHS)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
               -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}
               ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
               $<TARGET_FILE:coffeecnc_shell_tests>)
             set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-              RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
+              RESOURCE_LOCK linuxcnc TIMEOUT 900 FIXTURES_REQUIRED panel)
           endforeach()
           # The tool models through the real editor, on a sim machine that is given an identity
-          # (run.sh -m): a defaults save and an assignment save reach the disk; LinuxCNC and the
+          # (run.sh -i): a defaults save and an assignment save reach the disk; LinuxCNC and the
           # application are then started again in the same run directory (run.sh -k), and the
           # panel shows what was saved.
           add_test(NAME linuxcnc_shell_tool_models
@@ -235,7 +293,34 @@ if(BUILD_TESTING)
             ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
             $<TARGET_FILE:coffeecnc>)
           set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-            RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
+            RESOURCE_LOCK linuxcnc TIMEOUT 500 FIXTURES_REQUIRED panel)
+          # The same on the G0759's own INI and HAL files, and a program's preview with the
+          # machine's [RS274NGC] and tool table becomes ready.
+          add_test(NAME linuxcnc_machine_g0759_start COMMAND ${machine_g0759}
+            -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_machine_g0759_start
+            ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
+            --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh $<TARGET_FILE:coffeecnc>)
+          set_tests_properties(linuxcnc_machine_g0759_start PROPERTIES LABELS linuxcnc
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500 FIXTURES_REQUIRED panel
+            SKIP_RETURN_CODE 77)
+        endif()
+        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+          # The INSTALLED executable as the DISPLAY program, from the prefix and from the
+          # unpacked package: no --ui, no COFFEECNC_* setting. It names the installed panel and
+          # the installed helper, a program's preview becomes ready, and SIGTERM ends it and
+          # LinuxCNC with no process left (run.sh).
+          foreach(entry IN LISTS installed_programs)
+            string(REGEX MATCH "^[a-z]+" tree ${entry})
+            string(REGEX REPLACE "^[a-z]+:" "" program ${entry})
+            add_test(NAME linuxcnc_installed_${tree}_start
+              COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+              -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_installed_${tree}_start
+              ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
+              --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh,installed ${program})
+            set_tests_properties(linuxcnc_installed_${tree}_start PROPERTIES LABELS linuxcnc
+              RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500
+              FIXTURES_REQUIRED installed_${tree})
+          endforeach()
         endif()
       endif()
     endif()

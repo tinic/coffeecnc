@@ -16,18 +16,14 @@ xvfb=$2
 program=$3
 directory=$4
 
-"$runner" -u mm -m shell-mill -t 200 -d "$directory" "$xvfb" "$program" tool-models
+"$runner" -u mm -i shell-mill -t 200 -d "$directory" "$xvfb" "$program" tool-models
 first=$?
 cp "$directory/linuxcnc.log" "$directory/first-run.log" 2>/dev/null
 echo "restart=first_run exit=$first"
 [ "$first" = 0 ] || exit "$first"
-# One LinuxCNC per host: when another user of the simulator took it meanwhile, wait for it,
-# bounded; run.sh refuses anyway while one runs.
-for _ in $(seq 300); do
-  pgrep -x "linuxcncsvr|milltask|rtapi_app" >/dev/null || [ -e /tmp/linuxcnc.lock ] || break
-  sleep 1
-done
-"$runner" -k -u mm -m shell-mill -t 200 -d "$directory" "$xvfb" "$program" tool-models second-run
+# run.sh takes the host's runner lock for each run and waits for it when another checkout
+# holds it in between.
+"$runner" -k -u mm -i shell-mill -t 200 -d "$directory" "$xvfb" "$program" tool-models second-run
 second=$?
 echo "restart=second_run exit=$second"
 exit "$second"

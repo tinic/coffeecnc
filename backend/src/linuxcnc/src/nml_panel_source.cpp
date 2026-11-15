@@ -1,4 +1,5 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
@@ -76,16 +77,16 @@ struct NmlPanelSource::Impl {
   // A table is shown only with the comments read from the file for it: a tool's comment is
   // part of what a saved tool model is bound to, and neither the text of an earlier table nor
   // an empty text (a real value) may stand in for one that could not be read. While the file
-  // cannot be read no row is shown, which is said once; the accepted rows still count for the
-  // preview context (`withheld`), and the prepared tool and the preview use other tables.
+  // cannot be read (not there, a directory, a read error, above max_tool_table_bytes) no row
+  // is shown, which is said once; the accepted rows still count for the preview context
+  // (`withheld`), and the prepared tool and the preview use other tables.
   void show_tools(const std::vector<LoadedTool>& accepted,
                   std::vector<ControllerMessage>& messages) {
     bool read = config.tool_table.empty();
     std::map<int, std::string> comments;
-    if (std::ifstream in{config.tool_table, std::ios::binary}; in && !read) {
-      const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-      if (!in.bad()) {
-        comments = comments_of(text);
+    if (!read) {
+      if (const auto text = read_text_file(config.tool_table, max_tool_table_bytes)) {
+        comments = comments_of(*text);
         read = true;
       }
     }

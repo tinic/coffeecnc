@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -759,6 +760,63 @@ void source_table_is_withheld_without_its_comments() {
           "A later failure withholds the table again and is said again, once");
 }
 
+// A tool table path that opens and cannot be read (a directory), and a file above the bound:
+// read on a thread of its own, as the publisher reads. Nothing is thrown there; the table is
+// withheld, said once, tried again every period, and published when the file reads again.
+void source_survives_an_unreadable_tool_table() {
+  for (const bool too_large : {false, true}) {
+    Rig rig;
+    const std::string what = too_large ? "larger than the bound" : "a directory";
+    std::filesystem::remove_all(rig.config.tool_table);
+    if (too_large) {
+      std::string text = "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3 ;drill\n";
+      text.resize(max_tool_table_bytes + 1, ';');
+      write(rig.config.tool_table, text);
+    } else {
+      std::filesystem::create_directory(rig.config.tool_table);
+    }
+    std::vector<PanelReading> readings;
+    std::string thrown;
+    std::thread publisher{[&]() -> void {
+      try {
+        for (int period = 0; period < 6; ++period)
+          readings.push_back(rig.step());
+        // Readable again, the loaded table what it was.
+        std::filesystem::remove_all(rig.config.tool_table);
+        write(rig.config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3 ;drill\n");
+        for (int period = 0; period < 3; ++period)
+          readings.push_back(rig.step());
+      } catch (const std::exception& error) {
+        thrown = error.what();
+      }
+    }};
+    publisher.join();
+    require(thrown.empty() && readings.size() == 9,
+            "A tool table file that is " + what + ": the reading thread goes on: " + thrown);
+    std::size_t said = 0;
+    for (std::size_t i = 0; i < 6; ++i) {
+      said += readings[i].messages.size();
+      require(readings[i].tool_table.tools.empty() && readings[i].status.link == Link::live,
+              "A tool table file that is " + what + ": no row is shown, the status goes on");
+    }
+    const std::vector<Tool> rows{{1, 1, 50, 6, ""}, {2, 2, 40, 3, ""}};
+    require(said == 1 && readings[1].messages.size() == 1 &&
+                readings[1].messages[0].text.find("cannot be read: the tool table is not shown") !=
+                    std::string::npos &&
+                readings[1].tool_table.revision == 1 && readings[5].tool_table.revision == 1 &&
+                readings[5].accepted_tools == rows && readings[5].status.tool.prepared == 2,
+            "A tool table file that is " + what + ": withheld and said once, when the table "
+            "is accepted; tried again every period without another word");
+    require(readings[6].tool_table.revision == 2 &&
+                readings[6].tool_table.tools ==
+                    std::vector<Tool>{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, "drill"}} &&
+                readings[6].messages.empty() && !readings[6].accepted_tools &&
+                readings[8].tool_table.revision == 2,
+            "A tool table file that is " + what + ": readable again, the table is published "
+            "with its comments in the next period");
+  }
+}
+
 void source_without_a_tool_table() {
   Rig rig;
   rig.loaded.reset();
@@ -792,6 +850,7 @@ auto main(int argc, char** argv) -> int {
     source_lines_belong_to_the_revision();
     source_tool_table();
     source_table_is_withheld_without_its_comments();
+    source_survives_an_unreadable_tool_table();
     source_preview_tools();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";

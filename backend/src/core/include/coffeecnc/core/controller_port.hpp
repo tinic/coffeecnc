@@ -27,6 +27,29 @@ struct ActionResult {
   std::string reason;
 };
 
+// The result of an E-stop request, by the machine state the controller reports after the
+// command: the reported state decides, never the command's own status or which step of it
+// failed. A state confirms or names anything only when it is evidence: from a status of a
+// live link (`link`) that the controller published after it took the command
+// (`after_command`). A status buffer keeps its last contents when the controller stops: an
+// E-stop state still readable there says nothing. `reported` is empty when there is no status.
+// Not confirmed, the reason says what the controller reports instead, and nothing about why
+// (wiring is not visible in a status).
+[[nodiscard]] inline auto estop_request_result(std::optional<MachineState> reported, Link link,
+                                               bool after_command) -> ActionResult {
+  if (!reported || link != Link::live || !after_command)
+    return {ActionStatus::failed, "LinuxCNC's status cannot be read; E-stop was not confirmed."};
+  switch (*reported) {
+  case MachineState::estop:
+    return {};
+  case MachineState::off:
+    return {ActionStatus::failed, "LinuxCNC reports machine off; E-stop was not confirmed."};
+  case MachineState::on:
+    break;
+  }
+  return {ActionStatus::failed, "LinuxCNC still reports machine on; E-stop was not confirmed."};
+}
+
 // Asked by a port while it carries out an action: is the action still wanted? The session
 // answers for the request behind it: false once its page has ended or an abort, E-stop or power
 // off was asked for, and for a jog start or increment also once jogs were stopped. Cheap, and it

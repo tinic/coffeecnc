@@ -3,6 +3,7 @@
 //   coffeecnc_preview_engine_tests <coffeecnc-preview> <scratch directory>
 
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include "../src/linuxcnc/src/preview_wire.hpp"
 #include "../src/linuxcnc/src/program_watch.hpp"
@@ -522,8 +523,7 @@ void active_comments_are_refused() {
     const auto command = std::format("cd '{}' && '{}' request 3 3>'{}' >/dev/null 2>&1",
                                      direct.string(), helper, out.string());
     const int status = std::system(command.c_str());
-    std::ifstream in{out};
-    const std::string result{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+    const auto result = read_text_file(out.string(), std::size_t{64} << 20).value_or(std::string());
     const auto parsed = parse_output(result);
     require(status == 0 && parsed.end == HelperEnd::stop && parsed.problem &&
                 parsed.problem->line == 0 &&

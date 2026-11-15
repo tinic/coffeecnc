@@ -12,6 +12,7 @@
 #include "application.hpp"
 
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
+#include <coffeecnc/core/text_file.hpp>
 #include <coffeecnc/shell/test_hooks.hpp>
 
 #include <nlohmann/json.hpp>
@@ -90,8 +91,7 @@ auto output_of(const std::string& command) -> std::string {
 }
 
 auto contents(const std::filesystem::path& file) -> std::string {
-  std::ifstream in{file, std::ios::binary};
-  return {std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+  return read_text_file(file.string(), std::size_t{64} << 20).value_or(std::string());
 }
 
 void write(const std::filesystem::path& file, std::string_view text) {

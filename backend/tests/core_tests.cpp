@@ -1,4 +1,5 @@
 #include <coffeecnc/core/command_policy.hpp>
+#include <coffeecnc/core/controller_port.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 
@@ -6,6 +7,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -285,6 +287,37 @@ void task_heartbeat() {
 }
 } // namespace
 
+// An E-stop request is answered by the state reported after it, in these words.
+void estop_request_results() {
+  const std::string unreadable = "LinuxCNC's status cannot be read; E-stop was not confirmed.";
+  // A state from a status that is not evidence confirms and names nothing: a stale or absent
+  // link, or a status from before the command, whatever state is still readable in it.
+  for (const auto state : {MachineState::estop, MachineState::off, MachineState::on}) {
+    for (const auto link : {Link::stale, Link::down}) {
+      const auto stale = estop_request_result(state, link, true);
+      require(stale.status == ActionStatus::failed && stale.reason == unreadable,
+              "a state of a link that is not live is no evidence");
+    }
+    const auto earlier = estop_request_result(state, Link::live, false);
+    require(earlier.status == ActionStatus::failed && earlier.reason == unreadable,
+            "a state published before the command is no evidence");
+  }
+  const auto confirmed = estop_request_result(MachineState::estop, Link::live, true);
+  require(confirmed.status == ActionStatus::accepted && confirmed.reason.empty(),
+          "E-stop reported: accepted");
+  const auto off = estop_request_result(MachineState::off, Link::live, true);
+  require(off.status == ActionStatus::failed &&
+              off.reason == "LinuxCNC reports machine off; E-stop was not confirmed.",
+          "off reported: failed, and says off");
+  const auto on = estop_request_result(MachineState::on, Link::live, true);
+  require(on.status == ActionStatus::failed &&
+              on.reason == "LinuxCNC still reports machine on; E-stop was not confirmed.",
+          "on reported: failed, and says still on");
+  const auto unread = estop_request_result(std::nullopt, Link::live, true);
+  require(unread.status == ActionStatus::failed && unread.reason == unreadable,
+          "no status: failed, and says so");
+}
+
 auto main() -> int {
   try {
     execution_gates();
@@ -295,6 +328,7 @@ auto main() -> int {
     hostile_values();
     independent_jog_leases();
     task_heartbeat();
+    estop_request_results();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << "Check " << checks << " failed: " << error.what() << '\n';

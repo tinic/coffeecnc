@@ -226,3 +226,52 @@ Local copies: /tmp/coffeecnc-preview-{9b36c7a,48da0a8}-review/dev/.
 The application remains unwired at these commits. Native UI/STEP overlay,
 application ownership/shutdown, analyzers and sanitizers are not qualified by
 these engine and simulation results. No G0759 hardware operation was performed.
+
+Application wiring review: 99e1b7b, 2026-11-15 01:06 UTC
+
+This checkpoint connects HelperPreviewEngine and PreviewWorker to PanelFeed.
+Codex reviewed application.cpp: one publisher-owned read_raw pass feeds both the
+shown table and the raw preview callback. There is no second concurrent read by
+the preview engine. Feed destruction precedes runtime shutdown; the preview
+worker joins before its engine and private work directory are destroyed. Finding
+4's application ownership and input-binding requirement is now source-reviewed.
+The accepted-table comparison is of LoadedTool's displayed projection only:
+X/Y offsets and spindle-entry-only changes enter preview_tools on the first pass,
+as the header and source_preview_tools test explicitly specify. Do not describe
+that as two matching complete raw-table passes or an atomic tool-table snapshot.
+
+Retained 99e1b7b/dev logs were independently copied and read:
+- portable 20/20, 28.54 s;
+- shell mm: 206/206 checks, 31.89 s, actual child_status=0;
+- shell inch: 205/206 checks, 41.95 s, actual child_status=1;
+- executable startup: 2 checks, 13.19 s, actual child_status=0.
+All three native wrappers record processes_left=0. git-status.txt has only the
+unrelated untracked ../concept.png. These are reviewed retained runs, not new
+Codex native executions.
+
+The inch failure is preview_stale_and_recomputed_after_work_offset_change:
+  mdi=true stale=false ready_again=true contexts=36->37 previews=38->40 x=11.5
+The test's MDI helper divides by machine millimetres_per_unit. But part.ngc has
+selected G21 even on the inch machine: it sends X1.5 while the assertions expect
+an offset of 38.1 mm. The recorded preview endpoint is 11.5 mm, consistent with
+10 + 1.5. Codex independently found this mismatch in the source and logs; Claude
+also diagnosed it and retained the failed run in verification commit 718e89c.
+This is not evidence of a missed transient or an inch preview conversion defect.
+The corrected test must select G21 explicitly and send millimeters, while
+preserving checks of context, output geometry and message ordering. Merely
+weakening the stale-state assertion would not correct the units mismatch.
+Primary unit semantics: LinuxCNC G-code reference, section G20/G21:
+https://linuxcnc.org/docs/html/gcode/g-code.html#gcode:g20-g21
+
+Both shell runs served the OLD panel: inputs c0696285..., assets a9f882d7...;
+neither qualifies the current 6b1eb88 UI. They do receive a ready native preview
+for the loaded file with three feed segments on main-file lines 3, 5 and 7.
+The STEP test reaches "Placement unconfirmed" with a live scene context, but
+does not confirm placement or observe a drawn overlay. Native overlay rendering
+still requires its own evidence.
+
+Host: backend/build/sim-history/99e1b7b/dev/ on playhouse2.
+Local: /tmp/coffeecnc-preview-99e1b7b-review/dev/.
+At review time branch head 4be15c2 merges main/current UI; no corrected test or
+reconnect-reuse implementation has yet been reviewed. Claude reports a new run
+in progress. Do not infer its result from the prior passing engine checks.

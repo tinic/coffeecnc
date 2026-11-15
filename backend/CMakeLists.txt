@@ -164,6 +164,8 @@ if(BUILD_TESTING)
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
+      # The TIMEOUT of every simulation test includes 300 s it may wait for the host's
+      # simulation lock (run.sh -w): another checkout may be running one.
       foreach(units mm inch)
         # Every simulation test has a run directory of its own, named after the test: its
         # linuxcnc.log there is that test's and no other's.
@@ -172,7 +174,7 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests>)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-          RESOURCE_LOCK linuxcnc TIMEOUT 400)
+          RESOURCE_LOCK linuxcnc TIMEOUT 700)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
@@ -182,7 +184,7 @@ if(BUILD_TESTING)
       add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
         ${PROJECT_BINARY_DIR})
       set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
-        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
       # The G0759 scenario on the machine's own INI and HAL files, hardware simulated (run.sh
       # -m). The files are in a checkout of the machine configurations (tinic/linuxcnc), which
       # this repository does not carry: without one the tests are skipped.
@@ -196,7 +198,7 @@ if(BUILD_TESTING)
         -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_machine_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759-machine)
       set_tests_properties(linuxcnc_machine_g0759 PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-        RESOURCE_LOCK linuxcnc TIMEOUT 400 SKIP_RETURN_CODE 77)
+        RESOURCE_LOCK linuxcnc TIMEOUT 700 SKIP_RETURN_CODE 77)
       if(TARGET coffeecnc)
         set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.
@@ -266,7 +268,7 @@ if(BUILD_TESTING)
               ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
               $<TARGET_FILE:coffeecnc_shell_tests>)
             set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-              RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
+              RESOURCE_LOCK linuxcnc TIMEOUT 900 FIXTURES_REQUIRED panel)
           endforeach()
           # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
           # and SIGTERM ends it and LinuxCNC with no process left.
@@ -275,7 +277,7 @@ if(BUILD_TESTING)
             ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=12
             $<TARGET_FILE:coffeecnc>)
           set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-            RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
+            RESOURCE_LOCK linuxcnc TIMEOUT 500 FIXTURES_REQUIRED panel)
           # The same on the G0759's own INI and HAL files, and a program's preview with the
           # machine's [RS274NGC] and tool table becomes ready.
           add_test(NAME linuxcnc_machine_g0759_start COMMAND ${machine_g0759}
@@ -283,7 +285,7 @@ if(BUILD_TESTING)
             ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
             --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh $<TARGET_FILE:coffeecnc>)
           set_tests_properties(linuxcnc_machine_g0759_start PROPERTIES LABELS linuxcnc
-            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500 FIXTURES_REQUIRED panel
             SKIP_RETURN_CODE 77)
         endif()
         if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
@@ -300,7 +302,7 @@ if(BUILD_TESTING)
               ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
               --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh,installed ${program})
             set_tests_properties(linuxcnc_installed_${tree}_start PROPERTIES LABELS linuxcnc
-              RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 200
+              RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500
               FIXTURES_REQUIRED installed_${tree})
           endforeach()
         endif()

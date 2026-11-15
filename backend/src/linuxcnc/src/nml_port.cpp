@@ -527,6 +527,26 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
     message.state = EMC_TASK_STATE_ON;
     break;
   }
+  if (state == MachineState::estop) {
+    // An E-stop request is answered by the state LinuxCNC reports after it, whatever became of
+    // the command or of a step of it: task can switch the machine off and abort (which may
+    // publish errors of its own) without ever reporting E-stop, where the state is an input's.
+    const auto sent = impl_->run(message, from);
+    static_cast<void>(until(settle_timeout, [&]() -> bool {
+      impl_->collect();
+      const EMC_STAT* now = impl_->stat();
+      return now != nullptr && now->task.state == EMC_TASK_STATE_ESTOP;
+    }));
+    // What a failed step took out of the message queue for its reason is the operator's again.
+    if (!accepted(sent) && !sent.reason.empty())
+      impl_->messages.push_back({true, sent.reason});
+    const EMC_STAT* now = impl_->stat();
+    if (now == nullptr)
+      return estop_request_result(std::nullopt);
+    return estop_request_result(now->task.state == EMC_TASK_STATE_ESTOP ? MachineState::estop
+                                : now->task.state == EMC_TASK_STATE_ON  ? MachineState::on
+                                                                        : MachineState::off);
+  }
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
   // Task reports the command done even when it left the state as it was (on from E-stop).

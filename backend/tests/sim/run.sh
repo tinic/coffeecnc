@@ -2,7 +2,7 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n] <program> [arguments...]
+#   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-w seconds] [-d run-directory] [-n] <program> [arguments...]
 #   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-t ...] [-d ...] [-n] <program> ...
 #
 # Profiles (-p):
@@ -34,6 +34,18 @@
 #   125                               when nothing was recorded
 #   0                                 otherwise; a program need not print an `exit=` line
 #
+# One simulation per host and user at a time, whatever checkout starts it: instances share the
+# NML and HAL shared memory, and LinuxCNC's start script, finding another instance, shuts that
+# one down. Before it touches the run directory this script takes an exclusive lock (flock) on
+#
+#   ~/ai/coffeecnc-sim-runner-<uid>.lock      (/tmp/... where there is no ~/ai)
+#
+# and keeps it until it exits, cleanup included, on every path; LinuxCNC does not inherit it.
+# Who holds it is in <lock>.info. A held lock is waited for, at most -w seconds (300): then
+# `sim=refused reason=locked ...` and exit code 123, and nothing was started or changed. A
+# LinuxCNC found running while this script holds the lock is not one of these runs: it is never
+# cleaned up from here; the run is refused (125). -n takes no lock: it starts nothing.
+#
 # Output is the program's output followed by `sim=<key> ...` lines of this script; the last is
 # `sim=done exit=<result> printed_exit=<code|none> child_status=<code|signal_NAME|none> ...`.
 set -u
@@ -46,8 +58,10 @@ directory=
 assemble_only=
 machine=
 layer=
-while getopts "p:u:t:d:nm:s:" option; do
+lock_wait=300
+while getopts "p:u:t:d:nm:s:w:" option; do
   case $option in
+  w) lock_wait=$OPTARG ;;
   m) machine=$OPTARG ;;
   s) layer=$OPTARG ;;
   p) profile=$OPTARG ;;
@@ -90,6 +104,30 @@ if [ -n "$machine" ]; then
   ini=$(basename "$machine")
 fi
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
+
+locked=
+release() {
+  # The lock itself ends with this process. The note about its holder goes when it is ours.
+  [ -z "$locked" ] || ! grep -q "^pid=$$ " "$lock.info" 2>/dev/null || rm -f "$lock.info"
+}
+if [ -z "$assemble_only" ]; then
+  lock_directory=$HOME/ai
+  [ -d "$lock_directory" ] || lock_directory=/tmp
+  lock=$lock_directory/coffeecnc-sim-runner-$(id -u).lock
+  exec 9>>"$lock" || { echo "sim=refused reason=lock-file-cannot-be-opened lock=$lock"; exit 123; }
+  if ! flock -n 9; then
+    holder() { sed 's/\(^\| \)\([a-z_]*\)=/\1holder_\2=/g' "$lock.info" 2>/dev/null || echo holder=unknown; }
+    echo "sim=waiting reason=locked lock=$lock at_most_seconds=$lock_wait $(holder)"
+    if ! flock -w "$lock_wait" 9; then
+      echo "sim=refused reason=locked lock=$lock waited_seconds=$lock_wait $(holder)"
+      exit 123
+    fi
+  fi
+  locked=1
+  trap release EXIT
+  echo "pid=$$ checkout=$(cd "$here/../../.." && pwd) run_directory=$directory" \
+    "program=$(basename "$program") since=$(date -Is)" >"$lock.info"
+fi
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
 for word in "$program" "$directory" "$@"; do
@@ -212,7 +250,7 @@ finish() {
   if pgrep -x rtapi_app >/dev/null; then
     echo "sim=leftover names=rtapi_app"
     # Bounded: TERM after 20 s, KILL 5 s later. If rtapi_app survives it is counted below.
-    timeout -k 5 20 halrun -U >/dev/null 2>&1
+    timeout -k 5 20 halrun -U >/dev/null 2>&1 9>&-
     sleep 1
     [ "$status" != 0 ] || status=125
   fi
@@ -227,7 +265,8 @@ trap 'echo "sim=interrupted"; finish 130' INT TERM HUP
 cd "$directory" || exit 125
 # No DISPLAY: LinuxCNC's start script must not try to open dialog windows. -r keeps its output
 # and the program's on stdout instead of a temporary file.
-env -u DISPLAY linuxcnc -r "$directory/$ini" >"$directory/linuxcnc.log" 2>&1 &
+# Without the lock's descriptor: the lock is this script's, not LinuxCNC's.
+env -u DISPLAY linuxcnc -r "$directory/$ini" >"$directory/linuxcnc.log" 2>&1 9>&- &
 linuxcnc_pid=$!
 
 status=

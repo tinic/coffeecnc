@@ -411,55 +411,55 @@ void source_lines_belong_to_the_revision() {
     return s;
   };
   const auto automatic = TaskMode::automatic;
-  const auto reading = InterpState::reading;
+  const auto reads = InterpState::reading;
   const auto idle = InterpState::idle;
   const std::pair none{0, 0};
 
   // The status that makes the source take the revision up was read before it did.
-  auto r = rig.step(at(automatic, reading, 4, 4, true));
+  auto r = rig.step(at(automatic, reads, 4, 4, true));
   require(r.status.program.revision == 1 && lines(r) == none,
           "A status read before the revision was taken up attributes nothing");
   require(lines(rig.step(at(automatic, idle, 0, 0))) == none, "Idle after the open");
-  require(lines(rig.step(at(automatic, reading, 2, 0))) == std::pair{2, 0},
+  require(lines(rig.step(at(automatic, reads, 2, 0))) == std::pair{2, 0},
           "A counter that moved while the program runs is reported");
   require(lines(rig.step(at(automatic, InterpState::paused, 2, 0))) == std::pair{2, 0},
           "Paused in auto: the line is kept");
-  require(lines(rig.step(at(automatic, reading, 7, 6))) == std::pair{7, 6}, "Running on");
+  require(lines(rig.step(at(automatic, reads, 7, 6))) == std::pair{7, 6}, "Running on");
   require(lines(rig.step(at(automatic, idle, 7, 7))) == std::pair{7, 7},
           "The first idle status after the run gives the lines it stopped at");
   require(lines(rig.step(at(automatic, idle, 9, 0))) == std::pair{7, 7},
           "An idle counter is not passed through: what was attributed stays");
 
   // A status that is not fresh changes nothing, whatever it shows.
-  auto stale = at(automatic, reading, 8, 8, true);
+  auto stale = at(automatic, reads, 8, 8, true);
   stale.controller.link = Link::stale;
   require(lines(rig.step(stale)) == std::pair{7, 7}, "A stale status attributes nothing");
-  rig.mailbox.put(at(TaskMode::mdi, reading, 1, 1), rig.now - 60ms);
+  rig.mailbox.put(at(TaskMode::mdi, reads, 1, 1), rig.now - 60ms);
   require(lines(rig.source.read()) == std::pair{7, 7},
           "Nor does one read before the status judged last");
 
   // An MDI block after a valid run: the counters are no longer the program's.
-  require(lines(rig.step(at(TaskMode::mdi, reading, 7, 7, true))) == none,
+  require(lines(rig.step(at(TaskMode::mdi, reads, 7, 7, true))) == none,
           "An MDI block executing: nothing is reported");
   require(lines(rig.step(at(TaskMode::mdi, idle, 5, 5))) == none &&
               lines(rig.step(at(TaskMode::manual, idle, 5, 5))) == none &&
               lines(rig.step(at(automatic, idle, 5, 5))) == none,
           "MDI finished and idle, manual, auto again: still nothing");
-  require(lines(rig.step(at(automatic, reading, 5, 5))) == none,
+  require(lines(rig.step(at(automatic, reads, 5, 5))) == none,
           "The run has started but the counters still read what they read before it");
-  require(lines(rig.step(at(automatic, reading, 1, 5))) == std::pair{1, 0},
+  require(lines(rig.step(at(automatic, reads, 1, 5))) == std::pair{1, 0},
           "Each counter is back from its first change in the run");
-  require(lines(rig.step(at(automatic, reading, 3, 2))) == std::pair{3, 2} &&
+  require(lines(rig.step(at(automatic, reads, 3, 2))) == std::pair{3, 2} &&
               lines(rig.step(at(automatic, idle, 3, 3))) == std::pair{3, 3},
           "And follows task to the end of the run");
 
   // A run again whose first line seen is the one the last run ended at: motion shows that the
   // counters are of this run.
-  require(lines(rig.step(at(automatic, reading, 3, 3))) == none &&
-              lines(rig.step(at(automatic, reading, 3, 3, true))) == std::pair{3, 3} &&
+  require(lines(rig.step(at(automatic, reads, 3, 3))) == none &&
+              lines(rig.step(at(automatic, reads, 3, 3, true))) == std::pair{3, 3} &&
               lines(rig.step(at(automatic, idle, 3, 3))) == std::pair{3, 3},
           "Equal counters are attributed once the machine moves in the run");
-  auto dwell = at(automatic, reading, 3, 3);
+  auto dwell = at(automatic, reads, 3, 3);
   dwell.dwell_seconds_left = 0.5;
   require(lines(rig.step(dwell)) == std::pair{3, 0},
           "A dwell is a block of this run: the current line is attributed, the motion line "
@@ -470,8 +470,8 @@ void source_lines_belong_to_the_revision() {
   ++rig.loads.mdi_blocks;
   require(lines(rig.step(at(automatic, idle, 6, 6))) == none,
           "An MDI block the port reports ends the attribution");
-  require(lines(rig.step(at(automatic, reading, 6, 6))) == none &&
-              lines(rig.step(at(automatic, reading, 7, 6))) == std::pair{7, 0},
+  require(lines(rig.step(at(automatic, reads, 6, 6))) == none &&
+              lines(rig.step(at(automatic, reads, 7, 6))) == std::pair{7, 0},
           "A run right after it: its first status is what the counters must move from");
   static_cast<void>(rig.step(at(automatic, idle, 7, 7)));
 
@@ -487,12 +487,12 @@ void source_lines_belong_to_the_revision() {
 
   // A status of the run of the revision before, still in the mailbox when the load is seen.
   rig.now += 50ms;
-  rig.mailbox.put(at(automatic, reading, 9, 9, true), rig.now - 1ms);
+  rig.mailbox.put(at(automatic, reads, 9, 9, true), rig.now - 1ms);
   ++rig.loads.programs;
   r = rig.source.read();
   require(r.status.program.revision == 3 && lines(r) == none,
           "A status read before the load says nothing about the new revision");
-  require(lines(rig.step(at(automatic, reading, 9, 9, true))) == std::pair{9, 9},
+  require(lines(rig.step(at(automatic, reads, 9, 9, true))) == std::pair{9, 9},
           "The same read after it does");
 
   // The status thread was held up after it had acquired a status of the run before, and
@@ -502,14 +502,14 @@ void source_lines_belong_to_the_revision() {
   rig.now += 50ms;
   r = rig.source.read();
   require(r.status.program.revision == 4 && lines(r) == none, "Loaded again");
-  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now - 1ms);
+  rig.mailbox.put(at(automatic, reads, 6, 6, true), rig.now - 1ms);
   require(lines(rig.source.read()) == none,
           "A status put after the load but acquired before it is not evidence");
-  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now + 1ms);
+  rig.mailbox.put(at(automatic, reads, 6, 6, true), rig.now + 1ms);
   require(lines(rig.source.read()) == std::pair{6, 6}, "One acquired after it is");
 
   // Another file named by task while it runs (loaded and started by another client).
-  auto other = at(automatic, reading, 9, 8, true);
+  auto other = at(automatic, reads, 9, 8, true);
   other.program_file = (scratch / "other.ngc").string();
   r = rig.step(other);
   require(r.status.program.revision == 5 && lines(r) == none, "First seen: a new revision");
@@ -616,6 +616,68 @@ void source_tool_table() {
           "The prepared index names the loaded entry; a T0 row is shown as a row");
 }
 
+// The table with every field, for the preview: accepted like the table shown, on every field.
+void source_preview_tools() {
+  Rig rig;
+  std::vector<PreviewTool> raw{{0, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
+                               {1, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
+                               {2, 2, 2, {0, 0, 40}, 3, 0, 0, 0}};
+  rig.source.raw_tools([&]() -> std::vector<PreviewTool> { return raw; });
+  auto r = rig.step();
+  require(r.preview_tools.empty() && !r.tools_settled, "One pass is not a table yet");
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == raw && r.tools_settled,
+          "The second equal pass: the table shown and the table with every field, the "
+          "spindle's entry too, are accepted together");
+  // A difference only the full table has: an X offset.
+  const auto accepted = raw;
+  raw[1].offset[0] = 0.5;
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == accepted && !r.tools_settled,
+          "A pass that differs only in an X offset is not accepted at once: the accepted "
+          "table stays the preview's");
+  raw[1].offset[0] = 0.7; // another value: caught while it changes
+  r = rig.step();
+  require(r.preview_tools == accepted && !r.tools_settled, "Nor one that differs again");
+  r = rig.step();
+  require(r.preview_tools == raw && r.tools_settled && r.tool_table.revision == 1,
+          "The identical next pass is accepted");
+  // While task executes, nothing is accepted.
+  raw[0].number = 2;
+  auto busy = rig.status();
+  busy.task_executing = true;
+  static_cast<void>(rig.step(busy));
+  r = rig.step(busy);
+  require(r.preview_tools[0].number == 1 && !r.tools_settled,
+          "A changed spindle entry is not accepted while task has something in execution");
+  static_cast<void>(rig.step());
+  r = rig.step();
+  require(r.preview_tools == raw && r.tools_settled, "Idle between two equal passes: accepted");
+  raw = r.preview_tools;
+  require(rig.step().tools_settled && rig.step().preview_tools == raw, "And kept");
+
+  // Churn: the full table differs on every pass for a while, only in an X offset. Nothing
+  // is accepted during it: the table accepted before stays shown and stays the preview\x27s.
+  const auto before = raw;
+  const auto shown = rig.step().tool_table;
+  for (int i = 1; i <= 8; ++i) {
+    raw[2].offset[0] = 0.1 * i;
+    r = rig.step();
+    require(r.preview_tools == before && !r.tools_settled && r.tool_table == shown,
+            "While the table differs on every pass none is accepted");
+  }
+  // It stops changing, but task has something in execution between the equal passes.
+  r = rig.step(busy);
+  r = rig.step(busy);
+  require(r.preview_tools == before && !r.tools_settled && r.tool_table == shown,
+          "Equal passes with task executing between them are not accepted either");
+  // Equal passes and a status between them that shows task idle: accepted then.
+  static_cast<void>(rig.step());
+  r = rig.step();
+  require(r.preview_tools == raw && r.tools_settled && r.tool_table == shown,
+          "Identical passes with task idle between: accepted, in one step");
+}
+
 void source_without_a_tool_table() {
   Rig rig;
   rig.loaded.reset();
@@ -648,6 +710,7 @@ auto main(int argc, char** argv) -> int {
     source_program_loads();
     source_lines_belong_to_the_revision();
     source_tool_table();
+    source_preview_tools();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";
     return 0;

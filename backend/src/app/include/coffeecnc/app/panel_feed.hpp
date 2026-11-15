@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_PANEL_FEED_HPP
 #define COFFEECNC_APP_PANEL_FEED_HPP
 
+#include <coffeecnc/app/preview.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/app/status_publisher.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
@@ -18,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -35,9 +37,36 @@ namespace coffeecnc {
 // its statuses are numbered from 1. `hello` and every snapshot are sent in a page's first step
 // and again in the step after every further `ready` of that page; the numbering goes on.
 //
-// No interpreter preview exists yet. The `preview` sent is `unavailable` for the current
-// context, with no segments, whatever program is loaded, and carries no_preview_reason as its
-// error text.
+// The `preview` sent is for the status's context, always:
+//
+//   no service         `unavailable`, with no_preview_reason as its error text
+//   no program loaded  `unavailable`, no error
+//   no coherent start  `unavailable`: a program (file and revision) has a start state only
+//                      once a reading showed it at rest, with the tool table settled and the
+//                      link live, since it was loaded or since the link came back. Until
+//                      then nothing is computed and nothing of the machine's state is taken
+//                      as input: with no_start_state_reason while it runs (what is read is
+//                      the middle of its run), with not_settled_reason at rest (the tool
+//                      table is still being read). Once such a reading exists the context
+//                      then in force is
+//                      the current one: computed, unless a finished result for that very
+//                      context exists (the inputs are what they were), which is then used
+//                      again after the service has compared its files once more; `pending`
+//                      until it has.
+//   block delete was   `unavailable`, with plan_broken_reason: the context went up when the
+//   switched during    setting changed, so the path sent before is stale, and nothing is
+//   the run            computed until the run has ended, also when it is switched back
+//   otherwise          what the service has finished for this very context; until then
+//                      `pending`, without segments. A preview of another context is never
+//                      sent under this one.
+//
+// Every new context with a program loaded is submitted to the service, with the inputs in
+// force for it. While a program runs these are the machine's state from before the run
+// (PreviewContext): the preview during a run is the plan from before the run, not a
+// prediction of what is left of it. The service's files_generation is one of the inputs, read
+// at every reading. Optional stop is not an input: it pauses and changes no path. A reading
+// whose tool table is not settled (PanelReading::tools_settled) is treated like one of a
+// running program: the machine's state of the last settled reading at rest stays the input.
 //
 // `work_offsets` always has nine rows, each as available as the reading says; its revision
 // counts from 1 and goes up when a row changes.
@@ -49,9 +78,19 @@ class PanelComposer {
 public:
   static constexpr std::string_view no_preview_reason =
       "This version of CoffeeCNC does not compute a toolpath preview.";
+  static constexpr std::string_view plan_broken_reason =
+      "Block delete was switched while the program runs: the path shown before is not what "
+      "the rest of the run does. A preview is computed when the run has ended.";
+  static constexpr std::string_view no_start_state_reason =
+      "The program was already running when its state was first read: there is no start "
+      "state to preview it from. A preview is computed when the run has ended.";
+  static constexpr std::string_view not_settled_reason =
+      "The machine's tool table is still being read: no preview is computed before it is "
+      "settled.";
   static constexpr std::size_t max_waiting = 32;
 
-  explicit PanelComposer(Hello hello);
+  // `preview` may be null; it must outlive the composer.
+  explicit PanelComposer(Hello hello, PreviewService* preview = nullptr);
 
   // The messages for `page`, which has sent `ready`; `ready_again` when it has sent another
   // since the last step. When one of them cannot be encoded the result is the reason, nothing
@@ -66,8 +105,17 @@ private:
   void count(const PanelReading& reading);
 
   Hello hello_;
+  PreviewService* preview_;
   PreviewContext preview_context_;
   std::uint64_t context_{};
+  // The context has not been submitted to the service yet.
+  bool submit_due_{};
+  bool block_delete_before_run_{};
+  bool plan_broken_{};
+  // The program, file and revision, that was last seen with the interpreter idle.
+  std::optional<std::pair<std::optional<std::string>, std::uint64_t>> seen_at_rest_;
+  bool no_start_state_{};
+  bool running_without_start_{};
   Vec3 rest_position_{};
   std::optional<PageToken> page_;
   // hello and the snapshots are owed to the page.
@@ -97,8 +145,9 @@ public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
   static constexpr auto period = std::chrono::milliseconds{50};
 
-  // The source must outlive the feed. Starts the thread.
-  PanelFeed(PanelSource& source, Deliver deliver);
+  // The source, and the preview service when there is one, must outlive the feed. Starts the
+  // thread.
+  PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr);
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -116,6 +165,7 @@ private:
 
   PanelSource& source_;
   Deliver deliver_;
+  PreviewService* preview_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;

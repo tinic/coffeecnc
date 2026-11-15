@@ -2,6 +2,7 @@
 #define COFFEECNC_APP_STATUS_PUBLISHER_HPP
 
 #include <coffeecnc/core/panel_messages.hpp>
+#include <coffeecnc/core/preview.hpp>
 
 #include <array>
 #include <cstdint>
@@ -12,52 +13,34 @@
 
 namespace coffeecnc {
 
-// What the interpreter starts a run of the program from. A preview is computed from the same
-// state, so a change of any of it makes the preview stale.
-struct InterpreterStart {
-  int wcs{1}; // active work coordinate system, 1 is G54
-  LengthUnit program_units{LengthUnit::mm};
-  Vec3 position{}; // machine position the first move starts from, mm
-  int tool_in_spindle{};
-  std::optional<int> tool_prepared;
-  Vec3 tool_offset{};
-  // Active modal codes as LinuxCNC reports them (motion and distance mode, plane, feed mode, ...).
-  std::vector<std::string> active_codes;
-  // Settings the codes do not carry: the F and S words in effect.
-  double feed{};
-  double spindle_speed{};
-  // Identity of the interpreter's parameter file contents (numbered and named parameters).
-  std::uint64_t parameters_revision{};
-  friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
-};
-
-// Everything the path of a program depends on: the program, the work offsets with their
-// rotations, G92, the tool table and the interpreter's start state.
-struct PreviewInputs {
-  std::optional<std::string> program_file;
-  std::uint64_t program_revision{};
-  std::array<WorkSystem, 9> systems{}; // G54 ... G59.3
-  Vec3 g92{};
-  // Number, pocket, length and diameter count, in table order. The comment does not.
-  std::vector<Tool> tools;
-  // Not part of the start state: the operator can change it during a pause, and it changes
-  // which blocks the rest of the program runs.
-  bool block_delete{};
-  InterpreterStart start;
-};
-
 // Status::preview_context: a number that changes exactly when the inputs of a preview change.
 // It counts from 1 and goes up by one with every change, so two different sets of inputs never
 // share a context and nothing depends on a hash. 0.0 and -0.0 are the same value.
 //
-// While a program runs the interpreter's state is the program's doing, not a new start state:
-// with `running` the start state seen last before the run stays in force, and a change of it
-// counts once the run has ended. The other inputs count at once in either case.
+// While a program runs, the machine's state is the program's doing so far: a G92, a G10 L2, a
+// tool change of the program itself change offsets and tool table, and a preview computed
+// from them would replay the program from its first line with values that exist only because
+// part of it has run. With `running` every input that is machine state stays what it was
+// before the run: the start state, the work systems, G92, the tool table. The preview of the
+// context of the run's start stays the current one for the whole run, paused included, and
+// what the machine is when the run has ended counts then, as one new context. A change made
+// from outside the program during the run (another client's G10 in a pause) cannot be told
+// from the program's own and is frozen with it: it counts when the run has ended.
+//
+// What is not machine state counts at once also while running: another program or a reload,
+// a changed file (files_generation), and block delete, which the operator can switch in a
+// pause.
 //
 // Pure logic, NOT thread-safe.
 class PreviewContext {
 public:
   [[nodiscard]] auto update(const PreviewInputs& inputs, bool running) -> std::uint64_t;
+  // The inputs of the context: those given last, with the machine state that is in force.
+  // Empty inputs before the first update.
+  [[nodiscard]] auto inputs() const -> const PreviewInputs& {
+    static const PreviewInputs none;
+    return last_ ? *last_ : none;
+  }
 
 private:
   std::optional<PreviewInputs> last_;

@@ -1,0 +1,242 @@
+#include "preview_wire.hpp"
+
+#include <charconv>
+#include <cmath>
+#include <format>
+#include <system_error>
+#include <utility>
+
+namespace coffeecnc {
+namespace {
+
+constexpr std::string_view request_header = "coffeecnc-preview-request 1";
+
+// The next blank-separated word of `text`, which is advanced past it.
+auto word(std::string_view& text) -> std::string_view {
+  while (!text.empty() && text.front() == ' ')
+    text.remove_prefix(1);
+  const auto end = text.find(' ');
+  const auto found = text.substr(0, end);
+  text.remove_prefix(end == std::string_view::npos ? text.size() : end);
+  return found;
+}
+
+template <typename Number> auto number(std::string_view& text, Number& value) -> bool {
+  const auto found = word(text);
+  if (found.empty())
+    return false;
+  const auto [end, error] = std::from_chars(found.data(), found.data() + found.size(), value);
+  return error == std::errc{} && end == found.data() + found.size();
+}
+
+auto vector(std::string_view& text, Vec3& value) -> bool {
+  return number(text, value[0]) && number(text, value[1]) && number(text, value[2]);
+}
+
+auto flag(std::string_view& text, bool& value) -> bool {
+  int given = 0;
+  if (!number(text, given) || (given != 0 && given != 1))
+    return false;
+  value = given == 1;
+  return true;
+}
+
+// The rest of a line as it is: a path or a text.
+auto rest(std::string_view text) -> std::string {
+  while (!text.empty() && text.front() == ' ')
+    text.remove_prefix(1);
+  return std::string(text);
+}
+
+} // namespace
+
+auto write_request(const HelperRequest& request) -> std::string {
+  std::string out{request_header};
+  out += '\n';
+  const auto line = [&out](std::string_view key, const std::string& value) -> void {
+    out += key;
+    out += ' ';
+    out += value;
+    out += '\n';
+  };
+  const auto vec = [](const Vec3& v) -> std::string {
+    return std::format("{} {} {}", v[0], v[1], v[2]);
+  };
+  line("program", request.program);
+  if (!request.subroutines.empty())
+    line("subroutines", request.subroutines);
+  line("parameters", request.parameters);
+  line("units_per_mm", std::format("{}", request.units_per_mm));
+  line("position", vec(request.position));
+  line("tool_in_spindle", std::format("{}", request.tool_in_spindle));
+  line("tool_prepared", std::format("{}", request.tool_prepared));
+  line("tool_offset", vec(request.tool_offset));
+  line("feed", std::format("{}", request.feed));
+  line("block_delete", request.block_delete ? "1" : "0");
+  line("wcs", std::format("{}", request.wcs));
+  line("tool_change_at_g30", request.tool_change_at_g30 ? "1" : "0");
+  if (request.tool_change_position)
+    line("tool_change_position", vec(*request.tool_change_position));
+  line("max_points", std::format("{}", request.max_points));
+  line("chord_tolerance", std::format("{}", request.chord_tolerance));
+  for (const auto& code : request.codes)
+    line("code", code);
+  if (!request.inherited_motion.empty())
+    line("inherited_motion", request.inherited_motion);
+  for (const auto& tool : request.tools)
+    line("tool", std::format("{} {} {} {} {} {} {} {} {}", tool.index, tool.number, tool.pocket,
+                             vec(tool.offset), tool.diameter, tool.front_angle, tool.back_angle,
+                             tool.orientation, 0));
+  return out;
+}
+
+auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::string> {
+  HelperRequest request;
+  bool first = true;
+  while (!text.empty()) {
+    const auto end = text.find('\n');
+    if (end == std::string_view::npos)
+      return std::unexpected(std::string("the request ends in an incomplete line"));
+    auto line = text.substr(0, end);
+    text.remove_prefix(end + 1);
+    if (std::exchange(first, false)) {
+      if (line != request_header)
+        return std::unexpected(std::string("not a preview request of this version"));
+      continue;
+    }
+    const auto key = word(line);
+    bool good = true;
+    if (key == "program")
+      request.program = rest(line);
+    else if (key == "subroutines")
+      request.subroutines = rest(line);
+    else if (key == "parameters")
+      request.parameters = rest(line);
+    else if (key == "units_per_mm")
+      good = number(line, request.units_per_mm) && request.units_per_mm > 0;
+    else if (key == "position")
+      good = vector(line, request.position);
+    else if (key == "tool_in_spindle")
+      good = number(line, request.tool_in_spindle);
+    else if (key == "tool_prepared")
+      good = number(line, request.tool_prepared);
+    else if (key == "tool_offset")
+      good = vector(line, request.tool_offset);
+    else if (key == "feed")
+      good = number(line, request.feed);
+    else if (key == "block_delete")
+      good = flag(line, request.block_delete);
+    else if (key == "wcs")
+      good = number(line, request.wcs) && request.wcs >= 1 && request.wcs <= 9;
+    else if (key == "tool_change_at_g30")
+      good = flag(line, request.tool_change_at_g30);
+    else if (key == "tool_change_position") {
+      Vec3 position{};
+      good = vector(line, position);
+      request.tool_change_position = position;
+    } else if (key == "max_points")
+      good = number(line, request.max_points);
+    else if (key == "chord_tolerance")
+      good = number(line, request.chord_tolerance) && request.chord_tolerance > 0;
+    else if (key == "code")
+      request.codes.push_back(rest(line));
+    else if (key == "inherited_motion")
+      request.inherited_motion = rest(line);
+    else if (key == "tool") {
+      HelperTool tool;
+      int unused = 0;
+      good = number(line, tool.index) && number(line, tool.number) && number(line, tool.pocket) &&
+             vector(line, tool.offset) && number(line, tool.diameter) &&
+             number(line, tool.front_angle) && number(line, tool.back_angle) &&
+             number(line, tool.orientation) && number(line, unused);
+      request.tools.push_back(tool);
+    } else
+      good = false;
+    if (!good)
+      return std::unexpected(std::format("the request line `{}` is not understood", key));
+  }
+  if (first || request.program.empty() || request.parameters.empty())
+    return std::unexpected(std::string("the request names no program or no parameter file"));
+  return request;
+}
+
+auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
+  HelperOutput output;
+  std::size_t points = 0;
+  std::string_view problem_kind;
+  const auto defect = [&output](std::string why) -> HelperOutput {
+    output.defect = std::move(why);
+    output.end = HelperEnd::missing;
+    return output;
+  };
+  const auto line_number = [&limits](std::string_view& line, int& value) -> bool {
+    return number(line, value) && value >= 0 && value <= limits.max_line;
+  };
+  // Every pass of this loop removes one line from `text`, or returns.
+  while (!text.empty()) {
+    const auto newline = text.find('\n');
+    if (newline == std::string_view::npos)
+      return output; // cut off in a record: what came before stands
+    auto line = text.substr(0, newline);
+    text.remove_prefix(newline + 1);
+    const auto key = word(line);
+    if (key == "seg") {
+      PreviewSegment segment;
+      if (output.problem)
+        return defect("a segment after the record that ends the path");
+      if (!line_number(line, segment.line))
+        return defect("a segment with a line that is none of the program");
+      const auto kind = word(line);
+      if (kind != "r" && kind != "f")
+        return defect("a segment of an unknown kind");
+      if (!number(line, segment.tool) || segment.tool < 0 || segment.tool > OutputLimits::max_tool)
+        return defect("a segment with a tool number out of range");
+      segment.kind = kind == "r" ? MoveKind::rapid : MoveKind::feed;
+      // Every pass removes one word from `line`, or returns.
+      for (;;) {
+        auto rest_of_line = line;
+        if (word(rest_of_line).empty())
+          break;
+        Vec3 point{};
+        if (!vector(line, point) || !std::isfinite(point[0]) || !std::isfinite(point[1]) ||
+            !std::isfinite(point[2]))
+          return defect("a segment with a coordinate that is missing or not a finite number");
+        if (++points > limits.max_points)
+          return defect("more points than the preview allows");
+        segment.points.push_back(point);
+      }
+      if (segment.points.size() < 2)
+        return defect("a segment of fewer than two points");
+      output.segments.push_back(std::move(segment));
+    } else if (key == "error" || key == "stop" || key == "cut") {
+      PreviewError problem;
+      if (output.problem)
+        return defect("a second record that ends the path");
+      if (!line_number(line, problem.line))
+        return defect("a record with a line that is none of the program");
+      problem.text = rest(line);
+      output.problem = std::move(problem);
+      problem_kind = key;
+    } else if (key == "end") {
+      const auto how = word(line);
+      if (!word(line).empty() || !text.empty())
+        return defect("text after the end of the result");
+      if (how == "ok" && !output.problem)
+        output.end = HelperEnd::ok;
+      else if (how == "error" && problem_kind == "error")
+        output.end = HelperEnd::error;
+      else if (how == "stop" && problem_kind == "stop")
+        output.end = HelperEnd::stop;
+      else if (how == "cut" && problem_kind == "cut")
+        output.end = HelperEnd::cut;
+      else
+        return defect("an end that does not fit the records before it");
+      return output;
+    } else {
+      return defect("a record of an unknown kind");
+    }
+  }
+  return output;
+}
+
+} // namespace coffeecnc

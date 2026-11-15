@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <memory>
 #include <utility>
 
 namespace coffeecnc {
@@ -25,6 +26,7 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.systems = reading.work_systems;
   inputs.g92 = status.offsets.g92;
   inputs.tools = reading.tool_table.tools;
+  inputs.raw_tools = reading.preview_tools;
   inputs.block_delete = status.program.block_delete;
   inputs.start.wcs = status.offsets.wcs;
   inputs.start.program_units = status.program_units;
@@ -38,19 +40,59 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   return inputs;
 }
 
-PanelComposer::PanelComposer(Hello hello) : hello_(std::move(hello)) {}
+PanelComposer::PanelComposer(Hello hello, PreviewService* preview)
+    : hello_(std::move(hello)), preview_(preview) {}
 
 void PanelComposer::count(const PanelReading& reading) {
   const auto& status = reading.status;
-  // Without a status there are no inputs: the context stays what it was.
-  if (status.link == Link::down)
+  // Without a status there are no inputs: the context stays what it was. What the machine
+  // did meanwhile is not known: the program has to be seen at rest again.
+  if (status.link == Link::down) {
+    seen_at_rest_.reset();
     return;
+  }
   const bool running = status.interp != InterpState::idle;
   if (!running && status.motion.in_position)
     for (const auto& axis : status.axes)
       if (const auto index = axis_index(axis.axis))
         rest_position_.at(*index) = axis.machine;
-  context_ = preview_context_.update(preview_inputs(reading, rest_position_), running);
+  auto inputs = preview_inputs(reading, rest_position_);
+  if (preview_ != nullptr)
+    inputs.files_generation = preview_->files_generation();
+  // A coherent start: the machine at rest, its tool table accepted, the status live. Only from
+  // such a reading are the machine's state taken as input and a program known to have a
+  // start state.
+  const bool coherent = !running && reading.tools_settled && status.link == Link::live;
+  const auto context = preview_context_.update(inputs, !coherent);
+  const std::pair program{inputs.program_file, inputs.program_revision};
+  if (coherent) {
+    block_delete_before_run_ = inputs.block_delete;
+    seen_at_rest_ = program;
+  }
+  // A program that has had no coherent start since it was loaded, or since the link was
+  // down, has no start state: what is read is the middle of its run, or a machine whose tool
+  // table is still being read.
+  const bool had_no_start_state = no_start_state_;
+  no_start_state_ = seen_at_rest_ != program;
+  running_without_start_ = no_start_state_ && running;
+  // Block delete switched while the program runs: the rest of the run is no longer the plan
+  // that was previewed, and no coherent one can be computed before the run has ended.
+  // For the rest of that run, also when it is switched back: blocks already skipped or run
+  // under the other setting stay so.
+  plan_broken_ =
+      running && (plan_broken_ || inputs.block_delete != block_delete_before_run_);
+  submit_due_ = submit_due_ || context != context_;
+  context_ = context;
+  // At rest again with the inputs it had before: a preview is a function of its inputs, so
+  // the result that exists for this context is the preview, and nothing is computed. It was
+  // not shown meanwhile, so the service compares its files once more first.
+  if (had_no_start_state && !no_start_state_ && !submit_due_ && preview_ != nullptr)
+    preview_->revalidate(context_);
+  if (!submit_due_ || plan_broken_ || no_start_state_)
+    return;
+  submit_due_ = false;
+  if (preview_ != nullptr && preview_context_.inputs().program_file)
+    preview_->submit(context_, preview_context_.inputs());
 }
 
 void PanelComposer::observe(const PanelReading& reading) {
@@ -73,10 +115,26 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   snapshots_due_ = snapshots_due_ || ready_again;
   Status status = reading.status;
   status.preview_context = context_;
-  Preview preview;
-  preview.context = status.preview_context;
-  preview.state = PreviewState::unavailable;
-  preview.error = PreviewError{0, std::string(no_preview_reason)};
+  // A finished preview is sent as the service holds it; anything else is made here.
+  Preview made;
+  made.context = status.preview_context;
+  made.state = PreviewState::unavailable;
+  std::shared_ptr<const Preview> finished;
+  if (preview_ == nullptr) {
+    made.error = PreviewError{0, std::string(no_preview_reason)};
+  } else if (status.program.file && no_start_state_) {
+    made.error = PreviewError{0, std::string(running_without_start_ ? no_start_state_reason
+                                                                    : not_settled_reason)};
+  } else if (status.program.file && plan_broken_) {
+    made.error = PreviewError{0, std::string(plan_broken_reason)};
+  } else if (status.program.file) {
+    finished = preview_->latest();
+    if (!finished || finished->context != status.preview_context) {
+      finished.reset();
+      made.state = PreviewState::pending;
+    }
+  }
+  const Preview& preview = finished ? *finished : made;
   if (work_offsets_.revision == 0 || reading.work_systems != work_offsets_.systems)
     work_offsets_ = {work_offsets_.revision + 1, reading.work_systems};
   auto messages = publisher_.publish(
@@ -95,8 +153,9 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   return messages;
 }
 
-PanelFeed::PanelFeed(PanelSource& source, Deliver deliver)
-    : source_(source), deliver_(std::move(deliver)), thread_([this]() -> void { loop(); }) {}
+PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview)
+    : source_(source), deliver_(std::move(deliver)), preview_(preview),
+      thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
   {
@@ -123,7 +182,7 @@ void PanelFeed::page_ended(PageToken page) {
 }
 
 void PanelFeed::loop() {
-  PanelComposer composer{source_.hello()};
+  PanelComposer composer{source_.hello(), preview_};
   std::string reported;
   auto next = std::chrono::steady_clock::now();
   for (;;) {

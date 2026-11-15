@@ -1,7 +1,7 @@
 find_package(nlohmann_json 3.11 REQUIRED)
 find_package(Threads REQUIRED)
 
-add_library(coffeecnc_app src/file_system.cpp src/messages.cpp src/panel_assets.cpp src/panel_feed.cpp src/program_store.cpp src/request.cpp
+add_library(coffeecnc_app src/file_system.cpp src/messages.cpp src/panel_assets.cpp src/panel_feed.cpp src/preview.cpp src/program_store.cpp src/request.cpp
   src/response.cpp src/runtime.cpp src/session.cpp src/status_publisher.cpp)
 target_include_directories(coffeecnc_app PUBLIC include)
 target_compile_features(coffeecnc_app PUBLIC cxx_std_23)

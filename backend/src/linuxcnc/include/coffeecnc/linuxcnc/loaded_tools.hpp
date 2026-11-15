@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_LOADED_TOOLS_HPP
 
 #include <coffeecnc/core/command_policy.hpp>
+#include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <expected>
 #include <string>
@@ -19,6 +20,11 @@ struct LoadedTool {
   Tool tool; // lengths in millimetres
   friend auto operator==(const LoadedTool&, const LoadedTool&) -> bool = default;
 };
+
+// What the panel is shown of a pass with every field: the entries that hold a tool, from index
+// 1, lengths in millimetres.
+[[nodiscard]] auto loaded_tools(const std::vector<RawTool>& raw, double millimetres_per_unit)
+    -> std::vector<LoadedTool>;
 
 // The tool table as LinuxCNC has it loaded: its tool data shared memory, the same that
 // LinuxCNC's own GUIs read (Python `stat.tool_table`). Not NML: EMC_STAT carries only the tool
@@ -46,6 +52,9 @@ public:
 
   // One pass: every entry that holds a tool (index 1 and up), in index order, as read.
   [[nodiscard]] auto read() const -> std::vector<LoadedTool>;
+  // One pass with every field the interpreter uses, in machine units, the spindle (index 0)
+  // included: what a preview is computed with.
+  [[nodiscard]] auto read_raw() const -> std::vector<RawTool>;
 
 private:
   explicit LoadedToolTable(double millimetres_per_unit) : scale_(millimetres_per_unit) {}

@@ -2,6 +2,7 @@
 
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
+#include <coffeecnc/app/preview.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
@@ -10,6 +11,7 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
+#include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <array>
 #include <cstddef>
@@ -137,6 +139,46 @@ auto panel_directory(const Options& options) -> std::expected<std::string, std::
   return error ? directory.string() : resolved.string();
 }
 
+// The preview helper: COFFEECNC_PREVIEW_HELPER when set, else the program beside this one,
+// else the one of the build tree this was built in. Empty when there is none.
+auto preview_helper() -> std::string {
+  std::error_code error;
+  if (const char* given = std::getenv("COFFEECNC_PREVIEW_HELPER"); given != nullptr && *given != 0)
+    return given;
+  const auto self = std::filesystem::read_symlink("/proc/self/exe", error);
+  if (const auto beside = self.parent_path() / "coffeecnc-preview";
+      !error && std::filesystem::exists(beside, error))
+    return beside.string();
+#ifdef COFFEECNC_PREVIEW_HELPER_BUILT
+  if (std::filesystem::exists(COFFEECNC_PREVIEW_HELPER_BUILT, error))
+    return COFFEECNC_PREVIEW_HELPER_BUILT;
+#endif
+  return {};
+}
+
+// A directory of this process for the preview's private files, removed with it.
+class WorkDirectory {
+public:
+  WorkDirectory() {
+    std::error_code error;
+    std::string pattern =
+        (std::filesystem::temp_directory_path(error) / "coffeecnc-XXXXXX").string();
+    if (!error && mkdtemp(pattern.data()) != nullptr)
+      path_ = pattern;
+  }
+  WorkDirectory(const WorkDirectory&) = delete;
+  auto operator=(const WorkDirectory&) -> WorkDirectory& = delete;
+  ~WorkDirectory() {
+    std::error_code error;
+    if (!path_.empty())
+      std::filesystem::remove_all(path_, error);
+  }
+  [[nodiscard]] auto path() const -> const std::string& { return path_; }
+
+private:
+  std::string path_;
+};
+
 auto run_application(const Options& options, const ApplicationHooks& hooks) -> int {
   const auto config = load_machine_config(options.ini_file);
   if (!config) {
@@ -186,18 +228,30 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(tools.error());
     return 1;
   }
+  // One pass over LinuxCNC's tool data per period, by the publisher thread: shown, and kept
+  // with every field for the preview.
+  std::vector<RawTool> pass;
   NmlPanelSource source{
       *config, mailbox,
-      [&tools]() -> std::optional<std::vector<LoadedTool>> { return tools->read(); },
+      [&]() -> std::optional<std::vector<LoadedTool>> {
+        pass = tools->read_raw();
+        return loaded_tools(pass, config->millimetres_per_unit);
+      },
       [&programs](std::string_view path,
                   std::uint64_t revision) -> std::expected<ProgramText, std::string> {
         return programs.read_program(path, revision);
       },
       &loads};
+  source.raw_tools([&pass]() -> std::vector<PreviewTool> { return pass; });
 
   // Declared in the order they are made; destroyed in reverse: the publisher first, then the
   // runtime with its safe shutdown, the window last. By then the window is closed and drops
   // what the worker still posts.
+  // The preview: an engine that starts the helper, and the thread that computes with it. Both
+  // outlive the publisher, which hands contexts over and takes results.
+  const WorkDirectory work;
+  HelperPreviewEngine engine{load_preview_settings(*config, preview_helper(), work.path())};
+  PreviewWorker preview{engine};
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
   PanelWindow window{
@@ -224,7 +278,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     feed = std::make_unique<PanelFeed>(
         source, [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
-        });
+        },
+        &preview);
     if (hooks.before_load)
       hooks.before_load(window, *config);
     window.run();

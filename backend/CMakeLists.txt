@@ -66,6 +66,22 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_panel_feed_tests)
     add_test(NAME panel_feed COMMAND coffeecnc_panel_feed_tests)
+    # The preview in the app layer: composer on a service, worker thread on an engine, both the
+    # test's own. No interpreter.
+    add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)
+    target_link_libraries(coffeecnc_preview_tests PRIVATE coffeecnc_app coffeecnc_project_options
+      nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_preview_tests)
+    add_test(NAME preview_service COMMAND coffeecnc_preview_tests)
+    # The text formats between the executable and the preview helper, and the text checks on
+    # a program: pure code of the adapter layer, built from its sources so that it runs
+    # wherever the app layer does.
+    add_executable(coffeecnc_preview_wire_tests tests/preview_wire_tests.cpp
+      src/linuxcnc/src/preview_wire.cpp src/linuxcnc/src/program_watch.cpp)
+    target_link_libraries(coffeecnc_preview_wire_tests PRIVATE coffeecnc_core
+      coffeecnc_project_options)
+    coffeecnc_enable_analyzers(coffeecnc_preview_wire_tests)
+    add_test(NAME preview_wire COMMAND coffeecnc_preview_wire_tests)
     add_executable(coffeecnc_program_store_tests tests/program_store_tests.cpp)
     target_link_libraries(coffeecnc_program_store_tests PRIVATE coffeecnc_app
       coffeecnc_project_options)
@@ -103,13 +119,30 @@ if(BUILD_TESTING)
         coffeecnc_project_options)
       coffeecnc_enable_analyzers(coffeecnc_hal_control_tests)
       add_test(NAME hal_control COMMAND coffeecnc_hal_control_tests)
+      if(TARGET coffeecnc_preview)
+        # The preview engine with the real helper and LinuxCNC's interpreter on programs the
+        # test writes. No LinuxCNC runs.
+        add_executable(coffeecnc_preview_engine_tests tests/preview_engine_tests.cpp)
+        target_link_libraries(coffeecnc_preview_engine_tests PRIVATE coffeecnc_linuxcnc
+          coffeecnc_project_options)
+        target_compile_definitions(coffeecnc_preview_engine_tests PRIVATE
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples")
+        coffeecnc_enable_analyzers(coffeecnc_preview_engine_tests)
+        add_test(NAME preview_engine COMMAND coffeecnc_preview_engine_tests
+          $<TARGET_FILE:coffeecnc_preview> ${PROJECT_BINARY_DIR})
+        set_tests_properties(preview_engine PROPERTIES TIMEOUT 300)
+      endif()
       # The real Session on NmlPort against a running LinuxCNC on a simulated mill. Exists only
       # where the LinuxCNC adapter builds; `ctest -L linuxcnc` selects it, `-LE linuxcnc` skips it.
       add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp tests/sim/hal_probe.cpp)
       # hal_probe.cpp is a HAL component of the test's own and includes hal.h.
       target_include_directories(coffeecnc_sim_tests SYSTEM PRIVATE
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR})
-      target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI)
+      target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
+        COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
+      if(TARGET coffeecnc_preview)
+        add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
+      endif()
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)

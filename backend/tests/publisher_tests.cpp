@@ -278,17 +278,35 @@ void preview_contexts() {
   during.block_delete = true;
   require(counter.update(during, true) == ++expected,
           "Block delete switched during a run or a pause counts at once");
+  // What the program writes while it runs is not a new input either: a preview from it would
+  // replay the program from its first line with what only its later lines made.
   auto offset_changed = during;
   offset_changed.systems.at(1).offset[1] = 55;
-  require(counter.update(offset_changed, true) == ++expected,
-          "A work offset written during the run still counts at once");
-  require(counter.update(offset_changed, false) == ++expected,
-          "After the run the state it left is a new start state");
-  require(counter.update(offset_changed, false) == expected, "And then it is kept");
+  offset_changed.g92 = {1, 0, 0};
+  offset_changed.tools.at(0).length = 50;
+  offset_changed.raw_tools = {{0, 4, 4, {0, 0, 61.75}, 3.175, 0, 0, 0}};
+  require(counter.update(offset_changed, true) == expected,
+          "A work offset, G92 and the tool table written during the run are frozen with the "
+          "start state");
+  require(counter.inputs().systems.at(1).offset[1] == 100 && counter.inputs().g92 == inputs.g92 &&
+              counter.inputs().raw_tools.empty() && counter.inputs().block_delete,
+          "The inputs in force are those of before the run, with the block delete of now");
+  auto reloaded = offset_changed;
+  ++reloaded.program_revision;
+  require(counter.update(reloaded, true) == ++expected && counter.inputs().g92 == inputs.g92,
+          "A reload during the run counts at once, still with the state of before the run");
+  ++reloaded.files_generation;
+  require(counter.update(reloaded, true) == ++expected, "So does a changed file");
+  require(counter.update(reloaded, false) == ++expected && counter.inputs().g92 == Vec3{1, 0, 0} &&
+              counter.inputs().systems.at(1).offset[1] == 55 &&
+              counter.inputs().raw_tools.size() == 1,
+          "After the run the state it left is one new context");
+  require(counter.update(reloaded, false) == expected, "And then it is kept");
 
   PreviewContext fresh;
   require(fresh.update(inputs, true) == 1,
-          "A first reading during a run takes the state it finds");
+          "A first reading during a run is a context like any other; it is no start state, "
+          "and the composer computes no preview for it (preview_tests)");
 }
 } // namespace
 

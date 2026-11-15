@@ -17,6 +17,7 @@ auto same_tool(const Tool& a, const Tool& b) -> bool {
 // Equal for the path: tool comments do not count.
 auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
   return a.program_file == b.program_file && a.program_revision == b.program_revision &&
+         a.files_generation == b.files_generation && a.raw_tools == b.raw_tools &&
          a.systems == b.systems && a.g92 == b.g92 && a.block_delete == b.block_delete &&
          a.start == b.start &&
          std::ranges::equal(a.tools, b.tools, same_tool);
@@ -26,8 +27,16 @@ auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
 
 auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::uint64_t {
   PreviewInputs now = inputs;
-  if (running && last_)
+  if (running && last_) {
+    // What the machine is while the program runs is the program's doing so far: a preview
+    // computed from it would replay the program from its first line with offsets and tools
+    // that exist only because part of it has run.
     now.start = last_->start;
+    now.systems = last_->systems;
+    now.g92 = last_->g92;
+    now.tools = last_->tools;
+    now.raw_tools = last_->raw_tools;
+  }
   if (!last_ || !same_inputs(now, *last_)) {
     ++context_;
     last_ = std::move(now);

@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/controller_port.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
+#include <coffeecnc/core/preview.hpp>
 
 #include <array>
 #include <cstdint>
@@ -26,6 +27,13 @@ struct PanelReading {
   // The text of the program `status.program` names, with its revision. Null while no program is
   // loaded and when the text cannot be read.
   std::shared_ptr<const ProgramText> program;
+  // The loaded tool table with every field a preview is computed with, the spindle's entry
+  // included, in machine units; empty where the source has none.
+  std::vector<PreviewTool> preview_tools;
+  // False while a pass over the tool table that differs from preview_tools waits to be
+  // accepted: the machine's state is then not one coherent set, and no preview input is taken
+  // from it.
+  bool tools_settled{true};
   // What the source itself has to tell the operator (a file it cannot read), each once.
   std::vector<ControllerMessage> messages;
 };

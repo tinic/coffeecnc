@@ -32,6 +32,14 @@ struct NmlPanelSource::Impl {
   };
   std::optional<Pending> pending;
   std::uint64_t tool_loads_seen{};
+  RawToolReader raw_reader;
+  // The table with every field: accepted by the same rule as the table shown, on every field.
+  std::vector<PreviewTool> preview_tools;
+  struct PendingRaw {
+    std::vector<PreviewTool> tools;
+    Clock::time_point taken_at;
+  };
+  std::optional<PendingRaw> pending_raw;
   std::map<int, std::string> comments;
   ToolTable tool_table;
   bool tools_failed{};
@@ -84,6 +92,30 @@ struct NmlPanelSource::Impl {
     // The status as it was before this pass: it can vouch for an earlier pass only.
     const auto status = mailbox.latest();
     auto pass = tools();
+    if (pass && raw_reader)
+      accept_raw(raw_reader(), status);
+    show_pass(std::move(pass), status, messages);
+  }
+
+  // The table with every field, by the rule of the table shown: a pass that differs from the
+  // accepted one is accepted when the next pass equals it in every field of every entry and
+  // a status read after the first of the two says that task has nothing in execution. A
+  // table caught half loaded is so never an input of a preview.
+  void accept_raw(std::vector<PreviewTool> raw, const std::optional<TimedStatus>& status) {
+    if (raw == preview_tools) {
+      pending_raw.reset();
+    } else if (!pending_raw || raw != pending_raw->tools) {
+      pending_raw = PendingRaw{std::move(raw), clock()};
+    } else if (status && status->read_at > pending_raw->taken_at &&
+               status->status.controller.link != Link::down && !status->status.task_executing) {
+      preview_tools = std::move(raw);
+      pending_raw.reset();
+    }
+  }
+
+  void show_pass(std::optional<std::vector<LoadedTool>> pass,
+                 const std::optional<TimedStatus>& status,
+                 std::vector<ControllerMessage>& messages) {
     if (!pass) {
       pending.reset();
       if (!std::exchange(tools_failed, true))
@@ -198,6 +230,8 @@ NmlPanelSource::NmlPanelSource(const MachineConfig& config, const NmlStatusMailb
                                    std::move(clock))) {}
 NmlPanelSource::~NmlPanelSource() = default;
 
+void NmlPanelSource::raw_tools(RawToolReader reader) { impl_->raw_reader = std::move(reader); }
+
 auto NmlPanelSource::hello() const -> Hello { return to_hello(impl_->config); }
 
 auto NmlPanelSource::read() -> PanelReading {
@@ -224,7 +258,7 @@ auto NmlPanelSource::read() -> PanelReading {
       to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
-  if (loaded) {
+  if (loaded && latest) {
     impl_->track_lines(status, latest->read_at);
     reading.status.program.current_line = impl_->lines.current;
     reading.status.program.motion_line = impl_->lines.motion;
@@ -237,6 +271,8 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .optional_stop = reading.status.program.optional_stop,
                                            .block_delete = reading.status.program.block_delete};
   reading.tool_table = impl_->tool_table;
+  reading.preview_tools = impl_->preview_tools;
+  reading.tools_settled = !impl_->pending_raw.has_value();
   reading.work_systems = to_work_systems(status);
   reading.program = loaded ? impl_->program : nullptr;
   return reading;

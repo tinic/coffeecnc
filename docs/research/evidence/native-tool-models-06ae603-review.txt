@@ -68,3 +68,17 @@ restart under a still-running LinuxCNC, or native GUI sanitizer qualification
 is claimed. The separate G0759 machine configuration PR remains a draft
 for commissioning; CoffeeCNC configuration and storage support other machine
 identities without machine-name branches.
+
+Evidence retention check, 05:03 UTC after cleanup
+
+The store checkout's sim-history directories for b74207d, 218ec7c and
+06ae603 remain, as do the independently copied local records named above.
+The b74207d development, sanitizer, analyzer and fresh-package logs survive,
+including the panel stamp and complete CTest output. The tested b74207d
+Debian package and shell-evidence screenshots were not retained. Claude
+confirmed no copy under ~/ai on playhouse2; an independent directory check
+agrees. Their former build-tree paths are historical, not available artifacts.
+No rerun was made to substitute new files for those historical artifacts.
+The earlier 0a0985c package remains under the main checkout's
+backend/build/sim-history/0a0985c/package/artifact/; it predates PR 19 and
+must not be presented as the native tool-model persistence package.

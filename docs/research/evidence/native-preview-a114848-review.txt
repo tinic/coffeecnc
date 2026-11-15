@@ -377,3 +377,24 @@ a corresponding thread-sanitizer definition, or recognize Clang's features.
 The address-space limit must remain in ordinary builds; CPU/file/core limits
 remain in both. This is a test-build portability issue, not a production preview
 failure. Claude was notified at 01:24. Sanitizer/analyzer results are still pending.
+
+Retained GCC sanitizer results: 2c6bf9d, 2026-11-15 01:33 UTC
+
+Codex independently copied and read the retained configure/build/CTest/raw-test
+logs for the ASAN+UBSAN and TSan presets. ASAN portable tests pass 20/20 in
+68.20 s; sim mm passes all 121 checks in 103.50 s. TSan portable tests pass
+20/20 in 98.82 s; sim mm passes all 121 checks in 104.08 s. Both simulation
+children exit 0 with zero residual processes. These build logs have no compiler
+warnings/errors and these test logs have no sanitizer diagnostics. Configuration
+records select address;undefined and thread respectively. These are independent
+reviews of Claude's native-host executions, not additional Codex test runs.
+
+Scope: these results cover the portable suite and the non-GUI mm simulation.
+They do not qualify the native GTK/WebKit shell under either sanitizer, the inch
+simulation under these sanitizers, or Clang's resource-limit guard. The latter
+fix, one focused Clang run, native shell ASAN with the wired preview, and analyzer
+results are pending. Existing GUI TSan limitations and GUI-only LSan exclusions
+remain documented separately; no full-application race/leak-free claim follows.
+
+Host: backend/build/sim-history/2c6bf9d/{asan,tsan}/ on playhouse2.
+Local: /tmp/coffeecnc-preview-2c6bf9d-review/{asan,tsan}/.

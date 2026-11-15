@@ -24,7 +24,8 @@
 # -k: a run that is to find what the run before it in the same run directory saved. A machine
 # INI file (-m) whose own [COFFEECNC] DATA_DIRECTORY is not inside the run directory is refused:
 # `sim=refused reason=data_directory_outside_run ...`, exit code 122, also with -n; nothing
-# was started, locked or made.
+# was started, locked or made. The key is read with LinuxCNC's inivar; a run whose INI file
+# cannot be read that way is refused with reason=data_directory_cannot_be_checked (122).
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. (The arguments are in the wrapper this script
@@ -127,14 +128,25 @@ fi
 
 # A machine's own INI file may name a data directory of its own. Nothing of a test is saved
 # outside its run directory: such a run is refused, before the lock, before anything is made.
+# The value is read by LinuxCNC's own reader (inivar), the one the application's adapter uses
+# as a library: whatever that reader makes of comments, white space, case and repeated
+# sections is what the application will be given. Without it, or when it fails, the run is
+# refused too.
 if [ -n "$machine" ]; then
-  data_directory=$(awk '
-    /^[ \t]*\[/ { section = $0; gsub(/[ \t\r]/, "", section) }
-    section == "[COFFEECNC]" && /^[ \t]*DATA_DIRECTORY[ \t]*=/ {
-      sub(/^[^=]*=[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit
-    }' "$machine")
-  if [ -n "$data_directory" ]; then
-    case $(realpath -m "$data_directory") in
+  if ! command -v inivar >/dev/null; then
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=inivar-not-found ini=$machine"
+    exit 122
+  fi
+  # inivar's exit code 1 is "not found" (key or section absent; seen with 2.9.4, where a file it
+  # cannot open gives 255): that the file can be read is therefore established here first.
+  if [ ! -f "$machine" ] || [ ! -r "$machine" ] || ! head -c 1 "$machine" >/dev/null 2>&1; then
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=ini-not-readable ini=$machine"
+    exit 122
+  fi
+  data_directory=$(inivar -ini "$machine" -sec COFFEECNC -var DATA_DIRECTORY 2>/dev/null)
+  case $? in
+  0)
+    case $(realpath -m -- "$data_directory") in
     "$(realpath -m "$directory")"/*) ;;
     *)
       echo "sim=refused reason=data_directory_outside_run data_directory=$data_directory" \
@@ -142,7 +154,13 @@ if [ -n "$machine" ]; then
       exit 122
       ;;
     esac
-  fi
+    ;;
+  1) ;; # The key is not set.
+  *)
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=inivar-failed ini=$machine"
+    exit 122
+    ;;
+  esac
 fi
 
 locked=

@@ -68,12 +68,23 @@ changed=$(diff "$machine" "$directory/$ini" | grep -c '^[<>]')
 [ "$changed" = 5 ] || fail "ini-differs-in-${changed}-diff-lines-not-5"
 echo "machine=ini file=$ini from=$machine substituted=2 added=1"
 
-# Every value of a key in a section of the assembled INI file, one per line.
+# Every value of a key in a section of the assembled INI file, one per line: as LinuxCNC's
+# own reader (inivar) gives them, so that what is copied and filtered here is what LinuxCNC
+# will load.
+command -v inivar >/dev/null || fail inivar-not-found
 values() {
-  perl -ne 'BEGIN { $s = shift; $k = shift }
-    $c = $1 if /^\[(\w+)\]/;
-    print "$1\n" if $c eq $s && /^\Q$k\E\s*=\s*(.*?)\s*$/;' "$1" "$2" "$directory/$ini"
+  local number=1 value
+  while value=$(inivar -ini "$directory/$ini" -sec "$1" -var "$2" -num "$number" 2>/dev/null); do
+    echo "$value"
+    number=$((number + 1))
+  done
 }
+# The substitutions above were made on lines found by pattern. LinuxCNC must read them so:
+# the test's program, the run directory's programs, and the simulated hardware loaded last.
+[ "$(values DISPLAY DISPLAY | head -1)" = "$display" ] &&
+  [ "$(values DISPLAY PROGRAM_PREFIX | head -1)" = nc_files ] &&
+  [ "$(values HAL HALFILE | tail -1)" = "$(basename "$layer")" ] ||
+  fail "ini-substitutions-are-not-what-LinuxCNC-reads"
 plain() {
   case $1 in
   */* | *[!A-Za-z0-9_.+-]*) fail "file-name-not-plain_$1" ;;

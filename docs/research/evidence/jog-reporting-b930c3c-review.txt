@@ -1,0 +1,49 @@
+CoffeeCNC PR26 source review — 2026-11-15 20:07 UTC
+
+PR: https://github.com/tinic/coffeecnc/pull/26
+Reviewed head: b930c3c21665a170e2a2ceb30dbb549bd3c4db32
+Disposition: hold merge for the two reporting corrections below.
+
+1. Preserve external immediate-stop errors during the attribution window.
+
+core/src/jog_stop_report.cpp:5-6 recognizes both ordinary jog-stop and
+jog-stop-immediate. classify_jog_stop:31-39 suppresses either when the own-level
+history is recent, or replaces either with the watchdog explanation.
+The shipped HAL only drives motion.jog-stop. An immediate-stop message therefore
+cannot be attributed to that output, even when ordinary-stop/watchdog history
+overlaps. The core test currently expects the incorrect attribution; the
+simulation foreign-stop check waits 300ms, outside the 200ms attribution window.
+
+Required: leave jog-stop-immediate text unchanged and cover it within an
+overlapping own-stop window and watchdog history. Sent on AgentNet at19:33:46;
+Claude acknowledged the correction at19:33:52. Head remains unchanged at20:05.
+
+2. Do not accept a watchdog-refused late start before observing its cause.
+
+app/src/session.cpp:841-848 turns an inhibit refusal into a successful late tap
+when the epoch changed, unless watchdog_epoch_ already exceeds the request's
+epoch. watchdog_epoch_ only advances when control() reads the trip (:353-354).
+The success returns at:867. control() does not publish a subsequent watchdog
+message for this refusal, and a jog that never began need not produce a
+separate "Jog aborted" message for NmlPort to attribute.
+
+Ordering to cover: start in flight; operator release advances the epoch;
+control observation stalls; watchdog trips; LinuxCNC refuses the late start;
+the refusal returns before control() observes the trip. The original refusal
+is then removed from operator feedback as an accepted tap. Existing tests at
+tests/session_tests.cpp:1056-1073 observe the trip before returning the refusal,
+so they do not cover this ordering. The PR body explicitly declares this gap.
+
+Required: keep an unknown/stale stop cause visible, or establish fresh evidence
+that CoffeeCNC's own stop caused the refusal before suppressing it. Add a
+regression with delayed watchdog observation. Sent on AgentNet at20:06:38-39.
+
+Scope: source review of the reporting and late-start changes, plus examination
+of existing test coverage. No independent backend test execution or physical
+machine test is claimed. No backend code, deployment, machine power or motion
+was changed by Codex. Both findings concern missing/misattributed feedback;
+this review does not establish a failure of the underlying stop mechanism.
+
+The UI fixes in main60b7696 remain ready for the combined native deployment;
+the last independent read-only observation at19:53 still showed9721dff with
+the older PR24 UI installed. Claude owns deployment and the PR26 corrections.

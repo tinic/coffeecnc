@@ -155,3 +155,74 @@ preview start state is frozen. PreviewContext freezes start, while G92, systems 
 raw_tools (including spindle entry 0) remain live. Check that recomputation does not
 apply later offsets/tool state to earlier moves; otherwise withhold unsupported
 contexts. This is a requested oracle case, not a measured native failure.
+
+Retained verification: 9b36c7a and 48da0a8, 2026-11-15 00:57 UTC
+
+The following supersedes the open-finding status above. Codex independently read
+the corrected source/tests and copied the retained CTest, LastTest and LinuxCNC
+logs from playhouse2. These are reviews of Claude's recorded runs, not separate
+Codex native test executions. Both records show no tracked modifications; their
+git-status.txt contains only the unrelated untracked ../concept.png. The 48da0a8
+record also retains the stash listing for application wiring held out of the run.
+
+9b36c7a: portable 20/20, 29.13 s; preview engine 621, wire 79, service 59,
+mapping 98 checks. Sim mm 119 checks / 83.18 s; sim inch 119 / 82.58 s.
+Both simulation wrappers record actual child_status=0 and processes_left=0;
+all individual simulation checks pass.
+
+Findings 1-3 now have retained native engine evidence for the reviewed fixes.
+Finding 4's input binding/equality change also has retained evidence; application
+wiring must still establish one publisher owner and the same accepted raw-table
+pass as the displayed tool table. Finding 6 remains closed as recorded above.
+Findings 5 and 7 are closed for this checkpoint:
+- called_names enforces the distinct-name cap during collection, stops at the
+  257th name with room=256, and checks cancellation every 1024 lines. The test
+  measures examined bytes, not just subsequent file lookups.
+- A ready result requires valid end-ok and the helper PID's observed exit 0.
+  Bounded reaping precedes process-group cleanup. Fake-helper tests cover exit 7,
+  a signal, missing terminal record, closed pipes without exit, timeout, malformed
+  output, an out-of-range source line and a remaining child. Failed results retain
+  only a valid prefix; an interpreter error keeps its reported source line.
+
+The native simulation oracle agrees on an axis-only first block after fresh
+startup, MDI G1, an aborted G1 program, and a program ending with M2, including
+the two expected interpreter errors. With G54 rotation 30 degrees, G43, G17/18/19
+arcs, a helix and G20, sampled machine positions are at most 0.0099 mm from the
+preview in both runs. The reverse nearest-sample distances are 0.565 mm (mm run)
+and 0.591 mm (inch run); endpoints agree. This samples geometry, not swept volume,
+collision checking, machine dynamics or hardware accuracy.
+
+Unedited repository samples, recorded by preview_engine:
+task-17_A.nc, G54: ready, 98 segments / 196 points,
+  feed bounds 74,36,-20 .. 126,64,2 mm.
+task-17_B.nc, G55: ready, 73 segments / 510 points,
+  feed bounds 53,23,-21.767 .. 147,77,2 mm.
+task-17_B.nc, G54: failed line 24, no segments; G55 offsets unavailable.
+ops_block_face.nc: failed line 5, no segments; G28 saved position unavailable.
+These are engine previews, not programs run on hardware. The paired task-17 STEP
+continues to represent initial stock, not a finished-part model.
+
+48da0a8: portable 20/20, 28.65 s; service 105 and publishing 174 checks.
+Sim mm 121 checks / 102.70 s; sim inch 121 / 102.69 s. Both actual child statuses
+are 0, both residual process counts 0, and every individual check passes.
+Source and tests now freeze all machine-state preview inputs through execution
+and pauses. The native G92/M0/G10 L2/T2 M6/G43 case records zero computations
+during the run and pause, then exactly one afterward. Attaching mid-program
+records unavailable/no computation until idle, then one submission. Portable
+tests cover sticky invalidation after a block-delete change, including toggling
+back. The path during a run is the pre-run plan; external edits during a pause
+cannot be distinguished from changes made by the program itself.
+
+One narrower contract case remains under discussion: reconnect mid-run, then end
+with every input identical to the last idle snapshot. In 48da0a8 submit_due_ can
+remain false and the old result is reused rather than computed once afterward.
+The existing reconnect test changes G5x and does not exercise this case. This is
+a source-review edge case, not a reproduced native failure; Claude was asked to
+test it and make the intended reuse/submission rule explicit.
+
+Raw host records: backend/build/sim-history/{9b36c7a,48da0a8}/dev/ in
+/home/turo/ai/claudecode-coffeecnc on playhouse2.
+Local copies: /tmp/coffeecnc-preview-{9b36c7a,48da0a8}-review/dev/.
+The application remains unwired at these commits. Native UI/STEP overlay,
+application ownership/shutdown, analyzers and sanitizers are not qualified by
+these engine and simulation results. No G0759 hardware operation was performed.

@@ -16,9 +16,11 @@ import type {
   ProgramText,
   Status,
   ToolTable,
+  ToolModels,
   WorkOffsets,
 } from './protocol'
 import { protocolVersion } from './protocol'
+import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { wcsName } from './units'
 
@@ -69,6 +71,8 @@ export interface PanelState {
   /** Milliseconds since the last status arrived; meaningful when `link` is `silent`. */
   silentFor: number
   toolTable: ToolTable | null
+  /** Null until a valid snapshot arrives for the current hello. Never implies an empty file. */
+  toolModels: ToolModels | null
   workOffsets: WorkOffsets | null
   program: ProgramText | null
   preview: Preview | null
@@ -169,6 +173,10 @@ export function describeCommand(command: CommandBody): string {
       return `Remove tool ${String(command.number)}`
     case 'tool_changed':
       return 'Confirm tool change'
+    case 'set_tool_model_defaults':
+      return 'Save tool model defaults'
+    case 'set_tool_model_assignment':
+      return 'Save tool preview model'
   }
 }
 
@@ -202,6 +210,7 @@ export function createPanel(options: PanelOptions): Panel {
     link: 'connecting',
     silentFor: 0,
     toolTable: null,
+    toolModels: null,
     workOffsets: null,
     program: null,
     preview: null,
@@ -290,6 +299,7 @@ export function createPanel(options: PanelOptions): Panel {
     if (protocolError !== null && message.type !== 'hello') return
     switch (message.type) {
       case 'hello':
+        state.toolModels = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
           // These snapshots belong to a protocol we can no longer interpret. Clearing hello
@@ -327,6 +337,22 @@ export function createPanel(options: PanelOptions): Panel {
       case 'tool_table':
         state.toolTable = message
         break
+      case 'tool_models': {
+        // The native bridge already binds messages to a page. Bind persistence to its current
+        // hello too; an old machine's snapshot must never provide a revision for this machine.
+        if (state.hello?.tool_model_storage !== 1 || message.machine_id !== state.hello.machine_id) break
+        const decoded = decodeToolModels(message)
+        if (decoded === null) {
+          const reason = 'Invalid tool model settings received. Saving is unavailable.'
+          state.toolModels = { type: 'tool_models', machine_id: validMachineId(message.machine_id) ? message.machine_id : null,
+            revision: 0, availability: 'unavailable', reason, document: null }
+          log('error', reason, 'Tool models', now())
+        } else if (state.toolModels === null || decoded.availability !== 'available' ||
+          state.toolModels.availability !== 'available' || decoded.revision >= state.toolModels.revision) {
+          state.toolModels = decoded
+        }
+        break
+      }
       case 'work_offsets':
         state.workOffsets = message
         break

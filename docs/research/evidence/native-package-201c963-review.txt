@@ -1,0 +1,87 @@
+CoffeeCNC G0759/full-suite follow-up, 2026-11-15 03:20 UTC
+
+Source201c963c652c57fcb794a7522dca1e24724c0e4b on claude/packaging.
+Codex reviewed its test-only delta and independently copied/read retained
+development provenance, CTest, LastTest and raw simulation logs. Source clean;
+configure/build exit0, CTest exit8. Full suite33/35 in486.13s. Do not describe
+this checkpoint as a passing full run. No hardware operation.
+
+linuxcnc_machine_g0759 failure
+
+Machine files are clean e11000c, including MACHINE_ID=g0759. The first new
+scenario fails estop_request_idle_prepared: external input closed, OFF and ON
+commands accepted, reported machine ON, but estop-out remains FALSE. The
+subsequent observation still reports OFF, but the required starting state was
+not established, so this case is not qualified.
+
+Source clue, not a completed diagnosis: NmlPort maps `off` from ON to
+EMC_TASK_STATE_OFF, whereas `off` from another state sends ESTOP_RESET. The
+scenario's machine_on helper sends only one off before on, then assumes
+user-enable-out must be TRUE. Claude was asked to establish/reset the starting
+state explicitly and retain the original failure.
+
+Other recorded cases prepare successfully: software request during jog and
+program/spindle ends OFF; opening the external input in all three cases ends
+ESTOP. Spindle-enable ends FALSE and the interpreter is idle. The jog request
+returns failed:Jog_aborted_by_jog-stop, rather than the generic state-mismatch
+reason. The planned state-aware E-stop response must therefore consider early
+run() failure as well as settled() failure, using fresh status and retaining
+failure rather than claiming ESTOP acceptance.
+
+linuxcnc_shell_mm failure
+
+The shell never starts: runner exit125, printed_exit=none, child_status=none,
+processes_left0. This is not a failed UI assertion. Its log begins:
+  No display, no tty, trying to clean up other instance automatically
+  Waiting for other session to finish exiting...lockfile still not removed
+Then NML master buffers are missing and motmod.so cannot resolve
+update_joint_homing_params. The exact cause remains unestablished.
+
+Cross-checkout concurrency is a hypothesis to check. run.sh tests for existing
+processes and /tmp/linuxcnc.lock before launch, but those checks and launch are
+not protected by one atomic host lock. CTest RESOURCE_LOCK only serializes one
+CTest invocation. Claude was asked to retain ownership/timing evidence and
+investigate before cleanup or retry; no blind full-suite rerun requested.
+
+The other eight top-level DISPLAY runs exit0 with no residual processes;
+machine startup on e11000c and both installed startup paths pass. These
+individual results do not erase the two failures above.
+
+Fresh analyzer build was observed in progress with configure_exit0 and
+fresh=1; no completed analyzer or Release result is qualified here.
+
+Host: backend/build/sim-history/201c963/dev/ on playhouse2.
+Local: /tmp/coffeecnc-packaging-201c963-review/dev/.
+
+Fresh analyzer and Release follow-up, 2026-11-15 03:24 UTC
+
+Independently copied/read analyze and package records for the same clean head.
+Both explicitly remove their build directory before configure, and retain
+verbose compile logs and CMake cache selections. Analyzer configure/build0,
+88/88 steps with clang-tidy/cppcheck and no recorded warning/error diagnostics.
+This is a fresh build/analyzer result, not an analyzer-preset CTest run.
+
+Release configure/build0,88/88 steps. Actual compiler commands for the three
+previously failing production translation units include -O3 -DNDEBUG -Werror.
+Cache: CMAKE_BUILD_TYPE=Release, COFFEECNC_DEVELOPMENT_PATHS=FALSE. This closes
+the previous Release compiler failure/evidence gap without disabling warnings.
+
+The selected Release tests pass8/9 in64.63s, CTest exit8. The only failure is
+again estop_request_idle_prepared (ON but estop-out FALSE) on machine e11000c.
+This remains open; the successful individual packaging checks do not make the
+whole subset pass.
+
+Installed prefix and unpacked DEB both run their own executable/panel/helper,
+produce a six-segment sample preview computation, and exit with child_status0
+and processes_left0. Both binary pairs have zero matching build-host home or
+checkout strings in the retained scan. Each installed panel matches23 built
+files, still the pre-persistence UI bundle. No host package installation or
+manual visual inspection is claimed.
+
+Release DEB: coffeecnc_0.1.0_amd64.deb,3,984,560 bytes, Installed-Size9,779KiB.
+Recorded SHA256:
+6b921231b2592230074e4d60dae13da322e9adcb4df48c0a2ddec77cb65978c1
+Runtime dependencies are generated for this build host, including
+linuxcnc-uspace >=1:2.9.4 and <<1:2.10, libc6>=2.38 and libstdc++6>=14.
+
+Host/local paths: same sim-history/review directory, analyze/ and package/.

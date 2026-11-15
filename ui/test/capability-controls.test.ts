@@ -3,14 +3,15 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import ManualTab from '../src/components/ManualTab.vue'
 import RunBar from '../src/components/RunBar.vue'
+import StatusBar from '../src/components/StatusBar.vue'
 import { panel, send } from '../src/machine'
 import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const { requiresHoming } = await import('../src/machine-capabilities')
-  const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1 }) as unknown as typeof import('../src/machine').panel
-  return { panel, send: vi.fn(), onResult: (): (() => void) => (): void => undefined,
+  const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
+  return { panel, send: vi.fn(), dismissNotice: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
     live: computed(() => panel.link === 'live'),
     manualBlock: computed(() => panel.link !== 'live' ? 'Link unavailable' :
@@ -41,6 +42,37 @@ afterEach(() => {
 })
 
 describe('capability-aware controls', () => {
+  it('allows an explicit E-stop reset while off without powering on', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.machine = 'off'
+    wrapper = mount(StatusBar)
+    const reset = wrapper.findAll('button').find((button) => button.text() === 'Reset E-stop')
+    const on = wrapper.findAll('button').find((button) => button.text() === 'Machine on')
+    expect(reset).toBeDefined(); expect(on).toBeDefined()
+    await reset?.trigger('click')
+    expect(vi.mocked(send).mock.calls).toEqual([[{ type: 'set_machine', state: 'off' }]])
+    vi.mocked(send).mockClear()
+    await on?.trigger('click')
+    expect(vi.mocked(send).mock.calls).toEqual([[{ type: 'set_machine', state: 'on' }]])
+    panel.status.machine = 'on'
+    await nextTick()
+    expect(wrapper.text()).not.toContain('Reset E-stop')
+    expect(wrapper.text()).toContain('Machine off')
+  })
+
+  it.each(['stale', 'silent', 'incompatible'] as const)('blocks reset and power-on with a %s link', async (link) => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.machine = 'off'; panel.link = link
+    wrapper = mount(StatusBar)
+    const actions = wrapper.findAll('.actions button').filter((button) => ['Reset E-stop', 'Machine on'].includes(button.text()))
+    expect(actions).toHaveLength(2)
+    for (const button of actions) {
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it.each(['stale', 'silent', 'off', 'estop', 'busy', 'homing', 'homed'] as const)(
     'ends a held jog on %s and requires a new physical press after recovery', async (interruption) => {
       panel.jogIncrement = null

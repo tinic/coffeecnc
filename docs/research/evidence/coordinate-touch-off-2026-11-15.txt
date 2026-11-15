@@ -1,0 +1,29 @@
+CoffeeCNC direct coordinate touch-off — 2026-11-15
+
+User feedback: coordinate numbers cannot be tapped; keypad always starts at zero.
+Cause: DRO values were spans; only the target icon opened touch-off, whose
+initial value was hardcoded to 0.
+
+Correction: entire 48px-tall axis readout is a button in Manual work position.
+It opens with the displayed work coordinate in mm/inch; first digit replaces
+that initial value, Zero is explicit, and Set WCS/axis remains the command.
+Accepting the unchanged formatted value preserves the original precision.
+Changing axis starts a new draft. Units/session/workspace/WCS/basis/command
+availability changes invalidate the open draft before it can send.
+
+Validation:
+- Typecheck, lint, 339 tests in 27 files passed; 18 new touch-off cases.
+- Production build passed (existing Vite config-loader/import warnings remain).
+- Bundle stamp matches:
+  inputs=932326090c73e69c23b8ebfb28fef9da6148885ca05a74cde6094258aedc9531
+  assets=ed22596cfd3d72b95f9dd488b0c537008177fcfae0f114afca447edb84d10f40
+- Browser display fixture: tap X number -123.456, keypad starts -123.456;
+  press 7 replaces it with 7; Cancel leaves source unchanged. Inch Y readout
+  -0.3888 opens -0.3888; Zero changes draft to 0. No native machine commands.
+- Readout/unit centers remain identical for all XYZ rows:
+  1280x800: 221.390625px; 1600x900: 249.390625px. Tap target height 48px.
+- No browser warning/error entries. Physical touchscreen retest not established.
+- Screenshot ui/screenshots/coordinate-touch-off.png (1280x800 display fixture)
+  sha256=3970c797c0cf4ce58f18f1da1aacb34ff4c377369d24dd1206bcd8002fae84c0
+
+Native deployment pending at this record's initial commit; Claude owns deployment.

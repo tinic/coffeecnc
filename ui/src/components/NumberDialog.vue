@@ -21,7 +21,7 @@ const props = defineProps<{
   expanded?: boolean
   error?: string
 }>()
-const emit = defineEmits<{ confirm: [value: number]; close: [] }>()
+const emit = defineEmits<{ confirm: [value: number, text: string]; close: [] }>()
 
 const text = ref<string>(props.initial)
 const fresh = ref<boolean>(true)
@@ -57,7 +57,7 @@ function backspace(): void {
 
 function confirm(): void {
   if (value.value !== null) {
-    emit('confirm', value.value)
+    emit('confirm', value.value, text.value)
   }
 }
 

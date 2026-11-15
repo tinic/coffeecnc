@@ -634,7 +634,9 @@ function coolant(which: 'flood' | 'mist'): void {
 .increments .btn { min-width: 44px; padding: 0 10px; }
 
 .speed {
-  width: 44px;
+  flex: none;
+  width: 7ch;
+  min-width: 7ch;
   text-align: right;
   font-weight: 600;
 }
@@ -742,6 +744,7 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .rpm {
+  flex: none;
   width: 78px;
   text-align: right;
 }

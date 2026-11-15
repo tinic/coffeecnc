@@ -81,6 +81,8 @@ li.error {
 }
 
 .when {
+  flex: none;
+  min-width: 8ch;
   padding-top: 1px;
   font-size: 13px;
   color: var(--text-dim);

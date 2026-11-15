@@ -77,7 +77,7 @@ function apply(): void {
     <template v-if="part.attachment">
       <div class="identity"><strong>{{ part.attachment.name }}</strong><span>{{ part.attachment.geometry.meshes.length }} parts · {{ part.attachment.geometry.triangles.toLocaleString() }} triangles</span></div>
       <p v-if="part.attachment.note" class="notice">{{ part.attachment.note }}</p>
-      <div class="display-row"><label><input v-model="part.visible" type="checkbox" /> Show part</label><label class="opacity">Opacity <input v-model.number="part.opacity" type="range" min="0.1" max="1" step="0.05" />{{ Math.round(part.opacity * 100) }}%</label><button class="btn quiet" type="button" @click="removePart">Remove</button></div>
+      <div class="display-row"><label><input v-model="part.visible" type="checkbox" /> Show part</label><label class="opacity">Opacity <input v-model.number="part.opacity" type="range" min="0.1" max="1" step="0.05" /><span class="opacity-value mono">{{ Math.round(part.opacity * 100) }}%</span></label><button class="btn quiet" type="button" @click="removePart">Remove</button></div>
       <div class="placement-head"><strong>Placement in {{ wcsName(panel.status?.offsets.wcs ?? 1) }}</strong><small>Display only · does not change work offsets</small></div>
       <div class="placement-grid"><span></span><span v-for="axis in axes" :key="axis">{{ axis }}</span><label>Offset (mm)</label><input v-for="(axis, i) in axes" :key="`t${axis}`" v-model="translation[i]" v-numeric type="text" inputmode="decimal" :aria-label="`Model ${axis} offset in millimeters`" /><label>Rotation (°)</label><input v-for="(axis, i) in axes" :key="`r${axis}`" v-model="rotation[i]" v-numeric type="text" inputmode="decimal" :aria-label="`Model ${axis} rotation in degrees`" /></div>
       <p class="hint">Rotate about the CAD origin in X → Y → Z order, then translate. Zero offsets place the CAD origin at the active work origin.</p>
@@ -98,6 +98,7 @@ small { font-size: 10px; color: var(--text-dim); }.model-summary small { display
 .load-row, .display-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .identity { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }.identity span, .hint { color: var(--text-dim); font-size: 12px; }.hint, .notice, .error { margin: 0; line-height: 1.5; }.notice { color: var(--warn); font-size: 12px; }.error { color: var(--stop); font-size: 12px; }
 .display-row { font-size: 12px; }.display-row label { display: flex; align-items: center; gap: 6px; }.opacity { flex: 1; }.opacity input { min-width: 70px; width: 100px; flex: 1; }
+.opacity-value { flex: none; width: 4ch; min-width: 4ch; text-align: right; }
 .placement-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
 .placement-grid { display: grid; grid-template-columns: 100px repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px 10px; font-size: 12px; }.placement-grid > span { color: var(--text-dim); }.placement-grid input { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--control); color: var(--text); }
 </style>

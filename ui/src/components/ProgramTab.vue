@@ -109,14 +109,14 @@ async function showFailure(): Promise<void> {
             <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
             <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ currentTool === 0 ? 'No tool loaded' : `T${String(currentTool)} · ${tool?.comment || 'Tool not in table'}` }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
             <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
-            <div class="kv"><span>Spindle command</span><strong>{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
-            <div class="kv"><span>Current feed</span><strong>{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
+            <div class="kv"><span>Spindle command</span><strong class="mono">{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
+            <div class="kv"><span>Current feed</span><strong class="mono">{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
           </div>
         </div>
         <PartModel />
       </aside>
     </div>
-    <div class="status-row"><span :class="{ warning: !live || status?.machine === 'estop' }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="mono">{{ lineLabel }}</span></div>
+    <div class="status-row"><span :class="{ warning: !live || status?.machine === 'estop' }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 
@@ -136,9 +136,9 @@ async function showFailure(): Promise<void> {
 .section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-dim); font-size: 11px; flex: none; }
 .section[aria-pressed=true] .section-number { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 4px; }.section-text strong { font-weight: 500; font-size: 13px; }.section-text small { font-size: 11px; color: var(--text-dim); }
 .tool { border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }.tool-title { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; }.tool-title strong { font-size: 13px; font-weight: 500; }.tool-title small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 11px; }.tool-glyph { display: flex; padding: 10px; background: var(--bg-sunken); border-radius: 8px; color: var(--text-dim); }
-.kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
+.kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { flex: none; min-width: 14ch; text-align: right; color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
-.status-row { flex: none; min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
+.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.warning { color: var(--stop); }
 .status-row .program-feedback { margin: 0; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .failure.unavailable { color: var(--text-dim); }

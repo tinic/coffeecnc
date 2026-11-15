@@ -75,6 +75,8 @@ function slide(event: Event): void {
   grid-column: 3;
   grid-row: 1;
   min-height: 44px;
+  min-width: 56px;
+  text-align: right;
   padding: 0 4px;
   border: 0;
   background: none;

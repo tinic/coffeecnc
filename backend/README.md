@@ -1,6 +1,6 @@
 # Native backend
 
-C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md). Toolpath preview: [`docs/preview.md`](../docs/preview.md). Installation, package and machine configurations: [`docs/packaging.md`](../docs/packaging.md).
+C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md). Toolpath preview: [`docs/preview.md`](../docs/preview.md). Installation, package and machine configurations: [`docs/packaging.md`](../docs/packaging.md). Saved tool models: [`docs/tool-model-store.md`](../docs/tool-model-store.md).
 
 ## Layers
 
@@ -41,6 +41,9 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | CTest name | Label | Covers |
 |---|---|---|
 | `core_behavior` | | Policy decisions, jog leases |
+| `tool_models` | | Tool-model document, validation, codec and store on a file system that fails at each step; real lock and file modes |
+| `sim_data_directory` | | `run.sh -m` refuses a machine INI whose data directory is outside the run directory; starts nothing |
+| `linuxcnc_shell_tool_models` | `linuxcnc` | The real panel saves defaults and a tool's model; LinuxCNC and the application are started again; the panel shows what was saved |
 | `request_boundary` | | Request decoding limits and rejections |
 | `protocol_fixtures` | | Every entry of `protocol/fixtures/commands.json` decodes and every command is in the file; the encoders reproduce `protocol/fixtures/messages.json` exactly and every message variant is in it |
 | `response_encoding` | | Result and message JSON |
@@ -125,7 +128,7 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. The preview works on a private copy whose originals are compared again every 1 s (a polling period, not a deadline: a change is seen at the next comparison); the copy does not bind what task opens at run |
 | Preview | Public interpreter API only. A program stops being previewed at the first parameter (`#`), `M100`–`M199`, probe, `M66`, `G28`/`G30`, or a work system other than the active one; programs with comments that run code or write files, and configurations with `[RS274NGC] REMAP`, are refused. See `docs/preview.md` |
 | Work offsets | `EMC_STAT` carries only the active system; the other eight are sent `available: false` with zeros |
-| Tool table | Shown, and used for the preview with every field, from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Comments come from the file at load time |
+| Tool table | Shown, and used for the preview with every field, from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Shown only with the comments read from the file for that table: while the file cannot be read (missing, a directory, over 4 MiB) the panel gets no rows and one message, and the table returns when the file reads again. The preview is not affected |
 | ThreadSanitizer and the GUI | Unqualified: GLib, GTK and WebKit are not instrumented. Run by hand at 4588b3b: 133, 140 and 76 reports, none with an access-origin stack in CoffeeCNC code; no suppression |
 | LeakSanitizer | Suppressed in asan builds: `libfontconfig.so`, `libGLX_mesa.so`, `libjavascriptcoregtk-4.1.so`, nothing else; a leak this program causes through an allocation in one of them is hidden too. The GUI tests run with `NO_AT_BRIDGE=1`: with GTK's accessibility bridge on, libdbus holds 800 to 1216 bytes at exit. The executable does not set it; execution with accessibility is unqualified for leaks |
 | Start-up signal | SIGTERM before the window runs is not handled; the HAL component is then left to LinuxCNC's shutdown |

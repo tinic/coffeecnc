@@ -321,6 +321,21 @@ void estop_request_results() {
           "no status: failed, and says so");
 }
 
+// Motion's refusal of a start under motion.jog-inhibit, as the port's reason carries it.
+void jog_inhibit_refusal() {
+  require(is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active."), "LinuxCNC's text");
+  require(is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active"), "without the period");
+  require(is_jog_inhibit_refusal(
+              "Cannot jog while jog-inhibit is active.; Cannot jog while jog-inhibit is active."),
+          "published twice for one start");
+  require(!is_jog_inhibit_refusal(""), "no reason");
+  require(!is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active.; Joint 0 following "
+                                  "error."),
+          "with another error: not only the inhibit");
+  require(!is_jog_inhibit_refusal("Jog aborted by jog-stop"), "another text");
+  require(!is_jog_inhibit_refusal("cannot jog while jog-inhibit is active."), "exact text only");
+}
+
 // Whose stop a "Jog aborted by jog-stop" text reports.
 void jog_stop_attribution() {
   using Time = std::chrono::steady_clock::time_point;
@@ -377,6 +392,7 @@ auto main() -> int {
     independent_jog_leases();
     task_heartbeat();
     jog_stop_attribution();
+    jog_inhibit_refusal();
     estop_request_results();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {

@@ -39,6 +39,13 @@ inline constexpr std::string_view watchdog_stop_text =
 
 [[nodiscard]] auto is_jog_stop_text(std::string_view text) -> bool;
 
+// Motion refuses a jog start while motion.jog-inhibit is high with "Cannot jog while jog-inhibit
+// is active." (emc/motion/command.c; the text in motmod.so of LinuxCNC 2.9). In the shipped
+// post-GUI file that pin is driven by CoffeeCNC's own level and the HAL watchdog. True for a
+// failure reason that is this text alone, with or without its period, once or several times
+// joined by "; ".
+[[nodiscard]] auto is_jog_inhibit_refusal(std::string_view reason) -> bool;
+
 // `read_at`: when the text was read from LinuxCNC's error channel. `own_level_high`: the last
 // moment CoffeeCNC's control thread found or set its level high; it notes the level before each
 // write, so a level behind the text is known at `read_at`. `watchdog_tripped`: the last reading

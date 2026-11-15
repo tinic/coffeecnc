@@ -146,6 +146,15 @@ struct Work {
 //     axis or a new page has begun. The refreshes of a press that was stopped never start it
 //     again. Jog increments are not latched.
 //
+// A start in flight when a stop decision is made can reach motion after the level has risen,
+// and motion refuses it under motion.jog-inhibit ("Cannot jog while jog-inhibit is active.").
+// That start is answered `accepted`, with one `jog_late_start` line on stderr: the press ended
+// before its jog began, and nothing moved. When a control period read the watchdog tripped
+// after the start was sent, the answer is `failed` with watchdog_stop_text. A refusal without a
+// stop decision after the send stays `failed` with LinuxCNC's text. An increment refused that
+// way is `failed` with LinuxCNC's text and is a stop decision, as every increment that is not
+// accepted.
+//
 // Hold states, per session:
 //
 //   released   no axis needs a stop; the level is low; jog starts are sent.
@@ -326,6 +335,8 @@ private:
   std::uint64_t epoch_{};
   // Goes up with every abort, E-stop and power off.
   std::uint64_t cancels_{};
+  // The epoch in which a control period last read the watchdog tripped; 0 before any.
+  std::uint64_t watchdog_epoch_{};
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;

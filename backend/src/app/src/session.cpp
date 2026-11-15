@@ -1,11 +1,14 @@
 #include <coffeecnc/app/session.hpp>
 
 #include <coffeecnc/app/messages.hpp>
+#include <coffeecnc/core/jog_stop_report.hpp>
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstddef>
+#include <format>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -345,6 +348,10 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   }
   if (stop)
     stop_jogs();
+  // The epoch a tripped watchdog was last seen in: a start refused under jog-inhibit in an
+  // earlier epoch may have been refused by the watchdog.
+  if (!input.watchdog_ok)
+    watchdog_epoch_ = epoch_;
   for (auto& axis : jog_) {
     if (axis.stop_needed && axis.stop_failed && !axis.retry_due && !closing_) {
       axis.retry_due = true;
@@ -825,23 +832,39 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
                ? answer({CommandOutcome::rejected, stopped_reason})
                : cancelled();
   }
+  std::optional<std::uint64_t> late_in;
   {
     const std::scoped_lock lock{mutex_};
     auto& axis = jog_.at(*index);
     axis.in_flight = false;
     // Stopped while in flight: the stop decision has seen it and asks for the stop.
-    if (request.epoch != epoch_)
-      return answer(reply(std::move(started)));
-    axis.pressed = false;
-    if (started.status == ActionStatus::accepted) {
-      axis.running = true;
-      axis.held = asked;
-      return {};
+    if (request.epoch != epoch_) {
+      // Refused under the jog-inhibit that a stop decision made after the send has raised: a
+      // tap that ended before its jog began, and nothing moved. The stop is still needed.
+      if (started.status != ActionStatus::failed || !is_jog_inhibit_refusal(started.reason))
+        return answer(reply(std::move(started)));
+      if (watchdog_epoch_ > request.epoch)
+        return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
+      late_in = epoch_;
+    } else {
+      axis.pressed = false;
+      if (started.status == ActionStatus::accepted) {
+        axis.running = true;
+        axis.held = asked;
+        return {};
+      }
+      // The axis may be moving: an earlier jog, or a start that was lost on the way back.
+      stop_jogs();
+      need_stop(*index);
+      axis.latched = true;
     }
-    // The axis may be moving: an earlier jog, or a start that was lost on the way back.
-    stop_jogs();
-    need_stop(*index);
-    axis.latched = true;
+  }
+  if (late_in) {
+    std::cerr << std::format("coffeecnc: jog_late_start axis={} sent_epoch={} epoch={} "
+                             "text=\"{}\"\n",
+                             letter(command.axis), request.epoch, *late_in, started.reason)
+              << std::flush;
+    return {};
   }
   flush_stops();
   return answer(reply(std::move(started)));

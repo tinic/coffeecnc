@@ -634,10 +634,8 @@ void jog_taps(Rig& rig) {
         held_release.accepted() && held_messages.empty(),
         std::format("{} messages={}", held_release.text(), joined(held_messages)));
 
-  struct Tap {
-    double increment;
-    std::string_view label;
-  };
+  // The increment and its name in the check.
+  using Tap = std::pair<double, std::string_view>;
   for (const auto& [increment, label] : {Tap{1.0, "1_mm"}, Tap{0.05, "0_05_mm"}}) {
     rig.settle();
     rig.clear_messages();
@@ -657,6 +655,48 @@ void jog_taps(Rig& rig) {
           step.accepted() && near(moved, increment, 0.001) && step_messages.empty(),
           std::format("{} moved={:.4f} messages={}", step.text(), moved, joined(step_messages)));
   }
+}
+
+// Rapid continuous taps as on the machine: a release can raise the level before task has taken
+// up the start, which motion then refuses under jog-inhibit. Such a tap is no error, and the axis
+// does not move after its release.
+void jog_rapid_taps(Rig& rig) {
+  rig.settle();
+  rig.clear_messages();
+  std::vector<RequestId> sent;
+  Clock::time_point released_at;
+  for (int tap = 0; tap < 10; ++tap) {
+    const auto pressed_at = Clock::now();
+    sent.push_back(rig.post(hold_x));
+    pump_rest(rig, pressed_at, 80ms);
+    released_at = Clock::now();
+    sent.push_back(rig.post(release_x));
+    pump_rest(rig, released_at, 120ms);
+  }
+  pump_rest(rig, released_at, 300ms);
+  const double settled = rig.machine(0);
+  rig.pump(300ms);
+  const double later = rig.machine(0);
+  int accepted = 0;
+  int rejected = 0;
+  std::string refusals;
+  for (const auto id : sent) {
+    const auto result = rig.await(id, 5s);
+    if (result.accepted())
+      ++accepted;
+    else if (result.outcome == "rejected")
+      ++rejected;
+    else
+      refusals += (refusals.empty() ? "" : "|") + result.text();
+  }
+  const auto messages = rig.all_messages();
+  fact("jog_rapid_taps",
+       std::format("taps=10 accepted={} rejected={} failed={} moved_after_stop={:.4f}", accepted,
+                   rejected, refusals.empty() ? "-" : refusals, later - settled));
+  check("jog_rapid_taps_no_failed_result", refusals.empty(), refusals);
+  check("jog_rapid_taps_no_operator_message", messages.empty(), joined(messages));
+  check("jog_rapid_taps_stable_after_release", near(later, settled, 0.001),
+        std::format("{:.4f} {:.4f}", settled, later));
 }
 
 // The key property of the HAL path: it stops a jog while the NML command channel is useless.
@@ -3546,6 +3586,8 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   oracle_first_block(oracle, "fresh_start");
   axis_jogs(rig);
   jog_taps(rig);
+  if (config->machine_units == LengthUnit::mm)
+    jog_rapid_taps(rig);
   hal_stop_without_nml(rig);
   watchdog(rig);
   nml_gate(rig);

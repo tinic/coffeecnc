@@ -1027,6 +1027,82 @@ void jog_failures() {
   rig.acted({"stop_jog x"}, "A refresh never changes the mode to start its jog again");
 }
 
+// A start still in flight when a stop decision raised the level reaches motion under
+// jog-inhibit and is refused: the tap ended before its jog began.
+void late_jog_starts() {
+  constexpr auto inhibit = "Cannot jog while jog-inhibit is active.";
+  struct Row {
+    std::string name;
+    // Runs inside start_jog, after the start was written: what happened while it was in flight.
+    std::function<void(Rig&)> meanwhile;
+    std::string_view outcome;
+    std::string_view reason;
+    Calls calls;
+  };
+  const std::vector<Row> rows{
+      {"released in flight",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+       },
+       "accepted",
+       "",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"not released",
+       [](Rig&) -> void {},
+       "failed",
+       inhibit,
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"the watchdog tripped in flight",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.control(at(rig.clock), {false, false}));
+       },
+       "failed",
+       "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
+       "watchdog timeout.",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"released, then the watchdog tripped",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {true, false}));
+       },
+       "failed",
+       "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
+       "watchdog timeout.",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+  };
+  for (const auto& row : rows) {
+    Rig rig;
+    rig.port.script["start_jog"] = {{ActionStatus::failed, inhibit}};
+    rig.port.during["start_jog"] = [&rig, &row]() -> void { row.meanwhile(rig); };
+    const auto pressed = rig.next_id;
+    const auto outcome = rig.send(hold_x);
+    std::optional<Json> press;
+    bool error = false;
+    for (const auto& text : outcome.messages) {
+      auto message = Json::parse(text);
+      if (message.at("type") == "result" && message.at("id") == pressed)
+        press = message;
+      else if (message.at("type") == "result")
+        require(message.at("outcome") == "accepted", row.name + ": the release is accepted");
+      else
+        error = true;
+    }
+    require(press && press->at("outcome") == row.outcome && press->at("reason") == row.reason,
+            std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
+                        press ? press->dump() : std::string("none")));
+    require(!error, row.name + ": no operator message");
+    rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");
+    rig.clock += 10ms;
+    static_cast<void>(rig.tick(at(rig.clock)));
+    require(rig.driver.level, row.name + ": the level is held until a period has seen it high");
+    rig.clock += 10ms;
+    static_cast<void>(rig.tick(at(rig.clock)));
+    require(!rig.driver.level, row.name + ": then released as for any stop");
+  }
+}
+
 void stop_all_and_cancellation() {
   Rig rig;
   rig.accepted(hold_x);
@@ -1937,6 +2013,7 @@ auto main(int argc, char** argv) -> int {
     composed_mdi();
     jog_presses_and_refreshes();
     jog_failures();
+    late_jog_starts();
     stop_all_and_cancellation();
     lease_expiry();
     lost_machine_cancels_jogs();

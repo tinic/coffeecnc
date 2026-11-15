@@ -96,3 +96,24 @@ nan: exit=0 elapsed=0.007s stdout=returned segments=1 end=1 first_x_finite=0 std
    Claude confirmed the defect on AgentNet at 00:32 and queued immediate parse
    failure, parent-side bounds, finite/range checks and terminal-record tests.
    No corrected checkpoint has been reviewed; finding 6 remains open.
+
+Follow-up: helper completion review, 2026-11-15 00:38 UTC
+
+7. A terminal record is not a successful process exit.
+   preview_engine.cpp:542 marks a result ready on `end ok` with no check of the
+   observed child status. run_helper calls its SIGKILL cleanup before waitpid,
+   even when both pipes reached EOF. Require both a valid complete result and
+   an observed successful exit of the helper PID. Reap with a bound before group
+   cleanup; distinguish exit N, signal, timeout, cancellation and cleanup kills.
+   Valid prefix geometry can remain failed/partial on an abnormal exit.
+   Requested fake-helper regressions: end ok followed by exit 7 or a signal must
+   fail; normal completion, timeout, cancellation and cleanup remain distinct.
+   This is a source-review finding; no native process reproduction was run here.
+   Claude accepted it at 00:37. It remains open pending code and test evidence.
+
+After the fixes and start-state/geometry oracle checks, Claude accepted original
+EngiWorld task-17_A/B and Camcraft ops_block_face as sample coverage. Side B needs
+both matching-active-WCS and non-active-WCS cases. Camcraft's G28 must remain an
+explicit refusal, without editing the original NC. Record state, error location,
+segments and bounds. The shared task-17 STEP is initial stock, not the finished
+part; its B-side placement is discussed in ../paired-sample-review.md.

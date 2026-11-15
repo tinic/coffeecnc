@@ -506,7 +506,26 @@ void unhomed(Rig& rig) {
     rig.hal.hold_jog_stop(false);
     static_cast<void>(rig.port.stop_jog(Axis::x));
     rig.direct_pump(50ms);
-    check("jog_stop_reported", rig.has_message("Jog aborted by jog-stop"));
+    // The level was CoffeeCNC's own: LinuxCNC's text about it goes to the log only.
+    check("own_jog_stop_text_not_shown", !rig.has_message("Jog aborted by jog-stop"));
+    // Another driver of motion's jog-stop pins than CoffeeCNC's level and the watchdog: halcmd
+    // on motion.jog-stop-immediate, which the post-GUI file leaves unconnected. Its text
+    // reaches the operator unchanged.
+    rig.direct_pump(300ms); // past the attribution window after the level above
+    rig.clear_messages();
+    const auto foreign = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint, always());
+    rig.direct_pump(100ms);
+    const bool raised = halcmd("setp motion.jog-stop-immediate 1");
+    rig.direct_pump(50ms);
+    const bool lowered = halcmd("setp motion.jog-stop-immediate 0");
+    static_cast<void>(rig.port.stop_jog(Axis::x));
+    rig.direct_pump(100ms);
+    const auto shown = rig.all_messages();
+    check("foreign_jog_stop_text_shown",
+          foreign.status == ActionStatus::accepted && raised && lowered &&
+              rig.has_message("Jog aborted by jog-stop-immediate"),
+          std::format("start={}:{} messages={}", static_cast<int>(foreign.status), foreign.reason,
+                      shown.size()));
   });
 }
 
@@ -561,6 +580,83 @@ void axis_jogs(Rig& rig) {
 
   const auto beyond = rig.send(R"("type":"jog_step","axis":"z","distance":500,"velocity":600)");
   check("jog_step_beyond_travel_rejected", beyond.outcome == "rejected", beyond.text());
+}
+
+// Waits out the rest of `time` since `since`.
+void pump_rest(Rig& rig, Clock::time_point since, std::chrono::milliseconds time) {
+  const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+      time - (Clock::now() - since));
+  rig.pump(std::max(left, 0ms));
+}
+
+auto joined(const std::vector<std::string>& texts) -> std::string {
+  std::string all;
+  for (const auto& text : texts)
+    all += (all.empty() ? "" : "|") + text;
+  return all.empty() ? std::string("-") : all;
+}
+
+// A tap of a jog button as the panel sends it (ui/src/components/ManualTab.vue). Continuous:
+// the press, and its release about 100 ms later. With an increment selected: one jog_step on the
+// press and nothing on the release. A jog CoffeeCNC ends itself leaves no operator message, and
+// an increment runs to its full distance.
+void jog_taps(Rig& rig) {
+  rig.settle();
+  rig.clear_messages();
+  const double x0 = rig.machine(0);
+  const auto pressed_at = Clock::now();
+  const auto pressed = rig.send(hold_x);
+  pump_rest(rig, pressed_at, 100ms);
+  const double at_release = rig.machine(0);
+  const auto released = rig.send(release_x);
+  rig.pump(300ms);
+  const double stopped = rig.machine(0);
+  rig.pump(100ms);
+  const auto tap_messages = rig.all_messages();
+  fact("jog_tap_continuous",
+       std::format("held_ms=100 moved_at_release={:.4f} moved={:.4f} after_stop={:.4f}",
+                   at_release - x0, stopped - x0, rig.machine(0) - stopped));
+  check("jog_tap_continuous_stops",
+        pressed.accepted() && released.accepted() && stopped - x0 > 0.3 &&
+            near(rig.machine(0), stopped, 0.001),
+        std::format("{} {} moved={:.4f}", pressed.text(), released.text(), stopped - x0));
+  check("jog_tap_continuous_no_operator_message", tap_messages.empty(), joined(tap_messages));
+
+  // Held with refreshes, then released: the same.
+  rig.settle();
+  rig.clear_messages();
+  static_cast<void>(rig.send(hold_x));
+  rig.hold(hold_x, 300ms);
+  const auto held_release = rig.send(release_x);
+  rig.pump(300ms);
+  const auto held_messages = rig.all_messages();
+  check("jog_held_release_no_operator_message",
+        held_release.accepted() && held_messages.empty(),
+        std::format("{} messages={}", held_release.text(), joined(held_messages)));
+
+  struct Tap {
+    double increment;
+    std::string_view label;
+  };
+  for (const auto& [increment, label] : {Tap{1.0, "1_mm"}, Tap{0.05, "0_05_mm"}}) {
+    rig.settle();
+    rig.clear_messages();
+    const double s0 = rig.machine(0);
+    const auto tapped_at = Clock::now();
+    const auto step = rig.send(
+        std::format(R"("type":"jog_step","axis":"x","distance":{},"velocity":600)", increment));
+    pump_rest(rig, tapped_at, 100ms);
+    const double step_at_release = rig.machine(0) - s0;
+    rig.pump_until(3s, [&]() -> bool { return rig.idle(); });
+    rig.pump(100ms);
+    const double moved = rig.machine(0) - s0;
+    const auto step_messages = rig.all_messages();
+    fact("jog_tap_step", std::format("increment={} moved_at_release={:.4f} moved={:.4f}",
+                                     increment, step_at_release, moved));
+    check(std::format("jog_step_tap_{}_full_increment", label),
+          step.accepted() && near(moved, increment, 0.001) && step_messages.empty(),
+          std::format("{} moved={:.4f} messages={}", step.text(), moved, joined(step_messages)));
+  }
 }
 
 // The key property of the HAL path: it stops a jog while the NML command channel is useless.
@@ -620,6 +716,7 @@ void hal_stop_without_nml(Rig& rig) {
 // and pins without the runtime, whose threads the test cannot stall.
 void watchdog(Rig& rig) {
   rig.direct([&]() -> void {
+    rig.clear_messages();
     const auto pressed = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis, always());
     rig.direct_pump(100ms);
     const double before = rig.port.status().controller.axes[1].machine;
@@ -637,6 +734,15 @@ void watchdog(Rig& rig) {
     // Beating again arms it again, and jogging works as before.
     rig.direct_pump(200ms);
     const bool armed = rig.hal.watchdog_ok();
+    // The operator is told what stopped the jog, in CoffeeCNC's words, once.
+    const auto told = rig.all_messages();
+    const auto watchdog_messages = std::ranges::count_if(told, [](const std::string& text) -> bool {
+      return text.find("stopped by the HAL watchdog") != std::string::npos;
+    });
+    check("watchdog_stop_told_as_watchdog",
+          watchdog_messages == 1 && !rig.has_message("Jog aborted by jog-stop"),
+          std::format("watchdog_messages={} messages={} first={}", watchdog_messages, told.size(),
+                      told.empty() ? std::string("-") : told.front()));
     static_cast<void>(rig.port.stop_jog(Axis::y));
     const double y0 = rig.port.status().controller.axes[1].machine;
     const auto again = rig.port.start_jog(Axis::y, -1, 600, JogSpace::axis, always());
@@ -3438,6 +3544,7 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   // Nothing has been interpreted since LinuxCNC started.
   oracle_first_block(oracle, "fresh_start");
   axis_jogs(rig);
+  jog_taps(rig);
   hal_stop_without_nml(rig);
   watchdog(rig);
   nml_gate(rig);

@@ -8,9 +8,9 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
-![Current CoffeeCNC Manual workspace with larger jog controls and aligned coordinates](ui/screenshots/operator-refined-1600x900-light.png)
+![CoffeeCNC running on the G0759 controller with larger jog controls and aligned coordinates](ui/screenshots/g0759-operator-f0a4264.png)
 
-*Current operator layout at 1600 × 900, using a display-only G0759-shaped browser fixture. Axis labels and coordinates share their typography and align with the unit buttons. Larger jog controls sit beside the step choices; MDI expands above the bottom-aligned work coordinate selector. Native touch retesting remains pending. See [touch behavior and checks](ui/README.md#touch-operation-and-stable-feedback).*
+*Current operator layout on the G0759 controller at 1600 × 900, deployed on 15 November 2026 from UI revision `f0a4264` with Claude's jog-stop fix. The machine is off and axes are not homed. Larger jog controls, aligned coordinates and unit buttons, expanded MDI and the bottom-aligned work coordinate selector are visible. Physical touch retesting remains pending. See [deployment evidence](docs/research/evidence/operator-touch-followup-2026-11-15.txt) and [touch behavior](ui/README.md#touch-operation-and-stable-feedback).*
 
 <details>
 <summary>First G0759 controller launch</summary>

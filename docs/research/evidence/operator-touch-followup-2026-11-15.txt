@@ -63,3 +63,24 @@ Native deployment status at 19:08 UTC:
 - Physical touch/no-OSK testing remains pending. Browser checks do not qualify it.
 - Claude reported shell/gh unavailable for PR24 review at 18:56; no completed
   peer source review is claimed here. The later deployment report is separate.
+
+Deployment confirmation at 19:08:36 UTC:
+- Claude reported DEPLOYED: UI main f0a4264 plus claude/jog-stop-message, local
+  merge d71a79b78cecda7e401b36661364e5ebe163cc86. Panel stamp matches the inputs
+  and assets above. He reported 25/25 portable tests on the mill, no warnings,
+  machine switched off before restart, watchdog OK and hm2 clean.
+- Codex read-only SSH check at 19:09 UTC independently observed that checkout
+  HEAD and process 29881 running coffeecnc with the G0759-coffeecnc.ini profile.
+  This does not independently reproduce Claude's tests or hardware checks.
+- Codex independently verified both the build directory and installed panel at
+  /usr/share/coffeecnc/ui match the full input/asset digests above. The running
+  /proc/29881/exe and installed /usr/bin/coffeecnc have the same SHA256:
+  ca3d8a4219ca4f5c9ff506db9f8c3890118455cb50b1490187843fc9d5b2b465.
+- Inspected and retained Claude's supplied 1600x900 controller screenshot:
+  source /Users/turo/ai/evidence/coffeecnc-mill/mill-f0a4264.png
+  archive ui/screenshots/g0759-operator-f0a4264.png
+  sha256=6cd2c5aeeecf4df56f4d53aafb9c84cfac597630ab77b612ad9bce800f121978 bytes=112120
+  It shows the aligned coordinates/unit buttons, enlarged jog controls, expanded
+  MDI and bottom WCS selector. Machine off, axes not homed, no new messages.
+- Physical touch/OSK retesting is with the user; deployment is complete, and
+  those interaction checks are not claimed as passed.

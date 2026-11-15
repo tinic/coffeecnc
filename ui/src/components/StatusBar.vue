@@ -1,13 +1,41 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { theme, toggleTheme } from '../appearance'
-import { dismissNotice, live, panel, reported, send } from '../machine'
+import { dismissNotice, live, onResult, panel, reported, send } from '../machine'
+import type { CommandBody, Hello, Status } from '../protocol'
 import { baseName, wcsName } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
 const emit = defineEmits<{ log: []; open: [] }>()
 const status = reported
+const menu = useTemplateRef<HTMLDetailsElement>('menu')
+type PowerCommand = Extract<CommandBody, { type: 'set_machine' }>
+const pendingPower = shallowRef<{ command: PowerCommand; hello: Hello | null; before: Status | null; accepted: boolean } | null>(null)
+function power(state: 'on' | 'off'): void {
+  const command: PowerCommand = { type: 'set_machine', state }
+  // Install before send: the browser simulator can answer synchronously.
+  pendingPower.value = { command, hello: panel.hello, before: panel.status, accepted: false }
+  send(command)
+}
+const removeResultListener = onResult((command, result) => {
+  const pending = pendingPower.value
+  if (pending?.command !== command) return
+  pendingPower.value = result.outcome === 'accepted' ? { ...pending, accepted: true } : null
+})
+onBeforeUnmount(removeResultListener)
+watch([pendingPower, (): Status | null => panel.status, (): Hello | null => panel.hello, live], () => {
+  const pending = pendingPower.value
+  if (pending === null) return
+  if (!live.value || panel.hello !== pending.hello) { pendingPower.value = null; return }
+  if (pending.accepted && panel.status !== pending.before && panel.status?.machine === pending.command.state) {
+    pendingPower.value = null
+    if (menu.value?.open) {
+      menu.value.open = false
+      menu.value.querySelector('summary')?.focus({ preventScroll: true })
+    }
+  }
+})
 const tabs: readonly [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
 const linkLabel = computed(() => {
   switch (panel.link) {
@@ -61,12 +89,8 @@ const subtitle = computed(() => {
     <div class="job">
       <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
       <p class="subtitle">{{ subtitle }}</p>
-      <div v-if="panel.notice?.level === 'error'" class="error-row">
-        <p class="error" role="alert">{{ panel.notice.text }}</p>
-        <button class="dismiss" type="button" title="Dismiss this message; keep it in the message log" @click="dismissNotice">Dismiss</button>
-      </div>
     </div>
-    <details class="state-menu">
+    <details ref="menu" class="state-menu" @toggle="!menu?.open && (pendingPower = null)">
       <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
       <div class="popover">
         <h3>Machine</h3>
@@ -76,13 +100,26 @@ const subtitle = computed(() => {
         <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
         <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
         <div class="actions">
-          <button v-if="status?.machine === 'estop' || status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
-          <button v-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
-          <button v-else-if="status?.machine === 'on'" class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
+          <button v-if="status?.machine === 'estop' || status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('off')">Reset E-stop</button>
+          <button v-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('on')">Machine on</button>
+          <button v-else-if="status?.machine === 'on'" class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="power('off')">Machine off</button>
           <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
         </div>
+        <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
       </div>
     </details>
+  </section>
+  <section class="message-area" aria-label="Machine messages">
+    <div class="message-band" :class="panel.notice?.level ?? 'empty'">
+      <span class="message-label">{{ panel.notice?.level === 'error' ? '!' : 'i' }}</span>
+      <div class="message-copy">
+        <p role="alert" aria-atomic="true"><template v-if="panel.notice?.level === 'error'"><strong v-if="panel.notice.context">{{ panel.notice.context }} · </strong>{{ panel.notice.text }}<span v-if="panel.notice.count > 1"> (×{{ panel.notice.count }})</span></template></p>
+        <p role="status" aria-atomic="true"><template v-if="panel.notice?.level === 'info'">{{ panel.notice.text }}</template></p>
+        <p v-if="!panel.notice" class="no-message">No new messages</p>
+      </div>
+      <button class="message-log" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
+      <button v-if="panel.notice" class="dismiss" type="button" title="Dismiss this message; keep it in the message log" @click="dismissNotice">Dismiss</button>
+    </div>
   </section>
 </template>
 
@@ -114,9 +151,15 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
-.error-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; max-width: 70vw; }
-.error { color: var(--stop); font-size: 12px; margin: 0; overflow-wrap: anywhere; }
-.dismiss { flex: none; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.message-area { flex: none; height: 58px; margin: 0 24px 12px; }
+.message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+.message-band.error { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); border-left-width: 5px; }
+.message-band.empty { color: var(--text-dim); border-color: transparent; background: transparent; }
+.message-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
+.message-copy { flex: 1; min-width: 0; }.message-copy p { margin: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.message-copy p:empty { height: 0; }.no-message { color: var(--text-dim); }
+.message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.message-log { background: transparent; border-color: transparent; color: inherit; }
 .dismiss:hover { color: var(--text); background: var(--bg); }
 @media (max-height: 760px) { .em-top { padding-block: 12px; }.jobbar { padding-block: 12px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }

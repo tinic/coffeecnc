@@ -1,0 +1,125 @@
+CoffeeCNC program-line attribution review, 15 November 2026 UTC
+
+PR: https://github.com/tinic/coffeecnc/pull/13
+Merged as 43fe97e, reviewed final head 52397ea34d472c4dbf44876b0af7b50fe3507775.
+Production code tested: 59b2eedf1027479265dc4add0119d40bfd961025.
+Host: playhouse2, LinuxCNC 2.9.4, dev preset, simulation only.
+Codex independently read the retained raw logs and CTest LastTest files.
+No hardware was operated.
+
+Results:
+  f6d8dfc: portable 17/17 (18.48 s); shell mm/inch 203 checks each;
+           metric simulation 113 checks. All three actual child exits 0,
+           zero residual LinuxCNC processes.
+  59b2eed: portable 17/17 (17.91 s), including 94 panel-mapping checks;
+           metric simulation 113 checks (63.27 s);
+           metric shell 203 checks (31.10 s).
+           Both actual child exits 0, zero residual LinuxCNC processes.
+  Both shell revisions used the current UI bundle:
+    inputs c0696285dcb09bff7657bf552accd353dea65cacc28167897d4598f6116f2be4
+    assets a9f882d7e5ebd1d17737f498877852cff3d9efb86c0b4d5a18897dba82755ca2
+
+Not rerun on 59b2eed: inch shell (last passed at f6d8dfc), inch/G0759
+simulation, runner/startup, analyze, ASAN or TSAN. This is focused regression
+coverage, not a new full-matrix or hardware qualification.
+
+Observed defect: close/open clears LinuxCNC's line counters. A subsequent
+E-stop while idle restores the earlier run's currentLine. MDI after a valid
+AUTO run can also change the task counters. Passing these through can show
+an old line beside a new file.
+
+The mapper now attributes counters only after observing a fresh AUTO run of
+the loaded revision, with a changed counter or motion/dwell/tool-change
+activity. Manual/MDI activity clears attribution. The first AUTO idle sample
+after execution supplies retained end values; later idle samples do not
+change them. The UI displays live line progress only during fresh active
+AUTO execution; otherwise it shows a static file line count.
+
+Limits: a run missed between publisher samples leaves unknown lines at 0.
+External MDI that starts and ends between samples can go unobserved. Motion
+left over from before a newly observed AUTO run could establish attribution
+one block early; no such sequence was observed. Attribution is an observed
+state rule, not an interpreter-provided program identity attached to a line.
+
+The final timing fix dates local acquisition before the read. A thread
+preempted after acquiring a status cannot publish that sample with a new,
+post-reload timestamp. The consumer regression injects a delayed publication;
+it does not exercise reader preemption, and the reader has no unit hook.
+This timestamp is not LinuxCNC's publication time. Shared-buffer data can
+already be older; writer-heartbeat checks remain separate, and the two-pass
+tool-table check establishes sampled stability rather than atomicity.
+
+The 400 measured status calls took median 28 us, p99 43 us, max 45 us in this
+simulation run. These are measurements, not acquisition deadline guarantees.
+
+Native screenshot: ui/screenshots/native-program-estop-59b2eed.png
+Source mtime: 2026-11-14 23:53:09 UTC, matching the final metric shell run.
+Visually inspected at 1280 x 800: E-stop active in the footer, static 4 lines,
+Stop visible, Cycle start disabled. Native toolpath preview remains unavailable.
+Screenshot SHA-256: d1df70c138de93c422c55de760024649cedff09a6f408f39e5abf62d33b06382
+
+Final retained log excerpts: LastTest-linuxcnc_shell_mm.log
+panel=match inputs=c0696285dcb09bff7657bf552accd353dea65cacc28167897d4598f6116f2be4 assets=a9f882d7e5ebd1d17737f498877852cff3d9efb86c0b4d5a18897dba82755ca2 built=no
+Test time =   0.26 sec
+Test Passed.
+check=panel_bundle_matches_sources result=pass detail=panel=match_inputs=c0696285dcb09bff7657bf552accd353dea65cacc28167897d4598f6116f2be4_assets=a9f882d7e5ebd1d17737f498877852cff3d9efb86c0b4d5a18897dba82755ca2
+fact=panel ui=/home/turo/ai/claudecode-coffeecnc/backend/../ui/dist panel=match inputs=c0696285dcb09bff7657bf552accd353dea65cacc28167897d4598f6116f2be4 assets=a9f882d7e5ebd1d17737f498877852cff3d9efb86c0b4d5a18897dba82755ca2 commit=59b2eedf1027479265dc4add0119d40bfd961025
+check=lines_of_an_earlier_program_are_not_shown result=pass detail=task_current_line=7_task_motion_line=0_shown={"block_delete":true,"current_line":0,"file":"/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_shell_mm/nc_files/probe.ngc","motion_line":0,"optional_stop":true,"revision":4}
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_shell_mm/linuxcnc.log
+Test time =  31.10 sec
+Test Passed.
+
+Final retained log excerpts: LastTest-linuxcnc_sim_mm.log
+fact=status_read_us median=28 p99=43 max=45
+check=lines_of_a_run_not_seen_are_withheld result=pass detail=task=10,10_shown=0,0
+check=lines_paused_in_auto_are_reported result=pass detail=task=2,0_shown=2,0
+check=lines_of_a_finished_program_are_kept result=pass detail=task=3,3_shown=3,3
+check=lines_stay_through_estop_after_own_run result=pass detail=shown=3,3
+check=lines_are_withheld_after_an_mdi_block result=pass detail=during=0,0_after=0,0_after_jog=0,0
+check=lines_return_with_the_next_run result=pass detail=task=3,3_shown=3,3
+check=lines_of_an_earlier_load_are_withheld result=pass detail=task_at_estop=3,0_shown_at_estop=0,0_shown=0,0
+check=lines_of_an_aborted_program_are_kept result=pass detail=running=true_task=5,3_shown=5,3
+check=lines_across_open_sequence result=pass detail=-
+sim=done exit=0 printed_exit=0 child_status=0 processes_left=0 log=/home/turo/ai/claudecode-coffeecnc/backend/build/dev/sim/linuxcnc_sim_mm/linuxcnc.log
+Test time =  63.27 sec
+Test Passed.
+
+Earlier f6d8dfc measurement record: lines-trace.txt
+fact=lines at=after_abort_of_first file=coffeecnc_sim.ngc interp=0 mode=2 task_current_line=10 task_motion_line=10 shown_current_line=0 shown_motion_line=0
+check=lines_of_a_run_not_seen_are_withheld result=pass detail=task=10,10_shown=0,0
+fact=lines at=open_second file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=0 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=mdi_after_open file=coffeecnc_sim_second.ngc interp=0 mode=1 task_current_line=0 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=first_step file=coffeecnc_sim_second.ngc interp=2 mode=2 task_current_line=0 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=second_step file=coffeecnc_sim_second.ngc interp=2 mode=2 task_current_line=2 task_motion_line=0 shown_current_line=2 shown_motion_line=0
+check=lines_paused_in_auto_are_reported result=pass detail=task=2,0_shown=2,0
+fact=lines at=end_of_second file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=3 shown_current_line=3 shown_motion_line=3
+check=lines_of_a_finished_program_are_kept result=pass detail=task=3,3_shown=3,3
+fact=lines at=estop_after_own_run file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=0 shown_current_line=3 shown_motion_line=3
+fact=lines at=on_after_own_run file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=0 shown_current_line=3 shown_motion_line=3
+check=lines_stay_through_estop_after_own_run result=pass detail=shown=3,3
+fact=lines at=mdi_after_own_run file=coffeecnc_sim_second.ngc interp=0 mode=1 task_current_line=4 task_motion_line=4 shown_current_line=0 shown_motion_line=0
+fact=lines at=jog_after_own_run file=coffeecnc_sim_second.ngc interp=0 mode=0 task_current_line=4 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+check=lines_are_withheld_after_an_mdi_block result=pass detail=during=0,0_after=0,0_after_jog=0,0
+fact=lines at=second_run_again file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=3 shown_current_line=3 shown_motion_line=3
+check=lines_return_with_the_next_run result=pass detail=task=3,3_shown=3,3
+fact=lines at=reopen_second file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=0 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=estop_after_reopen file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=off_after_reopen file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=on_after_reopen file=coffeecnc_sim_second.ngc interp=0 mode=2 task_current_line=3 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+check=lines_of_an_earlier_load_are_withheld result=pass detail=task_at_estop=3,0_shown_at_estop=0,0_shown=0,0
+fact=lines at=open_first_again file=coffeecnc_sim.ngc interp=0 mode=2 task_current_line=0 task_motion_line=0 shown_current_line=0 shown_motion_line=0
+fact=lines at=run_first_again file=coffeecnc_sim.ngc interp=1 mode=2 task_current_line=3 task_motion_line=3 shown_current_line=3 shown_motion_line=3
+fact=lines at=abort_first_again file=coffeecnc_sim.ngc interp=0 mode=2 task_current_line=5 task_motion_line=3 shown_current_line=5 shown_motion_line=3
+check=lines_of_an_aborted_program_are_kept result=pass detail=running=true_task=5,3_shown=5,3
+check=lines_across_open_sequence result=pass detail=-
+
+Earlier f6d8dfc measurement record: lines-source-references.txt
+LinuxCNC v2.9.4 source lines behind the fact=lines trace (src/emc/task/)
+emctask.cc:547-549       emcTaskPlanOpen zeroes task.motionLine, currentLine, readLine
+emctask.cc:237           emcTaskAbort zeroes motionLine (not currentLine)
+emctask.cc:704-706       emcTaskUpdate: motionLine = motion.traj.id whenever that id is > 0
+emctaskmain.cc:2294-2310 EMC_TASK_PLAN_RUN sets interpState READING; it does not zero currentLine
+emctaskmain.cc:2613-2619 on taking a command from interp_list: currentLine = interp_list.get_line_number(),
+                         also for the resynch command an E-stop/abort queues while idle; the list
+                         keeps the line number of the program run before
+emctaskmain.cc:2158, 2590, 3518  currentLine = 0 on execution errors

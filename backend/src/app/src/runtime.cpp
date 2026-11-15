@@ -21,8 +21,8 @@ auto control_step(Session& session, SafetyOutputs& outputs, Instant now) -> bool
 }
 
 void status_step(Session& session, StatusSource& source) {
-  // Dated before the read: a status is never taken for newer than it is, so a read that was
-  // held up makes the link old, not fresh.
+  // Date the local acquisition before the read, so blocking and conversion time count
+  // toward sample age. The source separately checks the controller's writer heartbeat.
   const auto begun = JogLease::Clock::now();
   const auto state = source.read();
   session.observe(state, begun);

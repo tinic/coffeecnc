@@ -15,13 +15,13 @@
 
 namespace coffeecnc {
 
-// One full reading and its time. `read_at` is taken BEFORE the reading is acquired from
-// LinuxCNC: the data is of that moment or later, never earlier, however long the acquisition
-// waited or the reading thread was held up before it left the reading here. Whoever orders a
-// reading against an event of its own (a load, a pass over the tool table) may therefore take
-// `read_at` after the event as proof that the data is of after the event; and an age computed
-// from `read_at` is never less than the data's age. A reader, or a test that fills a mailbox
-// itself, must keep that.
+// One full reading and the start of its local acquisition. `read_at` is taken BEFORE the
+// NML read; acquisition, conversion and delayed publication do not give the sample a newer
+// timestamp. Consumers can reject a sample whose acquisition began before a local event
+// such as a load or tool-table pass. This is not LinuxCNC's publication timestamp: the shared
+// status buffer may already contain older controller data. Writer-heartbeat checks remain
+// separate, and tool-table sampling remains a stability check rather than an atomic snapshot.
+// A reader, or a test that fills a mailbox itself, must preserve the acquisition-start time.
 struct TimedStatus {
   NmlStatus status;
   std::chrono::steady_clock::time_point read_at;

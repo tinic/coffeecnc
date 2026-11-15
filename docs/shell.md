@@ -72,6 +72,6 @@ The helper receives private source copies and bounded inputs. This does not bind
 |---|---|
 | Physical STEP/path alignment, collision clearance and stock removal | Native simulation establishes drawing and declared placement, not a verified real setup |
 | Import cancelled mid-flight, named views, orbit, dark theme, lost context, large models | Not tested |
-| GUI under ThreadSanitizer | Uninstrumented GLib, GTK, WebKit; see `backend/README.md` |
+| GUI under ThreadSanitizer | Uninstrumented GLib, GTK, WebKit; see [backend limits](backend-rules.md#limits-of-the-current-state) |
 | Leaks with the accessibility bridge on | Tests run with `NO_AT_BRIDGE=1` |
 | A reload that stayed at "Waiting for connection" | Seen once under ThreadSanitizer at 3186b99; not reproduced after panel files were served as streams; cause not established |

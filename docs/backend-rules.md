@@ -1,6 +1,6 @@
 # Backend rules and limits
 
-The rules the C++ layers implement and where, and the known limits. Moved out of `backend/README.md`; sources are under `backend/`. Verified against LinuxCNC 2.9.4 in simulation only.
+The rules the C++ layers implement and where, and the known limits. Build and test instructions: [native backend](../backend/README.md); sources are under `backend/`. Native qualification uses LinuxCNC 2.9.4 in simulation only.
 
 ## Rules the layers implement
 
@@ -53,7 +53,7 @@ The rules the C++ layers implement and where, and the known limits. Moved out of
 | Adapter tests | Adapter cancellation is tested in simulation only; there is no fake channel layer |
 | ThreadSanitizer | It does not see inside libnml; the argument for libnml rests on the gate |
 | Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. The preview works on a private copy whose originals are compared again every 1 s (a polling period, not a deadline: a change is seen at the next comparison); the copy does not bind what task opens at run |
-| Preview | Public interpreter API only. A program stops being previewed at the first parameter (`#`), `M100`–`M199`, probe, `M66`, `G28`/`G30`, or a work system other than the active one; programs with comments that run code or write files, and configurations with `[RS274NGC] REMAP`, are refused. See `docs/preview.md` |
+| Preview | Public interpreter API only. A program stops being previewed at the first parameter (`#`), `M100`–`M199`, probe, `M66`, `G28`/`G30`, or a work system other than the active one; programs with comments that run code or write files, and configurations with `[RS274NGC] REMAP`, are refused. See [preview](preview.md) |
 | Work offsets | `EMC_STAT` carries only the active system; the other eight are sent `available: false` with zeros |
 | Tool table | Shown, and used for the preview with every field, from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Shown only with the comments read from the file for that table: while the file cannot be read (missing, a directory, over 4 MiB) the panel gets no rows and one message, and the table returns when the file reads again. The preview is not affected |
 | ThreadSanitizer and the GUI | Unqualified: GLib, GTK and WebKit are not instrumented. Run by hand at 4588b3b: 133, 140 and 76 reports, none with an access-origin stack in CoffeeCNC code; no suppression |

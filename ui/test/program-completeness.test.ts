@@ -10,8 +10,9 @@ import type { PanelState } from '../src/store'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
-  const panel = reactive({}) as typeof import('../src/machine').panel
+  const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), findTool: (): undefined => undefined,
+    onResult: (): (() => void) => () => undefined,
     live: computed(() => panel.link === 'live'), reported: computed(() => panel.link === 'down' ? null : panel.status) }
 })
 

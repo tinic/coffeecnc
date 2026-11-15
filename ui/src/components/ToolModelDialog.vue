@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { panel } from '../machine'
 import type { Tool } from '../protocol'
 import { factoryToolDefaults, pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity,
   type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
-import { persistToolDefaults, toolModels } from '../tool-models'
+import { toolModelSettings, toolModels } from '../tool-models'
 import { fromDisplay, parseNumber, toDisplay } from '../units'
 import ModalDialog from './ModalDialog.vue'
 
@@ -12,6 +12,22 @@ const ToolModelCanvas = defineAsyncComponent(() => import('./ToolModelCanvas.vue
 const props = defineProps<{ tool: Tool | null }>()
 const emit = defineEmits<{ close: [] }>()
 const defaultsMode = props.tool === null
+const editContext = toolModelSettings.context()
+const saving = ref(false)
+const saveError = ref('')
+let open = true
+onBeforeUnmount(() => { open = false })
+const saveBlock = computed(() => saving.value ? null : toolModelSettings.block(editContext) ??
+  (props.tool !== null && !panel.simulated && panel.link !== 'live' ? 'A current matching tool table is required. Wait for the machine connection.' : null))
+const scope = computed(() => {
+  switch (toolModels.storage) {
+    case 'browser': return defaultsMode ? 'Family defaults are saved in this browser.' : 'Tool assignments last for this page session.'
+    case 'available': return `Save keeps these models for machine ${panel.hello?.machine_id ?? ''}. Restored assignments require a matching tool-table row.`
+    case 'session_only': return 'Changes last until this page closes.'
+    case 'loading': return 'Waiting for this machine’s tool model settings.'
+    case 'unavailable': return 'Saved tool models are unavailable.'
+  }
+})
 const unit = panel.unit // Keep an open editor's unit stable.
 const identity = props.tool === null ? '' : toolIdentity(props.tool)
 const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number)
@@ -66,23 +82,33 @@ watch(family, (_current, previous) => {
 })
 watch(custom, (value) => { if (!value) load() })
 function reset(): void { fill(factoryToolDefaults()[family.value]) }
-function save(): void {
-  if (error.value !== null || changedTool.value) return
+async function save(): Promise<void> {
+  if (error.value !== null || changedTool.value || saving.value || saveBlock.value !== null) return
+  saving.value = true
+  saveError.value = ''
+  let result
   if (defaultsMode) {
     draftDefaults[family.value] = { ...dimensions.value }
     const copy = factoryToolDefaults()
     for (const { id } of toolFamilies) copy[id] = { ...draftDefaults[id] }
-    persistToolDefaults(copy)
+    result = await toolModelSettings.saveDefaults(copy, editContext)
   } else {
     const { cuttingLength, shankDiameter, overallLength, stickout, tipAngle } = model.value.dimensions
     const overrides = { cuttingLength, shankDiameter, overallLength, stickout, tipAngle }
-    toolModels.assignments.set(props.tool.number, { identity, family: family.value, overrides: custom.value ? overrides : {} })
+    result = await toolModelSettings.saveAssignment(props.tool, family.value, custom.value ? overrides : {}, editContext)
   }
-  emit('close')
+  saving.value = false
+  if (result.saved) { if (open) emit('close') }
+  else saveError.value = result.reason
 }
-function clearAssignment(): void {
-  if (props.tool !== null) toolModels.assignments.delete(props.tool.number)
-  emit('close')
+async function clearAssignment(): Promise<void> {
+  if (props.tool === null || saving.value || changedTool.value || saveBlock.value !== null) return
+  saving.value = true
+  saveError.value = ''
+  const result = await toolModelSettings.saveAssignment(props.tool, null, {}, editContext)
+  saving.value = false
+  if (result.saved) { if (open) emit('close') }
+  else saveError.value = result.reason
 }
 </script>
 
@@ -91,35 +117,36 @@ function clearAssignment(): void {
     <div class="editor">
       <div class="settings">
         <label class="entry"><span class="label">Tool family</span>
-          <select v-model="family" class="field"><option v-for="f in toolFamilies" :key="f.id" :value="f.id">{{ f.name }}</option></select>
+          <select v-model="family" class="field" :disabled="saving"><option v-for="f in toolFamilies" :key="f.id" :value="f.id">{{ f.name }}</option></select>
         </label>
         <p v-if="defaultsMode" class="hint explanation">Lengths scale from the reference diameter to each tool's table diameter. Tip angle stays fixed.</p>
         <template v-else>
-          <label class="check"><input v-model="custom" type="checkbox" />Override dimensions for this tool</label>
+          <label class="check"><input v-model="custom" type="checkbox" :disabled="saving" />Override dimensions for this tool</label>
           <p class="hint explanation">{{ model.nominalDiameter ? 'No table diameter: using the family’s nominal diameter.' : 'Cutting diameter comes from the tool table.' }} {{ custom ? 'Overrides are absolute dimensions.' : 'Other lengths use the family’s scaled defaults.' }}</p>
         </template>
         <div class="dimensions">
           <label v-for="field in fields.filter((f) => f.key !== 'tipAngle' || pointedTool(family))" :key="field.key" class="entry">
             <span class="label">{{ field.label }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
-            <input v-model="form[field.key]" class="field mono" type="text" inputmode="decimal" :disabled="!defaultsMode && (!custom || field.key === 'diameter')" />
+            <input v-model="form[field.key]" class="field mono" type="text" inputmode="decimal" :disabled="saving || !defaultsMode && (!custom || field.key === 'diameter')" />
           </label>
         </div>
-        <p v-if="error" class="blocked">{{ error }}</p>
-        <p v-if="changedTool" class="blocked">The tool table changed. Close this editor and reopen the current tool.</p>
         <p class="hint explanation">Stick-out runs from the tip to the holder face. These dimensions are independent of the LinuxCNC Z offset.</p>
-        <p class="scope hint">{{ defaultsMode ? 'Family defaults are saved in this browser.' : 'Tool assignments last for this page session; changed or removed tools lose their assignment.' }} Simplified envelopes; flutes, inserts and holder geometry are not represented.</p>
+        <p class="scope hint">{{ scope }} Simplified envelopes; flutes, inserts and holder geometry are not represented.</p>
       </div>
       <div class="preview">
         <ToolModelCanvas v-if="error === null" :model="model" />
         <div v-else class="invalid hint">Enter valid dimensions to preview the tool.</div>
       </div>
     </div>
+    <p v-if="saveError || saveBlock || changedTool || error || saving" class="feedback" :class="saving ? 'hint' : 'blocked'" role="status">
+      {{ saveError || saveBlock || (changedTool ? 'The tool table changed. Close this editor and reopen the current tool.' : error) || 'Saving… Closing this editor does not cancel the save.' }}
+    </p>
     <template #footer>
-      <button v-if="defaultsMode" class="btn quiet" type="button" @click="reset">Reset this family</button>
-      <button v-else class="btn quiet" type="button" @click="clearAssignment">Clear model</button>
+      <button v-if="defaultsMode" class="btn quiet" type="button" :disabled="saving" @click="reset">Reset this family</button>
+      <button v-else class="btn quiet" type="button" :disabled="saving || changedTool || saveBlock !== null" @click="clearAssignment">Clear model</button>
       <span class="spacer"></span>
-      <button class="btn" type="button" @click="emit('close')">Cancel</button>
-      <button class="btn primary" type="button" :disabled="error !== null || changedTool" @click="save">{{ defaultsMode ? 'Save defaults' : 'Save preview model' }}</button>
+      <button class="btn" type="button" @click="emit('close')">{{ saving ? 'Close' : 'Cancel' }}</button>
+      <button class="btn primary" type="button" :disabled="saving || error !== null || changedTool || saveBlock !== null" @click="save">{{ saving ? 'Saving…' : defaultsMode ? 'Save defaults' : 'Save preview model' }}</button>
     </template>
   </ModalDialog>
 </template>
@@ -129,6 +156,7 @@ function clearAssignment(): void {
 .settings { display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 8px; }.entry { display: flex; flex-direction: column; gap: 5px; }
 .dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }.dimensions .field { width: 100%; min-width: 0; }.dimensions .label { min-height: 30px; }
 .explanation, .scope, .blocked { margin: 0; line-height: 1.5; }.check { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.feedback { flex: none; margin: 0; line-height: 1.5; }
 .scope { padding-top: 12px; border-top: 1px solid var(--line); }.spacer { flex: 1; }
 .preview { min-width: 0; min-height: 0; }.invalid { display: grid; place-items: center; height: 100%; text-align: center; padding: 20px; background: var(--bg-sunken); border-radius: 8px; }
 @media (max-height: 850px) { .editor { gap: 16px; }.settings { gap: 9px; }.dimensions { gap: 8px 12px; } }

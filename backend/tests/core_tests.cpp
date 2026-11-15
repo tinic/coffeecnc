@@ -1,15 +1,18 @@
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
+#include <coffeecnc/core/jog_stop_report.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -318,6 +321,51 @@ void estop_request_results() {
           "no status: failed, and says so");
 }
 
+// Whose stop a "Jog aborted by jog-stop" text reports.
+void jog_stop_attribution() {
+  using Time = std::chrono::steady_clock::time_point;
+  const Time read{std::chrono::hours{1}};
+  const std::string stop = "Jog aborted by jog-stop";
+  const std::string immediate = "Jog aborted by jog-stop-immediate";
+  const std::optional<Time> never;
+  require(classify_jog_stop(stop, read, read - 12ms, never) == JogStopCause::own,
+          "own level high 12 ms before the read: own");
+  require(classify_jog_stop(immediate, read, read - 12ms, never) == JogStopCause::own,
+          "the immediate text is attributed the same way");
+  require(classify_jog_stop(stop, read, read - 12ms, read - 5ms) == JogStopCause::watchdog,
+          "a watchdog seen tripped in the window wins over the own level of the same stall");
+  require(classify_jog_stop(stop, read, read - 12ms, read - jog_stop_window - 1ns) ==
+              JogStopCause::own,
+          "a trip before the window does not take the own level's text");
+  require(classify_jog_stop(stop, read, read + 1ms, never) == JogStopCause::own,
+          "a level still high right after the read: own");
+  require(classify_jog_stop(stop, read, read - jog_stop_window, never) == JogStopCause::own,
+          "window boundary: high exactly jog_stop_window before the read is own");
+  require(classify_jog_stop(stop, read, read - jog_stop_window - 1ns, never) ==
+              JogStopCause::unattributed,
+          "window boundary: high just before the window is not own");
+  require(classify_jog_stop(stop, read, read - 1s, read + 8ms) == JogStopCause::watchdog,
+          "no own level in the window, watchdog seen tripped after the read: watchdog");
+  require(classify_jog_stop(stop, read, never, read - jog_stop_window) == JogStopCause::watchdog,
+          "watchdog seen tripped exactly jog_stop_window before: watchdog");
+  require(classify_jog_stop(stop, read, never, read - jog_stop_window - 1ns) ==
+              JogStopCause::unattributed,
+          "watchdog seen tripped only before the window: unattributed");
+  require(classify_jog_stop(stop, read, read - 1s, never) == JogStopCause::unattributed,
+          "no own level in the window, watchdog fine: unattributed, the text unchanged");
+  require(classify_jog_stop(stop, read, never, never) == JogStopCause::unattributed,
+          "no history at all: unattributed");
+  for (const std::string other :
+       {"Cannot jog while jog-inhibit is active", "Jog aborted by jog-stop.",
+        "jog aborted by jog-stop", "Joint 0 following error", ""})
+    require(classify_jog_stop(other, read, read, read) == JogStopCause::not_jog_stop &&
+                !is_jog_stop_text(other),
+            "another text is not a jog-stop text: " + other);
+  require(watchdog_stop_text.find("watchdog") != std::string_view::npos &&
+              watchdog_stop_text.find("Jog aborted") == std::string_view::npos,
+          "the watchdog text is CoffeeCNC's own");
+}
+
 auto main() -> int {
   try {
     execution_gates();
@@ -328,6 +376,7 @@ auto main() -> int {
     hostile_values();
     independent_jog_leases();
     task_heartbeat();
+    jog_stop_attribution();
     estop_request_results();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {

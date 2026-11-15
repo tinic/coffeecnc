@@ -3392,8 +3392,8 @@ void g0759_estop(Rig& rig) {
       if (cause == "request") {
         // Observed on LinuxCNC 2.9.4: task aborts and switches the machine off, io drops
         // user-enable-out. No sample showed E-stop: the watch ends with off reported. The port
-        // answers by the reported state, whichever step failed first (the jog case publishes
-        // "Jog aborted by jog-stop", which stays an operator message).
+        // answers by the reported state, whichever step failed first (in the jog case LinuxCNC
+        // publishes "Jog aborted by jog-stop" for CoffeeCNC's own level: logged, not shown).
         check(std::format("estop_request_{}_ends_off_with_no_estop_sample", situation),
               stopped && seen.last == MachineState::off && seen.estop_samples == 0 &&
                   seen.enable_out_ms >= 0 && enable_out_after == "FALSE" &&

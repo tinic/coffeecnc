@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Asks for one number, with an on-screen keypad for touch screens without a keyboard.
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 
@@ -66,7 +67,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <ModalDialog :title="title" size="medium" :expanded="expanded" @close="emit('close')">
+  <ModalDialog :title="title" size="medium" :expanded="expanded" fresh-gesture @close="emit('close')">
     <div class="numeric-grid">
       <p class="effect">{{ effect }}</p>
       <label class="entry">
@@ -91,7 +92,7 @@ onMounted(() => {
         <button v-for="key in keys" :key="key" class="btn mono" type="button" :disabled="integer && key === '.'" @click="press(key)">{{ key }}</button>
       </div>
       <div class="row corrections">
-        <button class="btn grow" type="button" title="Delete the last digit" @click="backspace">
+        <button v-tooltip="'Delete the last digit'" class="btn grow" type="button" @click="backspace">
           <AppIcon name="backspace" />
         </button>
         <button class="btn grow" type="button" @click="((text = '0'), (fresh = true))">Zero</button>

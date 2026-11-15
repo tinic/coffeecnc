@@ -22,16 +22,34 @@ const fixture = defineComponent({
     </label><div id="dialogs"></div><div id="workspace-dialogs"></div><NumericEntryDialog /></div>`,
 })
 let wrapper: VueWrapper
+function fieldEvent(type: string, point = 0): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  if (type.startsWith('pointer')) {
+    Object.defineProperties(event, { pointerType: { value: 'touch' }, pointerId: { value: 7 }, clientX: { value: point }, clientY: { value: point } })
+  } else if (type.startsWith('touch')) {
+    Object.defineProperty(event, 'changedTouches', { value: [{ identifier: 7, clientX: point, clientY: point }] })
+  }
+  return event
+}
+async function activate(button: { element: Element }): Promise<void> {
+  button.element.dispatchEvent(fieldEvent('pointerdown'))
+  button.element.dispatchEvent(fieldEvent('pointerup'))
+  button.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+  await nextTick()
+}
 function press(label: string): Promise<void> {
   const button = wrapper.findAll('button').find((b) => b.text() === label)
   if (button === undefined) throw new Error(`No button ${label}`)
-  return button.trigger('click')
+  return activate(button)
 }
-async function touch(type = 'pointerdown'): Promise<Event> {
-  const event = new Event(type, { bubbles: true, cancelable: true })
-  if (type === 'pointerdown') Object.defineProperty(event, 'pointerType', { value: 'touch' })
+async function touch(type = 'pointerdown', release = true): Promise<Event> {
+  const event = fieldEvent(type)
   wrapper.get('[data-source]').element.dispatchEvent(event)
   await nextTick()
+  if (release) {
+    wrapper.get('[data-source]').element.dispatchEvent(fieldEvent(type === 'touchstart' ? 'touchend' : 'pointerup'))
+    await nextTick()
+  }
   return event
 }
 beforeEach(() => {
@@ -45,11 +63,14 @@ afterEach(() => { const element = wrapper.element as HTMLElement; wrapper.unmoun
 describe('numeric touch entry', () => {
   it.each(['pointerdown', 'touchstart'])('prevents %s focus and edits only the draft until Use value', async (type) => {
     const source = wrapper.get('[data-source]').element as HTMLInputElement
-    const event = await touch(type)
+    const event = await touch(type, false)
     expect(event.defaultPrevented).toBe(true)
     expect(source.readOnly).toBe(true)
     expect(source.inputMode).toBe('none')
     expect(document.activeElement?.tagName).not.toBe('INPUT')
+    expect(openDialogs.value).toBe(0)
+    source.dispatchEvent(fieldEvent(type === 'touchstart' ? 'touchend' : 'pointerup'))
+    await nextTick()
     expect(openDialogs.value).toBe(1)
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Spindle speed, rpm')
     await press('4'); await press('.'); await press('2'); await press('±')
@@ -64,6 +85,71 @@ describe('numeric touch entry', () => {
     expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
     await press('9'); await press('Cancel')
     expect(value.value).toBe('12.5')
+  })
+  it('does not turn the opening release or compatibility clicks into keypad actions', async () => {
+    value.value = '600'; await nextTick()
+    await touch('touchstart')
+    const backspace = wrapper.get('button[aria-label="Delete the last digit"]')
+    // Real-screen regression: the release is retargeted to the newly inserted keypad.
+    backspace.element.dispatchEvent(fieldEvent('touchend'))
+    backspace.element.dispatchEvent(fieldEvent('pointerup'))
+    await backspace.trigger('mousedown'); await backspace.trigger('mouseup'); await backspace.trigger('click')
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('600')
+    // No new press: digits, corrections, confirmation, cancellation and Close all ignore it.
+    for (const button of wrapper.findAll('[role="dialog"] button')) await button.trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(value.value).toBe('600')
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('600')
+    await activate(backspace)
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('60')
+    await backspace.trigger('click')
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('60')
+    await press('Use value'); expect(value.value).toBe('60')
+  })
+  it.each(['pointerdown', 'touchstart'])('cancels %s without opening on a later compatibility click', async (start) => {
+    await touch(start, false)
+    const source = wrapper.get('[data-source]')
+    source.element.dispatchEvent(fieldEvent(start === 'touchstart' ? 'touchcancel' : 'pointercancel'))
+    source.element.dispatchEvent(fieldEvent(start === 'touchstart' ? 'touchend' : 'pointerup'))
+    await source.trigger('click')
+    expect(numericEntry.value).toBeNull()
+  })
+  it('rejects compatibility mouse events after a long opening touch', async () => {
+    let now = 1000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    value.value = '600'; await nextTick()
+    await touch('touchstart', false)
+    now += 2000
+    wrapper.get('[data-source]').element.dispatchEvent(fieldEvent('touchend')); await nextTick()
+    const backspace = wrapper.get('button[aria-label="Delete the last digit"]')
+    await backspace.trigger('pointerdown', { pointerType: 'mouse' })
+    await backspace.trigger('click')
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('600')
+    expect(touchInput.value).toBe(true)
+  })
+  it('waits for touchend when WebKit supplies both pointer and touch events', async () => {
+    await touch('pointerdown', false); await touch('touchstart', false)
+    const source = wrapper.get('[data-source]')
+    source.element.dispatchEvent(fieldEvent('pointerup')); await nextTick()
+    expect(numericEntry.value).toBeNull()
+    source.element.dispatchEvent(fieldEvent('touchend')); await nextTick()
+    expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+    await source.trigger('click')
+    expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+  })
+  it.each(['pointerdown', 'touchstart'])('does not open when %s is released outside the field', async (start) => {
+    await touch(start, false)
+    const source = wrapper.get('[data-source]')
+    source.element.dispatchEvent(fieldEvent(start === 'touchstart' ? 'touchend' : 'pointerup', 100))
+    await source.trigger('click')
+    expect(numericEntry.value).toBeNull()
+  })
+  it('allows keyboard activation after using touch', async () => {
+    await touch()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    const digit = wrapper.findAll('button').find((b) => b.text() === '9')
+    await digit?.trigger('click')
+    expect((wrapper.get('[role="dialog"] input').element as HTMLInputElement).value).toBe('9')
   })
   it('leaves physical-keyboard entry available', async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // One override. The number and the slider show what the machine reports; moving the slider only
 // asks for a new value.
 import { computed } from 'vue'
@@ -32,10 +33,10 @@ function slide(event: Event): void {
     <div class="top">
       <span class="caption">{{ label }}</span>
       <button
+        v-tooltip="'Back to 100 %'"
         class="value mono"
         type="button"
         :disabled="disabled || percent === 100"
-        title="Back to 100 %"
         @click="set(1)"
       >
         {{ value === null ? '—' : formatPercent(value) }}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // LinuxCNC is waiting for a manual tool change. The prompt covers the workspace, not the status
 // bar or the run bar: stopping stays possible.
 import { computed } from 'vue'
@@ -42,10 +43,10 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
         · spindle {{ spindle === 'stopped' ? 'stopped' : `running ${spindle}` }}
       </p>
       <button
+        v-tooltip="linkBlock ?? 'Tell LinuxCNC the tool change is done. The program continues.'"
         class="btn primary confirm"
         type="button"
         :disabled="linkBlock !== null"
-        :title="linkBlock ?? 'Tell LinuxCNC the tool change is done. The program continues.'"
         @click="send({ type: 'tool_changed' })"
       >
         <AppIcon name="check" />{{ tool === 0 ? 'Spindle is empty' : 'Tool is in the spindle' }}

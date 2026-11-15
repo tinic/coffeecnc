@@ -36,7 +36,6 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
       <NumericEntryDialog />
     </div>
     <RunBar />
-    <footer class="foot"><span>{{ panel.simulated ? 'SIMULATOR · No controller connected' : 'CoffeeCNC · Local machine interface' }}</span><span>coffeecnc / mill</span></footer>
   </div>
 </template>
 
@@ -45,6 +44,5 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
 .workspace { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .middle { position: relative; flex: 1; min-height: 0; margin: 0 24px 14px; }
 #dialogs, #workspace-dialogs { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
-.foot { display: flex; justify-content: space-between; padding: 3px 24px; color: var(--text-dim); font-size: 10px; letter-spacing: .2px; }
 @media (max-height: 760px) { .middle { margin-bottom: 10px; } }
 </style>

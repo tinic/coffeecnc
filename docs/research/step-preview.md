@@ -61,6 +61,30 @@ Keep a future native helper behind the same display-mesh contract if the older W
 
 Prepared on 14 November 2026 against CoffeeCNC `275b779`, with initial native results below from `ca88a0a7a853a152ec3e827d0dd47faef0b28d76` in [PR #12](https://github.com/tinic/coffeecnc/pull/12). The qualification matrix includes checks that are still pending; the browser and Node results above do not stand in for native execution. Coordinate exclusive use of the LinuxCNC simulation before running the shell.
 
+### Native interpreter preview and paired stock overlay
+
+The native preview implementation now supplies interpreter-generated paths to the GTK/WebKit panel. At `5a04f40`, the unedited Task 17 A program produced 98 segments; Task 17 B was refused at line 24 with G54 active because G55 was unavailable, then produced 73 segments with G55 active. The associated STEP file imports as one part, 12 triangles, 120 × 80 × 18 mm. It describes **initial stock shared by the two setups**, not the finished part.
+
+Both mm and inch shell runs passed 229 checks, exited 0 and left no simulation processes. The tests recorded ready/pending/ready message order for a context change and verified the current panel's source and asset hashes. Codex independently read those retained results and viewed the native captures. The subsequent `2c6bf9d` development runs also passed both 229-check shell tests after the coherent-start and cache-invalidation corrections. [The retained review](evidence/native-preview-a114848-review.txt) records exact scopes, sanitizer results and historical failed runs.
+
+The focused validation records distinguish the implementation and build presets:
+
+| Commit | Scope | Result |
+| --- | --- | --- |
+| `2c6bf9d` | GCC ASAN+UBSAN / TSan portable suite and mm simulation | 20/20 portable tests and 121 simulation checks in each preset; simulation children exit 0 with no residual processes |
+| `ba0067e` | Development portable suite and mm simulation | 20/20 and 121 checks; simulation child exits 0 with no residual processes |
+| `ba0067e` | Clang 19 ASAN+UBSAN preview engine | 621 checks; test binary exits 0 |
+| `ba0067e` | GCC ASAN+UBSAN native mm/inch shells | 229 checks each; both children exit 0 with no residual processes |
+| `ba0067e` | Fresh analyzer build (clang-tidy 19 / Cppcheck 2.17.1) | 86 build steps, exit 0, no findings; tests were not rerun in this build |
+
+The native shell sanitizer results retain the Xvfb accessibility setting and GUI-only library leak exclusions described below. GUI ThreadSanitizer and accessibility-enabled leak behavior remain unqualified. These scoped runs are not a complete matrix across all compilers, machines and presets.
+
+![Native Task 17 A paths with the associated STEP stock](../../ui/screenshots/native-task17a-stock-5a04f40.png)
+
+*Native LinuxCNC simulation at `5a04f40`, 1280 × 800, with placement applied. The generic model legend says “Part”; this sample is initial stock. Stop and E-stop remain visible.*
+
+The preview region contains 8,267 drawn pixels with paths alone, 38,705 with the unconfirmed model, 38,137 after applying placement, and 8,267 after hiding it, identically in both runs. The model is drawn before placement confirmation too, with an unconfirmed label. These measurements and screenshots establish rendering, not collision clearance or accuracy of a physical setup. The test answers the native file chooser automatically; manual dialog browsing, camera interactions, graphics-loss recovery and large-model behavior remain unqualified. The earlier shell records below retain their original, narrower scope.
+
 ### Merged shell: `ba41d78`
 
 PR #12 merged on 14 November 2026. Its production code is covered by the `4588b3b` runs below; `0362c61` changes only the virtual-display test environment and two comments. Later commits merge documentation and clarify the evidence. Codex independently reviewed the source changes, retained CTest and process-exit logs, leak traces and GUI ThreadSanitizer access stacks.

@@ -468,3 +468,26 @@ Codex read that failure; it confirms main was not clean under analyze at that
 commit. The corresponding changes are included in the reviewed ba0067e delta.
 
 Local: /tmp/coffeecnc-preview-ba0067e-review/{asan,clang-asan,analyze,main-analyze}/.
+
+Final review and merge: 2026-11-15 02:06 UTC
+
+The fresh analyzer build of the exact ba0067e tree is independently verified:
+configure and build exit 0, 86 build steps, no findings, with clang-tidy 19.1.7
+and Cppcheck 2.17.1 enabled. Codex copied/read fresh-build.txt, configuration.txt,
+fresh-configure.txt, head.txt and git-status-before-fresh-build.txt. The recorded
+tree is ba0067e0275cf2c5804c008d109ec1070f1ed13c with no tracked modifications.
+The earlier no-work record is retained as build-incremental-no-work.txt; it is
+not used as evidence of a fresh analysis pass. CTest was not rerun under analyze.
+
+All review findings and the agreed scoped validation are closed. Final docs at
+5d67c5a distinguish polling cadence from a detection deadline, allow PRINT only
+on the diagnostic stream, describe unchanged-input reuse and helper wall time,
+and label host timings as measurements. PR #15 was merged at f075073 after
+review of that exact head. The post-merge README now shows the retained native
+Task 17 A initial-stock capture and links the preview reference and qualification.
+
+This is LinuxCNC simulation qualification. Hardware operation, physical placement
+accuracy, collision checking, GUI TSan and accessibility-enabled leak behavior
+remain outside the verified scope. The G0759 and runner simulations were not
+rerun for this preview PR; sim inch and executable startup were last checked at
+5a04f40. Existing sanitizer exclusions remain explicitly documented.

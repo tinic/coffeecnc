@@ -11,6 +11,7 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 | status | 5 ms | Its NML status channel; leaves each full status with its time in `NmlStatusMailbox` | `src/linuxcnc/src/nml_status.cpp` |
 | worker | on work | NML commands and the error channel; counts accepted program and tool-table loads | `Runtime`, `NmlPort` |
 | publisher | 50 ms | `NmlPanelSource`, `PanelComposer`, the tool data memory; no NML call, no HAL pin | `PanelFeed` |
+| preview | on work / file polling | Private source snapshots, dependency checks and the interpreter helper process; no machine commands | Preview service and LinuxCNC preview engine |
 
 ## Message paths
 
@@ -40,8 +41,16 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 | `tool_table` | Tool data memory, shown after two identical passes with task idle between (a stability check, not an atomic read); comments from the file at load time |
 | `program.revision` | Goes up with every accepted `open_program` and when task names another file |
 | `wait` | Tool change (HAL request) before paused before dwell |
-| `preview` | `unavailable` |
+| `preview` | Latest context: pending, ready, failed or unavailable; the interpreter helper uses the captured program and machine inputs |
 | `work_offsets` | Active system live; the others `available: false` |
+
+## Interpreter preview
+
+The preview uses LinuxCNC's public interpreter API in a separate helper process. It captures a coherent live, idle start with a settled tool table and keeps that pre-run plan through execution and pause. A file or relevant context change invalidates the old result. The worker compares dependency contents before publication and during periodic checks; GTK and control threads do not perform that work.
+
+The initial scope includes parameter-free programs and subroutines, linear and circular moves, captured modal state, work offsets and tool compensation. Parameters, remaps and random tool changers are refused. Preview stops before probes, M66, unavailable work coordinate systems or user M commands. Unsupported input produces an explanation and, where known, a main-program line; a partial path is not a complete plan.
+
+The helper receives private source copies and bounded inputs. This does not bind the original files that LinuxCNC later opens, and tool-table stability sampling does not establish an atomic external snapshot. Preview is neither collision checking nor a prediction incorporating external edits made during execution. See [the interface contract](linuxcnc-interface.md) and [retained preview review](research/evidence/native-preview-a114848-review.txt).
 
 ## Qualified
 
@@ -52,6 +61,7 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 | Status during asset load | Longest time a page went without a status: 184 ms (dev); the panel takes the link for silent at 1 s |
 | WebGL2 | Works; WebKit masks the renderer string, the rasteriser in use is not established; tool model drawn (5772 of 91078 pixels) |
 | STEP import | The test answers WebKit's `run-file-chooser` request with the file; no dialog is operated: SM-101 1132 triangles, 120 x 80 x 20 mm; cancel, same file again and an invalid file keep the attachment |
+| STEP overlay | At `5a04f40`, both mm/inch shell runs passed 229 checks. Task 17 A shows interpreter paths with the associated STEP initial stock; hide/show pixel checks and retained screenshots confirm drawing. B refuses unavailable G55, then previews with G55 active. |
 | Fonts | DM Sans, IBM Plex Mono 400/500 |
 | Tool-table load | File edit without load shows no change; load by another client is shown; six rounds of reload-then-command show no intermediate table |
 
@@ -59,7 +69,7 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 
 | Item | Reason |
 |---|---|
-| STEP overlay rendering | The panel hides the part without a toolpath preview |
+| Physical STEP/path alignment, collision clearance and stock removal | Native simulation establishes drawing and declared placement, not a verified real setup |
 | Import cancelled mid-flight, named views, orbit, dark theme, lost context, large models | Not tested |
 | GUI under ThreadSanitizer | Uninstrumented GLib, GTK, WebKit; see `backend/README.md` |
 | Leaks with the accessibility bridge on | Tests run with `NO_AT_BRIDGE=1` |

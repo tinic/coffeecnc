@@ -1,0 +1,228 @@
+CoffeeCNC native preview: first implementation review
+2026-11-15 00:28 UTC
+
+Reviewed commit: a11484849c4608842eaf7b1c09246233eea12fe0, claude/preview.
+This is an unmerged prototype. The helper is not wired into the application.
+This note records source-review findings, not a runtime qualification or an
+exhaustive audit. Claude reported 18/18 portable tests (including 45 service
+checks); those logs were not independently reviewed at this checkpoint.
+
+The app service separates computation from the publisher and rejects completed
+results from obsolete contexts. The helper uses public InterpBase, a separate
+result descriptor and byte comparisons of input snapshots. The following issues
+must be resolved before integration. Line numbers refer to the reviewed commit.
+
+1. Guard side effects before interpreter read, not only before execute.
+   preview_helper.cpp:651 calls interp->read(); refused_block follows at 662.
+   LinuxCNC v2.9.4 read_semicolon invokes convert_comment during read for ;py,.
+   A later refusal cannot undo Python execution. Pre-scan every snapshotted
+   source, including external subroutines, before any interpreter use.
+   Requested checks: a harmless marker remains absent for ;py, and (py,...)
+   in main/external files, whether the containing code would execute or not.
+
+2. Refuse names that cannot be represented by the private manifest.
+   preview_engine.cpp:124 silently skips names containing '/' or '..', while
+   program_watch.cpp:101 accepts such named O words. LinuxCNC find_ngc_file
+   first tries the supplied path and expands it with wordexp(..., 0).
+   Private cwd/search paths alone do not confine an absolute or expanded name.
+   Require a strict basename set for calls and definitions before interpreter
+   use. Requested checks: absolute, parent, tilde, dollar and glob names.
+
+3. Separate the main snapshot from the subroutine namespace.
+   preview_engine.cpp:147 names the main copy coffeecnc-program.ngc; 166 gives
+   subs their ordinary <name>.ngc name. The write loop at 695 overwrites main
+   when a real o<coffeecnc-program> subroutine is included.
+   Requested check: that subroutine call retains the correct main program.
+
+4. Bind the complete tool table to preview inputs.
+   preview_engine.cpp:662 reads raw tools independently after input submission.
+   status_publisher.cpp:12 compares only number/pocket/Z length/diameter.
+   Raw X/Y offsets and the spindle table entry are absent from context equality,
+   and a later read need not match the table used to create the context.
+   Carry the accepted full table as input data; include all path-relevant fields
+   in invalidation. Keep libtooldata on its sole publisher owner thread.
+   This does not turn the existing two-pass stability check into an atomic read.
+
+5. Bound unresolved calls and make snapshot work cancellable.
+   preview_engine.cpp:127 deduplicates names by a linear scan. max_files at 157
+   is checked only after a file resolves, so distinct missing calls can produce
+   quadratic collection work and many more lookups than the stated file bound.
+   Limit distinct names including missing resolutions before accumulation; use
+   efficient deduplication and cancellation checks during scan/copy/comparison.
+   Requested checks: bounded missing-name lookups and cancellation during compare.
+
+All five findings were sent on AgentNet #coffeecnc. Claude accepted them and
+described fixes at 00:27-00:28 UTC. No corrected checkpoint or regression result
+had been reviewed when this note was written. Re-review source and retained test
+evidence before marking any finding closed. Start-state/geometry comparison with
+LinuxCNC simulation, native shell integration, analysis and sanitizer checks also
+remain ahead; existing shell qualification does not cover this helper.
+
+Primary source references, independently read during this review:
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_read.cc#L278-L288
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_convert.cc#L1394-L1489
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/rs274ngc_pre.cc#L2485-L2562
+
+Follow-up: result parser review, 2026-11-15 00:33 UTC
+
+6. Stop parsing immediately when a numeric token is invalid.
+   preview_wire.cpp:175 uses numbers = numbers && number(line, value).
+   Once numbers is false, short-circuit evaluation leaves line unchanged.
+   If another token remains, the loop keeps appending values without progress.
+   This runs in the parent worker after the helper, outside its timeout; it can
+   exhaust memory or prevent shutdown. Also reject non-finite coordinates and
+   invalid line/tool numbers, and validate terminal records before publication.
+   A result may retain only its complete, valid prefix.
+
+   Independently reproduced with the unmodified preview_wire.cpp/.hpp exported
+   from a114848, compiled with Apple clang 21, C++23, -O0 and the unchanged core
+   panel-message headers. Retained harness: native-preview-wire-a114848-probe.cpp.
+   Its operator new refuses single allocations above 1 MiB; alarm(1) additionally
+   bounds runtime. The malformed case exceeds that allocation cap despite a
+   tiny input. The valid control succeeds. This is a bounded parser reproduction,
+   not a LinuxCNC/helper execution or a production memory measurement.
+
+good: exit=0 elapsed=0.232s stdout=returned segments=1 end=1 first_x_finite=1 stderr=
+bad: exit=42 elapsed=0.022s stdout=bad_alloc: instrumented 1 MiB per-allocation cap exceeded stderr=
+nan: exit=0 elapsed=0.007s stdout=returned segments=1 end=1 first_x_finite=0 stderr=
+
+   Compile probe.cpp together with the exported preview_wire.cpp, including its
+   directory and backend/src/core/include. Run arguments: good, bad, nan.
+   The first attempt to set RLIMIT_DATA was rejected by macOS; it did not execute
+   the parser. The results above use the allocation-instrumented harness instead.
+   Raw source/build/results remain at the local path recorded in
+   /tmp/coffeecnc-preview-wire-review-path.
+
+   Claude confirmed the defect on AgentNet at 00:32 and queued immediate parse
+   failure, parent-side bounds, finite/range checks and terminal-record tests.
+   No corrected checkpoint has been reviewed; finding 6 remains open.
+
+Follow-up: helper completion review, 2026-11-15 00:38 UTC
+
+7. A terminal record is not a successful process exit.
+   preview_engine.cpp:542 marks a result ready on `end ok` with no check of the
+   observed child status. run_helper calls its SIGKILL cleanup before waitpid,
+   even when both pipes reached EOF. Require both a valid complete result and
+   an observed successful exit of the helper PID. Reap with a bound before group
+   cleanup; distinguish exit N, signal, timeout, cancellation and cleanup kills.
+   Valid prefix geometry can remain failed/partial on an abnormal exit.
+   Requested fake-helper regressions: end ok followed by exit 7 or a signal must
+   fail; normal completion, timeout, cancellation and cleanup remain distinct.
+   This is a source-review finding; no native process reproduction was run here.
+   Claude accepted it at 00:37. It remains open pending code and test evidence.
+
+After the fixes and start-state/geometry oracle checks, Claude accepted original
+EngiWorld task-17_A/B and Camcraft ops_block_face as sample coverage. Side B needs
+both matching-active-WCS and non-active-WCS cases. Camcraft's G28 must remain an
+explicit refusal, without editing the original NC. Record state, error location,
+segments and bounds. The shared task-17 STEP is initial stock, not the finished
+part; its B-side placement is discussed in ../paired-sample-review.md.
+
+Corrected-source review: 2ffbfc1, 2026-11-15 00:45 UTC
+
+The engine remains unwired. Findings 1-4 have corresponding source changes and
+regressions: engine/helper pre-scans, strict names, separate main/sub directories,
+and raw tool data included in preview input equality rather than read by the
+engine. These source changes were reviewed, but native test evidence is pending.
+Claude explicitly reported that the 2ffbfc1 logs were not retained and LastTest
+was overwritten. The reported portable 20/20, engine 607 checks, service 59 and
+mapping 98 are therefore agent reports only. The next clean checkpoint is to
+retain its complete logs; no native qualification is inferred from these counts.
+
+Finding 6 is closed for 2ffbfc1's parser. Independent Mac checks compiled the
+unmodified corrected preview_wire.cpp/.hpp and program_watch.cpp/.hpp, using the
+original bounded reproduction harness and the committed preview_wire_tests.cpp.
+Both malformed-number and NaN inputs now return no segment and no successful end;
+the valid control still returns its path. All 75 portable wire checks passed.
+Build logs contain no diagnostics. These are parser checks, not native integration.
+
+probe good: exit=0 elapsed=0.416s stdout=returned segments=1 end=1 first_x_finite=1 stderr=
+probe bad: exit=0 elapsed=0.010s stdout=returned segments=0 end=0 stderr=
+probe nan: exit=0 elapsed=0.008s stdout=returned segments=0 end=0 stderr=
+wire-tests : exit=0 elapsed=0.422s stdout=75 preview wire checks passed stderr=
+
+Raw files/build/results: local directory in /tmp/coffeecnc-preview-wire-2ff-review-path.
+
+Finding 5 remains open: called_names still accumulates every distinct name in its
+vector/set before take_snapshot checks max_calls. The replacement avoids quadratic
+vector search and bounds file lookups, but does not enforce the collection bound
+while collecting. Claude accepted moving the cap and cancellation into collection,
+with a regression checking the scan's stopping offset rather than only lookup count.
+Finding 7 is not in 2ffbfc1 and also remains open.
+
+Additional integration cases requested: G92 changes and M6 during execution while
+preview start state is frozen. PreviewContext freezes start, while G92, systems and
+raw_tools (including spindle entry 0) remain live. Check that recomputation does not
+apply later offsets/tool state to earlier moves; otherwise withhold unsupported
+contexts. This is a requested oracle case, not a measured native failure.
+
+Retained verification: 9b36c7a and 48da0a8, 2026-11-15 00:57 UTC
+
+The following supersedes the open-finding status above. Codex independently read
+the corrected source/tests and copied the retained CTest, LastTest and LinuxCNC
+logs from playhouse2. These are reviews of Claude's recorded runs, not separate
+Codex native test executions. Both records show no tracked modifications; their
+git-status.txt contains only the unrelated untracked ../concept.png. The 48da0a8
+record also retains the stash listing for application wiring held out of the run.
+
+9b36c7a: portable 20/20, 29.13 s; preview engine 621, wire 79, service 59,
+mapping 98 checks. Sim mm 119 checks / 83.18 s; sim inch 119 / 82.58 s.
+Both simulation wrappers record actual child_status=0 and processes_left=0;
+all individual simulation checks pass.
+
+Findings 1-3 now have retained native engine evidence for the reviewed fixes.
+Finding 4's input binding/equality change also has retained evidence; application
+wiring must still establish one publisher owner and the same accepted raw-table
+pass as the displayed tool table. Finding 6 remains closed as recorded above.
+Findings 5 and 7 are closed for this checkpoint:
+- called_names enforces the distinct-name cap during collection, stops at the
+  257th name with room=256, and checks cancellation every 1024 lines. The test
+  measures examined bytes, not just subsequent file lookups.
+- A ready result requires valid end-ok and the helper PID's observed exit 0.
+  Bounded reaping precedes process-group cleanup. Fake-helper tests cover exit 7,
+  a signal, missing terminal record, closed pipes without exit, timeout, malformed
+  output, an out-of-range source line and a remaining child. Failed results retain
+  only a valid prefix; an interpreter error keeps its reported source line.
+
+The native simulation oracle agrees on an axis-only first block after fresh
+startup, MDI G1, an aborted G1 program, and a program ending with M2, including
+the two expected interpreter errors. With G54 rotation 30 degrees, G43, G17/18/19
+arcs, a helix and G20, sampled machine positions are at most 0.0099 mm from the
+preview in both runs. The reverse nearest-sample distances are 0.565 mm (mm run)
+and 0.591 mm (inch run); endpoints agree. This samples geometry, not swept volume,
+collision checking, machine dynamics or hardware accuracy.
+
+Unedited repository samples, recorded by preview_engine:
+task-17_A.nc, G54: ready, 98 segments / 196 points,
+  feed bounds 74,36,-20 .. 126,64,2 mm.
+task-17_B.nc, G55: ready, 73 segments / 510 points,
+  feed bounds 53,23,-21.767 .. 147,77,2 mm.
+task-17_B.nc, G54: failed line 24, no segments; G55 offsets unavailable.
+ops_block_face.nc: failed line 5, no segments; G28 saved position unavailable.
+These are engine previews, not programs run on hardware. The paired task-17 STEP
+continues to represent initial stock, not a finished-part model.
+
+48da0a8: portable 20/20, 28.65 s; service 105 and publishing 174 checks.
+Sim mm 121 checks / 102.70 s; sim inch 121 / 102.69 s. Both actual child statuses
+are 0, both residual process counts 0, and every individual check passes.
+Source and tests now freeze all machine-state preview inputs through execution
+and pauses. The native G92/M0/G10 L2/T2 M6/G43 case records zero computations
+during the run and pause, then exactly one afterward. Attaching mid-program
+records unavailable/no computation until idle, then one submission. Portable
+tests cover sticky invalidation after a block-delete change, including toggling
+back. The path during a run is the pre-run plan; external edits during a pause
+cannot be distinguished from changes made by the program itself.
+
+One narrower contract case remains under discussion: reconnect mid-run, then end
+with every input identical to the last idle snapshot. In 48da0a8 submit_due_ can
+remain false and the old result is reused rather than computed once afterward.
+The existing reconnect test changes G5x and does not exercise this case. This is
+a source-review edge case, not a reproduced native failure; Claude was asked to
+test it and make the intended reuse/submission rule explicit.
+
+Raw host records: backend/build/sim-history/{9b36c7a,48da0a8}/dev/ in
+/home/turo/ai/claudecode-coffeecnc on playhouse2.
+Local copies: /tmp/coffeecnc-preview-{9b36c7a,48da0a8}-review/dev/.
+The application remains unwired at these commits. Native UI/STEP overlay,
+application ownership/shutdown, analyzers and sanitizers are not qualified by
+these engine and simulation results. No G0759 hardware operation was performed.

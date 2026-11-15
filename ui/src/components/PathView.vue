@@ -81,8 +81,14 @@ const current = computed(
 
 const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
   const preview = panel.preview
-  if (preview === null || preview.state === 'unavailable') {
+  if (preview === null) {
     return { text: (panel.status?.program.file ?? null) === null ? 'No program loaded' : 'No preview available', tone: '' }
+  }
+  if (preview.context !== panel.status?.preview_context) {
+    return { text: 'Preview out of date', tone: 'warn' }
+  }
+  if (preview.state === 'unavailable') {
+    return { text: panel.status.program.file === null ? 'No program loaded' : 'Preview unavailable', tone: '' }
   }
   if (preview.state === 'pending') {
     return { text: 'Computing preview', tone: 'warn' }
@@ -91,8 +97,11 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     return { text: 'Preview out of date', tone: 'warn' }
   }
   if (preview.state === 'failed') {
+    const line = preview.error?.line ?? 0
+    const location = Number.isSafeInteger(line) && line > 0 ? ` at line ${String(line)}` : ''
+    const path = preview.segments.some((segment) => segment.points.length >= 6) ? 'partial path shown' : 'no path available'
     return {
-      text: `Preview failed at line ${String(preview.error?.line ?? 0)}: path shown up to there`,
+      text: `Preview stopped${location}: ${path}`,
       tone: 'stop',
     }
   }

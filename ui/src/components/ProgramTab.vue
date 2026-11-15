@@ -17,6 +17,8 @@ watch(() => panel.program?.revision, () => { selected.value = null })
 const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.file === status.value.program.file && program.value.revision === status.value.program.revision)
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
+const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value ? panel.preview.error?.text : undefined)
+const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?.line ?? 0) : 0)
 const layouts: readonly [ProgramLayout, string][] = [['path', 'Preview'], ['text', 'Code'], ['split', 'Split']]
 // These are tool sections reported by the interpreter, not inferred CAM operations.
 const sections = computed(() => {
@@ -67,9 +69,10 @@ const runState = computed(() => {
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
 })
 async function showFailure(): Promise<void> {
+  if (failureLine.value === 0) return
   panel.programLayout = 'text'
   await nextTick()
-  if (failure.value) text.value?.goTo(failure.value.line)
+  if (failureLine.value > 0) text.value?.goTo(failureLine.value)
 }
 </script>
 
@@ -81,11 +84,12 @@ async function showFailure(): Promise<void> {
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
           <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="panel.programLayout = layout">{{ label }}</button></div>
         </header>
-        <div v-if="failure" class="failure" role="status"><AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span><button type="button" @click="showFailure">Show line {{ failure.line }}</button></div>
+        <div v-if="failure" class="failure" role="status"><AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span><button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button></div>
+        <div v-else-if="unavailableReason" class="failure unavailable" role="status"><AppIcon name="warning" /><span>Preview unavailable: {{ unavailableReason }}</span></div>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
-            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failure?.line ?? 0" />
+            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
@@ -136,7 +140,8 @@ async function showFailure(): Promise<void> {
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
 .status-row { flex: none; min-height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }.status-row .mono { font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
 .status-row .program-feedback { margin: 0; }
-.failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; }
+.failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.failure.unavailable { color: var(--text-dim); }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }

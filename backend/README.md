@@ -114,7 +114,7 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | Tool-change generation | A request withdrawn and raised again for the same tool within one control period is not told apart |
 | Adapter tests | Adapter cancellation is tested in simulation only; there is no fake channel layer |
 | ThreadSanitizer | It does not see inside libnml; the argument for libnml rests on the gate |
-| Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. The preview works on a private copy and is stale within 1 s of a change; the copy does not bind what task opens at run |
+| Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. The preview works on a private copy whose originals are compared again every 1 s (a polling period, not a deadline: a change is seen at the next comparison); the copy does not bind what task opens at run |
 | Preview | Public interpreter API only. A program stops being previewed at the first parameter (`#`), `M100`–`M199`, probe, `M66`, `G28`/`G30`, or a work system other than the active one; programs with comments that run code or write files, and configurations with `[RS274NGC] REMAP`, are refused. See `docs/preview.md` |
 | Work offsets | `EMC_STAT` carries only the active system; the other eight are sent `available: false` with zeros |
 | Tool table | Shown, and used for the preview with every field, from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Comments come from the file at load time |

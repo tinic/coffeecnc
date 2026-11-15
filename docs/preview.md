@@ -11,7 +11,7 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | `PreviewService`, `PreviewWorker` | `src/app/include/coffeecnc/app/preview.hpp` | The preview thread: newest context wins, a running computation is cancelled, files of the result compared every 1 s |
 | `PanelComposer` | `src/app/src/panel_feed.cpp` | Decides what is submitted and which `Preview` is sent |
 | `HelperPreviewEngine` | `src/linuxcnc/include/coffeecnc/linuxcnc/preview_engine.hpp` | Snapshot, private directory, start of the helper, limits, result |
-| `coffeecnc-preview` | `src/linuxcnc/preview/preview_helper.cpp` | `librs274` through `InterpBase` only; every canonical function inert except motion |
+| `coffeecnc-preview` | `src/linuxcnc/preview/preview_helper.cpp` | `librs274` through `InterpBase` only; the canonical functions keep the preview's own state (position, frame, tool) and record moves, and never issue a machine command |
 | Text checks | `src/linuxcnc/src/program_watch.cpp` | Whole-file scan before any read; block check before each execute |
 | Result format | `src/linuxcnc/src/preview_wire.cpp` | Parsed as hostile input; only the valid prefix is kept |
 
@@ -29,7 +29,7 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | Block delete switched during a run or pause | Context goes up; `unavailable`, `error.line` 0 for the rest of that run, also when switched back |
 | `[RS274NGC] REMAP` or a random tool changer configured, helper missing | `unavailable`, `error.line` 0 |
 
-`line` is always a line of the main program. A move inside a subroutine file carries the line of the call in the main program; an error there names the file and its line in the text. A subroutine defined in the program carries its own line.
+`line` is a line of the main program, or 0 when none is known. A move inside a subroutine file carries the line of the call in the main program; an error there names the file and its line in the text. A subroutine defined in the program carries its own line.
 
 ## Where a preview ends
 
@@ -50,8 +50,8 @@ Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)
 | Rule | Detail |
 |---|---|
 | Coherent start | Inputs are taken only from a reading at rest, with the tool table accepted and the link live, for that program revision |
-| During a run | Start state, work systems, G92 and tool table stay as before the run: the preview is the plan from before the run, not a prediction. One new context when the run has ended |
-| Files | Program and subroutine files are copied; the copy is compared byte for byte with the originals before a result is published and every 1 s after, call paths resolved again. A change raises the context |
+| During a run | Start state, work systems, G92 and tool table stay as before the run: the preview is the plan from before the run, not a prediction. When the run has ended, the state then found counts: a new context if an input changed, else the earlier result is reused after its files were compared |
+| Files | Program and subroutine files are copied; the copy is compared byte for byte with the originals before a result is published and at a 1 s polling period after, call paths resolved again. A change seen raises the context; the period is not a detection deadline |
 | Reuse | A context that has a finished result is not computed again; the result is current once the worker has compared its files |
 | Not bound | What task opens when the program is run is the original path, not the copy |
 
@@ -59,11 +59,11 @@ Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)
 
 | Bound | Value |
 |---|---|
-| Wall time of one computation | 20 s, then the process group is killed |
+| Wall time of the helper (the snapshot precedes it) | 20 s, then the process group is killed |
 | Time for the helper to exit after closing its result | 2 s |
 | Points | 400000, checked in helper and parent |
 | Arc chord error | 0.01 mm |
-| Program and subroutine bytes | 16 MiB; computed in 4.6 s, one comparison of its files 2.7 ms |
+| Program and subroutine bytes | 16 MiB. Measured on the test host, not a bound: computed in 4.6 s, one comparison of its files 2.7 ms |
 | Subroutine files; different called names, missing ones included | 64; 256 |
 | Helper standard output and error kept | 64 KiB, never parsed |
 | Helper process | Own process group, nice 10, CPU, file size and core limits; address-space limit except in sanitizer builds |

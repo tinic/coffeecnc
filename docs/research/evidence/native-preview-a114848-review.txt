@@ -434,3 +434,37 @@ PR #13 under analyze; its recorded checks did not include that preset.
 
 Host: backend/build/sim-history/ba0067e/ on playhouse2.
 Local: /tmp/coffeecnc-preview-ba0067e-review/{dev,defcheck,clang-asan}/.
+
+Clang and wired-shell sanitizer follow-up: ba0067e, 2026-11-15 01:55 UTC
+
+Clang runtime verification is now complete for the focused preview engine run:
+retained provenance records the actual test-binary exit as 0, build exit 0,
+Clang 19.1.7, and address+undefined instrumentation on both preview_engine.cpp
+and preview_helper.cpp. The recorded command runs the engine tests directly,
+not through CTest. Its retained output reports 621 checks passed and contains
+no sanitizer diagnostics. This is not a full Clang application qualification.
+
+The GCC address+undefined native shell runs each pass all 229 checks in 38.53 s.
+Each CTest invocation also includes panel_bundle: 2/2 in 38.78 s (mm), 38.79 s
+(inch). Both actual shell children exit 0 with zero residual processes. Codex
+independently copied/read both LastTest and raw logs, the build record and
+compiler/sanitizer provenance. No sanitizer diagnostics or compiler warnings
+appear in those retained records. Both runs serve the current UI input and asset
+digests recorded above, and repeat the Task 17 paths/refusal and stock-overlay
+pixel results from 5a04f40.
+
+Qualification retains the existing Xvfb NO_AT_BRIDGE=1 environment and GUI-only
+LSan exclusions for Fontconfig, Mesa GLX and JavaScriptCore. No suppression was
+added. These results do not establish leak-free accessibility-enabled execution
+or detect application-caused leaks hidden by the existing library exclusions.
+GUI ThreadSanitizer remains unqualified.
+
+The initial retained ba0067e analyzer build.txt says only "ninja: no work to do."
+Its provenance reports rc=0/findings=0 with LLVM 19.1.7 and Cppcheck 2.17.1;
+the preceding successful compilation record and analyzer configuration have been
+requested to substantiate that checkpoint. Separately, Claude's retained build
+of main at 8ca768f exits 1 on an optional-access diagnostic and test diagnostics.
+Codex read that failure; it confirms main was not clean under analyze at that
+commit. The corresponding changes are included in the reviewed ba0067e delta.
+
+Local: /tmp/coffeecnc-preview-ba0067e-review/{asan,clang-asan,analyze,main-analyze}/.

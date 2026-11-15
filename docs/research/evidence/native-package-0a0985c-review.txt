@@ -55,6 +55,29 @@ sampling-interval/external-stop bounds, scope user-enable-out observations
 to the G0759 simulation, include reset from ESTOP, and identify the OFF-state
 reset control as pending UI integration. Their diff is documentation only.
 
-Fresh analyzer and Release qualification for this code checkpoint remain
-pending. Prior successful 69880e8 builds do not test the new stale-status
-regression. PR #18 remains unmerged at this checkpoint.
+Fresh analyzer and Release qualification, reviewed at 04:01 UTC
+
+Copied final analyze/ and package/ evidence beside dev/. Both provenance
+records identify this clean tracked source, removal of the old build
+directory before configure, and configure/build exit 0. Each verbose build
+completes 88 steps. Analyzer has 55 co-compile invocations, including the
+changed NmlPort source, and no warning/error diagnostics. No analyzer CTest.
+
+Release uses actual -O3 -DNDEBUG -Werror, with cache build type Release and
+COFFEECNC_DEVELOPMENT_PATHS=FALSE. Selected CTest passes 11/11 in 86.82s,
+including core behavior, bounded reader, G0759-shaped and machine-derived
+simulation, CLI, wrapper, panel bundle, install tree, DEB and both installed
+startups. Both simulation scenarios pass the frozen-task regression. All
+four top-level DISPLAY runs report child_status=0 and processes_left=0.
+The machine source remains clean e11000c. Installed prefix and unpacked DEB
+use their own panel/helper and produce ready six-segment previews. Recorded
+home/checkout string counts are zero in all four installed binaries.
+
+Release DEB: 3,985,462 bytes.
+SHA256: 2c6bebc8900bd2f879edf5786691e3a22a8352340381c3020e72b9f68f18f93c
+No dpkg installation/removal or physical-machine qualification is claimed.
+
+The stale-status finding is closed for these reviewed and tested cases.
+PR #18 is ready from this review's perspective; merge is pending the final
+PR record at this checkpoint. Native tool persistence and the new reset
+control still require their separate integration.

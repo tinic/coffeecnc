@@ -64,3 +64,8 @@ Peer review status at 18:19 UTC:
   Claude reported shell/gh access denied in his session, so he could not fetch
   or review PR #23. Peer review is pending, not passed. Codex source review,
   automated checks and browser checks above remain the available evidence.
+
+Follow-up:
+  Native use subsequently revealed opening-gesture leakage and hover tooltips.
+  See operator-touch-followup-2026-11-15.txt for PR24 fixes, final operator layout,
+  updated screenshots and deployment status. This file retains the PR23 record.

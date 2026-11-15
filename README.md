@@ -8,9 +8,9 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
-![Current CoffeeCNC Manual workspace with stable messages and wrapped jog increments](ui/screenshots/operator-touch-1600x900-light.png)
+![Current CoffeeCNC Manual workspace with larger jog controls and aligned coordinates](ui/screenshots/operator-refined-1600x900-light.png)
 
-*Current operator layout at 1600 × 900, using a display-only G0759-shaped browser fixture. Numeric fields share a touch keypad; homing and messages reserve their space. The shown error deliberately exercises the message band. Native GNOME keyboard behavior remains unverified. See [touch behavior and checks](ui/README.md#touch-operation-and-stable-feedback).*
+*Current operator layout at 1600 × 900, using a display-only G0759-shaped browser fixture. Axis labels and coordinates share their typography and align with the unit buttons. Larger jog controls sit beside the step choices; MDI expands above the bottom-aligned work coordinate selector. Native touch retesting remains pending. See [touch behavior and checks](ui/README.md#touch-operation-and-stable-feedback).*
 
 <details>
 <summary>First G0759 controller launch</summary>

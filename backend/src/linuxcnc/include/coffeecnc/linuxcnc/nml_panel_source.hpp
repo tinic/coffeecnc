@@ -33,6 +33,45 @@ namespace coffeecnc {
 //                 load: when task names another file, and when the port reports that LinuxCNC
 //                 accepted an open_program (NmlLoads::programs), also of the same file
 //
+// Line numbers. Task's current and motion line are counters of task, not of a load, and they
+// are not only moved by the program: an open zeroes both; a run does not; an MDI block and an
+// E-stop or abort with the interpreter idle write the current line (2.9.4;
+// docs/linuxcnc-interface.md). `current_line` and `motion_line` of the status are therefore
+// never task's counters passed through. They are what was attributed to the loaded revision,
+// each 0 until something was:
+//
+//   evidence    only a status that is live, was read (TimedStatus::read_at, taken before the
+//               status is acquired) after this source took the revision up and after it
+//               noticed the last MDI block the port reports, and is newer than the one judged
+//               before. Any other status (stale, older, of another file) changes nothing:
+//               what was attributed last stays reported.
+//   executing   such a status with task in auto and the interpreter not idle (reading,
+//               paused, waiting): the program of this revision runs. At the start of a run
+//               the counters still hold what they held before it, until task takes up the
+//               first block, so each counter has a baseline: what it read in the last
+//               evidence status before the run; where there was none (the revision first
+//               seen executing, or the run first seen after an MDI block the port reports),
+//               the first status of the run supplies the baseline and attributes nothing by
+//               its counters. A counter is attributed from the first status of the run in
+//               which it differs from its baseline, or in which the machine moves (both
+//               counters), dwells or waits for a tool change (the current line). A counter
+//               equal to its baseline stays withheld (0) until then. Once attributed it is
+//               reported as read to the end of the run; paused included.
+//   ended       the first status after the run with task in auto and idle (finished, aborted,
+//               E-stop): the attributed counters are read once more, as the lines the
+//               program stopped at, and kept. Further idle statuses do not move them.
+//   not auto    a status with task in manual or MDI mode, or an MDI block the port reports
+//               (NmlLoads::mdi_blocks): nothing is attributed any more, both are 0 until the
+//               next run moves them.
+//   load        a new revision starts with both 0.
+//
+// What follows: a run that no status showed executing (shorter than the publishing period)
+// leaves the lines 0, and the lines of a run that ended between two readings are those of
+// the first idle status after it. Not excluded: a status that shows task in auto and not
+// idle while the machine still moves from something before the run (nothing is known that
+// does it: a mode change ends a jog) would attribute the counters one block early; and an
+// MDI block sent by another client that begins and ends in auto mode between two readings.
+//
 // Revisions count from 1. The tool table's goes up when the table shown differs; the program's
 // with every load as above. A program text that cannot be read leaves the program without text
 // and is reported once, as an operator message; so is a tool table that cannot be read, which

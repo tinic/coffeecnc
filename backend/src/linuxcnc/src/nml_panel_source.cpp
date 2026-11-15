@@ -40,6 +40,21 @@ struct NmlPanelSource::Impl {
   std::uint64_t program_loads_seen{};
   std::uint64_t program_revision{};
   std::shared_ptr<const ProgramText> program;
+  // What is attributed to the loaded revision of task's line counters; see the header.
+  struct Lines {
+    // Statuses read up to here are not evidence: the revision or an MDI block came after.
+    Clock::time_point not_before;
+    std::optional<Clock::time_point> judged; // when the status judged last was read
+    bool executing{};                         // that status showed the program running
+    // The counters as read last while it did not run, current then motion.
+    std::optional<std::pair<int, int>> before;
+    bool current_moved{}; // in this run
+    bool motion_moved{};
+    int current{}; // attributed: what is reported
+    int motion{};
+  };
+  Lines lines;
+  std::uint64_t mdi_blocks_seen{};
 
   Impl(MachineConfig machine, const NmlStatusMailbox& readings, ToolReader tool_reader,
        ProgramReader program_reader, const NmlLoads* counted,
@@ -103,6 +118,51 @@ struct NmlPanelSource::Impl {
     tool_loads_seen = counted;
   }
 
+  void track_lines(const NmlStatus& status, Clock::time_point read_at) {
+    if (const auto counted = loads != nullptr ? loads->mdi_blocks.load() : 0;
+        counted != mdi_blocks_seen) {
+      mdi_blocks_seen = counted;
+      lines = Lines{};
+      lines.not_before = clock();
+    }
+    const auto& controller = status.controller;
+    if (controller.link != Link::live || read_at <= lines.not_before ||
+        (lines.judged && read_at <= *lines.judged))
+      return;
+    lines.judged = read_at;
+    const std::pair now{status.current_line, status.motion_line};
+    if (controller.mode != TaskMode::automatic) {
+      const auto not_before = lines.not_before;
+      lines = Lines{};
+      lines.not_before = not_before;
+      lines.judged = read_at;
+      lines.before = now;
+      return;
+    }
+    if (controller.interp == InterpState::idle) {
+      // The run has ended: the lines it stopped at.
+      if (std::exchange(lines.executing, false)) {
+        if (lines.current_moved)
+          lines.current = now.first;
+        if (lines.motion_moved)
+          lines.motion = now.second;
+      }
+      lines.before = now;
+      return;
+    }
+    if (!std::exchange(lines.executing, true)) {
+      lines.current_moved = lines.motion_moved = false;
+      if (!lines.before)
+        lines.before = now;
+    }
+    const bool moving = !controller.in_position;
+    lines.current_moved = lines.current_moved || now.first != lines.before->first || moving ||
+                          status.dwell_seconds_left > 0 || controller.requested_tool.has_value();
+    lines.motion_moved = lines.motion_moved || now.second != lines.before->second || moving;
+    lines.current = lines.current_moved ? now.first : 0;
+    lines.motion = lines.motion_moved ? now.second : 0;
+  }
+
   void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
     if (status.controller.link == Link::down)
       return; // Nothing is known: what was read last stays.
@@ -118,6 +178,8 @@ struct NmlPanelSource::Impl {
     program_file = status.program_file;
     program_loads_seen = counted;
     ++program_revision;
+    lines = Lines{};
+    lines.not_before = clock();
     program.reset();
     auto text = programs ? programs(program_file, program_revision)
                          : std::unexpected(std::string("No program directory is configured."));
@@ -162,6 +224,11 @@ auto NmlPanelSource::read() -> PanelReading {
       to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
+  if (loaded) {
+    impl_->track_lines(status, latest->read_at);
+    reading.status.program.current_line = impl_->lines.current;
+    reading.status.program.motion_line = impl_->lines.motion;
+  }
   if (!loaded)
     reading.status.program = ProgramStatus{.file = {},
                                            .revision = 0,

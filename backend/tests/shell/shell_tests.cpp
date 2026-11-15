@@ -204,6 +204,12 @@ constexpr std::string_view instrumentation = R"js((() => {
     const box = element.getBoundingClientRect();
     return [box.left + box.width / 2, box.top + box.height / 2];
   };
+  // Whether `last` (the newest message of each type) shows work system `wcs` with a finished
+  // preview of that very status. What a wait after a work-system change by another client
+  // goes by: the status and preview from before the change are consistent with each other
+  // too, and must not satisfy it.
+  t.settledIn = (last, wcs) => !!(last.status && last.preview && last.status.offsets.wcs === wcs &&
+    last.preview.state !== 'pending' && last.preview.context === last.status.preview_context);
   t.axis = (letter) => (t.last.status ? t.last.status.axes.find((a) => a.axis === letter) : null);
 })();)js";
 
@@ -1108,7 +1114,7 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                                 53 + wcs)
                         .c_str()) == 0;
     return sent &&
-           rig.wait_js(std::format("__t.last.status.offsets.wcs === {} && {}", wcs, current), 30s);
+           rig.wait_js(std::format("__t.settledIn(__t.last, {})", wcs), 30s);
   };
   // What a preview check judges with: the status the panel has now.
   const auto judged = [&](const Json& preview) -> std::string {
@@ -1137,6 +1143,22 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                      word(preview.at("bounds").dump())));
     return preview;
   };
+  // The wait of select() on recorded states around a change from G54 to G55, in the order the
+  // page gets them: only the last one, a G55 status with a finished preview of its context,
+  // ends the wait. The first is what the wait returned on at 9892a42.
+  const auto sequence = rig.js(R"(
+      const state = (wcs, status_context, preview_context, preview_state) => ({
+        status: { offsets: { wcs: wcs }, preview_context: status_context },
+        preview: { context: preview_context, state: preview_state } });
+      return [
+        state(1, 36, 36, 'failed'),   // before the change: consistent, but G54
+        state(2, 37, 36, 'failed'),   // G55 status, the preview still the G54 one
+        state(2, 37, 37, 'pending'),  // the G55 preview is being computed
+        state(2, 37, 37, 'ready'),    // settled
+        { status: { offsets: { wcs: 2 }, preview_context: 37 } },  // no preview at all
+      ].map((last) => __t.settledIn(last, 2));)");
+  check("select_wait_refuses_the_state_from_before_the_change",
+        sequence == Json::array({false, false, false, true, false}), sequence.dump());
   // The programs use tools 1, 2 and 3: the machine's table gets them, loaded by another
   // client as an operator's own editor would. Lengths in machine units.
   const double unit = rig.config.millimetres_per_unit;

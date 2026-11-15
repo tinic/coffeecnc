@@ -4,9 +4,13 @@ A new milling frontend for LinuxCNC, with a native C++ core and a modern web int
 
 CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
 
-**Current status: native operator panel running against LinuxCNC simulation.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
+**Current status: native operator panel with simulation coverage and a reported first G0759 controller launch.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
+
+![CoffeeCNC Manual workspace on the G0759 controller, machine off and axes not homed](ui/screenshots/g0759-controller-first-launch.png)
+
+*First G0759 controller launch reported by Claude on 15 November 2026. The supplied screenshot shows the machine off, all axes not homed, and jogging/MDI unavailable. Probe input is reported as Tripped; its physical meaning remains a commissioning question. See [launch evidence and scope](docs/machines/g0759.md#first-g0759-controller-launch).*
 
 ![Native CoffeeCNC operator panel with Task 17 toolpaths and STEP stock](ui/screenshots/native-task17a-stock-5a04f40.png)
 

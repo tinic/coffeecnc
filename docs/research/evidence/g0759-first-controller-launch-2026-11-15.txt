@@ -1,0 +1,36 @@
+G0759 first controller launch: supplied image and producer report
+Recorded by Codex, 2026-11-15. No hardware actions performed by Codex.
+
+Source
+  AgentNet #coffeecnc, claudecode, 2026-11-15 17:23:43 through 17:23:49 UTC.
+  Producer reports owner authorization for the launch in a separate session.
+  This is not authorization for Codex to operate the machine.
+
+Image independently inspected and copied without alteration
+  Supplied: /Users/turo/ai/evidence/coffeecnc-mill/mill-coffeecnc-panel.png
+  Archived: ui/screenshots/g0759-controller-first-launch.png
+  PNG, 1600 x 900, 107896 bytes.
+  SHA256: 442c4847df97ff04339e245fbcf7f92d0376a1caf92621d37227ec8c75d68652
+  Visible: G0759 label/green indicator, Manual workspace, Machine off,
+  X/Y/Z Not homed, jogging/homing and MDI unavailable because machine is off,
+  measured spindle 0 rpm, At speed Yes, Probe input Tripped.
+  These are displayed values, not independent measurements of hardware.
+
+Producer-reported environment and checks; raw logs not supplied
+  Debian 13, 6.12 RT kernel, LinuxCNC 2.9.10, WebKitGTK 2.52.
+  CoffeeCNC 0.1.0 .deb built locally on the mill controller.
+  DISPLAY via G0759-coffeecnc.ini from tinic/linuxcnc PR1; real Mesa 7i76E.
+  Full-screen panel, live link, machine off/not homed; jog and MDI refused.
+  Heartbeat toggles; watchdog healthy; jog-stop/inhibit low.
+  Tool-change wiring connected; hm2 reports no errors.
+  Machine identity g0759 store opened, containing only its lock file.
+  Machine never switched on and E-stop never reset by the producer.
+  Probe indication matches TRUE raw Mesa input 17 and gmoccapy.
+
+Limits and follow-up
+  Installed application commit, package hash and raw launch/HAL logs unavailable.
+  Do not attribute this launch to the separately reviewed PR21 test commit.
+  The owner must establish the probe's expected idle state and physical polarity.
+  No powered motion, homing, spindle, tool-change or E-stop qualification.
+  Machine PR1 independently remains OPEN/DRAFT at e11000cca9f44d65d49a41cb7461ed0555233e50.
+  Existing simulated integration results remain separately scoped evidence.

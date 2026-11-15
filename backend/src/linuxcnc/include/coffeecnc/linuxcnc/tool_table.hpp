@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_LINUXCNC_TOOL_TABLE_HPP
 #define COFFEECNC_LINUXCNC_TOOL_TABLE_HPP
 
+#include <cstddef>
 #include <coffeecnc/core/command_policy.hpp>
 
 #include <map>
@@ -9,6 +10,10 @@
 #include <string_view>
 
 namespace coffeecnc {
+
+// The most of a tool table file that is read. LinuxCNC holds 1001 entries; a line of the file
+// is at most 255 characters.
+inline constexpr std::size_t max_tool_table_bytes = std::size_t{4} << 20;
 
 // Edits of the text of a LinuxCNC tool table: one tool per line, words `T<number> P<pocket>
 // Z<length> D<diameter>` and more, then `;comment`. Lengths in the file are machine units;

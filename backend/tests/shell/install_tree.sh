@@ -1,6 +1,6 @@
 #!/bin/bash
 # `cmake --install` of a build directory into a prefix below it, and what is in the prefix.
-#   install_tree.sh <build directory> <prefix> <backend source directory>
+#   install_tree.sh <build directory> <prefix> <backend source directory> development|installed-only
 # The prefix is emptied first. One `check=<name> result=pass|fail detail=...` line per check;
 # exit code 0 only if all pass.
 set -u
@@ -28,5 +28,5 @@ mkdir -p "$(dirname "$prefix")" || exit 125
 cmake --install "$build" --prefix "$prefix" >"$(dirname "$prefix")/install.log" 2>&1
 code=$?
 check cmake_install $code "exit=${code}_log=$(dirname "$prefix")/install.log"
-layout_checks "$prefix" "$source"
+layout_checks "$prefix" "$source" "$build" "$4"
 exit $failed

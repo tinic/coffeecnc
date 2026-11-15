@@ -85,5 +85,19 @@ run -ini "$work/sim/coffeecnc_sim.ini"
 [ "$code" = 1 ] && said "^coffeecnc: panel=$alone/share/coffeecnc/ui preview_helper=" &&
   said 'coffeecnc: Cannot open a display'
 check installed_panel_beside_the_executable_is_used $? "$(detail)"
+# No helper beside it either: a build for packaging says so and names none; a development
+# build names the build tree's.
+if [ "$paths" = installed-only ]; then
+  said ' preview_helper=none$' && said 'coffeecnc: No preview helper: coffeecnc-preview is not beside the executable'
+  check installed_only_build_says_the_helper_is_missing $? "$(detail)"
+else
+  said ' preview_helper=/.*/coffeecnc-preview$' && ! said 'coffeecnc: No preview helper'
+  check development_build_falls_back_to_the_built_helper $? "$(detail)"
+fi
+# With a helper beside the executable, that one is named, in either build.
+cp /bin/true "$alone/bin/coffeecnc-preview" || exit 125
+run -ini "$work/sim/coffeecnc_sim.ini"
+said " preview_helper=$alone/bin/coffeecnc-preview\$" && ! said 'coffeecnc: No preview helper'
+check installed_helper_beside_the_executable_is_used $? "$(detail)"
 
 exit $failed

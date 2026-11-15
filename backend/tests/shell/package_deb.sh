@@ -2,6 +2,7 @@
 # Builds the Debian package with CPack, checks its control fields and contents, and unpacks it
 # (dpkg-deb -x: nothing is installed on the host).
 #   package_deb.sh <build directory> <work directory> <backend source directory> <version>
+#     development|installed-only
 # Leaves in the work directory: cpack.log, the .deb in cpack/, info.txt (dpkg-deb -I),
 # contents.txt (dpkg-deb -c) and root/, the unpacked tree. One
 # `check=<name> result=pass|fail detail=...` line per check; exit code 0 only if all pass.
@@ -64,6 +65,6 @@ writable=$(grep -cE '^.....w|^........w' "$work/contents.txt")
 check package_nothing_group_or_world_writable $? "entries=$writable"
 dpkg-deb -x "$deb" "$work/root"
 check package_unpacks $? "root=$work/root"
-layout_checks "$work/root/usr" "$source"
+layout_checks "$work/root/usr" "$source" "$build" "$5"
 echo "fact=package file=$deb bytes=$(stat -c %s "$deb") installed_kib=$(field Installed-Size)"
 exit $failed

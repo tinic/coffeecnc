@@ -233,6 +233,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::cerr << std::format("coffeecnc: panel={} preview_helper={}\n", *ui,
                            helper.empty() ? std::string_view{"none"} : std::string_view{helper})
             << std::flush;
+  if (helper.empty())
+    say("No preview helper: coffeecnc-preview is not beside the executable. Programs are shown "
+        "without a toolpath preview.");
   if (!initialise_display()) {
     say("Cannot open a display.");
     return 1;

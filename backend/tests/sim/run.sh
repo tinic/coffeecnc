@@ -3,10 +3,14 @@
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
 #   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n] <program> [arguments...]
+#   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-t ...] [-d ...] [-n] <program> ...
 #
 # Profiles (-p):
 #   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
+# With -m, no profile: a machine's own INI file and HAL files with the hardware replaced by the
+# -s file; see assemble_machine.sh for exactly what differs from the machine's files. The INI
+# file in the run directory then has the machine file's name.
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. (The arguments are in the wrapper this script
@@ -40,8 +44,12 @@ units=mm
 timeout=300
 directory=
 assemble_only=
-while getopts "p:u:t:d:n" option; do
+machine=
+layer=
+while getopts "p:u:t:d:nm:s:" option; do
   case $option in
+  m) machine=$OPTARG ;;
+  s) layer=$OPTARG ;;
   p) profile=$OPTARG ;;
   u) units=$OPTARG ;;
   t) timeout=$OPTARG ;;
@@ -53,9 +61,11 @@ done
 shift $((OPTIND - 1))
 if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
   { [ "$profile" != sim ] && [ "$profile" != g0759 ]; } ||
-  { [ "$profile" = g0759 ] && [ "$units" != mm ]; }; then
+  { [ "$profile" = g0759 ] && [ "$units" != mm ]; } ||
+  { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; }; then
   echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n]" \
-    "<program> [arguments...]  (g0759 is millimetres only)" >&2
+    "<program> [arguments...]  (g0759 is millimetres only), or" \
+    "run.sh -m <machine INI file> -s <simulated hardware HAL file> ..." >&2
   exit 125
 fi
 program=$(realpath "$1") || exit 125
@@ -75,6 +85,10 @@ else
   fragments="coffeecnc_postgui.hal coffeecnc_${profile}_postgui.hal coffeecnc_${profile}_sim.hal"
 fi
 ini=coffeecnc_$profile.ini
+if [ -n "$machine" ]; then
+  flavour=machine
+  ini=$(basename "$machine")
+fi
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
@@ -106,6 +120,12 @@ exit \$status
 EOF
 chmod +x "$directory/display.sh" || exit 125
 
+if [ -n "$machine" ]; then
+  # A machine's own configuration: assembled from its files, never written to.
+  rm -f "$directory/linuxcnc.log"
+  "$here/assemble_machine.sh" "$machine" "$layer" "$directory" "$directory/display.sh" \
+    "$here/coffeecnc_postgui.hal" || exit 125
+else
 # The run directory holds only generated files.
 perl -pe '
   BEGIN { $inch = shift eq "inch"; $display = shift; }
@@ -126,6 +146,7 @@ elif [ "$units" = inch ]; then
 else
   printf 'T1 P1 Z50 D6 ;6 mm end mill\nT2 P2 Z40 D3 ;3 mm end mill\n'
 fi >"$directory/tool.tbl"
+fi
 if [ -n "$assemble_only" ]; then
   echo "sim=assembled ini=$directory/$ini"
   exit 0

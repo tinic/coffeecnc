@@ -9,6 +9,7 @@
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/core/text_file.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
@@ -373,6 +374,9 @@ void tool_table_text() {
                                  !without_tool(table, 9).has_value());
 }
 
+// Whether the HAL files are the machine's own (run.sh -m), not the simulation profile's.
+bool machine_hal = false;
+
 void power(Rig& rig) {
   const auto link = rig.link();
   auto state = rig.snapshot();
@@ -389,6 +393,10 @@ void power(Rig& rig) {
     check("port_on_in_estop_fails", forced.status == ActionStatus::failed, forced.reason);
   });
 
+  // The G0759's files: the E-stop state is the external chain's input (estop-ext) and nothing
+  // else. The operator releases the button.
+  if (machine_hal)
+    check("external_estop_released", halcmd("sets estop-ext 1"));
   const auto reset = rig.send(R"("type":"set_machine","state":"off")");
   rig.pump(50ms);
   check("estop_reset", reset.accepted() && rig.snapshot().machine == MachineState::off,
@@ -1047,8 +1055,7 @@ void adapter_cancellation(Rig& rig) {
       }));
     };
     const auto table = [&]() -> std::string {
-      std::ifstream in{rig.config.tool_table, std::ios::binary};
-      return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+      return read_text_file(rig.config.tool_table, std::size_t{64} << 20).value_or(std::string());
     };
     Tool tool;
     tool.number = 9;
@@ -2322,8 +2329,7 @@ void tools(Rig& rig) {
                     status.tool_offset[2]));
 
   const auto table = [&]() -> std::string {
-    std::ifstream in{rig.config.tool_table};
-    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    return read_text_file(rig.config.tool_table, std::size_t{64} << 20).value_or(std::string());
   };
   const auto set = rig.send(
       R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":48.2,"diameter":6,"comment":"End mill 6 mm"})");
@@ -2353,6 +2359,17 @@ void signals_not_configured(Rig& rig) {
         std::format("pins_driven={} rpm_pin={}", driven, hal_pin("coffeecnc.spindle-rpm")));
 }
 
+// The measured spindle speed and at-speed as a test sets them. On the simulation profile they
+// are bare signals. With the machine's own HAL files they come out of its scale, abs and near
+// components: the test moves the simulated spindle away from its commanded speed (0 here), and
+// at-speed follows by itself.
+auto spindle_feedback(double rpm, bool at_speed) -> bool {
+  if (machine_hal)
+    return halcmd(std::format("sets coffeecnc-sim-spindle-offset {}", rpm / 60));
+  return halcmd(std::format("sets spindle-vel-fb-rpm-abs {}", rpm)) &&
+         halcmd(std::format("sets spindle-at-speed {}", at_speed ? 1 : 0));
+}
+
 // G0759 profile: the three signals are declared in the INI file and connected by its post-GUI
 // file to the machine's signal names.
 void g0759_signals(Rig& rig) {
@@ -2362,22 +2379,28 @@ void g0759_signals(Rig& rig) {
             status.probe_input == false,
         std::format("rpm={} at_speed={} probe={}", status.spindle_actual_rpm.value_or(-1),
                     status.spindle_at_speed.value_or(false), status.probe_input.value_or(true)));
-  const bool set = halcmd("sets spindle-vel-fb-rpm-abs 1234.5") &&
-                   halcmd("sets spindle-at-speed 0") && halcmd("sets probe-in 1");
+  const bool set = spindle_feedback(1234.5, false) && halcmd("sets probe-in 1");
   rig.pump(50ms);
   status = rig.status();
   check("signals_report_values",
-        set && status.spindle_actual_rpm == 1234.5 && status.spindle_at_speed == false &&
-            status.probe_input == true,
+        set && status.spindle_actual_rpm && near(*status.spindle_actual_rpm, 1234.5, 1e-6) &&
+            status.spindle_at_speed == false && status.probe_input == true,
         std::format("rpm={} at_speed={} probe={}", status.spindle_actual_rpm.value_or(-1),
                     status.spindle_at_speed.value_or(true), status.probe_input.value_or(false)));
-  const bool negative = halcmd("sets spindle-vel-fb-rpm-abs -600");
+  const bool negative = spindle_feedback(-600, false);
   rig.pump(50ms);
-  check("spindle_rpm_is_a_magnitude", negative && rig.status().spindle_actual_rpm == 600.0);
-  const bool reset = halcmd("sets spindle-vel-fb-rpm-abs 0") && halcmd("sets spindle-at-speed 1") &&
-                     halcmd("sets probe-in 0");
+  status = rig.status();
+  check("spindle_rpm_is_a_magnitude",
+        negative && status.spindle_actual_rpm && near(*status.spindle_actual_rpm, 600, 1e-6),
+        std::format("rpm={}", status.spindle_actual_rpm.value_or(-1)));
+  const bool reset = spindle_feedback(0, true) && halcmd("sets probe-in 0");
   rig.pump(50ms);
-  check("signals_reset", reset && rig.status().probe_input == false);
+  status = rig.status();
+  check("signals_reset",
+        reset && status.probe_input == false && status.spindle_at_speed == true &&
+            status.spindle_actual_rpm == 0.0,
+        std::format("rpm={} at_speed={}", status.spindle_actual_rpm.value_or(-1),
+                    status.spindle_at_speed.value_or(false)));
 }
 
 auto none_homed(Rig& rig) -> bool {
@@ -2560,8 +2583,7 @@ void g0759_program(Rig& rig) {
   const auto touch = rig.send(R"("type":"tool_touch_off","value":3)");
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
   status = rig.status();
-  std::ifstream in{rig.config.tool_table};
-  const std::string table{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  const auto table = read_text_file(rig.config.tool_table, std::size_t{64} << 20).value_or(std::string());
   check("tool_touch_off_writes_length",
         touch.accepted() && near(status.work[2], 3) && near(status.tool_offset[2], -3.5) &&
             table.find("Z-3.5") != std::string::npos,
@@ -2641,10 +2663,28 @@ void power_off(Rig& rig) {
   const bool is_off = rig.snapshot().machine == MachineState::off;
   const auto estop = rig.send(R"("type":"set_machine","state":"estop")");
   rig.pump(50ms);
-  check("power_off_and_estop",
-        manual.accepted() && off.accepted() && is_off && estop.accepted() &&
-            rig.snapshot().machine == MachineState::estop,
-        std::format("{} {} {}", manual.text(), off.text(), estop.text()));
+  if (machine_hal) {
+    // G0759.hal connects iocontrol.0.emc-enable-in to the external input only, and
+    // iocontrol.0.user-enable-out (estop-out) to nothing: an E-stop request of a display
+    // program changes no state. The port says so; the machine stays off, not in E-stop. The
+    // button itself is what LinuxCNC reports.
+    const auto after_request = rig.snapshot().machine;
+    const bool pressed = halcmd("sets estop-ext 0");
+    // LinuxCNC's io task reads the input once per [EMCIO] CYCLE_TIME, 100 ms on this machine.
+    rig.pump_until(2s, [&]() -> bool { return rig.snapshot().machine == MachineState::estop; });
+    const auto after_button = rig.snapshot().machine;
+    check("estop_is_the_external_input_only",
+          manual.accepted() && off.accepted() && is_off && estop.outcome == "failed" &&
+              after_request == MachineState::off && pressed && after_button == MachineState::estop,
+          std::format("{} {} {} off={} after_request={} after_button={}", manual.text(), off.text(),
+                      estop.text(), is_off, static_cast<int>(after_request),
+                      static_cast<int>(after_button)));
+  } else {
+    check("power_off_and_estop",
+          manual.accepted() && off.accepted() && is_off && estop.accepted() &&
+              rig.snapshot().machine == MachineState::estop,
+          std::format("{} {} {}", manual.text(), off.text(), estop.text()));
+  }
   rig.runtime->end_page(rig.page);
   // The end of the executable: every thread joined, the level left high.
   const auto started = Clock::now();
@@ -2802,14 +2842,15 @@ auto main(int argc, char** argv) -> int {
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
-    // The scenario for run.sh -p g0759.
-    g0759 = g0759 || std::string_view(argv[i]) == "g0759";
+    // The scenario for run.sh -p g0759, and the same on the machine's own files (run.sh -m).
+    machine_hal = machine_hal || std::string_view(argv[i]) == "g0759-machine";
+    g0759 = g0759 || machine_hal || std::string_view(argv[i]) == "g0759";
   }
   int code = 1;
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759] (see tests/sim/run.sh)");
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine] (see tests/sim/run.sh)");
     code = run(ini_file, g0759);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());

@@ -1,0 +1,46 @@
+# The G0759's hardware, simulated, for tests/sim/run.sh -m on the machine's own configuration
+# (configs/G0759/G0759-coffeecnc.ini of the machine configurations). Loaded after the machine's
+# HAL files, from which tests/sim/assemble_machine.sh has dropped every line that matches one
+# of the `#drop:` expressions below. Everything else of those files loads as it is: motion,
+# the four pid loops, near, scale, abs, not, limit1, the spindle and halui nets.
+#
+# Mesa 7i76E: hostmot2, hm2_eth, and every line with a pin or parameter of the card (step
+# generators, spindle encoder, inputs 16 and 17, output 10, its watchdog and DPLL).
+#drop: hostmot2|hm2_
+# The VFD's userspace component on /dev/ttyUSB0 and the two nets to its pins.
+#drop: svd-ps_vfd
+# The RP2040 encoder component: position feedback of the three axes, scales and resets.
+#drop: rp2040
+#
+# What stands in for them:
+#   axes      the step generators run in velocity mode and the encoders report where the axis
+#             is: an integrator per axis, from the pid loop's velocity command (x-output) to
+#             the position feedback (x-pos-fb). No acceleration or velocity limit, no
+#             backlash, no scale error.
+#   spindle   runs at the commanded speed at once (spindle-vel-cmd-rps-abs), plus an offset a
+#             test sets (coffeecnc-sim-spindle-offset, rev/s): the encoder's velocity signal
+#             spindle-vel-fb-rps. The machine's scale.0, abs.0 and near.0 make
+#             spindle-vel-fb-rpm-abs and spindle-at-speed from it, as on the machine.
+#   E-stop    estop-ext has no writer and starts FALSE, the button pressed: a test releases
+#             and presses it with `halcmd sets estop-ext`. It is the machine's only E-stop
+#             input: G0759.hal connects iocontrol.0.user-enable-out to nothing.
+#   probe     probe-in has no writer: a test sets it with `halcmd sets`.
+#   outputs   machine-is-enabled, coolant and the VFD's speed command go nowhere.
+# Modules loaded here must not be among the machine's or CoffeeCNC's (a module loads once).
+loadrt integ names=coffeecnc-sim-x,coffeecnc-sim-y,coffeecnc-sim-z
+loadrt sum2 names=coffeecnc-sim-spindle
+addf coffeecnc-sim-x servo-thread
+addf coffeecnc-sim-y servo-thread
+addf coffeecnc-sim-z servo-thread
+addf coffeecnc-sim-spindle servo-thread
+
+net x-output => coffeecnc-sim-x.in
+net y-output => coffeecnc-sim-y.in
+net z-output => coffeecnc-sim-z.in
+net x-pos-fb <= coffeecnc-sim-x.out
+net y-pos-fb <= coffeecnc-sim-y.out
+net z-pos-fb <= coffeecnc-sim-z.out
+
+net spindle-vel-cmd-rps-abs => coffeecnc-sim-spindle.in0
+net coffeecnc-sim-spindle-offset => coffeecnc-sim-spindle.in1
+net spindle-vel-fb-rps <= coffeecnc-sim-spindle.out

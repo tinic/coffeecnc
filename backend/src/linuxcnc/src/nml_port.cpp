@@ -1,4 +1,5 @@
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
@@ -404,10 +405,13 @@ struct NmlPort::Impl {
   [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, std::string> {
     if (config.tool_table.empty())
       return std::unexpected(std::string("No tool table is configured ([EMCIO] TOOL_TABLE)."));
-    std::ifstream in{config.tool_table, std::ios::binary};
-    if (!in)
-      return std::unexpected(std::format("Cannot read tool table {}.", config.tool_table));
-    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    auto text = read_text_file(config.tool_table, max_tool_table_bytes);
+    if (!text)
+      return std::unexpected(text.error() == TextFileError::too_large
+                                 ? std::format("Tool table {} is larger than 4 MiB.",
+                                               config.tool_table)
+                                 : std::format("Cannot read tool table {}.", config.tool_table));
+    return std::move(*text);
   }
 
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the

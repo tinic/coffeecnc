@@ -3,6 +3,7 @@
 //   coffeecnc_machine_config_tests <tests/sim/run.sh> <scratch directory> <coffeecnc.ini.example>
 
 #include <coffeecnc/linuxcnc/machine_config.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include <algorithm>
 #include <array>
@@ -379,8 +380,7 @@ void simulation_profiles() {
               config->signals.spindle_rpm && config->signals.spindle_at_speed &&
               config->signals.probe && near(config->travel[1].min, -1000),
           "the G0759 simulation INI carries the machine's values");
-  std::ifstream table{config->tool_table};
-  const std::string rows{std::istreambuf_iterator<char>(table), std::istreambuf_iterator<char>()};
+  const auto rows = read_text_file(config->tool_table, 4096).value_or(std::string());
   require(rows == "T0 P0 ;\nT1 P1 ;\nT2 P2 ;\nT3 P3 ;\n", "its tool table has no dimensions");
   const auto refused = std::format("'{}' -n -p g0759 -u inch -d '{}' /bin/true 2>/dev/null", runner,
                                    (scratch / "refused").string());

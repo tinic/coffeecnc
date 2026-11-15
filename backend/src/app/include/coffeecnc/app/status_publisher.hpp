@@ -35,9 +35,12 @@ namespace coffeecnc {
 class PreviewContext {
 public:
   [[nodiscard]] auto update(const PreviewInputs& inputs, bool running) -> std::uint64_t;
-  // The inputs of the context: those given last, with the start state that is in force. Only
-  // after the first update.
-  [[nodiscard]] auto inputs() const -> const PreviewInputs& { return *last_; }
+  // The inputs of the context: those given last, with the machine state that is in force.
+  // Empty inputs before the first update.
+  [[nodiscard]] auto inputs() const -> const PreviewInputs& {
+    static const PreviewInputs none;
+    return last_ ? *last_ : none;
+  }
 
 private:
   std::optional<PreviewInputs> last_;

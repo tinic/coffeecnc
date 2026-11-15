@@ -29,6 +29,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -1106,9 +1107,12 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
   };
   const auto report = [&](std::string_view sample, std::string_view active) -> Json {
     const auto preview = rig.js("return __t.last.preview;");
-    std::size_t points = 0;
-    for (const auto& segment : preview.at("segments"))
-      points += segment.at("points").size() / 3;
+    const auto& segments = preview.at("segments");
+    const auto points =
+        std::accumulate(segments.begin(), segments.end(), std::size_t{0},
+                        [](std::size_t sum, const Json& segment) -> std::size_t {
+                          return sum + segment.at("points").size() / 3;
+                        });
     fact("paired_sample_preview",
          std::format("sample={} active={} state={} error={} segments={} points={} bounds={}",
                      sample, active, preview.at("state").get<std::string>(),

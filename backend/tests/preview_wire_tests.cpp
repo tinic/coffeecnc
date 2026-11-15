@@ -145,7 +145,7 @@ void hostile_results() {
               std::chrono::steady_clock::now() - begun < 5s,
           "The same with a bad word at its end is refused whole, in time");
   begun = std::chrono::steady_clock::now();
-  output = parse_output(std::string(16 * 1024 * 1024, 'x'));
+  output = parse_output(std::string(std::size_t{16} * 1024 * 1024, 'x'));
   require(output.segments.empty() && output.end == HelperEnd::missing &&
               std::chrono::steady_clock::now() - begun < 5s,
           "16 MiB without a newline");
@@ -182,14 +182,15 @@ void blocks_refused_by_their_text() {
               is_call("o<a> call") && is_call("O100 CALL [1]") && !is_call("o<a> sub") &&
               !is_call("G1 X1") && !is_call("o<call> sub"),
           "The name of an O word");
-  require(first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n") &&
-              first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n")->line == 3 &&
+  const auto unsafe = first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n");
+  const auto last_line = first_forbidden_line("\n\n;py,x");
+  require(unsafe && unsafe->line == 3 &&
               first_forbidden_line("o#1 call\n") && first_forbidden_line("(c) o<$a> endsub\n") &&
               !first_forbidden_line("o<ok> call\no100 if [1]\nG1 X1 (o</etc/x> call)\n"),
           "An O word that is not plainly a name is forbidden wherever it stands");
   const auto effect = first_forbidden_line("G1 X1\n(msg, #1)\n( LogOpen,f)\n;py,x\n");
   require(effect && effect->line == 3 && !first_forbidden_line("G1 X#1 (msg,#2)\n; py\n") &&
-              first_forbidden_line("\n\n;py,x") && first_forbidden_line("\n\n;py,x")->line == 3,
+              last_line && last_line->line == 3,
           "The first line of a text with a side effect");
   require(bare_block(" G1 (c) X 1 ; tail") == "g1x1" && bare_block("(a)(b)") .empty(),
           "A bare block");

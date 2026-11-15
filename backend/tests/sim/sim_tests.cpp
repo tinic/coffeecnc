@@ -45,6 +45,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -1699,6 +1700,8 @@ void lines_across_open(Rig& rig) {
     });
   };
   const auto never = []() -> bool { return false; };
+  // What the source reported last, as a value of now.
+  const auto seen = [&shown]() -> Pair { return shown; };
   // Task's counters now, and one line of both views.
   const auto lines = [&](std::string_view at) -> Pair {
     watch(120ms, never);
@@ -1769,14 +1772,15 @@ void lines_across_open(Rig& rig) {
   // An MDI block and a jog after the run: the counters are no longer the program's.
   sent = send(R"("type":"mdi","text":"G0 X2")") && sent;
   watch(100ms, never);
-  const auto during = shown;
+  const auto during = seen();
   watch(5s, [&]() -> bool { return rig.idle(); });
   task = lines("mdi_after_own_run");
-  const auto after_mdi = shown;
+  const auto after_mdi = seen();
   sent = send(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)") && sent;
   watch(3s, [&]() -> bool { return rig.idle(); });
   lines("jog_after_own_run");
-  check("lines_are_withheld_after_an_mdi_block", during == none && after_mdi == none && shown == none,
+  check("lines_are_withheld_after_an_mdi_block",
+        during == none && after_mdi == none && seen() == none,
         std::format("during={},{} after={},{} after_jog={},{}", during.first, during.second,
                     after_mdi.first, after_mdi.second, shown.first, shown.second));
   // And back with the next run.
@@ -1793,13 +1797,13 @@ void lines_across_open(Rig& rig) {
   lines("reopen_second");
   sent = send(R"("type":"set_machine","state":"estop")") && sent;
   task = lines("estop_after_reopen");
-  const auto at_estop = shown;
+  const auto at_estop = seen();
   sent = send(R"("type":"set_machine","state":"off")") && sent;
   lines("off_after_reopen");
   sent = send(R"("type":"set_machine","state":"on")") && sent;
   lines("on_after_reopen");
   fact("homed_after_power_cycle", std::format("x={}", rig.snapshot().axes.at(0).homed));
-  check("lines_of_an_earlier_load_are_withheld", at_estop == none && shown == none,
+  check("lines_of_an_earlier_load_are_withheld", at_estop == none && seen() == none,
         std::format("task_at_estop={},{} shown_at_estop={},{} shown={},{}", task.first,
                     task.second, at_estop.first, at_estop.second, shown.first, shown.second));
 
@@ -1957,20 +1961,20 @@ void oracle_first_block(PreviewOracle& oracle, std::string_view state) {
 // passes through is on the previewed path, and the path has no part the machine skips.
 void oracle_path(PreviewOracle& oracle) {
   Rig& rig = oracle.rig;
-  const auto mdi = [&](std::string_view text) -> bool {
+  const auto block = [&](std::string_view text) -> bool {
     const auto sent = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
     rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
     return sent.accepted();
   };
   const auto was = rig.status();
-  bool set = mdi("G21 G90 G54") && mdi("G10 L2 P1 X20 Y10 Z5 R30");
+  bool set = block("G21 G90 G54") && block("G10 L2 P1 X20 Y10 Z5 R30");
   if (rig.snapshot().tool_in_spindle != 1) {
     static_cast<void>(rig.send(R"("type":"mdi","text":"T1 M6")"));
     rig.pump_until(10s, [&]() -> bool { return rig.snapshot().requested_tool.has_value(); });
     static_cast<void>(rig.send(R"("type":"tool_changed")"));
     rig.pump_until(10s, [&]() -> bool { return rig.idle() && rig.snapshot().tool_in_spindle == 1; });
   }
-  set = mdi("G43") && set;
+  set = block("G43") && set;
   auto [inputs, preview] = oracle.preview("G21 G90 G61\n"                    // 1
                                           "G0 X0 Y0 Z10\n"                   // 2
                                           "G1 X20 F1500\n"                   // 3
@@ -2005,23 +2009,27 @@ void oracle_path(PreviewOracle& oracle) {
   });
   rig.pump(200ms);
   samples.push_back(oracle.position());
-  double off_path = 0;
-  for (const auto& sample : samples) {
-    double nearest = 1e9;
-    for (const auto& [a, b] : pieces)
-      nearest = std::min(nearest, distance(sample, a, b));
-    off_path = std::max(off_path, nearest);
-  }
-  double skipped = 0;
-  for (const auto& corner : corners) {
-    double nearest = 1e9;
-    for (const auto& sample : samples)
-      nearest = std::min(nearest, distance(corner, sample));
-    skipped = std::max(skipped, nearest);
-  }
+  // The farthest any sampled position is from the path, and any point of the path from a
+  // sampled position.
+  const auto farthest = [](const auto& from, const auto& nearest_to) -> double {
+    return std::transform_reduce(
+        from.begin(), from.end(), 0.0,
+        [](double a, double b) -> double { return std::max(a, b); }, nearest_to);
+  };
+  const double off_path = farthest(samples, [&](const Vec3& sample) -> double {
+    return std::transform_reduce(
+        pieces.begin(), pieces.end(), 1e9,
+        [](double a, double b) -> double { return std::min(a, b); },
+        [&](const auto& piece) -> double { return distance(sample, piece.first, piece.second); });
+  });
+  const double skipped = farthest(corners, [&](const Vec3& corner) -> double {
+    return std::transform_reduce(
+        samples.begin(), samples.end(), 1e9,
+        [](double a, double b) -> double { return std::min(a, b); },
+        [&](const Vec3& sample) -> double { return distance(corner, sample); });
+  });
   std::vector<int> lines;
-  for (const auto& segment : preview.segments)
-    lines.push_back(segment.line);
+  std::ranges::transform(preview.segments, std::back_inserter(lines), &PreviewSegment::line);
   const Vec3 last = corners.empty() ? Vec3{} : corners.back();
   check("preview_oracle_path",
         set && run.accepted() && finished && preview.state == PreviewState::ready &&
@@ -2036,8 +2044,8 @@ void oracle_path(PreviewOracle& oracle) {
                     corners.size(), samples.size(), tool[2], off_path, skipped, last[0], last[1],
                     last[2], samples.back()[0], samples.back()[1], samples.back()[2]));
   // As it was before.
-  static_cast<void>(mdi("G21 G90 G64 G49"));
-  static_cast<void>(mdi(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0],
+  static_cast<void>(block("G21 G90 G64 G49"));
+  static_cast<void>(block(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0],
                                     was.g5x[1], was.g5x[2], was.rotation_xy)));
 }
 
@@ -2056,12 +2064,12 @@ public:
 // when it has ended, what it left is one new context.
 void preview_context_during_a_run(PreviewOracle& oracle) {
   Rig& rig = oracle.rig;
-  const auto mdi = [&](std::string_view text) -> void {
+  const auto block = [&](std::string_view text) -> void {
     static_cast<void>(rig.send(std::format(R"("type":"mdi","text":"{}")", text)));
     rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
   };
-  mdi("G21 G90 G54 G49");
-  mdi("G0 X0 Y0 Z20");
+  block("G21 G90 G54 G49");
+  block("G0 X0 Y0 Z20");
   if (rig.snapshot().tool_in_spindle != 1) {
     static_cast<void>(rig.send(R"("type":"mdi","text":"T1 M6")"));
     rig.pump_until(10s, [&]() -> bool { return rig.snapshot().requested_tool.has_value(); });
@@ -2162,8 +2170,8 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
                     open.text(), run.text(), ended, paused_seen, g92_seen, offset_seen, tool_seen,
                     at_start, during.size(), computed_during - computed_at_start, context,
                     service.contexts.size() - computed_at_start));
-  mdi("G21 G90 G49");
-  mdi(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0], was.g5x[1], was.g5x[2],
+  block("G21 G90 G49");
+  block(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0], was.g5x[1], was.g5x[2],
                   was.rotation_xy));
 }
 

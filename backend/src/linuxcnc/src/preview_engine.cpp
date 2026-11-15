@@ -103,7 +103,7 @@ auto find_subroutine(const std::vector<std::string>& search_path, const std::str
 }
 
 auto megabytes(std::size_t bytes) -> std::string {
-  return std::format("{} MiB", bytes / (1024 * 1024));
+  return std::format("{} MiB", bytes / (std::size_t{1024} * 1024));
 }
 
 struct SnapshotFailure {
@@ -468,8 +468,9 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
     if (close_range(4, ~0U, 0) != 0 || chdir(working.c_str()) != 0)
       _exit(126);
     limit(RLIMIT_CPU, cpu_seconds);
-#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
-    // Not in a sanitizer build: the sanitizers reserve address space far beyond any bound.
+#if !defined(COFFEECNC_ADDRESS_SANITIZER) && !defined(COFFEECNC_THREAD_SANITIZER)
+    // Not in a sanitizer build (the definitions are the build system's, cmake/
+    // ProjectOptions.cmake): the sanitizers reserve address space far beyond any bound.
     limit(RLIMIT_AS, rlim_t{2} * 1024 * 1024 * 1024);
 #endif
     limit(RLIMIT_FSIZE, rlim_t{8} * 1024 * 1024);
@@ -491,7 +492,7 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   setpgid(child, child);
 
   // One point is at most about 40 bytes of text.
-  const std::size_t most = settings.max_points * 48 + 1024 * 1024;
+  const std::size_t most = settings.max_points * 48 + std::size_t{1024} * 1024;
   const auto deadline = Clock::now() + settings.timeout;
   bool killed = false;
   const auto end = [&](HelperExit why) -> void {
@@ -649,9 +650,10 @@ auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lin
 auto to_helper_tools(const std::vector<PreviewTool>& tools) -> std::vector<HelperTool> {
   std::vector<HelperTool> out;
   out.reserve(tools.size());
-  for (const auto& tool : tools)
-    out.push_back({tool.index, tool.number, tool.pocket, tool.offset, tool.diameter,
-                   tool.front_angle, tool.back_angle, tool.orientation});
+  std::ranges::transform(tools, std::back_inserter(out), [](const PreviewTool& tool) -> HelperTool {
+    return {tool.index, tool.number, tool.pocket, tool.offset, tool.diameter,
+            tool.front_angle, tool.back_angle, tool.orientation};
+  });
   return out;
 }
 
@@ -698,8 +700,9 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     std::istringstream words{*position};
     Vec3 where{};
     if (words >> where[0] >> where[1] >> where[2]) {
-      for (auto& axis : where)
-        axis *= config.millimetres_per_unit;
+      std::ranges::transform(where, where.begin(), [&](double axis) -> double {
+        return axis * config.millimetres_per_unit;
+      });
       settings.tool_change_position = where;
     }
   }
@@ -708,7 +711,6 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     if (const auto value = text("RS274NGC", key))
       settings.interpreter_options.push_back(std::format("{} = {}", key, *value));
 
-  std::error_code error;
   if (text("RS274NGC", "REMAP"))
     settings.refusal = "This machine remaps codes ([RS274NGC] REMAP): the preview cannot follow "
                        "a remapped code and is not computed.";

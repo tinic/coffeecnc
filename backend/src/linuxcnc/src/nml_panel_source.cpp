@@ -258,7 +258,7 @@ auto NmlPanelSource::read() -> PanelReading {
       to_panel_status(status, impl_->config, tools, loaded ? impl_->program_revision : 0);
   // The text goes with the status that names its file; a file task named during this very
   // call is read in the next period.
-  if (loaded) {
+  if (loaded && latest) {
     impl_->track_lines(status, latest->read_at);
     reading.status.program.current_line = impl_->lines.current;
     reading.status.program.motion_line = impl_->lines.motion;

@@ -18,6 +18,7 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -77,6 +78,13 @@ auto text_of(const PreviewOutcome& outcome) -> std::string {
   return text;
 }
 
+auto points_of(const PreviewOutcome& outcome) -> std::size_t {
+  return std::accumulate(outcome.segments.begin(), outcome.segments.end(), std::size_t{0},
+                         [](std::size_t sum, const PreviewSegment& segment) -> std::size_t {
+                           return sum + segment.points.size();
+                         });
+}
+
 // A machine of the test's own in a directory of its own.
 struct Rig {
   fs::path root;
@@ -111,9 +119,11 @@ struct Rig {
     lookups = engine.file_lookups();
     return computed;
   }
+  // The program file of the inputs.
+  [[nodiscard]] auto file() const -> std::string { return inputs.program_file.value_or(""); }
   // The preview of a program text.
   auto preview(std::string_view program) -> PreviewOutcome {
-    write(*inputs.program_file, program);
+    write(file(), program);
     return compute().outcome;
   }
   // Nothing of a computation stays in the work directory.
@@ -320,8 +330,7 @@ void subroutines() {
                        "M2\n");
   require(o.state == PreviewState::ready, text_of(o));
   std::vector<int> lines;
-  for (const auto& segment : o.segments)
-    lines.push_back(segment.line);
+  std::ranges::transform(o.segments, std::back_inserter(lines), &PreviewSegment::line);
   require(lines == std::vector<int>{2, 3, 4, 6, 10},
           "Moves of a subroutine file carry the line of the call, those of a subroutine in the "
           "program their own line: " + text_of(o));
@@ -371,9 +380,7 @@ void errors_and_limits() {
   // A loop without end that moves: the point limit.
   rig.settings.max_points = 1000;
   o = rig.preview("G21 G91\no1 while [1]\nG1 X1 F100\nG1 Y1\no1 endwhile\nM2\n");
-  std::size_t points = 0;
-  for (const auto& segment : o.segments)
-    points += segment.points.size();
+  const auto points = points_of(o);
   require(o.state == PreviewState::failed && o.error &&
               o.error->text.find("more than 1000 points") != std::string::npos &&
               points >= 1000 && points <= 1002,
@@ -394,7 +401,7 @@ void errors_and_limits() {
 
   // Given up when nobody wants it any more.
   rig.settings.timeout = 20s;
-  write(*rig.inputs.program_file, "o1 while [1]\no1 endwhile\n");
+  write(rig.file(), "o1 while [1]\no1 endwhile\n");
   const auto asked = std::chrono::steady_clock::now();
   const auto computed = rig.compute([&]() -> bool {
     return std::chrono::steady_clock::now() - asked > 200ms;
@@ -619,7 +626,7 @@ auto changed(const PreviewComputation& computed) -> bool { return computed.files
 
 void files_are_bound_to_the_result() {
   Rig rig{"files"};
-  const auto program = fs::path(*rig.inputs.program_file);
+  const auto program = fs::path(rig.file());
   const auto sub = rig.root / "subs" / "step.ngc";
   write(sub, "o<step> sub\nG91 G1 X1 F100\nG90\no<step> endsub\nM2\n");
   write(program, "G21 G90\no<step> call\nM2\n");
@@ -784,31 +791,33 @@ void call_bounds_and_cancellation() {
   for (int i = 0; i < 20000; ++i)
     program += std::format("o<missing{}> call\n", i % 256);
   program += "M2\n";
-  write(*rig.inputs.program_file, program);
+  write(rig.file(), program);
   HelperPreviewEngine engine{rig.settings};
   auto computed = engine.compute(rig.inputs, {});
   require(computed.outcome.state == PreviewState::failed && engine.helper_runs() == 1 &&
-              engine.file_lookups() == 2 * 256 * 3,
+              engine.file_lookups() == std::size_t{2} * 256 * 3,
           std::format("256 names: looked up once each per directory, at the snapshot and at "
                       "the check ({} lookups): {}",
                       engine.file_lookups(), text_of(computed.outcome)));
 
   // A look at the files that is given up returns at once and reports no change.
-  const auto before = engine.file_lookups();
-  write(*rig.inputs.program_file, "changed\n");
+  // (Through a call of its own: what the engine counted is not a constant between two looks.)
+  const auto looked = [&engine]() -> std::size_t { return engine.file_lookups(); };
+  const auto before = looked();
+  write(rig.file(), "changed\n");
   begun = std::chrono::steady_clock::now();
   const bool given_up = computed.files_changed([]() -> bool { return true; });
   took = std::chrono::steady_clock::now() - begun;
-  require(!given_up && engine.file_lookups() == before && took < 100ms,
+  require(!given_up && looked() == before && took < 100ms,
           "A cancelled look at the files does nothing");
   int asked = 0;
   require(!computed.files_changed([&]() -> bool { return ++asked > 10; }) &&
-              engine.file_lookups() == before + 10 * 3,
+              looked() == before + std::size_t{30},
           "Cancellation is asked before every name");
   require(computed.files_changed({}), "Not cancelled, the change is found");
 
   // A computation is given up between its files.
-  write(*rig.inputs.program_file, "G21 G90\no<a> call\no<b> call\nM2\n");
+  write(rig.file(), "G21 G90\no<a> call\no<b> call\nM2\n");
   for (const auto* name : {"a", "b"})
     write(rig.root / "subs" / (std::string(name) + ".ngc"),
           std::format("o<{0}> sub\no<{0}> endsub\nM2\n", name));
@@ -827,7 +836,7 @@ void cost_of_a_check() {
   while (program.size() + 40 < bytes)
     program += "(123456789012345678901234567890)\n";
   program += "M2\n";
-  write(*rig.inputs.program_file, program);
+  write(rig.file(), program);
   auto begun = std::chrono::steady_clock::now();
   const auto computed = rig.compute();
   const auto compute_ms =
@@ -852,7 +861,7 @@ void cost_of_a_check() {
 void how_the_helper_ended() {
   Rig rig{"ended"};
   rig.settings.exit_grace = 400ms;
-  write(*rig.inputs.program_file, "G21 G90\nG1 X1 F100\nM2\n");
+  write(rig.file(), "G21 G90\nG1 X1 F100\nM2\n");
   const auto pid_file = rig.root / "pid";
   const auto with = [&](std::string_view body) -> PreviewOutcome {
     const auto script = rig.root / "helper.sh";
@@ -952,13 +961,9 @@ void repository_samples() {
     rig.inputs.start.active_codes = {"G80", "G17", "G40", "G21", "G90", "G94",
                                      wcs == 1 ? "G54" : "G55", "G49", "G99"};
     const auto o = rig.compute().outcome;
-    std::size_t points = 0;
-    for (const auto& segment : o.segments)
-      points += segment.points.size();
+    const auto points = points_of(o);
     auto text = o.error ? o.error->text : std::string("-");
-    for (auto& c : text)
-      if (c == ' ')
-        c = '_';
+    std::ranges::replace(text, ' ', '_');
     std::cout << std::format(
         "fact=preview_sample sample={} start={} state={} error_line={} error_text={} segments={} "
         "points={} bounds={}\n",

@@ -121,6 +121,9 @@ public:
     finished = std::make_shared<const Preview>(std::move(preview));
   }
 
+  // The worker has compared the files and found them the same.
+  void compared() { checking = false; }
+
   std::vector<Submitted> submitted;
   std::vector<std::uint64_t> revalidated;
   bool checking{};
@@ -332,7 +335,8 @@ void composer_block_delete_during_a_run() {
   static_cast<void>(compose(composer, r));
   r.status.program.block_delete = false;
   step = compose(composer, r);
-  require(step.context() == first + 2 && step.preview->at("state") == "unavailable" &&
+  require(step.context() == first + 2 && step.preview &&
+              step.preview->at("state") == "unavailable" &&
               service.submitted.size() == 2,
           "Switched again in a pause: no plan");
   r.status.program.block_delete = true;
@@ -345,7 +349,7 @@ void composer_block_delete_during_a_run() {
           "preview of before");
   r.status.interp = InterpState::idle;
   step = compose(composer, r);
-  require(step.context() == first + 3 && service.submitted.size() == 3 &&
+  require(step.context() == first + 3 && service.submitted.size() == 3 && step.preview &&
               step.preview->at("state") == "pending",
           "When the run has ended: one computation for the state found");
   // Optional stop is not an input of a preview.
@@ -507,7 +511,9 @@ void composer_reuses_the_result_of_its_context() {
   auto r = reading();
   const auto first = compose(composer, r).context();
   service.finish(first);
-  require(compose(composer, r).preview->at("state") == "ready", "Computed and shown");
+  auto step_shown = compose(composer, r);
+  require(step_shown.preview && step_shown.preview->at("state") == "ready",
+          "Computed and shown");
   auto down = r;
   down.status.link = Link::down;
   static_cast<void>(compose(composer, down));
@@ -526,7 +532,7 @@ void composer_reuses_the_result_of_its_context() {
           "At rest with the inputs of before: nothing is computed; the result is checked "
           "again, and pending until it is");
   require(!compose(composer, r).preview && service.revalidated.size() == 1, "Asked once");
-  service.checking = false; // the worker compared the files: unchanged
+  service.compared(); // the worker compared the files: unchanged
   step = compose(composer, r);
   require(step.context() == first && step.preview && step.preview->at("state") == "ready" &&
               step.preview->at("context") == first && service.submitted.size() == 1,
@@ -539,7 +545,8 @@ void composer_reuses_the_result_of_its_context() {
   static_cast<void>(compose(composer, r));
   r.status.interp = InterpState::idle;
   step = compose(composer, r);
-  require(step.preview->at("state") == "pending" && service.revalidated.size() == 2 &&
+  require(step.preview && step.preview->at("state") == "pending" &&
+              service.revalidated.size() == 2 &&
               service.submitted.size() == 1,
           "Again at rest: checked again");
   service.generation = 1;
@@ -549,7 +556,7 @@ void composer_reuses_the_result_of_its_context() {
           "A file that changed meanwhile: a new context, one computation");
 
   // The complement: the inputs differ after the run: one computation, no check.
-  service.checking = false;
+  service.compared();
   service.finish(first + 1);
   static_cast<void>(compose(composer, r));
   static_cast<void>(compose(composer, down));

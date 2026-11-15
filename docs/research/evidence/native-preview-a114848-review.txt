@@ -515,3 +515,26 @@ results remain pending. No hardware run or additional sanitizer pass is implied.
 
 Host: backend/build/sim-history/9892a42/dev/ on playhouse2.
 Local: /tmp/coffeecnc-main-9892a42-review/dev/.
+
+G55 synchronization closure: fe78805, 2026-11-15 02:29 UTC
+
+PR #17 merged as 050e5ff at reviewed head 4fd5c75 (verification-only final
+commit; tested source fe78805). Codex reviewed the full test-only change and
+independently copied/read provenance, CTest, LastTest, shell logs and analyzer
+output from sim-history/fe78805/{dev-shell,analyze}.
+
+The wait requires the observed target WCS and a finished preview of the current
+status context. Recorded transition cases reject the old consistent G54 pair,
+G55 with an old preview, a pending preview and a missing preview; only the
+finished matching G55 pair passes. Assertions record actual WCS/context.
+
+Dev: panel_bundle plus shell mm/inch 3/3 in 75.15 s; shell checks 231/231 each,
+actual children exit 0. The G55 check observes mm context 37 after G54 36 and
+inch context 40 after G54 39, each WCS=2 with matching status/preview and ready
+geometry. Served panel inputs/assets match the unchanged 6b1eb88 bundle.
+Analyze rebuilds and checks shell_tests.cpp, exits 0 with no finding; this is
+analysis of the changed test translation unit, not a fresh full-tree build.
+No new sanitizer run or rerun of the other 24 dev tests. The failed 9892a42
+full-suite result remains retained above. No product or hardware change.
+
+Local evidence: /tmp/coffeecnc-g55-fe78805-review/{dev-shell,analyze}/.

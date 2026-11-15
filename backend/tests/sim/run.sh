@@ -8,6 +8,8 @@
 #   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
 #
+# @RUN@ in an INI template is the run directory.
+#
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. This script assembles the run directory, waits for
 # the program with a hard timeout, makes sure every process it started is gone, and exits with the
@@ -100,15 +102,18 @@ chmod +x "$directory/display.sh" || exit 125
 
 # The run directory holds only generated files.
 perl -pe '
-  BEGIN { $inch = shift eq "inch"; $display = shift; }
+  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; }
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
+  s/\@RUN\@/$run/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$directory/display.sh $*" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh $*" "$directory" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done
 rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log"
+# What an earlier run saved there ([COFFEECNC] DATA_DIRECTORY of the g0759 profile).
+rm -rf "$directory/coffeecnc-data"
 # Tool table in machine units: T number, P pocket, Z length, D diameter.
 if [ "$profile" = g0759 ]; then
   # As the machine's table: no length, no diameter, no description.

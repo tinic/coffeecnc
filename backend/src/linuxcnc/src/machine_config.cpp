@@ -296,6 +296,8 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .parameter_file = path("RS274NGC", "PARAMETER_FILE"),
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
+      .machine_id = ini.text("COFFEECNC", "MACHINE_ID"),
+      .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
   };
 }
 

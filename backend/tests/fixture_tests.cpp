@@ -1,6 +1,7 @@
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
+#include <coffeecnc/app/tool_models.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -41,7 +42,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "step",        "abort",          "set_override",
     "set_spindle", "set_coolant",    "set_program_option",
     "select_wcs",  "touch_off",      "tool_touch_off",
-    "set_tool",    "remove_tool",    "tool_changed"};
+    "set_tool",    "remove_tool",    "tool_changed",
+    "set_tool_model_defaults",       "set_tool_model_assignment"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};
@@ -106,6 +108,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   g0759.max_feed_override = 1.2;
   g0759.min_spindle_override = 0.5;
   g0759.max_spindle_override = 1.5;
+  g0759.machine_id = "G0759";
   messages.push_back(encode_hello(g0759));
 
   Hello demo;
@@ -259,6 +262,23 @@ auto encoded_messages() -> std::vector<Encoded> {
   many.entries = {{"0001.ngc", EntryKind::file, 12, 1700000200000}};
   many.truncated = true;
   messages.push_back(encode_directory(many));
+
+  ToolModels saved;
+  saved.machine_id = "G0759";
+  saved.revision = 2;
+  saved.availability = ToolModelAvailability::available;
+  ToolModelAssignment end_mill{{3, 3, 6, "End mill 6 mm"}, ToolFamily::end_mill, {}};
+  end_mill.overrides.stickout = 30;
+  saved.document = ToolModelDocument{factory_tool_defaults(), {end_mill}};
+  messages.push_back(encode_tool_models(saved));
+  ToolModels session_only;
+  session_only.reason = "No machine identity configured";
+  messages.push_back(encode_tool_models(session_only));
+  ToolModels in_use;
+  in_use.machine_id = "G0759";
+  in_use.availability = ToolModelAvailability::unavailable;
+  in_use.reason = "Tool model settings are already in use";
+  messages.push_back(encode_tool_models(in_use));
   return messages;
 }
 
@@ -282,6 +302,8 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("machine_units", message.at("machine_units").get<std::string>());
     const auto& caps = message.at("axis_max_jog_velocity");
     add("axis_max_jog_velocity", caps.at("x") == caps.at("z") ? "equal" : "per axis");
+    add("machine_id", message.at("machine_id").is_null() ? "null" : "given");
+    add("tool_model_storage", message.at("tool_model_storage").dump());
   } else if (type == "status") {
     for (const auto* field : {"link", "machine", "mode", "interp", "program_units"})
       add(field, message.at(field).get<std::string>());
@@ -295,6 +317,15 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("file", message.at("program").at("file").is_null() ? "null" : "path");
   } else if (type == "tool_table") {
     add("tools", message.at("tools").empty() ? "empty" : "some");
+  } else if (type == "tool_models") {
+    add("availability", message.at("availability").get<std::string>());
+    add("machine_id", message.at("machine_id").is_null() ? "null" : "given");
+    add("document", message.at("document").is_null() ? "null" : "given");
+    if (!message.at("document").is_null()) {
+      add("assignments", message.at("document").at("assignments").empty() ? "empty" : "some");
+      for (const auto& assignment : message.at("document").at("assignments"))
+        add("overrides", assignment.at("overrides").empty() ? "empty" : "some");
+    }
   } else if (type == "work_offsets") {
     for (const auto& system : message.at("systems"))
       add("available", system.at("available").get<bool>() ? "true" : "false");
@@ -342,6 +373,19 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "status mode mdi",
     "status mode auto",
     "status interp idle",
+    "hello machine_id null",
+    "hello machine_id given",
+    "hello tool_model_storage 1",
+    "tool_models",
+    "tool_models availability available",
+    "tool_models availability session_only",
+    "tool_models availability unavailable",
+    "tool_models machine_id null",
+    "tool_models machine_id given",
+    "tool_models document null",
+    "tool_models document given",
+    "tool_models assignments some",
+    "tool_models overrides some",
     "status interp reading",
     "status interp paused",
     "status interp waiting",

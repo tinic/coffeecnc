@@ -19,6 +19,8 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.max_feed_override = config.limits.max_feed_override;
   hello.min_spindle_override = config.limits.min_spindle_override;
   hello.max_spindle_override = config.limits.max_spindle_override;
+  if (config.machine_id && valid_machine_id(*config.machine_id))
+    hello.machine_id = config.machine_id;
   return hello;
 }
 

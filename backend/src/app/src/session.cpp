@@ -64,6 +64,16 @@ constexpr auto touch_off_reason = "The tool length was set, but a stop request c
 constexpr auto stopped_reason = "The jog was stopped before it started.";
 constexpr auto release_reason = "Release the jog control before jogging again.";
 constexpr auto hold_reason = "A jog stop is in progress.";
+constexpr auto no_tool_models_reason = "Tool model storage is not part of this session.";
+
+// The tool-model command in a request, if it is one.
+auto tool_model_command(Command& command) -> std::optional<ToolModelCommand> {
+  if (auto* defaults = std::get_if<SetToolModelDefaults>(&command))
+    return std::move(*defaults);
+  if (auto* assignment = std::get_if<SetToolModelAssignment>(&command))
+    return std::move(*assignment);
+  return {};
+}
 
 // Abort, E-stop and power off: whatever waits must not run after them.
 auto cancels_requests(const Command& command) -> bool {
@@ -92,8 +102,9 @@ auto starts_jog(const Command& command) -> bool {
 
 } // namespace
 
-Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs)
-    : port_(port), programs_(programs), policy_(limits) {}
+Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
+                 ToolModelService* tool_models)
+    : port_(port), programs_(programs), tool_models_(tool_models), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -136,6 +147,8 @@ auto Session::begin_page() -> PageToken {
   ready_ = false;
   last_id_.reset();
   page_open_ = !closing_;
+  if (tool_models_ != nullptr)
+    tool_models_->page_ended(PageToken{pages_});
   return PageToken{++pages_};
 }
 
@@ -149,6 +162,8 @@ void Session::end_page(PageToken page) {
   ready_ = false;
   last_id_.reset();
   page_open_ = false;
+  if (tool_models_ != nullptr)
+    tool_models_->page_ended(page);
 }
 
 void Session::close() {
@@ -158,6 +173,8 @@ void Session::close() {
   stop_jogs();
   drop_requests();
   page_open_ = false;
+  if (tool_models_ != nullptr)
+    tool_models_->page_ended(PageToken{pages_});
   wake();
 }
 
@@ -192,6 +209,21 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
   }
   if (!ready_) {
     result(CommandOutcome::rejected, "Panel has not finished loading.");
+    return outcome;
+  }
+
+  // Visual preferences: not the controller's business and not gated by its state. The policy
+  // is asked all the same, so that it stays the one place that says what is permitted.
+  if (std::holds_alternative<SetToolModelDefaults>(request.command) ||
+      std::holds_alternative<SetToolModelAssignment>(request.command)) {
+    auto decision = policy_.evaluate(request.command, status(now.monotonic));
+    auto models = tool_model_command(request.command);
+    if (!decision.allowed || !models)
+      result(CommandOutcome::rejected, decision.reason);
+    else if (tool_models_ == nullptr)
+      result(CommandOutcome::rejected, no_tool_models_reason);
+    else if (const auto refused = tool_models_->submit(page, request.id, std::move(*models)))
+      result(CommandOutcome::rejected, *refused);
     return outcome;
   }
 
@@ -700,12 +732,17 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.remove_tool(c.number, still);
           });
-        } else {
-          static_assert(std::is_same_v<T, ToolChanged>, "Every command needs an action.");
+        } else if constexpr (std::is_same_v<T, ToolChanged>) {
           // The tool the decision was made for: not another one asked for since.
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.tool_changed(state.requested_tool.value_or(-1), state.tool_request, still);
           });
+        } else {
+          static_assert(std::is_same_v<T, SetToolModelDefaults> ||
+                            std::is_same_v<T, SetToolModelAssignment>,
+                        "Every command needs an action.");
+          // `submit` hands these to the tool-model service: none is ever queued.
+          return answer({CommandOutcome::rejected, no_tool_models_reason});
         }
       },
       request.command);

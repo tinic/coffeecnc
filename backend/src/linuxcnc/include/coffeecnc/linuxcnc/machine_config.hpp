@@ -6,6 +6,7 @@
 
 #include <array>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,6 +53,11 @@ struct MachineConfig {
   std::string parameter_file;
   std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
   std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
+  // [COFFEECNC] MACHINE_ID and DATA_DIRECTORY as written, not judged and not resolved; empty
+  // when the key is absent. They say where the tool models are saved (app layer:
+  // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.
+  std::optional<std::string> machine_id;
+  std::optional<std::string> data_directory;
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

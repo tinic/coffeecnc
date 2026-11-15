@@ -13,6 +13,8 @@
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/app/session.hpp>
+#include <coffeecnc/app/tool_model_store.hpp>
+#include <coffeecnc/app/tool_models.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
@@ -37,6 +39,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
@@ -56,6 +59,7 @@
 #include <vector>
 
 #include <signal.h> // kill, SIGSTOP: POSIX, not in <csignal>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 using namespace coffeecnc;
@@ -2611,6 +2615,334 @@ void g0759_homing(Rig& rig) {
         std::format("{} moved={:.3f} teleop={}", pressed.text(), moving - start, world));
 }
 
+// Everything a shell command prints.
+auto all_output_of(const std::string& command) -> std::string {
+  std::string text;
+  if (FILE* pipe = popen(command.c_str(), "r"); pipe != nullptr) {
+    std::array<char, 4096> buffer{};
+    for (std::size_t got = 0; (got = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0;)
+      text.append(buffer.data(), got);
+    static_cast<void>(pclose(pipe));
+  }
+  return text;
+}
+
+auto file_text(const std::string& path) -> std::string {
+  std::ifstream in{path, std::ios::binary};
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+// Where the INI file keeps this machine's tool models, with no environment to fall back on.
+auto tool_model_location(const MachineConfig& config) -> ToolModelLocation {
+  return resolve_tool_model_location({config.machine_id, config.data_directory, {}, {}});
+}
+
+// `coffeecnc_sim_tests -ini <file> --tool-models`: another process of this machine opens its
+// tool models and prints the snapshot it would send. Needs no LinuxCNC.
+auto print_tool_models(const std::string& ini_file) -> int {
+  const auto config = load_machine_config(ini_file);
+  if (!config) {
+    std::cout << config.error() << '\n';
+    return 1;
+  }
+  LocalToolModelFiles files;
+  ToolModelArchive archive{files, tool_model_location(*config)};
+  archive.open();
+  std::cout << archive.snapshot() << '\n' << std::flush;
+  return 0;
+}
+
+// One session of the executable as far as the tool models go, wired as application.cpp wires
+// it: the store on the real files with its writer thread, a runtime that hands it the panel's
+// commands, and the publisher, whose `hello` the snapshot follows. Everything the three would
+// post to the window is kept in the order it was posted.
+class ModelSession {
+public:
+  ModelSession(Rig& rig, const LoadedToolTable& table)
+      : source_(rig.config, *rig.mailbox,
+                [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
+                  return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
+                },
+                [&rig](std::string_view path,
+                       std::uint64_t revision) -> std::expected<ProgramText, std::string> {
+                  return rig.programs.read_program(path, revision);
+                },
+                rig.loads),
+        store_(files_, tool_model_location(rig.config),
+               [this](PageToken at, const std::vector<std::string>& messages) -> void {
+                 post(at, messages);
+               }),
+        runtime_(rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
+                 [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
+                 &store_),
+        feed_(source_,
+              [this](PageToken at, const std::vector<std::string>& messages) -> void {
+                post(at, messages);
+              },
+              nullptr, [this](PageToken at) -> void { store_.send_snapshot(at); }),
+        page_(runtime_.begin_page()) {
+    static_cast<void>(send(R"("type":"ready")"));
+    feed_.page_ready(page_);
+  }
+
+  // A request and the position of its result among the messages; nothing when none came.
+  auto send(std::string_view body) -> std::optional<std::size_t> {
+    const auto id = next_id_++;
+    post(page_, runtime_.submit(page_, std::format("{{\"id\":{},{}}}", id, body)).messages);
+    return wait([&](const Json& message) -> bool {
+      return message.at("type") == "result" && message.at("id") == id;
+    });
+  }
+  // The position of the first message, from `from` on, that `wanted` holds for.
+  auto wait(const std::function<bool(const Json&)>& wanted, std::size_t from = 0,
+            std::chrono::milliseconds timeout = 10s) -> std::optional<std::size_t> {
+    for (const auto end = Clock::now() + timeout; Clock::now() < end;) {
+      {
+        const std::lock_guard lock{mutex_};
+        for (std::size_t i = from; i < messages_.size(); ++i)
+          if (wanted(messages_[i]))
+            return i;
+      }
+      std::this_thread::sleep_for(2ms);
+    }
+    return {};
+  }
+  auto first(std::string_view type, std::size_t from = 0) -> std::optional<std::size_t> {
+    return wait([&](const Json& message) -> bool { return message.at("type") == type; }, from);
+  }
+  auto at(std::size_t position) -> Json {
+    const std::lock_guard lock{mutex_};
+    return messages_.at(position);
+  }
+  // The last message of this type so far.
+  auto last(std::string_view type) -> Json {
+    const std::lock_guard lock{mutex_};
+    for (std::size_t i = messages_.size(); i > 0; --i)
+      if (messages_[i - 1].at("type") == type)
+        return messages_[i - 1];
+    return nullptr;
+  }
+  auto count() -> std::size_t {
+    const std::lock_guard lock{mutex_};
+    return messages_.size();
+  }
+
+private:
+  void post(PageToken at, const std::vector<std::string>& messages) {
+    const std::lock_guard lock{mutex_};
+    // As the window does: only for the page it shows.
+    if (at != page_)
+      return;
+    std::ranges::transform(messages, std::back_inserter(messages_),
+                           [](const std::string& text) -> Json { return Json::parse(text); });
+  }
+
+  std::mutex mutex_;
+  std::vector<Json> messages_;
+  LocalToolModelFiles files_;
+  NmlPanelSource source_;
+  ToolModelStore store_;
+  Runtime runtime_;
+  PanelFeed feed_;
+  PageToken page_;
+  RequestId next_id_{1};
+};
+
+// What of LinuxCNC a tool model must never change: the tool table file, the parameter file with
+// the work systems, the tool table and the offsets as the panel is told them.
+struct MachineFacts {
+  std::string tool_file;
+  std::string parameter_file;
+  Json tools;
+  Json offsets;
+  friend auto operator==(const MachineFacts&, const MachineFacts&) -> bool = default;
+};
+auto machine_facts(const Rig& rig, ModelSession& session) -> MachineFacts {
+  const auto status = session.first("status", session.count());
+  return {file_text(rig.config.tool_table), file_text(rig.config.parameter_file),
+          session.last("tool_table").value("tools", Json()),
+          status ? session.at(*status).value("offsets", Json()) : Json()};
+}
+
+// The tool models end to end on the G0759 profile, whose INI file names its machine and keeps
+// its data in the run directory: hello, the snapshot after ready, a defaults save and an
+// assignment save in their stated order, a second process locked out while this one runs and
+// shown the saved state after it has ended, and a second session that shows it too. LinuxCNC's
+// tool table and offsets are compared before and after.
+void tool_models(Rig& rig, const std::string& ini_file) {
+  const auto where = tool_model_location(rig.config);
+  const auto saved_file = where.directory + "/tool-models.json";
+  const auto run_directory = std::filesystem::path(ini_file).parent_path().string();
+  check("tool_models_location",
+        where.availability == ToolModelAvailability::available &&
+            where.directory == run_directory + "/coffeecnc-data/G0759-sim" &&
+            !std::filesystem::exists(where.directory),
+        "directory=" + where.directory + " reason=" + where.reason);
+  const auto self = std::filesystem::read_symlink("/proc/self/exe").string();
+  const auto other_process = [&]() -> Json {
+    const auto printed = all_output_of(std::format("'{}' -ini '{}' --tool-models", self, ini_file));
+    return Json::parse(printed, nullptr, false);
+  };
+  const auto mode = [](const std::string& path) -> unsigned {
+    struct stat info {};
+    return ::stat(path.c_str(), &info) == 0 ? static_cast<unsigned>(info.st_mode) & 07777U : 0U;
+  };
+  auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("tool_models_tool_data", table.has_value(), table ? "tool.mmap" : table.error());
+  if (!table)
+    return;
+
+  rig.stop();
+  const auto writes_before = rig.port.writes().size();
+  Json saved;
+  MachineFacts before;
+  {
+    ModelSession session{rig, *table};
+    const auto hello = session.first("hello");
+    const auto snapshot = session.first("tool_models");
+    const auto table_at = session.wait([](const Json& message) -> bool {
+      return message.at("type") == "tool_table" && message.at("tools").size() == 4;
+    });
+    check("tool_models_hello",
+          hello && session.at(*hello).value("machine_id", Json()) == "G0759-sim" &&
+              session.at(*hello).value("tool_model_storage", Json()) == 1,
+          hello ? session.at(*hello).dump() : "no hello");
+    if (!hello || !snapshot || !table_at) {
+      check("tool_models_snapshot_after_ready", false, "no snapshot or no tool table");
+      rig.start();
+      return;
+    }
+    const auto first = session.at(*snapshot);
+    check("tool_models_snapshot_after_ready",
+          *snapshot > *hello && first.at("machine_id") == "G0759-sim" &&
+              first.at("availability") == "available" && first.at("revision") == 0 &&
+              first.at("reason") == "" && first.at("document").at("version") == 1 &&
+              first.at("document").at("assignments").empty() &&
+              first.at("document").at("defaults").at("drill").at("tipAngle") == 118 &&
+              first.at("document").at("defaults").size() == 7,
+          std::format("hello_at={} snapshot_at={} {}", *hello, *snapshot,
+                      first.dump().substr(0, 160)));
+    check("tool_models_no_file_by_reading",
+          !std::filesystem::exists(saved_file) && mode(where.directory) == 0700 &&
+              mode(where.directory + "/lock") == 0600,
+          std::format("directory_mode={:o} lock_mode={:o}", mode(where.directory),
+                      mode(where.directory + "/lock")));
+    before = machine_facts(rig, session);
+    fact("tool_models_machine",
+         std::format("tools={} offsets={} tool_file_bytes={} parameter_file_bytes={}",
+                     word(before.tools.dump()), word(before.offsets.dump()),
+                     before.tool_file.size(), before.parameter_file.size()));
+
+    // A defaults save: the drill's tip angle and a stick-out that is no short decimal.
+    auto defaults = first.at("document").at("defaults");
+    defaults["drill"]["tipAngle"] = 135;
+    defaults["end-mill"]["stickout"] = 35 + 0.1 + 0.2;
+    auto mark = session.count();
+    auto result = session.send(std::format(
+        R"("type":"set_tool_model_defaults","machine_id":"G0759-sim","base_revision":0,"defaults":{})",
+        defaults.dump()));
+    auto shown = session.first("tool_models", mark);
+    check("tool_models_defaults_saved",
+          result && shown && *shown < *result && session.at(*result).at("outcome") == "accepted" &&
+              session.at(*shown).at("revision") == 1 &&
+              session.at(*shown).at("document").at("defaults") == defaults &&
+              session.at(*shown).at("document").at("assignments").empty() &&
+              mode(saved_file) == 0600,
+          std::format("snapshot_at={} result_at={} {} file_mode={:o}", shown.value_or(0),
+                      result.value_or(0), result ? session.at(*result).dump() : "no result",
+                      mode(saved_file)));
+
+    // An assignment save for T1, with the row exactly as the tool table message gave it.
+    const auto rows = session.at(*table_at).at("tools");
+    const auto row = *std::ranges::find_if(
+        rows, [](const Json& tool) -> bool { return tool.at("number") == 1; });
+    const Json binding{{"number", row.at("number")},
+                       {"pocket", row.at("pocket")},
+                       {"diameter", row.at("diameter")},
+                       {"comment", row.at("comment")}};
+    const auto assign = [&](int base) -> std::string {
+      return std::format(R"("type":"set_tool_model_assignment","machine_id":"G0759-sim",)"
+                         R"("base_revision":{},"tool":{},"family":"drill",)"
+                         R"("overrides":{{"stickout":30.5,"tipAngle":90}})",
+                         base, binding.dump());
+    };
+    mark = session.count();
+    result = session.send(assign(1));
+    shown = session.first("tool_models", mark);
+    const Json expected{{{"tool", binding},
+                         {"family", "drill"},
+                         {"overrides", {{"stickout", 30.5}, {"tipAngle", 90}}}}};
+    check("tool_models_assignment_saved",
+          result && shown && *shown < *result && session.at(*result).at("outcome") == "accepted" &&
+              session.at(*shown).at("revision") == 2 &&
+              session.at(*shown).at("document").at("assignments") == expected &&
+              session.at(*shown).at("document").at("defaults") == defaults,
+          std::format("snapshot_at={} result_at={} {} binding={}", shown.value_or(0),
+                      result.value_or(0), result ? session.at(*result).dump() : "no result",
+                      word(binding.dump())));
+
+    // The same command again: its base revision is stale.
+    mark = session.count();
+    result = session.send(assign(1));
+    shown = session.first("tool_models", mark);
+    check("tool_models_stale_revision",
+          result && shown && *shown < *result && session.at(*result).at("outcome") == "rejected" &&
+              session.at(*shown).at("revision") == 2,
+          result ? session.at(*result).dump() : "no result");
+    // For another machine, and while the machine is off: the state of LinuxCNC plays no part.
+    result = session.send(R"("type":"set_tool_model_assignment","machine_id":"G0759",)"
+                          R"("base_revision":2,"tool":{"number":1,"pocket":1,"diameter":0,)"
+                          R"("comment":""},"family":null,"overrides":{})");
+    check("tool_models_other_machine_rejected",
+          result && session.at(*result).at("outcome") == "rejected" &&
+              session.last("tool_models").at("revision") == 2,
+          result ? session.at(*result).dump() : "no result");
+    saved = session.last("tool_models");
+
+    // A second process while this one holds the lock.
+    const auto locked_out = other_process();
+    check("tool_models_second_process_locked_out",
+          locked_out.is_object() && locked_out.value("availability", "") == "unavailable" &&
+              locked_out.value("reason", "").find("already in use") != std::string::npos &&
+              locked_out.value("machine_id", "") == "G0759-sim" &&
+              locked_out.at("document").is_null(),
+          word(locked_out.dump().substr(0, 240)));
+    const auto after = machine_facts(rig, session);
+    check("tool_models_linuxcnc_unchanged",
+          after == before && !before.tools.empty() && before.offsets.is_object() &&
+              !before.tool_file.empty(),
+          "tools=" + word(after.tools.dump()) + " offsets=" + word(after.offsets.dump()));
+  }
+  check("tool_models_no_nml_command", rig.port.writes().size() == writes_before,
+        "written=" + trace_text(written_since(rig, writes_before)));
+  const auto on_disk = decode_tool_model_file(file_text(saved_file));
+  check("tool_models_file",
+        on_disk && on_disk->machine_id == "G0759-sim" && on_disk->revision == 2 &&
+            on_disk->document.assignments.size() == 1 &&
+            !std::filesystem::exists(saved_file + ".tmp"),
+        on_disk ? std::format("bytes={}", file_text(saved_file).size()) : on_disk.error());
+
+  // The process that saved has let go: another process is shown what it saved.
+  const auto restarted = other_process();
+  check("tool_models_second_process_restart", restarted == saved && saved.is_object(),
+        word(restarted.dump().substr(0, 240)));
+  // And so is a second session here: a new store, runtime and page.
+  {
+    ModelSession session{rig, *table};
+    const auto hello = session.first("hello");
+    const auto snapshot = session.first("tool_models");
+    check("tool_models_second_session",
+          hello && snapshot && *snapshot > *hello && session.at(*snapshot) == saved &&
+              session.at(*snapshot).at("document").at("defaults").at("end-mill").at("stickout") ==
+                  35 + 0.1 + 0.2,
+          snapshot ? word(session.at(*snapshot).dump().substr(0, 240)) : "no snapshot");
+    const auto after = machine_facts(rig, session);
+    check("tool_models_linuxcnc_unchanged_after_restart", after == before,
+          "tools=" + word(after.tools.dump()) + " offsets=" + word(after.offsets.dump()));
+  }
+  rig.start();
+}
+
 void stale_link(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"jog_stop_all")"));
   static_cast<void>(rig.send(release_x));
@@ -2656,6 +2988,12 @@ void power_off(Rig& rig) {
 }
 
 void sim_config(const MachineConfig& config) {
+  // No machine identity: tool models are session-only, and nothing is opened for them.
+  const auto models = tool_model_location(config);
+  check("config_no_machine_id",
+        !config.machine_id && models.availability == ToolModelAvailability::session_only &&
+            models.directory.empty(),
+        models.reason);
   check("config_limits", near(config.limits.max_jog_velocity, 1800, 0.01) &&
                              near(config.limits.max_axis_jog_velocity[2], 1800, 0.01) &&
                              near(config.limits.max_feed_override, 1.5) &&
@@ -2668,6 +3006,8 @@ void sim_config(const MachineConfig& config) {
 
 void g0759_config(const MachineConfig& config) {
   const std::vector<double> increments{5, 1, 0.5, 0.1, 0.05, 0.01, 0.005};
+  check("config_machine_id", config.machine_id == "G0759-sim" && config.data_directory,
+        config.machine_id.value_or("(none)"));
   check("config_limits",
         config.machine_units == LengthUnit::mm && near(config.limits.max_jog_velocity, 1500) &&
             near(config.limits.max_axis_jog_velocity[0], 1500) &&
@@ -2741,6 +3081,7 @@ auto run(const std::string& ini_file, bool g0759) -> int {
     g0759_limits(rig);
     g0759_program(rig);
     g0759_homing(rig);
+    tool_models(rig, ini_file);
     power_off(rig);
     for (const auto& message : rig.all_messages())
       fact("operator_message", "text=" + word(message));
@@ -2799,12 +3140,16 @@ auto run(const std::string& ini_file, bool g0759) -> int {
 auto main(int argc, char** argv) -> int {
   std::string ini_file;
   bool g0759 = false;
+  bool models_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
     // The scenario for run.sh -p g0759.
     g0759 = g0759 || std::string_view(argv[i]) == "g0759";
+    models_only = models_only || std::string_view(argv[i]) == "--tool-models";
   }
+  if (models_only && !ini_file.empty())
+    return print_tool_models(ini_file);
   int code = 1;
   try {
     if (ini_file.empty())

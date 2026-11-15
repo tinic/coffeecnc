@@ -88,6 +88,11 @@ if(BUILD_TESTING)
     coffeecnc_enable_analyzers(coffeecnc_program_store_tests)
     # The std::filesystem implementation is tested on a directory the test makes below this one.
     add_test(NAME program_store COMMAND coffeecnc_program_store_tests ${PROJECT_BINARY_DIR})
+    add_executable(coffeecnc_tool_model_tests tests/tool_model_tests.cpp)
+    target_link_libraries(coffeecnc_tool_model_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_tool_model_tests)
+    add_test(NAME tool_models COMMAND coffeecnc_tool_model_tests ${PROJECT_BINARY_DIR})
     add_executable(coffeecnc_session_tests tests/session_tests.cpp)
     target_link_libraries(coffeecnc_session_tests PRIVATE coffeecnc_app coffeecnc_project_options
       nlohmann_json::nlohmann_json)

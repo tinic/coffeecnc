@@ -301,6 +301,37 @@ void increments_and_signals() {
   }
 }
 
+// [COFFEECNC] MACHINE_ID and DATA_DIRECTORY are handed on as written: judging them is the app
+// layer's, and a wrong one must not keep the panel from starting.
+void tool_model_settings() {
+  constexpr std::string_view own = "MAX_SPINDLE_RPM = 1500\n";
+  const auto none = load(g0759);
+  require(none && !none->machine_id && !none->data_directory,
+          "neither key: neither value");
+  const auto both = load(with(std::string(g0759), own,
+                              "MAX_SPINDLE_RPM = 1500\nMACHINE_ID = Mill_7-a\n"
+                              "DATA_DIRECTORY = /srv/coffeecnc data\n"));
+  require(both && both->machine_id == "Mill_7-a" &&
+              both->data_directory == "/srv/coffeecnc data",
+          "both keys, as written, case kept");
+  const auto odd = load(with(std::string(g0759), own,
+                             "MAX_SPINDLE_RPM = 1500\nMACHINE_ID = ../Other Mill\n"
+                             "DATA_DIRECTORY = data\n"));
+  require(odd.has_value(), "values that are not usable do not fail the start: " +
+                               (odd ? std::string() : odd.error()));
+  require(odd->machine_id == "../Other Mill" && odd->data_directory == "data",
+          "they are not repaired and not resolved against the INI file's directory");
+  const auto spaced = load(with(std::string(g0759), own,
+                                "MAX_SPINDLE_RPM = 1500\nMACHINE_ID =   mill-1  \t\n"));
+  require(spaced && spaced->machine_id == "mill-1",
+          "LinuxCNC's INI reader drops the white space around a value: \"" +
+              (spaced ? spaced->machine_id.value_or("(none)") : spaced.error()) + "\"");
+  const auto empty = load(with(std::string(g0759), own,
+                               "MAX_SPINDLE_RPM = 1500\nMACHINE_ID =\nDATA_DIRECTORY =\n"));
+  require(empty && !empty->machine_id && !empty->data_directory,
+          "LinuxCNC's INI reader gives a key without a value as an absent key");
+}
+
 // The INI file run.sh assembles for a profile, without starting LinuxCNC.
 auto assembled(const std::string& options, const std::string& name)
     -> std::expected<MachineConfig, std::string> {
@@ -329,6 +360,9 @@ void simulation_profiles() {
                 config->home_all_configured && config->jog_increments.empty() &&
                 !config->signals.spindle_rpm && !config->signals.probe,
             std::format("the {} simulation INI is accepted as before", units));
+    require(!config->machine_id && !config->data_directory,
+            std::format("the {} simulation INI names no machine: tool models are session-only",
+                        units));
   }
   const auto config = assembled("-p g0759", "g0759");
   require(config.has_value(), config ? "" : config.error());
@@ -342,6 +376,11 @@ void simulation_profiles() {
               config->signals.spindle_rpm && config->signals.spindle_at_speed &&
               config->signals.probe && near(config->travel[1].min, -1000),
           "the G0759 simulation INI carries the machine's values");
+  require(config->machine_id == "G0759-sim" &&
+              config->data_directory ==
+                  std::filesystem::canonical(scratch / "g0759").string() + "/coffeecnc-data",
+          "it names its machine, and keeps the tool models in its run directory: " +
+              config->data_directory.value_or("(none)"));
   std::ifstream table{config->tool_table};
   const std::string rows{std::istreambuf_iterator<char>(table), std::istreambuf_iterator<char>()};
   require(rows == "T0 P0 ;\nT1 P1 ;\nT2 P2 ;\nT3 P3 ;\n", "its tool table has no dimensions");
@@ -365,6 +404,7 @@ auto main(int argc, char** argv) -> int {
     homing();
     axis_ceilings();
     increments_and_signals();
+    tool_model_settings();
     simulation_profiles();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;

@@ -42,6 +42,9 @@ struct Hello {
   double max_feed_override{};
   double min_spindle_override{};
   double max_spindle_override{};
+  // The valid [COFFEECNC] MACHINE_ID; empty when none is configured or it is not valid. The
+  // `tool_models` message says which. `tool_model_storage: 1` is always sent with it.
+  std::optional<std::string> machine_id;
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

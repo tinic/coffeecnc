@@ -1030,6 +1030,8 @@ void refusals_of_the_settings() {
       .parameter_file = (rig.root / "config" / "mill.var").string(),
       .postgui_halfile = {},
       .program_prefix = (rig.root / "nc").string(),
+      .machine_id = {},
+      .data_directory = {},
   };
   write(config.ini_file, "[RS274NGC]\nPARAMETER_FILE = mill.var\nSUBROUTINE_PATH = ../subs:macros\n"
                          "RETAIN_G43 = 1\n[EMCIO]\nTOOL_CHANGE_POSITION = 1 2 3\n"

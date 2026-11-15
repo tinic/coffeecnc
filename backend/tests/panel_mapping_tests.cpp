@@ -62,6 +62,8 @@ auto machine() -> MachineConfig {
       .parameter_file = {},
       .postgui_halfile = {},
       .program_prefix = scratch.string(),
+      .machine_id = {},
+      .data_directory = {},
   };
 }
 
@@ -113,6 +115,17 @@ const std::vector<LoadedTool> table{{1, {5, 1, 50, 6, ""}},
 
 void hello_from_the_configuration() {
   const auto hello = to_hello(machine());
+  require(!hello.machine_id, "hello: no machine ID without [COFFEECNC] MACHINE_ID");
+  for (const auto* id : {"", "../other", "mill 1", "-mill"}) {
+    auto invalid = machine();
+    invalid.machine_id = id;
+    require(!to_hello(invalid).machine_id, "hello: a machine ID that is not valid is not sent");
+  }
+  auto named = machine();
+  named.machine_id = "Mill_7-a";
+  named.data_directory = "relative";
+  require(to_hello(named).machine_id == "Mill_7-a",
+          "hello: a valid machine ID is sent, whatever the data directory");
   require(hello.machine_name == "G0759" && !hello.simulated &&
               hello.axes == std::vector<Axis>{Axis::x, Axis::y, Axis::z} &&
               hello.machine_units == LengthUnit::mm &&

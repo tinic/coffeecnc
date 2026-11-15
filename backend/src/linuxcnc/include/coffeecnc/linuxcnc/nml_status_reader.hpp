@@ -15,7 +15,13 @@
 
 namespace coffeecnc {
 
-// One full reading and when it was taken.
+// One full reading and the start of its local acquisition. `read_at` is taken BEFORE the
+// NML read; acquisition, conversion and delayed publication do not give the sample a newer
+// timestamp. Consumers can reject a sample whose acquisition began before a local event
+// such as a load or tool-table pass. This is not LinuxCNC's publication timestamp: the shared
+// status buffer may already contain older controller data. Writer-heartbeat checks remain
+// separate, and tool-table sampling remains a stability check rather than an atomic snapshot.
+// A reader, or a test that fills a mailbox itself, must preserve the acquisition-start time.
 struct TimedStatus {
   NmlStatus status;
   std::chrono::steady_clock::time_point read_at;
@@ -23,7 +29,8 @@ struct TimedStatus {
 
 // Where the thread that owns a status reader leaves each reading for the threads that do not:
 // the publisher takes the panel's status from here and never calls a reader. The time tells an
-// old reading from a new one. Thread-safe; its mutex is held for a copy only.
+// old reading from a new one (see TimedStatus for what it guarantees). Thread-safe; its mutex is
+// held for a copy only.
 class NmlStatusMailbox {
 public:
   void put(const NmlStatus& status, std::chrono::steady_clock::time_point read_at);

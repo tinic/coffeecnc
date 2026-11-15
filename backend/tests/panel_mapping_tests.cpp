@@ -393,6 +393,129 @@ void source_program_loads() {
   require(r.program && r.program->revision == 5, "Loaded again after none: a new revision");
 }
 
+// Task's line counters belong to task, not to a load: the status reports what was attributed
+// to the loaded revision, never the counters themselves.
+void source_lines_belong_to_the_revision() {
+  Rig rig;
+  const auto lines = [](const PanelReading& r) -> std::pair<int, int> {
+    return {r.status.program.current_line, r.status.program.motion_line};
+  };
+  const auto at = [&](TaskMode mode, InterpState interp, int current, int motion,
+                      bool moving = false) -> NmlStatus {
+    auto s = rig.status();
+    s.controller.mode = mode;
+    s.controller.interp = interp;
+    s.controller.in_position = !moving;
+    s.current_line = current;
+    s.motion_line = motion;
+    return s;
+  };
+  const auto automatic = TaskMode::automatic;
+  const auto reading = InterpState::reading;
+  const auto idle = InterpState::idle;
+  const std::pair none{0, 0};
+
+  // The status that makes the source take the revision up was read before it did.
+  auto r = rig.step(at(automatic, reading, 4, 4, true));
+  require(r.status.program.revision == 1 && lines(r) == none,
+          "A status read before the revision was taken up attributes nothing");
+  require(lines(rig.step(at(automatic, idle, 0, 0))) == none, "Idle after the open");
+  require(lines(rig.step(at(automatic, reading, 2, 0))) == std::pair{2, 0},
+          "A counter that moved while the program runs is reported");
+  require(lines(rig.step(at(automatic, InterpState::paused, 2, 0))) == std::pair{2, 0},
+          "Paused in auto: the line is kept");
+  require(lines(rig.step(at(automatic, reading, 7, 6))) == std::pair{7, 6}, "Running on");
+  require(lines(rig.step(at(automatic, idle, 7, 7))) == std::pair{7, 7},
+          "The first idle status after the run gives the lines it stopped at");
+  require(lines(rig.step(at(automatic, idle, 9, 0))) == std::pair{7, 7},
+          "An idle counter is not passed through: what was attributed stays");
+
+  // A status that is not fresh changes nothing, whatever it shows.
+  auto stale = at(automatic, reading, 8, 8, true);
+  stale.controller.link = Link::stale;
+  require(lines(rig.step(stale)) == std::pair{7, 7}, "A stale status attributes nothing");
+  rig.mailbox.put(at(TaskMode::mdi, reading, 1, 1), rig.now - 60ms);
+  require(lines(rig.source.read()) == std::pair{7, 7},
+          "Nor does one read before the status judged last");
+
+  // An MDI block after a valid run: the counters are no longer the program's.
+  require(lines(rig.step(at(TaskMode::mdi, reading, 7, 7, true))) == none,
+          "An MDI block executing: nothing is reported");
+  require(lines(rig.step(at(TaskMode::mdi, idle, 5, 5))) == none &&
+              lines(rig.step(at(TaskMode::manual, idle, 5, 5))) == none &&
+              lines(rig.step(at(automatic, idle, 5, 5))) == none,
+          "MDI finished and idle, manual, auto again: still nothing");
+  require(lines(rig.step(at(automatic, reading, 5, 5))) == none,
+          "The run has started but the counters still read what they read before it");
+  require(lines(rig.step(at(automatic, reading, 1, 5))) == std::pair{1, 0},
+          "Each counter is back from its first change in the run");
+  require(lines(rig.step(at(automatic, reading, 3, 2))) == std::pair{3, 2} &&
+              lines(rig.step(at(automatic, idle, 3, 3))) == std::pair{3, 3},
+          "And follows task to the end of the run");
+
+  // A run again whose first line seen is the one the last run ended at: motion shows that the
+  // counters are of this run.
+  require(lines(rig.step(at(automatic, reading, 3, 3))) == none &&
+              lines(rig.step(at(automatic, reading, 3, 3, true))) == std::pair{3, 3} &&
+              lines(rig.step(at(automatic, idle, 3, 3))) == std::pair{3, 3},
+          "Equal counters are attributed once the machine moves in the run");
+  auto dwell = at(automatic, reading, 3, 3);
+  dwell.dwell_seconds_left = 0.5;
+  require(lines(rig.step(dwell)) == std::pair{3, 0},
+          "A dwell is a block of this run: the current line is attributed, the motion line "
+          "only by motion");
+  static_cast<void>(rig.step(at(automatic, idle, 3, 3)));
+
+  // An MDI block too short for any status to show it: the port's count.
+  ++rig.loads.mdi_blocks;
+  require(lines(rig.step(at(automatic, idle, 6, 6))) == none,
+          "An MDI block the port reports ends the attribution");
+  require(lines(rig.step(at(automatic, reading, 6, 6))) == none &&
+              lines(rig.step(at(automatic, reading, 7, 6))) == std::pair{7, 0},
+          "A run right after it: its first status is what the counters must move from");
+  static_cast<void>(rig.step(at(automatic, idle, 7, 7)));
+
+  // B is opened: task zeroes the counters, and an E-stop brings A's current line back.
+  ++rig.loads.programs;
+  r = rig.step(at(automatic, idle, 0, 0));
+  require(r.status.program.revision == 2 && lines(r) == none, "A new revision has no lines");
+  require(lines(rig.step(at(automatic, idle, 7, 0))) == none,
+          "A line the previous program left is not reported for the new revision");
+  // A run too short for a status to show it.
+  require(lines(rig.step(at(automatic, idle, 4, 3))) == none,
+          "Counters that changed without a status showing the run are withheld");
+
+  // A status of the run of the revision before, still in the mailbox when the load is seen.
+  rig.now += 50ms;
+  rig.mailbox.put(at(automatic, reading, 9, 9, true), rig.now - 1ms);
+  ++rig.loads.programs;
+  r = rig.source.read();
+  require(r.status.program.revision == 3 && lines(r) == none,
+          "A status read before the load says nothing about the new revision");
+  require(lines(rig.step(at(automatic, reading, 9, 9, true))) == std::pair{9, 9},
+          "The same read after it does");
+
+  // The status thread was held up after it had acquired a status of the run before, and
+  // left it in the mailbox only after the load: it is dated when its acquisition began.
+  static_cast<void>(rig.step(at(automatic, idle, 9, 9)));
+  ++rig.loads.programs;
+  rig.now += 50ms;
+  r = rig.source.read();
+  require(r.status.program.revision == 4 && lines(r) == none, "Loaded again");
+  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now - 1ms);
+  require(lines(rig.source.read()) == none,
+          "A status put after the load but acquired before it is not evidence");
+  rig.mailbox.put(at(automatic, reading, 6, 6, true), rig.now + 1ms);
+  require(lines(rig.source.read()) == std::pair{6, 6}, "One acquired after it is");
+
+  // Another file named by task while it runs (loaded and started by another client).
+  auto other = at(automatic, reading, 9, 8, true);
+  other.program_file = (scratch / "other.ngc").string();
+  r = rig.step(other);
+  require(r.status.program.revision == 5 && lines(r) == none, "First seen: a new revision");
+  require(lines(rig.step(other)) == std::pair{9, 8}, "Seen executing after that: its lines");
+}
+
 void source_tool_table() {
   Rig rig;
   auto r = rig.step();
@@ -523,6 +646,7 @@ auto main(int argc, char** argv) -> int {
     source_status_and_age();
     source_ages_the_status_after_its_reads();
     source_program_loads();
+    source_lines_belong_to_the_revision();
     source_tool_table();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";

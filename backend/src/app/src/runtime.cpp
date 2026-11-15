@@ -21,8 +21,11 @@ auto control_step(Session& session, SafetyOutputs& outputs, Instant now) -> bool
 }
 
 void status_step(Session& session, StatusSource& source) {
+  // Date the local acquisition before the read, so blocking and conversion time count
+  // toward sample age. The source separately checks the controller's writer heartbeat.
+  const auto begun = JogLease::Clock::now();
   const auto state = source.read();
-  session.observe(state, JogLease::Clock::now());
+  session.observe(state, begun);
 }
 
 Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,

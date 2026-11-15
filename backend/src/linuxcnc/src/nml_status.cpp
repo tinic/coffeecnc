@@ -236,13 +236,15 @@ NmlStatusReader::~NmlStatusReader() = default;
 auto NmlStatusReader::read() -> ControllerState { return status().controller; }
 
 auto NmlStatusReader::status() -> NmlStatus {
+  // Dated before it is acquired: see TimedStatus.
+  const auto begun = std::chrono::steady_clock::now();
   const EMC_STAT* s = impl_->channel.stat();
   // Without a status the link is down.
   auto status =
       s == nullptr ? NmlStatus{}
                    : to_status(*s, impl_->config, impl_->hal, impl_->channel.link());
   if (impl_->mailbox != nullptr)
-    impl_->mailbox->put(status, std::chrono::steady_clock::now());
+    impl_->mailbox->put(status, begun);
   return status;
 }
 

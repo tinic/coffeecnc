@@ -1361,6 +1361,17 @@ void estop(const Rig& rig) {
   }));
   check("panel_shows_estop", rig.wait_js("__t.last.status.machine === 'estop'"),
         rig.js("return __t.text(document.querySelector('.state-pill'));").dump());
+  // probe.ngc was opened after part.ngc had run to its end and has not been run since. The
+  // E-stop brings task's current line of part.ngc back (2.9.4): it is not a line of probe.ngc
+  // and must not be shown beside it.
+  std::this_thread::sleep_for(300ms);
+  const auto raw = rig.status();
+  const auto shown = rig.js("return __t.last.status.program;");
+  check("lines_of_an_earlier_program_are_not_shown",
+        shown.value("file", "").ends_with("/probe.ngc") && shown.value("current_line", -1) == 0 &&
+            shown.value("motion_line", -1) == 0,
+        std::format("task_current_line={} task_motion_line={} shown={}", raw.current_line,
+                    raw.motion_line, shown.dump()));
   rig.snapshot("estop-after-run");
 }
 

@@ -52,7 +52,7 @@ watch([axes, touchBlock], () => {
     <button v-for="axis in axes" :key="axis.axis" v-tooltip="touchBlock ?? `Touch off ${axis.axis.toUpperCase()} in ${wcs}`" class="axis" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="`Touch off ${axis.axis.toUpperCase()} in ${wcs}`" @click="openTouchOff(axis)">
       <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
       <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? 'Last reported' : marker(axis) }}</span></span>
-      <span v-if="panel.tab === 'manual'" class="touch" aria-hidden="true"><AppIcon name="target" /></span>
+      <span class="touch" :class="{ hidden: panel.tab !== 'manual' }" aria-hidden="true"><AppIcon name="target" /></span>
     </button>
     <span v-if="axes.length === 0" class="unavailable">Position unavailable</span>
     <div class="units" role="group" aria-label="Display units">
@@ -69,9 +69,10 @@ watch([axes, touchBlock], () => {
 .basis strong { font-size: 13px; font-weight: 500; }.basis span { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
 .axis { display: flex; flex: 0 1 250px; height: 48px; align-items: center; gap: 12px; min-width: 0; padding: 0 18px; border: 0; border-left: 1px solid var(--line); background: none; color: var(--text); text-align: left; cursor: pointer; }
 .axis:disabled { cursor: default; }.axis:hover:not(:disabled) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-.letter { flex: none; width: 20px; color: var(--text); }.reading { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.letter { flex: none; width: 20px; color: var(--text); }.reading { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; text-align: right; }
 .number, .letter { font-size: 27px; line-height: 1.3; letter-spacing: -1px; font-weight: 500; white-space: nowrap; }.marker { position: absolute; top: 100%; left: 0; height: 15px; line-height: 15px; white-space: nowrap; font-size: 10px; color: var(--warn); }
 .touch { display: flex; align-self: center; padding: 8px; color: var(--text-dim); }.axis:disabled .touch { opacity: .3; }
+.touch.hidden { visibility: hidden; }
 .units { display: flex; flex: none; gap: 3px; padding: 3px; margin: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
 .units button { width: 52px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }

@@ -104,7 +104,7 @@ const subtitle = computed(() => {
           <button v-if="status?.machine === 'estop' || status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('off')">Reset E-stop</button>
           <button v-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('on')">Machine on</button>
           <button v-else-if="status?.machine === 'on'" class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="power('off')">Machine off</button>
-          <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
+          <button class="btn quiet" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
         </div>
         <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
       </div>
@@ -118,7 +118,7 @@ const subtitle = computed(() => {
         <p role="status" aria-atomic="true"><template v-if="panel.notice?.level === 'info'">{{ panel.notice.text }}</template></p>
         <p v-if="!panel.notice" class="no-message">No new messages</p>
       </div>
-      <button class="message-log" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
+      <button class="message-log" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
       <button v-if="panel.notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
     </div>
   </section>
@@ -160,6 +160,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-copy { flex: 1; min-width: 0; }.message-copy p { margin: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .message-copy p:empty { height: 0; }.no-message { color: var(--text-dim); }
 .message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.log-count { display: inline-block; width: 3ch; min-width: 3ch; text-align: right; }
 .message-log { background: transparent; border-color: transparent; color: inherit; }
 .dismiss:hover { color: var(--text); background: var(--bg); }
 @media (max-height: 820px) { .em-top { padding-block: 6px; }.jobbar { padding-block: 8px; }.message-area { height: 54px; margin-bottom: 8px; } }

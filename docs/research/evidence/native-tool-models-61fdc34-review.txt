@@ -1,0 +1,96 @@
+CoffeeCNC native tool-model review, 2026-11-15 03:36 UTC
+
+Checkpoint 61fdc3493cc177ab1ab9e111cc2b0cf90defb1f7, on 3859ac3. Not merged.
+Codex read all 14 changed files, including the actual panel save/restart test.
+The earlier captured production diff equals the committed backend/src diff.
+No simulation or hardware was started by this review.
+
+Corrections reviewed
+
+- External document/revision changes, including deletion, now make storage
+  unavailable until restart. The command is rejected before any write, with
+  the unavailable snapshot first. Lower/higher revisions, equal-revision
+  content changes, corrupt/other-machine documents and restart are covered.
+- Missing directories are made outermost first, their parent directories
+  synchronized before proceeding. Failure prevents availability. Created
+  directories and files are set to 0700/0600 even under a restrictive umask.
+  Existing directory permissions are preserved and reported in the snapshot.
+- When tool comments cannot be opened, published rows are withheld with one
+  message per failure episode. Accepted numeric rows still feed the preview
+  context; raw preview tools and prepared-tool resolution remain separate.
+  Recovery retries even when numeric tools have not changed. Mapping/feed
+  tests cover withholding, repeated failure and recovery without spurious
+  preview-context changes.
+
+Remaining finding sent to Claude
+
+show_tools constructs a string with istreambuf_iterator before checking
+in.bad(). That iterator can throw on a read failure even when the stream's
+bad bit is not set. A minimal reproduction on playhouse2 opened /tmp as an
+ifstream successfully, then threw:
+  basic_filebuf::underflow error reading the file: Is a directory
+  bad=0
+PanelFeed::loop has no catch around source_.read(). A directory replacing the
+tool-table path therefore escapes the intended unavailable/retry behavior.
+Requested: handle read exceptions as a withheld table and add a regression
+that recovers when the path becomes a readable file again.
+
+Retained evidence independently copied and read
+
+Host: /home/turo/ai/claudecode-coffeecnc-store/backend/build/sim-history/61fdc34/
+Local: /tmp/coffeecnc-store-61fdc34-review/61fdc34/
+
+Development, ASan and TSan each record build_exit=0 and ctest_exit=0, 21/21
+non-simulation tests. Times: 10.70s, 28.55s and 44.75s respectively. All three
+LastTest logs report 770 tool-model checks, correcting the commit message's
+769. Their retained build logs are incremental two-step test rebuilds; they
+do not by themselves establish fresh sanitizer production rebuilds. No new
+GUI sanitizer qualification is claimed.
+
+Fresh analyzer log records 90 Ninja steps, exit 0, and 57 translation units
+with clang-tidy 19.1.7 and cppcheck 2.17.1. The verbose invocations cover
+tool_models.cpp, tool_model_store.cpp, request.cpp, session.cpp,
+application.cpp and nml_panel_source.cpp. No warning/error diagnostic found
+in the retained build log. Analyzer command/config/version and TU list are
+retained. There is no separate source-cleanliness/configure provenance in
+this evidence directory; commit attribution remains the producer's.
+
+Native integration
+
+linuxcnc_sim_g0759 passes the service checks for identity, initial snapshot,
+defaults/assignment save order, stale revision, other-machine refusal,
+second-process lock/restart and second-session restore. Numeric controller
+tools/offsets and backing files are unchanged; no NML command is written by
+the model operations. DISPLAY child_status=0, processes_left=0.
+
+linuxcnc_shell_tool_models runs the actual GTK/WebKit panel twice. Through
+the editor it changes end-mill stick-out from 35 to 36.5 and assigns T1 a
+Drill model. Snapshots precede accepted results (indices 6/7 and 8/9); the
+JSON file holds both changes. After restarting LinuxCNC and the application,
+the snapshot equals the file, the table shows Drill, the defaults editor
+shows 36.5, and merely opening it leaves the file unchanged. Both runs report
+no console errors, child_status=0 and processes_left=0. Status-gap facts are
+268ms and 297ms; these tests do not establish a real-time UI guarantee.
+
+Both shell runs serve the expected UI production assets:
+  inputs 53cb478b739fba6e33be8a5ffa47b079bc75a6137e49fc5d5d776531e86fc36c
+  assets 779ea5b3c9bc21c17509ca4f66b57853987e8b418189063a03f0ce1df0d59bb5
+Their stamp names parent commit 3859ac3. Claude identifies the exercised
+tree as the checkpoint before two test-only edits to tool_model_tests.cpp;
+do not present these logs as clean-61fdc34 whole-tree runs.
+
+The restart test restarts LinuxCNC as well as the application. Restarting
+only CoffeeCNC under the same running test HAL reportedly failed because
+loadrt watchdog already existed; that failed attempt's log was not retained.
+This is a stated limitation, not a qualified application-only restart.
+
+Separate UI follow-up
+
+The G0759 E-stop investigation exposed that machine OFF can coexist with
+user-enable-out false. The status menu previously offered Reset E-stop only
+when LinuxCNC reported ESTOP. It now also offers the explicit reset while
+OFF, alongside the separate Machine on action. Reset and power-on require
+a live link; no automatic reset/power-on sequence is introduced. The change
+is generic, with no machine-name branch. Focused capability-control tests
+pass 13/13, production build/typecheck and lint pass. Native checks above
+predate this UI follow-up.

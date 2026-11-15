@@ -1,10 +1,16 @@
 #!/bin/bash
 # Checks that run.sh never leaves a LinuxCNC behind: after a timeout, and when it is interrupted.
-#   runner_tests.sh <build-directory>
+#   runner_tests.sh <build-directory> [lock wait, seconds]
+#
+# The host's runner lock: ten of the runs below (nine calls, one of them made twice) may each
+# have to wait for a simulation of another checkout, at most the lock wait given (run.sh -w;
+# 300 without one). The two waits on this test's own run are fixed, 3 s and 120 s. The
+# caller's time limit is made of these.
 # One `check=<name> result=pass|fail detail=...` line per check; exit code 0 only if all pass.
 set -u
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 build=$(realpath "${1:?build directory}")
+lock_wait=${2:-300}
 work=$build/sim/runner
 mkdir -p "$work" || exit 125
 # A DISPLAY program that never finishes on its own.
@@ -19,52 +25,69 @@ check() { # name, 0 for pass, detail
     failed=1
   fi
 }
-gone() {
-  ! pgrep -x linuxcncsvr >/dev/null && ! pgrep -x milltask >/dev/null &&
-    ! pgrep -x rtapi_app >/dev/null
+# Everything here is judged on this test's own runs: another checkout may run a simulation of
+# its own before, between and after them. A run's processes carry its run directory in their
+# environment (COFFEECNC_SIM_RUN, set by run.sh).
+of_run() { # run directory, process name: the process IDs of that run with that name
+  local pid
+  for pid in $(pgrep -u "$(id -u)" ${2:+-x "$2"}); do
+    tr '\0' '\n' 2>/dev/null <"/proc/$pid/environ" | grep -qxF "COFFEECNC_SIM_RUN=$1" && echo "$pid"
+  done
 }
+# No process of that run is left. (rtapi_app is setuid root: its environment cannot be read,
+# so it cannot be told apart here. The run's own `processes_left=0`, counted while it still
+# held the host's lock, is what the checks below read for it.)
+gone() { [ -z "$(of_run "$1")" ]; }
+# That run's own task has started; it may have had to wait for the host's lock first.
+await_task() {
+  for _ in $(seq $(((lock_wait + 30) * 5))); do
+    [ -z "$(of_run "$1" milltask)" ] || return 0
+    sleep 0.2
+  done
+  return 1
+}
+# The host's lock is not held by a run of this test.
+lock_not_ours() { ! grep -q " run_directory=$work/" "$lock.info" 2>/dev/null; }
+lock_directory=$HOME/ai
+[ -d "$lock_directory" ] || lock_directory=/tmp
+lock=$lock_directory/coffeecnc-sim-runner-$(id -u).lock
 
-started=$SECONDS
-"$here/run.sh" -t 8 -d "$work/timeout" "$work/never" >"$work/timeout.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 8 -d "$work/timeout" "$work/never" >"$work/timeout.out" 2>&1
 code=$?
-took=$((SECONDS - started))
-[ "$code" = 124 ] && grep -q '^sim=done exit=124 printed_exit=none child_status=none processes_left=0 ' "$work/timeout.out" && gone
+# From the moment this run had the lock: the time it waited for another checkout is not its.
+locked_at=$(sed -n 's/^sim=locked .* at=\([0-9]*\)$/\1/p' "$work/timeout.out" | head -1)
+took=$(($(date +%s) - ${locked_at:-0}))
+[ "$code" = 124 ] && grep -q '^sim=done exit=124 printed_exit=none child_status=none processes_left=0 ' "$work/timeout.out" && gone "$work/timeout"
 check timeout_ends_every_process $? "exit=${code}_seconds=$took"
-[ "$took" -lt 90 ]
-check timeout_is_bounded $? "seconds=$took"
+[ -n "$locked_at" ] && [ "$took" -lt 90 ]
+check timeout_is_bounded $? "seconds_since_locked=${took}_locked_at=${locked_at:-none}"
 
 # Not INT: bash starts background jobs with SIGINT ignored, so it would never arrive.
 for signal in TERM HUP; do
-  "$here/run.sh" -t 300 -d "$work/interrupt" "$work/never" >"$work/interrupt.out" 2>&1 &
+  "$here/run.sh" -w "$lock_wait" -t 300 -d "$work/interrupt" "$work/never" >"$work/interrupt.out" 2>&1 &
   runner=$!
-  for _ in $(seq 100); do
-    pgrep -x milltask >/dev/null && break
-    sleep 0.2
-  done
+  await_task "$work/interrupt"
+  begun=$?
   started=$SECONDS
   kill -"$signal" "$runner"
   wait "$runner"
   code=$?
   took=$((SECONDS - started))
-  [ "$code" = 130 ] && grep -q '^sim=interrupted' "$work/interrupt.out" &&
-    grep -q '^sim=done exit=130 printed_exit=none child_status=none processes_left=0 ' "$work/interrupt.out" && gone
-  check "interrupt_${signal}_ends_every_process" $? "exit=${code}_seconds=$took"
+  [ "$begun" = 0 ] && [ "$code" = 130 ] && grep -q '^sim=interrupted' "$work/interrupt.out" &&
+    grep -q '^sim=done exit=130 printed_exit=none child_status=none processes_left=0 ' "$work/interrupt.out" &&
+    gone "$work/interrupt"
+  check "interrupt_${signal}_ends_every_process" $? "started=${begun}_exit=${code}_seconds=$took"
 done
 
 # The host-wide lock: one simulation at a time, whatever checkout starts it.
-lock_directory=$HOME/ai
-[ -d "$lock_directory" ] || lock_directory=/tmp
-lock=$lock_directory/coffeecnc-sim-runner-$(id -u).lock
-flock -n "$lock" true
+lock_not_ours
 check lock_is_free_after_timeout_and_interrupts $? "lock=$lock"
 printf '#!/bin/sh\nexit 0\n' >"$work/quiet" && chmod +x "$work/quiet" || exit 125
 rm -rf "$work/refused" "$work/waiter"
-"$here/run.sh" -t 300 -d "$work/holder" "$work/never" >"$work/holder.out" 2>&1 &
+"$here/run.sh" -w "$lock_wait" -t 300 -d "$work/holder" "$work/never" >"$work/holder.out" 2>&1 &
 holder=$!
-for _ in $(seq 100); do
-  pgrep -x milltask >/dev/null && break
-  sleep 0.2
-done
+await_task "$work/holder"
+check lock_holder_started $? "run=$work/holder"
 # Assembly only starts nothing and waits for nobody.
 started=$SECONDS
 "$here/run.sh" -n -d "$work/assembled" "$work/quiet" >"$work/assembled.out" 2>&1
@@ -96,32 +119,32 @@ code=$?
   grep -q '^sim=done exit=130 .* processes_left=0 ' "$work/holder.out" && [ "$code" = 0 ] &&
   grep -q '^sim=done exit=0 printed_exit=none child_status=0 processes_left=0 ' "$work/waiter.out"
 check second_run_waits_then_runs $? "waiting=${waiting}_holder_exit=${held}_waiter_exit=$code"
-flock -n "$lock" true && [ ! -e "$lock.info" ] && gone
+lock_not_ours && gone "$work/holder" && gone "$work/waiter"
 check lock_is_released_after_the_runs $? "info=$(cat "$lock.info" 2>/dev/null | tr ' ' '_')"
 
 # How the program really ended decides, not the `exit=` line it printed.
 summary() { grep '^sim=done' "$1" | cut -d' ' -f2-4 | tr ' ' '_'; }
 printf '#!/bin/sh\necho exit=0\nexit 7\n' >"$work/late-failure" && chmod +x "$work/late-failure" || exit 125
-"$here/run.sh" -t 60 -d "$work/late" "$work/late-failure" >"$work/late.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 60 -d "$work/late" "$work/late-failure" >"$work/late.out" 2>&1
 code=$?
 [ "$code" = 7 ] && grep -q '^sim=done exit=7 printed_exit=0 child_status=7 processes_left=0 ' "$work/late.out"
 check failure_after_printed_exit_0_fails $? "exit=${code}_$(summary "$work/late.out")"
 
 printf '#!/bin/bash\necho exit=0\nkill -SEGV $$\n' >"$work/late-signal" && chmod +x "$work/late-signal" || exit 125
-"$here/run.sh" -t 60 -d "$work/signal" "$work/late-signal" >"$work/signal.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 60 -d "$work/signal" "$work/late-signal" >"$work/signal.out" 2>&1
 code=$?
 [ "$code" = 139 ] && grep -q '^sim=done exit=139 printed_exit=0 child_status=signal_SEGV processes_left=0 ' "$work/signal.out"
 check signal_after_printed_exit_0_fails $? "exit=${code}_$(summary "$work/signal.out")"
 
 printf '#!/bin/sh\necho exit=3\nexit 0\n' >"$work/printed-failure" && chmod +x "$work/printed-failure" || exit 125
-"$here/run.sh" -t 60 -d "$work/printed" "$work/printed-failure" >"$work/printed.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 60 -d "$work/printed" "$work/printed-failure" >"$work/printed.out" 2>&1
 code=$?
 [ "$code" = 3 ] && grep -q '^sim=done exit=3 printed_exit=3 child_status=0 ' "$work/printed.out"
 check printed_failure_with_exit_0_fails $? "exit=${code}_$(summary "$work/printed.out")"
 
 # A program that says nothing: its recorded exit code is the result.
 printf '#!/bin/sh\nexit 0\n' >"$work/silent" && chmod +x "$work/silent" || exit 125
-"$here/run.sh" -t 60 -d "$work/silent-run" "$work/silent" >"$work/silent.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 60 -d "$work/silent-run" "$work/silent" >"$work/silent.out" 2>&1
 code=$?
 [ "$code" = 0 ] && grep -q '^sim=done exit=0 printed_exit=none child_status=0 processes_left=0 ' "$work/silent.out"
 check silent_program_passes_on_its_exit_code $? "exit=${code}_$(summary "$work/silent.out")"
@@ -129,12 +152,12 @@ check silent_program_passes_on_its_exit_code $? "exit=${code}_$(summary "$work/s
 # Arguments longer than an INI line (255 characters in LinuxCNC) reach the program whole.
 printf '#!/bin/sh\necho "arguments=$*"\nexit 0\n' >"$work/arguments" && chmod +x "$work/arguments" || exit 125
 long=$(printf 'argument-%03d,' $(seq 40))
-"$here/run.sh" -t 60 -d "$work/arguments-run" "$work/arguments" first "$long" last >"$work/arguments.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -t 60 -d "$work/arguments-run" "$work/arguments" first "$long" last >"$work/arguments.out" 2>&1
 code=$?
 [ "$code" = 0 ] && grep -qxF "arguments=-ini $work/arguments-run/coffeecnc_sim.ini first $long last" "$work/arguments-run/linuxcnc.log"
 check long_arguments_reach_the_program $? "exit=${code}_characters=${#long}"
 
-"$here/run.sh" -d "$work/with space" "$work/never" >"$work/space.out" 2>&1
+"$here/run.sh" -w "$lock_wait" -d "$work/with space" "$work/never" >"$work/space.out" 2>&1
 code=$?
 [ "$code" = 125 ] && grep -q 'unsupported-characters' "$work/space.out"
 check unsupported_path_is_refused $? "exit=$code"

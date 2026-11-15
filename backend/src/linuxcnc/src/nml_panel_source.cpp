@@ -40,9 +40,12 @@ struct NmlPanelSource::Impl {
     Clock::time_point taken_at;
   };
   std::optional<PendingRaw> pending_raw;
-  std::map<int, std::string> comments;
   ToolTable tool_table;
+  // The accepted rows while the table is not shown because its file cannot be read.
+  std::optional<std::vector<Tool>> withheld;
   bool tools_failed{};
+  // The tool table file could not be read for the accepted table; said already.
+  bool comments_failed{};
   // The load the program text belongs to.
   std::string program_file;
   std::uint64_t program_loads_seen{};
@@ -70,16 +73,39 @@ struct NmlPanelSource::Impl {
       : config(std::move(machine)), mailbox(readings), tools(std::move(tool_reader)),
         programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
 
-  void show_tools(const std::vector<LoadedTool>& accepted) {
-    if (std::ifstream in{config.tool_table, std::ios::binary}; in && !config.tool_table.empty())
-      comments = comments_of(
-          std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}});
-    std::vector<Tool> shown;
-    shown.reserve(accepted.size());
+  // A table is shown only with the comments read from the file for it: a tool's comment is
+  // part of what a saved tool model is bound to, and neither the text of an earlier table nor
+  // an empty text (a real value) may stand in for one that could not be read. While the file
+  // cannot be read no row is shown, which is said once; the accepted rows still count for the
+  // preview context (`withheld`), and the prepared tool and the preview use other tables.
+  void show_tools(const std::vector<LoadedTool>& accepted,
+                  std::vector<ControllerMessage>& messages) {
+    bool read = config.tool_table.empty();
+    std::map<int, std::string> comments;
+    if (std::ifstream in{config.tool_table, std::ios::binary}; in && !read) {
+      const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+      if (!in.bad()) {
+        comments = comments_of(text);
+        read = true;
+      }
+    }
+    std::vector<Tool> rows;
+    rows.reserve(accepted.size());
     for (const auto& entry : accepted) {
-      shown.push_back(entry.tool);
+      rows.push_back(entry.tool);
       if (const auto comment = comments.find(entry.tool.number); comment != comments.end())
-        shown.back().comment = comment->second;
+        rows.back().comment = comment->second;
+    }
+    std::vector<Tool> shown;
+    if (read) {
+      shown = std::move(rows);
+      withheld.reset();
+      comments_failed = false;
+    } else {
+      withheld = std::move(rows);
+      if (!std::exchange(comments_failed, true))
+        messages.push_back({true, "The tool table file " + config.tool_table +
+                                      " cannot be read: the tool table is not shown."});
     }
     if (tool_table.revision == 0 || shown != tool_table.tools)
       tool_table = {tool_table.revision + 1, std::move(shown)};
@@ -127,10 +153,11 @@ struct NmlPanelSource::Impl {
     if (loaded && *pass == *loaded) {
       pending.reset();
       loaded_current = true;
-      // A load the port reports with the same numbers: the comments may have changed.
-      if (counted != tool_loads_seen) {
+      // A load the port reports with the same numbers: the comments may have changed. And a
+      // table withheld for its file is tried again every period.
+      if (counted != tool_loads_seen || comments_failed) {
         tool_loads_seen = counted;
-        show_tools(*pass);
+        show_tools(*pass, messages);
       }
       return;
     }
@@ -143,7 +170,7 @@ struct NmlPanelSource::Impl {
     if (!status || status->read_at <= pending->taken_at ||
         status->status.controller.link == Link::down || status->status.task_executing)
       return;
-    show_tools(*pass);
+    show_tools(*pass, messages);
     loaded = std::move(*pass);
     pending.reset();
     loaded_current = true;
@@ -271,6 +298,7 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .optional_stop = reading.status.program.optional_stop,
                                            .block_delete = reading.status.program.block_delete};
   reading.tool_table = impl_->tool_table;
+  reading.accepted_tools = impl_->withheld;
   reading.preview_tools = impl_->preview_tools;
   reading.tools_settled = !impl_->pending_raw.has_value();
   reading.work_systems = to_work_systems(status);

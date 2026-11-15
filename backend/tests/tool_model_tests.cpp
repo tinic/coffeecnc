@@ -30,6 +30,7 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -72,6 +73,11 @@ const std::string machine = "mill-1";
 const std::string directory = "/data/mill-1";
 const std::string file = directory + "/tool-models.json";
 const std::string temporary = directory + "/tool-models.json.tmp";
+// What opening does where nothing exists yet: each directory made and then made durable in its
+// parent, outermost first; then the lock; then the file.
+const std::string opening =
+    "make_directory /data, sync_directory /, make_directory /data/mill-1, sync_directory /data, "
+    "lock /data/mill-1, read " + file;
 
 // Not a short decimal.
 constexpr double odd_length = 35 + 0.1 + 0.2;
@@ -391,6 +397,51 @@ void wire_text() {
                           {"availability", "session_only"}, {"reason", "why"},
                           {"document", nullptr}},
           "A session-only snapshot");
+  // The variants the shared fixtures have no example of, as exact text.
+  const auto factory_json = Json::parse(
+      R"({"end-mill":{"diameter":10,"cuttingLength":22,"shankDiameter":10,"overallLength":72,"stickout":35,"tipAngle":90},)"
+      R"("ball-mill":{"diameter":10,"cuttingLength":20,"shankDiameter":10,"overallLength":72,"stickout":35,"tipAngle":90},)"
+      R"("drill":{"diameter":10,"cuttingLength":60,"shankDiameter":10,"overallLength":100,"stickout":75,"tipAngle":118},)"
+      R"("spot-drill":{"diameter":10,"cuttingLength":15,"shankDiameter":10,"overallLength":60,"stickout":30,"tipAngle":90},)"
+      R"("chamfer":{"diameter":10,"cuttingLength":12,"shankDiameter":10,"overallLength":60,"stickout":30,"tipAngle":90},)"
+      R"("face-mill":{"diameter":50,"cuttingLength":12,"shankDiameter":20,"overallLength":70,"stickout":40,"tipAngle":90},)"
+      R"("generic":{"diameter":10,"cuttingLength":20,"shankDiameter":10,"overallLength":70,"stickout":35,"tipAngle":90}})");
+  const auto fresh = encode_tool_models(
+      {"mill-1", 0, ToolModelAvailability::available, "",
+       ToolModelDocument{factory_tool_defaults(), {}}});
+  auto fresh_json = Json::parse(
+      R"({"type":"tool_models","machine_id":"mill-1","revision":0,"availability":"available",)"
+      R"("reason":"","document":{"version":1,"defaults":null,"assignments":[]}})");
+  fresh_json["document"]["defaults"] = factory_json;
+  require(fresh && Json::parse(*fresh) == fresh_json,
+          "Available at revision 0: the factory defaults and no assignments");
+  require(fresh == std::string(
+                       R"({"availability":"available","document":{"assignments":[],"defaults":{)"
+                       R"("ball-mill":{"cuttingLength":20.0,"diameter":10.0,"overallLength":72.0,"shankDiameter":10.0,"stickout":35.0,"tipAngle":90.0},)"
+                       R"("chamfer":{"cuttingLength":12.0,"diameter":10.0,"overallLength":60.0,"shankDiameter":10.0,"stickout":30.0,"tipAngle":90.0},)"
+                       R"("drill":{"cuttingLength":60.0,"diameter":10.0,"overallLength":100.0,"shankDiameter":10.0,"stickout":75.0,"tipAngle":118.0},)"
+                       R"("end-mill":{"cuttingLength":22.0,"diameter":10.0,"overallLength":72.0,"shankDiameter":10.0,"stickout":35.0,"tipAngle":90.0},)"
+                       R"("face-mill":{"cuttingLength":12.0,"diameter":50.0,"overallLength":70.0,"shankDiameter":20.0,"stickout":40.0,"tipAngle":90.0},)"
+                       R"("generic":{"cuttingLength":20.0,"diameter":10.0,"overallLength":70.0,"shankDiameter":10.0,"stickout":35.0,"tipAngle":90.0},)"
+                       R"("spot-drill":{"cuttingLength":15.0,"diameter":10.0,"overallLength":60.0,"shankDiameter":10.0,"stickout":30.0,"tipAngle":90.0}},)"
+                       R"("version":1},"machine_id":"mill-1","reason":"","revision":0,"type":"tool_models"})"),
+          "and these are its bytes: keys in alphabetical order, whole numbers with .0");
+  const auto inherited = encode_tool_models(
+      {"mill-1", 4, ToolModelAvailability::available, "",
+       ToolModelDocument{factory_tool_defaults(), {{{2, 0, 0, ""}, ToolFamily::generic, {}}}}});
+  require(inherited &&
+              Json::parse(*inherited).at("document").at("assignments") ==
+                  Json::parse(R"([{"tool":{"number":2,"pocket":0,"diameter":0,"comment":""},)"
+                              R"("family":"generic","overrides":{}}])") &&
+              has(*inherited,
+                  R"("assignments":[{"family":"generic","overrides":{},"tool":{"comment":"","diameter":0.0,"number":2,"pocket":0}}])"),
+          "An assignment that inherits everything: overrides is an empty object");
+  require(encode_tool_models({{}, 0, ToolModelAvailability::unavailable,
+                              "[COFFEECNC] MACHINE_ID is not valid", {}}) ==
+              std::string(R"({"availability":"unavailable","document":null,"machine_id":null,)"
+                          R"("reason":"[COFFEECNC] MACHINE_ID is not valid","revision":0,)"
+                          R"("type":"tool_models"})"),
+          "Unavailable without a machine ID: machine_id is null");
   require(Json::parse(encode_tool_models({"m", 0, ToolModelAvailability::unavailable,
                                           "/data/\xff/x cannot be read", {}})
                           .value_or("0"))
@@ -699,8 +750,11 @@ void archive_reads() {
                 models.document->defaults == factory_tool_defaults() &&
                 models.document->assignments.empty(),
             "No file: available, revision 0, the factory defaults, no assignments");
-    require(steps(rig.files) == "lock /data/mill-1, read " + file,
-            "Opening takes the lock and reads: " + steps(rig.files));
+    require(steps(rig.files) == opening,
+            "Opening makes the directories durable, takes the lock and reads: " +
+                steps(rig.files));
+    require(rig.disk.directories == std::set<std::string>{"/", "/data", "/data/mill-1"},
+            "The data root and the machine directory were made");
     require(!rig.disk.files.contains(file) && !rig.disk.files.contains(temporary) &&
                 rig.disk.files.size() == 1 && rig.disk.files.contains(directory + "/lock"),
             "Reading makes no document: only the directory and its lock file exist");
@@ -727,7 +781,8 @@ void archive_reads() {
     require(reply.outcome == CommandOutcome::rejected && reply.reason == where.reason &&
                 !reply.snapshot,
             "and every command is rejected with its reason");
-    require(files.calls.empty() && disk.files.empty() && disk.directories.empty(),
+    require(files.calls.empty() && disk.files.empty() &&
+                disk.directories == std::set<std::string>{"/"},
             "Nothing is locked, read or made: " + steps(files));
     require(Json::parse(archive.snapshot()).at("availability") ==
                 (settings.machine_id ? "unavailable" : "session_only"),
@@ -781,7 +836,7 @@ void archive_reads() {
               std::format("A file that is {}: every command is rejected with that reason", name));
     }
     require(rig.disk.files.at(file) == content && rig.disk.files.size() == 2 &&
-                steps(rig.files) == "lock /data/mill-1, read " + file,
+                steps(rig.files) == opening,
             std::format("A file that is {} is never written, renamed or removed: {}", name,
                         steps(rig.files)));
   }
@@ -812,6 +867,100 @@ void archive_reads() {
                 archive.apply(assign(0, 1)).outcome == CommandOutcome::rejected &&
                 disk.files.empty(),
             "A directory that cannot be locked: unavailable, nothing read or written");
+  }
+}
+
+// The directories are on the disk before the store says it is available.
+void archive_directories() {
+  // A deeper location, nothing of it there yet.
+  const auto deep = resolve_tool_model_location({"mill-1", "/srv/cnc/data", {}, {}});
+  const std::string made =
+      "make_directory /srv, sync_directory /, make_directory /srv/cnc, sync_directory /srv, "
+      "make_directory /srv/cnc/data, sync_directory /srv/cnc, "
+      "make_directory /srv/cnc/data/mill-1, sync_directory /srv/cnc/data, "
+      "lock /srv/cnc/data/mill-1, read /srv/cnc/data/mill-1/tool-models.json";
+  {
+    FakeDisk disk;
+    FakeToolModelFiles files{disk};
+    ToolModelArchive archive{files, deep};
+    archive.open();
+    require(archive.models().availability == ToolModelAvailability::available &&
+                archive.models().reason.empty() && steps(files) == made,
+            "Every missing directory is made and its parent synchronised before the next, the "
+            "machine directory last, then the lock: " + steps(files));
+  }
+  // What exists is neither made nor synchronised again.
+  {
+    FakeDisk disk;
+    disk.directories = {"/", "/srv", "/srv/cnc"};
+    FakeToolModelFiles files{disk};
+    ToolModelArchive archive{files, deep};
+    archive.open();
+    require(archive.models().availability == ToolModelAvailability::available &&
+                steps(files) ==
+                    "make_directory /srv, make_directory /srv/cnc, make_directory /srv/cnc/data, "
+                    "sync_directory /srv/cnc, make_directory /srv/cnc/data/mill-1, "
+                    "sync_directory /srv/cnc/data, lock /srv/cnc/data/mill-1, "
+                    "read /srv/cnc/data/mill-1/tool-models.json",
+            "Only the parents of directories made here are synchronised: " + steps(files));
+  }
+  // A failure at any level: unavailable, and nothing is locked, read or written afterwards.
+  for (const auto* failing :
+       {"sync_directory /", "sync_directory /srv", "sync_directory /srv/cnc",
+        "sync_directory /srv/cnc/data", "make_directory /srv", "make_directory /srv/cnc/data",
+        "make_directory /srv/cnc/data/mill-1"}) {
+    FakeDisk disk;
+    FakeToolModelFiles files{disk};
+    files.failures[failing] = 1;
+    ToolModelArchive archive{files, deep};
+    archive.open();
+    const auto& models = archive.models();
+    require(models.availability == ToolModelAvailability::unavailable && !models.document &&
+                has(models.reason, "/srv/cnc/data/mill-1 cannot be opened") &&
+                has(models.reason, std::string(failing).starts_with("sync")
+                                       ? "cannot be made durable"
+                                       : "cannot be made"),
+            std::format("A failure of {}: unavailable: {}", failing, models.reason));
+    require(files.calls.back() == failing && files.count("lock") == 0 && files.count("read") == 0,
+            std::format("A failure of {}: nothing follows it: {}", failing, steps(files)));
+    const auto reply = archive.apply(SetToolModelAssignment{"mill-1", 0, row(1),
+                                                            ToolFamily::generic, {}});
+    require(reply.outcome == CommandOutcome::rejected && reply.reason == models.reason &&
+                files.calls.back() == failing && disk.files.empty(),
+            std::format("A failure of {}: no later save is attempted or claimed", failing));
+  }
+  // A machine directory that was there, open to other users: used, and said.
+  for (const unsigned mode : {0755U, 0750U, 0701U, 0777U}) {
+    FakeDisk disk;
+    disk.directories = {"/", "/data", "/data/mill-1"};
+    disk.modes["/data/mill-1"] = mode;
+    disk.modes["/data"] = 0755;
+    FakeToolModelFiles files{disk};
+    ToolModelArchive archive{files, location()};
+    archive.open();
+    const auto note = std::format("The directory /data/mill-1 can be entered by other users "
+                                  "(mode {:o}).",
+                                  mode);
+    require(archive.models().availability == ToolModelAvailability::available &&
+                archive.models().reason == note && files.count("sync_directory") == 0,
+            std::format("An existing machine directory of mode {:o} is used as it is, and the "
+                        "snapshot says so: {}",
+                        mode, archive.models().reason));
+    require(archive.apply(assign(0, 1)).outcome == CommandOutcome::accepted &&
+                archive.models().reason == note &&
+                Json::parse(archive.snapshot()).at("reason") == note,
+            "also after a save");
+  }
+  {
+    FakeDisk disk;
+    disk.directories = {"/", "/data", "/data/mill-1"};
+    disk.modes["/data"] = 0777;
+    FakeToolModelFiles files{disk};
+    ToolModelArchive archive{files, location()};
+    archive.open();
+    require(archive.models().availability == ToolModelAvailability::available &&
+                archive.models().reason.empty(),
+            "The mode of a data root that was there is the operator's: nothing is said");
   }
 }
 
@@ -868,7 +1017,7 @@ void archive_writes() {
 
   // A stale base revision: the snapshot, then the rejection; nothing is written.
   const auto before = rig.disk.files.at(file);
-  auto calls = rig.files.calls.size();
+  const auto calls = rig.files.calls.size();
   for (const std::uint64_t base : {std::uint64_t{7}, std::uint64_t{9}, std::uint64_t{0}}) {
     const auto reply = rig.archive.apply(assign(base, 20));
     require(reply.outcome == CommandOutcome::rejected && reply.snapshot &&
@@ -879,39 +1028,91 @@ void archive_writes() {
   require(rig.disk.files.at(file) == before && rig.revision() == 8 &&
               steps(rig.files, calls) == std::format("read {0}, read {0}, read {0}", file),
           "and nothing was written for it");
+}
 
-  // The file is the authority at commit, not what was read before.
-  const ToolModelDocument foreign{other_defaults(), {{row(99), ToolFamily::generic, {}}}};
-  rig.disk.files[file] = saved(40, foreign);
-  auto reply = rig.archive.apply(assign(8, 20));
-  require(reply.outcome == CommandOutcome::rejected && reply.snapshot && rig.revision() == 40 &&
-              rig.archive.models().document == foreign &&
-              Json::parse(rig.archive.snapshot()).at("revision") == 40 &&
-              rig.disk.files.at(file) == saved(40, foreign),
-          "A file replaced from outside is found at commit: its revision decides");
-  rig.accepted(assign(40, 20), "A command based on what the file holds");
-  require(numbers() == std::vector<int>{20, 99}, "is applied to what the file holds");
-  // The same revision, other content: still the file's content.
-  rig.disk.files[file] = saved(41, foreign);
-  reply = rig.archive.apply(remove(41, 5));
-  require(reply.outcome == CommandOutcome::accepted && numbers() == std::vector<int>{99},
-          "At an equal revision the file's content is still what is changed");
-  rig.disk.files.erase(file);
-  reply = rig.archive.apply(assign(42, 1));
-  require(reply.outcome == CommandOutcome::rejected && reply.snapshot && rig.revision() == 0 &&
-              doc(rig.archive.models()).assignments.empty() && !rig.disk.files.contains(file),
-          "A file removed from outside: revision 0 again, and the command is stale");
-  rig.accepted(assign(0, 1), "The first save after that");
-  rig.disk.files[file] = "{ not json";
-  calls = rig.files.calls.size();
-  reply = rig.archive.apply(assign(1, 2));
-  require(reply.outcome == CommandOutcome::rejected && reply.snapshot && !rig.available() &&
-              has(reply.reason, "is not usable") && rig.disk.files.at(file) == "{ not json" &&
-              steps(rig.files, calls) == "read " + file,
-          "A file corrupted from outside: unavailable from then on, and not overwritten");
-  require(rig.archive.apply(assign(0, 2)).outcome == CommandOutcome::rejected &&
-              rig.files.calls.size() == calls + 1,
-          "and not looked at again");
+// The settings file changed by something else while this process runs: nothing of it is taken
+// over and nothing is written over it. Storage is unavailable until the next start.
+void archive_outside_changes() {
+  const ToolModelDocument held{other_defaults(), {{row(4), ToolFamily::chamfer, {}}}};
+  auto edited = held;
+  edited.assignments.front().family = ToolFamily::drill;
+  struct Change {
+    std::string name;
+    std::optional<std::string> content; // none: the file is removed
+    std::uint64_t base;                 // the revision the command names
+  };
+  const std::vector<Change> changes{
+      {"removed", std::nullopt, 5},
+      {"removed, command based on revision 0", std::nullopt, 0},
+      {"replaced with a lower revision", saved(3, held), 5},
+      {"replaced with a lower revision, command based on it", saved(3, held), 3},
+      {"replaced with a higher revision", saved(9, held), 5},
+      {"replaced with a higher revision, command based on it", saved(9, held), 9},
+      {"replaced with other content at the same revision", saved(5, edited), 5},
+      {"replaced with text that is no document", std::string("{ not json"), 5},
+      {"replaced with another machine's file", saved(5, held, "mill-2"), 5},
+  };
+  for (const auto& [name, content, base] : changes) {
+    Rig rig{saved(5, held)};
+    require(rig.available() && rig.revision() == 5, "The file as this process read it");
+    if (content)
+      rig.disk.files[file] = *content;
+    else
+      rig.disk.files.erase(file);
+    const auto calls = rig.files.calls.size();
+    const auto reply = rig.archive.apply(assign(base, 9));
+    const auto& models = rig.archive.models();
+    require(reply.outcome == CommandOutcome::rejected && reply.snapshot &&
+                reply.reason == models.reason,
+            std::format("File {}: the command is rejected, after the snapshot", name));
+    require(models.availability == ToolModelAvailability::unavailable && models.revision == 0 &&
+                !models.document && models.machine_id == machine && has(models.reason, file) &&
+                has(models.reason, "was changed from outside while CoffeeCNC runs"),
+            std::format("File {}: unavailable, never an available snapshot of what the file "
+                        "holds now: {}",
+                        name, models.reason));
+    const auto snapshot = Json::parse(rig.archive.snapshot());
+    require(snapshot.at("availability") == "unavailable" && snapshot.at("revision") == 0 &&
+                snapshot.at("document").is_null(),
+            std::format("File {}: the snapshot says so", name));
+    require(steps(rig.files, calls) == "read " + file,
+            std::format("File {}: one read and no write: {}", name, steps(rig.files, calls)));
+    // Sticky: whatever is asked next, also what would fit the file as it is now.
+    for (const std::uint64_t later : {std::uint64_t{0}, std::uint64_t{3}, std::uint64_t{5},
+                                      std::uint64_t{9}}) {
+      const auto again = rig.archive.apply(defaults(later, factory_tool_defaults()));
+      require(again.outcome == CommandOutcome::rejected && again.reason == models.reason,
+              std::format("File {}: every later command is rejected the same way", name));
+    }
+    require(rig.files.calls.size() == calls + 1 &&
+                (content ? rig.disk.files.at(file) == *content : !rig.disk.files.contains(file)) &&
+                !rig.disk.files.contains(temporary),
+            std::format("File {}: it is not read again and never overwritten", name));
+    // Until a new store instance: that one reads what is there.
+    rig.archive.close();
+    FakeToolModelFiles next_files{rig.disk};
+    ToolModelArchive next{next_files, location()};
+    next.open();
+    const bool usable = !content || decode_tool_model_file(*content)
+                                        .transform([](const ToolModelFile& f) -> bool {
+                                          return f.machine_id == machine;
+                                        })
+                                        .value_or(false);
+    require((next.models().availability == ToolModelAvailability::available) == usable &&
+                (!usable || next.models().revision ==
+                                (content ? decode_tool_model_file(*content)
+                                               .transform([](const ToolModelFile& f)
+                                                              -> std::uint64_t {
+                                                 return f.revision;
+                                               })
+                                               .value_or(0)
+                                         : 0)),
+            std::format("File {}: a new instance reads what the file holds", name));
+  }
+  // What this process wrote itself is not an outside change.
+  Rig rig{saved(5, held)};
+  rig.accepted(assign(5, 9), "A save");
+  rig.accepted(assign(6, 10), "and another: the file is what this process wrote");
 }
 
 void archive_failures() {
@@ -931,7 +1132,9 @@ void archive_failures() {
               std::format("A failure of {}: failed, the file unchanged: {}", step, reply.reason));
       require((with_file ? rig.disk.files.at(file) == good : !rig.disk.files.contains(file)) &&
                   !rig.disk.files.contains(temporary) && rig.revision() == base &&
-                  rig.archive.snapshot() == shown && rig.files.count("sync_directory") == 0 &&
+                  rig.archive.snapshot() == shown &&
+                  // The two of opening, none for a save that did not get that far.
+                  rig.files.count("sync_directory") == 2 &&
                   rig.files.count("discard") == 1,
               std::format("A failure of {}: file and snapshot are as before, the temporary file "
                           "is gone: {}",
@@ -1467,6 +1670,39 @@ void on_the_host(const std::filesystem::path& scratch) {
                 !std::filesystem::exists(root / "mill_a" / "tool-models.json"),
             "Machine mill_a under the same root has nothing of Mill_A's");
   }
+  // Whatever the umask: directories 0700 and files 0600 exactly. A machine directory that was
+  // there and is open to others is used and reported.
+  for (const mode_t mask : {mode_t{0}, mode_t{0277}, mode_t{022}}) {
+    const auto before = ::umask(mask);
+    const auto base = scratch / std::format("umask-{:o}", static_cast<unsigned>(mask));
+    const auto place = resolve_tool_model_location({"m", (base / "a" / "b").string(), {}, {}});
+    LocalToolModelFiles files;
+    ToolModelArchive archive{files, place};
+    archive.open();
+    const auto reply = archive.apply(SetToolModelAssignment{"m", 0, row(1), ToolFamily::generic, {}});
+    static_cast<void>(::umask(before));
+    require(reply.outcome == CommandOutcome::accepted && archive.models().reason.empty(),
+            std::format("With umask {:o} a save succeeds: {}{}", static_cast<unsigned>(mask),
+                        reply.reason, archive.models().reason));
+    require(mode(base) == 0700 && mode(base / "a") == 0700 && mode(base / "a" / "b") == 0700 &&
+                mode(base / "a" / "b" / "m") == 0700 && mode(base / "a" / "b" / "m" / "lock") == 0600 &&
+                mode(base / "a" / "b" / "m" / "tool-models.json") == 0600,
+            std::format("With umask {:o}: every directory made is 0700, every file 0600",
+                        static_cast<unsigned>(mask)));
+  }
+  {
+    const auto wide = scratch / "wide";
+    std::filesystem::create_directories(wide / "m");
+    require(::chmod((wide / "m").c_str(), 0755) == 0, "The test directory gets mode 0755");
+    LocalToolModelFiles files;
+    ToolModelArchive archive{files, resolve_tool_model_location({"m", wide.string(), {}, {}})};
+    archive.open();
+    require(archive.models().availability == ToolModelAvailability::available &&
+                has(archive.models().reason, "can be entered by other users (mode 755)") &&
+                mode(wide / "m") == 0755,
+            "A machine directory that was there with mode 0755 is used, left as it is, and "
+            "reported: " + archive.models().reason);
+  }
   // The store, with its thread, on the real files.
   {
     LocalToolModelFiles files;
@@ -1529,7 +1765,9 @@ auto main(int argc, char** argv) -> int {
     wire_text();
     file_refusals();
     archive_reads();
+    archive_directories();
     archive_writes();
+    archive_outside_changes();
     archive_failures();
     archive_limits();
     archive_machines();

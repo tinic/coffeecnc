@@ -119,22 +119,39 @@ LocalToolModelFiles::~LocalToolModelFiles() {
   static_cast<void>(close_descriptor(lock_));
 }
 
+auto LocalToolModelFiles::make_directory(const std::string& path)
+    -> std::expected<Directory, std::string> {
+  constexpr unsigned permission_bits = 07777;
+  bool created = ::mkdir(path.c_str(), directory_mode) == 0;
+  if (!created && errno != EEXIST)
+    return failure(std::format("the directory {} cannot be made", path));
+  // The umask may have taken bits away; it cannot have added any.
+  if (created && ::chmod(path.c_str(), directory_mode) != 0)
+    return failure(std::format("the mode of the directory {} cannot be set", path));
+  struct stat info {};
+  if (::stat(path.c_str(), &info) != 0)
+    return failure(std::format("the directory {} cannot be examined", path));
+  if (!S_ISDIR(info.st_mode))
+    return std::unexpected(std::format("{} is not a directory", path));
+  return Directory{created, static_cast<unsigned>(info.st_mode) & permission_bits};
+}
+
 auto LocalToolModelFiles::lock(const std::string& directory) -> std::expected<void, LockError> {
   const auto error = [](std::string_view what) -> std::unexpected<LockError> {
     return std::unexpected(LockError{
         false, std::format("{}: {}", what, std::generic_category().message(errno))});
   };
-  // Every directory on the way that is missing; one that exists is left as it is.
-  for (auto end = directory.find('/', 1);; end = directory.find('/', end + 1)) {
-    const auto part = directory.substr(0, end);
-    if (::mkdir(part.c_str(), directory_mode) != 0 && errno != EEXIST)
-      return error("the directory cannot be made");
-    if (end == std::string::npos)
-      break;
-  }
   unlock();
   const auto file = directory + '/' + std::string(tool_model_lock_name);
-  lock_ = ::open(file.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, file_mode);
+  // Made by this call: 0600 exactly, whatever the umask. One that exists is left as it is.
+  lock_ = ::open(file.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, file_mode);
+  if (lock_ >= 0 && ::fchmod(lock_, file_mode) != 0) {
+    auto refused = error("the mode of the lock file cannot be set");
+    static_cast<void>(close_descriptor(lock_));
+    return refused;
+  }
+  if (lock_ < 0 && errno == EEXIST)
+    lock_ = ::open(file.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
   if (lock_ < 0)
     return error("the lock file cannot be opened");
   if (::flock(lock_, LOCK_EX | LOCK_NB) != 0) {
@@ -191,6 +208,9 @@ auto LocalToolModelFiles::open_temporary(const std::string& path) -> Done {
                       file_mode);
   if (temporary_ < 0)
     return failure("the temporary file cannot be made");
+  // Also for one a crashed write left there, and whatever the umask.
+  if (::fchmod(temporary_, file_mode) != 0)
+    return failure("the mode of the temporary file cannot be set");
   return {};
 }
 
@@ -270,9 +290,41 @@ void ToolModelArchive::show(ToolModels models) {
   snapshot_ = encoded.value_or(std::string());
 }
 
+auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
+  constexpr unsigned others = 077;
+  const auto& directory = location_.directory;
+  // Outermost first. What exists is left as it is; what is made is made durable in its
+  // parent before anything is made inside it.
+  for (auto end = directory.find('/', 1);; end = directory.find('/', end + 1)) {
+    const auto part = directory.substr(0, end);
+    const auto made = files_.make_directory(part);
+    if (!made)
+      return std::unexpected(made.error());
+    if (made->created) {
+      const auto slash = part.rfind('/');
+      const auto parent = slash == 0 || slash == std::string::npos ? std::string("/")
+                                                                   : part.substr(0, slash);
+      if (const auto durable = files_.sync_directory(parent); !durable)
+        return std::unexpected(std::format("the new directory {} cannot be made durable: {}",
+                                           part, durable.error()));
+    }
+    if (end == std::string::npos) {
+      if ((made->mode & others) != 0)
+        note_ = std::format("The directory {} can be entered by other users (mode {:o}).",
+                            directory, made->mode);
+      return {};
+    }
+  }
+}
+
 void ToolModelArchive::open() {
   if (location_.availability != ToolModelAvailability::available)
     return;
+  if (const auto prepared = prepare(); !prepared) {
+    show(unavailable(std::format("Tool model settings in {} cannot be opened: {}. {}",
+                                 location_.directory, prepared.error(), not_saved)));
+    return;
+  }
   if (const auto locked = files_.lock(location_.directory); !locked) {
     show(unavailable(locked.error().in_use
                          ? std::format("Tool model settings in {} are already in use by another "
@@ -294,7 +346,7 @@ auto ToolModelArchive::read() const -> ToolModels {
     return unavailable(std::format("{} cannot be read: {}. {}", file, read.error(), not_saved));
   const std::optional<ToolModelFiles::Content> content = std::move(*read);
   if (!content)
-    return {location_.machine_id, 0, ToolModelAvailability::available, {},
+    return {location_.machine_id, 0, ToolModelAvailability::available, note_,
             ToolModelDocument{factory_tool_defaults(), {}}};
   if (content->more)
     return unavailable(std::format("{} is larger than 1 MiB. {}", file, left_alone));
@@ -305,8 +357,8 @@ auto ToolModelArchive::read() const -> ToolModels {
     return unavailable(std::format("{} belongs to machine {}, not to {}. {}", file,
                                    saved->machine_id, location_.machine_id.value_or(""),
                                    left_alone));
-  ToolModels held{location_.machine_id, saved->revision, ToolModelAvailability::available, {},
-                  std::move(saved->document)};
+  ToolModels held{location_.machine_id, saved->revision, ToolModelAvailability::available,
+                  note_, std::move(saved->document)};
   if (const auto encoded = encode_tool_models(held); !encoded)
     return unavailable(std::format("{} is not usable: {} {}", file, encoded.error(), left_alone));
   return held;
@@ -315,13 +367,21 @@ auto ToolModelArchive::read() const -> ToolModels {
 auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply {
   if (models_.availability != ToolModelAvailability::available)
     return {CommandOutcome::rejected, models_.reason, false};
-  // Compare and swap against the file itself, not against what was last read from it.
-  bool differs = false;
+  // Compare and swap against the file itself. The lock keeps other CoffeeCNC processes out;
+  // a file that is nevertheless not what this process read or wrote last was changed by
+  // something else. Nothing is written over it, and nothing of it is taken over: storage is
+  // unavailable until the next start.
   if (auto now = read(); now != models_) {
-    show(std::move(now));
-    differs = true;
+    const auto file = path(tool_model_file_name);
+    show(now.availability == ToolModelAvailability::available
+             ? unavailable(std::format("{} was changed from outside while CoffeeCNC runs. {} "
+                                       "Restart CoffeeCNC to use what it holds.",
+                                       file, not_saved))
+             : unavailable(std::format("{} was changed from outside while CoffeeCNC runs: {}",
+                                       file, now.reason)));
+    return {CommandOutcome::rejected, models_.reason, true};
   }
-  if (models_.availability != ToolModelAvailability::available || !models_.document)
+  if (!models_.document)
     return {CommandOutcome::rejected, models_.reason, true};
   const auto base = std::visit([](const auto& c) -> std::uint64_t { return c.base_revision; },
                                command);
@@ -333,17 +393,17 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
             true};
   if (models_.revision >= max_tool_model_revision)
     return {CommandOutcome::rejected,
-            "The tool models have reached their last revision. Nothing was saved.", differs};
+            "The tool models have reached their last revision. Nothing was saved.", false};
   auto document = changed(*models_.document, command);
   if (!document)
-    return {CommandOutcome::rejected, document.error(), differs};
-  ToolModels next{location_.machine_id, models_.revision + 1, ToolModelAvailability::available, {},
-                  std::move(*document)};
+    return {CommandOutcome::rejected, document.error(), false};
+  ToolModels next{location_.machine_id, models_.revision + 1, ToolModelAvailability::available,
+                  note_, std::move(*document)};
   const auto text = encode_tool_model_file(
       {location_.machine_id.value_or(""), next.revision, *next.document});
   if (const auto message = encode_tool_models(next); !text || !message)
     return {CommandOutcome::rejected,
-            std::format("{} Nothing was saved.", text ? message.error() : text.error()), differs};
+            std::format("{} Nothing was saved.", text ? message.error() : text.error()), false};
 
   const auto file = path(tool_model_file_name);
   const auto temporary = path(tool_model_temporary_name);
@@ -359,7 +419,7 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
     return {CommandOutcome::failed,
             std::format("The tool models were not saved: {}. The saved file is unchanged.",
                         step.error()),
-            differs};
+            false};
   }
   if (const auto durable = files_.sync_directory(location_.directory); !durable) {
     // The file was replaced, and whether that outlasts a power failure is not known. What it

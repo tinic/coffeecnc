@@ -20,8 +20,9 @@ namespace coffeecnc {
 // What several FakeToolModelFiles share, as processes share a disk.
 struct FakeDisk {
   std::map<std::string, std::string> files; // by path
-  std::set<std::string> directories;
-  std::set<std::string> locked; // directories whose lock is held
+  std::set<std::string> directories{"/"};
+  std::map<std::string, unsigned> modes; // of directories; 0700 where none is given
+  std::set<std::string> locked;          // directories whose lock is held
 };
 
 // The tool-model writer's file system in memory. Every step can be made to fail, and a hook
@@ -35,18 +36,25 @@ public:
   auto operator=(const FakeToolModelFiles&) -> FakeToolModelFiles& = delete;
 
   FakeDisk& disk;
-  // Steps that fail, each as often as its count: lock, read, open_temporary, write, sync,
-  // rename, sync_directory.
+  // Steps that fail, each as often as its count: make_directory, lock, read, open_temporary,
+  // write, sync, rename, sync_directory; or one call of a step, as `<step> <path>`.
   std::map<std::string, int> failures;
   // Every call, as `<step> <path>`.
   std::vector<std::string> calls;
   // Called inside every step, with its name, before it does anything.
   std::function<void(std::string_view)> during;
 
+  auto make_directory(const std::string& path)
+      -> std::expected<Directory, std::string> override {
+    if (begin("make_directory", path))
+      return std::unexpected("the directory " + path + " cannot be made: Permission denied");
+    const bool created = disk.directories.insert(path).second;
+    const auto mode = disk.modes.find(path);
+    return Directory{created, mode == disk.modes.end() ? 0700U : mode->second};
+  }
   auto lock(const std::string& directory) -> std::expected<void, LockError> override {
     if (begin("lock", directory))
       return std::unexpected(LockError{false, "the lock file cannot be opened: Permission denied"});
-    disk.directories.insert(directory);
     disk.files.try_emplace(directory + "/lock", "");
     if (!disk.locked.insert(directory).second)
       return std::unexpected(LockError{true, "the lock cannot be taken: Resource temporarily "
@@ -121,11 +129,14 @@ private:
     calls.push_back(std::string(step) + ' ' + path);
     if (during)
       during(step);
-    const auto failing = failures.find(std::string(step));
-    if (failing == failures.end() || failing->second <= 0)
-      return false;
-    --failing->second;
-    return true;
+    for (const auto& key : {std::string(step), std::string(step) + ' ' + path}) {
+      const auto failing = failures.find(key);
+      if (failing != failures.end() && failing->second > 0) {
+        --failing->second;
+        return true;
+      }
+    }
+    return false;
   }
   void release() {
     if (!held_.empty())

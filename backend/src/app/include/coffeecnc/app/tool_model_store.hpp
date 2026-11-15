@@ -68,12 +68,19 @@ public:
     std::string bytes; // at most the limit asked for
     bool more{};       // the file is longer
   };
+  struct Directory {
+    bool created{};   // by this call
+    unsigned mode{};  // its permission bits now
+  };
 
   ToolModelFiles() = default;
   virtual ~ToolModelFiles() = default;
 
-  // Makes `directory` and what is missing above it, each with mode 0700, opens
-  // `<directory>/lock` (made with mode 0600) and takes an exclusive flock on it without
+  // Makes this one directory with mode 0700 exactly, whatever the umask, when it is missing;
+  // one that exists is left as it is. Fails when the path is not a directory.
+  [[nodiscard]] virtual auto make_directory(const std::string& path)
+      -> std::expected<Directory, std::string> = 0;
+  // Opens `<directory>/lock` (made with mode 0600) and takes an exclusive flock on it without
   // waiting. The lock is held until unlock or destruction.
   [[nodiscard]] virtual auto lock(const std::string& directory)
       -> std::expected<void, LockError> = 0;
@@ -88,7 +95,7 @@ public:
   // fsync of the temporary file, which is then closed.
   [[nodiscard]] virtual auto sync() -> Done = 0;
   [[nodiscard]] virtual auto rename(const std::string& from, const std::string& to) -> Done = 0;
-  // fsync of the directory: the rename is on the disk.
+  // fsync of the directory: a rename in it, or an entry made in it, is on the disk.
   [[nodiscard]] virtual auto sync_directory(const std::string& directory) -> Done = 0;
   // Closes the temporary file if it is open and removes it. Failure is not reported.
   virtual void discard(const std::string& path) = 0;
@@ -108,6 +115,8 @@ public:
   LocalToolModelFiles(const LocalToolModelFiles&) = delete;
   auto operator=(const LocalToolModelFiles&) -> LocalToolModelFiles& = delete;
 
+  [[nodiscard]] auto make_directory(const std::string& path)
+      -> std::expected<Directory, std::string> override;
   [[nodiscard]] auto lock(const std::string& directory) -> std::expected<void, LockError> override;
   void unlock() override;
   [[nodiscard]] auto read(const std::string& path, std::size_t limit)
@@ -129,7 +138,7 @@ struct ToolModelReply {
   CommandOutcome outcome{CommandOutcome::accepted};
   std::string reason;
   // The `tool_models` snapshot is sent before the result: after a save, for a stale base
-  // revision, and whenever the file turned out to hold something else than was last sent.
+  // revision, and when the store has just become unavailable.
   bool snapshot{};
 };
 
@@ -140,16 +149,26 @@ struct ToolModelReply {
 //
 //   session_only  the location has no machine ID. Nothing is opened, read or written.
 //   unavailable   the location is not usable, the lock is held by another process, the
-//                 directory or file cannot be read, or the file is not a valid version 1
+//                 directory or file cannot be read, the file is not a valid version 1
 //                 document of this machine (too large, not JSON, unknown fields, a later
-//                 version, another machine's). The reason names the directory or the file.
-//                 Nothing is written, renamed or removed. It ends with the process.
+//                 version, another machine's), or the file was changed from outside while
+//                 this process runs. The reason names the directory or the file. Nothing is
+//                 written, renamed or removed. It ends with the process.
 //   available     the lock is held. Without a file: revision 0, factory defaults, no
 //                 assignments; no file is made before the first accepted command.
 //
-// `apply`, when available, in this order: the file is read again and is the authority (what
-// it holds replaces what was last sent; if it has become unusable the store is unavailable);
-// a base revision other than the file's is `rejected` as stale; the new document is checked
+// `open` makes every directory of the location that is missing, outermost first, each 0700,
+// and fsyncs the parent of each one it made before it goes on: a directory is on the disk
+// only once its parent is. A failure of any of these is `unavailable`. Then the lock, then
+// the file. A machine directory that existed and that other users can enter (any group or
+// other permission bit) is used as it is, and the available snapshot's `reason` says so: the
+// operator may have set it up that way, and the files in it are 0600 either way.
+//
+// `apply`, when available, in this order: the file is read again and must hold exactly what
+// this process read or wrote last, revision and content (a file removed, replaced or edited
+// from outside makes the store unavailable, and the command is `rejected` with that snapshot
+// before it); a base revision other than the held one is `rejected` as stale; the new
+// document is checked
 // (1001 assignments, 1 MiB as file and as message, revision below 2^53 - 1); then temporary
 // file in the same directory, write, fsync, rename, fsync of the directory. A failure up to
 // and including the rename is `failed`: the saved file is as it was and the temporary file is
@@ -161,7 +180,7 @@ public:
   // The files must outlive the archive.
   ToolModelArchive(ToolModelFiles& files, ToolModelLocation location);
 
-  // Takes the lock and reads the file. Once, before anything else.
+  // Makes the directories, takes the lock and reads the file. Once, before anything else.
   void open();
   // Releases the lock.
   void close();
@@ -172,6 +191,7 @@ public:
 
 private:
   [[nodiscard]] auto read() const -> ToolModels;
+  [[nodiscard]] auto prepare() -> std::expected<void, std::string>;
   void show(ToolModels models);
   [[nodiscard]] auto unavailable(std::string reason) const -> ToolModels;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
@@ -180,6 +200,8 @@ private:
   ToolModelLocation location_;
   ToolModels models_;
   std::string snapshot_;
+  // Said with every available snapshot: the machine directory is open to other users.
+  std::string note_;
 };
 
 // The archive on its writer thread, behind the session.

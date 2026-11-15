@@ -691,6 +691,74 @@ void source_preview_tools() {
           "Identical passes with task idle between: accepted, in one step");
 }
 
+// A table is shown only with the comments read for it: a saved tool model is bound to them.
+void source_table_is_withheld_without_its_comments() {
+  Rig rig;
+  write(rig.config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");
+  static_cast<void>(rig.step());
+  auto r = rig.step();
+  const std::vector<Tool> first{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, ""}};
+  require(r.tool_table.revision == 1 && r.tool_table.tools == first && r.messages.empty() &&
+              !r.accepted_tools && r.status.tool.prepared == 2,
+          "A table accepted with the comments of its file, one of them empty");
+
+  // The file is gone. The table shown was read with its comments: it stays.
+  std::filesystem::remove(rig.config.tool_table);
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.tool_table.tools == first && r.messages.empty(),
+          "A file that cannot be read changes nothing while no table is accepted");
+
+  // LinuxCNC has another table loaded, tool 2 as before: no row is shown, not even tool 2
+  // with the empty comment it had, which no file vouches for now.
+  rig.loaded = std::vector<LoadedTool>{{1, {1, 1, 80, 12, ""}}, {2, {2, 2, 40, 3, ""}}};
+  static_cast<void>(rig.step());
+  r = rig.step();
+  const std::vector<Tool> rows{{1, 1, 80, 12, ""}, {2, 2, 40, 3, ""}};
+  require(r.tool_table.revision == 2 && r.tool_table.tools.empty(),
+          "A table accepted while its file cannot be read is withheld: an empty table");
+  require(r.messages.size() == 1 && r.messages[0].error &&
+              r.messages[0].text.find("cannot be read: the tool table is not shown") !=
+                  std::string::npos &&
+              r.messages[0].text.find(rig.config.tool_table) != std::string::npos,
+          "said once, naming the file");
+  require(r.accepted_tools == rows && r.status.tool.prepared == 2,
+          "The accepted rows still count for the preview context, and the prepared tool is "
+          "resolved in the loaded table as before");
+  for (int period = 0; period < 3; ++period) {
+    r = rig.step();
+    require(r.messages.empty() && r.tool_table.revision == 2 && r.tool_table.tools.empty() &&
+                r.accepted_tools == rows,
+            "Still unreadable in the next periods: nothing said again, nothing sent again");
+  }
+  // Another table and a reported load in the same failure.
+  rig.loaded = std::vector<LoadedTool>{{1, {1, 1, 81, 12, ""}}, {2, {2, 2, 40, 3, ""}}};
+  static_cast<void>(rig.step());
+  ++rig.loads.tool_tables;
+  r = rig.step();
+  const std::vector<Tool> later{{1, 1, 81, 12, ""}, {2, 2, 40, 3, ""}};
+  require(r.messages.empty() && r.tool_table.revision == 2 && r.tool_table.tools.empty() &&
+              r.accepted_tools == later,
+          "Another table in the same failure: still withheld, still said only once");
+
+  // Readable again, the numbers what they were: published, with the comments.
+  write(rig.config.tool_table, "T1 P1 Z81 D12 ;face mill\nT2 P2 Z40 D3 ;drill\n");
+  r = rig.step();
+  require(r.tool_table.revision == 3 &&
+              r.tool_table.tools ==
+                  std::vector<Tool>{{1, 1, 81, 12, "face mill"}, {2, 2, 40, 3, "drill"}} &&
+              r.messages.empty() && !r.accepted_tools,
+          "Readable again with the same numbers: the table is published with its comments");
+  require(rig.step().tool_table.revision == 3, "and not sent again unchanged");
+
+  // A later failure is a new episode: at a reported load.
+  std::filesystem::remove(rig.config.tool_table);
+  ++rig.loads.tool_tables;
+  r = rig.step();
+  require(r.tool_table.revision == 4 && r.tool_table.tools.empty() && r.messages.size() == 1 &&
+              r.accepted_tools == later,
+          "A later failure withholds the table again and is said again, once");
+}
+
 void source_without_a_tool_table() {
   Rig rig;
   rig.loaded.reset();
@@ -723,6 +791,7 @@ auto main(int argc, char** argv) -> int {
     source_program_loads();
     source_lines_belong_to_the_revision();
     source_tool_table();
+    source_table_is_withheld_without_its_comments();
     source_preview_tools();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";

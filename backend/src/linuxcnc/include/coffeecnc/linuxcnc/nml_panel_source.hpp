@@ -25,7 +25,12 @@ namespace coffeecnc {
 //                 is what set_tool and remove_tool edit before LinuxCNC loads it again. Only the
 //                 comments come from the file, by tool number: LinuxCNC does not keep them with
 //                 the loaded table. They are read when a table is accepted, and when the port
-//                 reports a load (NmlLoads::tool_tables)
+//                 reports a load (NmlLoads::tool_tables). A table is shown only with the
+//                 comments read for it: while the file cannot be read the table shown is
+//                 empty (said once per failure), the file is tried again every period, and
+//                 PanelReading::accepted_tools carries the rows for the preview context. The
+//                 prepared tool is resolved in the loaded table and the preview is computed
+//                 from the raw table: neither is affected
 //   work offsets  the active system only, from the status. The interpreter's parameter file is
 //                 not read: it is what LinuxCNC saved last, not what is in force (see
 //                 docs/linuxcnc-interface.md)

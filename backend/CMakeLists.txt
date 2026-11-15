@@ -217,6 +217,17 @@ if(BUILD_TESTING)
             set_tests_properties(linuxcnc_shell_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
               RESOURCE_LOCK linuxcnc TIMEOUT 600 FIXTURES_REQUIRED panel)
           endforeach()
+          # The tool models through the real editor, on a sim machine that is given an identity
+          # (run.sh -m): a defaults save and an assignment save reach the disk; LinuxCNC and the
+          # application are then started again in the same run directory (run.sh -k), and the
+          # panel shows what was saved.
+          add_test(NAME linuxcnc_shell_tool_models
+            COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/tool_models_restart.sh
+            ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+            $<TARGET_FILE:coffeecnc_shell_tests>
+            ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_tool_models)
+          set_tests_properties(linuxcnc_shell_tool_models PROPERTIES LABELS linuxcnc
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 900 FIXTURES_REQUIRED panel)
           # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
           # and SIGTERM ends it and LinuxCNC with no process left.
           add_test(NAME linuxcnc_coffeecnc_start COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

@@ -166,6 +166,22 @@ void preview_context_follows_live_inputs() {
           "A changed rotation of the active system too");
   context = sent.context();
 
+  // A tool table withheld from the panel (its file cannot be read) is still the machine's:
+  // the rows it would show count, and the context stays.
+  const auto shown = r.tool_table;
+  r.accepted_tools = shown.tools;
+  r.tool_table = {shown.revision + 1, {}};
+  sent = compose(composer, r);
+  require(sent.context() == context && sent.types.front() == "tool_table" &&
+              sent.messages.front().at("tools").empty(),
+          "A withheld tool table is sent empty and leaves the preview context as it is");
+  r.accepted_tools.reset();
+  r.tool_table = {shown.revision + 2, shown.tools};
+  sent = compose(composer, r);
+  require(sent.context() == context && sent.types.front() == "tool_table" &&
+              sent.messages.front().at("tools").size() == shown.tools.size(),
+          "Shown again: sent again, and still the same context");
+
   // A jog: the position counts only once the machine rests again.
   r.status.motion.in_position = false;
   r.status.axes.at(0).machine = 5;

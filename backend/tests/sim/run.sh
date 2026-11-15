@@ -2,13 +2,18 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n] <program> [arguments...]
+#   run.sh [-p sim|g0759] [-u mm|inch] [-m machine-id] [-k] [-t seconds] [-d run-directory]
+#          [-n] <program> [arguments...]
 #
 # Profiles (-p):
 #   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
 #
-# @RUN@ in an INI template is the run directory.
+# @RUN@ in an INI template is the run directory. With -m the sim profile, which names no
+# machine, gets `[COFFEECNC] MACHINE_ID = <machine-id>` and `DATA_DIRECTORY =
+# <run-directory>/coffeecnc-data` (the g0759 profile has its own). That data directory is
+# emptied before every run, except with -k: a run that is to find what the run before it in
+# the same run directory saved.
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. This script assembles the run directory, waits for
@@ -40,12 +45,16 @@ units=mm
 timeout=300
 directory=
 assemble_only=
-while getopts "p:u:t:d:n" option; do
+machine=
+keep_data=
+while getopts "p:u:t:d:m:kn" option; do
   case $option in
   p) profile=$OPTARG ;;
   u) units=$OPTARG ;;
   t) timeout=$OPTARG ;;
   d) directory=$OPTARG ;;
+  m) machine=$OPTARG ;;
+  k) keep_data=1 ;;
   n) assemble_only=1 ;;
   *) exit 125 ;;
   esac
@@ -53,9 +62,11 @@ done
 shift $((OPTIND - 1))
 if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
   { [ "$profile" != sim ] && [ "$profile" != g0759 ]; } ||
-  { [ "$profile" = g0759 ] && [ "$units" != mm ]; }; then
-  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n]" \
-    "<program> [arguments...]  (g0759 is millimetres only)" >&2
+  { [ "$profile" = g0759 ] && [ "$units" != mm ]; } ||
+  { [ "$profile" = g0759 ] && [ -n "$machine" ]; }; then
+  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-m machine-id] [-k] [-t seconds]" \
+    "[-d run-directory] [-n] <program> [arguments...]" \
+    "(g0759 is millimetres only and has its own machine ID)" >&2
   exit 125
 fi
 program=$(realpath "$1") || exit 125
@@ -78,7 +89,7 @@ ini=coffeecnc_$profile.ini
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
-for word in "$program" "$directory" "$@"; do
+for word in "$program" "$directory" "$machine" "$@"; do
   if ! plain "$word"; then
     echo "sim=error detail=unsupported-characters-in-path-or-argument"
     exit 125
@@ -108,12 +119,16 @@ perl -pe '
   s/\@RUN\@/$run/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
 ' "$units" "$directory/display.sh $*" "$directory" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+if [ -n "$machine" ]; then
+  printf '\n[COFFEECNC]\nMACHINE_ID = %s\nDATA_DIRECTORY = %s/coffeecnc-data\n' \
+    "$machine" "$directory" >>"$directory/$ini" || exit 125
+fi
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done
 rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log"
 # What an earlier run saved there ([COFFEECNC] DATA_DIRECTORY of the g0759 profile).
-rm -rf "$directory/coffeecnc-data"
+[ -n "$keep_data" ] || rm -rf "$directory/coffeecnc-data"
 # Tool table in machine units: T number, P pocket, Z length, D diameter.
 if [ "$profile" = g0759 ]; then
   # As the machine's table: no length, no diameter, no description.

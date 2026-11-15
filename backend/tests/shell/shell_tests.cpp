@@ -20,6 +20,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -216,6 +217,8 @@ constexpr std::string_view instrumentation = R"js((() => {
 struct Failure : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
+// Ends a scenario that is not the whole test.
+struct ScenarioDone {};
 
 // The test's side: the page through the hooks, LinuxCNC through its own channel and halcmd.
 class Rig {
@@ -1685,7 +1688,187 @@ void estop(const Rig& rig) {
   rig.snapshot("estop-after-run");
 }
 
-void drive(ShellTestHooks& hooks, const MachineConfig& config) {
+// The paths of this machine's tool models: [COFFEECNC] DATA_DIRECTORY/MACHINE_ID.
+auto tool_model_file(const MachineConfig& config) -> std::filesystem::path {
+  return std::filesystem::path(config.data_directory.value_or("")) /
+         config.machine_id.value_or("") / "tool-models.json";
+}
+
+// Waits for a control and clicks it.
+auto click_when_ready(const Rig& rig, const std::string& selector, const std::string& text)
+    -> std::string {
+  rig.wait_js(std::format("(() => {{ const e = __t.find({}, {}); return e && !e.disabled; }})()",
+                          Json(selector).dump(), Json(text).dump()),
+              10s);
+  return rig.click(selector, text);
+}
+
+// The positions, among the messages the page received, of the first snapshot at `revision`
+// and of the result of the last command of `type` the page sent: [snapshot, result, outcome].
+auto save_order(const Rig& rig, std::string_view type, int revision) -> Json {
+  return rig.js(std::format(R"(
+    const sent = __t.sent.filter((m) => m && m.type === '{}').pop();
+    if (!sent) return [-1, -1, 'not sent', null];
+    const snapshot = __t.received.findIndex((m) => m.type === 'tool_models' && m.revision === {});
+    const result = __t.received.findIndex((m) => m.type === 'result' && m.id === sent.id);
+    return [snapshot, result, result < 0 ? 'no result' : __t.received[result].outcome, sent];)",
+                            type, revision));
+}
+
+// Run one of the tool-model scenario (tests/shell/tool_models_restart.sh): through the real
+// editor a defaults save and an assignment save reach the disk, each shown by a snapshot
+// before its accepted result. LinuxCNC's tool table and offsets stay what they were.
+void tool_models_saved(const Rig& rig) {
+  const auto file = tool_model_file(rig.config);
+  const auto hello = rig.js("return __t.last.hello;");
+  check("tool_models_hello",
+        hello.value("machine_id", Json()) == "shell-mill" &&
+            hello.value("tool_model_storage", Json()) == 1,
+        std::format("machine_id={} tool_model_storage={}", hello.value("machine_id", Json()).dump(),
+                    hello.value("tool_model_storage", Json()).dump()));
+  const bool shown = rig.wait_js("__t.last.tool_models && __t.last.tool_table", 10s);
+  const auto first = rig.js("return __t.last.tool_models || null;");
+  check("tool_models_first_snapshot",
+        shown && first.value("availability", "") == "available" && first.value("revision", -1) == 0 &&
+            first.value("machine_id", "") == "shell-mill" && !std::filesystem::exists(file) &&
+            rig.js("return __t.received.findIndex((m) => m.type === 'hello') < "
+                   "__t.received.findIndex((m) => m.type === 'tool_models');") == true,
+        first.dump().substr(0, 200));
+  if (!shown)
+    throw Failure("no tool model snapshot: nothing to save against");
+  const auto table_file = contents(rig.config.tool_table);
+  const auto tools = rig.js("return __t.last.tool_table.tools;");
+  const auto offsets = rig.panel_status().at("offsets");
+
+  check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  // The family defaults: the end mill's stick-out.
+  check("tool_models_defaults_editor",
+        click_when_ready(rig, "button", "Model defaults") == "ok" &&
+            rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s));
+  const auto typed = rig.js(R"(
+    const input = __t.find('section.dialog label.entry', 'Stick-out').querySelector('input');
+    const before = input.value;
+    input.value = '36.5';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 100));
+    return [before, input.value];)");
+  const auto saving = click_when_ready(rig, "section.dialog button.primary", "Save defaults");
+  const bool saved = rig.wait_js("__t.last.tool_models.revision === 1 && "
+                                 "!document.querySelector('section.dialog') && "
+                                 "document.body.textContent.includes('Tool models saved for "
+                                 "shell-mill.')",
+                                 15s);
+  auto order = save_order(rig, "set_tool_model_defaults", 1);
+  check("tool_models_defaults_saved_by_the_editor",
+        typed == Json::array({"35", "36.5"}) && saving == "ok" && saved &&
+            order.at(0).get<int>() >= 0 && order.at(0).get<int>() < order.at(1).get<int>() &&
+            order.at(2) == "accepted" && order.at(3).at("base_revision") == 0 &&
+            order.at(3).at("machine_id") == "shell-mill",
+        std::format("typed={} click={} snapshot_at={} result_at={} outcome={} errors={}",
+                    typed.dump(), saving, order.at(0).dump(), order.at(1).dump(),
+                    order.at(2).dump(), rig.errors()));
+  auto on_disk = Json::parse(contents(file), nullptr, false);
+  check("tool_models_defaults_on_disk",
+        on_disk.is_object() && on_disk.value("revision", 0) == 1 &&
+            on_disk.value("machine_id", "") == "shell-mill" &&
+            on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5 &&
+            on_disk.at("document").at("defaults").at("drill").at("tipAngle") == 118 &&
+            on_disk.at("document").at("assignments").empty(),
+        std::format("file={} bytes={}", file.string(), contents(file).size()));
+
+  // A model for T1, as the tool table shows that row.
+  check("tool_models_assignment_editor",
+        click_when_ready(rig, "button.model-link", "Preview model for T1") == "ok" &&
+            rig.wait_js("__t.find('section.dialog select')", 10s));
+  const auto chosen = rig.js(R"(
+    const select = __t.find('section.dialog select');
+    select.value = 'drill';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 100));
+    return select.value;)");
+  const auto assigning =
+      click_when_ready(rig, "section.dialog button.primary", "Save preview model");
+  const bool assigned =
+      rig.wait_js("__t.last.tool_models.revision === 2 && !document.querySelector('section.dialog')",
+                  15s);
+  order = save_order(rig, "set_tool_model_assignment", 2);
+  const auto row = *std::ranges::find_if(
+      tools, [](const Json& tool) -> bool { return tool.at("number") == 1; });
+  const Json binding{{"number", 1},
+                     {"pocket", row.at("pocket")},
+                     {"diameter", row.at("diameter")},
+                     {"comment", row.at("comment")}};
+  check("tool_models_assignment_saved_by_the_editor",
+        chosen == "drill" && assigning == "ok" && assigned && order.at(0).get<int>() >= 0 &&
+            order.at(0).get<int>() < order.at(1).get<int>() && order.at(2) == "accepted" &&
+            order.at(3).at("base_revision") == 1 && order.at(3).at("tool") == binding,
+        std::format("click={} snapshot_at={} result_at={} outcome={} sent={} errors={}", assigning,
+                    order.at(0).dump(), order.at(1).dump(), order.at(2).dump(),
+                    word(order.at(3).dump()), rig.errors()));
+  on_disk = Json::parse(contents(file), nullptr, false);
+  check("tool_models_assignment_on_disk",
+        on_disk.is_object() && on_disk.value("revision", 0) == 2 &&
+            on_disk.at("document").at("assignments") ==
+                Json::array({{{"tool", binding}, {"family", "drill"}, {"overrides", Json::object()}}}) &&
+            on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5,
+        word(on_disk.is_object() ? on_disk.at("document").at("assignments").dump() : "unreadable"));
+  check("tool_models_assignment_shown",
+        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill'",
+                    5s),
+        rig.js("return __t.text(__t.find('button.model-link', 'Preview model for T1'));").dump());
+  rig.snapshot("tool-models-saved");
+  check("tool_models_linuxcnc_unchanged",
+        contents(rig.config.tool_table) == table_file &&
+            rig.js("return __t.last.tool_table.tools;") == tools &&
+            rig.panel_status().at("offsets") == offsets && !table_file.empty(),
+        std::format("tools={} offsets={}", word(tools.dump()), word(offsets.dump())));
+  check("tool_models_no_console_errors", rig.js("return __t.errors.length;") == 0, rig.errors());
+}
+
+// Run two, LinuxCNC and the executable started again: the page is sent what run one saved, and
+// the panel shows it, in the table and in the editor.
+void tool_models_restored(const Rig& rig) {
+  const auto file = tool_model_file(rig.config);
+  const auto on_disk = Json::parse(contents(file), nullptr, false);
+  check("tool_models_file_from_first_run",
+        on_disk.is_object() && on_disk.value("revision", 0) == 2, file.string());
+  if (!on_disk.is_object())
+    throw Failure("the first run left no tool model file");
+  const bool shown = rig.wait_js("__t.last.tool_models && __t.last.tool_models.revision === 2", 10s);
+  const auto snapshot = rig.js("return __t.last.tool_models || null;");
+  check("tool_models_restored_snapshot",
+        shown && snapshot.value("availability", "") == "available" &&
+            snapshot.value("machine_id", "") == "shell-mill" &&
+            snapshot.at("document") == on_disk.at("document") &&
+            rig.js("return __t.received.findIndex((m) => m.type === 'hello') < "
+                   "__t.received.findIndex((m) => m.type === 'tool_models');") == true &&
+            rig.js("return __t.sent.filter((m) => m && m.type.startsWith('set_tool_model')).length;") ==
+                0,
+        word(snapshot.dump().substr(0, 300)));
+  check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  check("tool_models_restored_assignment_shown",
+        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill' && "
+                    "__t.text(__t.find('button.model-link', 'Preview model for T2')) === 'Set model'",
+                    10s),
+        rig.js("return __t.all('button.model-link').map((b) => __t.text(b));").dump());
+  const bool editor = click_when_ready(rig, "button", "Model defaults") == "ok" &&
+                      rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s);
+  const auto value = editor ? rig.js("return __t.find('section.dialog label.entry', 'Stick-out')"
+                                     ".querySelector('input').value;")
+                            : Json();
+  check("tool_models_restored_defaults_in_editor", value == "36.5", value.dump());
+  rig.snapshot("tool-models-restored");
+  check("tool_models_editor_closes", rig.click("section.dialog button", "Cancel") == "ok");
+  check("tool_models_file_untouched_by_restart",
+        Json::parse(contents(file), nullptr, false) == on_disk &&
+            !std::filesystem::exists(file.string() + ".tmp"));
+  check("tool_models_no_console_errors", rig.js("return __t.errors.length;") == 0, rig.errors());
+}
+
+// What a run of this program does: everything, or one half of the tool-model scenario.
+enum class Scenario : std::uint8_t { everything, tool_models_first_run, tool_models_second_run };
+
+void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario) {
   try {
     auto observer = NmlStatusReader::connect(config, nullptr);
     check("observer_connected", observer.has_value(), observer ? "status" : observer.error());
@@ -1716,6 +1899,14 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
               stamp.find("assets=" + served.value("assets_digest", "none")) != std::string::npos,
           std::format("served_inputs={} served_assets={}", served.value("inputs_digest", "none"),
                       served.value("assets_digest", "none")));
+    if (scenario != Scenario::everything) {
+      if (scenario == Scenario::tool_models_first_run)
+        tool_models_saved(rig);
+      else
+        tool_models_restored(rig);
+      status_gaps(rig, "tool_models");
+      throw ScenarioDone{};
+    }
     power_on(rig);
     status_gaps(rig, "power_on");
     home(rig);
@@ -1748,6 +1939,9 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
                                           : state.foreign_resources.front());
     fact("delivery", std::format("delivered={} dropped={} commits={}", state.delivered,
                                  state.dropped, state.commits));
+  } catch (const ScenarioDone&) {
+    // The scenario's checks are made; the window is closed as after every run.
+    fact("scenario", "tool-models done");
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }
@@ -1788,6 +1982,15 @@ auto main(int argc, char** argv) -> int {
   for (int i = 1; i + 1 < argc; ++i)
     if (std::string_view(argv[i]) == "-ini")
       ini_file = argv[i + 1];
+  // `tool-models`: the tool-model scenario; with `second-run` its second half, after the
+  // restart (tests/shell/tool_models_restart.sh).
+  auto scenario = Scenario::everything;
+  for (int i = 1; i < argc; ++i)
+    if (std::string_view(argv[i]) == "tool-models")
+      scenario = Scenario::tool_models_first_run;
+  for (int i = 1; i < argc; ++i)
+    if (std::string_view(argv[i]) == "second-run" && scenario != Scenario::everything)
+      scenario = Scenario::tool_models_second_run;
   int code = 1;
   try {
     if (ini_file.empty())
@@ -1801,7 +2004,8 @@ auto main(int argc, char** argv) -> int {
     const int result = run_application(
         options, {.before_load = [&](PanelWindow& window, const MachineConfig& config) -> void {
           hooks = ShellTestHooks::install(window, std::string(instrumentation));
-          driver = std::thread([&hooks, config]() -> void { drive(*hooks, config); });
+          driver = std::thread(
+              [&hooks, config, scenario]() -> void { drive(*hooks, config, scenario); });
         }});
     check("application_started", driver.joinable(), std::format("exit={}", result));
     if (driver.joinable())

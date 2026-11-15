@@ -25,7 +25,8 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.program_revision = status.program.revision;
   inputs.systems = reading.work_systems;
   inputs.g92 = status.offsets.g92;
-  inputs.tools = reading.tool_table.tools;
+  // A table withheld from the panel is still the machine's table.
+  inputs.tools = reading.accepted_tools.value_or(reading.tool_table.tools);
   inputs.raw_tools = reading.preview_tools;
   inputs.block_delete = status.program.block_delete;
   inputs.start.wcs = status.offsets.wcs;

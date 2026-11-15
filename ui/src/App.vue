@@ -9,6 +9,7 @@ import StatusBar from './components/StatusBar.vue'
 import ToolChangePrompt from './components/ToolChangePrompt.vue'
 import ToolsTab from './components/ToolsTab.vue'
 import FileBrowser from './components/FileBrowser.vue'
+import NumericEntryDialog from './components/NumericEntryDialog.vue'
 import { startDialog } from './dialogs'
 import { panel } from './machine'
 
@@ -32,6 +33,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
         <FileBrowser v-if="browsing" @close="browsing = false" />
       </main>
       <div id="workspace-dialogs"></div>
+      <NumericEntryDialog />
     </div>
     <RunBar />
     <footer class="foot"><span>{{ panel.simulated ? 'SIMULATOR · No controller connected' : 'CoffeeCNC · Local machine interface' }}</span><span>coffeecnc / mill</span></footer>
@@ -43,6 +45,6 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
 .workspace { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .middle { position: relative; flex: 1; min-height: 0; margin: 0 24px 14px; }
 #dialogs, #workspace-dialogs { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
-.foot { display: flex; justify-content: space-between; padding: 9px 24px; color: var(--text-dim); font-size: 10px; letter-spacing: .2px; }
-@media (max-height: 760px) { .middle { margin-bottom: 10px; } .foot { padding-block: 5px; } }
+.foot { display: flex; justify-content: space-between; padding: 3px 24px; color: var(--text-dim); font-size: 10px; letter-spacing: .2px; }
+@media (max-height: 760px) { .middle { margin-bottom: 10px; } }
 </style>

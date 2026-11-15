@@ -6,6 +6,7 @@ import { cancelImport, importPart, part, partBlock, placePart, removePart } from
 import { formatLength, parseNumber, wcsName } from '../units'
 import type { Vec3 } from '../protocol'
 import ModalDialog from './ModalDialog.vue'
+import { vNumeric } from '../numeric-input'
 
 const open = ref(false)
 const chooser = useTemplateRef<HTMLInputElement>('chooser')
@@ -78,7 +79,7 @@ function apply(): void {
       <p v-if="part.attachment.note" class="notice">{{ part.attachment.note }}</p>
       <div class="display-row"><label><input v-model="part.visible" type="checkbox" /> Show part</label><label class="opacity">Opacity <input v-model.number="part.opacity" type="range" min="0.1" max="1" step="0.05" />{{ Math.round(part.opacity * 100) }}%</label><button class="btn quiet" type="button" @click="removePart">Remove</button></div>
       <div class="placement-head"><strong>Placement in {{ wcsName(panel.status?.offsets.wcs ?? 1) }}</strong><small>Display only · does not change work offsets</small></div>
-      <div class="placement-grid"><span></span><span v-for="axis in axes" :key="axis">{{ axis }}</span><label>Offset (mm)</label><input v-for="(axis, i) in axes" :key="`t${axis}`" v-model="translation[i]" type="text" inputmode="decimal" :aria-label="`Model ${axis} offset in millimeters`" /><label>Rotation (°)</label><input v-for="(axis, i) in axes" :key="`r${axis}`" v-model="rotation[i]" type="text" inputmode="decimal" :aria-label="`Model ${axis} rotation in degrees`" /></div>
+      <div class="placement-grid"><span></span><span v-for="axis in axes" :key="axis">{{ axis }}</span><label>Offset (mm)</label><input v-for="(axis, i) in axes" :key="`t${axis}`" v-model="translation[i]" v-numeric type="text" inputmode="decimal" :aria-label="`Model ${axis} offset in millimeters`" /><label>Rotation (°)</label><input v-for="(axis, i) in axes" :key="`r${axis}`" v-model="rotation[i]" v-numeric type="text" inputmode="decimal" :aria-label="`Model ${axis} rotation in degrees`" /></div>
       <p class="hint">Rotate about the CAD origin in X → Y → Z order, then translate. Zero offsets place the CAD origin at the active work origin.</p>
       <p v-if="bounds" class="hint">CAD size: {{ axes.map((_, i) => formatLength((bounds?.max[i] ?? 0) - (bounds?.min[i] ?? 0), 'mm')).join(' × ') }} mm. Model and placement stay in mm.</p>
       <p v-if="partBlock" class="notice">{{ partBlock }}</p>

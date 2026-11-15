@@ -4,6 +4,7 @@
 import { computed, reactive, ref } from 'vue'
 
 import { startDialog } from '../dialogs'
+import { vNumeric } from '../numeric-input'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
 import type { Tool } from '../protocol'
 import { resolveToolModel, toolDimensionError, toolFamilies } from '../tool-model'
@@ -259,15 +260,15 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
     <ModalDialog v-if="editing !== null" :title="editing === 'add' ? 'Add tool' : `Edit tool ${form.number}`" size="small" @close="editing = null">
       <label class="entry">
         <span class="label">Tool number</span>
-        <input v-model="form.number" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
+        <input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
       </label>
       <label class="entry">
         <span class="label">Length, {{ unit }}</span>
-        <input v-model="form.length" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <input v-model="form.length" v-numeric class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
       <label class="entry">
         <span class="label">Diameter, {{ unit }}</span>
-        <input v-model="form.diameter" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <input v-model="form.diameter" v-numeric class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
       <label class="entry">
         <span class="label">Description</span>

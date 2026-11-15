@@ -1,0 +1,66 @@
+CoffeeCNC operator touch/layout review — 2026-11-15
+
+Implementation: a9f7ac6 + 2e105b5 on codex/operator-touch-fixes, PR #23.
+Scope: UI source and browser display checks only; no Codex hardware operation.
+User feedback: actual G0759 panel at 1600x900; power popup remains open,
+messages/homing cause reflow, XYZ spaced too far apart, clipped increments,
+excessive empty history/footer space, numeric fields opening the GNOME OSK.
+
+Automated verification at 2e105b5 source:
+  npm run check: typecheck + lint + 309 tests / 25 files passed.
+  npm run build: passed.
+  node backend/tests/sim/check-panel-stamp.mjs .: panel=match.
+  inputs_digest=2242f4a44eadcf70c527eb4445966c4952e34bc60d565a9d43615fcb1748361c
+  assets_digest=8fff733b905e52a480e489805151e7388514667d01e5101318bb0bbd11190af6
+
+Production-browser checks (macOS in-app browser, not native WebKitGTK):
+- Display fixture served the production bundle. Fake protocol messages use all
+  seven G0759 jog increments, XYZ ceilings, and illustrative status/tool rows.
+  No LinuxCNC connection exists. Other commands are intentionally rejected.
+- 1600x900 and 1280x800: every configured jog increment, home control, spindle,
+  coolant and WCS selector visible without horizontal or vertical card scrolling.
+  Jog pad and step buttons retain 44px height; Stop/Cycle controls remain 48px.
+- Both viewport sizes in light/dark themes: conspicuous long error fits reserved
+  space, same DRO/jog/pads/increments/MDI/utilities/WCS/footer bounding boxes
+  before/during homing and before/after error insertion. Measurements retained
+  in operator-touch-layout-2026-11-15.json. Small viewport uses one reserved line
+  in each card; larger viewport allows two. Full error text remains in the log.
+- Machine off and Machine on: confirmed fixture state closed the popup. Failed,
+  stale, new-session and synchronous reply paths are covered by component tests.
+- Numeric pointer emulation: RPM keypad entered 600 and updated the field without
+  issuing a spindle command. Nested Add tool keypad changed 5 to 8 while leaving
+  Save to tool table separate; integer keypad disables decimal. Tool-model
+  Cutting length opened the same keypad over its existing editor.
+- Stop and E-stop remain visible outside the numeric overlay. Text fields such
+  as MDI and descriptions keep normal keyboard entry. Automated pointer/touch
+  tests verify prevented default focus, readonly/inputmode none, cancellation,
+  finite/integer constraints, stale-field invalidation and keyboard recovery.
+- No browser-console warning/error entries observed in the checked fixture flow.
+
+Reproduction:
+  cd ui && npm run build
+  python3 scripts/operator-display-fixture.py
+  Open its localhost URL. Omitting touch=1 uses ordinary mouse/keyboard behavior.
+  The touch flag only emulates the numeric input pointer type. It cannot prove
+  physical touchscreen events, GNOME OSK suppression, or machine behavior.
+
+Native status:
+  Claude acknowledged source 2e105b5 on AgentNet at 18:17 UTC but reported this
+  session could not reach the mill. Native OSK/no-reflow/popup checks pending.
+  Older WebKitGTK has a known inputmode bug; source reference:
+  https://github.com/WebKit/WebKit/commit/70da7470a97f93585864227eb629f71dfd13f488
+  Readonly before touch focus and prevented touch defaults provide the fallback.
+  This record does not claim that fallback has been tested on the native mill.
+
+Retained screenshots (all display-only fixtures, not the physical controller):
+  ui/screenshots/operator-touch-1280x800-dark.png
+    sha256=1430252770b4ecf459d7dce17e742c3c046770f34df522a256bf5fed3024acf0 bytes=68285
+  ui/screenshots/operator-touch-1600x900-light.png
+    sha256=fb2f15ac819f2fc46f0da8ea3e7589812d0af4c98a7d4ccaaf0fa26e07875100 bytes=90889
+  ui/screenshots/operator-touch-keypad-dark.png
+    sha256=a5f411b126d6d6b2bc157fe7be0eb617669c8f774b95ca4aecf9d44f1cce6cda bytes=54946
+
+Peer review status at 18:19 UTC:
+  Claude reported shell/gh access denied in his session, so he could not fetch
+  or review PR #23. Peer review is pending, not passed. Codex source review,
+  automated checks and browser checks above remain the available evidence.

@@ -3,6 +3,7 @@
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 
 import { parseNumber } from '../units'
+import { touchInput, vNumeric } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
@@ -15,6 +16,9 @@ const props = defineProps<{
   initial: string
   /** Label of the confirming button. */
   action: string
+  integer?: boolean
+  expanded?: boolean
+  error?: string
 }>()
 const emit = defineEmits<{ confirm: [value: number]; close: [] }>()
 
@@ -22,7 +26,10 @@ const text = ref<string>(props.initial)
 const fresh = ref<boolean>(true)
 const input = useTemplateRef<HTMLInputElement>('input')
 
-const value = computed(() => parseNumber(text.value))
+const value = computed(() => {
+  const parsed = parseNumber(text.value)
+  return parsed !== null && Number.isFinite(parsed) && (!props.integer || Number.isInteger(parsed)) ? parsed : null
+})
 
 const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '±', '0', '.'] as const
 
@@ -54,39 +61,43 @@ function confirm(): void {
 }
 
 onMounted(() => {
-  input.value?.select()
+  if (!touchInput.value) input.value?.select()
 })
 </script>
 
 <template>
-  <ModalDialog :title="title" size="small" @close="emit('close')">
-    <p class="effect">{{ effect }}</p>
-    <label class="entry">
-      <span class="label">{{ label }}</span>
-      <span class="row">
-        <input
-          ref="input"
-          v-model="text"
-          class="field mono"
-          type="text"
-          inputmode="decimal"
-          autocomplete="off"
-          spellcheck="false"
-          @input="fresh = false"
-          @keydown.enter.prevent="confirm"
-        />
-        <span class="unit">{{ unit }}</span>
-      </span>
-    </label>
-    <div class="keypad">
-      <button v-for="key in keys" :key="key" class="btn mono" type="button" @click="press(key)">{{ key }}</button>
+  <ModalDialog :title="title" size="medium" :expanded="expanded" @close="emit('close')">
+    <div class="numeric-grid">
+      <p class="effect">{{ effect }}</p>
+      <label class="entry">
+        <span class="label">{{ label }}</span>
+        <span class="row">
+          <input
+            ref="input"
+            v-model="text"
+            v-numeric="'inline'"
+            class="field mono"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            spellcheck="false"
+            @input="fresh = false"
+            @keydown.enter.prevent="confirm"
+          />
+          <span v-if="unit" class="unit">{{ unit }}</span>
+        </span>
+      </label>
+      <div class="keypad">
+        <button v-for="key in keys" :key="key" class="btn mono" type="button" :disabled="integer && key === '.'" @click="press(key)">{{ key }}</button>
+      </div>
+      <div class="row corrections">
+        <button class="btn grow" type="button" title="Delete the last digit" @click="backspace">
+          <AppIcon name="backspace" />
+        </button>
+        <button class="btn grow" type="button" @click="((text = '0'), (fresh = true))">Zero</button>
+      </div>
     </div>
-    <div class="row">
-      <button class="btn grow" type="button" title="Delete the last digit" @click="backspace">
-        <AppIcon name="backspace" />
-      </button>
-      <button class="btn grow" type="button" @click="((text = '0'), (fresh = true))">Zero</button>
-    </div>
+    <p v-if="error" class="blocked" role="alert">{{ error }}</p>
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
       <button class="btn primary" type="button" :disabled="value === null" @click="confirm">{{ action }}</button>
@@ -95,7 +106,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.numeric-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; }
+.effect, .entry, .corrections { grid-column: 1; }
+.keypad { grid-column: 2; grid-row: 1 / 4; }
 .effect {
+  font-size: 13px;
   margin: 0;
   line-height: 1.45;
 }

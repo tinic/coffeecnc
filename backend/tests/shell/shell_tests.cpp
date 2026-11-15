@@ -1096,14 +1096,31 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                                    "__t.last.status.program.file.endsWith('/{}') && {}",
                                    name, current), 30s);
   };
-  const auto select = [&](std::string_view system) -> bool {
+  // Another client makes a work system active. Done when the panel has a status that shows
+  // that system and a finished preview of that status's context. The preview of the system
+  // before satisfies `current` too, until the first status after the change arrives (one
+  // publisher period): without the system in the condition this returned on it.
+  const auto select = [&](int wcs) -> bool {
     const bool sent =
         std::system(std::format("python3 -c \"import linuxcnc; c = linuxcnc.command(); "
                                 "c.mode(linuxcnc.MODE_MDI); c.wait_complete(); "
-                                "c.mdi('{}'); c.wait_complete()\"",
-                                system)
+                                "c.mdi('G{}'); c.wait_complete()\"",
+                                53 + wcs)
                         .c_str()) == 0;
-    return sent && rig.wait_js(current, 30s);
+    return sent &&
+           rig.wait_js(std::format("__t.last.status.offsets.wcs === {} && {}", wcs, current), 30s);
+  };
+  // What a preview check judges with: the status the panel has now.
+  const auto judged = [&](const Json& preview) -> std::string {
+    return std::format("status_wcs={} status_context={} {}",
+                       rig.js("return __t.last.status.offsets.wcs;").dump(),
+                       rig.js("return __t.last.status.preview_context;").dump(),
+                       preview.dump().substr(0, 300));
+  };
+  const auto of_status = [&](const Json& preview, int wcs) -> bool {
+    return rig.js(std::format("return __t.last.status.offsets.wcs === {} && "
+                              "__t.last.status.preview_context === {};",
+                              wcs, preview.at("context").dump())) == true;
   };
   const auto report = [&](std::string_view sample, std::string_view active) -> Json {
     const auto preview = rig.js("return __t.last.preview;");
@@ -1134,7 +1151,7 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                   "__t.last.tool_table.tools[2].number === 3", 20s);
   check("paired_sample_tools_loaded", tools, rig.js("return __t.last.tool_table;").dump());
   // Side A is G54 throughout.
-  const bool opened_a = select("G54") && open("task-17_A.nc");
+  const bool opened_a = select(1) && open("task-17_A.nc");
   auto preview = report("task-17_A.nc", "G54");
   check("paired_sample_a_previewed_in_g54",
         opened_a && preview.at("state") == "ready" && preview.at("segments").size() > 20,
@@ -1216,22 +1233,27 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
   // Side B cuts in G55 and returns to G54 in its last block.
   const bool opened_b = open("task-17_B.nc");
   preview = report("task-17_B.nc", "G54");
+  const auto context_g54 = preview.at("context").get<std::uint64_t>();
   check("paired_sample_b_stops_at_g55_while_g54_is_active",
-        opened_b && preview.at("state") == "failed" && preview.at("error").is_object() &&
-            preview.at("error").at("line") == 24 &&
+        opened_b && of_status(preview, 1) && preview.at("state") == "failed" &&
+            preview.at("error").is_object() && preview.at("error").at("line") == 24 &&
             preview.at("error").at("text").get<std::string>().find("G55") != std::string::npos,
-        preview.dump().substr(0, 300));
+        judged(preview));
   rig.snapshot("task17b-preview-g54-active");
-  const bool g55 = select("G55");
+  const bool g55 = select(2);
   preview = report("task-17_B.nc", "G55");
+  // Judged on the preview of a status that shows G55, never on the one from before the change.
+  check("paired_sample_g55_preview_is_of_the_g55_status",
+        g55 && of_status(preview, 2) && preview.at("context").get<std::uint64_t>() > context_g54,
+        std::format("selected={} context_g54={} {}", g55, context_g54, judged(preview)));
   // The simulated mill has tools 1 and 2; the program changes to tool 3 in line 43.
   check("paired_sample_b_previewed_while_g55_is_active",
-        g55 && !preview.at("segments").empty() &&
+        g55 && of_status(preview, 2) && !preview.at("segments").empty() &&
             (preview.at("state") == "ready" ||
              (preview.at("error").is_object() && preview.at("error").at("line") == 43)),
-        preview.dump().substr(0, 300));
+        judged(preview));
   rig.snapshot("task17b-preview-g55-active");
-  check("paired_sample_back_to_g54", select("G54"));
+  check("paired_sample_back_to_g54", select(1));
   // As this part of the test found things: probe.ngc loaded, the machine in E-stop.
   const bool back = open("probe.ngc") &&
                     std::system("python3 -c \"import linuxcnc; c = linuxcnc.command(); "

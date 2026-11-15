@@ -1,12 +1,12 @@
 # Native tool-model storage
 
-First increment, agreed interface direction on 15 November 2026. The panel implements the messages, validation, machine isolation and save lifecycle below. The native writer and restart-persistence integration remain to be qualified before this increment is complete.
+First increment, implemented on 15 November 2026. The panel and native backend implement the messages, validation, machine isolation and save lifecycle below. Editor saves and full LinuxCNC/application restart pass native simulation checks; see the [integration review and qualification limits](../research/evidence/native-tool-models-06ae603-review.txt).
 
 ## Scope and identity
 
 Persist the seven family defaults and explicit per-tool model assignments. Exclude STEP files, placement, jobs, work offsets, LinuxCNC tool-table edits, and camera state. The native WebKit context stays ephemeral. Browser demonstration defaults keep their existing localStorage key; they are never silently imported into a native machine.
 
-Native persistence requires an explicit `[COFFEECNC] MACHINE_ID`. No display-name slug, hostname or configuration-path fallback: two machines must not share settings accidentally. Missing or empty identity means session-only models, with that lifetime stated in the editor. An invalid configured identity disables storage with an explanation; it must not resolve to another machine's directory. The G0759 integration configuration will set an explicit ID.
+Native persistence requires an explicit `[COFFEECNC] MACHINE_ID`. No display-name slug, hostname or configuration-path fallback: two machines must not share settings accidentally. Missing or empty identity means session-only models, with that lifetime stated in the editor. An invalid configured identity disables storage with an explanation; it must not resolve to another machine's directory. The draft G0759 integration configuration sets the explicit ID `g0759`.
 
 The backend owns the directory, document and write lifecycle. Default: `$XDG_DATA_HOME/coffeecnc/<machine_id>/` (normal per-user fallback when unset), with `[COFFEECNC] DATA_DIRECTORY` as an absolute configured data root and the machine ID still appended. A relative DATA_DIRECTORY disables persistence with an explanation. Use an absolute XDG_DATA_HOME, otherwise the per-user ~/.local/share fallback; do not resolve a relative environment value against the process working directory. IDs are case-sensitive ASCII `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. The panel never supplies a filesystem path.
 

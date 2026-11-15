@@ -88,5 +88,6 @@ Documentation review found no conflict in the new docs/shell.md writer row.
 Requested two wording corrections: absolute XDG paths only in the storage
 reference, and "revision-checked commands, process lock and atomic file
 replacement" instead of suggesting a filesystem compare-and-swap primitive
-in the PR description. The final follow-up and its focused evidence remain
-to be reviewed before this integration is ready to merge.
+in the PR description. At this checkpoint the final follow-up was pending. Its subsequent source
+and focused-result review closes the findings in
+native-tool-models-06ae603-review.txt.

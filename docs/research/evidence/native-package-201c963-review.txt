@@ -52,3 +52,36 @@ fresh=1; no completed analyzer or Release result is qualified here.
 
 Host: backend/build/sim-history/201c963/dev/ on playhouse2.
 Local: /tmp/coffeecnc-packaging-201c963-review/dev/.
+
+Fresh analyzer and Release follow-up, 2026-11-15 03:24 UTC
+
+Independently copied/read analyze and package records for the same clean head.
+Both explicitly remove their build directory before configure, and retain
+verbose compile logs and CMake cache selections. Analyzer configure/build0,
+88/88 steps with clang-tidy/cppcheck and no recorded warning/error diagnostics.
+This is a fresh build/analyzer result, not an analyzer-preset CTest run.
+
+Release configure/build0,88/88 steps. Actual compiler commands for the three
+previously failing production translation units include -O3 -DNDEBUG -Werror.
+Cache: CMAKE_BUILD_TYPE=Release, COFFEECNC_DEVELOPMENT_PATHS=FALSE. This closes
+the previous Release compiler failure/evidence gap without disabling warnings.
+
+The selected Release tests pass8/9 in64.63s, CTest exit8. The only failure is
+again estop_request_idle_prepared (ON but estop-out FALSE) on machine e11000c.
+This remains open; the successful individual packaging checks do not make the
+whole subset pass.
+
+Installed prefix and unpacked DEB both run their own executable/panel/helper,
+produce a six-segment sample preview computation, and exit with child_status0
+and processes_left0. Both binary pairs have zero matching build-host home or
+checkout strings in the retained scan. Each installed panel matches23 built
+files, still the pre-persistence UI bundle. No host package installation or
+manual visual inspection is claimed.
+
+Release DEB: coffeecnc_0.1.0_amd64.deb,3,984,560 bytes, Installed-Size9,779KiB.
+Recorded SHA256:
+6b921231b2592230074e4d60dae13da322e9adcb4df48c0a2ddec77cb65978c1
+Runtime dependencies are generated for this build host, including
+linuxcnc-uspace >=1:2.9.4 and <<1:2.10, libc6>=2.38 and libstdc++6>=14.
+
+Host/local paths: same sim-history/review directory, analyze/ and package/.

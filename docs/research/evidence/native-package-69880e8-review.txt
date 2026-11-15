@@ -71,7 +71,29 @@ B/G55 previews are ready (98/73 segments). Machine-derived startup and
 installed prefix/unpacked-DEB startup use their intended executable, panel
 and helper and produce a ready six-segment preview.
 
-Fresh analyzer/Release evidence for this checkpoint was still in progress
-when the stale-status finding was accepted. Claude will retain those logs
-and qualify the fix commit separately. No new analyzer, Release, sanitizer,
-physical-machine or application-only-restart claim is made here.
+Fresh analyzer and Release evidence, reviewed at 03:44 UTC
+
+Copied the final analyze/ and package/ evidence directories beside dev/.
+Both provenance records identify clean tracked 69880e8, removal of the old
+build directory before configure, configure_exit=0 and build_exit=0. Each
+verbose build completes 88 Ninja steps. Analyzer has 55 co-compile analyzer
+invocations and no warning/error diagnostics; no analyzer CTest was run.
+
+The package build uses actual -O3 -DNDEBUG -Werror flags. Cache identifies
+Release and COFFEECNC_DEVELOPMENT_PATHS=FALSE. Its selected 11/11 tests pass
+in 82.49s: core_behavior, text_file, sim_g0759, machine_g0759, CLI, wrapper,
+panel bundle, install tree, DEB, and both installed startups. The four
+top-level DISPLAY runs have child_status=0 and processes_left=0. Machine
+source is clean e11000c; all six E-stop preparations and reset recovery pass.
+Both installed trees use their own executable/panel/helper and yield ready
+six-segment previews. All four binaries' recorded home/checkout string
+counts are zero.
+
+Release DEB: 3,985,132 bytes, Installed-Size 9,779 KiB.
+SHA256: c1e24aa21c66d706f2b1c7b9183e2a2ffa1861578bf3d1f6261b19ed75b80670
+Dependencies remain build-host-specific (including libc6 >=2.38 and
+libstdc++6 >=14); this is an unpacked package test, not a host installation.
+
+These passing builds/tests do not cover the subsequently identified
+stale-status case. Claude is qualifying that fix separately. No new
+sanitizer, physical-machine or application-only-restart claim is made here.

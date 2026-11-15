@@ -59,13 +59,15 @@ void PanelComposer::count(const PanelReading& reading) {
   auto inputs = preview_inputs(reading, rest_position_);
   if (preview_ != nullptr)
     inputs.files_generation = preview_->files_generation();
-  const auto context = preview_context_.update(inputs, running);
+  // The machine's state counts as input only at rest and with a settled tool table.
+  const auto context = preview_context_.update(inputs, running || !reading.tools_settled);
   if (!running) {
     block_delete_before_run_ = inputs.block_delete;
     seen_at_rest_ = std::pair{inputs.program_file, inputs.program_revision};
   }
   // A program first seen while it runs has no start state: what was read is the middle of
   // its run.
+  const bool had_no_start_state = no_start_state_;
   no_start_state_ =
       running && seen_at_rest_ != std::pair{inputs.program_file, inputs.program_revision};
   // Block delete switched while the program runs: the rest of the run is no longer the plan
@@ -76,6 +78,11 @@ void PanelComposer::count(const PanelReading& reading) {
       running && (plan_broken_ || inputs.block_delete != block_delete_before_run_);
   submit_due_ = submit_due_ || context != context_;
   context_ = context;
+  // At rest again with the inputs it had before: a preview is a function of its inputs, so
+  // the result that exists for this context is the preview, and nothing is computed. It was
+  // not shown meanwhile, so the service compares its files once more first.
+  if (had_no_start_state && !no_start_state_ && !submit_due_ && preview_ != nullptr)
+    preview_->revalidate(context_);
   if (!submit_due_ || plan_broken_ || no_start_state_)
     return;
   submit_due_ = false;

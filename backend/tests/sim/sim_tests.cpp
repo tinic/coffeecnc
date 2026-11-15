@@ -2046,6 +2046,7 @@ class CountingService final : public PreviewService {
 public:
   void submit(std::uint64_t context, const PreviewInputs&) override { contexts.push_back(context); }
   [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override { return {}; }
+  void revalidate(std::uint64_t) override {}
   [[nodiscard]] auto files_generation() const -> std::uint64_t override { return 0; }
   std::vector<std::uint64_t> contexts;
 };
@@ -2089,14 +2090,17 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
   CountingService service;
   PanelComposer composer{oracle.source.hello(), &service};
   std::uint64_t context = 0;
-  const auto step = [&]() -> std::uint64_t {
+  // One reading through the composer. Whether THAT reading showed the program running: what
+  // the composer did with it is judged by the reading it was given, not by what the machine
+  // does a moment later.
+  const auto step = [&]() -> bool {
     const auto reading = oracle.source.read();
     const auto messages = composer.compose(reading, PageToken{1}, false, 0ms);
     if (messages)
       for (const auto& text : *messages)
         if (const auto message = Json::parse(text); message.at("type") == "status")
           context = message.at("preview_context").get<std::uint64_t>();
-    return context;
+    return reading.status.link != Link::down && reading.status.interp != InterpState::idle;
   };
   // At rest with the program loaded: the context of the run's start.
   for (int i = 0; i < 20; ++i) {
@@ -2107,6 +2111,7 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
   const auto computed_at_start = service.contexts.size();
   const auto run = rig.send(R"("type":"run")");
   std::set<std::uint64_t> during;
+  auto computed_during = computed_at_start;
   bool paused_seen = false;
   bool g92_seen = false;
   bool offset_seen = false;
@@ -2117,9 +2122,10 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
     const bool running = status.controller.interp != InterpState::idle;
     if (Clock::now() >= next) {
       next = Clock::now() + 50ms;
-      const auto now = step();
-      if (running && rig.status().controller.interp != InterpState::idle)
-        during.insert(now);
+      if (step()) {
+        during.insert(context);
+        computed_during = service.contexts.size();
+      }
     }
     g92_seen = g92_seen || std::fabs(status.g92[0]) > 0.001;
     offset_seen = offset_seen || !near(status.g5x[1], was.g5x[1], 0.001);
@@ -2129,7 +2135,10 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
       // Paused at M0 with G92 in force: still the same context after a while.
       for (int i = 0; i < 6; ++i) {
         rig.pump(50ms);
-        during.insert(step());
+        if (step()) {
+          during.insert(context);
+          computed_during = service.contexts.size();
+        }
       }
       static_cast<void>(rig.send(R"("type":"resume")"));
     }
@@ -2137,7 +2146,6 @@ void preview_context_during_a_run(PreviewOracle& oracle) {
       static_cast<void>(rig.send(R"("type":"tool_changed")"));
     return during.size() > 0 && rig.idle() && !status.paused && tool_seen;
   });
-  const auto computed_during = service.contexts.size();
   // Ended: what the program left is a new context, one.
   for (int i = 0; i < 30; ++i) {
     rig.pump(50ms);
@@ -2187,12 +2195,15 @@ void preview_attached_mid_program(PreviewOracle& oracle) {
   CountingService service;
   PanelComposer composer{source.hello(), &service};
   Json preview;
-  const auto step = [&]() -> void {
-    const auto messages = composer.compose(source.read(), PageToken{1}, false, 0ms);
+  // One reading through the composer, and whether that reading showed the program running.
+  const auto step = [&]() -> bool {
+    const auto reading = source.read();
+    const auto messages = composer.compose(reading, PageToken{1}, false, 0ms);
     if (messages)
       for (const auto& text : *messages)
         if (auto message = Json::parse(text); message.at("type") == "preview")
           preview = std::move(message);
+    return reading.status.link != Link::down && reading.status.interp != InterpState::idle;
   };
   std::size_t computed_during = 0;
   Json during;
@@ -2202,9 +2213,7 @@ void preview_attached_mid_program(PreviewOracle& oracle) {
     if (Clock::now() < next)
       return false;
     next = Clock::now() + 50ms;
-    const bool running = !rig.idle();
-    step();
-    if (running && !rig.idle()) {
+    if (step()) {
       seen_running = true;
       computed_during = service.contexts.size();
       during = preview;

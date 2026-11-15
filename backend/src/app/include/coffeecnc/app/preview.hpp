@@ -26,8 +26,14 @@ public:
   // The inputs of a new context, with a program loaded. The newest context wins: a computation
   // for an older one is given up.
   virtual void submit(std::uint64_t context, const PreviewInputs& inputs) = 0;
-  // The preview finished last, of whatever context; null before the first.
+  // The preview finished last, of whatever context; null before the first, and while that
+  // preview is being checked again (revalidate).
   [[nodiscard]] virtual auto latest() const -> std::shared_ptr<const Preview> = 0;
+  // The finished preview of `context` is about to be used again after a time in which it was
+  // not shown: its files are compared once more, by the service's own thread, before it
+  // counts as finished again. Until then latest() gives nothing; a difference raises
+  // files_generation instead. Nothing happens when the latest preview is of another context.
+  virtual void revalidate(std::uint64_t context) = 0;
   // Counts the times a file of the latest preview was found changed. It is a preview input
   // (PreviewInputs::files_generation): the context goes up with it, the preview shown is then
   // stale by the protocol's own rule, and the new context is submitted like any other.
@@ -55,8 +61,9 @@ protected:
 // A computation and a look at the files are both given up for a newer context and for the
 // end of the worker; how soon is the engine's matter (HelperPreviewEngine: within one file
 // read or comparison, or 20 ms while its helper runs).
-// Nothing here is called by the GTK, control, status or command thread but submit, latest and
-// files_generation, which return at once.
+// Nothing here is called by the GTK, control, status or command thread; the publisher thread
+// calls submit, latest, revalidate and files_generation, which return at once. Every file is
+// read by the preview thread.
 class PreviewWorker final : public PreviewService {
 public:
   static constexpr auto default_check_period = std::chrono::milliseconds{1000};
@@ -71,6 +78,7 @@ public:
 
   void submit(std::uint64_t context, const PreviewInputs& inputs) override;
   [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override;
+  void revalidate(std::uint64_t context) override;
   [[nodiscard]] auto files_generation() const -> std::uint64_t override;
 
 private:
@@ -86,6 +94,8 @@ private:
   std::condition_variable wake_;
   std::optional<Request> wanted_;
   std::shared_ptr<const Preview> latest_;
+  // The latest preview while its files are compared again: not finished for anyone meanwhile.
+  std::shared_ptr<const Preview> unchecked_;
   // The context submitted last: a computation for another one is of no use.
   std::atomic<std::uint64_t> newest_{};
   std::atomic<std::uint64_t> generation_{};

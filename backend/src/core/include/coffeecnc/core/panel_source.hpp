@@ -30,6 +30,10 @@ struct PanelReading {
   // The loaded tool table with every field a preview is computed with, the spindle's entry
   // included, in machine units; empty where the source has none.
   std::vector<PreviewTool> preview_tools;
+  // False while a pass over the tool table that differs from preview_tools waits to be
+  // accepted: the machine's state is then not one coherent set, and no preview input is taken
+  // from it.
+  bool tools_settled{true};
   // What the source itself has to tell the operator (a file it cannot read), each once.
   std::vector<ControllerMessage> messages;
 };

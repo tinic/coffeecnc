@@ -33,7 +33,13 @@ struct NmlPanelSource::Impl {
   std::optional<Pending> pending;
   std::uint64_t tool_loads_seen{};
   RawToolReader raw_reader;
-  std::vector<PreviewTool> preview_tools; // read with a pass equal to the accepted table
+  // The table with every field: accepted by the same rule as the table shown, on every field.
+  std::vector<PreviewTool> preview_tools;
+  struct PendingRaw {
+    std::vector<PreviewTool> tools;
+    Clock::time_point taken_at;
+  };
+  std::optional<PendingRaw> pending_raw;
   std::map<int, std::string> comments;
   ToolTable tool_table;
   bool tools_failed{};
@@ -86,6 +92,30 @@ struct NmlPanelSource::Impl {
     // The status as it was before this pass: it can vouch for an earlier pass only.
     const auto status = mailbox.latest();
     auto pass = tools();
+    if (pass && raw_reader)
+      accept_raw(raw_reader(), status);
+    show_pass(std::move(pass), status, messages);
+  }
+
+  // The table with every field, by the rule of the table shown: a pass that differs from the
+  // accepted one is accepted when the next pass equals it in every field of every entry and
+  // a status read after the first of the two says that task has nothing in execution. A
+  // table caught half loaded is so never an input of a preview.
+  void accept_raw(std::vector<PreviewTool> raw, const std::optional<TimedStatus>& status) {
+    if (raw == preview_tools) {
+      pending_raw.reset();
+    } else if (!pending_raw || raw != pending_raw->tools) {
+      pending_raw = PendingRaw{std::move(raw), clock()};
+    } else if (status && status->read_at > pending_raw->taken_at &&
+               status->status.controller.link != Link::down && !status->status.task_executing) {
+      preview_tools = std::move(raw);
+      pending_raw.reset();
+    }
+  }
+
+  void show_pass(std::optional<std::vector<LoadedTool>> pass,
+                 const std::optional<TimedStatus>& status,
+                 std::vector<ControllerMessage>& messages) {
     if (!pass) {
       pending.reset();
       if (!std::exchange(tools_failed, true))
@@ -93,12 +123,10 @@ struct NmlPanelSource::Impl {
       return;
     }
     tools_failed = false;
-    auto raw = raw_reader ? raw_reader() : std::vector<PreviewTool>{};
     const auto counted = loads != nullptr ? loads->tool_tables.load() : 0;
     if (loaded && *pass == *loaded) {
       pending.reset();
       loaded_current = true;
-      preview_tools = std::move(raw);
       // A load the port reports with the same numbers: the comments may have changed.
       if (counted != tool_loads_seen) {
         tool_loads_seen = counted;
@@ -119,7 +147,6 @@ struct NmlPanelSource::Impl {
     loaded = std::move(*pass);
     pending.reset();
     loaded_current = true;
-    preview_tools = std::move(raw);
     tool_loads_seen = counted;
   }
 
@@ -245,6 +272,7 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .block_delete = reading.status.program.block_delete};
   reading.tool_table = impl_->tool_table;
   reading.preview_tools = impl_->preview_tools;
+  reading.tools_settled = !impl_->pending_raw.has_value();
   reading.work_systems = to_work_systems(status);
   reading.program = loaded ? impl_->program : nullptr;
   return reading;

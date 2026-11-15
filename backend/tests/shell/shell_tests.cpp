@@ -135,7 +135,8 @@ auto descendants(std::string_view name) -> std::vector<pid_t> {
 // what goes wrong in it, and helps finding its controls. A test's own; the panel has none of it.
 constexpr std::string_view instrumentation = R"js((() => {
   const t = { errors: [], received: [], counts: {}, last: {}, firstSeq: null, lastSeq: null,
-              seqBreaks: 0, sent: [], resultIds: [], lastStatusAt: null, maxGapMs: 0, gaps: [] };
+              seqBreaks: 0, sent: [], resultIds: [], lastStatusAt: null, maxGapMs: 0, gaps: [],
+              previews: [], contextMismatches: [] };
   window.__t = t;
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.coffeecnc;
   t.handlerAtStart = !!(bridge && typeof bridge.postMessage === 'function');
@@ -150,6 +151,12 @@ constexpr std::string_view instrumentation = R"js((() => {
   const record = (m) => {
     t.counts[m.type] = (t.counts[m.type] || 0) + 1;
     t.last[m.type] = m;
+    // The order of the previews as they arrive, and every status whose context is not the
+    // context of the newest preview: the page must never be told a context it has no preview
+    // message for.
+    if (m.type === 'preview') t.previews.push([m.context, m.state]);
+    if (m.type === 'status' && t.last.preview && m.preview_context !== t.last.preview.context)
+      t.contextMismatches.push([m.seq, m.preview_context, t.last.preview.context]);
     if (m.type === 'status') {
       if (t.firstSeq === null) t.firstSeq = m.seq;
       else if (m.seq !== t.lastSeq + 1) t.seqBreaks++;
@@ -919,32 +926,51 @@ void preview_of_the_loaded_program(const Rig& rig) {
                     preview.is_object() ? preview.at("context").dump() : "-", first.at(1).dump(),
                     offset, preview.dump().substr(0, 700)));
 
-  // Another client moves the work offset of G54 by 1.5 machine units.
+  // Another client moves the work offset of G54 by 1.5 machine units. The block says G21: a
+  // G10 value is in the interpreter's active unit, not the machine's.
   const double unit = rig.config.millimetres_per_unit;
   const auto mdi = [&](double x_offset_mm) -> bool {
     return std::system(std::format(
                            "python3 -c \"import linuxcnc; c = linuxcnc.command(); "
                            "c.mode(linuxcnc.MODE_MDI); c.wait_complete(); "
-                           "c.mdi('G10 L2 P1 X{:.6f}'); c.wait_complete()\"",
-                           x_offset_mm / unit)
+                           "c.mdi('G21 G10 L2 P1 X{:.6f}'); c.wait_complete()\"",
+                           x_offset_mm)
                            .c_str()) == 0;
   };
+  const auto before = rig.js("return __t.previews.length;").get<std::size_t>();
   const bool moved = mdi(offset + 1.5 * unit);
-  // The status says so at once: its context is past the preview's.
-  const bool stale = rig.wait_js(std::format(
-      "__t.last.status.preview_context > {0} && Math.abs(__t.last.status.offsets.g5x[0] - {1}) < 0.001",
-      first.at(1).dump(), offset + 1.5 * unit));
-  const bool again = rig.wait_js(current, 20s);
+  const bool again = rig.wait_js(std::format("{} && __t.last.preview.context > {}", current,
+                                             first.at(1).dump()), 20s);
   const auto second = rig.js("return [__t.last.preview, __t.last.status.preview_context, "
-                             "__t.counts.preview];");
+                             "__t.last.status.offsets.g5x[0], __t.previews, "
+                             "__t.contextMismatches];");
+  // From the page's own record of what arrived, in order: after the ready preview of the old
+  // context comes a pending one of the next context (the old path is stale from then on, by
+  // the protocol's rule), then the ready one of that context; and no status ever named a
+  // context other than the newest preview's.
+  const auto& trail = second.at(3);
+  const auto old_context = first.at(1).get<std::uint64_t>();
+  bool ordered = trail.size() >= before + 2 && before >= 1 &&
+                 trail.at(before - 1) == Json::array({old_context, "ready"});
+  if (ordered) {
+    const auto next = trail.at(before).at(0).get<std::uint64_t>();
+    ordered = next > old_context && trail.at(before) == Json::array({next, "pending"}) &&
+              trail.back() == Json::array({second.at(1).get<std::uint64_t>(), "ready"});
+    for (std::size_t i = before; ordered && i < trail.size(); ++i)
+      ordered = trail.at(i).at(0).get<std::uint64_t>() > old_context;
+  }
   check("preview_stale_and_recomputed_after_work_offset_change",
-        moved && stale && again && second.at(0).at("context") == second.at(1) &&
-            second.at(1).get<std::uint64_t>() > first.at(1).get<std::uint64_t>() &&
-            second.at(2).get<int>() >= first.at(3).get<int>() + 2 &&
+        moved && again && ordered && second.at(0).at("context") == second.at(1) &&
+            near(second.at(2).get<double>(), offset + 1.5 * unit, 0.001) &&
             near(x_of(second.at(0), 0), 10 + offset + 1.5 * unit, 0.001),
-        std::format("mdi={} stale={} ready_again={} contexts={}->{} previews={}->{} x={}", moved,
-                    stale, again, first.at(1).dump(), second.at(1).dump(), first.at(3).dump(),
-                    second.at(2).dump(), again ? x_of(second.at(0), 0) : 0.0));
+        std::format("mdi={} ready_again={} ordered={} g5x_x={} x={} previews_since={}", moved,
+                    again, ordered, second.at(2).dump(), again ? x_of(second.at(0), 0) : 0.0,
+                    Json(std::vector<Json>(trail.begin() + static_cast<std::ptrdiff_t>(
+                                                               std::min(before - 1, trail.size())),
+                                           trail.end()))
+                        .dump()));
+  check("status_context_is_always_the_newest_previews", second.at(4).empty(),
+        second.at(4).dump().substr(0, 300));
   // Back, for what follows.
   const bool back = mdi(offset) && rig.wait_js(std::format(
                         "Math.abs(__t.last.status.offsets.g5x[0] - {}) < 0.001 && {}", offset,
@@ -1038,6 +1064,178 @@ void program_with_tool_change(const Rig& rig, const std::filesystem::path& progr
   check("panel_shows_program_done",
         rig.wait_js("__t.last.status.interp === 'idle' && Math.abs(__t.axis('x').machine - 16) < 0.01"));
   check("no_console_errors_after_program", rig.js("return __t.errors.length;") == 0, rig.errors());
+}
+
+// The paired sample of the repository: EngiWorld task 17, its two programs as they are and
+// its STEP model, in the real panel. What the preview is for each program and each active
+// work system, and what of the model is on the screen before and after its placement is
+// confirmed. Facts and screenshots; the panel's part of it belongs to the panel.
+void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
+  const auto samples = std::filesystem::path(COFFEECNC_SAMPLES_DIRECTORY);
+  const auto task = samples / "upstream/engiworld-cam/task/single-software-execution/cli/"
+                              "freecad-path/task-17";
+  const auto model = task / "init_file/two_sided_part.step";
+  if (!std::filesystem::exists(task / "ground_truth/task-17_A.nc") ||
+      !std::filesystem::exists(model)) {
+    fact("paired_sample", "skipped=the-sample-corpus-is-not-in-this-checkout");
+    return;
+  }
+  power_on(rig);
+  for (const auto* name : {"task-17_A.nc", "task-17_B.nc"})
+    std::filesystem::copy_file(task / "ground_truth" / name, programs / name,
+                               std::filesystem::copy_options::overwrite_existing);
+  const std::string current = "__t.last.preview && __t.last.preview.state !== 'pending' && "
+                              "__t.last.preview.context === __t.last.status.preview_context";
+  const auto open = [&](const std::string& name) -> bool {
+    return rig.click("nav.em-nav button", "Machine") == "ok" &&
+           rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
+           rig.wait_js(std::format("!!__t.find('.entries button.entry', '{}')", name)) &&
+           rig.click(".entries button.entry", name) == "ok" &&
+           rig.wait_js(std::format("__t.last.status.program.file && "
+                                   "__t.last.status.program.file.endsWith('/{}') && {}",
+                                   name, current), 30s);
+  };
+  const auto select = [&](std::string_view system) -> bool {
+    const bool sent =
+        std::system(std::format("python3 -c \"import linuxcnc; c = linuxcnc.command(); "
+                                "c.mode(linuxcnc.MODE_MDI); c.wait_complete(); "
+                                "c.mdi('{}'); c.wait_complete()\"",
+                                system)
+                        .c_str()) == 0;
+    return sent && rig.wait_js(current, 30s);
+  };
+  const auto report = [&](std::string_view sample, std::string_view active) -> Json {
+    const auto preview = rig.js("return __t.last.preview;");
+    std::size_t points = 0;
+    for (const auto& segment : preview.at("segments"))
+      points += segment.at("points").size() / 3;
+    fact("paired_sample_preview",
+         std::format("sample={} active={} state={} error={} segments={} points={} bounds={}",
+                     sample, active, preview.at("state").get<std::string>(),
+                     word(preview.at("error").dump()), preview.at("segments").size(), points,
+                     word(preview.at("bounds").dump())));
+    return preview;
+  };
+  // The programs use tools 1, 2 and 3: the machine's table gets them, loaded by another
+  // client as an operator's own editor would. Lengths in machine units.
+  const double unit = rig.config.millimetres_per_unit;
+  write(rig.config.tool_table,
+        std::format("T1 P1 Z{:.4f} D{:.4f} ;10 mm end mill\nT2 P2 Z{:.4f} D{:.4f} ;5 mm drill\n"
+                    "T3 P3 Z{:.4f} D{:.4f} ;8 mm end mill\n",
+                    50 / unit, 10 / unit, 40 / unit, 5 / unit, 45 / unit, 8 / unit));
+  const bool tools =
+      std::system("python3 -c \"import linuxcnc; c = linuxcnc.command(); "
+                  "c.load_tool_table(); c.wait_complete()\"") == 0 &&
+      rig.wait_js("__t.last.tool_table.tools.length === 3 && "
+                  "__t.last.tool_table.tools[2].number === 3", 20s);
+  check("paired_sample_tools_loaded", tools, rig.js("return __t.last.tool_table;").dump());
+  // Side A is G54 throughout.
+  const bool opened_a = select("G54") && open("task-17_A.nc");
+  auto preview = report("task-17_A.nc", "G54");
+  check("paired_sample_a_previewed_in_g54",
+        opened_a && preview.at("state") == "ready" && preview.at("segments").size() > 20,
+        preview.dump().substr(0, 300));
+  rig.snapshot("task17a-preview");
+
+  // Its STEP model through the panel's own dialog.
+  const auto summary = [&]() -> std::string {
+    return rig.js("return __t.text(document.querySelector('.model-summary'));").get<std::string>();
+  };
+  const auto scene = [&](std::string_view what) -> std::uint64_t {
+    std::this_thread::sleep_for(700ms);
+    const auto box = rig.js(R"(
+        const canvas = document.querySelector('canvas.toolpath-canvas');
+        if (!canvas) return null;
+        const b = canvas.getBoundingClientRect();
+        return [Math.ceil(b.left), Math.ceil(b.top), Math.floor(b.width), Math.floor(b.height)];)");
+    if (!box.is_array())
+      return 0;
+    const auto drawn = rig.hooks.pixels(box.at(0).get<int>(), box.at(1).get<int>(),
+                                        box.at(2).get<int>(), box.at(3).get<int>());
+    fact("paired_sample_scene",
+         std::format("at={} drawn_pixels={} of={} summary={}", what, drawn ? drawn->drawn : 0,
+                     drawn ? drawn->total : 0, word(summary())));
+    return drawn ? drawn->drawn : 0;
+  };
+  check("panel_split_view_for_sample", rig.click(".view-switch button", "Split") == "ok");
+  const auto path_only = scene("toolpath_without_model");
+  const bool dialog = rig.click("button.attach", "") == "ok" &&
+                      rig.wait_js("!!__t.find('button', 'Choose STEP file')");
+  const auto choosers = rig.hooks.state().file_choosers;
+  rig.hooks.answer_file_chooser({model.string()});
+  const bool chosen = dialog && rig.real_click("button", "Choose STEP file") &&
+                      rig.wait(5s, [&]() -> bool {
+                        return rig.hooks.state().file_choosers == choosers + 1;
+                      });
+  const bool imported = chosen &&
+                        rig.wait_js("__t.text(document.querySelector('.identity'))"
+                                    ".startsWith('two_sided_part.step')", 60s);
+  fact("paired_sample_model",
+       std::format("imported={} identity={} size={}", imported,
+                   word(rig.js("return __t.text(document.querySelector('.identity'));").dump()),
+                   word(rig.js("return __t.text(__t.find('p.hint', 'CAD size'));").dump())));
+  check("paired_sample_model_imported", imported);
+  check("panel_closes_sample_dialog",
+        rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+            rig.wait_js("!document.querySelector('section.dialog')"));
+  const auto unplaced_text = summary();
+  const auto unplaced = scene("model_attached_placement_unconfirmed");
+  rig.snapshot("task17a-model-unplaced");
+  // The operator confirms the placement: zero offsets, the CAD origin at the work origin.
+  const bool placed = rig.click("button.attach", "") == "ok" &&
+                      rig.wait_js("!!__t.find('button', 'Apply placement')") &&
+                      rig.click("button", "Apply placement") == "ok" &&
+                      rig.wait_js("!document.querySelector('section.dialog')");
+  const auto placed_text = summary();
+  const auto with_model = scene("placement_set");
+  rig.snapshot("task17a-model-placed");
+  // And hides the part again: what is left is the path.
+  const bool hidden = rig.click("button.attach", "") == "ok" &&
+                      rig.wait_js("!!document.querySelector('section.dialog .display-row input')") &&
+                      rig.js("const box = document.querySelector('section.dialog .display-row "
+                             "input[type=checkbox]'); if (box.checked) box.click(); "
+                             "return !box.checked;") == true &&
+                      rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+                      rig.wait_js("!document.querySelector('section.dialog')");
+  const auto without_model = scene("part_hidden_by_the_operator");
+  check("paired_sample_part_is_drawn_over_the_path",
+        placed && hidden && placed_text.find("Placement set by operator") != std::string::npos &&
+            with_model > without_model + 500 && path_only > 100 &&
+            without_model * 2 > path_only && without_model < path_only * 2,
+        std::format("unplaced_summary={} placed_summary={} pixels_path_only={} unplaced={} "
+                    "placed={} hidden={}",
+                    word(unplaced_text), word(placed_text), path_only, unplaced, with_model,
+                    without_model));
+  check("no_console_errors_with_paired_sample", rig.js("return __t.errors.length;") == 0,
+        rig.errors());
+
+  // Side B cuts in G55 and returns to G54 in its last block.
+  const bool opened_b = open("task-17_B.nc");
+  preview = report("task-17_B.nc", "G54");
+  check("paired_sample_b_stops_at_g55_while_g54_is_active",
+        opened_b && preview.at("state") == "failed" && preview.at("error").is_object() &&
+            preview.at("error").at("line") == 24 &&
+            preview.at("error").at("text").get<std::string>().find("G55") != std::string::npos,
+        preview.dump().substr(0, 300));
+  rig.snapshot("task17b-preview-g54-active");
+  const bool g55 = select("G55");
+  preview = report("task-17_B.nc", "G55");
+  // The simulated mill has tools 1 and 2; the program changes to tool 3 in line 43.
+  check("paired_sample_b_previewed_while_g55_is_active",
+        g55 && !preview.at("segments").empty() &&
+            (preview.at("state") == "ready" ||
+             (preview.at("error").is_object() && preview.at("error").at("line") == 43)),
+        preview.dump().substr(0, 300));
+  rig.snapshot("task17b-preview-g55-active");
+  check("paired_sample_back_to_g54", select("G54"));
+  // As this part of the test found things: probe.ngc loaded, the machine in E-stop.
+  const bool back = open("probe.ngc") &&
+                    std::system("python3 -c \"import linuxcnc; c = linuxcnc.command(); "
+                                "c.state(linuxcnc.STATE_ESTOP); c.wait_complete()\"") == 0 &&
+                    rig.wait(5s, [&]() -> bool {
+                      return rig.status().controller.machine == MachineState::estop;
+                    });
+  check("paired_sample_leaves_the_machine_as_it_was", back);
 }
 
 // WebKitGTK as the panel needs it: module worker, WebAssembly, WebGL2, fonts, and the STEP
@@ -1491,6 +1689,8 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config) {
     program_with_tool_change(rig, programs);
     status_gaps(rig, "program_with_tool_change");
     platform(rig, ui);
+    status_gaps(rig, "platform");
+    paired_sample(rig, programs);
     status_gaps(rig, "platform");
     estop(rig);
     status_gaps(rig, "estop");

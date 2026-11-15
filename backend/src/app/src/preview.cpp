@@ -31,6 +31,17 @@ auto PreviewWorker::latest() const -> std::shared_ptr<const Preview> {
   return latest_;
 }
 
+void PreviewWorker::revalidate(std::uint64_t context) {
+  {
+    const std::scoped_lock lock{mutex_};
+    if (!latest_ || latest_->context != context)
+      return;
+    unchecked_ = std::move(latest_);
+    latest_.reset();
+  }
+  wake_.notify_all();
+}
+
 auto PreviewWorker::files_generation() const -> std::uint64_t { return generation_; }
 
 void PreviewWorker::loop() {
@@ -38,7 +49,9 @@ void PreviewWorker::loop() {
   PreviewComputation::Watch files_changed;
   std::unique_lock lock{mutex_};
   for (;;) {
-    const auto due = [&]() -> bool { return stop_ || wanted_.has_value(); };
+    const auto due = [&]() -> bool {
+      return stop_ || wanted_.has_value() || unchecked_ != nullptr;
+    };
     if (files_changed)
       wake_.wait_for(lock, check_period_, due);
     else
@@ -57,14 +70,20 @@ void PreviewWorker::loop() {
       if (computed.cancelled || stop_ || newest_ != request.context)
         continue;
       auto& outcome = computed.outcome;
+      unchecked_.reset();
       latest_ = std::make_shared<const Preview>(
           Preview{request.context, outcome.state, std::move(outcome.error),
                   std::move(outcome.segments), outcome.bounds});
       files_changed = std::move(computed.files_changed);
       continue;
     }
-    if (!files_changed)
+    if (!files_changed) {
+      // Nothing to compare: a preview asked to be checked again is finished as it is.
+      if (unchecked_)
+        latest_ = std::move(unchecked_);
+      unchecked_.reset();
       continue;
+    }
     lock.unlock();
     // A new context or the end need not wait for the files to be compared.
     const bool changed = files_changed([&]() -> bool { return stop_ || waiting_; });
@@ -73,6 +92,11 @@ void PreviewWorker::loop() {
       // Once: the composer makes a new context of it and submits that.
       ++generation_;
       files_changed = nullptr;
+      unchecked_.reset();
+    } else if (unchecked_ && !wanted_ && !stop_) {
+      // Compared again and the same: finished for its context again.
+      latest_ = std::move(unchecked_);
+      unchecked_.reset();
     }
   }
 }

@@ -44,7 +44,11 @@ namespace coffeecnc {
 //   first seen while   `unavailable`, with no_start_state_reason: a program (file and
 //   it runs            revision) that has not been seen at rest since it was loaded, or since
 //                      the link came back, has no start state: what is read is the middle of
-//                      its run. Computed once it has been seen at rest.
+//                      its run. Once it has been seen at rest the context then in force is
+//                      the current one: computed, unless a finished result for that very
+//                      context exists (the inputs are what they were), which is then used
+//                      again after the service has compared its files once more; `pending`
+//                      until it has.
 //   block delete was   `unavailable`, with plan_broken_reason: the context went up when the
 //   switched during    setting changed, so the path sent before is stale, and nothing is
 //   the run            computed until the run has ended, also when it is switched back
@@ -56,7 +60,9 @@ namespace coffeecnc {
 // force for it. While a program runs these are the machine's state from before the run
 // (PreviewContext): the preview during a run is the plan from before the run, not a
 // prediction of what is left of it. The service's files_generation is one of the inputs, read
-// at every reading. Optional stop is not an input: it pauses and changes no path.
+// at every reading. Optional stop is not an input: it pauses and changes no path. A reading
+// whose tool table is not settled (PanelReading::tools_settled) is treated like one of a
+// running program: the machine's state of the last settled reading at rest stays the input.
 //
 // `work_offsets` always has nine rows, each as available as the reading says; its revision
 // counts from 1 and goes up when a row changes.

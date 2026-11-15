@@ -616,34 +616,66 @@ void source_tool_table() {
           "The prepared index names the loaded entry; a T0 row is shown as a row");
 }
 
-// The table with every field, for the preview: read with the pass, reported while that pass
-// is the accepted table.
+// The table with every field, for the preview: accepted like the table shown, on every field.
 void source_preview_tools() {
   Rig rig;
   std::vector<PreviewTool> raw{{0, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
                                {1, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
                                {2, 2, 2, {0, 0, 40}, 3, 0, 0, 0}};
   rig.source.raw_tools([&]() -> std::vector<PreviewTool> { return raw; });
-  static_cast<void>(rig.step());
   auto r = rig.step();
-  require(r.tool_table.revision == 1 && r.preview_tools == raw,
-          "With the accepted table goes the pass with every field, the spindle's entry too");
-  raw[1].offset[0] = 0.5; // not a field of the table shown
+  require(r.preview_tools.empty() && !r.tools_settled, "One pass is not a table yet");
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == raw && r.tools_settled,
+          "The second equal pass: the table shown and the table with every field, the "
+          "spindle's entry too, are accepted together");
+  // A difference only the full table has: an X offset.
+  const auto accepted = raw;
+  raw[1].offset[0] = 0.5;
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == accepted && !r.tools_settled,
+          "A pass that differs only in an X offset is not accepted at once: the accepted "
+          "table stays the preview's");
+  raw[1].offset[0] = 0.7; // another value: caught while it changes
+  r = rig.step();
+  require(r.preview_tools == accepted && !r.tools_settled, "Nor one that differs again");
+  r = rig.step();
+  require(r.preview_tools == raw && r.tools_settled && r.tool_table.revision == 1,
+          "The identical next pass is accepted");
+  // While task executes, nothing is accepted.
   raw[0].number = 2;
-  r = rig.step();
-  require(r.tool_table.revision == 1 && r.preview_tools == raw,
-          "A change the shown table does not have is reported with the next pass");
-  // A table that is not accepted yet: the preview keeps the one that was.
-  rig.loaded = std::vector<LoadedTool>{{1, {7, 1, 1, 1, ""}}};
-  auto changed = raw;
-  changed[1].number = 7;
-  std::swap(raw, changed);
-  r = rig.step();
-  require(r.tool_table.revision == 1 && r.preview_tools == changed,
-          "While a changed table waits to be accepted the preview's table is the accepted one");
+  auto busy = rig.status();
+  busy.task_executing = true;
+  static_cast<void>(rig.step(busy));
+  r = rig.step(busy);
+  require(r.preview_tools[0].number == 1 && !r.tools_settled,
+          "A changed spindle entry is not accepted while task has something in execution");
   static_cast<void>(rig.step());
   r = rig.step();
-  require(r.tool_table.revision == 2 && r.preview_tools == raw, "Accepted: both change");
+  require(r.preview_tools == raw && r.tools_settled, "Idle between two equal passes: accepted");
+  raw = r.preview_tools;
+  require(rig.step().tools_settled && rig.step().preview_tools == raw, "And kept");
+
+  // Churn: the full table differs on every pass for a while, only in an X offset. Nothing
+  // is accepted during it: the table accepted before stays shown and stays the preview\x27s.
+  const auto before = raw;
+  const auto shown = rig.step().tool_table;
+  for (int i = 1; i <= 8; ++i) {
+    raw[2].offset[0] = 0.1 * i;
+    r = rig.step();
+    require(r.preview_tools == before && !r.tools_settled && r.tool_table == shown,
+            "While the table differs on every pass none is accepted");
+  }
+  // It stops changing, but task has something in execution between the equal passes.
+  r = rig.step(busy);
+  r = rig.step(busy);
+  require(r.preview_tools == before && !r.tools_settled && r.tool_table == shown,
+          "Equal passes with task executing between them are not accepted either");
+  // Equal passes and a status between them that shows task idle: accepted then.
+  static_cast<void>(rig.step());
+  r = rig.step();
+  require(r.preview_tools == raw && r.tools_settled && r.tool_table == shown,
+          "Identical passes with task idle between: accepted, in one step");
 }
 
 void source_without_a_tool_table() {

@@ -101,7 +101,14 @@ public:
   void submit(std::uint64_t context, const PreviewInputs& inputs) override {
     submitted.push_back({context, inputs});
   }
-  [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override { return finished; }
+  [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override {
+    return checking ? nullptr : finished;
+  }
+  // As the worker: not finished for anyone until the test says the files were compared.
+  void revalidate(std::uint64_t context) override {
+    revalidated.push_back(context);
+    checking = finished && finished->context == context;
+  }
   [[nodiscard]] auto files_generation() const -> std::uint64_t override { return generation; }
 
   // A path of one feed move, for `context`.
@@ -115,6 +122,8 @@ public:
   }
 
   std::vector<Submitted> submitted;
+  std::vector<std::uint64_t> revalidated;
+  bool checking{};
   std::shared_ptr<const Preview> finished;
   std::uint64_t generation{};
 };
@@ -345,6 +354,40 @@ void composer_block_delete_during_a_run() {
           "Optional stop changes no context");
 }
 
+// A reading whose tool table is not settled gives no input: what the run left counts when
+// the table has settled, as one context.
+void composer_waits_for_a_settled_tool_table() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  r.preview_tools = {{0, 1, 1, {0, 0, 40}, 6, 0, 0, 0}};
+  const auto first = compose(composer, r).context();
+  r.status.interp = InterpState::reading;
+  static_cast<void>(compose(composer, r));
+  // The run ends with a tool changed and an offset written; the tool table is read once.
+  r.status.interp = InterpState::idle;
+  r.status.offsets.g5x = {10, 23, 30};
+  r.work_systems.at(0) = WorkSystem{{10, 23, 30}, 0, true};
+  r.tools_settled = false;
+  auto step = compose(composer, r);
+  require(step.context() == first && service.submitted.size() == 1,
+          "At rest, the tool table not settled: no new context yet");
+  // For as long as it is not settled: no context, no computation.
+  for (int i = 0; i < 8; ++i) {
+    r.preview_tools[0].offset[0] = 0.1 * i; // what a source would not report; ignored anyway
+    step = compose(composer, r);
+    require(step.context() == first && service.submitted.size() == 1 && !step.preview,
+            "While the tool table is not settled nothing changes and nothing is computed");
+  }
+  r.preview_tools = {{0, 2, 2, {0, 0, 30}, 3, 0, 0, 0}};
+  r.tools_settled = true;
+  step = compose(composer, r);
+  require(step.context() == first + 1 && service.submitted.size() == 2 &&
+              service.submitted[1].inputs.raw_tools == r.preview_tools &&
+              service.submitted[1].inputs.systems.at(0).offset == Vec3{10, 23, 30},
+          "Settled: offsets and tool table together are one new context");
+}
+
 // A program first seen while it runs has no start state.
 void composer_no_start_state() {
   FakeService service;
@@ -403,6 +446,72 @@ void composer_no_start_state() {
   require(service.submitted.size() == 3, "At rest again: computed");
 }
 
+// The link is lost and returns in the middle of a run, and the run ends with every input as
+// it was: the result that exists for that context is the preview again, after its files were
+// compared once more, and nothing is computed.
+void composer_reuses_the_result_of_its_context() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  const auto first = compose(composer, r).context();
+  service.finish(first);
+  require(compose(composer, r).preview->at("state") == "ready", "Computed and shown");
+  auto down = r;
+  down.status.link = Link::down;
+  static_cast<void>(compose(composer, down));
+  r.status.interp = InterpState::reading;
+  auto step = compose(composer, r);
+  require(step.context() == first && step.preview &&
+              step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::no_start_state_reason &&
+              service.submitted.size() == 1 && service.revalidated.empty(),
+          "Back in the middle of a run: the same context, no start state, nothing asked");
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(step.context() == first && service.submitted.size() == 1 &&
+              service.revalidated == std::vector<std::uint64_t>{first} && step.preview &&
+              step.preview->at("state") == "pending" && step.preview->at("context") == first,
+          "At rest with the inputs of before: nothing is computed; the result is checked "
+          "again, and pending until it is");
+  require(!compose(composer, r).preview && service.revalidated.size() == 1, "Asked once");
+  service.checking = false; // the worker compared the files: unchanged
+  step = compose(composer, r);
+  require(step.context() == first && step.preview && step.preview->at("state") == "ready" &&
+              step.preview->at("context") == first && service.submitted.size() == 1,
+          "Checked: the earlier result is the preview of this context again, 0 computations");
+
+  // The files changed meanwhile: the worker raises the generation instead, and that is a new
+  // context, computed.
+  static_cast<void>(compose(composer, down));
+  r.status.interp = InterpState::reading;
+  static_cast<void>(compose(composer, r));
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(step.preview->at("state") == "pending" && service.revalidated.size() == 2 &&
+              service.submitted.size() == 1,
+          "Again at rest: checked again");
+  service.generation = 1;
+  step = compose(composer, r);
+  require(step.context() == first + 1 && service.submitted.size() == 2 &&
+              service.submitted[1].inputs.files_generation == 1,
+          "A file that changed meanwhile: a new context, one computation");
+
+  // The complement: the inputs differ after the run: one computation, no check.
+  service.checking = false;
+  service.finish(first + 1);
+  static_cast<void>(compose(composer, r));
+  static_cast<void>(compose(composer, down));
+  r.status.interp = InterpState::reading;
+  static_cast<void>(compose(composer, r));
+  r.status.interp = InterpState::idle;
+  r.status.offsets.g5x = {12, 20, 30};
+  r.work_systems.at(0) = WorkSystem{{12, 20, 30}, 0, true};
+  step = compose(composer, r);
+  require(step.context() == first + 2 && service.submitted.size() == 3 &&
+              service.revalidated.size() == 2,
+          "Inputs that changed during the outage: a new context, computed once");
+}
+
 void composer_without_a_service() {
   PanelComposer composer{hello()};
   const auto step = compose(composer, reading());
@@ -430,6 +539,9 @@ public:
         {1, MoveKind::feed, 0, {{0, 0, 0}, {static_cast<double>(inputs.program_revision), 0, 0}}}};
     received.push_back(inputs);
     computed.files_changed = [this](const std::function<bool()>&) -> bool {
+      check_thread = std::this_thread::get_id();
+      while (hold_check)
+        std::this_thread::sleep_for(1ms);
       ++file_checks;
       return files_changed;
     };
@@ -440,6 +552,8 @@ public:
   std::atomic<int> cancellations{};
   std::atomic<int> file_checks{};
   std::atomic<bool> hold{};
+  std::atomic<bool> hold_check{};
+  std::atomic<std::thread::id> check_thread{};
   std::atomic<bool> files_changed{};
 };
 
@@ -517,6 +631,38 @@ void worker_watches_the_files() {
           "The new preview is watched again");
 }
 
+// A result that is to be used again is not finished until the worker's own thread has
+// compared its files; the caller never reads a file.
+void worker_revalidates_on_its_own_thread() {
+  FakeEngine engine;
+  PreviewWorker worker{engine, 1h}; // no periodic check in this test
+  worker.submit(3, inputs(1));
+  require(wait_for([&]() -> bool { return worker.latest() != nullptr; }) &&
+              engine.file_checks == 0,
+          "Computed; its files not looked at since");
+  worker.revalidate(2);
+  require(worker.latest() != nullptr && engine.file_checks == 0,
+          "Another context than the latest preview's: nothing happens");
+  engine.hold_check = true;
+  worker.revalidate(3);
+  require(worker.latest() == nullptr, "Asked to be checked again: not finished at once");
+  require(wait_for([&]() -> bool { return engine.check_thread.load() != std::thread::id{}; }) &&
+              engine.check_thread.load() != std::this_thread::get_id() &&
+              worker.latest() == nullptr && engine.file_checks == 0,
+          "The files are compared by the worker's thread, and the result waits for it");
+  engine.hold_check = false;
+  require(wait_for([&]() -> bool { return worker.latest() != nullptr; }) &&
+              worker.latest()->context == 3 && engine.file_checks == 1 &&
+              engine.computations == 1 && worker.files_generation() == 0,
+          "Unchanged: finished again, one comparison, no computation");
+  // Changed: the generation goes up and the result is not finished again.
+  engine.files_changed = true;
+  worker.revalidate(3);
+  require(wait_for([&]() -> bool { return worker.files_generation() == 1; }) &&
+              worker.latest() == nullptr && engine.computations == 1,
+          "Changed: a new generation instead of the old result");
+}
+
 void worker_ends_a_computation_when_destroyed() {
   FakeEngine engine;
   engine.hold = true;
@@ -551,11 +697,14 @@ auto main() -> int {
     composer_tools_are_inputs();
     composer_plan_of_before_the_run();
     composer_block_delete_during_a_run();
+    composer_waits_for_a_settled_tool_table();
     composer_no_start_state();
+    composer_reuses_the_result_of_its_context();
     composer_without_a_service();
     worker_computes_the_newest();
     worker_hands_the_submitted_tools_on();
     worker_watches_the_files();
+    worker_revalidates_on_its_own_thread();
     worker_ends_a_computation_when_destroyed();
     bounds_are_of_the_feed_moves();
     std::cout << checks << " preview checks passed\n";

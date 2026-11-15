@@ -58,21 +58,22 @@ function slide(event: Event): void {
 
 <style scoped>
 .override {
-  display: flex;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 56px;
+  align-items: center;
   flex: 1 1 0;
-  flex-direction: column;
-  gap: 2px;
+  gap: 8px;
   min-width: 0;
 }
 
 .top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  height: 20px;
+  display: contents;
 }
 
 .value {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 44px;
   padding: 0 4px;
   border: 0;
   background: none;
@@ -90,6 +91,8 @@ function slide(event: Event): void {
 }
 
 .row {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -99,5 +102,5 @@ input {
   flex: 1;
   height: 28px;
 }
-.caption { font-size: 12px; color: var(--text-dim); }
+.caption { grid-column: 1; grid-row: 1; font-size: 12px; color: var(--text-dim); }
 </style>

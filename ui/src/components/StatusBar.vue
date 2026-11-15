@@ -35,7 +35,7 @@ watch([pendingPower, (): Status | null => panel.status, (): Hello | null => pane
       menu.value.querySelector('summary')?.focus({ preventScroll: true })
     }
   }
-})
+}, { flush: 'sync' })
 const tabs: readonly [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
 const linkLabel = computed(() => {
   switch (panel.link) {
@@ -124,7 +124,7 @@ const subtitle = computed(() => {
 </template>
 
 <style scoped>
-.em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 10px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .em-brand { display: flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: 3px; font-weight: 700; white-space: nowrap; }
 .em-brand small { font-size: 11px; font-weight: 400; letter-spacing: 1px; color: var(--text-dim); margin-left: 4px; }
 .brand-mark { display: flex; align-items: end; gap: 3px; height: 21px; }
@@ -139,7 +139,7 @@ const subtitle = computed(() => {
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { width: 32px; height: 36px; background: none; border: 0; color: var(--text-dim); font-size: 18px; cursor: pointer; }
 .estop { min-height: 44px; padding: 0 10px; background: none; border: 1px solid transparent; border-radius: 7px; color: var(--stop); font-size: 11px; cursor: pointer; }.estop:hover { border-color: var(--stop); background: var(--stop-soft); }
-.jobbar { display: flex; justify-content: space-between; align-items: center; padding: 19px 24px 16px; gap: 20px; }
+.jobbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; gap: 20px; }
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-weight: 550; }
 .subtitle { margin: 5px 0 0; font-size: 12px; color: var(--text-dim); }
@@ -161,6 +161,6 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .message-log { background: transparent; border-color: transparent; color: inherit; }
 .dismiss:hover { color: var(--text); background: var(--bg); }
-@media (max-height: 760px) { .em-top { padding-block: 12px; }.jobbar { padding-block: 12px; } }
+@media (max-height: 820px) { .em-top { padding-block: 6px; }.jobbar { padding-block: 8px; }.message-area { height: 54px; margin-bottom: 8px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }
 </style>

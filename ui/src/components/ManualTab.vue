@@ -7,6 +7,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { openDialogs } from '../dialogs'
+import { vNumeric } from '../numeric-input'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
@@ -335,7 +336,7 @@ function coolant(which: 'flood' | 'mist'): void {
   <div class="manual">
     <section class="card jog">
       <h2>Jog</h2>
-      <p v-if="manualBlock" class="blocked">Jog and homing unavailable: {{ manualBlock }}</p>
+      <p class="blocked reserved" :title="jogUnavailable ?? undefined"><template v-if="jogUnavailable">Jog unavailable: {{ jogUnavailable }}</template></p>
       <div class="pads">
         <div class="pad">
           <button
@@ -371,9 +372,9 @@ function coolant(which: 'flood' | 'mist'): void {
         </div>
       </div>
 
-      <div class="line">
+      <div class="line steps">
         <span class="label">Step</span>
-        <div class="segmented">
+        <div class="increments">
           <button
             class="btn"
             type="button"
@@ -413,7 +414,7 @@ function coolant(which: 'flood' | 'mist'): void {
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
 
-      <p v-if="limitedSpeeds" class="hint">Axis limits: {{ limitedSpeeds }}</p>
+      <p class="hint reserved" :title="limitedSpeeds || undefined"><template v-if="limitedSpeeds">Axis limits: {{ limitedSpeeds }}</template></p>
 
       <div class="line">
         <span class="label">Home</span>
@@ -485,7 +486,7 @@ function coolant(which: 'flood' | 'mist'): void {
             Run
           </button>
         </form>
-        <p v-if="mdiBlock" class="blocked">MDI unavailable: {{ mdiBlock }}</p>
+        <p class="blocked reserved" :title="mdiBlock ?? undefined"><template v-if="mdiBlock">MDI unavailable: {{ mdiBlock }}</template></p>
       </section>
 
       <section class="card utilities">
@@ -493,6 +494,7 @@ function coolant(which: 'flood' | 'mist'): void {
         <div class="line">
           <input
             v-model="rpmText"
+            v-numeric
             class="field mono rpm"
             type="text"
             inputmode="decimal"
@@ -570,6 +572,8 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .jog {
   gap: 6px;
+  align-self: start;
+  max-height: 100%;
   overflow-y: auto;
 }
 
@@ -617,9 +621,9 @@ function coolant(which: 'flood' | 'mist'): void {
   flex: 1;
 }
 
-.jog .segmented .btn {
-  padding: 0 10px;
-}
+.steps { align-items: baseline; }
+.increments { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; gap: 4px; }
+.increments .btn { min-width: 44px; padding: 0 10px; }
 
 .speed {
   width: 44px;
@@ -654,18 +658,18 @@ function coolant(which: 'flood' | 'mist'): void {
 .blocked {
   margin: 0;
 }
+.reserved { height: 30px; flex: none; margin: 0; font-size: 11px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .mdi {
-  flex: 1;
-  min-height: 150px;
+  flex: none;
 }
 
 .history {
   display: flex;
-  flex: 1;
+  flex: none;
   flex-direction: column;
   gap: 2px;
-  min-height: 44px;
+  height: 64px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -696,10 +700,13 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .entry .result {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-dim);
   text-align: right;
 }
+.entry .text { flex: none; max-width: 45%; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 
 .entry.rejected .result,
 .entry.failed .result,
@@ -751,4 +758,5 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
+@media (max-height: 820px) { .jog { gap: 4px; }.reserved { height: 15px; -webkit-line-clamp: 1; } }
 </style>

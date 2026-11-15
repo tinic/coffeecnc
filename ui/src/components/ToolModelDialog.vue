@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { panel } from '../machine'
+import { vNumeric } from '../numeric-input'
 import type { Tool } from '../protocol'
 import { factoryToolDefaults, pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity,
   type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
@@ -127,7 +128,7 @@ async function clearAssignment(): Promise<void> {
         <div class="dimensions">
           <label v-for="field in fields.filter((f) => f.key !== 'tipAngle' || pointedTool(family))" :key="field.key" class="entry">
             <span class="label">{{ field.label }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
-            <input v-model="form[field.key]" class="field mono" type="text" inputmode="decimal" :disabled="saving || !defaultsMode && (!custom || field.key === 'diameter')" />
+            <input v-model="form[field.key]" v-numeric class="field mono" type="text" inputmode="decimal" :disabled="saving || !defaultsMode && (!custom || field.key === 'diameter')" />
           </label>
         </div>
         <p class="hint explanation">Stick-out runs from the tip to the holder face. These dimensions are independent of the LinuxCNC Z offset.</p>

@@ -42,7 +42,7 @@ function touchOff(value: number): void {
 </template>
 
 <style scoped>
-.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 18px; padding: 14px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .basis { display: flex; flex-direction: column; gap: 5px; width: 125px; flex: none; padding: 0 20px; border: 0; background: none; text-align: left; cursor: pointer; }
 .basis strong { font-size: 13px; font-weight: 500; }.basis span { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
 .axis { display: flex; flex: 0 1 250px; align-items: center; gap: 12px; min-width: 0; padding: 0 18px; border-left: 1px solid var(--line); }
@@ -51,5 +51,5 @@ function touchOff(value: number): void {
 .touch { border: 0; background: none; padding: 8px; color: var(--text-dim); cursor: pointer; }.touch:disabled { opacity: .3; }
 .units { flex: none; width: 65px; height: 44px; background: none; border: 0; font-size: 12px; color: var(--text-dim); cursor: pointer; }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
-@media (max-height: 760px) { .dro { min-height: 70px; margin-bottom: 12px; } }
+@media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 </style>

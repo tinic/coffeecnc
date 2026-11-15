@@ -20,6 +20,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -126,10 +127,11 @@ auto panel_directory(const Options& options) -> std::expected<std::string, std::
     directory = *options.ui_directory;
   } else {
     const auto self = std::filesystem::read_symlink("/proc/self/exe", error);
-    const auto installed = self.parent_path().parent_path() / "share" / "coffeecnc" / "ui";
-    directory = !error && std::filesystem::exists(installed / "index.html", error)
-                    ? installed
-                    : std::filesystem::path{COFFEECNC_SOURCE_UI_DIRECTORY};
+    directory = self.parent_path().parent_path() / "share" / "coffeecnc" / "ui";
+#ifdef COFFEECNC_SOURCE_UI_DIRECTORY
+    if (error || !std::filesystem::exists(directory / "index.html", error))
+      directory = std::filesystem::path{COFFEECNC_SOURCE_UI_DIRECTORY};
+#endif
   }
   if (!std::filesystem::is_regular_file(directory / "index.html", error))
     return std::unexpected(std::format(
@@ -140,7 +142,8 @@ auto panel_directory(const Options& options) -> std::expected<std::string, std::
 }
 
 // The preview helper: COFFEECNC_PREVIEW_HELPER when set, else the program beside this one,
-// else the one of the build tree this was built in. Empty when there is none.
+// else, in a build with COFFEECNC_DEVELOPMENT_PATHS, the one of the build tree this was built
+// in. Empty when there is none.
 auto preview_helper() -> std::string {
   std::error_code error;
   if (const char* given = std::getenv("COFFEECNC_PREVIEW_HELPER"); given != nullptr && *given != 0)
@@ -155,6 +158,41 @@ auto preview_helper() -> std::string {
 #endif
   return {};
 }
+
+auto state_name(PreviewState state) -> std::string_view {
+  switch (state) {
+  case PreviewState::pending:
+    return "pending";
+  case PreviewState::ready:
+    return "ready";
+  case PreviewState::failed:
+    return "failed";
+  case PreviewState::unavailable:
+    return "unavailable";
+  }
+  return "unknown";
+}
+
+// Says on stderr how each preview computation ended, one line each: what shows on a machine
+// that the helper was found and works, and what a test of an installed tree reads. Called by
+// the preview thread only, like the engine it wraps.
+class ReportingEngine final : public PreviewEngine {
+public:
+  explicit ReportingEngine(PreviewEngine& engine) : engine_(&engine) {}
+  [[nodiscard]] auto compute(const PreviewInputs& inputs, const std::function<bool()>& cancelled)
+      -> PreviewComputation override {
+    auto computation = engine_->compute(inputs, cancelled);
+    if (!computation.cancelled && inputs.program_file)
+      std::cerr << std::format("coffeecnc: preview state={} segments={} program={}\n",
+                               state_name(computation.outcome.state),
+                               computation.outcome.segments.size(), *inputs.program_file)
+                << std::flush;
+    return computation;
+  }
+
+private:
+  PreviewEngine* engine_;
+};
 
 // A directory of this process for the preview's private files, removed with it.
 class WorkDirectory {
@@ -190,6 +228,14 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(ui.error());
     return 1;
   }
+  // Which panel and which helper this process uses: an installed tree's own, or a checkout's.
+  const auto helper = preview_helper();
+  std::cerr << std::format("coffeecnc: panel={} preview_helper={}\n", *ui,
+                           helper.empty() ? std::string_view{"none"} : std::string_view{helper})
+            << std::flush;
+  if (helper.empty())
+    say("No preview helper: coffeecnc-preview is not beside the executable. Programs are shown "
+        "without a toolpath preview.");
   if (!initialise_display()) {
     say("Cannot open a display.");
     return 1;
@@ -250,7 +296,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   // The preview: an engine that starts the helper, and the thread that computes with it. Both
   // outlive the publisher, which hands contexts over and takes results.
   const WorkDirectory work;
-  HelperPreviewEngine engine{load_preview_settings(*config, preview_helper(), work.path())};
+  HelperPreviewEngine helper_engine{load_preview_settings(*config, helper, work.path())};
+  ReportingEngine engine{helper_engine};
   PreviewWorker preview{engine};
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;

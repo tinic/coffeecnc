@@ -284,7 +284,8 @@ struct Driver {
     now = at;
     session.observe(port.state, now.monotonic);
     Outcome outcome;
-    outcome.messages = std::exchange(backlog, {});
+    // A fresh outcome has no messages: the swap leaves the backlog empty.
+    outcome.messages.swap(backlog);
     control();
     drain(outcome);
     return outcome;

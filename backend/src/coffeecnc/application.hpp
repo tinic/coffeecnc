@@ -65,9 +65,10 @@ struct ApplicationHooks {
 //                                      remote desktop); the older path renders everywhere
 void configure_environment();
 
-// The built panel: `--ui`, else `<prefix>/share/coffeecnc/ui` beside the executable's `bin`,
-// else the source tree's `ui/dist` this build was made in. Fails when the directory found has
-// no index.html.
+// The built panel: `--ui`, else `<prefix>/share/coffeecnc/ui`, where `<prefix>/bin` is the
+// directory of the running executable (/proc/self/exe), whatever the prefix is; else, only in a
+// build with COFFEECNC_DEVELOPMENT_PATHS, the source tree's `ui/dist` this build was made in.
+// Fails when the directory found has no index.html.
 [[nodiscard]] auto panel_directory(const Options& options) -> std::expected<std::string, std::string>;
 
 } // namespace coffeecnc

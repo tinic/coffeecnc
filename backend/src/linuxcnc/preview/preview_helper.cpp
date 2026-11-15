@@ -38,6 +38,7 @@
 
 #include "../src/preview_wire.hpp"
 #include "../src/program_watch.hpp"
+#include <coffeecnc/core/text_file.hpp>
 
 #include <array>
 #include <chrono>
@@ -652,6 +653,8 @@ auto run(const HelperRequest& request) -> int {
   // called name with shell expansion. The executable has scanned its copies already; this
   // does not rely on it.
   {
+    // The executable bounds a program and its subroutine files at 16 MiB together.
+    constexpr std::size_t max_file_bytes = std::size_t{16} << 20;
     std::vector<std::filesystem::path> files{request.program};
     std::error_code error;
     if (!request.subroutines.empty())
@@ -660,10 +663,11 @@ auto run(const HelperRequest& request) -> int {
     if (error)
       return give_up("the directory of the subroutine files cannot be read");
     for (const auto& file : files) {
-      std::ifstream in{file, std::ios::binary};
-      const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-      const auto found = coffeecnc::first_forbidden_line(text);
-      if (!in || !found)
+      const auto text = coffeecnc::read_text_file(file.string(), max_file_bytes);
+      if (!text && text.error() == coffeecnc::TextFileError::too_large)
+        return give_up("a file of the program is larger than the preview reads");
+      const auto found = text ? coffeecnc::first_forbidden_line(*text) : std::nullopt;
+      if (!found)
         continue;
       if (file == request.program)
         canon.line = found->line;
@@ -800,12 +804,16 @@ auto main(int argc, char** argv) -> int {
                stderr);
     return 2;
   }
-  std::ifstream in{argv[1], std::ios::binary};
-  const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-  const auto request = coffeecnc::parse_request(text);
-  if (!in || !request) {
-    std::fprintf(stderr, "coffeecnc-preview: %s\n",
-                 request ? "the request file cannot be read" : request.error().c_str());
+  // The request: start state, work systems and the tool table as text.
+  constexpr std::size_t max_request_bytes = std::size_t{16} << 20;
+  const auto text = coffeecnc::read_text_file(argv[1], max_request_bytes);
+  if (!text) {
+    std::fputs("coffeecnc-preview: the request file cannot be read\n", stderr);
+    return 2;
+  }
+  const auto request = coffeecnc::parse_request(*text);
+  if (!request) {
+    std::fprintf(stderr, "coffeecnc-preview: %s\n", request.error().c_str());
     return 2;
   }
   const int code = run(*request);

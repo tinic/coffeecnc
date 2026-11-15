@@ -407,6 +407,23 @@ void power(Rig& rig) {
     rig.pump(300ms);
     check("external_estop_released", released);
   }
+  // A task that no longer answers, with E-stop still readable in the status buffer: that state
+  // is no evidence, and the request is not confirmed by it.
+  rig.direct([&]() -> void {
+    ActionResult unanswered;
+    {
+      const FrozenTask frozen{rig.config.ini_file};
+      unanswered = rig.port.set_machine_state(MachineState::estop, always());
+    }
+    check("estop_request_to_a_frozen_task_is_not_confirmed",
+          unanswered.status == ActionStatus::failed &&
+              unanswered.reason == "LinuxCNC's status cannot be read; E-stop was not confirmed.",
+          std::format("status={} reason={}", static_cast<int>(unanswered.status),
+                      unanswered.reason));
+    // Task runs again and takes the queued request: wait for a live link before going on.
+    rig.direct_until(5s, [&]() -> bool { return rig.port.status().controller.link == Link::live; });
+  });
+  check("link_live_again", rig.link() == Link::live);
   const auto reset = rig.send(R"("type":"set_machine","state":"off")");
   rig.pump(50ms);
   check("estop_reset", reset.accepted() && rig.snapshot().machine == MachineState::off,

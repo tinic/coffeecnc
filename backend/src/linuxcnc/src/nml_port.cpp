@@ -532,20 +532,28 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
     // the command or of a step of it: task can switch the machine off and abort (which may
     // publish errors of its own) without ever reporting E-stop, where the state is an input's.
     const auto sent = impl_->run(message, from);
+    // Evidence is a status task published after it took this command, read while the link is
+    // live. stat() also hands out what a stopped task left in the buffer.
+    const auto evidence = [&](const EMC_STAT* now) -> bool {
+      return now != nullptr && impl_->status.link() == Link::live &&
+             !impl_->written_types.empty() && now->echo_serial_number - impl_->serial >= 0;
+    };
     static_cast<void>(until(settle_timeout, [&]() -> bool {
       impl_->collect();
       const EMC_STAT* now = impl_->stat();
-      return now != nullptr && now->task.state == EMC_TASK_STATE_ESTOP;
+      return evidence(now) && now->task.state == EMC_TASK_STATE_ESTOP;
     }));
     // What a failed step took out of the message queue for its reason is the operator's again.
     if (!accepted(sent) && !sent.reason.empty())
       impl_->messages.push_back({true, sent.reason});
     const EMC_STAT* now = impl_->stat();
+    const Link link = impl_->status.link();
     if (now == nullptr)
-      return estop_request_result(std::nullopt);
+      return estop_request_result(std::nullopt, link, false);
     return estop_request_result(now->task.state == EMC_TASK_STATE_ESTOP ? MachineState::estop
                                 : now->task.state == EMC_TASK_STATE_ON  ? MachineState::on
-                                                                        : MachineState::off);
+                                                                        : MachineState::off,
+                                link, evidence(now));
   }
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;

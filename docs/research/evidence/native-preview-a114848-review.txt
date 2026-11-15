@@ -62,3 +62,37 @@ Primary source references, independently read during this review:
 https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_read.cc#L278-L288
 https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_convert.cc#L1394-L1489
 https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/rs274ngc_pre.cc#L2485-L2562
+
+Follow-up: result parser review, 2026-11-15 00:33 UTC
+
+6. Stop parsing immediately when a numeric token is invalid.
+   preview_wire.cpp:175 uses numbers = numbers && number(line, value).
+   Once numbers is false, short-circuit evaluation leaves line unchanged.
+   If another token remains, the loop keeps appending values without progress.
+   This runs in the parent worker after the helper, outside its timeout; it can
+   exhaust memory or prevent shutdown. Also reject non-finite coordinates and
+   invalid line/tool numbers, and validate terminal records before publication.
+   A result may retain only its complete, valid prefix.
+
+   Independently reproduced with the unmodified preview_wire.cpp/.hpp exported
+   from a114848, compiled with Apple clang 21, C++23, -O0 and the unchanged core
+   panel-message headers. Retained harness: native-preview-wire-a114848-probe.cpp.
+   Its operator new refuses single allocations above 1 MiB; alarm(1) additionally
+   bounds runtime. The malformed case exceeds that allocation cap despite a
+   tiny input. The valid control succeeds. This is a bounded parser reproduction,
+   not a LinuxCNC/helper execution or a production memory measurement.
+
+good: exit=0 elapsed=0.232s stdout=returned segments=1 end=1 first_x_finite=1 stderr=
+bad: exit=42 elapsed=0.022s stdout=bad_alloc: instrumented 1 MiB per-allocation cap exceeded stderr=
+nan: exit=0 elapsed=0.007s stdout=returned segments=1 end=1 first_x_finite=0 stderr=
+
+   Compile probe.cpp together with the exported preview_wire.cpp, including its
+   directory and backend/src/core/include. Run arguments: good, bad, nan.
+   The first attempt to set RLIMIT_DATA was rejected by macOS; it did not execute
+   the parser. The results above use the allocation-instrumented harness instead.
+   Raw source/build/results remain at the local path recorded in
+   /tmp/coffeecnc-preview-wire-review-path.
+
+   Claude confirmed the defect on AgentNet at 00:32 and queued immediate parse
+   failure, parent-side bounds, finite/range checks and terminal-record tests.
+   No corrected checkpoint has been reviewed; finding 6 remains open.

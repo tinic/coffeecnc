@@ -88,6 +88,8 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | Jog status | Joint jog: `RCS_EXEC`, `inpos` 0. Teleop jog: `RCS_DONE`, `inpos` 1 | `in_position` also checks velocity; jog commands wait for the echo, not completion |
 | Mode change | Refused only in auto with a busy interpreter. During an MDI move it is accepted and aborts the move. During a jog it is ignored with `RCS_DONE` | Verify `task.mode` after every change |
 | Pause and step | At an M0/M1 stop `currentLine` is the line before it. The first step after such a stop only takes up the next block; `task_paused` stays set with the interpreter reading | Report paused whenever `task_paused` is set |
+| Line counters | Close + open zero `currentLine` and `motionLine` (`emc/task/emctask.cc:547`). After a 4-line program ends: 3 / 3. E-stop with an idle interpreter then gives 3 / 0, also after another file was opened (`emc/task/emctaskmain.cc:2615`). An MDI block after the run counts on: 4 / 4. An abort in line 3 leaves 5 / 3 (read ahead). A run does not reset them (`emctaskmain.cc:2294`) | `current_line` and `motion_line` are attributed per program revision, never passed through: 0 at load; as read while auto is not idle and the counter moved; the value at the end of the run is kept; 0 after a manual or MDI status until the next run. A run shorter than the 50 ms publishing period leaves 0 |
+| Status time | The status buffer holds what task published last, however old | A reading is dated before it is acquired: the time orders CoffeeCNC's samples against its own commands, not LinuxCNC's publication |
 | Manual tool change | `T1 M6` raises `iocontrol.0.tool-change`, `tool-prep-number` 1; `tool-changed` high releases it; `toolInSpindle` changes afterwards. M6 for the loaded tool asks for nothing | `requested_tool` comes from the HAL pins |
 | Units | `traj.linearUnits` is units per mm; `task.programUnits` 1 is G20, 2 is G21 and stays inch after an abort inside a G20 section | One scale factor from the INI; composed G-code in the program unit |
 | Error channel | Text arrives a few ms after the status, sometimes as several messages. A jog into a soft limit produces no error | All errors of a failed action become its reason |
@@ -108,14 +110,14 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | The interpreter reports motion through about 160 free functions the host must define | `emc/nml_intf/canon.hh` (`STRAIGHT_TRAVERSE` 245, `ARC_FEED` 406, `STRAIGHT_FEED` 464) | One implementation per process, and the interpreter keeps global state: the preview is a separate helper process |
 | AXIS does exactly this, into Python callbacks | `emc/rs274ngc/gcodemodule.cc:718` (`parse_file`), `193`–`238` | Reference for call order, unit and init codes, and arc handling |
 | `rs274` is the same interpreter as a command line program printing canonical commands | `emc/sai/Submakefile:9`, `emc/sai/driver.cc:578` (`-t` tool table, `-v` parameters, `-i` INI, `-g`) | Usable for a first preview and as a test oracle for the helper |
-| Probing and `M66` input depend on the machine | `canon.hh:875` (`GET_EXTERNAL_PROBE_POSITION_X`) | The helper returns the programmed target; such programs are marked in `Preview` as not deterministic (field to add) |
+| Probing and `M66` input depend on the machine | `canon.hh:875` (`GET_EXTERNAL_PROBE_POSITION_X`) | The trusted path stops at the first such operation: `Preview` is `failed` with the line and the segments up to it. No marker field |
 | The preview depends on offsets, tool table and parameters at load time | `-t`, `-v` above | Re-run on any change of those; `Status.preview_context` identifies the inputs and `Preview.context` says which it was computed for |
 
 ## Open
 
 | Item | Question |
 |---|---|
-| Remaps and `M100`–`M199` | The helper needs the Python plugin and INI `[RS274NGC]` settings; which side effects must it suppress? |
+| Remaps and `M100`–`M199` | Decided for the preview helper: a configuration with `[RS274NGC] REMAP` is refused; the path stops at the first `M100`–`M199`. Modelling either is open |
 | Non-trivial kinematics | Joint and axis indexes are assumed equal; reject other configurations at start-up or map them? |
 | Jog watchdog wiring | Shipped in `postgui.hal` or checked at start-up? |
 | Step and resume around M0/M1 | Observed on one program; confirm before the panel relies on it |

@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -922,7 +923,16 @@ void how_the_helper_ended() {
            result + "exit 0");
   int stray = 0;
   std::ifstream{stray_file} >> stray;
-  require(o.state == PreviewState::ready && stray > 0 && kill(stray, 0) != 0 &&
+  // The engine ends it; init reaps it, asynchronously: a killed orphan answers kill(pid, 0)
+  // for a while (about 0.6 ms on a PREEMPT_RT kernel), so its end is waited for, bounded.
+  bool stray_ended = false;
+  for (const auto until = std::chrono::steady_clock::now() + 2s;
+       stray > 0 && !stray_ended && std::chrono::steady_clock::now() < until;) {
+    stray_ended = kill(stray, 0) != 0;
+    if (!stray_ended)
+      std::this_thread::sleep_for(1ms);
+  }
+  require(o.state == PreviewState::ready && stray > 0 && stray_ended &&
               rig.diagnostics.find("left processes behind") != std::string::npos,
           "A process left behind after a good exit: ready, ended, noted: " + text_of(o));
   // A result that is not valid, from a helper that exits 0.

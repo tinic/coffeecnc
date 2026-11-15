@@ -9,7 +9,9 @@
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
-# [arguments...]` and shuts down when it exits. This script assembles the run directory, waits for
+# [arguments...]` and shuts down when it exits. (The arguments are in the wrapper this script
+# writes, not in the INI file: LinuxCNC reads at most 255 characters of an INI line and cuts a
+# longer [DISPLAY] DISPLAY short without a word.) This script assembles the run directory, waits for
 # the program with a hard timeout, makes sure every process it started is gone, and exits with the
 # program's exit code (124 after a timeout, 125 when LinuxCNC could not be run or did not shut
 # down). With -n it only assembles the run directory, prints `sim=assembled ini=<file>` and
@@ -83,11 +85,17 @@ for word in "$program" "$directory" "$@"; do
   fi
 done
 
-# The DISPLAY program LinuxCNC starts: the real one, and a record of how it ended.
+if [ $((${#directory} + 30)) -gt 250 ]; then
+  echo "sim=error detail=run-directory-path-too-long-for-an-ini-line"
+  exit 125
+fi
+
+# The DISPLAY program LinuxCNC starts: the real one with its arguments, and a record of how it
+# ended. LinuxCNC calls it as `display.sh -ini <file>`.
 rm -f "$directory/display.status"
 cat >"$directory/display.sh" <<EOF || exit 125
 #!/bin/bash
-"$program" "\$@"
+"$program" "\$@" $*
 status=\$?
 if [ \$status -gt 128 ] && name=\$(kill -l \$status 2>/dev/null); then
   echo "signal_\$name" >"$directory/display.status"
@@ -104,7 +112,7 @@ perl -pe '
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$directory/display.sh $*" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done

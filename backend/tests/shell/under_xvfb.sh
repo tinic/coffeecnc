@@ -2,25 +2,31 @@
 # Runs a DISPLAY program of LinuxCNC on an X display of its own (Xvfb, 1280x800): for
 # tests/sim/run.sh, which starts LinuxCNC without one.
 #
-#   run.sh [...] under_xvfb.sh [--terminate-after=<seconds>] <program> [arguments...]
+#   run.sh [...] under_xvfb.sh [--terminate-after=<seconds>] [--check=<script>[,<word>]]
+#     <program> [arguments...]
 #
-# LinuxCNC starts this script as `under_xvfb.sh -ini <file> [--terminate-after=<seconds>]
-# <program> [arguments...]`; the program is started as `<program> -ini <file> [arguments...]`.
+# LinuxCNC starts this script as `under_xvfb.sh -ini <file> [options] <program>
+# [arguments...]`; the program is started as `<program> -ini <file> [arguments...]`.
 # With --terminate-after the program is sent SIGTERM after that time and this script prints
 # an `exit=<code>` line with the program's exit code; otherwise the program prints it. Either
-# way this script exits with the program's exit code. Xvfb is started here and ended here, by
-# its process ID.
+# way this script exits with the program's exit code. With --check (and --terminate-after) the
+# script is run as `<script> <process ID> <INI file> <program> [<word>]` while the program
+# still runs, just before the SIGTERM; when it fails, so does this script (exit code 1 where
+# the program's own was 0). Xvfb is started here and ended here, by its process ID.
 set -u
 [ "${1:-}" = -ini ] && [ $# -ge 3 ] || { echo "exit=125"; exit 125; }
 ini=$2
 shift 2
 terminate_after=
-case $1 in
---terminate-after=*)
-  terminate_after=${1#--terminate-after=}
+check=
+while :; do
+  case $1 in
+  --terminate-after=*) terminate_after=${1#--terminate-after=} ;;
+  --check=*) check=${1#--check=} ;;
+  *) break ;;
+  esac
   shift
-  ;;
-esac
+done
 program=$1
 shift
 directory=$(dirname "$ini")
@@ -57,8 +63,16 @@ else
   "$program" -ini "$ini" "$@" &
   pid=$!
   sleep "$terminate_after"
+  checked=0
   if kill -0 "$pid" 2>/dev/null; then
     echo "check=program_ran_until_terminated result=pass detail=seconds=$terminate_after"
+    if [ -n "$check" ]; then
+      # shellcheck disable=SC2086  # <script>,<word>: two words on purpose.
+      "${check%%,*}" "$pid" "$ini" "$program" $(case $check in *,*) echo "${check#*,}" ;; esac)
+      checked=$?
+      kill -0 "$pid" 2>/dev/null
+      echo "check=program_ran_through_its_checks result=$([ $? = 0 ] && echo pass || echo fail) detail=checks_exit=$checked"
+    fi
     kill -TERM "$pid"
   else
     echo "check=program_ran_until_terminated result=fail detail=ended-by-itself"
@@ -70,6 +84,7 @@ else
   else
     echo "check=sigterm_exit_code result=fail detail=$code"
   fi
+  [ "$code" != 0 ] || [ "$checked" = 0 ] || code=1
   echo "exit=$code"
 fi
 kill "$xvfb" 2>/dev/null

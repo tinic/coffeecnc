@@ -1,0 +1,32 @@
+# What a machine's INI file needs for CoffeeCNC. Not a complete INI file: put these keys into
+# the sections of the machine's own.
+
+[DISPLAY]
+# LinuxCNC starts this program and shuts down when it exits. Options go after the name:
+# --windowed (a 1280 x 800 window instead of the full screen).
+DISPLAY = coffeecnc
+# Read by coffeecnc: PROGRAM_PREFIX (the only directory programs are opened from),
+# MAX_LINEAR_VELOCITY, INCREMENTS, MAX_FEED_OVERRIDE, MIN_SPINDLE_OVERRIDE,
+# MAX_SPINDLE_OVERRIDE. Keys of other display programs are ignored.
+
+[COFFEECNC]
+# The highest spindle speed the panel accepts, in rpm. Without this key
+# [SPINDLE_0] MAX_FORWARD_VELOCITY is taken, then [DISPLAY] MAX_SPINDLE_0_SPEED; with none of
+# the three coffeecnc does not start.
+MAX_SPINDLE_RPM = 1500
+# yes when the machine's HAL files connect a signal to the pin of the coffeecnc component;
+# only then is the value shown. An unconnected pin is never taken for a measured zero.
+#   SPINDLE_RPM_SIGNAL        coffeecnc.spindle-rpm       float in, measured rpm
+#   SPINDLE_AT_SPEED_SIGNAL   coffeecnc.spindle-at-speed  bit in
+#   PROBE_SIGNAL              coffeecnc.probe-input       bit in
+SPINDLE_RPM_SIGNAL = no
+SPINDLE_AT_SPEED_SIGNAL = no
+PROBE_SIGNAL = no
+
+[HAL]
+# Run by coffeecnc with halcmd once its HAL component exists; a path relative to the INI
+# file's directory. The file must have the commands of
+# /usr/share/coffeecnc/hal/coffeecnc_postgui.hal: copy that file beside the INI file, or
+# `source` it from a file of the machine. Post-GUI files of another display program connect
+# that program's pins and cannot be loaded.
+POSTGUI_HALFILE = coffeecnc_postgui.hal

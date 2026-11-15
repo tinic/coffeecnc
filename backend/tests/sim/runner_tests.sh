@@ -78,6 +78,14 @@ code=$?
 [ "$code" = 0 ] && grep -q '^sim=done exit=0 printed_exit=none child_status=0 processes_left=0 ' "$work/silent.out"
 check silent_program_passes_on_its_exit_code $? "exit=${code}_$(summary "$work/silent.out")"
 
+# Arguments longer than an INI line (255 characters in LinuxCNC) reach the program whole.
+printf '#!/bin/sh\necho "arguments=$*"\nexit 0\n' >"$work/arguments" && chmod +x "$work/arguments" || exit 125
+long=$(printf 'argument-%03d,' $(seq 40))
+"$here/run.sh" -t 60 -d "$work/arguments-run" "$work/arguments" first "$long" last >"$work/arguments.out" 2>&1
+code=$?
+[ "$code" = 0 ] && grep -qxF "arguments=-ini $work/arguments-run/coffeecnc_sim.ini first $long last" "$work/arguments-run/linuxcnc.log"
+check long_arguments_reach_the_program $? "exit=${code}_characters=${#long}"
+
 "$here/run.sh" -d "$work/with space" "$work/never" >"$work/space.out" 2>&1
 code=$?
 [ "$code" = 125 ] && grep -q 'unsupported-characters' "$work/space.out"

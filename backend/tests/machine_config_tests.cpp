@@ -1,6 +1,6 @@
 // load_machine_config and parse_jog_increments against INI files written here, and against the
 // INI files tests/sim/run.sh assembles for its profiles. No LinuxCNC is started.
-//   coffeecnc_machine_config_tests <tests/sim/run.sh> <scratch directory>
+//   coffeecnc_machine_config_tests <tests/sim/run.sh> <scratch directory> <coffeecnc.ini.example>
 
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
@@ -26,6 +26,7 @@ namespace {
 int checks = 0;
 std::filesystem::path scratch;
 std::string runner;
+std::string example;
 
 void require(bool condition, const std::string& message) {
   ++checks;
@@ -301,6 +302,42 @@ void increments_and_signals() {
   }
 }
 
+// The installed example (share/coffeecnc.ini.example): its [COFFEECNC] section, put into a
+// machine's INI file as it stands, is read, and has no key the loader does not know.
+void shipped_example() {
+  std::ifstream in{example};
+  require(in.good(), "cannot read " + example);
+  std::string section;
+  std::vector<std::string> keys;
+  bool inside = false;
+  for (std::string line; std::getline(in, line);) {
+    if (line.starts_with("["))
+      inside = line == "[COFFEECNC]";
+    if (!inside)
+      continue;
+    section += line + "\n";
+    if (const auto equals = line.find('='); equals != std::string::npos && !line.starts_with("#"))
+      keys.push_back(line.substr(0, line.find_first_of(" =")));
+  }
+  const std::vector<std::string> known{"MAX_SPINDLE_RPM", "SPINDLE_RPM_SIGNAL",
+                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"};
+  require(keys == known, std::format("example keys: {} of {}", keys.size(), known.size()));
+  const auto config =
+      load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", section));
+  require(config.has_value(), config ? "" : config.error());
+  require(near(config->limits.max_spindle_rpm, 1500) && !config->signals.spindle_rpm &&
+              !config->signals.spindle_at_speed && !config->signals.probe,
+          "the example's values");
+  // Every signal the example names can be switched on by the word it documents.
+  auto yes = section;
+  for (std::size_t at = 0; (at = yes.find("= no", at)) != std::string::npos;)
+    yes.replace(at, 4, "= yes");
+  const auto wired = load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", yes));
+  require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
+              wired->signals.probe,
+          "the example's signals set to yes");
+}
+
 // The INI file run.sh assembles for a profile, without starting LinuxCNC.
 auto assembled(const std::string& options, const std::string& name)
     -> std::expected<MachineConfig, std::string> {
@@ -354,10 +391,12 @@ void simulation_profiles() {
 
 auto main(int argc, char** argv) -> int {
   try {
-    if (argc != 3)
-      throw std::runtime_error("usage: coffeecnc_machine_config_tests <run.sh> <scratch>");
+    if (argc != 4)
+      throw std::runtime_error(
+          "usage: coffeecnc_machine_config_tests <run.sh> <scratch> <coffeecnc.ini.example>");
     runner = argv[1];
     scratch = argv[2];
+    example = argv[3];
     std::filesystem::create_directories(scratch);
     increments();
     g0759_shape();
@@ -365,6 +404,7 @@ auto main(int argc, char** argv) -> int {
     homing();
     axis_ceilings();
     increments_and_signals();
+    shipped_example();
     simulation_profiles();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;

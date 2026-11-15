@@ -6,9 +6,18 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 include(cmake/ProjectOptions.cmake)
+# Directories an installation or package creates: not writable by the group, whatever the
+# umask of the build is.
+set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+  GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 include(cmake/StaticAnalyzers.cmake)
 add_subdirectory(src/core)
 option(COFFEECNC_BUILD_APP "Build the app protocol layer (requires nlohmann_json)" ON)
+# ON: an executable that finds no panel or preview helper installed beside it uses the panel of
+# this checkout (ui/dist) and the helper of this build tree; both paths are compiled in. OFF,
+# for a build that is packaged: only the installed places are looked at.
+option(COFFEECNC_DEVELOPMENT_PATHS
+  "Compile in this checkout's panel and this build tree's preview helper as fallbacks" ON)
 if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/app)
 endif()
@@ -16,6 +25,9 @@ add_subdirectory(src/linuxcnc)
 if(COFFEECNC_BUILD_APP)
   add_subdirectory(src/shell)
   add_subdirectory(src/coffeecnc)
+endif()
+if(TARGET coffeecnc)
+  include(cmake/Packaging.cmake)
 endif()
 
 include(CTest)
@@ -106,7 +118,8 @@ if(BUILD_TESTING)
         coffeecnc_project_options)
       coffeecnc_enable_analyzers(coffeecnc_machine_config_tests)
       add_test(NAME machine_config COMMAND coffeecnc_machine_config_tests
-        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config)
+        ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_BINARY_DIR}/machine_config
+        ${PROJECT_SOURCE_DIR}/share/coffeecnc.ini.example)
       # LinuxCNC's status as the panel's messages, on constructed readings. No LinuxCNC runs.
       add_executable(coffeecnc_panel_mapping_tests tests/panel_mapping_tests.cpp)
       target_link_libraries(coffeecnc_panel_mapping_tests PRIVATE coffeecnc_linuxcnc
@@ -169,7 +182,7 @@ if(BUILD_TESTING)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.
         add_test(NAME coffeecnc_cli COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/cli_tests.sh
           $<TARGET_FILE:coffeecnc> ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          ${PROJECT_BINARY_DIR}/cli)
+          ${PROJECT_BINARY_DIR}/cli $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The panel the tests below run: ui/dist, built from the ui/ sources of this checkout
         # and stamped with their hashes (ui/build-stamp.ts). The tests need it, and each checks
         # the stamp again itself before it does anything.
@@ -203,7 +216,25 @@ if(BUILD_TESTING)
         # cross to the GTK thread through the shell's own queue.) Each of these programs then
         # exits 66 on the reports. All 202 checks of each shell test passed in those runs. No
         # suppression is in place. The programs still build with the preset.
-        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+        # `cmake --install` into a prefix below the build directory: the layout, the one HAL
+        # fragment, nothing else installed.
+        set(installed ${PROJECT_BINARY_DIR}/installed)
+        add_test(NAME install_tree COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/install_tree.sh
+          ${PROJECT_BINARY_DIR} ${installed}/prefix ${PROJECT_SOURCE_DIR})
+        set_tests_properties(install_tree PROPERTIES FIXTURES_REQUIRED panel
+          FIXTURES_SETUP installed_prefix TIMEOUT 300)
+        set(installed_programs prefix:${installed}/prefix/bin/coffeecnc)
+        if(CPACK_GENERATOR)
+          # The Debian package: control fields, dependencies, contents; unpacked with
+          # dpkg-deb -x below the build directory, never installed.
+          add_test(NAME package_deb COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/package_deb.sh
+            ${PROJECT_BINARY_DIR} ${installed}/package ${PROJECT_SOURCE_DIR} ${PROJECT_VERSION})
+          set_tests_properties(package_deb PROPERTIES FIXTURES_REQUIRED panel
+            FIXTURES_SETUP installed_package TIMEOUT 600)
+          list(APPEND installed_programs package:${installed}/package/root/usr/bin/coffeecnc)
+        endif()
+        # The build tree's GUI tests need the fallbacks: the test program is not installed.
+        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS AND COFFEECNC_DEVELOPMENT_PATHS)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
               -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}
@@ -220,6 +251,24 @@ if(BUILD_TESTING)
             $<TARGET_FILE:coffeecnc>)
           set_tests_properties(linuxcnc_coffeecnc_start PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
             RESOURCE_LOCK linuxcnc TIMEOUT 200 FIXTURES_REQUIRED panel)
+        endif()
+        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+          # The INSTALLED executable as the DISPLAY program, from the prefix and from the
+          # unpacked package: no --ui, no COFFEECNC_* setting. It names the installed panel and
+          # the installed helper, a program's preview becomes ready, and SIGTERM ends it and
+          # LinuxCNC with no process left (run.sh).
+          foreach(entry IN LISTS installed_programs)
+            string(REGEX MATCH "^[a-z]+" tree ${entry})
+            string(REGEX REPLACE "^[a-z]+:" "" program ${entry})
+            add_test(NAME linuxcnc_installed_${tree}_start
+              COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+              -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_installed_${tree}_start
+              ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
+              --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh,installed ${program})
+            set_tests_properties(linuxcnc_installed_${tree}_start PROPERTIES LABELS linuxcnc
+              RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 200
+              FIXTURES_REQUIRED installed_${tree})
+          endforeach()
         endif()
       endif()
     endif()

@@ -226,3 +226,245 @@ Local copies: /tmp/coffeecnc-preview-{9b36c7a,48da0a8}-review/dev/.
 The application remains unwired at these commits. Native UI/STEP overlay,
 application ownership/shutdown, analyzers and sanitizers are not qualified by
 these engine and simulation results. No G0759 hardware operation was performed.
+
+Application wiring review: 99e1b7b, 2026-11-15 01:06 UTC
+
+This checkpoint connects HelperPreviewEngine and PreviewWorker to PanelFeed.
+Codex reviewed application.cpp: one publisher-owned read_raw pass feeds both the
+shown table and the raw preview callback. There is no second concurrent read by
+the preview engine. Feed destruction precedes runtime shutdown; the preview
+worker joins before its engine and private work directory are destroyed. Finding
+4's application ownership and input-binding requirement is now source-reviewed.
+The accepted-table comparison is of LoadedTool's displayed projection only:
+X/Y offsets and spindle-entry-only changes enter preview_tools on the first pass,
+as the header and source_preview_tools test explicitly specify. Do not describe
+that as two matching complete raw-table passes or an atomic tool-table snapshot.
+
+Retained 99e1b7b/dev logs were independently copied and read:
+- portable 20/20, 28.54 s;
+- shell mm: 206/206 checks, 31.89 s, actual child_status=0;
+- shell inch: 205/206 checks, 41.95 s, actual child_status=1;
+- executable startup: 2 checks, 13.19 s, actual child_status=0.
+All three native wrappers record processes_left=0. git-status.txt has only the
+unrelated untracked ../concept.png. These are reviewed retained runs, not new
+Codex native executions.
+
+The inch failure is preview_stale_and_recomputed_after_work_offset_change:
+  mdi=true stale=false ready_again=true contexts=36->37 previews=38->40 x=11.5
+The test's MDI helper divides by machine millimetres_per_unit. But part.ngc has
+selected G21 even on the inch machine: it sends X1.5 while the assertions expect
+an offset of 38.1 mm. The recorded preview endpoint is 11.5 mm, consistent with
+10 + 1.5. Codex independently found this mismatch in the source and logs; Claude
+also diagnosed it and retained the failed run in verification commit 718e89c.
+This is not evidence of a missed transient or an inch preview conversion defect.
+The corrected test must select G21 explicitly and send millimeters, while
+preserving checks of context, output geometry and message ordering. Merely
+weakening the stale-state assertion would not correct the units mismatch.
+Primary unit semantics: LinuxCNC G-code reference, section G20/G21:
+https://linuxcnc.org/docs/html/gcode/g-code.html#gcode:g20-g21
+
+Both shell runs served the OLD panel: inputs c0696285..., assets a9f882d7...;
+neither qualifies the current 6b1eb88 UI. They do receive a ready native preview
+for the loaded file with three feed segments on main-file lines 3, 5 and 7.
+The STEP test reaches "Placement unconfirmed" with a live scene context, but
+does not confirm placement or observe a drawn overlay. Native overlay rendering
+still requires its own evidence.
+
+Host: backend/build/sim-history/99e1b7b/dev/ on playhouse2.
+Local: /tmp/coffeecnc-preview-99e1b7b-review/dev/.
+At review time branch head 4be15c2 merges main/current UI; no corrected test or
+reconnect-reuse implementation has yet been reviewed. Claude reports a new run
+in progress. Do not infer its result from the prior passing engine checks.
+
+Integration checkpoint: 5a04f40, 2026-11-15 01:16 UTC
+
+Codex independently reviewed the source changes and retained logs, and viewed
+the native mm screenshots for Task 17 A with its stock model, Task 17 B with G54
+active (explicit refusal) and Task 17 B with G55 active (ready path). Copies are
+in ui/screenshots/native-task17a-stock-5a04f40.png,
+native-task17b-unavailable-g55-5a04f40.png and native-task17b-g55-5a04f40.png.
+These are native LinuxCNC simulation captures from an unmerged backend branch,
+not browser protocol fixtures or hardware runs. The model is INITIAL STOCK;
+the current UI's generic legend calls an attached model "Part".
+
+Retained dev results: portable 20/20 in 28.83 s (service 156, mapping 112);
+sim mm 121 checks / 102.69 s; sim inch 121 / 102.49 s;
+shell mm 229 checks / 36.72 s; shell inch 229 / 36.92 s; startup 2 checks.
+All five native child_status values are 0, all processes_left values 0, all
+individual checks pass. git-status.txt contains only untracked ../concept.png.
+The shell logs verify CURRENT UI inputs a1cd52cfb90eec6626b810d7a9e001f0b57e6bef1c871b70cba2cb8aa626b60d
+and assets ff90e920d574813037ed865390c45f5ed4d7dd96ebbf7a5147f9505fd679cca1.
+These are independently read records of Claude's runs, not new Codex executions.
+
+The unit correction explicitly sends G21 and millimeter values. The page records
+ready C, pending C+1, ready C+1 in order. Offset/end-X are 1.5/11.5 mm in the mm
+run and 38.1/48.1 mm in the inch run. No recorded status names a context different
+from the newest preview message in the tested interval.
+
+Native paired samples: A ready with 98 segments, B refused at line 24 while G54
+is active, B ready with 73 segments while G55 is active. The shared STEP imports
+as one part / 12 triangles / 120 x 80 x 18 mm. The captured A view visibly draws
+the gray stock and blue cutting path; the operator has applied its placement.
+The test also measures pixels in the preview region: 8267 with path alone,
+38705 with the attached model before placement confirmation, 38137 after Apply
+placement, and 8267 after hiding the model, identically in both shell runs.
+This establishes visible overlay rendering, not machining validation, collision
+checking, or proof that the operator's selected placement matches a real setup.
+The model is drawn before confirmation too; the label then says it is unconfirmed.
+The chooser was answered by the test, not manually browsed by an operator.
+
+An additional retained failure at 4be15c2 is preserved locally: sim mm's frozen
+context test records contexts_during=1, computations_during=1, context_after=2,
+computations_after=1. Its old test reads the total computation count only after
+the wait for run completion; it can count the idle step as a computation during
+the run. The correction classifies each step by the SAME reading passed to the
+composer and records the count only for a non-idle reading. This source defect
+and the log agree with Claude's test-race diagnosis; the new mm/inch runs both
+report zero computations during execution and one after. 4be15c2 also retains
+the already diagnosed inch test-unit failure; neither failed run is discarded.
+
+Reuse now removes the cached preview from latest(), compares source files on
+the worker thread and restores it only after validation; callers see pending.
+Portable tests check the comparison thread, unchanged-input reuse without a new
+computation, and recomputation after changed files or inputs. Full raw tool rows
+now have their own two-pass acceptance and newer idle status check; raw-only X
+changes, eight changing passes and task-executing deferral have regressions.
+These sampling rules still do not establish an atomic external table snapshot.
+
+New open composer edge: the first idle reading with tools_settled=false still
+gets submitted, because PreviewContext has no prior input to freeze. The same
+reading also marks the revision as seen at rest. A new revision seen idle while
+unsettled can inherit an older revision's frozen start if execution begins before
+the table settles. The current composer test starts with settled inputs and does
+not cover either case. Claude accepted at 01:14: only a live, idle, settled reading
+can supply/record a coherent start; add both regressions and keep unavailable
+during a run with no such start. Source finding, not independently reproduced
+native behavior. Corrected code/evidence remains pending.
+
+Raw host records: backend/build/sim-history/{4be15c2,5a04f40}/dev/ on playhouse2;
+local /tmp/coffeecnc-preview-{4be15c2,5a04f40}-review/dev/ (including screenshots).
+Analyzers and sanitizers for this preview implementation remain pending.
+
+Preview-state follow-up: 2c6bf9d, 2026-11-15 01:25 UTC
+
+Both new preview-state edges are closed for this checkpoint after source/test
+review and independent reading of retained dev results. The composer only records
+a start for a revision from a live, idle reading with a settled tool table. New
+regressions cover the first unsettled idle reading and a new revision started
+before settling; neither is submitted until a coherent idle reading exists.
+
+The second edge was identified at 01:17: the ordinary file poll invalidated its
+watch but left latest_ cached, so a subsequent revalidate(old_context) could
+restore it through the no-watch branch without comparing bytes. Now a detected
+change clears latest_ permanently. Revalidation without a watch drops the result
+and raises the generation, instead of restoring it unchecked. The regression
+uses poll-change THEN revalidate; the opposite-order regression remains too.
+
+Retained 2c6bf9d/dev: portable 20/20, 28.76 s (service 172, mapping 112);
+sim mm 121 checks / 102.48 s; shell mm and inch 229 checks each. All three native
+children exit 0 with zero residual processes; all individual checks pass. No
+tracked modifications; git-status.txt contains untracked ../concept.png only.
+Sim inch and startup were not rerun here; their last reviewed results are 5a04f40.
+Host: backend/build/sim-history/2c6bf9d/dev/ on playhouse2.
+Local: /tmp/coffeecnc-preview-2c6bf9d-review/dev/.
+
+Sanitizer-build portability remains to correct: 2c6bf9d omits the helper's
+RLIMIT_AS only when GCC's __SANITIZE_ADDRESS__ or __SANITIZE_THREAD__ is defined.
+Independent local Clang preprocessing with -fsanitize=address confirms the
+address_sanitizer feature is present but __SANITIZE_ADDRESS__ is absent. The
+project already supplies COFFEECNC_ADDRESS_SANITIZER through CMake; use that and
+a corresponding thread-sanitizer definition, or recognize Clang's features.
+The address-space limit must remain in ordinary builds; CPU/file/core limits
+remain in both. This is a test-build portability issue, not a production preview
+failure. Claude was notified at 01:24. Sanitizer/analyzer results are still pending.
+
+Retained GCC sanitizer results: 2c6bf9d, 2026-11-15 01:33 UTC
+
+Codex independently copied and read the retained configure/build/CTest/raw-test
+logs for the ASAN+UBSAN and TSan presets. ASAN portable tests pass 20/20 in
+68.20 s; sim mm passes all 121 checks in 103.50 s. TSan portable tests pass
+20/20 in 98.82 s; sim mm passes all 121 checks in 104.08 s. Both simulation
+children exit 0 with zero residual processes. These build logs have no compiler
+warnings/errors and these test logs have no sanitizer diagnostics. Configuration
+records select address;undefined and thread respectively. These are independent
+reviews of Claude's native-host executions, not additional Codex test runs.
+
+Scope: these results cover the portable suite and the non-GUI mm simulation.
+They do not qualify the native GTK/WebKit shell under either sanitizer, the inch
+simulation under these sanitizers, or Clang's resource-limit guard. The latter
+fix, one focused Clang run, native shell ASAN with the wired preview, and analyzer
+results are pending. Existing GUI TSan limitations and GUI-only LSan exclusions
+remain documented separately; no full-application race/leak-free claim follows.
+
+Host: backend/build/sim-history/2c6bf9d/{asan,tsan}/ on playhouse2.
+Local: /tmp/coffeecnc-preview-2c6bf9d-review/{asan,tsan}/.
+
+Committed build corrections: ba0067e, 2026-11-15 01:50 UTC
+
+Codex reviewed the complete 2c6bf9d..ba0067e delta. The helper now uses CMake's
+COFFEECNC_ADDRESS_SANITIZER and new COFFEECNC_THREAD_SANITIZER definitions to
+omit RLIMIT_AS only in sanitizer builds. Ordinary builds retain the 2 GiB bound;
+CPU/file/core limits remain in both. Six retained configure checks cover GCC and
+Clang 19 with no sanitizer, address+undefined, and thread: each exits 0 and the
+recorded definition matches its configuration. No compiler-specific sanitizer
+macro remains in backend src/tests/cmake. The source/configuration portability
+finding is closed; the focused Clang runtime exit record is still pending below.
+
+The rest of the delta resolves analyzer diagnostics without suppressions:
+explicit optional guards, size_t constants, equivalent transforms/reductions,
+and test-local names/access helpers. PreviewContext::inputs() now supplies an
+empty input before its first update instead of requiring that precondition;
+the caller only submits when program_file exists. NmlPanelSource's explicit
+latest check preserves the prior loaded-program condition. No new review concern
+was found in this delta.
+
+Retained development results: portable 20/20 in 28.45 s and mm simulation all
+121 checks in 102.70 s, actual child exit 0 and zero residual processes. Only
+untracked ../concept.png appears in git-status.txt. Codex independently read
+the retained CTest and raw records. The Clang preview output reports 621 checks
+passed with no sanitizer diagnostic, but an actual process exit and compiler/
+sanitizer command provenance have been requested before runtime qualification.
+Wired native shell ASAN and completed analyzer results remain pending.
+
+The initial analyzer build and subsequent fix-attempt failure at 2c6bf9d are
+preserved locally under analyze/{build.txt,build-after-fix-attempt.txt}. They
+report unchecked optional access, constant-widening and test cleanup diagnostics;
+neither is a passing analyzer run. This review does not retrospectively qualify
+PR #13 under analyze; its recorded checks did not include that preset.
+
+Host: backend/build/sim-history/ba0067e/ on playhouse2.
+Local: /tmp/coffeecnc-preview-ba0067e-review/{dev,defcheck,clang-asan}/.
+
+Clang and wired-shell sanitizer follow-up: ba0067e, 2026-11-15 01:55 UTC
+
+Clang runtime verification is now complete for the focused preview engine run:
+retained provenance records the actual test-binary exit as 0, build exit 0,
+Clang 19.1.7, and address+undefined instrumentation on both preview_engine.cpp
+and preview_helper.cpp. The recorded command runs the engine tests directly,
+not through CTest. Its retained output reports 621 checks passed and contains
+no sanitizer diagnostics. This is not a full Clang application qualification.
+
+The GCC address+undefined native shell runs each pass all 229 checks in 38.53 s.
+Each CTest invocation also includes panel_bundle: 2/2 in 38.78 s (mm), 38.79 s
+(inch). Both actual shell children exit 0 with zero residual processes. Codex
+independently copied/read both LastTest and raw logs, the build record and
+compiler/sanitizer provenance. No sanitizer diagnostics or compiler warnings
+appear in those retained records. Both runs serve the current UI input and asset
+digests recorded above, and repeat the Task 17 paths/refusal and stock-overlay
+pixel results from 5a04f40.
+
+Qualification retains the existing Xvfb NO_AT_BRIDGE=1 environment and GUI-only
+LSan exclusions for Fontconfig, Mesa GLX and JavaScriptCore. No suppression was
+added. These results do not establish leak-free accessibility-enabled execution
+or detect application-caused leaks hidden by the existing library exclusions.
+GUI ThreadSanitizer remains unqualified.
+
+The initial retained ba0067e analyzer build.txt says only "ninja: no work to do."
+Its provenance reports rc=0/findings=0 with LLVM 19.1.7 and Cppcheck 2.17.1;
+the preceding successful compilation record and analyzer configuration have been
+requested to substantiate that checkpoint. Separately, Claude's retained build
+of main at 8ca768f exits 1 on an optional-access diagnostic and test diagnostics.
+Codex read that failure; it confirms main was not clean under analyze at that
+commit. The corresponding changes are included in the reviewed ba0067e delta.
+
+Local: /tmp/coffeecnc-preview-ba0067e-review/{asan,clang-asan,analyze,main-analyze}/.

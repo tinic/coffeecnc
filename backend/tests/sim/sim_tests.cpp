@@ -2677,8 +2677,7 @@ auto all_output_of(const std::string& command) -> std::string {
 }
 
 auto file_text(const std::string& path) -> std::string {
-  std::ifstream in{path, std::ios::binary};
-  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  return read_text_file(path, std::size_t{8} << 20).value_or(std::string());
 }
 
 // Where this machine's tool models are kept, as the executable works it out: from the INI

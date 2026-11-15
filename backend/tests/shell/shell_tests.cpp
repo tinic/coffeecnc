@@ -415,6 +415,39 @@ void power_on(const Rig& rig) {
         rig.wait(5s, [&]() -> bool { return rig.status().controller.machine == MachineState::off; }));
   check("panel_shows_off", rig.wait_js("__t.last.status.machine === 'off' && "
                                        "!!__t.find('details.state-menu button', 'Machine on')"));
+  // Off: the reset is offered beside "Machine on". Pressed while off it asks for `off` once
+  // more, which LinuxCNC takes as the reset it is, and nothing turns the machine on.
+  const auto offered = rig.js(R"(
+    const reset = __t.find('details.state-menu button', 'Reset E-stop');
+    const on = __t.find('details.state-menu button', 'Machine on');
+    return [!!reset && !reset.disabled, !!on && !on.disabled, __t.sent.length];)");
+  check("panel_off_offers_reset_and_on", offered.at(0) == true && offered.at(1) == true,
+        offered.dump());
+  const auto pressed = rig.click("details.state-menu button", "Reset E-stop");
+  const bool answered = rig.wait_js(std::format(R"((() => {{
+    const sent = __t.sent.slice({});
+    return sent.length === 1 && __t.received.some((m) => m.type === 'result' && m.id === sent[0].id);
+  }})())", offered.at(2).dump()), 5s);
+  const auto request = rig.js(std::format(R"(
+    const sent = __t.sent.slice({});
+    const result = sent.length ? __t.received.find((m) => m.type === 'result' && m.id === sent[0].id) : null;
+    return [sent, result || null];)", offered.at(2).dump()));
+  bool stayed_off = true;
+  for (int sample = 0; sample < 25; ++sample) {
+    stayed_off = stayed_off && rig.status().controller.machine == MachineState::off;
+    std::this_thread::sleep_for(20ms);
+  }
+  check("panel_reset_while_off_sends_off",
+        pressed == "ok" && answered && request.at(0).size() == 1 &&
+            request.at(0).at(0).value("type", "") == "set_machine" &&
+            request.at(0).at(0).value("state", "") == "off" &&
+            request.at(1).value("outcome", "") == "accepted",
+        std::format("click={} {}", pressed, word(request.dump())));
+  check("linuxcnc_stays_off_after_reset_while_off",
+        stayed_off && rig.panel_status().at("machine") == "off" &&
+            rig.js("return !!__t.find('details.state-menu button', 'Machine on');") == true,
+        std::format("linuxcnc_off={} panel={}", stayed_off,
+                    rig.panel_status().at("machine").dump()));
   check("panel_machine_on", rig.click("details.state-menu button", "Machine on") == "ok");
   check("linuxcnc_machine_on",
         rig.wait(5s, [&]() -> bool { return rig.status().controller.machine == MachineState::on; }));

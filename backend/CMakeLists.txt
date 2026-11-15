@@ -190,6 +190,11 @@ if(BUILD_TESTING)
         ${PROJECT_BINARY_DIR})
       set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      # run.sh -m refuses a machine INI file that keeps its data outside the run directory.
+      # Nothing is started: no label, no lock.
+      add_test(NAME sim_data_directory COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/data_directory_tests.sh
+        ${PROJECT_BINARY_DIR})
+      set_tests_properties(sim_data_directory PROPERTIES TIMEOUT 60)
       # The G0759 scenario on the machine's own INI and HAL files, hardware simulated (run.sh
       # -m). The files are in a checkout of the machine configurations (tinic/linuxcnc), which
       # this repository does not carry: without one the tests are skipped.
@@ -279,13 +284,22 @@ if(BUILD_TESTING)
           # (run.sh -i): a defaults save and an assignment save reach the disk; LinuxCNC and the
           # application are then started again in the same run directory (run.sh -k), and the
           # panel shows what was saved.
+          # Two runner calls, each of which may wait for the host's lock, run and clean up: the
+          # time limit is made of those parts, and the script is handed the same numbers.
+          set(tool_models_lock_wait 300) # run.sh -w, per call
+          set(tool_models_run_time 200)  # run.sh -t, per call
+          set(tool_models_cleanup 100)   # run.sh ending LinuxCNC, per call
+          math(EXPR tool_models_timeout
+            "2 * (${tool_models_lock_wait} + ${tool_models_run_time} + ${tool_models_cleanup})")
           add_test(NAME linuxcnc_shell_tool_models
             COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/tool_models_restart.sh
             ${PROJECT_SOURCE_DIR}/tests/sim/run.sh ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
             $<TARGET_FILE:coffeecnc_shell_tests>
-            ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_tool_models)
+            ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_tool_models
+            ${tool_models_lock_wait} ${tool_models_run_time})
           set_tests_properties(linuxcnc_shell_tool_models PROPERTIES LABELS linuxcnc
-            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 900 FIXTURES_REQUIRED panel)
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT ${tool_models_timeout}
+            FIXTURES_REQUIRED panel)
           # The `coffeecnc` executable itself as the DISPLAY program: it starts, shows the panel,
           # and SIGTERM ends it and LinuxCNC with no process left.
           add_test(NAME linuxcnc_coffeecnc_start COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

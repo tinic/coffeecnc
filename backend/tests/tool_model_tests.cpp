@@ -5,6 +5,7 @@
 
 #include <coffeecnc/app/tool_model_store.hpp>
 #include <coffeecnc/app/tool_models.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include "fake_tool_model_files.hpp"
 
@@ -1588,8 +1589,7 @@ auto mode(const std::filesystem::path& path) -> unsigned {
 }
 
 auto contents(const std::filesystem::path& path) -> std::string {
-  std::ifstream stream{path, std::ios::binary};
-  return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+  return read_text_file(path.string(), 2 * max_tool_model_bytes).value_or(std::string());
 }
 
 // The real file system and the real lock.

@@ -21,7 +21,10 @@
 # the program is started with XDG_DATA_HOME=<run-directory>/xdg-data, which is where a machine
 # with a MACHINE_ID and no DATA_DIRECTORY keeps it (a machine's own INI file with -m: nothing is
 # added to that file for it). Both data directories are emptied before every run, except with
-# -k: a run that is to find what the run before it in the same run directory saved.
+# -k: a run that is to find what the run before it in the same run directory saved. A machine
+# INI file (-m) whose own [COFFEECNC] DATA_DIRECTORY is not inside the run directory is refused:
+# `sim=refused reason=data_directory_outside_run ...`, exit code 122, also with -n; nothing
+# was started, locked or made.
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. (The arguments are in the wrapper this script
@@ -121,6 +124,26 @@ if [ -n "$machine" ]; then
   ini=$(basename "$machine")
 fi
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
+
+# A machine's own INI file may name a data directory of its own. Nothing of a test is saved
+# outside its run directory: such a run is refused, before the lock, before anything is made.
+if [ -n "$machine" ]; then
+  data_directory=$(awk '
+    /^[ \t]*\[/ { section = $0; gsub(/[ \t\r]/, "", section) }
+    section == "[COFFEECNC]" && /^[ \t]*DATA_DIRECTORY[ \t]*=/ {
+      sub(/^[^=]*=[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit
+    }' "$machine")
+  if [ -n "$data_directory" ]; then
+    case $(realpath -m "$data_directory") in
+    "$(realpath -m "$directory")"/*) ;;
+    *)
+      echo "sim=refused reason=data_directory_outside_run data_directory=$data_directory" \
+        "run_directory=$(realpath -m "$directory") ini=$machine"
+      exit 122
+      ;;
+    esac
+  fi
+fi
 
 locked=
 release() {

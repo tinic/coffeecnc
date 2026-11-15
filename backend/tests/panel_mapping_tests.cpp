@@ -15,6 +15,7 @@
 #include <exception>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -792,12 +793,12 @@ void source_survives_an_unreadable_tool_table() {
     }};
     publisher.join();
     require(thrown.empty() && readings.size() == 9,
-            "A tool table file that is " + what + ": the reading thread goes on: " + thrown);
+            std::format("A tool table file that is {}: the reading thread goes on: {}", what, thrown));
     std::size_t said = 0;
     for (std::size_t i = 0; i < 6; ++i) {
       said += readings[i].messages.size();
       require(readings[i].tool_table.tools.empty() && readings[i].status.link == Link::live,
-              "A tool table file that is " + what + ": no row is shown, the status goes on");
+              std::format("A tool table file that is {}: no row is shown, the status goes on", what));
     }
     const std::vector<Tool> rows{{1, 1, 50, 6, ""}, {2, 2, 40, 3, ""}};
     require(said == 1 && readings[1].messages.size() == 1 &&
@@ -805,15 +806,17 @@ void source_survives_an_unreadable_tool_table() {
                     std::string::npos &&
                 readings[1].tool_table.revision == 1 && readings[5].tool_table.revision == 1 &&
                 readings[5].accepted_tools == rows && readings[5].status.tool.prepared == 2,
-            "A tool table file that is " + what + ": withheld and said once, when the table "
-            "is accepted; tried again every period without another word");
+            std::format("A tool table file that is {}: withheld and said once, when the table is "
+                        "accepted; tried again every period without another word",
+                        what));
     require(readings[6].tool_table.revision == 2 &&
                 readings[6].tool_table.tools ==
                     std::vector<Tool>{{1, 1, 50, 6, "end mill"}, {2, 2, 40, 3, "drill"}} &&
                 readings[6].messages.empty() && !readings[6].accepted_tools &&
                 readings[8].tool_table.revision == 2,
-            "A tool table file that is " + what + ": readable again, the table is published "
-            "with its comments in the next period");
+            std::format("A tool table file that is {}: readable again, the table is published "
+                        "with its comments in the next period",
+                        what));
   }
 }
 

@@ -388,6 +388,58 @@ void composer_waits_for_a_settled_tool_table() {
           "Settled: offsets and tool table together are one new context");
 }
 
+// A coherent start is a reading at rest with the tool table settled: nothing is computed
+// from, and no start state recorded for, anything else.
+void composer_needs_a_coherent_start() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  r.tools_settled = false;
+  r.preview_tools = {{1, 9, 1, {0, 0, 1}, 1, 0, 0, 0}}; // a table that was never accepted
+  auto step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::not_settled_reason &&
+              service.submitted.empty(),
+          "The first reading at rest with an unsettled tool table: nothing is computed");
+  static_cast<void>(compose(composer, r));
+  require(service.submitted.empty(), "For as long as it is unsettled");
+  r.preview_tools = {{1, 1, 1, {0, 0, 40}, 6, 0, 0, 0}};
+  r.tools_settled = true;
+  step = compose(composer, r);
+  require(service.submitted.size() == 1 && service.submitted[0].context == step.context() &&
+              service.submitted[0].inputs.raw_tools == r.preview_tools && step.preview &&
+              step.preview->at("state") == "pending",
+          "Settled: one computation, with the accepted table");
+
+  // A new revision arrives while the table is unsettled, and is run before it settles.
+  r.tools_settled = false;
+  r.status.program.revision = 2;
+  r.status.offsets.g5x = {11, 20, 30};
+  r.work_systems.at(0) = WorkSystem{{11, 20, 30}, 0, true};
+  step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::not_settled_reason &&
+              service.submitted.size() == 1,
+          "A new revision with an unsettled table: not computed, and not seen at rest");
+  r.status.interp = InterpState::reading;
+  step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::no_start_state_reason &&
+              service.submitted.size() == 1,
+          "Run before it settled: no start state, for the whole run");
+  r.tools_settled = true;
+  r.status.interp = InterpState::paused;
+  require(!compose(composer, r).preview && service.submitted.size() == 1,
+          "A table that settles during the run is no start either");
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(service.submitted.size() == 2 && service.submitted[1].inputs.program_revision == 2 &&
+              service.submitted[1].inputs.systems.at(0).offset == Vec3{11, 20, 30} &&
+              service.submitted[1].inputs.raw_tools == r.preview_tools &&
+              service.submitted[1].context == step.context(),
+          "At rest and settled after the run: one computation, from the state of then");
+}
+
 // A program first seen while it runs has no start state.
 void composer_no_start_state() {
   FakeService service;
@@ -622,13 +674,24 @@ void worker_watches_the_files() {
   require(worker.files_generation() == 1 && engine.file_checks == checks_then &&
               engine.computations == 1,
           "Once: the worker computes nothing by itself and stops checking that preview");
+  // The result of files that changed is gone, and asking for it again does not bring it back.
+  require(worker.latest() == nullptr, "A preview whose file changed is no longer finished");
+  worker.revalidate(1);
+  std::this_thread::sleep_for(60ms);
+  require(worker.latest() == nullptr && engine.computations == 1 &&
+              engine.file_checks == checks_then && worker.files_generation() == 1,
+          "Revalidating after the change was found restores nothing");
   // The composer makes a new context of the generation and submits it.
   engine.files_changed = false;
   worker.submit(2, inputs(2));
-  require(wait_for([&]() -> bool { return worker.latest()->context == 2; }) &&
+  require(wait_for([&]() -> bool {
+            const auto latest = worker.latest();
+            return latest && latest->context == 2;
+          }) &&
+              engine.computations == 2 &&
               wait_for([&]() -> bool { return engine.file_checks > checks_then; }) &&
               worker.files_generation() == 1,
-          "The new preview is watched again");
+          "What follows is a new computation, one, and its preview is watched again");
 }
 
 // A result that is to be used again is not finished until the worker's own thread has
@@ -698,6 +761,7 @@ auto main() -> int {
     composer_plan_of_before_the_run();
     composer_block_delete_during_a_run();
     composer_waits_for_a_settled_tool_table();
+    composer_needs_a_coherent_start();
     composer_no_start_state();
     composer_reuses_the_result_of_its_context();
     composer_without_a_service();

@@ -59,17 +59,22 @@ void PanelComposer::count(const PanelReading& reading) {
   auto inputs = preview_inputs(reading, rest_position_);
   if (preview_ != nullptr)
     inputs.files_generation = preview_->files_generation();
-  // The machine's state counts as input only at rest and with a settled tool table.
-  const auto context = preview_context_.update(inputs, running || !reading.tools_settled);
-  if (!running) {
+  // A coherent start: the machine at rest, its tool table accepted, the status live. Only from
+  // such a reading are the machine's state taken as input and a program known to have a
+  // start state.
+  const bool coherent = !running && reading.tools_settled && status.link == Link::live;
+  const auto context = preview_context_.update(inputs, !coherent);
+  const std::pair program{inputs.program_file, inputs.program_revision};
+  if (coherent) {
     block_delete_before_run_ = inputs.block_delete;
-    seen_at_rest_ = std::pair{inputs.program_file, inputs.program_revision};
+    seen_at_rest_ = program;
   }
-  // A program first seen while it runs has no start state: what was read is the middle of
-  // its run.
+  // A program that has had no coherent start since it was loaded, or since the link was
+  // down, has no start state: what is read is the middle of its run, or a machine whose tool
+  // table is still being read.
   const bool had_no_start_state = no_start_state_;
-  no_start_state_ =
-      running && seen_at_rest_ != std::pair{inputs.program_file, inputs.program_revision};
+  no_start_state_ = seen_at_rest_ != program;
+  running_without_start_ = no_start_state_ && running;
   // Block delete switched while the program runs: the rest of the run is no longer the plan
   // that was previewed, and no coherent one can be computed before the run has ended.
   // For the rest of that run, also when it is switched back: blocks already skipped or run
@@ -118,7 +123,8 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   if (preview_ == nullptr) {
     made.error = PreviewError{0, std::string(no_preview_reason)};
   } else if (status.program.file && no_start_state_) {
-    made.error = PreviewError{0, std::string(no_start_state_reason)};
+    made.error = PreviewError{0, std::string(running_without_start_ ? no_start_state_reason
+                                                                    : not_settled_reason)};
   } else if (status.program.file && plan_broken_) {
     made.error = PreviewError{0, std::string(plan_broken_reason)};
   } else if (status.program.file) {

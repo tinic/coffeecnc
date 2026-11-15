@@ -41,10 +41,14 @@ namespace coffeecnc {
 //
 //   no service         `unavailable`, with no_preview_reason as its error text
 //   no program loaded  `unavailable`, no error
-//   first seen while   `unavailable`, with no_start_state_reason: a program (file and
-//   it runs            revision) that has not been seen at rest since it was loaded, or since
-//                      the link came back, has no start state: what is read is the middle of
-//                      its run. Once it has been seen at rest the context then in force is
+//   no coherent start  `unavailable`: a program (file and revision) has a start state only
+//                      once a reading showed it at rest, with the tool table settled and the
+//                      link live, since it was loaded or since the link came back. Until
+//                      then nothing is computed and nothing of the machine's state is taken
+//                      as input: with no_start_state_reason while it runs (what is read is
+//                      the middle of its run), with not_settled_reason at rest (the tool
+//                      table is still being read). Once such a reading exists the context
+//                      then in force is
 //                      the current one: computed, unless a finished result for that very
 //                      context exists (the inputs are what they were), which is then used
 //                      again after the service has compared its files once more; `pending`
@@ -80,6 +84,9 @@ public:
   static constexpr std::string_view no_start_state_reason =
       "The program was already running when its state was first read: there is no start "
       "state to preview it from. A preview is computed when the run has ended.";
+  static constexpr std::string_view not_settled_reason =
+      "The machine's tool table is still being read: no preview is computed before it is "
+      "settled.";
   static constexpr std::size_t max_waiting = 32;
 
   // `preview` may be null; it must outlive the composer.
@@ -108,6 +115,7 @@ private:
   // The program, file and revision, that was last seen with the interpreter idle.
   std::optional<std::pair<std::optional<std::string>, std::uint64_t>> seen_at_rest_;
   bool no_start_state_{};
+  bool running_without_start_{};
   Vec3 rest_position_{};
   std::optional<PageToken> page_;
   // hello and the snapshots are owed to the page.

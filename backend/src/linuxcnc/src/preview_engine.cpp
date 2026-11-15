@@ -468,7 +468,10 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
     if (close_range(4, ~0U, 0) != 0 || chdir(working.c_str()) != 0)
       _exit(126);
     limit(RLIMIT_CPU, cpu_seconds);
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
+    // Not in a sanitizer build: the sanitizers reserve address space far beyond any bound.
     limit(RLIMIT_AS, rlim_t{2} * 1024 * 1024 * 1024);
+#endif
     limit(RLIMIT_FSIZE, rlim_t{8} * 1024 * 1024);
     limit(RLIMIT_CORE, 0);
     static_cast<void>(nice(10));

@@ -32,7 +32,9 @@ public:
   // The finished preview of `context` is about to be used again after a time in which it was
   // not shown: its files are compared once more, by the service's own thread, before it
   // counts as finished again. Until then latest() gives nothing; a difference raises
-  // files_generation instead. Nothing happens when the latest preview is of another context.
+  // files_generation instead, and so does a preview that has no files to compare. A result
+  // is never given back without a completed comparison. Nothing happens when the latest
+  // preview is of another context, or was already dropped for a changed file.
   virtual void revalidate(std::uint64_t context) = 0;
   // Counts the times a file of the latest preview was found changed. It is a preview input
   // (PreviewInputs::files_generation): the context goes up with it, the preview shown is then
@@ -57,7 +59,8 @@ protected:
 //            is current
 //
 // While a preview is current the thread asks every `check_period` whether its files changed
-// (PreviewComputation::files_changed); a change raises files_generation, once per preview.
+// (PreviewComputation::files_changed); a change raises files_generation, once per preview,
+// and drops that preview: latest() gives nothing until the next is computed.
 // A computation and a look at the files are both given up for a newer context and for the
 // end of the worker; how soon is the engine's matter (HelperPreviewEngine: within one file
 // read or comparison, or 20 ms while its helper runs).

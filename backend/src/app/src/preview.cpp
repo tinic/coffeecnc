@@ -78,10 +78,12 @@ void PreviewWorker::loop() {
       continue;
     }
     if (!files_changed) {
-      // Nothing to compare: a preview asked to be checked again is finished as it is.
-      if (unchecked_)
-        latest_ = std::move(unchecked_);
-      unchecked_.reset();
+      // A preview asked to be checked again that has nothing to compare its files with is
+      // never given back unchecked: it is dropped, and the generation asks for a new one.
+      if (unchecked_) {
+        unchecked_.reset();
+        ++generation_;
+      }
       continue;
     }
     lock.unlock();
@@ -89,10 +91,12 @@ void PreviewWorker::loop() {
     const bool changed = files_changed([&]() -> bool { return stop_ || waiting_; });
     lock.lock();
     if (changed) {
-      // Once: the composer makes a new context of it and submits that.
+      // Once: the composer makes a new context of it and submits that. The result is of
+      // files that are no more: it is gone for good, and nothing can bring it back.
       ++generation_;
       files_changed = nullptr;
       unchecked_.reset();
+      latest_.reset();
     } else if (unchecked_ && !wanted_ && !stop_) {
       // Compared again and the same: finished for its context again.
       latest_ = std::move(unchecked_);

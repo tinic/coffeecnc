@@ -44,7 +44,7 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | NURBS moves (`G5.2`, `G5.3`) | Not computed |
 | An inherited motion mode no block can set, at a block that would move by it | |
 
-Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)`, `(pyrun,)`, `(pyreload)`, `(log…)`, `(PROBEOPEN)`, `(PROBECLOSE)` anywhere in the program or a subroutine file; an O-word name outside `[a-z0-9_.-]+`. The scan covers every line, also branches not taken and subroutines never called.
+Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)`, `(pyrun,)`, `(pyreload)`, `(log…)`, `(PROBEOPEN)`, `(PROBECLOSE)` anywhere in the program or a subroutine file; an O-word name outside `[a-z0-9_.-]+`. Within the snapshotted files, the scan covers every line, including branches not taken and subroutine definitions never called.
 
 Not modelled: path blending (`G64`; the comparison with the machine ran under `G61`), spindle speed and overrides. `M98`/`M99` and `WIZARD_ROOT` subroutines end in the interpreter's error.
 

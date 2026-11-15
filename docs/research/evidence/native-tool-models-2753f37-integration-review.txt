@@ -1,0 +1,70 @@
+CoffeeCNC tool-model storage: integration source review
+2026-11-15 UTC
+
+Scope
+
+Reviewed all 527 lines of the remerge diff for
+2753f37e07f890188cbac570df5ae71cd13c8805, integrating main 6bdfcbe into
+the previously reviewed store checkpoint 61fdc34. Also read the resulting
+tool-table comment reader and runner argument handling. Subsequent merges
+9414e8e and 27a24de incorporate the UI branch through ee62c0f, including
+native persistence and the explicit Reset E-stop action while OFF.
+
+This is a source review, not qualification of the integrated build. Earlier
+native evidence in native-tool-models-61fdc34-review.txt remains scoped to
+that earlier implementation and UI bundle. Claude owns the native runs.
+
+Reviewed integration
+
+The application retains both storage environment handling and packaging's
+preview state helpers. Configuration tests retain both tool-model settings
+coverage and the shipped-example checks.
+
+The tool-table comment reader now uses read_text_file with the existing
+4 MiB tool-table limit. Read failure takes the intended withheld-table and
+retry path. This addresses the uncaught istreambuf_iterator exception found
+in 61fdc34 when a directory occupies the tool-table path. A new threaded
+regression covers both that directory and an oversized file: six periods
+with no published rows, a live status, one error and revision 1, preserved
+numeric preview tools and prepared T2; replacing the path with a readable
+table containing unchanged numbers publishes comments at revision 2 and
+clears the retained numeric-tools state. Execution is still pending.
+
+The runner keeps packaging's -m machine-INI option and moves the simulated
+machine identity to -i. Identity injection is refused for the G0759 profile
+and machine-INI inputs. The shared host lock remains in place, including
+for both calls made by the restart test. The merged Perl argument handling
+preserves the wrapper's display arguments and run-directory substitution.
+
+The runner exports XDG_DATA_HOME beneath its canonical run directory before
+launch. Both possible test storage directories are reset unless -k requests
+preservation. This isolates the current G0759 INI, which has no explicit
+DATA_DIRECTORY, while retaining the machine-INI assembly invariants.
+
+A new actual-machine G0759 service check expects the run-local XDG root,
+machine ID g0759, available revision 0, a lock file and no saved JSON. It
+also checks that existence of the normal home settings directory is
+unchanged. The profile retains the full save checks; the actual-machine
+case adds these read-only checks.
+
+Follow-ups acknowledged on AgentNet at 04:07 UTC
+
+1. The restart test still has a 900-second CTest timeout in this checkpoint.
+   Its two runner calls can each spend 300 seconds waiting for the host
+   lock and 200 seconds running, before cleanup. Derive the outer timeout
+   from both calls plus a margin, and check other multi-call tests.
+
+2. XDG isolation alone does not protect a supplied machine INI that names
+   an explicit DATA_DIRECTORY outside the run directory. Before launch,
+   refuse such a root without creating it or altering the machine INI.
+   Claude acknowledged adding this guard and a regression. The current
+   G0759 configuration does not contain this override.
+
+3. Exercise the latest UI's explicit OFF -> Reset action in the native
+   shell. This is separate from Machine on and must not power on as a side
+   effect. Earlier native persistence logs predate that UI change.
+
+The acknowledged changes and their test results have not yet been reviewed
+at this checkpoint. No physical-machine operation or commissioning is
+claimed. The separate tinic/linuxcnc PR 1 remains a commissioning draft;
+its nine commissioning questions do not block software integration.

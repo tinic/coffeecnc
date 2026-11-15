@@ -398,3 +398,39 @@ remain documented separately; no full-application race/leak-free claim follows.
 
 Host: backend/build/sim-history/2c6bf9d/{asan,tsan}/ on playhouse2.
 Local: /tmp/coffeecnc-preview-2c6bf9d-review/{asan,tsan}/.
+
+Committed build corrections: ba0067e, 2026-11-15 01:50 UTC
+
+Codex reviewed the complete 2c6bf9d..ba0067e delta. The helper now uses CMake's
+COFFEECNC_ADDRESS_SANITIZER and new COFFEECNC_THREAD_SANITIZER definitions to
+omit RLIMIT_AS only in sanitizer builds. Ordinary builds retain the 2 GiB bound;
+CPU/file/core limits remain in both. Six retained configure checks cover GCC and
+Clang 19 with no sanitizer, address+undefined, and thread: each exits 0 and the
+recorded definition matches its configuration. No compiler-specific sanitizer
+macro remains in backend src/tests/cmake. The source/configuration portability
+finding is closed; the focused Clang runtime exit record is still pending below.
+
+The rest of the delta resolves analyzer diagnostics without suppressions:
+explicit optional guards, size_t constants, equivalent transforms/reductions,
+and test-local names/access helpers. PreviewContext::inputs() now supplies an
+empty input before its first update instead of requiring that precondition;
+the caller only submits when program_file exists. NmlPanelSource's explicit
+latest check preserves the prior loaded-program condition. No new review concern
+was found in this delta.
+
+Retained development results: portable 20/20 in 28.45 s and mm simulation all
+121 checks in 102.70 s, actual child exit 0 and zero residual processes. Only
+untracked ../concept.png appears in git-status.txt. Codex independently read
+the retained CTest and raw records. The Clang preview output reports 621 checks
+passed with no sanitizer diagnostic, but an actual process exit and compiler/
+sanitizer command provenance have been requested before runtime qualification.
+Wired native shell ASAN and completed analyzer results remain pending.
+
+The initial analyzer build and subsequent fix-attempt failure at 2c6bf9d are
+preserved locally under analyze/{build.txt,build-after-fix-attempt.txt}. They
+report unchecked optional access, constant-widening and test cleanup diagnostics;
+neither is a passing analyzer run. This review does not retrospectively qualify
+PR #13 under analyze; its recorded checks did not include that preset.
+
+Host: backend/build/sim-history/ba0067e/ on playhouse2.
+Local: /tmp/coffeecnc-preview-ba0067e-review/{dev,defcheck,clang-asan}/.

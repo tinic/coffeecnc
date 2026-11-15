@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <memory>
 #include <utility>
 
 namespace coffeecnc {
@@ -38,7 +39,8 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   return inputs;
 }
 
-PanelComposer::PanelComposer(Hello hello) : hello_(std::move(hello)) {}
+PanelComposer::PanelComposer(Hello hello, PreviewService* preview)
+    : hello_(std::move(hello)), preview_(preview) {}
 
 void PanelComposer::count(const PanelReading& reading) {
   const auto& status = reading.status;
@@ -50,7 +52,15 @@ void PanelComposer::count(const PanelReading& reading) {
     for (const auto& axis : status.axes)
       if (const auto index = axis_index(axis.axis))
         rest_position_.at(*index) = axis.machine;
-  context_ = preview_context_.update(preview_inputs(reading, rest_position_), running);
+  auto inputs = preview_inputs(reading, rest_position_);
+  if (preview_ != nullptr)
+    inputs.files_generation = preview_->files_generation();
+  const auto context = preview_context_.update(inputs, running);
+  if (context == context_)
+    return;
+  context_ = context;
+  if (preview_ != nullptr && preview_context_.inputs().program_file)
+    preview_->submit(context_, preview_context_.inputs());
 }
 
 void PanelComposer::observe(const PanelReading& reading) {
@@ -73,10 +83,21 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   snapshots_due_ = snapshots_due_ || ready_again;
   Status status = reading.status;
   status.preview_context = context_;
-  Preview preview;
-  preview.context = status.preview_context;
-  preview.state = PreviewState::unavailable;
-  preview.error = PreviewError{0, std::string(no_preview_reason)};
+  // A finished preview is sent as the service holds it; anything else is made here.
+  Preview made;
+  made.context = status.preview_context;
+  made.state = PreviewState::unavailable;
+  std::shared_ptr<const Preview> finished;
+  if (preview_ == nullptr) {
+    made.error = PreviewError{0, std::string(no_preview_reason)};
+  } else if (status.program.file) {
+    finished = preview_->latest();
+    if (!finished || finished->context != status.preview_context) {
+      finished.reset();
+      made.state = PreviewState::pending;
+    }
+  }
+  const Preview& preview = finished ? *finished : made;
   if (work_offsets_.revision == 0 || reading.work_systems != work_offsets_.systems)
     work_offsets_ = {work_offsets_.revision + 1, reading.work_systems};
   auto messages = publisher_.publish(
@@ -95,8 +116,9 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   return messages;
 }
 
-PanelFeed::PanelFeed(PanelSource& source, Deliver deliver)
-    : source_(source), deliver_(std::move(deliver)), thread_([this]() -> void { loop(); }) {}
+PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview)
+    : source_(source), deliver_(std::move(deliver)), preview_(preview),
+      thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
   {
@@ -123,7 +145,7 @@ void PanelFeed::page_ended(PageToken page) {
 }
 
 void PanelFeed::loop() {
-  PanelComposer composer{source_.hello()};
+  PanelComposer composer{source_.hello(), preview_};
   std::string reported;
   auto next = std::chrono::steady_clock::now();
   for (;;) {

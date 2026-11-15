@@ -50,7 +50,7 @@ endif()
 
 add_library(coffeecnc_linuxcnc src/hal_component.cpp src/hal_control.cpp src/loaded_tools.cpp
   src/machine_config.cpp src/nml_panel_source.cpp src/nml_port.cpp src/nml_status.cpp src/panel_mapping.cpp
-  src/tool_table.cpp)
+  src/preview_engine.cpp src/preview_wire.cpp src/program_watch.cpp src/tool_table.cpp)
 target_include_directories(coffeecnc_linuxcnc PUBLIC include)
 target_include_directories(coffeecnc_linuxcnc SYSTEM PRIVATE ${COFFEECNC_LINUXCNC_INCLUDE_DIR}
   ${COFFEECNC_BOOST_INCLUDE_DIR} ${COFFEECNC_LINUXCNC_TOOLDATA_INCLUDE_DIR})
@@ -70,3 +70,23 @@ target_compile_definitions(coffeecnc_linuxcnc_probe PRIVATE ULAPI)
 target_compile_features(coffeecnc_linuxcnc_probe PRIVATE cxx_std_23)
 target_link_libraries(coffeecnc_linuxcnc_probe PRIVATE coffeecnc_linuxcnc ${COFFEECNC_LINUXCNC_EMC}
   ${COFFEECNC_LINUXCNC_NML} ${COFFEECNC_LINUXCNC_HAL} ${COFFEECNC_LINUXCNC_INI})
+
+# The preview helper: LinuxCNC's interpreter (librs274.so) in a process of its own, with the
+# canonical functions and the tool table functions the interpreter calls defined in the program
+# itself. They must be in its dynamic symbol table for the library to find them.
+find_library(COFFEECNC_LINUXCNC_RS274 rs274)
+if(COFFEECNC_LINUXCNC_RS274)
+  add_executable(coffeecnc_preview preview/preview_helper.cpp src/preview_wire.cpp
+    src/program_watch.cpp)
+  set_target_properties(coffeecnc_preview PROPERTIES OUTPUT_NAME coffeecnc-preview
+    ENABLE_EXPORTS ON)
+  target_include_directories(coffeecnc_preview SYSTEM PRIVATE ${COFFEECNC_LINUXCNC_INCLUDE_DIR}
+    ${COFFEECNC_BOOST_INCLUDE_DIR} ${COFFEECNC_LINUXCNC_TOOLDATA_INCLUDE_DIR})
+  target_compile_definitions(coffeecnc_preview PRIVATE ULAPI)
+  target_link_libraries(coffeecnc_preview PRIVATE coffeecnc_core coffeecnc_project_options
+    ${COFFEECNC_LINUXCNC_RS274})
+  include(GNUInstallDirs)
+  install(TARGETS coffeecnc_preview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+  message(STATUS "librs274.so not found: the preview helper is not built")
+endif()

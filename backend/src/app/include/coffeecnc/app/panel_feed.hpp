@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_PANEL_FEED_HPP
 #define COFFEECNC_APP_PANEL_FEED_HPP
 
+#include <coffeecnc/app/preview.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/app/status_publisher.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
@@ -35,9 +36,17 @@ namespace coffeecnc {
 // its statuses are numbered from 1. `hello` and every snapshot are sent in a page's first step
 // and again in the step after every further `ready` of that page; the numbering goes on.
 //
-// No interpreter preview exists yet. The `preview` sent is `unavailable` for the current
-// context, with no segments, whatever program is loaded, and carries no_preview_reason as its
-// error text.
+// The `preview` sent is for the status's context, always:
+//
+//   no service         `unavailable`, with no_preview_reason as its error text
+//   no program loaded  `unavailable`, no error
+//   otherwise          what the service has finished for this very context; until then
+//                      `pending`, without segments. A preview of another context is never
+//                      sent under this one.
+//
+// Every new context with a program loaded is submitted to the service, with the inputs in
+// force for it (the start state frozen while a program runs). The service's files_generation
+// is one of the inputs, read at every reading.
 //
 // `work_offsets` always has nine rows, each as available as the reading says; its revision
 // counts from 1 and goes up when a row changes.
@@ -51,7 +60,8 @@ public:
       "This version of CoffeeCNC does not compute a toolpath preview.";
   static constexpr std::size_t max_waiting = 32;
 
-  explicit PanelComposer(Hello hello);
+  // `preview` may be null; it must outlive the composer.
+  explicit PanelComposer(Hello hello, PreviewService* preview = nullptr);
 
   // The messages for `page`, which has sent `ready`; `ready_again` when it has sent another
   // since the last step. When one of them cannot be encoded the result is the reason, nothing
@@ -66,6 +76,7 @@ private:
   void count(const PanelReading& reading);
 
   Hello hello_;
+  PreviewService* preview_;
   PreviewContext preview_context_;
   std::uint64_t context_{};
   Vec3 rest_position_{};
@@ -97,8 +108,9 @@ public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
   static constexpr auto period = std::chrono::milliseconds{50};
 
-  // The source must outlive the feed. Starts the thread.
-  PanelFeed(PanelSource& source, Deliver deliver);
+  // The source, and the preview service when there is one, must outlive the feed. Starts the
+  // thread.
+  PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr);
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -116,6 +128,7 @@ private:
 
   PanelSource& source_;
   Deliver deliver_;
+  PreviewService* preview_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;

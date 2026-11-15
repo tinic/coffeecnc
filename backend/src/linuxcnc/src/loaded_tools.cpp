@@ -31,4 +31,23 @@ auto LoadedToolTable::read() const -> std::vector<LoadedTool> {
   return tools;
 }
 
+auto LoadedToolTable::read_raw() const -> std::vector<RawTool> {
+  std::vector<RawTool> tools;
+  const int last = tooldata_last_index_get();
+  for (int index = 0; index <= last && index < CANON_POCKETS_MAX; ++index) {
+    CANON_TOOL_TABLE entry{};
+    if (tooldata_get(&entry, index) != IDX_OK || entry.toolno < 0)
+      continue;
+    tools.push_back({index,
+                     entry.toolno,
+                     entry.pocketno,
+                     {entry.offset.tran.x, entry.offset.tran.y, entry.offset.tran.z},
+                     entry.diameter,
+                     entry.frontangle,
+                     entry.backangle,
+                     entry.orientation});
+  }
+  return tools;
+}
+
 } // namespace coffeecnc

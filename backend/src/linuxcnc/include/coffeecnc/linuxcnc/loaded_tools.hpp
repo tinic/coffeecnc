@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_LOADED_TOOLS_HPP
 
 #include <coffeecnc/core/command_policy.hpp>
+#include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <expected>
 #include <string>
@@ -46,6 +47,9 @@ public:
 
   // One pass: every entry that holds a tool (index 1 and up), in index order, as read.
   [[nodiscard]] auto read() const -> std::vector<LoadedTool>;
+  // One pass with every field the interpreter uses, in machine units, the spindle (index 0)
+  // included: what a preview is computed with.
+  [[nodiscard]] auto read_raw() const -> std::vector<RawTool>;
 
 private:
   explicit LoadedToolTable(double millimetres_per_unit) : scale_(millimetres_per_unit) {}

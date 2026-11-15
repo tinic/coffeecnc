@@ -27,7 +27,7 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | Program running when first seen, or since the link returned | `unavailable`, `error.line` 0, until seen at rest |
 | Tool table not accepted yet | `unavailable`, `error.line` 0 |
 | Block delete switched during a run or pause | Context goes up; `unavailable`, `error.line` 0 for the rest of that run, also when switched back |
-| `[RS274NGC] REMAP` or a random tool changer configured, helper missing | `unavailable`, `error.line` 0 |
+| `[RS274NGC] REMAP`, `NO_DOWNCASE_OWORD` or a random tool changer configured; a UVW plane or cutter compensation active at the start; helper missing | `unavailable`, `error.line` 0 |
 
 `line` is a line of the main program, or 0 when none is known. A move inside a subroutine file carries the line of the call in the main program; an error there names the file and its line in the text. A subroutine defined in the program carries its own line.
 
@@ -41,9 +41,12 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | `G28`, `G30`, `G92.3` | Positions saved in the parameter file are not live |
 | A work system other than the active one | Only the active system's offsets are live |
 | `M6` with `[EMCIO] TOOL_CHANGE_AT_G30` | As `G30` |
+| NURBS moves (`G5.2`, `G5.3`) | Not computed |
 | An inherited motion mode no block can set, at a block that would move by it | |
 
-Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)`, `(pyrun,)`, `(pyreload)`, `(log…)`, `(PROBEOPEN)`, `(PROBECLOSE)` anywhere in the program or a subroutine file; an O-word name outside `[a-z0-9_.-]+`.
+Refused as a whole, before the interpreter reads anything: a `;py,` line, `(py,)`, `(pyrun,)`, `(pyreload)`, `(log…)`, `(PROBEOPEN)`, `(PROBECLOSE)` anywhere in the program or a subroutine file; an O-word name outside `[a-z0-9_.-]+`. The scan covers every line, also branches not taken and subroutines never called.
+
+Not modelled: path blending (`G64`; the comparison with the machine ran under `G61`), spindle speed and overrides. `M98`/`M99` and `WIZARD_ROOT` subroutines end in the interpreter's error.
 
 ## Inputs and time
 

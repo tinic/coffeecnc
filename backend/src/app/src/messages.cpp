@@ -16,6 +16,9 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr std::uint64_t max_safe_integer = 9007199254740991; // 2^53 - 1
+// Hello.tool_model_storage: the `tool_models` message and its two commands, as of
+// docs/design/native-tool-model-storage.md.
+constexpr int tool_model_storage_version = 1;
 
 auto name(Axis axis) -> std::string_view {
   switch (axis) {
@@ -221,7 +224,9 @@ auto encode_hello(const Hello& hello) -> Encoded {
        {"homing_required", hello.homing_required},
        {"max_feed_override", fields.real(hello.max_feed_override, "max_feed_override")},
        {"min_spindle_override", fields.real(hello.min_spindle_override, "min_spindle_override")},
-       {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")}});
+       {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")},
+       {"machine_id", nullable(hello.machine_id)},
+       {"tool_model_storage", tool_model_storage_version}});
 }
 
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {

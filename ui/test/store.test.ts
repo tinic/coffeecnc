@@ -4,6 +4,7 @@ import type { Listener, Transport } from '../src/bridge'
 import type { FromMachine, Status, ToMachine } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, describeCommand, staleAfterMs, type Panel } from '../src/store'
+import { emptyToolModelDocument } from '../src/tool-model-settings'
 
 interface Rig {
   panel: Panel
@@ -61,6 +62,31 @@ function rig(): Rig {
 }
 
 describe('commands', () => {
+  it('binds tool settings to the current capable hello, withholds invalid data and never regresses revisions', () => {
+    const { panel, receive } = rig()
+    const snapshot = { type: 'tool_models', machine_id: 'G0759', revision: 2,
+      availability: 'available', reason: '', document: emptyToolModelDocument() } as const
+    receive(snapshot)
+    receive(hello)
+    receive(snapshot)
+    expect(panel.state.toolModels).toBeNull()
+    receive({ ...hello, machine_id: 'G0759', tool_model_storage: 1 })
+    receive(snapshot)
+    expect(panel.state.toolModels).toEqual(snapshot)
+    receive({ ...snapshot, revision: 1 })
+    receive({ ...snapshot, machine_id: 'AnotherMill', revision: 3 })
+    expect(panel.state.toolModels?.revision).toBe(2)
+    receive({ ...snapshot, revision: NaN })
+    expect(panel.state.toolModels?.availability).toBe('unavailable')
+    expect(panel.state.notice?.text).toContain('Invalid tool model settings')
+    receive({ ...hello, machine_id: 'AnotherMill', tool_model_storage: 1 })
+    expect(panel.state.toolModels).toBeNull()
+    receive(snapshot)
+    expect(panel.state.toolModels).toBeNull()
+    receive({ ...snapshot, machine_id: 'AnotherMill' })
+    receive({ ...hello, protocol: hello.protocol + 1 })
+    expect(panel.state.toolModels).toBeNull()
+  })
   it('does not present incompatible status as live or forward new motion', () => {
     const { panel, sent, receive, status, pass } = rig()
     receive(hello)

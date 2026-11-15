@@ -1,8 +1,11 @@
 #include <coffeecnc/app/request.hpp>
 
+#include "tool_model_json.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <cmath>
+#include <expected>
 #include <initializer_list>
 #include <limits>
 #include <set>
@@ -106,6 +109,13 @@ auto choice(const Json& object, std::string_view name,
     if (value == label)
       return result;
   throw InvalidRequest("Unsupported value for field: " + std::string(name) + '.');
+}
+
+// A value read by the forms the saved file shares with these commands.
+template <typename T> auto valid(std::expected<T, std::string> read) -> T {
+  if (!read)
+    throw InvalidRequest(read.error());
+  return std::move(*read);
 }
 
 auto axis(const Json& object) -> Axis {
@@ -220,6 +230,25 @@ auto command(const Json& object) -> Command {
   if (type == "remove_tool") {
     fields(object, {"id", "type", "number"});
     return RemoveTool{integer(object, "number")};
+  }
+  if (type == "set_tool_model_defaults") {
+    fields(object, {"id", "type", "machine_id", "base_revision", "defaults"});
+    return SetToolModelDefaults{string(object, "machine_id"),
+                                valid(tool_model_json::revision(field(object, "base_revision"))),
+                                valid(tool_model_json::defaults(field(object, "defaults")))};
+  }
+  if (type == "set_tool_model_assignment") {
+    fields(object,
+           {"id", "type", "machine_id", "base_revision", "tool", "family", "overrides"});
+    SetToolModelAssignment assignment;
+    assignment.machine_id = string(object, "machine_id");
+    assignment.base_revision = valid(tool_model_json::revision(field(object, "base_revision")));
+    assignment.tool = valid(tool_model_json::binding(field(object, "tool")));
+    // `family: null` removes the tool's assignment.
+    if (const auto& family = field(object, "family"); !family.is_null())
+      assignment.family = valid(tool_model_json::family(family));
+    assignment.overrides = valid(tool_model_json::overrides(field(object, "overrides")));
+    return assignment;
   }
   throw InvalidRequest("Unknown protocol v1 command.");
 }

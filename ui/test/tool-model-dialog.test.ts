@@ -9,7 +9,7 @@ import { toolModels } from '../src/tool-models'
 
 vi.mock('../src/machine', async () => {
   const { reactive } = await import('vue')
-  return { panel: reactive({ unit: 'mm', toolTable: null, hello: null }), send: vi.fn() }
+  return { panel: reactive({ simulated: true, unit: 'mm', toolTable: null, hello: null, toolModels: null }), send: vi.fn(), onResult: (): (() => void) => () => undefined }
 })
 const tool: Tool = { number: 1, pocket: 1, diameter: 6, length: -123, comment: 'End mill' }
 let wrapper: VueWrapper | null = null

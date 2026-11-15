@@ -166,6 +166,22 @@ void preview_context_follows_live_inputs() {
           "A changed rotation of the active system too");
   context = sent.context();
 
+  // A tool table withheld from the panel (its file cannot be read) is still the machine's:
+  // the rows it would show count, and the context stays.
+  const auto shown = r.tool_table;
+  r.accepted_tools = shown.tools;
+  r.tool_table = {shown.revision + 1, {}};
+  sent = compose(composer, r);
+  require(sent.context() == context && sent.types.front() == "tool_table" &&
+              sent.messages.front().at("tools").empty(),
+          "A withheld tool table is sent empty and leaves the preview context as it is");
+  r.accepted_tools.reset();
+  r.tool_table = {shown.revision + 2, shown.tools};
+  sent = compose(composer, r);
+  require(sent.context() == context && sent.types.front() == "tool_table" &&
+              sent.messages.front().at("tools").size() == shown.tools.size(),
+          "Shown again: sent again, and still the same context");
+
   // A jog: the position counts only once the machine rests again.
   r.status.motion.in_position = false;
   r.status.axes.at(0).machine = 5;
@@ -351,6 +367,50 @@ void feed_thread() {
 // Ending the feed while it sleeps between two readings begins no further reading: a reading
 // can block in the tool data memory or the file system, and shutdown must not wait for one
 // that nobody needs.
+// What must follow a page's hello is sent from the hook, after hello was handed over.
+void snapshots_sent_follow_hello() {
+  Source source;
+  Delivered delivered;
+  std::mutex mutex;
+  // The page of each call, and the hellos that page had been delivered by then.
+  std::vector<std::pair<std::uint64_t, std::size_t>> calls;
+  const auto called = [&]() -> std::vector<std::pair<std::uint64_t, std::size_t>> {
+    const std::scoped_lock lock{mutex};
+    return calls;
+  };
+  const auto wait_for = [&](std::size_t count) -> void {
+    const auto begun = std::chrono::steady_clock::now();
+    while (called().size() < count && std::chrono::steady_clock::now() - begun < 2s)
+      std::this_thread::sleep_for(1ms);
+  };
+  PanelFeed feed{source,
+                 [&](PageToken page, const std::vector<std::string>& messages) -> void {
+                   const std::scoped_lock lock{delivered.mutex};
+                   for (const auto& text : messages)
+                     delivered.messages.emplace_back(page.value, Json::parse(text));
+                 },
+                 nullptr, [&](PageToken page) -> void {
+                   const auto hellos = delivered.count(page.value, "hello");
+                   const std::scoped_lock lock{mutex};
+                   calls.emplace_back(page.value, hellos);
+                 }};
+  std::this_thread::sleep_for(120ms);
+  require(called().empty(), "Without a ready page nothing is announced");
+  feed.page_ready(PageToken{3});
+  wait_for(1);
+  std::this_thread::sleep_for(170ms);
+  require(called() == std::vector<std::pair<std::uint64_t, std::size_t>>{{3, 1}},
+          "Once per ready, after that page's hello was delivered; not with every status");
+  feed.page_ready(PageToken{3});
+  wait_for(2);
+  feed.page_ready(PageToken{4});
+  wait_for(3);
+  std::this_thread::sleep_for(120ms);
+  require(called() ==
+              std::vector<std::pair<std::uint64_t, std::size_t>>{{3, 1}, {3, 2}, {4, 1}},
+          "Again for a repeated ready and for the next page");
+}
+
 void feed_stops_without_another_reading() {
   for (int round = 0; round < 10; ++round) {
     Source source;
@@ -386,6 +446,7 @@ auto main() -> int {
     messages_wait_for_a_page();
     a_status_that_cannot_be_sent();
     feed_thread();
+    snapshots_sent_follow_hello();
     feed_stops_without_another_reading();
     std::cout << checks << " panel feed checks passed\n";
     return 0;

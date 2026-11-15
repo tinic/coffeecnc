@@ -76,9 +76,9 @@ const subtitle = computed(() => {
         <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
         <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
         <div class="actions">
-          <button v-if="status?.machine === 'estop'" class="btn" type="button" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
-          <button v-else-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
-          <button v-else class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
+          <button v-if="status?.machine === 'estop' || status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'off' })">Reset E-stop</button>
+          <button v-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="send({ type: 'set_machine', state: 'on' })">Machine on</button>
+          <button v-else-if="status?.machine === 'on'" class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="send({ type: 'set_machine', state: 'off' })">Machine off</button>
           <button class="btn quiet" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
         </div>
       </div>

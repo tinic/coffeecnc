@@ -37,6 +37,86 @@ const examples: Examples = {
   },
   remove_tool: { id: 23, type: 'remove_tool', number: 3 },
   tool_changed: { id: 24, type: 'tool_changed' },
+  set_tool_model_defaults: {
+    "id": 25,
+    "type": "set_tool_model_defaults",
+    "machine_id": "G0759",
+    "base_revision": 0,
+    "defaults": {
+      "end-mill": {
+        "diameter": 10,
+        "cuttingLength": 22,
+        "shankDiameter": 10,
+        "overallLength": 72,
+        "stickout": 35,
+        "tipAngle": 90
+      },
+      "ball-mill": {
+        "diameter": 10,
+        "cuttingLength": 20,
+        "shankDiameter": 10,
+        "overallLength": 72,
+        "stickout": 35,
+        "tipAngle": 90
+      },
+      "drill": {
+        "diameter": 10,
+        "cuttingLength": 60,
+        "shankDiameter": 10,
+        "overallLength": 100,
+        "stickout": 75,
+        "tipAngle": 118
+      },
+      "spot-drill": {
+        "diameter": 10,
+        "cuttingLength": 15,
+        "shankDiameter": 10,
+        "overallLength": 60,
+        "stickout": 30,
+        "tipAngle": 90
+      },
+      "chamfer": {
+        "diameter": 10,
+        "cuttingLength": 12,
+        "shankDiameter": 10,
+        "overallLength": 60,
+        "stickout": 30,
+        "tipAngle": 90
+      },
+      "face-mill": {
+        "diameter": 50,
+        "cuttingLength": 12,
+        "shankDiameter": 20,
+        "overallLength": 70,
+        "stickout": 40,
+        "tipAngle": 90
+      },
+      "generic": {
+        "diameter": 10,
+        "cuttingLength": 20,
+        "shankDiameter": 10,
+        "overallLength": 70,
+        "stickout": 35,
+        "tipAngle": 90
+      }
+    }
+  },
+  set_tool_model_assignment: {
+    "id": 26,
+    "type": "set_tool_model_assignment",
+    "machine_id": "G0759",
+    "base_revision": 1,
+    "tool": {
+      "number": 3,
+      "pocket": 3,
+      "diameter": 6,
+      "comment": "End mill 6 mm"
+    },
+    "family": "end-mill",
+    "overrides": {
+      "stickout": 30
+    }
+  },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -9,6 +9,9 @@
 // The panel never sets LinuxCNC's task mode. A command implies the mode it needs and the
 // executable switches mode when the interpreter is idle, or rejects the command.
 
+import type { ToolDefaults, ToolFamily, ToolOverrides } from './tool-model'
+import type { ToolModelBinding, ToolModelDocument } from './tool-model-settings'
+
 export const protocolVersion = 1
 
 export type AxisLetter = 'x' | 'y' | 'z'
@@ -38,6 +41,10 @@ export interface Hello {
   type: 'hello'
   protocol: number
   machine_name: string
+  /** Explicit configured identity; absent on older peers. Never derive this from the name. */
+  machine_id?: string | null
+  /** Native tool-model persistence contract v1; absent means session-only visual settings. */
+  tool_model_storage?: 1
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -174,6 +181,22 @@ export interface ToolTable {
   tools: Tool[]
 }
 
+/** Native visual preferences, independent of LinuxCNC's tool table and machine power. */
+export type ToolModels = {
+  type: 'tool_models'
+  reason: string
+} & ({
+  machine_id: string
+  revision: number
+  availability: 'available'
+  document: ToolModelDocument
+} | {
+  machine_id: string | null
+  revision: 0
+  availability: 'session_only' | 'unavailable'
+  document: null
+})
+
 export interface ProgramText {
   type: 'program'
   revision: number
@@ -277,6 +300,7 @@ export type FromMachine =
   | Hello
   | Status
   | ToolTable
+  | ToolModels
   | ProgramText
   | Preview
   | WorkOffsets
@@ -412,6 +436,23 @@ export interface ToolChanged extends CommandBase {
   type: 'tool_changed'
 }
 
+/** Replace all seven family defaults atomically, retaining the saved assignment catalog. */
+export interface SetToolModelDefaults extends CommandBase {
+  type: 'set_tool_model_defaults'
+  machine_id: string
+  base_revision: number
+  defaults: ToolDefaults
+}
+/** Replace one T-number binding; null family and empty overrides remove that saved entry. */
+export interface SetToolModelAssignment extends CommandBase {
+  type: 'set_tool_model_assignment'
+  machine_id: string
+  base_revision: number
+  tool: ToolModelBinding
+  family: ToolFamily | null
+  overrides: ToolOverrides
+}
+
 export type ToMachine =
   | Ready
   | SetMachine
@@ -437,6 +478,8 @@ export type ToMachine =
   | SetTool
   | RemoveTool
   | ToolChanged
+  | SetToolModelDefaults
+  | SetToolModelAssignment
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

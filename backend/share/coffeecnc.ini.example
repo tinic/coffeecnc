@@ -22,6 +22,17 @@ MAX_SPINDLE_RPM = 1500
 SPINDLE_RPM_SIGNAL = no
 SPINDLE_AT_SPEED_SIGNAL = no
 PROBE_SIGNAL = no
+# The identity of this machine for what coffeecnc saves (the tool models of the Tools tab):
+# a name that stays the same for this machine and that no other machine has. 1 to 64 of the
+# characters A-Z a-z 0-9 _ and -, the first a letter or a digit; upper and lower case differ.
+# Without this key nothing is saved: the settings last until the panel closes. With a name
+# that is not valid nothing is saved either, and the panel says why.
+#MACHINE_ID = my-mill
+# Where the saved settings are kept: an absolute path; the machine's identity is appended as
+# a directory of its own. Without this key it is $XDG_DATA_HOME/coffeecnc when that variable
+# holds an absolute path, else ~/.local/share/coffeecnc. A path that is not absolute is not
+# used: nothing is saved then, and the panel says why.
+#DATA_DIRECTORY = /var/lib/coffeecnc
 
 [HAL]
 # Run by coffeecnc with halcmd once its HAL component exists; a path relative to the INI

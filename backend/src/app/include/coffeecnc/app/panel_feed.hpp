@@ -143,11 +143,15 @@ private:
 class PanelFeed {
 public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
+  // Called on the publisher thread right after `hello` and the snapshots were handed to
+  // `deliver` for that page: what must reach a page after its `hello` is sent from here.
+  using SnapshotsSent = std::function<void(PageToken)>;
   static constexpr auto period = std::chrono::milliseconds{50};
 
   // The source, and the preview service when there is one, must outlive the feed. Starts the
   // thread.
-  PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr);
+  PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr,
+            SnapshotsSent snapshots_sent = {});
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -165,6 +169,7 @@ private:
 
   PanelSource& source_;
   Deliver deliver_;
+  SnapshotsSent snapshots_sent_;
   PreviewService* preview_;
   std::mutex mutex_;
   std::condition_variable wake_;

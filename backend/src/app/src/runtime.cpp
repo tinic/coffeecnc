@@ -29,8 +29,10 @@ void status_step(Session& session, StatusSource& source) {
 }
 
 Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,
-                 const Limits& limits, const ProgramStore& programs, Sink sink)
-    : status_(status), outputs_(outputs), sink_(std::move(sink)), session_(port, limits, programs),
+                 const Limits& limits, const ProgramStore& programs, Sink sink,
+                 ToolModelService* tool_models)
+    : status_(status), outputs_(outputs), sink_(std::move(sink)),
+      session_(port, limits, programs, tool_models),
       control_([this]() -> void { control_loop(); }),
       status_thread_([this]() -> void { status_loop(); }),
       worker_([this]() -> void { work_loop(); }) {}

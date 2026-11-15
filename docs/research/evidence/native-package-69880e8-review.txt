@@ -1,0 +1,99 @@
+CoffeeCNC packaging review, 2026-11-15 03:41 UTC
+
+Source 69880e87b18afe5356d722d9cd1ec161ce592a6f, on 201c963. Not merged.
+Codex reviewed all seven changed files, including the E-stop result path,
+StatusChannel's cache/heartbeat behavior, simulation runner and regressions.
+No simulation or hardware was started by this review.
+
+Reviewed changes
+
+- E-stop results describe the reported machine state even when an earlier
+  command step failed. OFF and ON remain failed/unconfirmed; the original
+  command error is returned to the operator message queue.
+- The simulator takes a shared per-user flock before changing its run
+  directory, holds it through cleanup, and closes the descriptor in LinuxCNC
+  and halrun children. Contention waits at most the configured interval and
+  returns 123 with holder information. Assembly-only runs take no lock.
+  The lock inode persists; only the holder-information file is removed.
+- G0759 test preparation now performs power-off, reset while OFF, then ON,
+  after allowing the external input to be observed. Every scenario checks
+  user-enable-out true before its cause. The observation records sampled
+  state transitions and counts; it does not claim continuous observation or
+  physical stop latency. Separate recovery checks establish why an explicit
+  reset must remain accessible when the reported machine state is OFF.
+
+Open finding: stale status can incorrectly confirm E-stop
+
+The new settle and final checks treat a non-null StatusChannel::stat() as
+fresh. That method intentionally returns the last cached EMC_STAT even when
+the status write counter has stopped advancing; freshness is exposed
+separately through link(). If the cached state is ESTOP and task stops
+publishing, run() can time out and the new final path can still return
+accepted from that old state. This changes a command failure into an
+unsubstantiated confirmation.
+
+Reported to Claude at 03:39 UTC; accepted. The final state descriptions and
+confirmation must require live status. Planned regressions cover stale
+ESTOP/OFF versus live ESTOP and, if practical, frozen-task simulation. The
+fix and its evidence remain pending; passing tests below do not close it.
+
+Retained development evidence independently copied and read
+
+Host: /home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/69880e8/dev/
+Local: /tmp/coffeecnc-packaging-69880e8-review/dev/
+
+Provenance names this source and branch claude/packaging, tracked dirty=0,
+configure_exit=0, build_exit=0, ctest_exit=0. git-status lists only the
+untracked ../concept.png. The selected 31/31 tests pass in 310.97s. Excluded:
+linuxcnc_sim_mm, linuxcnc_sim_inch, linuxcnc_shell_inch and
+linuxcnc_coffeecnc_start. This is a focused run, not the full test matrix.
+
+Both failures retained at 201c963 pass here: G0759 preparation and shell_mm
+startup. All six top-level DISPLAY runs report actual child_status=0 and
+processes_left=0. Runner regressions also pass: timeout/TERM/HUP cleanup,
+lock availability, assembly without waiting, bounded refusal after three
+seconds without creating the refused run directory, and a waiting second
+run that starts after the first is terminated and cleaned up.
+
+All six G0759 preparations report estop_out TRUE. Each software-request
+case samples ON then OFF, with 429 state samples and zero ESTOP samples,
+and returns the exact failed/unconfirmed OFF reason. External-input cases
+sample ON then ESTOP. Recovery observes user-enable-out false after the
+request, still false after ON and power-off, then true after reset from OFF.
+These are observations of the simulated hardware layer, not machine tests.
+
+shell_mm serves the previous preview UI, not the pending persistence UI or
+the new OFF-state Reset button:
+  inputs a1cd52cfb90eec6626b810d7a9e001f0b57e6bef1c871b70cba2cb8aa626b60d
+  assets ff90e920d574813037ed865390c45f5ed4d7dd96ebbf7a5147f9505fd679cca1
+Its stamp names 69880e8 and the served digests match. Task-17 A/G54 and
+B/G55 previews are ready (98/73 segments). Machine-derived startup and
+installed prefix/unpacked-DEB startup use their intended executable, panel
+and helper and produce a ready six-segment preview.
+
+Fresh analyzer and Release evidence, reviewed at 03:44 UTC
+
+Copied the final analyze/ and package/ evidence directories beside dev/.
+Both provenance records identify clean tracked 69880e8, removal of the old
+build directory before configure, configure_exit=0 and build_exit=0. Each
+verbose build completes 88 Ninja steps. Analyzer has 55 co-compile analyzer
+invocations and no warning/error diagnostics; no analyzer CTest was run.
+
+The package build uses actual -O3 -DNDEBUG -Werror flags. Cache identifies
+Release and COFFEECNC_DEVELOPMENT_PATHS=FALSE. Its selected 11/11 tests pass
+in 82.49s: core_behavior, text_file, sim_g0759, machine_g0759, CLI, wrapper,
+panel bundle, install tree, DEB, and both installed startups. The four
+top-level DISPLAY runs have child_status=0 and processes_left=0. Machine
+source is clean e11000c; all six E-stop preparations and reset recovery pass.
+Both installed trees use their own executable/panel/helper and yield ready
+six-segment previews. All four binaries' recorded home/checkout string
+counts are zero.
+
+Release DEB: 3,985,132 bytes, Installed-Size 9,779 KiB.
+SHA256: c1e24aa21c66d706f2b1c7b9183e2a2ffa1861578bf3d1f6261b19ed75b80670
+Dependencies remain build-host-specific (including libc6 >=2.38 and
+libstdc++6 >=14); this is an unpacked package test, not a host installation.
+
+These passing builds/tests do not cover the subsequently identified
+stale-status case. Claude is qualifying that fix separately. No new
+sanitizer, physical-machine or application-only-restart claim is made here.

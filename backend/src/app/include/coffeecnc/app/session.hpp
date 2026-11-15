@@ -29,6 +29,28 @@ struct PageToken {
   friend auto operator==(const PageToken&, const PageToken&) -> bool = default;
 };
 
+// Where the two tool-model commands go: storage with a thread of its own (ToolModelStore).
+// Called with the session's mutex held, so neither call may block or call the session.
+class ToolModelService {
+public:
+  ToolModelService() = default;
+  virtual ~ToolModelService() = default;
+
+  // A reason: the command is `rejected` with it at once. None: the command waits for the
+  // writer, and its one CommandResult comes from there, unless its page ends first.
+  [[nodiscard]] virtual auto submit(PageToken page, RequestId id, ToolModelCommand command)
+      -> std::optional<std::string> = 0;
+  // This page and every one before it has ended: what waits for them is dropped, and what
+  // they are still owed is not sent.
+  virtual void page_ended(PageToken page) = 0;
+
+protected:
+  ToolModelService(const ToolModelService&) = default;
+  ToolModelService(ToolModelService&&) = default;
+  auto operator=(const ToolModelService&) -> ToolModelService& = default;
+  auto operator=(ToolModelService&&) -> ToolModelService& = default;
+};
+
 // The caller's clocks, read once per call.
 struct Instant {
   JogLease::Time monotonic{};            // jog leases
@@ -147,6 +169,11 @@ struct Work {
 // the controller only with a path the store resolved: a regular file inside the program
 // directory; anything else is `rejected`.
 //
+// `set_tool_model_defaults` and `set_tool_model_assignment` are answered by the tool-model
+// service, whatever the machine and the link are doing: they pass the page, ready and ID checks
+// in `submit` and are handed over there. They never wait in the request queues, so the worker
+// and the controller never see them. Without a service they are `rejected`.
+//
 // No threads of its own and time passed in: every member is a step a test can take.
 class Session {
 public:
@@ -159,9 +186,10 @@ public:
   // may be the one in which the pin fell.
   static constexpr int settled_periods = 2;
 
-  // The port and the store must outlive the session. Throws std::invalid_argument for invalid
-  // limits.
-  Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs);
+  // The port, the store and the tool-model service (may be null) must outlive the session.
+  // Throws std::invalid_argument for invalid limits.
+  Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
+          ToolModelService* tool_models = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -291,6 +319,7 @@ private:
   // Ordered by size: the analyzer counts padding.
   ControllerPort& port_;
   const ProgramStore& programs_;
+  ToolModelService* tool_models_;
   std::uint64_t pages_{};
   JogLease::Time status_at_{};
   // Goes up with every stop decision.

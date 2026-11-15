@@ -23,6 +23,7 @@ const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
 const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
 const modelEditor = ref<{ tool: Tool | null } | null>(null)
+const modelSettingsPending = computed(() => toolModels.storage === 'loading' || toolModels.saving)
 function modelLabel(tool: Tool): string {
   const model = resolveToolModel(tool, toolModels.assignments.get(tool.number), toolModels.defaults)
   if (model === null) return 'Set model'
@@ -127,7 +128,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         <h2>Tool table</h2>
         <span class="hint">{{ unit }}</span>
         <span class="spacer"></span>
-        <button class="btn" type="button" @click="modelEditor = { tool: null }">Model defaults</button>
+        <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
         <button class="btn" type="button" :disabled="editBlock !== null" :title="editBlock ?? 'Add a tool'" @click="add">
           <AppIcon name="plus" />Add tool
         </button>
@@ -162,6 +163,9 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       </div>
       <p v-if="touchBlock" class="hint reason">Touch-off unavailable: {{ touchBlock }}</p>
       <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>
+      <p v-else-if="toolModels.saved" class="hint" role="status">{{ toolModels.saved }}</p>
+      <p v-else-if="toolModels.storage === 'loading'" class="hint">Loading tool model settings…</p>
+      <p v-else-if="toolModels.storageReason" class="hint">{{ toolModels.storageReason }}</p>
 
       <div class="scroll">
         <table>
@@ -182,7 +186,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
               <td class="comment" :title="tool.comment">
                 {{ tool.comment }}
                 <span v-if="tool.number === loaded" class="inspindle">in spindle</span>
-                <button class="model-link" type="button" :aria-label="`Preview model for T${tool.number}`" @click="modelEditor = { tool }">{{ modelLabel(tool) }}</button>
+                <button class="model-link" type="button" :disabled="modelSettingsPending" :aria-label="`Preview model for T${tool.number}`" @click="modelEditor = { tool }">{{ modelLabel(tool) }}</button>
               </td>
               <td class="actions">
                 <button class="btn square" type="button" :disabled="editBlock !== null" :title="editBlock ?? `Edit tool ${tool.number}`" @click="edit(tool)">

@@ -1,0 +1,65 @@
+CoffeeCNC packaging and G0759 review, 2026-11-15 03:05 UTC
+
+Reviewed source: 89f06e388133cc5eacf0db64c670e10bd64f6ed2 on claude/packaging.
+Codex read the complete 23-file delta against the previously reviewed 128b404.
+This checkpoint has not merged. No hardware or host package installation.
+
+Development results
+
+Independently copied/read retained provenance, CTest, LastTest and machine
+logs. Clean source; configure/build/CTest exit0. Full suite35/35 in499.66s.
+The seven new wrapper regressions pass, including an early exit0 child and a
+child exiting0 during its check: both wrappers now exit1. A missing check
+script fails, and --check without --terminate-after exits125. The earlier
+failure-propagation finding is closed for these tested cases.
+
+Both the installed prefix and unpacked development DEB start successfully,
+using their own panel/helper; six-segment sample preview computation is ready.
+The package is 4,119,138 bytes, Installed-Size10,983KiB. This remains the
+development build and old pre-persistence panel, not Release qualification.
+
+Release source changes
+
+read_text_file replaces the streambuf-iterator construction that failed the
+previous Release build. Reads are bounded in64KiB blocks; tests cover empty,
+exact/over-limit, block boundaries, missing and non-file paths. Program/helper
+request limits are16MiB; tool-table file limit is4MiB. No warning suppression
+was added. Installed-only layout checks now look for checkout/build/home
+paths in binary strings. Release build/package results remain pending here.
+
+G0759 machine configuration
+
+Draft https://github.com/tinic/linuxcnc/pull/1, head9e82a90, base949d67f.
+Only two new files. Independent INI comparison found added explanatory
+comments, DISPLAY=coffeecnc, the COFFEECNC spindle/signal configuration, and a
+different post-GUI HAL file. Existing machine settings and files are unchanged.
+MACHINE_ID is missing at this head; Claude acknowledged adding explicit g0759.
+
+The retained simulation uses clean machine checkout9e82a90. It substitutes
+DISPLAY and PROGRAM_PREFIX, adds one simulated-hardware HAL file, removes
+56 specified driver/pin lines from G0759.hal and19 from custom.hal, and copies
+post-GUI HAL, shutdown HAL and tool table byte for byte. All22 standard
+CoffeeCNC post-GUI commands appear in order. Parameter state starts fresh.
+Both machine scenario and application startup pass with child_status0 and
+processes_left0. Simulated feedback is not qualification of physical hardware.
+
+The test named estop_is_the_external_input_only is too broad. Its sequence
+turns power OFF first, then requests E-stop: it proves no latched ESTOP from
+OFF while the external chain is closed. It does not establish the result
+while ON or moving. Claude retracted the broader claim and is adding separate
+ON-idle, jog, program/spindle and external-input scenarios, without changing
+physical HAL wiring. No UI control decision follows from the existing test.
+
+Separate persistence review follow-up
+
+The publisher retains old tool comments if the file cannot be read. Replacing
+them with empty strings also risks matching real blank-comment assignments.
+Agreed fix: withhold published rows and report failure until comments are
+readable, republish on recovery with unchanged numeric tools, preserve saved
+assignments and raw numeric preview inputs. Implementation/test review pending
+on the tool-model store branch; this is not a completed packaging fix.
+
+Host: backend/build/sim-history/89f06e3/dev/ on playhouse2.
+Local: /tmp/coffeecnc-packaging-89f06e3-review/dev/.
+Pending: retained analyzer and Release results; revised G0759 machine identity
+and narrowly stated E-stop evidence; backend store review and restart tests.

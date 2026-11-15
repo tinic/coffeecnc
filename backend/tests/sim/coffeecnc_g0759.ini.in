@@ -1,7 +1,7 @@
 # A simulated mill with the values of the G0759's INI file that CoffeeCNC acts on (see
 # docs/machines/g0759.md). No hardware: none of the machine's drivers are loaded, and
 # coffeecnc_g0759_sim.hal loops the commanded position back as feedback.
-# tests/sim/run.sh -p g0759 fills in @DISPLAY@.
+# tests/sim/run.sh -p g0759 fills in @DISPLAY@ and @RUN@ (the run directory).
 
 [EMC]
 VERSION = 1.1
@@ -28,6 +28,9 @@ MAX_SPINDLE_RPM = 1500
 SPINDLE_RPM_SIGNAL = yes
 SPINDLE_AT_SPEED_SIGNAL = yes
 PROBE_SIGNAL = yes
+# The machine's identity, and where its tool models are saved: <DATA_DIRECTORY>/<MACHINE_ID>.
+MACHINE_ID = G0759-sim
+DATA_DIRECTORY = @RUN@/coffeecnc-data
 
 [TASK]
 TASK = milltask

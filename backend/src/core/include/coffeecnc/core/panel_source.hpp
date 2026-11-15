@@ -21,6 +21,10 @@ struct PanelReading {
   // `preview_context` is left 0: the publisher numbers the preview inputs.
   Status status;
   ToolTable tool_table;
+  // Set while the source shows no rows although a table is accepted (its comments could not
+  // be read): the accepted rows, which count for the preview context in place of the empty
+  // table shown. Their comments are not to be shown.
+  std::optional<std::vector<Tool>> accepted_tools;
   // G54 ... G59.3, each marked available or not. LinuxCNC's status carries the active system
   // alone; the others are not available while task runs and hold zero placeholders.
   std::array<WorkSystem, 9> work_systems{};

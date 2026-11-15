@@ -25,7 +25,8 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.program_revision = status.program.revision;
   inputs.systems = reading.work_systems;
   inputs.g92 = status.offsets.g92;
-  inputs.tools = reading.tool_table.tools;
+  // A table withheld from the panel is still the machine's table.
+  inputs.tools = reading.accepted_tools.value_or(reading.tool_table.tools);
   inputs.raw_tools = reading.preview_tools;
   inputs.block_delete = status.program.block_delete;
   inputs.start.wcs = status.offsets.wcs;
@@ -153,8 +154,10 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   return messages;
 }
 
-PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview)
-    : source_(source), deliver_(std::move(deliver)), preview_(preview),
+PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview,
+                     SnapshotsSent snapshots_sent)
+    : source_(source), deliver_(std::move(deliver)), snapshots_sent_(std::move(snapshots_sent)),
+      preview_(preview),
       thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
@@ -184,6 +187,10 @@ void PanelFeed::page_ended(PageToken page) {
 void PanelFeed::loop() {
   PanelComposer composer{source_.hello(), preview_};
   std::string reported;
+  // The page the composer was last asked for, and whether it still owes that page its
+  // snapshots: as the composer itself counts them.
+  std::optional<PageToken> composed;
+  bool snapshots_owed = false;
   auto next = std::chrono::steady_clock::now();
   for (;;) {
     const auto reading = source_.read();
@@ -197,10 +204,14 @@ void PanelFeed::loop() {
       ready = std::exchange(ready_, false);
     }
     if (page) {
+      snapshots_owed = snapshots_owed || ready || composed != page;
+      composed = page;
       auto messages = composer.compose(reading, *page, ready, unix_now());
       if (messages) {
         reported.clear();
         deliver_(*page, std::move(*messages));
+        if (std::exchange(snapshots_owed, false) && snapshots_sent_)
+          snapshots_sent_(*page);
       } else if (messages.error() != reported) {
         reported = messages.error();
         deliver_(*page, {encode_message(MessageLevel::error,

@@ -2,8 +2,9 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-w seconds] [-d run-directory] [-n] <program> [arguments...]
-#   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-t ...] [-d ...] [-n] <program> ...
+#   run.sh [-p sim|g0759] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
+#          [-d run-directory] [-n] <program> [arguments...]
+#   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-k] [-t ...] [-d ...] [-n] <program> ...
 #
 # Profiles (-p):
 #   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
@@ -11,6 +12,20 @@
 # With -m, no profile: a machine's own INI file and HAL files with the hardware replaced by the
 # -s file; see assemble_machine.sh for exactly what differs from the machine's files. The INI
 # file in the run directory then has the machine file's name.
+#
+# @RUN@ in an INI template is the run directory. With -i the sim profile, which names no
+# machine, gets `[COFFEECNC] MACHINE_ID = <machine-id>` and `DATA_DIRECTORY =
+# <run-directory>/coffeecnc-data` (the g0759 profile has its own).
+#
+# What CoffeeCNC saves for a machine never goes to the user's own data directory from here:
+# the program is started with XDG_DATA_HOME=<run-directory>/xdg-data, which is where a machine
+# with a MACHINE_ID and no DATA_DIRECTORY keeps it (a machine's own INI file with -m: nothing is
+# added to that file for it). Both data directories are emptied before every run, except with
+# -k: a run that is to find what the run before it in the same run directory saved. A machine
+# INI file (-m) whose own [COFFEECNC] DATA_DIRECTORY is not inside the run directory is refused:
+# `sim=refused reason=data_directory_outside_run ...`, exit code 122, also with -n; nothing
+# was started, locked or made. The key is read with LinuxCNC's inivar; a run whose INI file
+# cannot be read that way is refused with reason=data_directory_cannot_be_checked (122).
 #
 # LinuxCNC starts <program> as `<program> -ini <run-directory>/coffeecnc_<profile>.ini
 # [arguments...]` and shuts down when it exits. (The arguments are in the wrapper this script
@@ -41,7 +56,8 @@
 #   ~/ai/coffeecnc-sim-runner-<uid>.lock      (/tmp/... where there is no ~/ai)
 #
 # and keeps it until it exits, cleanup included, on every path; LinuxCNC does not inherit it.
-# Who holds it is in <lock>.info. A held lock is waited for, at most -w seconds (300): then
+# Who holds it is in <lock>.info, and `sim=locked lock=<file> at=<seconds since the epoch>` is
+# printed when it is taken. A held lock is waited for, at most -w seconds (300): then
 # `sim=refused reason=locked ...` and exit code 123, and nothing was started or changed. A
 # LinuxCNC found running while this script holds the lock is not one of these runs: it is never
 # cleaned up from here; the run is refused (125). -n takes no lock: it starts nothing.
@@ -57,9 +73,11 @@ timeout=300
 directory=
 assemble_only=
 machine=
+keep_data=
+identity=
 layer=
 lock_wait=300
-while getopts "p:u:t:d:nm:s:w:" option; do
+while getopts "p:u:t:d:nm:s:w:i:k" option; do
   case $option in
   w) lock_wait=$OPTARG ;;
   m) machine=$OPTARG ;;
@@ -68,6 +86,8 @@ while getopts "p:u:t:d:nm:s:w:" option; do
   u) units=$OPTARG ;;
   t) timeout=$OPTARG ;;
   d) directory=$OPTARG ;;
+  i) identity=$OPTARG ;;
+  k) keep_data=1 ;;
   n) assemble_only=1 ;;
   *) exit 125 ;;
   esac
@@ -76,9 +96,11 @@ shift $((OPTIND - 1))
 if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
   { [ "$profile" != sim ] && [ "$profile" != g0759 ]; } ||
   { [ "$profile" = g0759 ] && [ "$units" != mm ]; } ||
-  { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; }; then
-  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-t seconds] [-d run-directory] [-n]" \
-    "<program> [arguments...]  (g0759 is millimetres only), or" \
+  { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; } ||
+  { [ -n "$identity" ] && { [ "$profile" != sim ] || [ -n "$machine" ]; }; }; then
+  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
+    "[-d run-directory] [-n] <program> [arguments...]  (g0759 is millimetres only and has" \
+    "its own machine ID), or" \
     "run.sh -m <machine INI file> -s <simulated hardware HAL file> ..." >&2
   exit 125
 fi
@@ -105,6 +127,43 @@ if [ -n "$machine" ]; then
 fi
 [ -n "$directory" ] || directory=$here/../../build/sim/$(basename "$program")-$flavour
 
+# A machine's own INI file may name a data directory of its own. Nothing of a test is saved
+# outside its run directory: such a run is refused, before the lock, before anything is made.
+# The value is read by LinuxCNC's own reader (inivar), the one the application's adapter uses
+# as a library: whatever that reader makes of comments, white space, case and repeated
+# sections is what the application will be given. Without it, or when it fails, the run is
+# refused too.
+if [ -n "$machine" ]; then
+  if ! command -v inivar >/dev/null; then
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=inivar-not-found ini=$machine"
+    exit 122
+  fi
+  # inivar's exit code 1 is "not found" (key or section absent; seen with 2.9.4, where a file it
+  # cannot open gives 255): that the file can be read is therefore established here first.
+  if [ ! -f "$machine" ] || [ ! -r "$machine" ] || ! head -c 1 "$machine" >/dev/null 2>&1; then
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=ini-not-readable ini=$machine"
+    exit 122
+  fi
+  data_directory=$(inivar -ini "$machine" -sec COFFEECNC -var DATA_DIRECTORY 2>/dev/null)
+  case $? in
+  0)
+    case $(realpath -m -- "$data_directory") in
+    "$(realpath -m "$directory")"/*) ;;
+    *)
+      echo "sim=refused reason=data_directory_outside_run data_directory=$data_directory" \
+        "run_directory=$(realpath -m "$directory") ini=$machine"
+      exit 122
+      ;;
+    esac
+    ;;
+  1) ;; # The key is not set.
+  *)
+    echo "sim=refused reason=data_directory_cannot_be_checked detail=inivar-failed ini=$machine"
+    exit 122
+    ;;
+  esac
+fi
+
 locked=
 release() {
   # The lock itself ends with this process. The note about its holder goes when it is ours.
@@ -127,10 +186,12 @@ if [ -z "$assemble_only" ]; then
   trap release EXIT
   echo "pid=$$ checkout=$(cd "$here/../../.." && pwd) run_directory=$directory" \
     "program=$(basename "$program") since=$(date -Is)" >"$lock.info"
+  # From here the time is this run's own, not the queue's (seconds since the epoch).
+  echo "sim=locked lock=$lock at=$(date +%s)"
 fi
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")
-for word in "$program" "$directory" "$@"; do
+for word in "$program" "$directory" "$machine" "$identity" "$@"; do
   if ! plain "$word"; then
     echo "sim=error detail=unsupported-characters-in-path-or-argument"
     exit 125
@@ -158,6 +219,8 @@ exit \$status
 EOF
 chmod +x "$directory/display.sh" || exit 125
 
+# What an earlier run saved for its machine.
+[ -n "$keep_data" ] || rm -rf "$directory/coffeecnc-data" "$directory/xdg-data"
 if [ -n "$machine" ]; then
   # A machine's own configuration: assembled from its files, never written to.
   rm -f "$directory/linuxcnc.log"
@@ -166,11 +229,16 @@ if [ -n "$machine" ]; then
 else
 # The run directory holds only generated files.
 perl -pe '
-  BEGIN { $inch = shift eq "inch"; $display = shift; }
+  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; }
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
+  s/\@RUN\@/$run/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$directory/display.sh" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh" "$directory" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+if [ -n "$identity" ]; then
+  printf '\n[COFFEECNC]\nMACHINE_ID = %s\nDATA_DIRECTORY = %s/coffeecnc-data\n' \
+    "$identity" "$directory" >>"$directory/$ini" || exit 125
+fi
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done
@@ -206,6 +274,8 @@ fi
 
 # Every process of this run carries the marker in its environment, however it detaches.
 export COFFEECNC_SIM_RUN="$directory"
+# Where a machine without [COFFEECNC] DATA_DIRECTORY keeps its data: here, not under $HOME.
+export XDG_DATA_HOME="$directory/xdg-data"
 ours() {
   local pid
   for pid in $(pgrep -u "$(id -u)"); do

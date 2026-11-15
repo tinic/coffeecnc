@@ -1,0 +1,85 @@
+CoffeeCNC packaging review, 2026-11-15 03:59 UTC
+
+Code: 0a0985c0b7cbff4bb2c94853d0afff8f5ac6c1d5.
+PR: https://github.com/tinic/coffeecnc/pull/18
+Reviewed final PR head: 00680567a17a401bdf17c071cd642d97ac096e31.
+Merged at 04:02 UTC as 6bdfcbe11f3f7c3b49da6e8e34fb9f9bc72f4ad6.
+Changes after the code checkpoint are a merge of main and documentation;
+no further production/test source changes. All four fix files and the
+subsequent documentation changes were read. No hardware was operated.
+
+Stale E-stop confirmation finding
+
+The result now requires a live status, a command successfully written by
+this action, and a status echo serial at least that command's serial. Both
+the settling predicate and the final result use these requirements. Cached
+ESTOP, OFF or ON without this evidence cannot confirm or describe the result
+as a current controller state. The original command failure remains an
+operator message. Portable checks cover stale/down links, pre-command state,
+missing state, live confirmed ESTOP and live unconfirmed OFF/ON.
+
+The native regression freezes LinuxCNC task, requests E-stop through the
+port, verifies failed/unconfirmed despite the readable cached status, then
+resumes task and waits for a live link. The source fix closes the finding
+from the 69880e8 review for the tested cases below.
+
+Retained development evidence independently copied and read
+
+Host: /home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/0a0985c/dev/
+Local: /tmp/coffeecnc-packaging-0a0985c-review/dev/
+
+Provenance records this code head, tracked dirty=0, configure_exit=0,
+build_exit=0 and ctest_exit=0, with no CTest selection filter. The only
+git-status entry is untracked ../concept.png. Full development CTest passes
+35/35 in 573.78s, including 120 core-behavior checks. This is not a fresh
+production rebuild claim.
+
+The frozen-task E-stop regression and link recovery pass in all four native
+adapter scenarios: metric, inch, the G0759-shaped profile and the actual
+G0759 configuration with simulated hardware. All ten top-level DISPLAY runs
+report actual child_status=0 and processes_left=0. No failing check lines.
+The runner contention/cleanup checks, all six G0759 E-stop preparations,
+software-request OFF wording, external-input ESTOP observations, reset
+recovery, both shell suites and installed prefix/unpacked-package startup
+also pass. Machine source is clean e11000c.
+
+Both shell tests serve the old preview bundle, not the pending persistence
+UI or Reset-while-OFF control:
+  inputs a1cd52cfb90eec6626b810d7a9e001f0b57e6bef1c871b70cba2cb8aa626b60d
+  assets ff90e920d574813037ed865390c45f5ed4d7dd96ebbf7a5147f9505fd679cca1
+
+PR documentation review
+
+The install/package reference, backend README and interface additions were
+reviewed through bc57a7b. Corrections in 432783e and 30ac421 remove unsupported
+sampling-interval/external-stop bounds, scope user-enable-out observations
+to the G0759 simulation, include reset from ESTOP, and identify the OFF-state
+reset control as pending UI integration. Their diff is documentation only.
+
+Fresh analyzer and Release qualification, reviewed at 04:01 UTC
+
+Copied final analyze/ and package/ evidence beside dev/. Both provenance
+records identify this clean tracked source, removal of the old build
+directory before configure, and configure/build exit 0. Each verbose build
+completes 88 steps. Analyzer has 55 co-compile invocations, including the
+changed NmlPort source, and no warning/error diagnostics. No analyzer CTest.
+
+Release uses actual -O3 -DNDEBUG -Werror, with cache build type Release and
+COFFEECNC_DEVELOPMENT_PATHS=FALSE. Selected CTest passes 11/11 in 86.82s,
+including core behavior, bounded reader, G0759-shaped and machine-derived
+simulation, CLI, wrapper, panel bundle, install tree, DEB and both installed
+startups. Both simulation scenarios pass the frozen-task regression. All
+four top-level DISPLAY runs report child_status=0 and processes_left=0.
+The machine source remains clean e11000c. Installed prefix and unpacked DEB
+use their own panel/helper and produce ready six-segment previews. Recorded
+home/checkout string counts are zero in all four installed binaries.
+
+Release DEB: 3,985,462 bytes.
+SHA256: 2c6bebc8900bd2f879edf5786691e3a22a8352340381c3020e72b9f68f18f93c
+No dpkg installation/removal or physical-machine qualification is claimed.
+
+The stale-status finding is closed for these reviewed and tested cases.
+Final head 0068056 adds verification-record commit 28c0251 without a file
+change. Its production/test tree matches the tested 0a0985c. PR #18 was
+merged after confirming the final head and evidence. Native tool persistence
+and the new reset control still require their separate integration.

@@ -52,10 +52,10 @@ public:
     std::chrono::nanoseconds longest_control_period{};
   };
 
-  // Everything passed in must outlive the runtime. Starts the threads. Throws
-  // std::invalid_argument for invalid limits.
+  // Everything passed in must outlive the runtime; the tool-model service may be null. Starts
+  // the threads. Throws std::invalid_argument for invalid limits.
   Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs, const Limits& limits,
-          const ProgramStore& programs, Sink sink);
+          const ProgramStore& programs, Sink sink, ToolModelService* tool_models = nullptr);
   // Shutdown. From the first control period after it begins, at most control_period later, the
   // jog-stop level is high, with or without a jog, and nothing lowers it again. The worker
   // finishes the call it is in, executes waiting stop requests and stops each axis that may be

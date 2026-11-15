@@ -380,6 +380,141 @@ void stale_pages_are_dropped() {
           "The current page is unaffected by the stale page's IDs");
 }
 
+// Records what the session hands over and answers as told.
+class FakeToolModels final : public ToolModelService {
+public:
+  struct Submitted {
+    PageToken page;
+    RequestId id{};
+    ToolModelCommand command;
+  };
+  std::vector<Submitted> submitted;
+  std::vector<std::uint64_t> ended;
+  // Not empty: the next commands are refused with it.
+  std::optional<std::string> refusal;
+
+  auto submit(PageToken page, RequestId id, ToolModelCommand command)
+      -> std::optional<std::string> override {
+    submitted.push_back({page, id, std::move(command)});
+    return refusal;
+  }
+  void page_ended(PageToken page) override { ended.push_back(page.value); }
+  [[nodiscard]] auto taken() const -> std::size_t { return submitted.size(); }
+  [[nodiscard]] auto ends() const -> std::size_t { return ended.size(); }
+  [[nodiscard]] auto last_ended() const -> std::uint64_t {
+    return ended.empty() ? 0 : ended.back();
+  }
+};
+
+constexpr auto remove_model =
+    R"("type":"set_tool_model_assignment","machine_id":"mill-1","base_revision":3,)"
+    R"("tool":{"number":2,"pocket":2,"diameter":6,"comment":"drill"},"family":null,"overrides":{})";
+constexpr auto assign_model =
+    R"("type":"set_tool_model_assignment","machine_id":"mill-1","base_revision":3,)"
+    R"("tool":{"number":2,"pocket":2,"diameter":6,"comment":"drill"},"family":"drill",)"
+    R"("overrides":{"tipAngle":135})";
+
+void tool_model_commands_go_to_their_service() {
+  FakePort port;
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  FakeToolModels models;
+  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs, &models};
+  Driver driver{session, port};
+  RequestId id = 0;
+  const auto send = [&](PageToken page, std::string_view body) -> Outcome {
+    return driver.handle(page, std::format("{{\"id\":{},{}}}", ++id, body), at(0ms));
+  };
+  // The machine is in E-stop and the link is down, and stays so.
+  port.state = ControllerState{};
+  const auto page = driver.begin_page();
+  require(models.ended == std::vector<std::uint64_t>{0}, "A new page ends every page before it");
+
+  auto outcome = send(page, assign_model);
+  require(results(outcome).size() == 1 && results(outcome).front().at("outcome") == "rejected" &&
+              results(outcome).front().at("reason") == gate_reason && models.submitted.empty(),
+          "Before ready a tool-model command is rejected like any other");
+  static_cast<void>(send(page, R"("type":"ready")"));
+
+  outcome = send(page, assign_model);
+  require(outcome.messages.empty() && models.taken() == 1 &&
+              models.submitted.back().page == page && models.submitted.back().id == id,
+          "After ready it is handed to the service, and answered from there");
+  const auto* handed = std::get_if<SetToolModelAssignment>(&models.submitted.back().command);
+  require(handed != nullptr && handed->machine_id == "mill-1" && handed->base_revision == 3 &&
+              handed->tool == ToolBinding{2, 2, 6, "drill"} &&
+              handed->family == ToolFamily::drill && handed->overrides.tip_angle == 135,
+          "as decoded");
+  outcome = send(page, remove_model);
+  require(outcome.messages.empty() && models.taken() == 2,
+          "A removal goes the same way");
+  require(port.calls.empty() && port.snapshots == 0,
+          "Neither reached the controller: no snapshot, no command, with the link down");
+  const auto work = session.work([]() -> Instant { return at(0ms); });
+  require(work.status == WorkStatus::idle && work.outcome.messages.empty() && port.calls.empty(),
+          "and nothing of them waits for the worker");
+
+  // The machine running a program changes nothing.
+  port.state = homed_machine();
+  port.state.mode = TaskMode::automatic;
+  port.state.interp = InterpState::reading;
+  port.state.in_position = false;
+  outcome = send(page, assign_model);
+  require(outcome.messages.empty() && models.taken() == 3 && port.calls.empty(),
+          "While a program runs it is handed over just the same");
+
+  // What the service refuses at once is the one result.
+  models.refusal = "Too many tool model changes are waiting.";
+  outcome = send(page, assign_model);
+  require(outcome.messages.size() == 1 && results(outcome).size() == 1 &&
+              results(outcome).front().at("id") == id &&
+              results(outcome).front().at("outcome") == "rejected" &&
+              results(outcome).front().at("reason") == *models.refusal,
+          "A refusal of the service is the command's rejected result");
+  models.refusal.reset();
+
+  // The ID rule and the decoder's refusals are the session's, as for every command.
+  // Four commands were handed over so far.
+  const auto replay = driver.handle(page, std::format("{{\"id\":{},{}}}", id, assign_model), at(0ms));
+  require(replay.messages.empty() && models.taken() == 4,
+          "A replayed ID is dropped before the service sees it");
+  outcome = send(page, R"("type":"set_tool_model_assignment","machine_id":"mill-1")");
+  require(results(outcome).size() == 1 && results(outcome).front().at("outcome") == "rejected" &&
+              models.taken() == 4,
+          "A malformed command is rejected by the decoder");
+  outcome = send(page, R"("type":"abort")");
+  require(results(outcome).size() == 1 && models.taken() == 4,
+          "An abort cancels nothing of the service's: it has no part in it");
+
+  // Pages.
+  models.ended.clear();
+  const auto next = driver.begin_page();
+  require(models.ended == std::vector<std::uint64_t>{page.value},
+          "A replaced page is ended for the service");
+  outcome = send(page, assign_model);
+  require(outcome.messages.empty() && models.taken() == 4,
+          "A command of the replaced page is dropped");
+  id = 0;
+  static_cast<void>(send(next, R"("type":"ready")"));
+  outcome = send(next, assign_model);
+  require(outcome.messages.empty() && models.taken() == 5 &&
+              models.submitted.back().page == next,
+          "The new page's command carries the new page");
+  driver.end_page(next);
+  require(models.last_ended() == next.value, "A page that ends is ended for the service");
+  outcome = send(next, assign_model);
+  require(outcome.messages.empty() && models.taken() == 5,
+          "After its end nothing is handed over");
+  session.close();
+  require(models.last_ended() == next.value && models.ends() == 3,
+          "Closing ends the last page for the service");
+
+  // Without a service.
+  Rig rig;
+  rig.expect(assign_model, "rejected", "Tool model storage is not part of this session.");
+  rig.acted({}, "and nothing reaches the controller");
+}
+
 void ready_gate() {
   Rig rig{false};
   rig.expect(R"("type":"run")", "rejected", gate_reason);
@@ -1789,6 +1924,7 @@ auto main(int argc, char** argv) -> int {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
     ready_gate();
+    tool_model_commands_go_to_their_service();
     ids_strictly_increase();
     decode_errors();
     policy_rejections_pass_through();

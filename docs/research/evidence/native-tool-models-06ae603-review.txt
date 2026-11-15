@@ -1,0 +1,70 @@
+CoffeeCNC native tool-model storage: final integration review
+2026-11-15 UTC
+
+Reviewed 06ae603e375eebd3fbefebdcd1d7edbf56454b26 and the PR 19 head
+11bf500cb450910f4a5c7f606486b7a7878e998c. All earlier source findings are
+closed. The head contains the reviewed implementation, example INI,
+configuration tests, harness fixes and both contributors' documentation.
+Production C++ and UI are unchanged after the qualified b74207d build.
+The later C++ change is to machine_config_tests.cpp only.
+
+Runner follow-up closed
+
+The runner emits its own sim=locked timestamp after acquiring the shared
+host lock. The timeout test measures from that timestamp, excluding any
+wait for another checkout. Interrupt and lock-holder startup wait for a
+milltask carrying this run's COFFEECNC_SIM_RUN marker, within the lock-wait
+budget plus 30 seconds. Cleanup checks also use that marker; lock checks
+ask whether one of this test's runs still owns the lock rather than
+requiring the entire host to be idle.
+
+The setuid rtapi_app environment cannot be attributed by this user. The
+test retains the runner's processes_left=0 assertion, counted while that
+runner still owns the shared lock, for this component. No nested acquisition
+of the same host lock is introduced. The outer timeout is derived as
+10 * 300 + 123 + 300 = 3423 seconds, and the same lock wait is passed to the
+script. The separate tool-model restart test retains its 1200-second budget.
+
+The example INI documents optional MACHINE_ID and DATA_DIRECTORY without
+enabling either. Its configuration test verifies the default remains
+session-only and that uncommenting the two entries produces a valid stable
+identity and absolute root. The default XDG behavior is documented accurately.
+
+Retained focused evidence
+
+Copied backend/build/sim-history/06ae603/ from playhouse2's store checkout
+to /tmp/coffeecnc-store-integration-qualification/06ae603/.
+
+Development portable tests pass 26/26 in 12.11 seconds, including 77 machine
+configuration checks and installation/package comparisons of the example
+file. The retained build reports no work to do; the test result, rather
+than a fresh compilation claim, is the evidence for this run.
+
+The focused runner/G0759 selection passes 2/2 in 170.49 seconds. The runner
+takes 155.05 seconds and reports 16 passing check lines, correcting the
+commit message's count of 15. The measured timeout is 41 seconds after
+acquisition; both interrupt cases find their own started task, and holder
+startup, bounded refusal, waiting successor and cleanup checks pass.
+The G0759 profile reports child_status=0 and processes_left=0.
+
+The analyzer record has 92 steps and 58 actual analyzer invocations, including
+the updated machine configuration test; exit 0 and no diagnostics found.
+It was produced before the final shell-only changes, with the same C++
+sources. The earlier b74207d and 218ec7c records provide the full native,
+sanitizer, Release and actual-machine-configuration simulation coverage;
+see native-tool-models-218ec7c-review.txt for exact scope and provenance.
+
+Final disposition
+
+The INI guard mismatch, runner time budget and own-run attribution findings
+are closed. The native editor saves defaults and assignments across a full
+LinuxCNC/application restart without changing controller tool data or
+offsets. The final PR head adds documentation to the reviewed source, has
+no remaining review finding and is ready to merge. GitHub reports no CI
+checks; qualification comes from the retained host records described here.
+
+No physical-machine operation, actual power-loss durability, application-only
+restart under a still-running LinuxCNC, or native GUI sanitizer qualification
+is claimed. The separate G0759 machine configuration PR remains a draft
+for commissioning; CoffeeCNC configuration and storage support other machine
+identities without machine-name branches.

@@ -25,7 +25,9 @@
     "homing_required": false,
     "max_feed_override": 1.2,
     "min_spindle_override": 0.5,
-    "max_spindle_override": 1.5
+    "max_spindle_override": 1.5,
+    "machine_id": "G0759",
+    "tool_model_storage": 1
   },
   {
     "type": "hello",
@@ -52,7 +54,9 @@
     "homing_required": true,
     "max_feed_override": 2,
     "min_spindle_override": 0.5,
-    "max_spindle_override": 1
+    "max_spindle_override": 1,
+    "machine_id": null,
+    "tool_model_storage": 1
   },
   {
     "type": "status",
@@ -798,7 +802,7 @@
     "lines": [
       "G21 G90 G54",
       "",
-      "(pièce)",
+      "(pi\u00e8ce)",
       "G0 X0 Y0 Z10",
       "M2"
     ],
@@ -983,5 +987,103 @@
       }
     ],
     "truncated": true
+  },
+  {
+    "type": "tool_models",
+    "machine_id": "G0759",
+    "revision": 2,
+    "availability": "available",
+    "reason": "",
+    "document": {
+      "version": 1,
+      "defaults": {
+        "end-mill": {
+          "diameter": 10,
+          "cuttingLength": 22,
+          "shankDiameter": 10,
+          "overallLength": 72,
+          "stickout": 35,
+          "tipAngle": 90
+        },
+        "ball-mill": {
+          "diameter": 10,
+          "cuttingLength": 20,
+          "shankDiameter": 10,
+          "overallLength": 72,
+          "stickout": 35,
+          "tipAngle": 90
+        },
+        "drill": {
+          "diameter": 10,
+          "cuttingLength": 60,
+          "shankDiameter": 10,
+          "overallLength": 100,
+          "stickout": 75,
+          "tipAngle": 118
+        },
+        "spot-drill": {
+          "diameter": 10,
+          "cuttingLength": 15,
+          "shankDiameter": 10,
+          "overallLength": 60,
+          "stickout": 30,
+          "tipAngle": 90
+        },
+        "chamfer": {
+          "diameter": 10,
+          "cuttingLength": 12,
+          "shankDiameter": 10,
+          "overallLength": 60,
+          "stickout": 30,
+          "tipAngle": 90
+        },
+        "face-mill": {
+          "diameter": 50,
+          "cuttingLength": 12,
+          "shankDiameter": 20,
+          "overallLength": 70,
+          "stickout": 40,
+          "tipAngle": 90
+        },
+        "generic": {
+          "diameter": 10,
+          "cuttingLength": 20,
+          "shankDiameter": 10,
+          "overallLength": 70,
+          "stickout": 35,
+          "tipAngle": 90
+        }
+      },
+      "assignments": [
+        {
+          "tool": {
+            "number": 3,
+            "pocket": 3,
+            "diameter": 6,
+            "comment": "End mill 6 mm"
+          },
+          "family": "end-mill",
+          "overrides": {
+            "stickout": 30
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "tool_models",
+    "machine_id": null,
+    "revision": 0,
+    "availability": "session_only",
+    "reason": "No machine identity configured",
+    "document": null
+  },
+  {
+    "type": "tool_models",
+    "machine_id": "G0759",
+    "revision": 0,
+    "availability": "unavailable",
+    "reason": "Tool model settings are already in use",
+    "document": null
   }
 ]

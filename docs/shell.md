@@ -11,6 +11,7 @@ The `coffeecnc` executable: threads, message paths, start-up, and what was quali
 | status | 5 ms | Its NML status channel; leaves each full status with its time in `NmlStatusMailbox` | `src/linuxcnc/src/nml_status.cpp` |
 | worker | on work | NML commands and the error channel; counts accepted program and tool-table loads | `Runtime`, `NmlPort` |
 | publisher | 50 ms | `NmlPanelSource`, `PanelComposer`, the tool data memory; no NML call, no HAL pin | `PanelFeed` |
+| tool-model writer | on work | The settings lock and file, every read and write of them; no NML, no HAL | `ToolModelStore` |
 | preview | on work / file polling | Private source snapshots, dependency checks and the interpreter helper process; no machine commands | Preview service and LinuxCNC preview engine |
 
 ## Message paths

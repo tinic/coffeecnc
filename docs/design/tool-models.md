@@ -26,9 +26,11 @@ The banner identifies the loaded T number and absent holder, and flags a nominal
 
 ## Storage and lifetime
 
-Validated family defaults persist in browser storage under `coffeecnc.tool-model-defaults.v1`. Corrupt or unsupported preferences fall back to built-in defaults. Storage failure is reported and retains defaults only in memory.
+The browser demonstration stores validated family defaults under `coffeecnc.tool-model-defaults.v1`; its per-tool assignments remain page-local. Native sessions never consult that browser key, including native LinuxCNC simulations and older backends without persistence support.
 
-Per-tool assignments are deliberately page-local while native machine-scoped configuration remains pending. Assignments are keyed by tool number and fingerprinted with pocket, diameter and description. A changed/deleted row removes its assignment; a new connection hello clears all assignments. An open editor rejects saving against a changed tool. Z offset changes alone preserve the assignment. This does not establish physical tool identity when an operator replaces a cutter without changing its table row.
+The native panel uses the [machine-scoped storage contract](native-tool-model-storage.md) when the backend advertises `tool_model_storage: 1`. It waits for a validated document belonging to the current hello identity. Family defaults save together; each assignment saves separately without replacing the catalog. The editor keeps its opening revision, retains failed drafts, and waits for both a new authoritative snapshot and accepted result before closing. Timeout does not prove cancellation. Save errors remain visible outside the scrolling form. Older peers or a missing configured identity use explicitly labeled session-only models; corrupt, unsupported or locked storage disables native saves.
+
+Saved assignments use number, pocket, exact reported mm diameter and description. Z touch-off preserves an assignment. Changed/deleted rows or stale/missing tables withhold the usable model without deleting the saved entry. A new hello clears settings and active assignments; it also requires a fresh tool table. This does not establish physical tool identity when a cutter is replaced without changing the table row. The backend writer and native editor pass save and full LinuxCNC/application restart checks; see the [completed integration review](../research/evidence/native-tool-models-06ae603-review.txt). Actual power-loss durability and application-only restart under a still-running LinuxCNC remain unqualified.
 
 Changing defaults affects tools that inherit them; overridden lengths remain fixed. A combination made invalid by a later family-default change is labeled **Review model** and must be corrected before rendering.
 
@@ -41,4 +43,4 @@ The expanded corpus supplies useful next cases without justifying automatic tool
 - Trebuchet's `tools.json` includes cutting and shank diameters, flute/overall length and a holder with its own inch units beside metric tools. An importer needs explicit unit conversion and tool/holder assembly handling.
 - SM-101's tool JSON conflicts with its NC revision for T4, as documented in the sample catalog. Metadata import needs conflict review, not silent assignment.
 
-A later native configuration format should persist machine-scoped assignments and setup-specific stick-out, support manufacturer/CAM imports with provenance, and introduce toolholders separately. The loaded-tool renderer follows that reported-tool/tip convention; future holders and other machine kinematics must retain explicit coordinate and unit contracts.
+Later increments can add setup-specific stick-out, manufacturer/CAM imports with provenance, and toolholders separately. The loaded-tool renderer follows that reported-tool/tip convention; future holders and other machine kinematics must retain explicit coordinate and unit contracts.

@@ -117,3 +117,41 @@ both matching-active-WCS and non-active-WCS cases. Camcraft's G28 must remain an
 explicit refusal, without editing the original NC. Record state, error location,
 segments and bounds. The shared task-17 STEP is initial stock, not the finished
 part; its B-side placement is discussed in ../paired-sample-review.md.
+
+Corrected-source review: 2ffbfc1, 2026-11-15 00:45 UTC
+
+The engine remains unwired. Findings 1-4 have corresponding source changes and
+regressions: engine/helper pre-scans, strict names, separate main/sub directories,
+and raw tool data included in preview input equality rather than read by the
+engine. These source changes were reviewed, but native test evidence is pending.
+Claude explicitly reported that the 2ffbfc1 logs were not retained and LastTest
+was overwritten. The reported portable 20/20, engine 607 checks, service 59 and
+mapping 98 are therefore agent reports only. The next clean checkpoint is to
+retain its complete logs; no native qualification is inferred from these counts.
+
+Finding 6 is closed for 2ffbfc1's parser. Independent Mac checks compiled the
+unmodified corrected preview_wire.cpp/.hpp and program_watch.cpp/.hpp, using the
+original bounded reproduction harness and the committed preview_wire_tests.cpp.
+Both malformed-number and NaN inputs now return no segment and no successful end;
+the valid control still returns its path. All 75 portable wire checks passed.
+Build logs contain no diagnostics. These are parser checks, not native integration.
+
+probe good: exit=0 elapsed=0.416s stdout=returned segments=1 end=1 first_x_finite=1 stderr=
+probe bad: exit=0 elapsed=0.010s stdout=returned segments=0 end=0 stderr=
+probe nan: exit=0 elapsed=0.008s stdout=returned segments=0 end=0 stderr=
+wire-tests : exit=0 elapsed=0.422s stdout=75 preview wire checks passed stderr=
+
+Raw files/build/results: local directory in /tmp/coffeecnc-preview-wire-2ff-review-path.
+
+Finding 5 remains open: called_names still accumulates every distinct name in its
+vector/set before take_snapshot checks max_calls. The replacement avoids quadratic
+vector search and bounds file lookups, but does not enforce the collection bound
+while collecting. Claude accepted moving the cap and cancellation into collection,
+with a regression checking the scan's stopping offset rather than only lookup count.
+Finding 7 is not in 2ffbfc1 and also remains open.
+
+Additional integration cases requested: G92 changes and M6 during execution while
+preview start state is frozen. PreviewContext freezes start, while G92, systems and
+raw_tools (including spindle entry 0) remain live. Check that recomputation does not
+apply later offsets/tool state to earlier moves; otherwise withhold unsupported
+contexts. This is a requested oracle case, not a measured native failure.

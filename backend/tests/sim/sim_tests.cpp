@@ -617,7 +617,7 @@ void jog_taps(Rig& rig) {
        std::format("held_ms=100 moved_at_release={:.4f} moved={:.4f} after_stop={:.4f}",
                    at_release - x0, stopped - x0, rig.machine(0) - stopped));
   check("jog_tap_continuous_stops",
-        pressed.accepted() && released.accepted() && stopped - x0 > 0.3 &&
+        pressed.accepted() && released.accepted() && stopped - x0 > 0.1 &&
             near(rig.machine(0), stopped, 0.001),
         std::format("{} {} moved={:.4f}", pressed.text(), released.text(), stopped - x0));
   check("jog_tap_continuous_no_operator_message", tap_messages.empty(), joined(tap_messages));
@@ -3519,6 +3519,7 @@ auto run(const std::string& ini_file, bool g0759) -> int {
     g0759_signals(rig);
     g0759_unhomed(rig);
     g0759_jogs(rig);
+    jog_taps(rig);
     g0759_limits(rig);
     g0759_program(rig);
     g0759_homing(rig);

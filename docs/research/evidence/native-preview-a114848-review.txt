@@ -344,3 +344,36 @@ native behavior. Corrected code/evidence remains pending.
 Raw host records: backend/build/sim-history/{4be15c2,5a04f40}/dev/ on playhouse2;
 local /tmp/coffeecnc-preview-{4be15c2,5a04f40}-review/dev/ (including screenshots).
 Analyzers and sanitizers for this preview implementation remain pending.
+
+Preview-state follow-up: 2c6bf9d, 2026-11-15 01:25 UTC
+
+Both new preview-state edges are closed for this checkpoint after source/test
+review and independent reading of retained dev results. The composer only records
+a start for a revision from a live, idle reading with a settled tool table. New
+regressions cover the first unsettled idle reading and a new revision started
+before settling; neither is submitted until a coherent idle reading exists.
+
+The second edge was identified at 01:17: the ordinary file poll invalidated its
+watch but left latest_ cached, so a subsequent revalidate(old_context) could
+restore it through the no-watch branch without comparing bytes. Now a detected
+change clears latest_ permanently. Revalidation without a watch drops the result
+and raises the generation, instead of restoring it unchecked. The regression
+uses poll-change THEN revalidate; the opposite-order regression remains too.
+
+Retained 2c6bf9d/dev: portable 20/20, 28.76 s (service 172, mapping 112);
+sim mm 121 checks / 102.48 s; shell mm and inch 229 checks each. All three native
+children exit 0 with zero residual processes; all individual checks pass. No
+tracked modifications; git-status.txt contains untracked ../concept.png only.
+Sim inch and startup were not rerun here; their last reviewed results are 5a04f40.
+Host: backend/build/sim-history/2c6bf9d/dev/ on playhouse2.
+Local: /tmp/coffeecnc-preview-2c6bf9d-review/dev/.
+
+Sanitizer-build portability remains to correct: 2c6bf9d omits the helper's
+RLIMIT_AS only when GCC's __SANITIZE_ADDRESS__ or __SANITIZE_THREAD__ is defined.
+Independent local Clang preprocessing with -fsanitize=address confirms the
+address_sanitizer feature is present but __SANITIZE_ADDRESS__ is absent. The
+project already supplies COFFEECNC_ADDRESS_SANITIZER through CMake; use that and
+a corresponding thread-sanitizer definition, or recognize Clang's features.
+The address-space limit must remain in ordinary builds; CPU/file/core limits
+remain in both. This is a test-build portability issue, not a production preview
+failure. Claude was notified at 01:24. Sanitizer/analyzer results are still pending.

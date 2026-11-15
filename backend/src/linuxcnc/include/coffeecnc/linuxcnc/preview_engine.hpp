@@ -36,6 +36,8 @@ struct PreviewSettings {
   std::string refusal;
 
   std::chrono::milliseconds timeout{20000};
+  // How long the helper may take to exit after it has closed its result.
+  std::chrono::milliseconds exit_grace{2000};
   std::size_t max_points{400000};
   double chord_tolerance{0.01}; // mm
   // The program and its subroutine files together.
@@ -82,6 +84,13 @@ struct PreviewSettings {
 //             small environment, CPU, memory and file size limits, lower priority, in a
 //             process group of its own; ended with SIGKILL after `timeout`, when `cancelled`
 //             says so, or when it has written more than the points allow
+//   end       when the helper has closed its result it is given `exit_grace` to exit, and
+//             its exit is collected before anything is ended by force: `ready` needs a whole
+//             valid result ending `ok` AND the helper's own exit with status 0. An exit code,
+//             a signal, the timeout, a helper that closes its result and stays, are each
+//             `failed` with line 0 and their own text, with the valid part of the path. Its
+//             process group is ended in every case; processes left after a good exit are
+//             noted in the diagnostics and change nothing.
 //   check     before the result is returned the originals are compared, byte for byte, with
 //             the manifest, and every call is searched again. A difference discards the
 //             result and starts over, `attempts` times in all; after that the outcome is

@@ -203,6 +203,41 @@ void blocks_refused_by_their_text() {
           "What a block does about the motion mode");
 }
 
+// The collection of called names is bounded while it runs, not after.
+void called_names_are_bounded() {
+  std::string text = "G21 G90\n";
+  std::size_t at_257 = 0;
+  for (int i = 0; i < 100000; ++i) {
+    if (i == 257)
+      at_257 = text.size();
+    text += std::format("o<missing{}> call\n", i);
+  }
+  auto begun = std::chrono::steady_clock::now();
+  auto found = called_names(text, {}, 256, {});
+  require(found.too_many && !found.cancelled && found.names.size() == 256 &&
+              found.names.front() == "missing0" && found.names.back() == "missing255" &&
+              found.examined <= at_257 && found.examined < text.size() / 100 &&
+              std::chrono::steady_clock::now() - begun < 1s,
+          std::format("The scan stops at the 257th name: examined {} of {} bytes, the 257th "
+                      "ends at {}",
+                      found.examined, text.size(), at_257));
+  // Names already known do not count, a name twice counts once, and at the bound it is whole.
+  found = called_names("o<a> call\nO<A> CALL\no<b> call\no<c> sub\nG1 X1\no<c> call\n", {"b"}, 2, {});
+  require(!found.too_many && found.names == std::vector<std::string>{"a", "c"} &&
+              found.examined == 55,
+          "Distinct new names, in order, to the end of the text");
+  found = called_names("o<a> call\no<b> call\no<c> call\n", {}, 2, {});
+  require(found.too_many && found.names.size() == 2 && found.examined == 30, "One too many");
+  // Cancelled inside one large text: it returns long before the end.
+  int asked = 0;
+  begun = std::chrono::steady_clock::now();
+  found = called_names(text, {}, 1000000, [&]() -> bool { return ++asked > 3; });
+  require(found.cancelled && !found.too_many && found.examined < text.size() / 10 &&
+              found.names.size() == 3 * 1024 - 1 && asked == 4,
+          std::format("Cancellation is asked every 1024 lines: stopped after {} of {} bytes",
+                      found.examined, text.size()));
+}
+
 } // namespace
 
 auto main() -> int {
@@ -210,6 +245,7 @@ auto main() -> int {
     wire_formats();
     hostile_results();
     blocks_refused_by_their_text();
+    called_names_are_bounded();
     std::cout << checks << " preview wire checks passed\n";
     return 0;
   } catch (const std::exception& error) {

@@ -2,9 +2,13 @@
 #define COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 
 #include <cstdint>
+#include <cstddef>
+#include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -73,6 +77,21 @@ struct Forbidden {
 [[nodiscard]] auto o_word_name(std::string_view line) -> std::optional<std::string>;
 // Whether that O word is a call.
 [[nodiscard]] auto is_call(std::string_view line) -> bool;
+
+// The names a text calls as subroutines (`o<name> call`, `o123 call`) that are not in `known`,
+// each once, in the order of their first call. The collection is bounded while it runs: it
+// stops at the first name beyond `room` (`too_many`), and when `cancelled`, asked every
+// 1024 lines, says so. `examined` is how many bytes of the text it had looked at when it
+// stopped: all of them only when it ran to the end. The text has passed first_forbidden_line.
+struct CalledNames {
+  std::vector<std::string> names;
+  bool too_many{};
+  bool cancelled{};
+  std::size_t examined{};
+};
+[[nodiscard]] auto called_names(std::string_view text, const std::set<std::string>& known,
+                                std::size_t room, const std::function<bool()>& cancelled)
+    -> CalledNames;
 
 // What a line does about the motion mode, for a program that starts in a mode the preview
 // could not put in place: it names a motion code of its own (G0, G1, G2, G3, G33, G38.x, a

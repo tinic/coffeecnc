@@ -125,6 +125,8 @@ if(BUILD_TESTING)
         add_executable(coffeecnc_preview_engine_tests tests/preview_engine_tests.cpp)
         target_link_libraries(coffeecnc_preview_engine_tests PRIVATE coffeecnc_linuxcnc
           coffeecnc_project_options)
+        target_compile_definitions(coffeecnc_preview_engine_tests PRIVATE
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples")
         coffeecnc_enable_analyzers(coffeecnc_preview_engine_tests)
         add_test(NAME preview_engine COMMAND coffeecnc_preview_engine_tests
           $<TARGET_FILE:coffeecnc_preview> ${PROJECT_BINARY_DIR})
@@ -136,7 +138,11 @@ if(BUILD_TESTING)
       # hal_probe.cpp is a HAL component of the test's own and includes hal.h.
       target_include_directories(coffeecnc_sim_tests SYSTEM PRIVATE
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR})
-      target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI)
+      target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
+        COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
+      if(TARGET coffeecnc_preview)
+        add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
+      endif()
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)

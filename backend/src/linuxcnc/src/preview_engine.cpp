@@ -13,6 +13,7 @@
 #include <cmath>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -26,6 +27,7 @@
 #include <string_view>
 #include <expected>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include <fcntl.h>
@@ -100,23 +102,6 @@ auto find_subroutine(const std::vector<std::string>& search_path, const std::str
   return {};
 }
 
-// The distinct names a text calls as subroutines, in the order of their first call. One pass
-// over the text. Every name is plainly a name: first_forbidden_line has passed the text.
-auto called_names(std::string_view text) -> std::vector<std::string> {
-  std::vector<std::string> names;
-  std::set<std::string> seen;
-  while (!text.empty()) {
-    const auto end = text.find('\n');
-    const auto line = text.substr(0, end);
-    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
-    if (!is_call(line))
-      continue;
-    if (auto name = o_word_name(line); name && seen.insert(*name).second)
-      names.push_back(std::move(*name));
-  }
-  return names;
-}
-
 auto megabytes(std::size_t bytes) -> std::string {
   return std::format("{} MiB", bytes / (1024 * 1024));
 }
@@ -152,17 +137,17 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
   std::set<std::string> seen;
   // The texts still to be looked through for calls: the program, then each file as it is read.
   for (std::size_t next = 0; next <= manifest.subroutines.size(); ++next) {
-    if (is_cancelled(cancelled))
+    // Collected within the bound: the scan stops at the first name too many.
+    const auto called =
+        called_names(next == 0 ? manifest.program.bytes : manifest.subroutines[next - 1].bytes,
+                     seen, settings.max_calls - seen.size(), cancelled);
+    if (called.cancelled)
       return std::unexpected(SnapshotFailure{true, {}});
-    const auto names =
-        called_names(next == 0 ? manifest.program.bytes : manifest.subroutines[next - 1].bytes);
-    std::size_t fresh = 0;
-    for (const auto& name : names)
-      fresh += seen.contains(name) ? std::size_t{0} : std::size_t{1};
-    if (seen.size() + fresh > settings.max_calls)
+    if (called.too_many)
       return refused(0, std::format("The program calls more than {} different subroutines: no "
                                     "preview.",
                                     settings.max_calls));
+    const auto& names = called.names;
     for (const auto& name : names) {
       if (!seen.insert(name).second)
         continue;
@@ -411,12 +396,19 @@ private:
 
 // ---- the helper process ------------------------------------------------------------------------
 
+// How a helper process ended: by itself, or by which of our hands.
+enum class HelperExit : std::uint8_t {
+  not_started,
+  by_itself,   // `status` is its own: an exit code or a signal
+  cancelled,   // killed: nobody wants the result
+  timed_out,   // killed: it ran longer than the timeout
+  too_much,    // killed: it wrote more than a result can be
+  never_ended, // killed: it had closed its result and did not exit within exit_grace
+};
+
 struct HelperRun {
-  bool started{};
-  bool cancelled{};
-  bool timed_out{};
-  bool too_much{};
-  int status{}; // of waitpid
+  HelperExit how{HelperExit::not_started};
+  int status{}; // of waitpid on the helper itself
   std::string result;
   std::string diagnostics;
 };
@@ -492,16 +484,17 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
     close(diagnostics[0]);
     return run;
   }
-  run.started = true;
+  run.how = HelperExit::by_itself;
   setpgid(child, child);
 
   // One point is at most about 40 bytes of text.
   const std::size_t most = settings.max_points * 48 + 1024 * 1024;
   const auto deadline = Clock::now() + settings.timeout;
   bool killed = false;
-  const auto end = [&]() -> void {
+  const auto end = [&](HelperExit why) -> void {
     if (std::exchange(killed, true))
       return;
+    run.how = why;
     kill(-child, SIGKILL);
     kill(child, SIGKILL);
   };
@@ -510,16 +503,12 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   int open_ends = 2;
   while (open_ends > 0) {
     if (!killed) {
-      if (cancelled && cancelled()) {
-        run.cancelled = true;
-        end();
-      } else if (Clock::now() >= deadline) {
-        run.timed_out = true;
-        end();
-      } else if (run.result.size() > most) {
-        run.too_much = true;
-        end();
-      }
+      if (cancelled && cancelled())
+        end(HelperExit::cancelled);
+      else if (Clock::now() >= deadline)
+        end(HelperExit::timed_out);
+      else if (run.result.size() > most)
+        end(HelperExit::too_much);
     }
     if (poll(watched.data(), watched.size(), 20) < 0 && errno != EINTR)
       break;
@@ -543,10 +532,31 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
       }
     }
   }
-  end(); // nothing of its process group stays, however the pipes ended
   close(result[0]);
   close(diagnostics[0]);
-  while (waitpid(child, &run.status, 0) < 0 && errno == EINTR) {
+  // Its pipes are closed: the helper is given exit_grace to end by itself, so that how it
+  // ended is its own doing and can be told from ours.
+  bool reaped = false;
+  for (const auto until = Clock::now() + settings.exit_grace; !killed && !reaped;) {
+    const auto got = waitpid(child, &run.status, WNOHANG);
+    reaped = got == child;
+    if (reaped || (got < 0 && errno != EINTR))
+      break;
+    if (cancelled && cancelled())
+      end(HelperExit::cancelled);
+    else if (Clock::now() >= until)
+      end(HelperExit::never_ended);
+    else
+      std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  // Nothing of its process group stays. After a normal exit that is cleaning up, not an
+  // outcome: it is said in the diagnostics only.
+  if (reaped && kill(-child, SIGKILL) == 0)
+    run.diagnostics += "\n[coffeecnc: the helper left processes behind; they were ended]\n";
+  if (!reaped) {
+    end(run.how == HelperExit::by_itself ? HelperExit::never_ended : run.how);
+    while (waitpid(child, &run.status, 0) < 0 && errno == EINTR) {
+    }
   }
   return run;
 }
@@ -567,53 +577,69 @@ auto unavailable(std::string text) -> PreviewOutcome {
 }
 
 // What a helper run is worth as a preview. Its result is read as text of unknown origin:
-// only whole, valid records count, within the limits the helper was given.
+// only whole, valid records count, within the limits the helper was given. `ready` needs
+// both a whole result that ends `ok` and the helper's own exit with status 0: a result that
+// says it is finished is not the process having ended well.
 auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lines)
     -> PreviewOutcome {
-  if (!run.started)
+  if (run.how == HelperExit::not_started)
     return unavailable("The preview program could not be started.");
   auto output = parse_output(run.result, {settings.max_points + 2, program_lines});
   PreviewOutcome outcome;
   outcome.segments = std::move(output.segments);
   outcome.bounds = feed_bounds(outcome.segments);
   outcome.state = PreviewState::failed;
-  const auto seconds =
-      std::chrono::duration_cast<std::chrono::seconds>(settings.timeout).count();
-  if (run.timed_out) {
-    outcome.error = PreviewError{
-        0,
-        std::format("The preview took longer than {} s and was ended; the program may loop "
-                    "without end. The path is shown as far as it was computed.",
-                    seconds)};
-  } else if (run.too_much) {
-    outcome.error = PreviewError{0, "The preview wrote more than its limit and was ended."};
-  } else if (!output.defect.empty()) {
+  const bool exited = run.how == HelperExit::by_itself && WIFEXITED(run.status);
+  const bool well = exited && WEXITSTATUS(run.status) == 0;
+  // How the helper ended, when that is what there is to say.
+  const auto ending = [&]() -> std::string {
+    const auto seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(settings.timeout).count();
+    switch (run.how) {
+    case HelperExit::timed_out:
+      return std::format("The preview took longer than {} s and was ended; the program may "
+                         "loop without end. The path is shown as far as it was computed.",
+                         seconds);
+    case HelperExit::too_much:
+      return "The preview wrote more than its limit and was ended.";
+    case HelperExit::never_ended:
+      return "The preview program closed its result and did not end; it was ended.";
+    case HelperExit::by_itself:
+      if (WIFSIGNALED(run.status))
+        return WTERMSIG(run.status) == SIGXCPU
+                   ? std::string("The preview used more processor time than its limit and was "
+                                 "ended; the program may loop without end.")
+                   : std::format("The preview program was ended by signal {}.",
+                                 WTERMSIG(run.status));
+      if (!well)
+        return std::format("The preview program ended with exit code {}.",
+                           WEXITSTATUS(run.status));
+      return "The preview program ended without finishing its result; the path is shown as "
+             "far as it was received.";
+    default:
+      return "The preview program did not run to its end.";
+    }
+  };
+  if (!output.defect.empty())
     outcome.error = PreviewError{
         0, std::format("The preview program's result is not valid ({}); the path is shown as "
                        "far as it was.",
                        output.defect)};
-  } else if (output.end == HelperEnd::ok && !output.problem) {
+  else if (output.end == HelperEnd::ok && well)
     outcome.state = PreviewState::ready;
-  } else if (output.end == HelperEnd::error && output.problem) {
+  else if (output.end == HelperEnd::error && output.problem)
+    // The interpreter's own error, with its line: that is the reason, however the helper
+    // ended after it.
     outcome.error = std::move(output.problem);
-  } else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem) {
+  else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem)
     outcome.error = PreviewError{
         output.problem->line,
         output.end == HelperEnd::cut
             ? std::format("Line {}: {}.", output.problem->line, output.problem->text)
             : std::format("The preview ends at line {}: {}.", output.problem->line,
                           output.problem->text)};
-  } else {
-    const bool signalled = WIFSIGNALED(run.status);
-    outcome.error = PreviewError{
-        0,
-        signalled && WTERMSIG(run.status) == SIGXCPU
-            ? std::string("The preview used more processor time than its limit and was ended; "
-                          "the program may loop without end.")
-            : std::format("The preview program ended unexpectedly ({} {}).",
-                          signalled ? "signal" : "exit code",
-                          signalled ? WTERMSIG(run.status) : WEXITSTATUS(run.status))};
-  }
+  else
+    outcome.error = PreviewError{0, ending()};
   return outcome;
 }
 
@@ -783,7 +809,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     ++runs_;
     auto run = run_helper(settings_, directory.path(), working, request_file, cancelled);
     diagnostics_ = std::move(run.diagnostics);
-    if (run.cancelled)
+    if (run.how == HelperExit::cancelled)
       return {{}, true, {}};
     const auto& text = manifest->program.bytes;
     auto outcome = outcome_of(

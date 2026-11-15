@@ -25,6 +25,9 @@
 #include <utility>
 #include <vector>
 
+#include <signal.h> // kill: POSIX, not in <csignal>
+#include <sys/types.h>
+
 using namespace coffeecnc;
 using namespace std::chrono_literals;
 namespace fs = std::filesystem;
@@ -844,6 +847,154 @@ void cost_of_a_check() {
                            program.size(), compute_ms, worst);
 }
 
+// `ready` is the helper's own good end, not its word for it. Helpers of the test's own: shell
+// scripts that write a result to descriptor 3 and end in different ways.
+void how_the_helper_ended() {
+  Rig rig{"ended"};
+  rig.settings.exit_grace = 400ms;
+  write(*rig.inputs.program_file, "G21 G90\nG1 X1 F100\nM2\n");
+  const auto pid_file = rig.root / "pid";
+  const auto with = [&](std::string_view body) -> PreviewOutcome {
+    const auto script = rig.root / "helper.sh";
+    write(script, std::format("#!/bin/bash\necho $$ > '{}'\n{}\n", pid_file.string(), body));
+    fs::permissions(script, fs::perms::owner_all);
+    rig.settings.helper = script.string();
+    return rig.compute().outcome;
+  };
+  const auto gone = [&]() -> bool {
+    std::ifstream in{pid_file};
+    int pid = 0;
+    in >> pid;
+    return pid > 0 && kill(pid, 0) != 0;
+  };
+  const std::string result = "echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'end ok' >&3; ";
+
+  auto o = with(result + "exit 0");
+  require(o.state == PreviewState::ready && o.segments.size() == 1 && gone(),
+          "A whole result and exit 0: ready: " + text_of(o));
+  o = with(result + "exit 7");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
+              o.error->text.find("exit code 7") != std::string::npos && o.segments.size() == 1,
+          "`end ok`, then exit 7: failed, with the path: " + text_of(o));
+  o = with(result + "kill -SEGV $$");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
+              o.error->text.find("signal 11") != std::string::npos && o.segments.size() == 1,
+          "`end ok`, then death by a signal: failed: " + text_of(o));
+  o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; exit 0");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
+              o.error->text.find("without finishing") != std::string::npos &&
+              o.segments.size() == 1,
+          "No `end`, exit 0: failed, with what was received: " + text_of(o));
+  o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'error 2 broken' >&3; echo 'end error' >&3; "
+           "exit 3");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 2 &&
+              o.error->text == "broken",
+          "An error with its line stays the reason whatever the exit code: " + text_of(o));
+  // Closes its result and stays: ended after the grace, and nothing of it is left.
+  const auto begun = std::chrono::steady_clock::now();
+  o = with(result + "exec 3>&- 1>&- 2>&-; exec sleep 100");
+  const auto took = std::chrono::steady_clock::now() - begun;
+  require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
+              o.error->text.find("did not end") != std::string::npos && o.segments.size() == 1 &&
+              took > 350ms && took < 5s && gone(),
+          "`end ok` without exiting: failed after the grace, and the process is gone: " +
+              text_of(o));
+  // Runs past the timeout with its result open.
+  rig.settings.timeout = 500ms;
+  o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; exec sleep 100");
+  require(o.state == PreviewState::failed && o.error &&
+              o.error->text.find("longer than") != std::string::npos && o.segments.size() == 1 &&
+              gone(),
+          "Past the timeout: ended, failed, gone: " + text_of(o));
+  rig.settings.timeout = 20s;
+  // A process it left behind does not make a good result bad, and does not stay.
+  const auto stray_file = rig.root / "stray";
+  o = with(std::format("sleep 100 3>&- >/dev/null 2>&1 & echo $! > '{}'; ", stray_file.string()) +
+           result + "exit 0");
+  int stray = 0;
+  std::ifstream{stray_file} >> stray;
+  require(o.state == PreviewState::ready && stray > 0 && kill(stray, 0) != 0 &&
+              rig.diagnostics.find("left processes behind") != std::string::npos,
+          "A process left behind after a good exit: ready, ended, noted: " + text_of(o));
+  // A result that is not valid, from a helper that exits 0.
+  o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'seg 1 f 0 0 bad 0 1 0 0' >&3; "
+           "echo 'end ok' >&3; exit 0");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
+              o.error->text.find("not valid") != std::string::npos && o.segments.size() == 1,
+          "A result with a bad record: failed, with the records before it: " + text_of(o));
+  o = with("echo 'seg 9 f 0 0 0 0 1 0 0' >&3; echo 'end ok' >&3; exit 0");
+  require(o.state == PreviewState::failed && o.segments.empty(),
+          "A segment of a line the program does not have: not valid: " + text_of(o));
+}
+
+// Programs of the repository's sample corpus, as they are: what the preview makes of each.
+// One fact line per sample and start state.
+void repository_samples() {
+  const fs::path samples{COFFEECNC_SAMPLES_DIRECTORY};
+  const auto task17 = samples / "upstream/engiworld-cam/task/single-software-execution/cli/"
+                                "freecad-path/task-17/ground_truth";
+  const auto face = samples / "upstream/camcraft/fixtures/nc/ops_block_face.nc";
+  if (!fs::exists(task17 / "task-17_A.nc") || !fs::exists(face)) {
+    std::cout << "fact=preview_samples skipped=the-sample-corpus-is-not-in-this-checkout\n";
+    return;
+  }
+  Rig rig{"samples"};
+  rig.inputs.raw_tools = {{1, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
+                          {2, 2, 2, {0, 0, 40}, 5, 0, 0, 0},
+                          {3, 3, 3, {0, 0, 45}, 8, 0, 0, 0}};
+  rig.inputs.start.position = {0, 0, 100};
+  const auto run = [&](const fs::path& file, int wcs, std::string_view label) -> PreviewOutcome {
+    rig.inputs.program_file = file.string();
+    rig.settings.search_path = {file.parent_path().string()};
+    rig.inputs.start.wcs = wcs;
+    rig.inputs.systems = {};
+    rig.inputs.systems.at(static_cast<std::size_t>(wcs - 1)) = WorkSystem{{100, 50, -20}, 0, true};
+    rig.inputs.start.active_codes = {"G80", "G17", "G40", "G21", "G90", "G94",
+                                     wcs == 1 ? "G54" : "G55", "G49", "G99"};
+    const auto o = rig.compute().outcome;
+    std::size_t points = 0;
+    for (const auto& segment : o.segments)
+      points += segment.points.size();
+    auto text = o.error ? o.error->text : std::string("-");
+    for (auto& c : text)
+      if (c == ' ')
+        c = '_';
+    std::cout << std::format(
+        "fact=preview_sample sample={} start={} state={} error_line={} error_text={} segments={} "
+        "points={} bounds={}\n",
+        file.filename().string(), label,
+        o.state == PreviewState::ready ? "ready" : o.state == PreviewState::failed ? "failed"
+                                                                                    : "unavailable",
+        o.error ? o.error->line : 0, text, o.segments.size(), points,
+        o.bounds ? std::format("{:.3f},{:.3f},{:.3f}..{:.3f},{:.3f},{:.3f}", o.bounds->min[0],
+                               o.bounds->min[1], o.bounds->min[2], o.bounds->max[0],
+                               o.bounds->max[1], o.bounds->max[2])
+                 : std::string("none"));
+    return o;
+  };
+  // Side A: G54 throughout.
+  auto o = run(task17 / "task-17_A.nc", 1, "G54");
+  require(o.state == PreviewState::ready && !o.segments.empty() && o.bounds,
+          "task-17_A with G54 active is previewed whole: " + text_of(o).substr(0, 300));
+  // Side B cuts in G55 and returns to G54 in its last block. With G55 active its offsets are
+  // known and the return moves nothing: whole. With G54 active the first move in G55 is where
+  // the preview ends.
+  o = run(task17 / "task-17_B.nc", 2, "G55");
+  require(o.state == PreviewState::ready && !o.segments.empty(),
+          "task-17_B with G55 active is previewed whole: " + text_of(o).substr(0, 300));
+  o = run(task17 / "task-17_B.nc", 1, "G54");
+  require(o.state == PreviewState::failed && o.error && o.error->line > 0 &&
+              o.error->text.find("G55") != std::string::npos,
+          "task-17_B with G54 active ends at its first move in G55: " +
+              text_of(o).substr(0, 300));
+  // The Camcraft facing program returns to its reference with G28 in line 5: refused there,
+  // as it is; nothing of the sample is changed to get a picture.
+  o = run(face, 1, "G54");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 5 &&
+              o.error->text.find("G28") != std::string::npos && o.segments.empty(),
+          "ops_block_face is refused at its G28: " + text_of(o).substr(0, 300));
+}
+
 void refusals_of_the_settings() {
   Rig rig{"settings"};
   rig.settings.refusal = "Not on this machine.";
@@ -926,6 +1077,8 @@ auto main(int argc, char** argv) -> int {
     input_bounds();
     call_bounds_and_cancellation();
     cost_of_a_check();
+    how_the_helper_ended();
+    repository_samples();
     refusals_of_the_settings();
     std::cout << checks << " preview engine checks passed\n";
     return 0;

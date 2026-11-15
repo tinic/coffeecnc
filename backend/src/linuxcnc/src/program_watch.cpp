@@ -157,6 +157,35 @@ auto is_call(std::string_view line) -> bool {
   return found && found->rest.starts_with("call");
 }
 
+auto called_names(std::string_view text, const std::set<std::string>& known, std::size_t room,
+                  const std::function<bool()>& cancelled) -> CalledNames {
+  CalledNames found;
+  std::set<std::string> fresh;
+  const std::size_t size = text.size();
+  for (std::size_t lines = 0; !text.empty(); ++lines) {
+    if (lines % 1024 == 0 && cancelled && cancelled()) {
+      found.cancelled = true;
+      break;
+    }
+    const auto end = text.find('\n');
+    const auto line = text.substr(0, end);
+    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+    if (!is_call(line))
+      continue;
+    auto name = o_word_name(line);
+    if (!name || known.contains(*name) || fresh.contains(*name))
+      continue;
+    if (found.names.size() >= room) {
+      found.too_many = true;
+      break;
+    }
+    fresh.insert(*name);
+    found.names.push_back(std::move(*name));
+  }
+  found.examined = size - text.size();
+  return found;
+}
+
 auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden> {
   for (int number = 1; !text.empty(); ++number) {
     const auto end = text.find('\n');

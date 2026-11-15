@@ -9,6 +9,7 @@
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/app/session.hpp>
@@ -17,7 +18,9 @@
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
+#include <coffeecnc/linuxcnc/preview_engine.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
 #include "hal_probe.hpp"
@@ -1528,9 +1531,12 @@ void program(Rig& rig) {
 
   // The program store decides before LinuxCNC is asked: nothing outside the program directory,
   // and nothing that is not a file in it.
+  const auto loaded_before = rig.status().program_file;
   const auto outside = rig.send(R"("type":"open_program","path":"/etc/hostname")");
+  rig.pump(100ms);
   check("open_outside_program_directory_rejected",
-        outside.outcome == "rejected" && !rig.snapshot().program_loaded, outside.text());
+        outside.outcome == "rejected" && rig.status().program_file == loaded_before,
+        outside.text());
   const auto missing = rig.send(R"("type":"open_program","path":"none.ngc")");
   check("open_missing_program_rejected", missing.outcome == "rejected" && !missing.reason.empty(),
         missing.text());
@@ -1809,6 +1815,229 @@ void lines_across_open(Rig& rig) {
         std::format("running={} task={},{} shown={},{}", running, task.first, task.second,
                     shown.first, shown.second));
   check("lines_across_open_sequence", sent);
+}
+
+// The preview against the machine: what the helper's interpreter computes from the inputs the
+// executable would give it, beside what LinuxCNC then does with the same program.
+struct PreviewOracle {
+  Rig& rig;
+  LoadedToolTable table;
+  std::vector<RawTool> pass;
+  NmlPanelSource source;
+  HelperPreviewEngine engine;
+  std::string program;
+
+  PreviewOracle(Rig& given, LoadedToolTable attached)
+      : rig(given), table(attached),
+        source(rig.config, *rig.mailbox,
+               [this]() -> std::optional<std::vector<LoadedTool>> {
+                 pass = table.read_raw();
+                 return loaded_tools(pass, rig.config.millimetres_per_unit);
+               },
+               [this](std::string_view path, std::uint64_t revision)
+                   -> std::expected<ProgramText, std::string> {
+                 return rig.programs.read_program(path, revision);
+               },
+               rig.loads),
+        engine(load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                     rig.config.directory + "/preview-work")),
+        program(rig.config.program_prefix + "/coffeecnc_oracle.ngc") {
+    source.raw_tools([this]() -> std::vector<PreviewTool> { return pass; });
+  }
+
+  // Loads `text` as the program and computes its preview from the machine as it is now, at
+  // rest: the inputs the publisher would hand over.
+  auto preview(std::string_view text) -> std::pair<PreviewInputs, PreviewOutcome> {
+    {
+      std::ofstream out{program};
+      out << text;
+    }
+    const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", program));
+    rig.settle();
+    PanelReading reading;
+    for (int i = 0; i < 60; ++i) {
+      rig.pump(50ms);
+      reading = source.read();
+      if (reading.status.link == Link::live && reading.tool_table.revision > 0 &&
+          !reading.preview_tools.empty() && reading.status.program.file == program)
+        break;
+    }
+    const auto inputs = preview_inputs(reading, position());
+    auto computed = engine.compute(inputs, {});
+    fact("oracle_inputs",
+         std::format("open={} codes={} wcs={} feed={} tool={} tool_offset_z={:.3f} g5x={:.3f},"
+                     "{:.3f},{:.3f} rotation={:.2f} raw_tools={}",
+                     open.outcome, word(join(inputs.start.active_codes)), inputs.start.wcs,
+                     inputs.start.feed, inputs.start.tool_in_spindle, inputs.start.tool_offset[2],
+                     inputs.systems.at(static_cast<std::size_t>(inputs.start.wcs - 1)).offset[0],
+                     inputs.systems.at(static_cast<std::size_t>(inputs.start.wcs - 1)).offset[1],
+                     inputs.systems.at(static_cast<std::size_t>(inputs.start.wcs - 1)).offset[2],
+                     inputs.systems.at(static_cast<std::size_t>(inputs.start.wcs - 1)).rotation_xy,
+                     inputs.raw_tools.size()));
+    return {inputs, std::move(computed.outcome)};
+  }
+  // The controlled point in machine coordinates, mm.
+  auto position() -> Vec3 {
+    const auto status = rig.status();
+    return {status.controller.axes[0].machine, status.controller.axes[1].machine,
+            status.controller.axes[2].machine};
+  }
+  static auto join(const std::vector<std::string>& words) -> std::string {
+    std::string text;
+    for (const auto& w : words)
+      text += (text.empty() ? "" : ",") + w;
+    return text;
+  }
+};
+
+auto distance(const Vec3& a, const Vec3& b) -> double {
+  return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) +
+                   (a[2] - b[2]) * (a[2] - b[2]));
+}
+
+// From a point to a straight piece.
+auto distance(const Vec3& p, const Vec3& a, const Vec3& b) -> double {
+  const Vec3 ab{b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+  const double length = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+  double t = length == 0 ? 0
+                         : ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) /
+                               length;
+  t = std::clamp(t, 0.0, 1.0);
+  return distance(p, {a[0] + t * ab[0], a[1] + t * ab[1], a[2] + t * ab[2]});
+}
+
+// A program whose first block is axis words only, in the modal state the machine is in: the
+// preview must say what the machine then does: a rapid, a feed move, or an error and no move.
+void oracle_first_block(PreviewOracle& oracle, std::string_view state) {
+  Rig& rig = oracle.rig;
+  auto [inputs, preview] = oracle.preview("X4 Y2\nM2\n");
+  const auto before = oracle.position();
+  rig.clear_messages();
+  const auto run = rig.send(R"("type":"run")");
+  double peak = 0;
+  rig.pump_until(1s, [&]() -> bool { return !rig.idle(); });
+  rig.pump_until(30s, [&]() -> bool {
+    peak = std::max(peak, rig.status().velocity);
+    return rig.idle() && !rig.status().paused;
+  });
+  rig.pump(200ms);
+  const auto after = oracle.position();
+  const bool moved = distance(before, after) > 0.001;
+  // The fastest the machine goes is [TRAJ] MAX_LINEAR_VELOCITY, 30 mm/s: a rapid reaches it.
+  const bool rapid = peak > 0.9 * 1800;
+  const auto messages = rig.all_messages();
+  const std::string machine =
+      !moved ? "error" : rapid ? "rapid" : "feed";
+  std::string said = "error";
+  Vec3 end{};
+  if (preview.state == PreviewState::ready && !preview.segments.empty()) {
+    said = preview.segments.front().kind == MoveKind::rapid ? "rapid" : "feed";
+    end = preview.segments.back().points.back();
+    for (std::size_t axis = 0; axis < 3; ++axis)
+      end.at(axis) += inputs.start.tool_offset.at(axis);
+  }
+  const bool agree = said == machine && (machine == "error"
+                                             ? preview.state == PreviewState::failed &&
+                                                   preview.error && preview.error->line == 1 &&
+                                                   (!run.accepted() || !messages.empty())
+                                             : distance(end, after) < 0.01);
+  check(std::format("preview_oracle_first_block_{}", state), agree,
+        std::format("codes={} feed={} machine={} peak_mm_min={:.0f} run={} machine_message={} "
+                    "moved_to={:.3f},{:.3f},{:.3f} preview={} preview_end={:.3f},{:.3f},{:.3f} "
+                    "preview_error={}",
+                    PreviewOracle::join(inputs.start.active_codes), inputs.start.feed, machine,
+                    peak, run.text(), messages.empty() ? "-" : messages.front(), after[0],
+                    after[1], after[2], said, end[0], end[1], end[2],
+                    preview.error ? preview.error->text : "-"));
+}
+
+// Coordinates: a program with lines, arcs in the three planes, a helix and both units, run
+// with a work offset, a rotation and a tool length in force. Every position the machine
+// passes through is on the previewed path, and the path has no part the machine skips.
+void oracle_path(PreviewOracle& oracle) {
+  Rig& rig = oracle.rig;
+  const auto mdi = [&](std::string_view text) -> bool {
+    const auto sent = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
+    rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
+    return sent.accepted();
+  };
+  const auto was = rig.status();
+  bool set = mdi("G21 G90 G54") && mdi("G10 L2 P1 X20 Y10 Z5 R30");
+  if (rig.snapshot().tool_in_spindle != 1) {
+    static_cast<void>(rig.send(R"("type":"mdi","text":"T1 M6")"));
+    rig.pump_until(10s, [&]() -> bool { return rig.snapshot().requested_tool.has_value(); });
+    static_cast<void>(rig.send(R"("type":"tool_changed")"));
+    rig.pump_until(10s, [&]() -> bool { return rig.idle() && rig.snapshot().tool_in_spindle == 1; });
+  }
+  set = mdi("G43") && set;
+  auto [inputs, preview] = oracle.preview("G21 G90 G61\n"                    // 1
+                                          "G0 X0 Y0 Z10\n"                   // 2
+                                          "G1 X20 F1500\n"                   // 3
+                                          "G2 X30 Y0 I5 J0\n"                // 4
+                                          "G18 G3 X40 Z10 I5 K0\n"           // 5
+                                          "G19 G2 Y10 Z10 J5 K0\n"           // 6
+                                          "G17 G3 X30 Y20 I-10 J0 Z5\n"      // 7
+                                          "G20\n"                            // 8
+                                          "G1 X1 Y0.5 Z0.3 F60\n"            // 9
+                                          "G21\n"                            // 10
+                                          "G0 X2 Y2\n"                       // 11
+                                          "M2\n");                           // 12
+  const Vec3 tool = inputs.start.tool_offset;
+  // The path of the controlled point, as the machine reports its position.
+  std::vector<std::pair<Vec3, Vec3>> pieces;
+  std::vector<Vec3> corners;
+  for (const auto& segment : preview.segments)
+    for (std::size_t i = 0; i < segment.points.size(); ++i) {
+      Vec3 point = segment.points[i];
+      for (std::size_t axis = 0; axis < 3; ++axis)
+        point.at(axis) += tool.at(axis);
+      if (i > 0)
+        pieces.emplace_back(corners.back(), point);
+      corners.push_back(point);
+    }
+  std::vector<Vec3> samples;
+  const auto run = rig.send(R"("type":"run")");
+  rig.pump_until(1s, [&]() -> bool { return !rig.idle(); });
+  const bool finished = rig.pump_until(120s, [&]() -> bool {
+    samples.push_back(oracle.position());
+    return rig.idle() && !rig.status().paused;
+  });
+  rig.pump(200ms);
+  samples.push_back(oracle.position());
+  double off_path = 0;
+  for (const auto& sample : samples) {
+    double nearest = 1e9;
+    for (const auto& [a, b] : pieces)
+      nearest = std::min(nearest, distance(sample, a, b));
+    off_path = std::max(off_path, nearest);
+  }
+  double skipped = 0;
+  for (const auto& corner : corners) {
+    double nearest = 1e9;
+    for (const auto& sample : samples)
+      nearest = std::min(nearest, distance(corner, sample));
+    skipped = std::max(skipped, nearest);
+  }
+  std::vector<int> lines;
+  for (const auto& segment : preview.segments)
+    lines.push_back(segment.line);
+  const Vec3 last = corners.empty() ? Vec3{} : corners.back();
+  check("preview_oracle_path",
+        set && run.accepted() && finished && preview.state == PreviewState::ready &&
+            lines == std::vector<int>{2, 3, 4, 5, 6, 7, 9, 11} && std::fabs(tool[2]) > 1 &&
+            off_path < 0.03 && skipped < 1.0 && distance(last, samples.back()) < 0.01,
+        std::format("set={} run={} finished={} preview_state={} error={} segments={} points={} "
+                    "samples={} tool_offset_z={:.3f} machine_off_preview_mm={:.4f} "
+                    "preview_not_visited_mm={:.3f} end_preview={:.3f},{:.3f},{:.3f} "
+                    "end_machine={:.3f},{:.3f},{:.3f}",
+                    set, run.text(), finished, static_cast<int>(preview.state),
+                    preview.error ? preview.error->text : "-", preview.segments.size(),
+                    corners.size(), samples.size(), tool[2], off_path, skipped, last[0], last[1],
+                    last[2], samples.back()[0], samples.back()[1], samples.back()[2]));
+  // As it was before.
+  static_cast<void>(mdi("G21 G90 G64 G49"));
+  static_cast<void>(mdi(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0],
+                                    was.g5x[1], was.g5x[2], was.rotation_xy)));
 }
 
 void tools(Rig& rig) {
@@ -2316,6 +2545,13 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   signals_not_configured(rig);
   unhomed(rig);
   homing(rig);
+  auto table = LoadedToolTable::attach(config->millimetres_per_unit);
+  check("tool_data_attached", table.has_value(), table ? "tool.mmap" : table.error());
+  if (!table)
+    return 1;
+  PreviewOracle oracle{rig, *table};
+  // Nothing has been interpreted since LinuxCNC started.
+  oracle_first_block(oracle, "fresh_start");
   axis_jogs(rig);
   hal_stop_without_nml(rig);
   watchdog(rig);
@@ -2329,14 +2565,22 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   dead_man_timing(rig);
   increment_interrupted_by_page_end(rig);
   mdi(rig);
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54 G1 X3 F600")"));
+  rig.pump_until(10s, [&]() -> bool { return rig.idle(); });
+  oracle_first_block(oracle, "after_mdi_g1");
   overrides(rig);
   program(rig);
+  // program() ends with an abort in a G1 move of a G20 section.
+  oracle_first_block(oracle, "after_aborted_g1_program");
+  // That one ran to its M2.
+  oracle_first_block(oracle, "after_finished_program");
   lines_across_open(rig);
   adapter_cancellation(rig);
   home_withdrawn_in_its_wait(rig);
   half_sent_action_is_reported(rig);
   abort_overtakes_what_waits_for_the_gate(rig);
   tools(rig);
+  oracle_path(oracle);
   stale_link(rig);
   power_off(rig);
   for (const auto& message : rig.all_messages())

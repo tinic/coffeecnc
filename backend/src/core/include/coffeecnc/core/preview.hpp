@@ -33,6 +33,20 @@ struct InterpreterStart {
   friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
 };
 
+// One entry of LinuxCNC's loaded tool table with every field its interpreter uses, in machine
+// units as LinuxCNC holds it. Index 0 is the spindle: the entry of the tool that is in it.
+struct PreviewTool {
+  int index{};
+  int number{};
+  int pocket{};
+  Vec3 offset{};
+  double diameter{};
+  double front_angle{};
+  double back_angle{};
+  int orientation{};
+  friend auto operator==(const PreviewTool&, const PreviewTool&) -> bool = default;
+};
+
 // Everything the path of a program depends on: the program, the work offsets with their
 // rotations, G92, the tool table and the interpreter's start state.
 struct PreviewInputs {
@@ -45,6 +59,11 @@ struct PreviewInputs {
   Vec3 g92{};
   // Number, pocket, length and diameter count, in table order. The comment does not.
   std::vector<Tool> tools;
+  // The loaded table as a preview is computed with it: every entry with every field, the
+  // spindle's included. Captured by the thread that reads the controller (the only one that
+  // touches LinuxCNC's tool data) with the reading these inputs are of, counted in full for
+  // the context, and handed to the engine as data: the engine reads no tool table.
+  std::vector<PreviewTool> raw_tools;
   // Not part of the start state: the operator can change it during a pause, and it changes
   // which blocks the rest of the program runs.
   bool block_delete{};
@@ -85,7 +104,9 @@ struct PreviewComputation {
   bool cancelled{};
   // Whether a file the outcome was computed from is no longer what it was. Empty when there is
   // nothing to watch. May read files: called only on the thread that called compute.
-  std::function<bool()> files_changed;
+  // `cancelled` is asked as in compute; given up, the answer is false.
+  using Watch = std::function<bool(const std::function<bool()>& cancelled)>;
+  Watch files_changed;
 };
 
 // Computes the path of a program for one set of inputs. Blocking, for a thread of its own;

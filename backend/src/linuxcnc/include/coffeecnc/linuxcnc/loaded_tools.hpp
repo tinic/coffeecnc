@@ -21,6 +21,11 @@ struct LoadedTool {
   friend auto operator==(const LoadedTool&, const LoadedTool&) -> bool = default;
 };
 
+// What the panel is shown of a pass with every field: the entries that hold a tool, from index
+// 1, lengths in millimetres.
+[[nodiscard]] auto loaded_tools(const std::vector<RawTool>& raw, double millimetres_per_unit)
+    -> std::vector<LoadedTool>;
+
 // The tool table as LinuxCNC has it loaded: its tool data shared memory, the same that
 // LinuxCNC's own GUIs read (Python `stat.tool_table`). Not NML: EMC_STAT carries only the tool
 // in the spindle on LinuxCNC 2.9. The NML gate is not involved.

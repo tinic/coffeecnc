@@ -21,6 +21,7 @@ void PreviewWorker::submit(std::uint64_t context, const PreviewInputs& inputs) {
     const std::scoped_lock lock{mutex_};
     wanted_ = Request{context, inputs};
     newest_ = context;
+    waiting_ = true;
   }
   wake_.notify_all();
 }
@@ -34,7 +35,7 @@ auto PreviewWorker::files_generation() const -> std::uint64_t { return generatio
 
 void PreviewWorker::loop() {
   // Of the preview that is current; this thread's alone.
-  std::function<bool()> files_changed;
+  PreviewComputation::Watch files_changed;
   std::unique_lock lock{mutex_};
   for (;;) {
     const auto due = [&]() -> bool { return stop_ || wanted_.has_value(); };
@@ -47,6 +48,7 @@ void PreviewWorker::loop() {
     if (wanted_) {
       const auto request = std::move(*wanted_);
       wanted_.reset();
+      waiting_ = false;
       lock.unlock();
       auto computed = engine_.compute(request.inputs, [&]() -> bool {
         return stop_ || newest_ != request.context;
@@ -64,7 +66,8 @@ void PreviewWorker::loop() {
     if (!files_changed)
       continue;
     lock.unlock();
-    const bool changed = files_changed();
+    // A new context or the end need not wait for the files to be compared.
+    const bool changed = files_changed([&]() -> bool { return stop_ || waiting_; });
     lock.lock();
     if (changed) {
       // Once: the composer makes a new context of it and submits that.

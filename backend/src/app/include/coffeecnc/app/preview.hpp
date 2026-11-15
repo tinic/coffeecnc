@@ -52,6 +52,9 @@ protected:
 //
 // While a preview is current the thread asks every `check_period` whether its files changed
 // (PreviewComputation::files_changed); a change raises files_generation, once per preview.
+// A computation and a look at the files are both given up for a newer context and for the
+// end of the worker; how soon is the engine's matter (HelperPreviewEngine: within one file
+// read or comparison, or 20 ms while its helper runs).
 // Nothing here is called by the GTK, control, status or command thread but submit, latest and
 // files_generation, which return at once.
 class PreviewWorker final : public PreviewService {
@@ -86,6 +89,7 @@ private:
   // The context submitted last: a computation for another one is of no use.
   std::atomic<std::uint64_t> newest_{};
   std::atomic<std::uint64_t> generation_{};
+  std::atomic<bool> waiting_{}; // a request waits in wanted_
   std::atomic<bool> stop_{};
   std::thread thread_;
 };

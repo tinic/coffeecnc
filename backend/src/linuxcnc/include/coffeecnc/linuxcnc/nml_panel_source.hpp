@@ -106,6 +106,11 @@ namespace coffeecnc {
 // its own copy: the status thread is held up in LinuxCNC's library or has stopped, or this
 // thread was held up reading.
 //
+// The preview's tool table (PanelReading::preview_tools) is the pass with every field that
+// was read together with a pass equal to the accepted table: an edit the panel's table does
+// not show (an X offset, the spindle's entry) is in it as soon as it is read. This thread is
+// the only one of the executable that touches LinuxCNC's tool data.
+//
 // NOT thread-safe: one thread calls read.
 class NmlPanelSource final : public PanelSource {
 public:
@@ -122,6 +127,12 @@ public:
   ~NmlPanelSource() override;
   NmlPanelSource(const NmlPanelSource&) = delete;
   auto operator=(const NmlPanelSource&) -> NmlPanelSource& = delete;
+
+  // The same pass with every field a preview is computed with (LoadedToolTable::read_raw):
+  // asked right after `tools`, by the same thread, and reported as PanelReading::preview_tools
+  // whenever the pass of `tools` is the accepted table. Call before the first read.
+  using RawToolReader = std::function<std::vector<PreviewTool>()>;
+  void raw_tools(RawToolReader reader);
 
   [[nodiscard]] auto hello() const -> Hello override;
   [[nodiscard]] auto read() -> PanelReading override;

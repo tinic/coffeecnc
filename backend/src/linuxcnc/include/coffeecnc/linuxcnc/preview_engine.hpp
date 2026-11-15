@@ -4,28 +4,19 @@
 #include <coffeecnc/core/preview.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace coffeecnc {
 
-// One entry of LinuxCNC's loaded tool table with every field the interpreter uses, in machine
-// units. Index 0 is the spindle.
-struct RawTool {
-  int index{};
-  int number{};
-  int pocket{};
-  Vec3 offset{};
-  double diameter{};
-  double front_angle{};
-  double back_angle{};
-  int orientation{};
-  friend auto operator==(const RawTool&, const RawTool&) -> bool = default;
-};
+// The name the adapter uses for an entry of the loaded tool table with every field.
+using RawTool = PreviewTool;
 
 // What a preview needs of the machine besides the inputs of one computation.
 struct PreviewSettings {
@@ -50,6 +41,8 @@ struct PreviewSettings {
   // The program and its subroutine files together.
   std::size_t max_input_bytes{std::size_t{16} * 1024 * 1024};
   std::size_t max_files{64};
+  // Different subroutine names called, found or not.
+  std::size_t max_calls{256};
   std::size_t max_diagnostics_bytes{std::size_t{64} * 1024};
   int attempts{3}; // computations for one result while the files keep changing
 };
@@ -66,46 +59,61 @@ struct PreviewSettings {
 // One computation:
 //
 //   snapshot  the program task names and every subroutine file its `o<name> call` blocks reach
-//             are read once, within max_input_bytes and max_files, and written to a private
-//             directory. The content manifest keeps the bytes read, and for every called name
-//             which file the search path gave, or that none did.
+//             are read once, within max_input_bytes, max_files and max_calls (different names
+//             called, found or not; counted before any of them is looked up), and each text
+//             is scanned whole before it is accepted (first_forbidden_line): a comment that
+//             runs Python or writes a file, or an O word that is not plainly a name, refuses
+//             the program before the interpreter reads anything. The content manifest keeps
+//             the bytes read, and for every called name which file the search path gave, or
+//             that none did; a name is never passed over.
 //   start     the parameter file is copied and the live work system, its rotation and G92 are
-//             written over the copy; a private INI file names only the private directory;
-//             task's modal state becomes blocks to replay (units, plane, distance modes, feed
-//             mode, retract mode, motion mode G0 or G1)
-//   helper    started with a private working directory, no descriptor but its three standard
-//             ones and the result pipe, a small environment, CPU, memory and file size limits,
-//             lower priority, in a process group of its own; ended with SIGKILL after
-//             `timeout`, when `cancelled` says so, or when it has written more than the points
-//             allow
+//             written over the copy; task's modal state becomes blocks to replay (units,
+//             plane, distance modes, feed mode, retract mode, motion mode G0 or G1; any other
+//             motion mode is named to the helper, which ends the preview at a block that
+//             would move by it). The tool table is the one of the inputs: this class reads
+//             none.
+//   private   a directory per computation with the program in `program/`, the subroutine
+//             copies in `subroutines/`, which is the only PROGRAM_PREFIX and SUBROUTINE_PATH
+//             of the private INI file, and `empty/`, the helper's working directory (the
+//             interpreter looks there first). A subroutine cannot take the program's place,
+//             whatever it is called. The directory's own path must be plain characters: the
+//             interpreter expands the paths of its INI file as a shell would.
+//   helper    started with no descriptor but its three standard ones and the result pipe, a
+//             small environment, CPU, memory and file size limits, lower priority, in a
+//             process group of its own; ended with SIGKILL after `timeout`, when `cancelled`
+//             says so, or when it has written more than the points allow
 //   check     before the result is returned the originals are compared, byte for byte, with
 //             the manifest, and every call is searched again. A difference discards the
 //             result and starts over, `attempts` times in all; after that the outcome is
 //             `failed`.
 //
-// files_changed of the result makes the same comparison again: at most max_input_bytes read
-// and (max_files x search path) lookups per call. It binds the preview to the files; it does
-// not bind what LinuxCNC runs: task opens the program by its path when it runs it.
+// The watch of the result makes the same comparison again: at most max_input_bytes read and
+// (max_calls x search path) lookups per call. It binds the preview to the files; it does not
+// bind what LinuxCNC runs: task opens the program by its path when it runs it.
+//
+// `cancelled` is asked before every file read, every name lookup and every file comparison
+// (one file is at most max_input_bytes), and every 20 ms while the helper runs.
 //
 // Outcomes: `ready`; `failed` with the line and the text for an interpreter error, a block the
 // preview does not go past, a limit, the timeout, files that keep changing; `unavailable` with
 // the text when no preview is computed at all (the refusal of the settings, no program, a
-// start state that cannot be replayed, the tool table unreadable).
+// start state that cannot be replayed). A reason that is not a line of the program has line 0.
 //
 // NOT thread-safe: one thread, the preview worker's.
 class HelperPreviewEngine final : public PreviewEngine {
 public:
-  using ToolReader = std::function<std::optional<std::vector<RawTool>>()>;
   // For tests: called after the snapshot was taken and before the helper is started, with
   // the number of the attempt, from 1.
   using AfterSnapshot = std::function<void(int attempt)>;
 
-  HelperPreviewEngine(PreviewSettings settings, ToolReader tools,
-                      AfterSnapshot after_snapshot = {});
+  explicit HelperPreviewEngine(PreviewSettings settings, AfterSnapshot after_snapshot = {});
 
   [[nodiscard]] auto compute(const PreviewInputs& inputs, const std::function<bool()>& cancelled)
       -> PreviewComputation override;
 
+  // Lookups of a subroutine file in a directory made so far, by this engine and the watches
+  // it returned.
+  [[nodiscard]] auto file_lookups() const -> std::size_t;
   // Helper processes started so far.
   [[nodiscard]] auto helper_runs() const -> std::size_t { return runs_; }
   // What the last helper wrote to its standard output and error, cut at max_diagnostics_bytes.
@@ -113,8 +121,8 @@ public:
 
 private:
   PreviewSettings settings_;
-  ToolReader tools_;
   AfterSnapshot after_snapshot_;
+  std::shared_ptr<std::atomic<std::size_t>> lookups_;
   std::size_t runs_{};
   std::string diagnostics_;
 };

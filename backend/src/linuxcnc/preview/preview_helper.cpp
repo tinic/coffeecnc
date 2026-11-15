@@ -16,6 +16,12 @@
 // The interpreter's tool table functions are defined here too, on a table of the helper's own
 // filled from the request, so LinuxCNC's tool data memory is neither read nor written.
 //
+// Lines: every `seg`, `error`, `stop` and `cut` names a line of the program file. A move made
+// by a subroutine defined in the program carries the line of the block that moves; one made in
+// a subroutine FILE carries the line of the program's call that led there, however deep, and
+// an error or stop in such a file says the file and its line in the text. Which file the
+// interpreter is in is its own report (InterpBase::file_name), asked after every read.
+//
 // Coordinates as LinuxCNC's task keeps them (emc/task/emccanon.cc): the interpreter speaks
 // program coordinates in the program's unit; the controlled point in machine coordinates is
 // rotate(program + G92, XY rotation) + G5x + tool offset. The path written is the tool tip:
@@ -34,12 +40,15 @@
 #include "../src/program_watch.hpp"
 
 #include <array>
+#include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -84,9 +93,12 @@ struct Canon {
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
   int last_index{};
 
-  // The program line being executed, and whether motion is written (not while the start state
-  // is being put in place).
+  // The line of the program (the file the request names) being executed: the line the
+  // interpreter is at while it reads that file, and while it is in a subroutine file the line
+  // of the program that called out of it. `elsewhere` then says where it really is.
   int line{};
+  std::string elsewhere; // "name.ngc line 12: ", empty in the program itself
+  // Whether motion is written (not while the start state is being put in place).
   bool recording{};
   // The run of motion being collected.
   bool open{};
@@ -127,8 +139,8 @@ void halt(Halt how, const std::string& text) {
   for (auto& c : clean)
     if (c == '\n' || c == '\r')
       c = ' ';
-  put(std::format("{} {} {}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
-                  canon.line, clean));
+  put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
+                  canon.line, canon.elsewhere, clean));
 }
 
 auto program_unit() -> double {
@@ -591,6 +603,12 @@ auto error_text(InterpBase& interp, int code) -> std::string {
 
 auto is_error(int code) -> bool { return code > INTERP_MIN_ERROR; }
 
+auto inherited_reason(const std::string& mode) -> std::string {
+  return std::format("moves by the motion mode {} that was active before the program, which "
+                     "the preview does not take over",
+                     mode);
+}
+
 // Nothing can be computed: an error at line 0.
 auto give_up(const std::string& why) -> int {
   halt(Halt::error, why);
@@ -620,9 +638,43 @@ auto run(const HelperRequest& request) -> int {
     entry.orientation = tool.orientation;
     canon.last_index = std::max(canon.last_index, tool.index);
   }
+  // The spindle is entry 0; a table given without it gets the entry of the tool in the spindle.
+  if (canon.tools.at(0).toolno < 0 && request.tool_in_spindle > 0)
+    if (const int index = find_index(request.tool_in_spindle); index > 0)
+      canon.tools.at(0) = canon.tools.at(static_cast<std::size_t>(index));
   canon.selected_index = request.tool_prepared < 0 ? -1 : find_index(request.tool_prepared);
   for (auto& function : USER_DEFINED_FUNCTION)
     function = user_m_code;
+
+  // Before the interpreter reads anything: no file it could read holds a comment that runs
+  // Python or writes a file, or an O word that is not plainly a name. The interpreter acts on
+  // `;py,` while it READS a line, reads lines it never executes, and looks for the file of a
+  // called name with shell expansion. The executable has scanned its copies already; this
+  // does not rely on it.
+  {
+    std::vector<std::filesystem::path> files{request.program};
+    std::error_code error;
+    if (!request.subroutines.empty())
+      for (const auto& entry : std::filesystem::directory_iterator(request.subroutines, error))
+        files.push_back(entry.path());
+    if (error)
+      return give_up("the directory of the subroutine files cannot be read");
+    for (const auto& file : files) {
+      std::ifstream in{file, std::ios::binary};
+      const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+      const auto found = coffeecnc::first_forbidden_line(text);
+      if (!in || !found)
+        continue;
+      if (file == request.program)
+        canon.line = found->line;
+      else
+        canon.elsewhere = std::format("{} line {}: ", file.filename().string(), found->line);
+      halt(Halt::stop, found->what);
+      put("end stop\n");
+      std::fflush(sink);
+      return 0;
+    }
+  }
 
   // Never deleted: the process ends without the interpreter's exit, which writes files and
   // finalises its Python.
@@ -646,22 +698,74 @@ auto run(const HelperRequest& request) -> int {
 
   canon.recording = true;
   std::array<char, LINELEN + 1> text{};
+  std::array<char, PATH_MAX + 1> file{};
+  std::string sub_file;
+  int sub_line = 0;
+  bool after_o_word = false;
+  std::string inherited = request.inherited_motion;
+  constexpr auto flush_period = std::chrono::milliseconds{50};
+  auto flushed = std::chrono::steady_clock::now();
   bool ended = false;
   while (canon.halt == Halt::none && !ended) {
+    // What is finished goes out, so that it is there if the helper is ended.
+    if (const auto now = std::chrono::steady_clock::now(); now - flushed > flush_period) {
+      if (canon.open && canon.open_line != canon.line)
+        flush_run();
+      std::fflush(sink);
+      flushed = now;
+    }
     int result = interp->read();
-    if (interp->call_level() == 0)
-      canon.line = interp->line();
-    if (result == INTERP_ENDFILE)
-      break;
     if (is_error(result)) {
-      halt(Halt::error, error_text(*interp, result));
+      // A line that cannot be read. The interpreter has already left every subroutine, so
+      // where it was is taken from the line before: the next line of that file, unless that
+      // line was an O word, after which the interpreter may be anywhere.
+      if (!canon.elsewhere.empty())
+        canon.elsewhere = after_o_word ? std::string("in a subroutine file: ")
+                                       : std::format("{} line {}: ", sub_file, sub_line + 1);
+      else if (!after_o_word)
+        canon.line = interp->line();
+      // The interpreter, in G80, refuses at reading a block that would move by a mode this
+      // preview did not take over: that is the preview's end, not the program's error.
+      text.fill(0);
+      interp->line_text(text.data(), text.size() - 1);
+      if (!inherited.empty() &&
+          coffeecnc::motion_use(text.data()) == coffeecnc::MotionUse::inherits)
+        halt(Halt::stop, inherited_reason(inherited));
+      else
+        halt(Halt::error, error_text(*interp, result));
       break;
     }
+    // Where the interpreter is: in the program, or in a subroutine file a call led to.
+    file.fill(0);
+    interp->file_name(file.data(), file.size() - 1);
+    if (request.program == file.data()) {
+      canon.line = interp->line();
+      canon.elsewhere.clear();
+    } else {
+      const std::string_view path{file.data()};
+      sub_file = path.substr(path.rfind('/') + 1);
+      sub_line = interp->line();
+      canon.elsewhere = std::format("{} line {}: ", sub_file, sub_line);
+    }
+    if (result == INTERP_ENDFILE)
+      break;
     text.fill(0);
     interp->line_text(text.data(), text.size() - 1);
+    after_o_word = coffeecnc::bare_block(text.data()).starts_with('o');
     if (const auto reason = coffeecnc::refused_block(text.data())) {
       halt(Halt::stop, *reason);
       break;
+    }
+    // Until the program names a motion code, a mode that was not put in place is not known
+    // to this interpreter: a block that would move by it is where the preview ends.
+    if (!inherited.empty()) {
+      const auto use = coffeecnc::motion_use(text.data());
+      if (use == coffeecnc::MotionUse::inherits) {
+        halt(Halt::stop, inherited_reason(inherited));
+        break;
+      }
+      if (use == coffeecnc::MotionUse::sets)
+        inherited.clear();
     }
     result = interp->execute();
     if (canon.halt != Halt::none)
@@ -675,8 +779,6 @@ auto run(const HelperRequest& request) -> int {
     else if (result == INTERP_EXECUTE_FINISH)
       // Task lets the queue drain and takes the machine's state again: here it is the canon's.
       interp->synch();
-    if (canon.written % 4096 < 2)
-      std::fflush(sink);
   }
   flush_run();
   put(canon.halt == Halt::none    ? "end ok\n"

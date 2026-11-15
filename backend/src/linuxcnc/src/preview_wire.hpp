@@ -34,6 +34,9 @@ struct HelperTool {
 // Request, one `key value...` line each; lengths in millimetres unless said otherwise.
 struct HelperRequest {
   std::string program;    // the private copy to interpret
+  // The directory of the private subroutine copies: the helper scans every file in it
+  // before its interpreter reads anything. Empty when there is none.
+  std::string subroutines;
   std::string parameters; // the private parameter file; the interpreter writes it at M2
   double units_per_mm{1}; // machine units per millimetre: 1, or 1/25.4
   // Where the first move starts: the controlled point in machine coordinates.
@@ -52,6 +55,10 @@ struct HelperRequest {
   double chord_tolerance{0.01};
   // Blocks that put the interpreter in task's modal state, in this order: "G21", "G91", "G1".
   std::vector<std::string> codes;
+  // The motion mode task is in when it is one that cannot be put in place by a block ("G38.2",
+  // "G2", "G81"); empty otherwise. The helper's interpreter is then in G80, and a block that
+  // would move by the mode it inherits ends the preview.
+  std::string inherited_motion;
   std::vector<HelperTool> tools;
   friend auto operator==(const HelperRequest&, const HelperRequest&) -> bool = default;
 };
@@ -82,13 +89,33 @@ struct HelperOutput {
   std::vector<PreviewSegment> segments;
   std::optional<PreviewError> problem; // of error, stop or cut
   HelperEnd end{HelperEnd::missing};
-  // The last program line a complete record named; 0 for none.
-  int last_line{};
+  // Why the reading ended before an `end` that fits the records: the text is not what a
+  // helper writes. Empty for a result that is whole, and for one that only stops short (a
+  // helper that was ended): then `end` is missing and nothing more.
+  std::string defect;
 };
 
-// Never fails: a line that is not complete (no newline) or not understood ends the reading, and
-// what was read before it stands with `end` missing.
-[[nodiscard]] auto parse_output(std::string_view text) -> HelperOutput;
+// What a result may hold at most.
+struct OutputLimits {
+  std::size_t max_points{400000}; // in all segments together
+  int max_line{2000000000};       // the last line of the program
+  static constexpr int max_tool{99999};
+};
+
+// Reads a result as text of unknown origin: the helper runs a program's G-code, and its
+// result is trusted only as far as every record is well formed. Never fails and always ends:
+// every step consumes input. Kept are the complete, valid records before the first that is
+// not; that first one sets `defect` and ends the reading with `end` missing:
+//
+//   a line without its newline at the end of the text (cut off): no defect, `end` missing
+//   a record of an unknown kind, with a number that is not a finite number, a line outside
+//   0..max_line, a tool outside 0..max_tool, a segment of fewer than two points or with a
+//   coordinate missing, more points than max_points in all
+//   a second error, stop or cut; a segment after one of them
+//   an `end` whose reason does not fit the records (`ok` after a problem, `error` without
+//   one), and anything at all after `end`
+[[nodiscard]] auto parse_output(std::string_view text, const OutputLimits& limits = {})
+    -> HelperOutput;
 
 } // namespace coffeecnc
 

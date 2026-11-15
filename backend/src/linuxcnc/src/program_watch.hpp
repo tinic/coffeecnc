@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 #define COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -34,6 +35,50 @@ namespace coffeecnc {
 // A line in a branch that is not taken, or in a subroutine that is never called, is read by
 // the interpreter too and is refused all the same.
 [[nodiscard]] auto refused_block(std::string_view line) -> std::optional<std::string>;
+
+// A comment that makes the interpreter run Python or write a file, anywhere in a text: the
+// first line that has one, from 1, and what it is. The forms, as LinuxCNC 2.9.4 recognises
+// them:
+//
+//   in parentheses, acted on when the block is EXECUTED (Interp::convert_comment,
+//   interp_convert.cc:1499: leading white space skipped, any case, the word then its comma):
+//   (py,...) (pyrun,...) (pyreload...) run Python; (log,...) (logopen,...) (logappend,...)
+//   (logclose) write a file through the canon. (PROBEOPEN ...) and (PROBECLOSE) open and
+//   close a file in task's canon (emccanon.cc:2236), not in the interpreter
+//   a line that begins `;py,`, acted on when the line is READ (Interp::read_semicolon,
+//   interp_read.cc:316), before any check between read and execute could see it
+//
+// Recognised here a little wider than there: `;py,` also after white space and in any case.
+//
+// And an O word whose name is not plainly a name. The interpreter looks for the file of a
+// called subroutine as `<name>.ngc`, first as given (an absolute path opens that path) and
+// after shell-style expansion of the name (wordexp: `~`, `$VAR`, globs, command substitution;
+// Interp::find_ngc_file, rs274ngc_pre.cc:2672). A name is therefore only letters, digits, `_`,
+// `-` and `.` (after the interpreter's own lower-casing and removal of white space), without
+// `..`; a number is a name; a computed O word (`o[...]`, `o#...`) is not; and the name is
+// followed by one of the interpreter's words for an O block (sub, call, if, ...). This holds
+// for every O word of the text, a definition as much as a call.
+//
+// A program is to be scanned whole with this before the interpreter reads any of it: the
+// first line, from 1, that must not reach the interpreter, and why.
+struct Forbidden {
+  int line{};
+  std::string what;
+};
+[[nodiscard]] auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden>;
+
+// The name of the O word a line begins with, as the interpreter takes it: lower case, without
+// white space; a number as its digits. Nothing when the line has no O word or its name is
+// not plainly a name (first_forbidden_line refuses those).
+[[nodiscard]] auto o_word_name(std::string_view line) -> std::optional<std::string>;
+// Whether that O word is a call.
+[[nodiscard]] auto is_call(std::string_view line) -> bool;
+
+// What a line does about the motion mode, for a program that starts in a mode the preview
+// could not put in place: it names a motion code of its own (G0, G1, G2, G3, G33, G38.x, a
+// canned cycle, G80), or it has axis words and none, and so moves by the mode it inherits.
+enum class MotionUse : std::uint8_t { none, sets, inherits };
+[[nodiscard]] auto motion_use(std::string_view line) -> MotionUse;
 
 } // namespace coffeecnc
 

@@ -616,6 +616,36 @@ void source_tool_table() {
           "The prepared index names the loaded entry; a T0 row is shown as a row");
 }
 
+// The table with every field, for the preview: read with the pass, reported while that pass
+// is the accepted table.
+void source_preview_tools() {
+  Rig rig;
+  std::vector<PreviewTool> raw{{0, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
+                               {1, 1, 1, {0, 0, 50}, 6, 0, 0, 0},
+                               {2, 2, 2, {0, 0, 40}, 3, 0, 0, 0}};
+  rig.source.raw_tools([&]() -> std::vector<PreviewTool> { return raw; });
+  static_cast<void>(rig.step());
+  auto r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == raw,
+          "With the accepted table goes the pass with every field, the spindle's entry too");
+  raw[1].offset[0] = 0.5; // not a field of the table shown
+  raw[0].number = 2;
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == raw,
+          "A change the shown table does not have is reported with the next pass");
+  // A table that is not accepted yet: the preview keeps the one that was.
+  rig.loaded = std::vector<LoadedTool>{{1, {7, 1, 1, 1, ""}}};
+  auto changed = raw;
+  changed[1].number = 7;
+  std::swap(raw, changed);
+  r = rig.step();
+  require(r.tool_table.revision == 1 && r.preview_tools == changed,
+          "While a changed table waits to be accepted the preview's table is the accepted one");
+  static_cast<void>(rig.step());
+  r = rig.step();
+  require(r.tool_table.revision == 2 && r.preview_tools == raw, "Accepted: both change");
+}
+
 void source_without_a_tool_table() {
   Rig rig;
   rig.loaded.reset();
@@ -648,6 +678,7 @@ auto main(int argc, char** argv) -> int {
     source_program_loads();
     source_lines_belong_to_the_revision();
     source_tool_table();
+    source_preview_tools();
     source_without_a_tool_table();
     std::cout << checks << " panel mapping checks passed\n";
     return 0;

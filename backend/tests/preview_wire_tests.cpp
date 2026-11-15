@@ -1,0 +1,219 @@
+// The text formats between the executable and its preview helper, and the text checks on a
+// program, alone: no helper, no interpreter, no LinuxCNC.
+
+#include "../src/linuxcnc/src/preview_wire.hpp"
+#include "../src/linuxcnc/src/program_watch.hpp"
+
+#include <chrono>
+#include <exception>
+#include <format>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+using namespace coffeecnc;
+using namespace std::chrono_literals;
+
+namespace {
+
+int checks = 0;
+void require(bool condition, const std::string& message) {
+  ++checks;
+  if (!condition)
+    throw std::runtime_error(message);
+}
+
+void wire_formats() {
+  HelperRequest request;
+  request.program = "/a path/with spaces.ngc";
+  request.subroutines = "/subs";
+  request.inherited_motion = "G38.2";
+  request.parameters = "/p.var";
+  request.units_per_mm = 1 / 25.4;
+  request.position = {1.5, -2, 1e-7};
+  request.tool_in_spindle = 3;
+  request.tool_prepared = 4;
+  request.tool_offset = {0, 0, 50.123456789};
+  request.feed = 300;
+  request.block_delete = true;
+  request.wcs = 9;
+  request.tool_change_at_g30 = true;
+  request.tool_change_position = Vec3{1, 2, 3};
+  request.max_points = 77;
+  request.chord_tolerance = 0.005;
+  request.codes = {"G21", "F1.000000", "G1"};
+  request.tools = {{0, 3, 0, {0, 0, 1}, 2, 0, 0, 0}, {5, 9, 7, {0.1, 0.2, 0.3}, 6, 1, 2, 3}};
+  const auto parsed = parse_request(write_request(request));
+  require(parsed && *parsed == request, "A request is read as it was written");
+  require(!parse_request("something else\n") && !parse_request("") &&
+              !parse_request(write_request(request) + "wcs 12\n") &&
+              !parse_request(write_request(request) + "unknown 1\n"),
+          "Another header, an empty text, a bad value and an unknown key are refused");
+
+  auto output = parse_output("seg 2 r 0 0 0 0 1 2 3\nseg 3 f 5 1 2 3 4 5 6 7 8 9\nend ok\n");
+  require(output.end == HelperEnd::ok && output.segments.size() == 2 &&
+              output.segments[1].tool == 5 && output.segments[1].points.size() == 3 &&
+              !output.problem && output.defect.empty(),
+          "Segments and the end");
+  output = parse_output("seg 2 r 0 0 0 0 1 2 3\nstop 7 reads a thing\nend stop\n");
+  require(output.end == HelperEnd::stop && output.problem && output.problem->line == 7 &&
+              output.problem->text == "reads a thing" && output.segments.size() == 1 &&
+              output.defect.empty(),
+          "A stop with its line and text");
+  require(parse_output("").end == HelperEnd::missing && parse_output("").defect.empty() &&
+              parse_output("end ok\n").end == HelperEnd::ok,
+          "Nothing, and nothing but the end");
+}
+
+// The result is text of unknown origin: each case ends, soon, with the valid records before
+// the bad one and nothing after.
+void hostile_results() {
+  const std::string good = "seg 2 r 0 0 0 0 1 2 3\n";
+  const auto kept_one = [&](const std::string& bad, std::string_view what) -> void {
+    const auto begun = std::chrono::steady_clock::now();
+    const auto output = parse_output(good + bad);
+    const auto took = std::chrono::steady_clock::now() - begun;
+    require(took < 1s && output.end == HelperEnd::missing && output.segments.size() == 1 &&
+                output.segments[0].line == 2,
+            std::format("{}: the reading ends at once, with the record before it", what));
+  };
+  const auto defect = [&](const std::string& bad, std::string_view what) -> void {
+    kept_one(bad, what);
+    require(!parse_output(good + bad).defect.empty(), std::format("{}: and is a defect", what));
+  };
+  // The parent once never came back from this one.
+  defect("seg 1 f 0 0 bad 0 1 0 0\nend ok\n", "a word that is no number");
+  defect("seg 1 f 0 0 0 0 1 0\nend ok\n", "a coordinate missing");
+  defect("seg 1 f 0 0 0 0\nend ok\n", "one point");
+  defect("seg 1 f 0\nend ok\n", "no point");
+  defect("seg 1 f 0 0 0 nan 1 1 1\nend ok\n", "nan");
+  defect("seg 1 f 0 inf 0 0 1 1 1\nend ok\n", "inf");
+  defect("seg 1 f 0 0 0 0 1 1 -infinity\nend ok\n", "-infinity");
+  defect("seg 1 f 0 0 0 0 1 1 1e999\nend ok\n", "a number out of range");
+  defect("seg -1 f 0 0 0 0 1 1 1\nend ok\n", "a negative line");
+  defect("seg 1 f -1 0 0 0 1 1 1\nend ok\n", "a negative tool");
+  defect("seg 1 f 100000 0 0 0 1 1 1\nend ok\n", "a tool out of range");
+  defect("seg 99999999999 f 0 0 0 0 1 1 1\nend ok\n", "a line that is no int");
+  defect("seg 1 x 0 0 0 0 1 1 1\nend ok\n", "an unknown kind of move");
+  defect("seg 1.5 f 0 0 0 0 1 1 1\nend ok\n", "a line that is a fraction");
+  defect("segment 1 f 0 0 0 0 1 1 1\nend ok\n", "an unknown record");
+  defect("\nend ok\n", "an empty line");
+  defect("error -4 text\nend error\n", "a negative line of an error");
+  defect("error 4 a\nerror 5 b\nend error\n", "two errors");
+  defect("stop 4 a\nseg 5 f 0 0 0 0 1 1 1\nend stop\n", "a segment after a stop");
+  defect("error 4 a\nend ok\n", "ok after an error");
+  defect("end error\n", "an error end without an error");
+  defect("stop 4 a\nend cut\n", "an end of another kind");
+  defect("end ok\nend ok\n", "two ends");
+  defect("end ok\nseg 5 f 0 0 0 0 1 1 1\n", "a record after the end");
+  defect("end ok\ngarbage", "garbage after the end");
+  defect("end ok extra\n", "words after the end's reason");
+  defect("end\n", "an end without a reason");
+  kept_one("seg 3 f 5 1 2 3 4 5", "a last record that was cut off");
+  require(parse_output(good + "seg 3 f 5 1 2 3 4 5").defect.empty() &&
+              parse_output(good).defect.empty() && parse_output(good).end == HelperEnd::missing,
+          "A result that only stops short has no defect: its helper was ended");
+
+  // Lines of the program: nothing beyond its last.
+  auto output = parse_output("seg 7 f 0 0 0 0 1 1 1\nseg 8 f 0 1 1 1 2 2 2\nend ok\n", {100, 7});
+  require(output.segments.size() == 1 && !output.defect.empty() &&
+              parse_output("stop 8 x\nend stop\n", {100, 7}).problem == std::nullopt,
+          "A line beyond the program's last is a defect");
+  // Points: no more than the limit, in all segments together.
+  std::string many;
+  for (int i = 0; i < 40; ++i)
+    many += "seg 1 f 0 0 0 0 1 1 1 2 2 2\n";
+  output = parse_output(many + "end ok\n", {100, 10});
+  require(output.segments.size() == 33 && !output.defect.empty() && output.end == HelperEnd::missing,
+          std::format("More points than the limit: the segments before it ({})",
+                      output.segments.size()));
+  // A very long line, and very many bad ones: time is linear.
+  std::string huge = "seg 1 f 0";
+  for (int i = 0; i < 300000; ++i)
+    huge += " 1.5 2.5 3.5";
+  auto begun = std::chrono::steady_clock::now();
+  output = parse_output(huge + "\nend ok\n", {400000, 10});
+  require(output.end == HelperEnd::ok && output.segments.at(0).points.size() == 300000 &&
+              std::chrono::steady_clock::now() - begun < 5s,
+          "A segment of 300000 points is read in time");
+  begun = std::chrono::steady_clock::now();
+  output = parse_output(huge + " x\nend ok\n", {400000, 10});
+  require(output.segments.empty() && !output.defect.empty() &&
+              std::chrono::steady_clock::now() - begun < 5s,
+          "The same with a bad word at its end is refused whole, in time");
+  begun = std::chrono::steady_clock::now();
+  output = parse_output(std::string(16 * 1024 * 1024, 'x'));
+  require(output.segments.empty() && output.end == HelperEnd::missing &&
+              std::chrono::steady_clock::now() - begun < 5s,
+          "16 MiB without a newline");
+}
+
+void blocks_refused_by_their_text() {
+  const auto refused = [](std::string_view line) -> bool { return refused_block(line).has_value(); };
+  require(refused("#1=5") && refused("g1 x#1") && refused("G1 X#<a>") && refused("x[##2]") &&
+              refused("O100 CALL [1]") && refused("o<a b> call [1] [2]") && refused("o[1+2] call") &&
+              refused("g[28]") && refused("G28") && refused("g 2 8") && refused("G28.0 X1") &&
+              refused("G30") && refused("G92.3") && refused("N10 G28") && refused("/G28"),
+          "Blocks with parameters, computed words and saved positions");
+  require(!refused("G1 X1 Y2") && !refused("G28.1") && !refused("G30.1") && !refused("G92.1") &&
+              !refused("G2 X8 I3") && !refused("G280") && !refused("o100 call") &&
+              !refused("o<g28> call") && !refused("o100 if [1 GT 0]") && !refused("(#1) G1 X1") &&
+              !refused("G1 X1 ; #1") && !refused("") && !refused("%") && !refused("M2") &&
+              !refused("G3 X1 Y1 R[2+3]") && !refused("o1 while [2 GE 1]"),
+          "Blocks without");
+  require(refused("(py,x)") && refused("(PYRUN,x)") && refused("( pyreload)") &&
+              refused(";py,x") && refused("  ;PY,x") && refused("; py ,x") && refused("(Logopen,f)") &&
+              refused("(LOG,x)") && refused("(logclose)") && refused("(probeopen f)") &&
+              refused("(PROBECLOSE)") && refused("(msg, #1)") && refused("(DEBUG,#<_x>)") &&
+              refused("(print,#1)") && refused("(abort,#1)") && refused("G1 X1 (comment) (py,x)"),
+          "Comments the interpreter acts on");
+  require(!refused("(msg, hello)") && !refused("(debug,x)") && !refused("(PRINT,x)") &&
+              !refused("(pyramid)") && !refused("(logic)") && !refused("(py without a comma)") &&
+              !refused("(the log, see below)") && !refused("; a python note") &&
+              !refused(";python") && !refused("G1 X1 ;py,x"),
+          "Comments it does not act on");
+  require(o_word_name("O<My Sub> call") == "mysub" && o_word_name("N10 o100 sub") == "100" &&
+              o_word_name("/o<a.b-c_d> if [1]") == "a.b-c_d" && !o_word_name("G1 X1") &&
+              !o_word_name("o</etc/x> call") && !o_word_name("o<a..b> call") &&
+              !o_word_name("o<> call") && !o_word_name("o[1] call") && !o_word_name("o<a") &&
+              is_call("o<a> call") && is_call("O100 CALL [1]") && !is_call("o<a> sub") &&
+              !is_call("G1 X1") && !is_call("o<call> sub"),
+          "The name of an O word");
+  require(first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n") &&
+              first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n")->line == 3 &&
+              first_forbidden_line("o#1 call\n") && first_forbidden_line("(c) o<$a> endsub\n") &&
+              !first_forbidden_line("o<ok> call\no100 if [1]\nG1 X1 (o</etc/x> call)\n"),
+          "An O word that is not plainly a name is forbidden wherever it stands");
+  const auto effect = first_forbidden_line("G1 X1\n(msg, #1)\n( LogOpen,f)\n;py,x\n");
+  require(effect && effect->line == 3 && !first_forbidden_line("G1 X#1 (msg,#2)\n; py\n") &&
+              first_forbidden_line("\n\n;py,x") && first_forbidden_line("\n\n;py,x")->line == 3,
+          "The first line of a text with a side effect");
+  require(bare_block(" G1 (c) X 1 ; tail") == "g1x1" && bare_block("(a)(b)") .empty(),
+          "A bare block");
+  require(motion_use("X1 Y2") == MotionUse::inherits && motion_use("N5 z[1+2]") == MotionUse::inherits &&
+              motion_use("G53 X0") == MotionUse::inherits && motion_use("G1 X1") == MotionUse::sets &&
+              motion_use("g0") == MotionUse::sets && motion_use("G81 R1 Z0") == MotionUse::sets &&
+              motion_use("G38.2 Z-1") == MotionUse::sets && motion_use("G80") == MotionUse::sets &&
+              motion_use("G21 G90 F100 S[fix[3.2]] M3") == MotionUse::none &&
+              motion_use("o100 while [1 LT 2]") == MotionUse::none &&
+              motion_use("(X1) T2 M6") == MotionUse::none && motion_use("G4 P1") == MotionUse::none,
+          "What a block does about the motion mode");
+}
+
+} // namespace
+
+auto main() -> int {
+  try {
+    wire_formats();
+    hostile_results();
+    blocks_refused_by_their_text();
+    std::cout << checks << " preview wire checks passed\n";
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+  }
+}

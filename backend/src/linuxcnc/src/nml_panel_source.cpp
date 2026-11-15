@@ -32,6 +32,8 @@ struct NmlPanelSource::Impl {
   };
   std::optional<Pending> pending;
   std::uint64_t tool_loads_seen{};
+  RawToolReader raw_reader;
+  std::vector<PreviewTool> preview_tools; // read with a pass equal to the accepted table
   std::map<int, std::string> comments;
   ToolTable tool_table;
   bool tools_failed{};
@@ -91,10 +93,12 @@ struct NmlPanelSource::Impl {
       return;
     }
     tools_failed = false;
+    auto raw = raw_reader ? raw_reader() : std::vector<PreviewTool>{};
     const auto counted = loads != nullptr ? loads->tool_tables.load() : 0;
     if (loaded && *pass == *loaded) {
       pending.reset();
       loaded_current = true;
+      preview_tools = std::move(raw);
       // A load the port reports with the same numbers: the comments may have changed.
       if (counted != tool_loads_seen) {
         tool_loads_seen = counted;
@@ -115,6 +119,7 @@ struct NmlPanelSource::Impl {
     loaded = std::move(*pass);
     pending.reset();
     loaded_current = true;
+    preview_tools = std::move(raw);
     tool_loads_seen = counted;
   }
 
@@ -198,6 +203,8 @@ NmlPanelSource::NmlPanelSource(const MachineConfig& config, const NmlStatusMailb
                                    std::move(clock))) {}
 NmlPanelSource::~NmlPanelSource() = default;
 
+void NmlPanelSource::raw_tools(RawToolReader reader) { impl_->raw_reader = std::move(reader); }
+
 auto NmlPanelSource::hello() const -> Hello { return to_hello(impl_->config); }
 
 auto NmlPanelSource::read() -> PanelReading {
@@ -237,6 +244,7 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .optional_stop = reading.status.program.optional_stop,
                                            .block_delete = reading.status.program.block_delete};
   reading.tool_table = impl_->tool_table;
+  reading.preview_tools = impl_->preview_tools;
   reading.work_systems = to_work_systems(status);
   reading.program = loaded ? impl_->program : nullptr;
   return reading;

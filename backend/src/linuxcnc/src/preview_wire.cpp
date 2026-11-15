@@ -1,6 +1,7 @@
 #include "preview_wire.hpp"
 
 #include <charconv>
+#include <cmath>
 #include <format>
 #include <system_error>
 #include <utility>
@@ -62,6 +63,8 @@ auto write_request(const HelperRequest& request) -> std::string {
     return std::format("{} {} {}", v[0], v[1], v[2]);
   };
   line("program", request.program);
+  if (!request.subroutines.empty())
+    line("subroutines", request.subroutines);
   line("parameters", request.parameters);
   line("units_per_mm", std::format("{}", request.units_per_mm));
   line("position", vec(request.position));
@@ -78,6 +81,8 @@ auto write_request(const HelperRequest& request) -> std::string {
   line("chord_tolerance", std::format("{}", request.chord_tolerance));
   for (const auto& code : request.codes)
     line("code", code);
+  if (!request.inherited_motion.empty())
+    line("inherited_motion", request.inherited_motion);
   for (const auto& tool : request.tools)
     line("tool", std::format("{} {} {} {} {} {} {} {} {}", tool.index, tool.number, tool.pocket,
                              vec(tool.offset), tool.diameter, tool.front_angle, tool.back_angle,
@@ -103,6 +108,8 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
     bool good = true;
     if (key == "program")
       request.program = rest(line);
+    else if (key == "subroutines")
+      request.subroutines = rest(line);
     else if (key == "parameters")
       request.parameters = rest(line);
     else if (key == "units_per_mm")
@@ -133,6 +140,8 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
       good = number(line, request.chord_tolerance) && request.chord_tolerance > 0;
     else if (key == "code")
       request.codes.push_back(rest(line));
+    else if (key == "inherited_motion")
+      request.inherited_motion = rest(line);
     else if (key == "tool") {
       HelperTool tool;
       int unused = 0;
@@ -151,54 +160,80 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
   return request;
 }
 
-auto parse_output(std::string_view text) -> HelperOutput {
+auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
-  while (!text.empty() && output.end == HelperEnd::missing) {
-    const auto end = text.find('\n');
-    if (end == std::string_view::npos)
-      break;
-    auto line = text.substr(0, end);
-    text.remove_prefix(end + 1);
+  std::size_t points = 0;
+  std::string_view problem_kind;
+  const auto defect = [&output](std::string why) -> HelperOutput {
+    output.defect = std::move(why);
+    output.end = HelperEnd::missing;
+    return output;
+  };
+  const auto line_number = [&limits](std::string_view& line, int& value) -> bool {
+    return number(line, value) && value >= 0 && value <= limits.max_line;
+  };
+  // Every pass of this loop removes one line from `text`, or returns.
+  while (!text.empty()) {
+    const auto newline = text.find('\n');
+    if (newline == std::string_view::npos)
+      return output; // cut off in a record: what came before stands
+    auto line = text.substr(0, newline);
+    text.remove_prefix(newline + 1);
     const auto key = word(line);
     if (key == "seg") {
       PreviewSegment segment;
-      if (!number(line, segment.line) || segment.line < 0)
-        break;
+      if (output.problem)
+        return defect("a segment after the record that ends the path");
+      if (!line_number(line, segment.line))
+        return defect("a segment with a line that is none of the program");
       const auto kind = word(line);
-      if ((kind != "r" && kind != "f") || !number(line, segment.tool))
-        break;
+      if (kind != "r" && kind != "f")
+        return defect("a segment of an unknown kind");
+      if (!number(line, segment.tool) || segment.tool < 0 || segment.tool > OutputLimits::max_tool)
+        return defect("a segment with a tool number out of range");
       segment.kind = kind == "r" ? MoveKind::rapid : MoveKind::feed;
-      std::vector<double> values;
-      bool numbers = true;
-      for (auto next = line; !word(next).empty();) {
-        double value = 0;
-        numbers = numbers && number(line, value);
-        values.push_back(value);
-        next = line;
+      // Every pass removes one word from `line`, or returns.
+      for (;;) {
+        auto rest_of_line = line;
+        if (word(rest_of_line).empty())
+          break;
+        Vec3 point{};
+        if (!vector(line, point) || !std::isfinite(point[0]) || !std::isfinite(point[1]) ||
+            !std::isfinite(point[2]))
+          return defect("a segment with a coordinate that is missing or not a finite number");
+        if (++points > limits.max_points)
+          return defect("more points than the preview allows");
+        segment.points.push_back(point);
       }
-      if (!numbers || values.size() < 6 || values.size() % 3 != 0)
-        break;
-      for (std::size_t i = 0; i < values.size(); i += 3)
-        segment.points.push_back({values[i], values[i + 1], values[i + 2]});
-      output.last_line = segment.line;
+      if (segment.points.size() < 2)
+        return defect("a segment of fewer than two points");
       output.segments.push_back(std::move(segment));
     } else if (key == "error" || key == "stop" || key == "cut") {
       PreviewError problem;
-      if (!number(line, problem.line) || output.problem)
-        break;
+      if (output.problem)
+        return defect("a second record that ends the path");
+      if (!line_number(line, problem.line))
+        return defect("a record with a line that is none of the program");
       problem.text = rest(line);
-      output.last_line = problem.line;
       output.problem = std::move(problem);
+      problem_kind = key;
     } else if (key == "end") {
       const auto how = word(line);
-      output.end = how == "ok"      ? HelperEnd::ok
-                   : how == "error" ? HelperEnd::error
-                   : how == "stop"  ? HelperEnd::stop
-                   : how == "cut"   ? HelperEnd::cut
-                                    : HelperEnd::missing;
-      break;
+      if (!word(line).empty() || !text.empty())
+        return defect("text after the end of the result");
+      if (how == "ok" && !output.problem)
+        output.end = HelperEnd::ok;
+      else if (how == "error" && problem_kind == "error")
+        output.end = HelperEnd::error;
+      else if (how == "stop" && problem_kind == "stop")
+        output.end = HelperEnd::stop;
+      else if (how == "cut" && problem_kind == "cut")
+        output.end = HelperEnd::cut;
+      else
+        return defect("an end that does not fit the records before it");
+      return output;
     } else {
-      break;
+      return defect("a record of an unknown kind");
     }
   }
   return output;

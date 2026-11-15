@@ -214,6 +214,33 @@ void composer_files_generation_is_an_input() {
           "Once per change");
 }
 
+// The tool table a preview is computed with travels with the inputs, every field of it.
+void composer_tools_are_inputs() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  r.preview_tools = {{0, 1, 1, {0, 0, 40}, 6, 0, 0, 0}, {1, 1, 1, {0, 0, 40}, 6, 0, 0, 0}};
+  const auto first = compose(composer, r).context();
+  require(service.submitted.size() == 1 && service.submitted[0].inputs.raw_tools == r.preview_tools,
+          "The table is submitted with the context");
+  // An X offset: nothing the panel's table shows.
+  r.preview_tools[1].offset[0] = 0.5;
+  auto step = compose(composer, r);
+  require(step.context() == first + 1 && service.submitted.size() == 2 &&
+              service.submitted[1].inputs.raw_tools[1].offset == Vec3{0.5, 0, 40} &&
+              step.preview && step.preview->at("state") == "pending",
+          "An edit of a tool's X offset is a new context, computed again with it");
+  // The spindle's entry, an angle, the orientation: each counts.
+  r.preview_tools[0].number = 2;
+  require(compose(composer, r).context() == first + 2, "The spindle's entry counts");
+  r.preview_tools[1].front_angle = 30;
+  require(compose(composer, r).context() == first + 3, "An angle counts");
+  r.preview_tools[1].orientation = 2;
+  require(compose(composer, r).context() == first + 4 && service.submitted.size() == 5,
+          "The orientation counts");
+  require(compose(composer, r).context() == first + 4, "The same table: the same context");
+}
+
 void composer_start_state_is_frozen_while_running() {
   FakeService service;
   PanelComposer composer{hello(), &service};
@@ -256,12 +283,14 @@ public:
     computed.outcome.state = PreviewState::ready;
     computed.outcome.segments = {
         {1, MoveKind::feed, 0, {{0, 0, 0}, {static_cast<double>(inputs.program_revision), 0, 0}}}};
-    computed.files_changed = [this]() -> bool {
+    received.push_back(inputs);
+    computed.files_changed = [this](const std::function<bool()>&) -> bool {
       ++file_checks;
       return files_changed;
     };
     return computed;
   }
+  std::vector<PreviewInputs> received; // of finished computations; read when none runs
   std::atomic<int> computations{};
   std::atomic<int> cancellations{};
   std::atomic<int> file_checks{};
@@ -298,6 +327,24 @@ void worker_computes_the_newest() {
   require(wait_for([&]() -> bool { return worker.latest()->context == 6; }) &&
               worker.latest()->segments.at(0).points.at(1)[0] == 3.0 && engine.computations == 3,
           "The newest context is computed");
+}
+
+// The engine computes with the table that was submitted, whatever the table is by then.
+void worker_hands_the_submitted_tools_on() {
+  FakeEngine engine;
+  PreviewWorker worker{engine, 10ms};
+  auto submitted = inputs(1);
+  submitted.raw_tools = {{1, 7, 1, {0.25, 0, 40}, 6, 0, 0, 0}};
+  engine.hold = true;
+  worker.submit(1, submitted);
+  require(wait_for([&]() -> bool { return engine.computations == 1; }), "Computing");
+  submitted.raw_tools[0].offset[0] = 9; // the caller's copy changes after the submit
+  engine.hold = false;
+  require(wait_for([&]() -> bool { return worker.latest() != nullptr; }) &&
+              engine.received.size() == 1 &&
+              engine.received[0].raw_tools ==
+                  std::vector<PreviewTool>{{1, 7, 1, {0.25, 0, 40}, 6, 0, 0, 0}},
+          "The engine receives the table as it was submitted");
 }
 
 void worker_watches_the_files() {
@@ -356,9 +403,11 @@ auto main() -> int {
     composer_pending_then_the_result();
     composer_stale_and_recomputed();
     composer_files_generation_is_an_input();
+    composer_tools_are_inputs();
     composer_start_state_is_frozen_while_running();
     composer_without_a_service();
     worker_computes_the_newest();
+    worker_hands_the_submitted_tools_on();
     worker_watches_the_files();
     worker_ends_a_computation_when_destroyed();
     bounds_are_of_the_feed_moves();

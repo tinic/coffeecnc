@@ -26,6 +26,7 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.systems = reading.work_systems;
   inputs.g92 = status.offsets.g92;
   inputs.tools = reading.tool_table.tools;
+  inputs.raw_tools = reading.preview_tools;
   inputs.block_delete = status.program.block_delete;
   inputs.start.wcs = status.offsets.wcs;
   inputs.start.program_units = status.program_units;

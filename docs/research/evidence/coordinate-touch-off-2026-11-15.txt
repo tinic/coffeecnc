@@ -27,3 +27,14 @@ Validation:
   sha256=3970c797c0cf4ce58f18f1da1aacb34ff4c377369d24dd1206bcd8002fae84c0
 
 Native deployment pending at this record's initial commit; Claude owns deployment.
+
+Integration and native status at 19:34 UTC:
+- PR25 merged as 543c9ba927ead4b7492a84053769f7795ccdfd07 from source
+  aefc4a9224bbf67ecf1206df3376cb96c6bff306.
+- Claude owns native deployment. His working session subsequently deployed the
+  separate backend jog-reporting changes at 9721dff655cde89748156830154fb05b88ba4ee9.
+  A read-only SSH check observed process 33673 and the previous PR24 UI stamp
+  (inputs56fb4f3f / assets16de1b80), so this coordinate fix is not yet confirmed
+  installed or running. No Codex installation, restart or machine command occurred.
+- The transient codex/coordinate-deploy ref on the mill points to 543c9ba;
+  no source checkout was changed by Codex. Claude was informed before proceeding.

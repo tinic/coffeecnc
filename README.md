@@ -65,6 +65,7 @@ The concept established the panel's visual direction: readable coordinates, a pa
 
 ## Research and design material
 
+- [Logo concepts](docs/design/branding/README.md): the initial bean mark and the revised end-mill direction, with transparent artwork and generation prompts.
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
 - [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
 - [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks, browser and native overlay qualification.

@@ -111,6 +111,10 @@ auto hal_pin(const std::string& pin) -> std::string { return output_of("halcmd g
 auto halcmd(const std::string& command) -> bool {
   return std::system(("halcmd " + command).c_str()) == 0;
 }
+// A signal's value as halcmd prints it: TRUE, FALSE or a number.
+auto hal_signal(const std::string& signal) -> std::string {
+  return output_of("halcmd gets " + signal);
+}
 auto hal_number(const std::string& pin) -> double { return std::atof(hal_pin(pin).c_str()); }
 
 auto name(Link link) -> std::string_view {
@@ -2664,16 +2668,17 @@ void power_off(Rig& rig) {
   const auto estop = rig.send(R"("type":"set_machine","state":"estop")");
   rig.pump(50ms);
   if (machine_hal) {
-    // G0759.hal connects iocontrol.0.emc-enable-in to the external input only, and
-    // iocontrol.0.user-enable-out (estop-out) to nothing: an E-stop request of a display
-    // program changes no state. The port says so; the machine stays off, not in E-stop. The
-    // button itself is what LinuxCNC reports.
+    // G0759.hal connects iocontrol.0.emc-enable-in to the external input only. Observed here,
+    // and only this: an E-stop request made while the machine is OFF with the external chain
+    // closed leaves the reported state at off, and the port answers `failed`; the input
+    // opening is reported as E-stop. What the request does to a machine that is on is
+    // g0759_estop's.
     const auto after_request = rig.snapshot().machine;
     const bool pressed = halcmd("sets estop-ext 0");
     // LinuxCNC's io task reads the input once per [EMCIO] CYCLE_TIME, 100 ms on this machine.
     rig.pump_until(2s, [&]() -> bool { return rig.snapshot().machine == MachineState::estop; });
     const auto after_button = rig.snapshot().machine;
-    check("estop_is_the_external_input_only",
+    check("estop_request_from_off_reports_no_estop_state",
           manual.accepted() && off.accepted() && is_off && estop.outcome == "failed" &&
               after_request == MachineState::off && pressed && after_button == MachineState::estop,
           std::format("{} {} {} off={} after_request={} after_button={}", manual.text(), off.text(),
@@ -2704,6 +2709,148 @@ void sim_config(const MachineConfig& config) {
                              config.home_all_configured && config.jog_increments.empty() &&
                              !config.signals.spindle_rpm && !config.signals.spindle_at_speed &&
                              !config.signals.probe);
+}
+
+// What was seen for 1.5 s after a cause to stop, on the machine's own HAL files.
+struct StopSeen {
+  MachineState state{MachineState::on}; // at the end
+  double state_ms{-1};                  // first reading that was not "on"
+  double spindle_ms{-1};                // spindle-enable (spindle.0.on) first read FALSE
+  double enable_out_ms{-1};             // estop-out (iocontrol.0.user-enable-out) first read FALSE
+  double still_ms{};                    // last change of the X position; 0 when it never moved
+  double travel{};                      // X travelled since the cause, mm
+};
+
+// Times are from `from`, read in a loop whose round takes about 20 ms (two halcmd calls): each
+// is the first round that saw the change, not the moment of it. `refresh` is a held jog that
+// the panel would keep sending.
+auto watch_stop(Rig& rig, Clock::time_point from, const char* refresh) -> StopSeen {
+  StopSeen seen;
+  const double start = rig.machine(0);
+  double last = start;
+  auto refreshed = from;
+  while (milliseconds(Clock::now() - from) < 1500) {
+    if (refresh != nullptr && Clock::now() - refreshed >= 50ms) {
+      static_cast<void>(rig.post(refresh));
+      refreshed = Clock::now();
+    }
+    rig.pump(5ms);
+    const double at = milliseconds(Clock::now() - from);
+    if (seen.state_ms < 0 && rig.snapshot().machine != MachineState::on)
+      seen.state_ms = at;
+    if (seen.spindle_ms < 0 && hal_signal("spindle-enable") == "FALSE")
+      seen.spindle_ms = at;
+    if (seen.enable_out_ms < 0 && hal_signal("estop-out") == "FALSE")
+      seen.enable_out_ms = at;
+    if (const double x = rig.machine(0); std::fabs(x - last) > 0.001) {
+      last = x;
+      seen.still_ms = at;
+    }
+  }
+  seen.state = rig.snapshot().machine;
+  seen.travel = last - start;
+  return seen;
+}
+
+// The G0759's E-stop wiring, measured: G0759.hal connects iocontrol.0.emc-enable-in to the
+// external input (estop-ext) only, and iocontrol.0.user-enable-out to the signal estop-out,
+// which nothing reads. Two causes, a display program's E-stop request and the external input
+// opening, each with the machine on and idle, during a held jog, and during a program with
+// the spindle on.
+void g0759_estop(Rig& rig) {
+  // The machine on and at rest with the external chain closed; what did not work otherwise.
+  const auto machine_on = [&]() -> std::string {
+    const bool closed = halcmd("sets estop-ext 1");
+    rig.pump_until(2s, [&]() -> bool { return rig.snapshot().machine != MachineState::estop; });
+    static_cast<void>(rig.send(R"("type":"abort")"));
+    static_cast<void>(rig.send(release_x));
+    rig.settle();
+    const auto off = rig.send(R"("type":"set_machine","state":"off")");
+    const auto on = rig.send(R"("type":"set_machine","state":"on")");
+    const bool is_on = rig.pump_until(
+        2s, [&]() -> bool { return rig.snapshot().machine == MachineState::on; });
+    // iocontrol writes its pins once per [EMCIO] CYCLE_TIME.
+    const bool enabled =
+        rig.pump_until(2s, [&]() -> bool { return hal_signal("estop-out") == "TRUE"; });
+    return closed && off.accepted() && on.accepted() && is_on && enabled
+               ? std::string()
+               : std::format("closed={} off={} on={} is_on={} estop_out={}", closed, off.text(),
+                             on.text(), is_on, hal_signal("estop-out"));
+  };
+  const std::string file = rig.config.program_prefix + "/coffeecnc_g0759_estop.ngc";
+  {
+    std::ofstream out{file};
+    out << "G21 G91\nM3 S1000\nG1 X30 F300\nG90\nM5\nM2\n";
+  }
+  for (const std::string cause : {"request", "external_input"}) {
+    for (const std::string situation : {"idle", "jog", "program_spindle_on"}) {
+      const auto not_on = machine_on();
+      bool ready = not_on.empty();
+      const double before = rig.machine(0);
+      if (situation == "jog") {
+        ready = ready && rig.send(hold_x).accepted();
+        rig.hold(hold_x, 200ms);
+      } else if (situation == "program_spindle_on") {
+        ready = ready &&
+                rig.send(std::format(R"("type":"open_program","path":"{}")", file)).accepted() &&
+                rig.send(R"("type":"run")").accepted() &&
+                rig.pump_until(5s, [&]() -> bool {
+                  return rig.machine(0) - before > 0.5 && hal_signal("spindle-enable") == "TRUE";
+                });
+      }
+      const bool moving = std::fabs(rig.machine(0) - before) > 0.1;
+      const auto spindle_before = hal_signal("spindle-enable");
+      auto from = Clock::now();
+      std::optional<RequestId> request;
+      if (cause == "request") {
+        request = rig.post(R"("type":"set_machine","state":"estop")");
+      } else {
+        ready = ready && halcmd("sets estop-ext 0");
+        from = Clock::now();
+      }
+      const auto seen = watch_stop(rig, from, situation == "jog" ? hold_x : nullptr);
+      const auto answer = request ? rig.await(*request, 2s).text() : std::string("-");
+      const auto interp = rig.snapshot().interp;
+      fact("g0759_estop",
+           std::format("cause={} situation={} ready={} moving_before={} spindle_enable_before={} "
+                       "answer={} state_after={} state_ms={:.0f} still_ms={:.0f} travel_mm={:.3f} "
+                       "spindle_enable_after={} spindle_ms={:.0f} estop_out_after={} "
+                       "estop_out_ms={:.0f} interp_idle={}",
+                       cause, situation, ready, moving, spindle_before, word(answer),
+                       seen.state == MachineState::estop ? "estop"
+                       : seen.state == MachineState::off ? "off" : "on",
+                       seen.state_ms, seen.still_ms, seen.travel, hal_signal("spindle-enable"),
+                       seen.spindle_ms, hal_signal("estop-out"), seen.enable_out_ms,
+                       interp == InterpState::idle));
+      check(std::format("estop_{}_{}_prepared", cause, situation),
+            ready && moving == (situation != "idle") &&
+                (spindle_before == "TRUE") == (situation == "program_spindle_on"),
+            not_on.empty() ? "-" : not_on);
+      // What every stop has in common: the machine is not on, nothing moves any more, the
+      // spindle is not commanded, the interpreter is idle. The bounds are a second, far above
+      // what was measured (state within 230 ms, motion within 300 ms): this host keeps no time.
+      const bool stopped = seen.state != MachineState::on && seen.state_ms >= 0 &&
+                           seen.state_ms < 1000 && seen.still_ms < 1000 &&
+                           std::fabs(seen.travel) < 5 && hal_signal("spindle-enable") == "FALSE" &&
+                           interp == InterpState::idle;
+      if (cause == "request") {
+        // Observed on LinuxCNC 2.9.4: task aborts, switches the machine off and io drops
+        // user-enable-out, which this machine connects to nothing. emc-enable-in stays true, so
+        // the state reported is off, never E-stop, and the port, which verifies the state it
+        // asked for, answers `failed`.
+        check(std::format("estop_request_{}_switches_off_without_estop_state", situation),
+              stopped && seen.state == MachineState::off && seen.enable_out_ms >= 0 &&
+                  hal_signal("estop-out") == "FALSE" && answer.starts_with("failed:"));
+      } else {
+        // The input is what LinuxCNC reports as E-stop. user-enable-out stays as it was.
+        check(std::format("estop_external_input_{}_is_estop", situation),
+              stopped && seen.state == MachineState::estop && seen.enable_out_ms < 0 &&
+                  hal_signal("estop-out") == "TRUE");
+      }
+    }
+  }
+  const auto left = machine_on();
+  check("estop_scenarios_leave_the_machine_on", left.empty(), left.empty() ? "-" : left);
 }
 
 void g0759_config(const MachineConfig& config) {
@@ -2781,6 +2928,8 @@ auto run(const std::string& ini_file, bool g0759) -> int {
     g0759_limits(rig);
     g0759_program(rig);
     g0759_homing(rig);
+    if (machine_hal)
+      g0759_estop(rig);
     power_off(rig);
     for (const auto& message : rig.all_messages())
       fact("operator_message", "text=" + word(message));

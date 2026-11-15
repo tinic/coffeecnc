@@ -1,11 +1,13 @@
 #!/bin/bash
 # The coffeecnc executable's command line and the start-up failures that need no LinuxCNC:
-#   cli_tests.sh <coffeecnc> <tests/sim/run.sh> <scratch directory>
+#   cli_tests.sh <coffeecnc> <tests/sim/run.sh> <scratch directory> development|installed-only
+# The last word says how the executable was built (COFFEECNC_DEVELOPMENT_PATHS).
 # One `check=<name> result=pass|fail detail=...` line per check; exit code 0 only if all pass.
 set -u
 coffeecnc=$1
 runner=$2
 work=$3
+paths=$4
 mkdir -p "$work" || exit 125
 failed=0
 check() { # name, 0 for pass, detail
@@ -59,5 +61,43 @@ mkdir -p "$work/panel" && echo '<!doctype html>' >"$work/panel/index.html"
 run -ini "$work/sim/coffeecnc_sim.ini" --ui "$work/panel"
 [ "$code" = 1 ] && said 'coffeecnc: Cannot open a display'
 check no_display_is_reported $? "$(detail)"
+
+# The executable alone in a prefix, no panel installed beside it. A build for packaging looks
+# nowhere else and says where it looked; a development build falls back to the checkout's
+# panel and gets as far as the display.
+rm -rf "$work/alone"
+mkdir -p "$work/alone/bin" && cp "$coffeecnc" "$work/alone/bin/coffeecnc" || exit 125
+alone=$(realpath "$work/alone")
+coffeecnc=$alone/bin/coffeecnc
+run -ini "$work/sim/coffeecnc_sim.ini"
+if [ "$paths" = installed-only ]; then
+  [ "$code" = 1 ] && said "coffeecnc: No panel in $alone/share/coffeecnc/ui: index.html is missing" &&
+    ! said 'coffeecnc: panel='
+  check installed_only_build_has_no_checkout_fallback $? "$(detail)"
+else
+  [ "$code" = 1 ] && said '^coffeecnc: panel=.*/ui/dist preview_helper=' &&
+    said 'coffeecnc: Cannot open a display'
+  check development_build_falls_back_to_the_checkout $? "$(detail)"
+fi
+# With a panel installed beside it, that one is used, in either build.
+mkdir -p "$alone/share/coffeecnc/ui" && echo '<!doctype html>' >"$alone/share/coffeecnc/ui/index.html"
+run -ini "$work/sim/coffeecnc_sim.ini"
+[ "$code" = 1 ] && said "^coffeecnc: panel=$alone/share/coffeecnc/ui preview_helper=" &&
+  said 'coffeecnc: Cannot open a display'
+check installed_panel_beside_the_executable_is_used $? "$(detail)"
+# No helper beside it either: a build for packaging says so and names none; a development
+# build names the build tree's.
+if [ "$paths" = installed-only ]; then
+  said ' preview_helper=none$' && said 'coffeecnc: No preview helper: coffeecnc-preview is not beside the executable'
+  check installed_only_build_says_the_helper_is_missing $? "$(detail)"
+else
+  said ' preview_helper=/.*/coffeecnc-preview$' && ! said 'coffeecnc: No preview helper'
+  check development_build_falls_back_to_the_built_helper $? "$(detail)"
+fi
+# With a helper beside the executable, that one is named, in either build.
+cp /bin/true "$alone/bin/coffeecnc-preview" || exit 125
+run -ini "$work/sim/coffeecnc_sim.ini"
+said " preview_helper=$alone/bin/coffeecnc-preview\$" && ! said 'coffeecnc: No preview helper'
+check installed_helper_beside_the_executable_is_used $? "$(detail)"
 
 exit $failed

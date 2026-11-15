@@ -1,6 +1,6 @@
 # Native backend
 
-C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md). Toolpath preview: [`docs/preview.md`](../docs/preview.md).
+C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md). Toolpath preview: [`docs/preview.md`](../docs/preview.md). Installation, package and machine configurations: [`docs/packaging.md`](../docs/packaging.md).
 
 ## Layers
 
@@ -24,6 +24,7 @@ Run inside `backend/`. Requires CMake 3.25+, Ninja and a C++23 compiler (Clang o
 | `asan` | same with `asan` | AddressSanitizer and UndefinedBehaviorSanitizer |
 | `tsan` | same with `tsan` | ThreadSanitizer. On hosts with high ASLR entropy: `setarch -R ctest --preset tsan` |
 | `analyze` | same with `analyze` | clang-tidy and cppcheck; configuration fails if either is missing |
+| `package` | `cmake --preset package && cmake --build --preset package && cpack --preset package` | Release build without development paths; the Debian package |
 
 | Option | Values | Effect |
 |---|---|---|
@@ -33,7 +34,7 @@ Run inside `backend/`. Requires CMake 3.25+, Ninja and a C++23 compiler (Clang o
 
 The adapter needs `linuxcnc-uspace-dev` and `libboost-dev` (LinuxCNC's headers include Boost's; its package does not depend on it). Where Boost cannot be installed, headers unpacked under `build/deps/usr/include` are accepted. The package ships `libtooldata.so` without `tooldata.hh`; `src/linuxcnc/upstream/tooldata.hh` is LinuxCNC's own header, used where none is installed.
 
-Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC starts `coffeecnc -ini <file>`. Options: `--windowed` (1280 x 800 instead of full screen), `--ui <directory>` (the built panel; default is the installed one, else `ui/dist` of the checkout), `--inspector`. `cmake --install` puts the executable in `bin` and `ui/dist` in `share/coffeecnc/ui`.
+Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC starts `coffeecnc -ini <file>`. Options: `--windowed` (1280 x 800 instead of full screen), `--ui <directory>` (the built panel; default is the installed one, and in a development build `ui/dist` of the checkout), `--inspector`.
 
 ## Tests
 
@@ -62,9 +63,14 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | `coffeecnc_cli` | | Command line and start-up refusals of the executable; no LinuxCNC, no display |
 | `panel_bundle`, `panel_stamp` | | Build `ui/dist` from this checkout; the stamp checker refuses a changed source, a changed bundle and an unbuilt source |
 | `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 229 checks, about 32 s each, with a paired STEP sample over a computed preview. Not registered in the `tsan` preset |
+| `text_file` | | The bounded file reader: bound, block edges, missing file, directory |
+| `xvfb_wrapper` | | `tests/shell/under_xvfb.sh`: an early exit, a program gone after its checks and a failed check are nonzero exits |
+| `install_tree`, `package_deb` | | The installed layout; the package's control fields, dependencies and contents; no build-host path in an installed-only build |
+| `linuxcnc_installed_prefix_start`, `linuxcnc_installed_package_start` | `linuxcnc` | The installed executable as DISPLAY program without overrides: names its own panel and helper, a preview becomes ready, SIGTERM leaves no process |
+| `linuxcnc_machine_g0759`, `linuxcnc_machine_g0759_start` | `linuxcnc` | A machine's own INI and HAL files with the hardware simulated (`run.sh -m <INI> -s <hardware HAL>`); E-stop request and external input, sampled. Skipped without `COFFEECNC_MACHINES_DIRECTORY` |
 | `linuxcnc_coffeecnc_start` | `linuxcnc` | The executable starts, shows the panel, and SIGTERM ends it and LinuxCNC with no process left. Not registered in the `tsan` preset |
 
-`ctest --preset dev -LE linuxcnc` skips the simulation tests; they exist only where the adapter builds. One LinuxCNC runs per host: `run.sh` refuses to start while another instance or `/tmp/linuxcnc.lock` exists. Each simulation test runs in `build/<preset>/sim/<CTest name>/`. `run.sh` goes by how the DISPLAY program really ended (`display.status`: exit code or signal) and prints `printed_exit=` and `child_status=`. Keep the logs of a failing run before re-running (`build/sim-history/<commit>/<preset>/`, with `Testing/Temporary/LastTest.log`). Simulation output is one `check=<name> result=pass|fail detail=…` line per check. A shell test first checks that `ui/dist` was built from the `ui/` sources of the checkout (`tests/sim/check-panel-stamp.mjs`).
+`ctest --preset dev -LE linuxcnc` skips the simulation tests; they exist only where the adapter builds. One LinuxCNC runs per host: `run.sh` holds an exclusive lock (`~/ai/coffeecnc-sim-runner-<uid>.lock`, else under `/tmp`) from before it touches the run directory until it exits, waits for it at most `-w` seconds (300), then prints `sim=refused reason=locked` and exits 123; under the lock it refuses (125) while another LinuxCNC runs and never cleans one up. `-n` assembles without the lock. Each simulation test runs in `build/<preset>/sim/<CTest name>/`. `run.sh` goes by how the DISPLAY program really ended (`display.status`: exit code or signal) and prints `printed_exit=` and `child_status=`. Keep the logs of a failing run before re-running (`build/sim-history/<commit>/<preset>/`, with `Testing/Temporary/LastTest.log`). Simulation output is one `check=<name> result=pass|fail detail=…` line per check. A shell test first checks that `ui/dist` was built from the `ui/` sources of the checkout (`tests/sim/check-panel-stamp.mjs`).
 
 ## Rules the layers implement
 
@@ -77,6 +83,8 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | A jog above its axis ceiling (`[AXIS_*] MAX_VELOCITY`) is rejected | `Limits::max_axis_jog_velocity` |
 | The spindle ceiling is `[COFFEECNC] MAX_SPINDLE_RPM`, else `[SPINDLE_0] MAX_FORWARD_VELOCITY`, else `[DISPLAY] MAX_SPINDLE_0_SPEED`; with none, start-up fails | `load_machine_config` |
 | Actual spindle speed, at-speed and probe input are reported only when `[COFFEECNC] SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL`, `PROBE_SIGNAL` say the pins are wired; an unconnected pin is never a measured zero | `HalComponent` |
+| An E-stop request is answered by the state a live status shows after the command: accepted only when E-stop is reported; else `failed` with "LinuxCNC reports machine off; E-stop was not confirmed.", "LinuxCNC still reports machine on; ..." or "LinuxCNC's status cannot be read; ..." | `estop_request_result`, `NmlPort` |
+| Files are read whole through one bounded reader: 16 MiB for a program, 4 MiB for the tool table | `core/text_file.hpp` |
 | Home all is refused unless every joint has a `HOME_SEQUENCE`: LinuxCNC would accept it and do nothing | `NmlPort::home` |
 | A program path must resolve to a regular file inside `[DISPLAY] PROGRAM_PREFIX`, through symlinks, and be at most 254 bytes | `ProgramStore`, `Session` |
 | A listing shows at most 1000 entries and a program at most 16 MiB of whole lines; both say `truncated` | `ProgramStore` |

@@ -51,6 +51,54 @@ for signal in TERM HUP; do
   check "interrupt_${signal}_ends_every_process" $? "exit=${code}_seconds=$took"
 done
 
+# The host-wide lock: one simulation at a time, whatever checkout starts it.
+lock_directory=$HOME/ai
+[ -d "$lock_directory" ] || lock_directory=/tmp
+lock=$lock_directory/coffeecnc-sim-runner-$(id -u).lock
+flock -n "$lock" true
+check lock_is_free_after_timeout_and_interrupts $? "lock=$lock"
+printf '#!/bin/sh\nexit 0\n' >"$work/quiet" && chmod +x "$work/quiet" || exit 125
+rm -rf "$work/refused" "$work/waiter"
+"$here/run.sh" -t 300 -d "$work/holder" "$work/never" >"$work/holder.out" 2>&1 &
+holder=$!
+for _ in $(seq 100); do
+  pgrep -x milltask >/dev/null && break
+  sleep 0.2
+done
+# Assembly only starts nothing and waits for nobody.
+started=$SECONDS
+"$here/run.sh" -n -d "$work/assembled" "$work/quiet" >"$work/assembled.out" 2>&1
+code=$?
+[ "$code" = 0 ] && grep -q '^sim=assembled ' "$work/assembled.out" && [ $((SECONDS - started)) -lt 5 ]
+check assembly_only_takes_no_lock $? "exit=${code}_seconds=$((SECONDS - started))"
+# A second run waits its bound, then is refused: it names the holder and has started and
+# written nothing.
+started=$SECONDS
+"$here/run.sh" -w 3 -t 60 -d "$work/refused" "$work/quiet" >"$work/refused.out" 2>&1
+code=$?
+took=$((SECONDS - started))
+[ "$code" = 123 ] && grep -q "^sim=waiting reason=locked .*holder_pid=$holder " "$work/refused.out" &&
+  grep -q "^sim=refused reason=locked .*waited_seconds=3 holder_pid=$holder .*holder_run_directory=$work/holder " "$work/refused.out" &&
+  [ ! -e "$work/refused" ] && [ "$took" -ge 3 ] && [ "$took" -lt 30 ] && kill -0 "$holder"
+check bounded_wait_ends_in_a_refusal $? "exit=${code}_seconds=${took}_$(grep -c . "$work/refused.out")_lines"
+# A second run with time to wait runs once the first has ended, here by SIGTERM.
+"$here/run.sh" -w 120 -t 60 -d "$work/waiter" "$work/quiet" >"$work/waiter.out" 2>&1 &
+waiter=$!
+sleep 3
+grep -q '^sim=waiting reason=locked ' "$work/waiter.out" && [ ! -e "$work/waiter" ] && kill -0 "$waiter"
+waiting=$?
+kill -TERM "$holder"
+wait "$holder"
+held=$?
+wait "$waiter"
+code=$?
+[ "$waiting" = 0 ] && [ "$held" = 130 ] &&
+  grep -q '^sim=done exit=130 .* processes_left=0 ' "$work/holder.out" && [ "$code" = 0 ] &&
+  grep -q '^sim=done exit=0 printed_exit=none child_status=0 processes_left=0 ' "$work/waiter.out"
+check second_run_waits_then_runs $? "waiting=${waiting}_holder_exit=${held}_waiter_exit=$code"
+flock -n "$lock" true && [ ! -e "$lock.info" ] && gone
+check lock_is_released_after_the_runs $? "info=$(cat "$lock.info" 2>/dev/null | tr ' ' '_')"
+
 # How the program really ended decides, not the `exit=` line it printed.
 summary() { grep '^sim=done' "$1" | cut -d' ' -f2-4 | tr ' ' '_'; }
 printf '#!/bin/sh\necho exit=0\nexit 7\n' >"$work/late-failure" && chmod +x "$work/late-failure" || exit 125
@@ -77,6 +125,14 @@ printf '#!/bin/sh\nexit 0\n' >"$work/silent" && chmod +x "$work/silent" || exit 
 code=$?
 [ "$code" = 0 ] && grep -q '^sim=done exit=0 printed_exit=none child_status=0 processes_left=0 ' "$work/silent.out"
 check silent_program_passes_on_its_exit_code $? "exit=${code}_$(summary "$work/silent.out")"
+
+# Arguments longer than an INI line (255 characters in LinuxCNC) reach the program whole.
+printf '#!/bin/sh\necho "arguments=$*"\nexit 0\n' >"$work/arguments" && chmod +x "$work/arguments" || exit 125
+long=$(printf 'argument-%03d,' $(seq 40))
+"$here/run.sh" -t 60 -d "$work/arguments-run" "$work/arguments" first "$long" last >"$work/arguments.out" 2>&1
+code=$?
+[ "$code" = 0 ] && grep -qxF "arguments=-ini $work/arguments-run/coffeecnc_sim.ini first $long last" "$work/arguments-run/linuxcnc.log"
+check long_arguments_reach_the_program $? "exit=${code}_characters=${#long}"
 
 "$here/run.sh" -d "$work/with space" "$work/never" >"$work/space.out" 2>&1
 code=$?

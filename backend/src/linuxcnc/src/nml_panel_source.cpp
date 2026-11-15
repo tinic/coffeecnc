@@ -1,4 +1,5 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
@@ -71,9 +72,9 @@ struct NmlPanelSource::Impl {
         programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
 
   void show_tools(const std::vector<LoadedTool>& accepted) {
-    if (std::ifstream in{config.tool_table, std::ios::binary}; in && !config.tool_table.empty())
-      comments = comments_of(
-          std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}});
+    if (const auto text = read_text_file(config.tool_table, max_tool_table_bytes);
+        text && !config.tool_table.empty())
+      comments = comments_of(*text);
     std::vector<Tool> shown;
     shown.reserve(accepted.size());
     for (const auto& entry : accepted) {

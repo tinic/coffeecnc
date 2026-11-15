@@ -1,0 +1,64 @@
+CoffeeCNC native preview: first implementation review
+2026-11-15 00:28 UTC
+
+Reviewed commit: a11484849c4608842eaf7b1c09246233eea12fe0, claude/preview.
+This is an unmerged prototype. The helper is not wired into the application.
+This note records source-review findings, not a runtime qualification or an
+exhaustive audit. Claude reported 18/18 portable tests (including 45 service
+checks); those logs were not independently reviewed at this checkpoint.
+
+The app service separates computation from the publisher and rejects completed
+results from obsolete contexts. The helper uses public InterpBase, a separate
+result descriptor and byte comparisons of input snapshots. The following issues
+must be resolved before integration. Line numbers refer to the reviewed commit.
+
+1. Guard side effects before interpreter read, not only before execute.
+   preview_helper.cpp:651 calls interp->read(); refused_block follows at 662.
+   LinuxCNC v2.9.4 read_semicolon invokes convert_comment during read for ;py,.
+   A later refusal cannot undo Python execution. Pre-scan every snapshotted
+   source, including external subroutines, before any interpreter use.
+   Requested checks: a harmless marker remains absent for ;py, and (py,...)
+   in main/external files, whether the containing code would execute or not.
+
+2. Refuse names that cannot be represented by the private manifest.
+   preview_engine.cpp:124 silently skips names containing '/' or '..', while
+   program_watch.cpp:101 accepts such named O words. LinuxCNC find_ngc_file
+   first tries the supplied path and expands it with wordexp(..., 0).
+   Private cwd/search paths alone do not confine an absolute or expanded name.
+   Require a strict basename set for calls and definitions before interpreter
+   use. Requested checks: absolute, parent, tilde, dollar and glob names.
+
+3. Separate the main snapshot from the subroutine namespace.
+   preview_engine.cpp:147 names the main copy coffeecnc-program.ngc; 166 gives
+   subs their ordinary <name>.ngc name. The write loop at 695 overwrites main
+   when a real o<coffeecnc-program> subroutine is included.
+   Requested check: that subroutine call retains the correct main program.
+
+4. Bind the complete tool table to preview inputs.
+   preview_engine.cpp:662 reads raw tools independently after input submission.
+   status_publisher.cpp:12 compares only number/pocket/Z length/diameter.
+   Raw X/Y offsets and the spindle table entry are absent from context equality,
+   and a later read need not match the table used to create the context.
+   Carry the accepted full table as input data; include all path-relevant fields
+   in invalidation. Keep libtooldata on its sole publisher owner thread.
+   This does not turn the existing two-pass stability check into an atomic read.
+
+5. Bound unresolved calls and make snapshot work cancellable.
+   preview_engine.cpp:127 deduplicates names by a linear scan. max_files at 157
+   is checked only after a file resolves, so distinct missing calls can produce
+   quadratic collection work and many more lookups than the stated file bound.
+   Limit distinct names including missing resolutions before accumulation; use
+   efficient deduplication and cancellation checks during scan/copy/comparison.
+   Requested checks: bounded missing-name lookups and cancellation during compare.
+
+All five findings were sent on AgentNet #coffeecnc. Claude accepted them and
+described fixes at 00:27-00:28 UTC. No corrected checkpoint or regression result
+had been reviewed when this note was written. Re-review source and retained test
+evidence before marking any finding closed. Start-state/geometry comparison with
+LinuxCNC simulation, native shell integration, analysis and sanitizer checks also
+remain ahead; existing shell qualification does not cover this helper.
+
+Primary source references, independently read during this review:
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_read.cc#L278-L288
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/interp_convert.cc#L1394-L1489
+https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/rs274ngc/rs274ngc_pre.cc#L2485-L2562

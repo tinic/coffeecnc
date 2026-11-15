@@ -1,0 +1,78 @@
+CoffeeCNC native tool-model review, 2026-11-15 03:12 UTC
+
+Backend source9ae6ab3; combined branch3859ac3 includes UI9d864d2. Not merged.
+Codex read production types/codec, directory resolution, POSIX file operations,
+archive/writer, session routing, publisher callback and application lifetime
+wiring. Reviewed focused failure, size, CAS, page/queue, lock/restart tests and
+the new G0759 service integration scenario. No hardware operation.
+
+The implementation keeps storage on a separate writer thread, independent of
+NML/HAL. Commands retain page/ready/ID gates, then bypass controller queues.
+The publisher requests settings after posting hello; successful writes post
+the settings snapshot before the result. Closing drains publisher/runtime
+before destroying the writer. The queue holds at most8 waiting commands.
+Started writes finish across page closure; obsolete-page replies are withheld.
+
+The codec bounds disk reads and encoded snapshots at1MiB, validates all seven
+defaults, unique tool bindings, known fields, finite dimensions, UTF-8 identity
+text and safe integer revisions. Requests retain16KiB/depth8 limits. Disk
+revision0 is reserved for the missing-file state; saved files begin at1.
+Dimensions remain millimetres and Z offsets are excluded from identity.
+
+Open findings and agreed corrections
+
+1. External file replacement/deletion currently changes the held catalog,
+   including a lower revision or different content at the same revision.
+   Agreed: reject before writing, publish unavailable, require restart. Do not
+   relax the panel's nonregressing available-revision rule.
+2. Unreadable comments currently retain previous descriptions. Blank strings
+   are also unsafe identity substitutes because legitimate G0759 rows have
+   blank descriptions. Agreed: withhold published rows, report failure, retry
+   and republish on recovery; preserve saved bindings and raw preview inputs.
+3. LocalToolModelFiles::lock creates missing directory components but does not
+   synchronize the parent entries that make those directories reachable.
+   Synchronizing the final machine directory after JSON replacement does not
+   establish durability of its entry in the parent. Claude accepted syncing
+   each created directory's parent before reporting storage available, with
+   failure propagation and ordering/failure tests. This is an inference from
+   the source and Linux fsync directory-entry semantics:
+   https://man7.org/linux/man-pages/man2/fsync.2.html
+
+Retained test evidence read independently
+
+Copied9ae6ab3/dev and analyze from the separate store checkout. Recorded
+development build_exit0 and ctest_exit0;21/21 non-simulation tests in10.66s,
+including600 tool-model checks and316 shared-protocol fixture checks. The
+retained development build has77 Ninja steps. These directories contain no
+separate configure/source-cleanliness provenance record, so the source hash
+attribution is Claude's and the containing directory's, not independently
+established by that metadata.
+
+Analyzer build_exit0 is incremental4/4: only tool_model_tests.cpp and
+sim_tests.cpp are visibly checked/relinked in the retained log. It does not
+establish a fresh analyzer run over the production store implementation.
+No new ASAN/TSan or native simulation result is qualified here.
+
+The service integration test wires a real writer, runtime and publisher,
+checks snapshot/result order and unchanged controller tools/offsets, opens a
+second process for lock/restart checks, then creates another session. This is
+useful service-level coverage; it does not exercise an actual GTK editor save
+or complete application restart. Native UI integration remains to be checked.
+
+Host: /home/turo/ai/claudecode-coffeecnc-store/backend/build/sim-history/9ae6ab3/
+Local: /tmp/coffeecnc-store-9ae6ab3-review/
+
+G0759 follow-up at this checkpoint
+
+Machine PR1 head e11000c adds exactly MACHINE_ID=g0759 plus its explanatory
+comment; independently compared against9e82a90. Packaging201c963 adds six
+E-stop scenarios: request/external input during ON-idle, held jog and program
+with spindle. Source reviewed; retained execution evidence is still pending.
+Its sampler records the final state, not every transient state; do not infer
+"never E-stop". Timings are sampled simulation observations, with the external
+timer starting after halcmd returns, not physical stop-latency qualification.
+
+Agreed result behavior: retain failed when requested ESTOP is unconfirmed. If
+fresh status reports OFF, say "LinuxCNC reports machine off; E-stop was not
+confirmed." Do not infer wiring or remove the panel control based on the
+machine name. Claude is implementing the wording after201c963 validation.

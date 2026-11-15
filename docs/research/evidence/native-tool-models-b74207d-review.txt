@@ -132,7 +132,8 @@ run exercises the integrated persistence and OFF-Reset UI, unlike the old
 61fdc34 native evidence. Prefix and unpacked-package startup tests also pass
 in this development run; this does not replace a fresh Release package run.
 
-Sanitizer and fresh Release-package validation of the integration remain
-pending. The current G0759 has no DATA_DIRECTORY override, so the known
-parser mismatch is not triggered by that input. The generic runner still
-needs its parser fix and focused follow-up checks before integration closes.
+At this checkpoint sanitizer/Release records and the parser fix were still
+pending review. Their subsequent review and the remaining runner follow-up
+are recorded in native-tool-models-218ec7c-review.txt. The current G0759 has
+no DATA_DIRECTORY override, so the parser mismatch was not triggered by
+that input in this full development run.

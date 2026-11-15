@@ -1,0 +1,92 @@
+CoffeeCNC tool-model integration: parser fix and qualification records
+2026-11-15 UTC
+
+Reviewed checkpoint 218ec7c3467ba988d5e8f8bfa000d74ebdf8f1b1 and documentation
+commit dca088990713bd1c1dc49c9d2b83ff4b2c6662de. The code delta from b74207d
+is three test-harness shell scripts; no production C++ or panel change.
+PR 19 is a draft pending the runner-test budget and example INI follow-up.
+
+Parser finding closed
+
+run.sh now reads DATA_DIRECTORY with LinuxCNC's inivar, the same INI reader
+used by the backend. Exit 0 supplies the value for the canonical directory
+boundary check; exit 1 means absent optional key/section and permits the
+run-local XDG default. Missing inivar, an unreadable file, or another reader
+exit code refuses the run before locking or creating its run directory.
+
+The assembler also enumerates HAL and file keys with inivar -num. After
+its textual substitution it verifies the effective DISPLAY, PROGRAM_PREFIX
+and final HALFILE with that reader. This retains the intended G0759 INI/HAL
+assembly while checking what LinuxCNC will actually read.
+
+The retained guard log has 18 check lines, correcting the commit's count
+of 19. Both header-suffix regressions pass, as do outside/prefix/parent
+paths, unreadable input and missing-reader refusal. Absent keys remain
+allowed. Lowercase and second-section keys follow inivar's behavior rather
+than an independently invented grammar. The source and these results close
+the header-suffix bypass reported in the b74207d review.
+
+218ec7c portable development tests pass 26/26 in 11.92 seconds. The actual
+G0759 service/startup selection plus its panel fixture passes 3/3 in 51.24
+seconds, with both DISPLAY children exiting 0 and no residual processes.
+The machine checkout is e11000c, clean; INI substitutions, post-GUI order
+and run-local tool-model storage checks still pass.
+
+Completed b74207d records
+
+Copied backend/build/sim-history/{b74207d,218ec7c}/ from the store checkout
+on playhouse2 to /tmp/coffeecnc-store-integration-qualification/.
+Each run now has its own directory; dev-portable and dev-full are distinct.
+
+The archived dev-full LastTest.log is byte-identical to the completed log
+already reviewed in native-tool-models-b74207d-review.txt. Its retained
+CTest stdout/status confirms 38/38, exit 0, total 587.62 seconds.
+
+ASan/UBSan and TSan each pass the 26 tests excluding the linuxcnc label,
+in 27.32 and 39.32 seconds. Both retain 54-step incremental build logs that
+recompile the changed storage, session, publisher, NML, application and test
+units under their respective sanitizer presets; these are more than the
+earlier test-only rebuilds, but are not fresh whole-project builds. Both
+report 770 tool-model and 148 panel-mapping checks, with no sanitizer
+diagnostics found. No native GUI sanitizer qualification is claimed.
+
+The fresh package build records Release, DEVELOPMENT_PATHS=FALSE, all 92
+build steps and actual -O3/-DNDEBUG compilation, with no warning/error
+diagnostics. Its full 33-test suite passes in 468.16 seconds, exit 0. Six
+top-level DISPLAY summaries report child_status=0 and processes_left=0.
+The runner-harness test separately passes its intentional failure cases.
+Actual G0759 storage remains beneath the run-local XDG directory, and no
+normal home settings directory appears.
+
+Prefix and unpacked-DEB startup use their installed executable, panel and
+preview helper; both produce a ready six-segment preview and exit cleanly.
+Installed binary checks find no build-host paths. The package is 4,076,144
+bytes and retains the build-host dependency floor (LinuxCNC 2.9.x, libc6
+2.38, libstdc++6 14). It was unpacked for tests, not installed with dpkg.
+These package checks precede the example INI documentation follow-up.
+
+The analyzer evidence was already reviewed: 92 steps, 58 analyzer calls,
+exit 0. The archived runs do not add separate tracked-cleanliness records
+for each configure/build. Source attribution is the producer's, alongside
+the independent observations of a clean b74207d checkout during and after
+the full development run. Hardware and actual power-loss durability remain
+unqualified.
+
+Remaining review at this checkpoint
+
+The pending four-file runner/example patch derives a 3423-second outer
+runner-test budget and documents optional MACHINE_ID/DATA_DIRECTORY with
+a configuration test. Its outer budget covers ten possible 300-second
+waits, the two fixed waits and a runtime allowance. However, the inner
+timeout_is_bounded check still counts that lock wait against its 90-second
+limit; interrupt/holder startup still watches a global milltask that may
+belong to another lock holder. Sent at 04:44 UTC: measure runtime after
+acquisition and wait for this runner's own startup. No new simulation was
+launched by the reviewer.
+
+Documentation review found no conflict in the new docs/shell.md writer row.
+Requested two wording corrections: absolute XDG paths only in the storage
+reference, and "revision-checked commands, process lock and atomic file
+replacement" instead of suggesting a filesystem compare-and-swap primitive
+in the PR description. The final follow-up and its focused evidence remain
+to be reviewed before this integration is ready to merge.

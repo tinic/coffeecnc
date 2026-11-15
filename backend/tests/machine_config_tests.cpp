@@ -368,6 +368,26 @@ void shipped_example() {
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,
           "the example's signals set to yes");
+  // As shipped the example names no machine: nothing is saved, no directory is configured.
+  require(!config->machine_id && !config->data_directory,
+          "the example as it stands keeps settings for the session only");
+  // Its two commented-out keys, taken into use, are the identity it documents.
+  auto named = section;
+  for (const std::string_view key : {"#MACHINE_ID = ", "#DATA_DIRECTORY = "}) {
+    const auto at = named.find(key);
+    require(at != std::string::npos && named.find(key, at + 1) == std::string::npos &&
+                (at == 0 || named[at - 1] == '\n'),
+            std::format("the example has one commented-out line {}", key));
+    named.erase(at, 1);
+  }
+  const auto identified =
+      load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", named));
+  require(identified.has_value(), identified ? "" : identified.error());
+  require(identified->machine_id == "my-mill" &&
+              valid_machine_id(identified->machine_id.value_or("")) &&
+              identified->data_directory == "/var/lib/coffeecnc",
+          "the example's identity and data directory, uncommented: a valid machine ID and an "
+          "absolute path");
 }
 
 // The INI file run.sh assembles for a profile, without starting LinuxCNC.

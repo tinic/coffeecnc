@@ -56,7 +56,8 @@
 #   ~/ai/coffeecnc-sim-runner-<uid>.lock      (/tmp/... where there is no ~/ai)
 #
 # and keeps it until it exits, cleanup included, on every path; LinuxCNC does not inherit it.
-# Who holds it is in <lock>.info. A held lock is waited for, at most -w seconds (300): then
+# Who holds it is in <lock>.info, and `sim=locked lock=<file> at=<seconds since the epoch>` is
+# printed when it is taken. A held lock is waited for, at most -w seconds (300): then
 # `sim=refused reason=locked ...` and exit code 123, and nothing was started or changed. A
 # LinuxCNC found running while this script holds the lock is not one of these runs: it is never
 # cleaned up from here; the run is refused (125). -n takes no lock: it starts nothing.
@@ -185,6 +186,8 @@ if [ -z "$assemble_only" ]; then
   trap release EXIT
   echo "pid=$$ checkout=$(cd "$here/../../.." && pwd) run_directory=$directory" \
     "program=$(basename "$program") since=$(date -Is)" >"$lock.info"
+  # From here the time is this run's own, not the queue's (seconds since the epoch).
+  echo "sim=locked lock=$lock at=$(date +%s)"
 fi
 mkdir -p "$directory/nc_files" || exit 125
 directory=$(realpath "$directory")

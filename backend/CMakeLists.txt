@@ -186,10 +186,21 @@ if(BUILD_TESTING)
       add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
-      add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
-        ${PROJECT_BINARY_DIR})
-      set_tests_properties(linuxcnc_sim_g0759 linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
+      set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      # The runner's own test calls run.sh many times. Ten of its runs may each wait for a
+      # simulation of another checkout; two wait on the test's own run for fixed times. The
+      # time limit is made of those parts, and the script is handed the same lock wait.
+      set(runner_lock_wait 300)   # run.sh -w of each of the ten runs
+      set(runner_waiting_runs 10)
+      set(runner_own_waits 123)   # the refused run (3 s) and the run that waits its turn (120 s)
+      set(runner_run_time 300)    # everything else the test does; about 160 s measured
+      math(EXPR runner_timeout
+        "${runner_waiting_runs} * ${runner_lock_wait} + ${runner_own_waits} + ${runner_run_time}")
+      add_test(NAME linuxcnc_sim_runner COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/runner_tests.sh
+        ${PROJECT_BINARY_DIR} ${runner_lock_wait})
+      set_tests_properties(linuxcnc_sim_runner PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT ${runner_timeout})
       # run.sh -m refuses a machine INI file that keeps its data outside the run directory.
       # Nothing is started: no label, no lock.
       add_test(NAME sim_data_directory COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/data_directory_tests.sh

@@ -9,11 +9,12 @@ import { SimMachine } from '../src/sim/machine'
 vi.mock('../src/machine', async () => {
   const { reactive, ref } = await import('vue')
   return {
-    panel: reactive({}) as typeof import('../src/machine').panel,
+    panel: reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel,
     findTool: (): null => null,
     linkBlock: ref(null),
     mdiBlock: ref(null),
     send: vi.fn(),
+    onResult: (): (() => void) => () => undefined,
   }
 })
 

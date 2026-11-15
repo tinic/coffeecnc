@@ -1,6 +1,6 @@
 # Native tool-model storage
 
-First increment, agreed interface direction on 15 November 2026. Implementation follows this contract; the panel currently still uses browser defaults and page-local assignments.
+First increment, agreed interface direction on 15 November 2026. The panel implements the messages, validation, machine isolation and save lifecycle below. The native writer and restart-persistence integration remain to be qualified before this increment is complete.
 
 ## Scope and identity
 

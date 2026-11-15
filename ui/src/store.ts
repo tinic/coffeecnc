@@ -300,6 +300,7 @@ export function createPanel(options: PanelOptions): Panel {
     switch (message.type) {
       case 'hello':
         state.toolModels = null
+        state.toolTable = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
           // These snapshots belong to a protocol we can no longer interpret. Clearing hello

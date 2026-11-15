@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -40,13 +41,22 @@ namespace coffeecnc {
 //
 //   no service         `unavailable`, with no_preview_reason as its error text
 //   no program loaded  `unavailable`, no error
+//   first seen while   `unavailable`, with no_start_state_reason: a program (file and
+//   it runs            revision) that has not been seen at rest since it was loaded, or since
+//                      the link came back, has no start state: what is read is the middle of
+//                      its run. Computed once it has been seen at rest.
+//   block delete was   `unavailable`, with plan_broken_reason: the context went up when the
+//   switched during    setting changed, so the path sent before is stale, and nothing is
+//   the run            computed until the run has ended, also when it is switched back
 //   otherwise          what the service has finished for this very context; until then
 //                      `pending`, without segments. A preview of another context is never
 //                      sent under this one.
 //
 // Every new context with a program loaded is submitted to the service, with the inputs in
-// force for it (the start state frozen while a program runs). The service's files_generation
-// is one of the inputs, read at every reading.
+// force for it. While a program runs these are the machine's state from before the run
+// (PreviewContext): the preview during a run is the plan from before the run, not a
+// prediction of what is left of it. The service's files_generation is one of the inputs, read
+// at every reading. Optional stop is not an input: it pauses and changes no path.
 //
 // `work_offsets` always has nine rows, each as available as the reading says; its revision
 // counts from 1 and goes up when a row changes.
@@ -58,6 +68,12 @@ class PanelComposer {
 public:
   static constexpr std::string_view no_preview_reason =
       "This version of CoffeeCNC does not compute a toolpath preview.";
+  static constexpr std::string_view plan_broken_reason =
+      "Block delete was switched while the program runs: the path shown before is not what "
+      "the rest of the run does. A preview is computed when the run has ended.";
+  static constexpr std::string_view no_start_state_reason =
+      "The program was already running when its state was first read: there is no start "
+      "state to preview it from. A preview is computed when the run has ended.";
   static constexpr std::size_t max_waiting = 32;
 
   // `preview` may be null; it must outlive the composer.
@@ -79,6 +95,13 @@ private:
   PreviewService* preview_;
   PreviewContext preview_context_;
   std::uint64_t context_{};
+  // The context has not been submitted to the service yet.
+  bool submit_due_{};
+  bool block_delete_before_run_{};
+  bool plan_broken_{};
+  // The program, file and revision, that was last seen with the interpreter idle.
+  std::optional<std::pair<std::optional<std::string>, std::uint64_t>> seen_at_rest_;
+  bool no_start_state_{};
   Vec3 rest_position_{};
   std::optional<PageToken> page_;
   // hello and the snapshots are owed to the page.

@@ -45,9 +45,12 @@ PanelComposer::PanelComposer(Hello hello, PreviewService* preview)
 
 void PanelComposer::count(const PanelReading& reading) {
   const auto& status = reading.status;
-  // Without a status there are no inputs: the context stays what it was.
-  if (status.link == Link::down)
+  // Without a status there are no inputs: the context stays what it was. What the machine
+  // did meanwhile is not known: the program has to be seen at rest again.
+  if (status.link == Link::down) {
+    seen_at_rest_.reset();
     return;
+  }
   const bool running = status.interp != InterpState::idle;
   if (!running && status.motion.in_position)
     for (const auto& axis : status.axes)
@@ -57,9 +60,25 @@ void PanelComposer::count(const PanelReading& reading) {
   if (preview_ != nullptr)
     inputs.files_generation = preview_->files_generation();
   const auto context = preview_context_.update(inputs, running);
-  if (context == context_)
-    return;
+  if (!running) {
+    block_delete_before_run_ = inputs.block_delete;
+    seen_at_rest_ = std::pair{inputs.program_file, inputs.program_revision};
+  }
+  // A program first seen while it runs has no start state: what was read is the middle of
+  // its run.
+  no_start_state_ =
+      running && seen_at_rest_ != std::pair{inputs.program_file, inputs.program_revision};
+  // Block delete switched while the program runs: the rest of the run is no longer the plan
+  // that was previewed, and no coherent one can be computed before the run has ended.
+  // For the rest of that run, also when it is switched back: blocks already skipped or run
+  // under the other setting stay so.
+  plan_broken_ =
+      running && (plan_broken_ || inputs.block_delete != block_delete_before_run_);
+  submit_due_ = submit_due_ || context != context_;
   context_ = context;
+  if (!submit_due_ || plan_broken_ || no_start_state_)
+    return;
+  submit_due_ = false;
   if (preview_ != nullptr && preview_context_.inputs().program_file)
     preview_->submit(context_, preview_context_.inputs());
 }
@@ -91,6 +110,10 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   std::shared_ptr<const Preview> finished;
   if (preview_ == nullptr) {
     made.error = PreviewError{0, std::string(no_preview_reason)};
+  } else if (status.program.file && no_start_state_) {
+    made.error = PreviewError{0, std::string(no_start_state_reason)};
+  } else if (status.program.file && plan_broken_) {
+    made.error = PreviewError{0, std::string(plan_broken_reason)};
   } else if (status.program.file) {
     finished = preview_->latest();
     if (!finished || finished->context != status.preview_context) {

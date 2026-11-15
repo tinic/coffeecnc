@@ -241,21 +241,166 @@ void composer_tools_are_inputs() {
   require(compose(composer, r).context() == first + 4, "The same table: the same context");
 }
 
-void composer_start_state_is_frozen_while_running() {
+void composer_plan_of_before_the_run() {
   FakeService service;
   PanelComposer composer{hello(), &service};
   auto r = reading();
   const auto first = compose(composer, r).context();
+  service.finish(first);
+  static_cast<void>(compose(composer, r));
+  // The program runs and changes G92, the work offset, the tool: nothing of it is an input.
   r.status.interp = InterpState::reading;
   r.status.active_codes = {"G0", "G55"};
-  r.status.program.block_delete = true; // not start state: counts at once
-  const auto step = compose(composer, r);
+  r.status.offsets.g92 = {5, 0, 0};
+  r.status.offsets.g5x = {10, 23, 30};
+  r.work_systems.at(0) = WorkSystem{{10, 23, 30}, 0, true};
+  r.preview_tools = {{0, 2, 2, {0, 0, 40}, 3, 0, 0, 0}};
+  auto step = compose(composer, r);
+  require(step.context() == first && !step.preview && service.submitted.size() == 1,
+          "While the program runs its own changes are no new context: the plan of before the "
+          "run stays the preview");
+  // A file changed meanwhile is one, computed from the state of before the run.
+  service.generation = 1;
+  step = compose(composer, r);
   require(step.context() == first + 1 && service.submitted.size() == 2 &&
-              service.submitted[1].inputs.block_delete &&
+              service.submitted[1].inputs.g92 == Vec3{} &&
+              service.submitted[1].inputs.systems.at(0).offset == Vec3{10, 20, 30} &&
+              service.submitted[1].inputs.raw_tools.empty() &&
               service.submitted[1].inputs.start.active_codes ==
                   std::vector<std::string>{"G1", "G54"},
-          "While the program runs a new context is computed from the start state before the "
-          "run");
+          "A new context during the run is computed from the machine as it was before the run");
+  // Ended: what the run left is one new context.
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(step.context() == first + 2 && service.submitted.size() == 3 &&
+              service.submitted[2].inputs.g92 == Vec3{5, 0, 0} &&
+              service.submitted[2].inputs.raw_tools.size() == 1,
+          "After the run the state it left is one new context");
+  require(compose(composer, r).context() == first + 2 && service.submitted.size() == 3, "One");
+}
+
+// Block delete switched in a pause: the path shown is no longer the plan, and none can be
+// computed before the run has ended.
+void composer_block_delete_during_a_run() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  const auto first = compose(composer, r).context();
+  service.finish(first);
+  static_cast<void>(compose(composer, r));
+  r.status.interp = InterpState::paused;
+  static_cast<void>(compose(composer, r));
+  r.status.program.block_delete = true;
+  auto step = compose(composer, r);
+  require(step.context() == first + 1 && step.preview &&
+              step.preview->at("state") == "unavailable" &&
+              step.preview->at("context") == first + 1 &&
+              step.preview->at("error").at("line") == 0 &&
+              step.preview->at("error").at("text") == PanelComposer::plan_broken_reason &&
+              step.preview->at("segments").empty() && service.submitted.size() == 1,
+          "Block delete switched while paused: the context goes up, the preview for it says "
+          "why there is none, and nothing is computed");
+  r.status.interp = InterpState::reading;
+  step = compose(composer, r);
+  require(step.context() == first + 1 && !step.preview && service.submitted.size() == 1,
+          "For the rest of the run: once, and still nothing computed");
+  // The run ends where it began: the same context, and now it is computed, once.
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(step.context() == first + 1 && service.submitted.size() == 2 &&
+              service.submitted[1].context == first + 1 &&
+              service.submitted[1].inputs.block_delete && step.preview &&
+              step.preview->at("state") == "pending",
+          "When the run has ended the context is computed, once");
+  service.finish(first + 1);
+  step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "ready" && service.submitted.size() == 2,
+          "And its preview is sent");
+
+  // Switched, and switched back within the same pause: still no plan. Blocks already skipped
+  // or run under the other setting stay so.
+  r.status.interp = InterpState::paused;
+  static_cast<void>(compose(composer, r));
+  r.status.program.block_delete = false;
+  step = compose(composer, r);
+  require(step.context() == first + 2 && step.preview->at("state") == "unavailable" &&
+              service.submitted.size() == 2,
+          "Switched again in a pause: no plan");
+  r.status.program.block_delete = true;
+  step = compose(composer, r);
+  require(step.context() == first + 3 && step.preview &&
+              step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::plan_broken_reason &&
+              step.preview->at("context") == first + 3 && service.submitted.size() == 2,
+          "Switched back to what it was: still no plan for this run, and no return to the "
+          "preview of before");
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(step.context() == first + 3 && service.submitted.size() == 3 &&
+              step.preview->at("state") == "pending",
+          "When the run has ended: one computation for the state found");
+  // Optional stop is not an input of a preview.
+  r.status.program.optional_stop = !r.status.program.optional_stop;
+  require(compose(composer, r).context() == first + 3 && service.submitted.size() == 3,
+          "Optional stop changes no context");
+}
+
+// A program first seen while it runs has no start state.
+void composer_no_start_state() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  r.status.interp = InterpState::reading;
+  auto step = compose(composer, r);
+  const auto first = step.context();
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("line") == 0 &&
+              step.preview->at("error").at("text") == PanelComposer::no_start_state_reason &&
+              step.preview->at("context") == first && service.submitted.empty(),
+          "A first reading during a run: no preview, with the reason, and nothing computed");
+  r.status.interp = InterpState::paused;
+  require(!compose(composer, r).preview && service.submitted.empty(), "Paused: the same");
+  r.status.interp = InterpState::idle;
+  step = compose(composer, r);
+  require(service.submitted.size() == 1 && service.submitted[0].context == step.context() &&
+              step.preview && step.preview->at("state") == "pending",
+          "Seen at rest: computed, once");
+  static_cast<void>(compose(composer, r));
+  require(service.submitted.size() == 1, "Once");
+  // Run again: now there is a start state.
+  r.status.interp = InterpState::reading;
+  step = compose(composer, r);
+  require(!step.preview && service.submitted.size() == 1, "A run seen from its start keeps its plan");
+
+  // Another program, loaded and started by someone else, seen only while it runs.
+  r.status.program.file = "/nc/other.ngc";
+  r.status.program.revision = 2;
+  step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::no_start_state_reason &&
+              service.submitted.size() == 1,
+          "Another program first seen running: no preview and no computation");
+  r.status.interp = InterpState::idle;
+  static_cast<void>(compose(composer, r));
+  require(service.submitted.size() == 2 &&
+              service.submitted[1].inputs.program_file == "/nc/other.ngc",
+          "Until it is seen at rest");
+
+  // The link was down: whatever happened meanwhile, the program must be seen at rest again.
+  auto down = r;
+  down.status.link = Link::down;
+  static_cast<void>(compose(composer, down));
+  r.status.interp = InterpState::reading;
+  r.status.offsets.g5x = {11, 20, 30};
+  r.work_systems.at(0) = WorkSystem{{11, 20, 30}, 0, true};
+  step = compose(composer, r);
+  require(step.preview && step.preview->at("state") == "unavailable" &&
+              step.preview->at("error").at("text") == PanelComposer::no_start_state_reason &&
+              service.submitted.size() == 2,
+          "A link that returns in the middle of a run: no start state");
+  r.status.interp = InterpState::idle;
+  static_cast<void>(compose(composer, r));
+  require(service.submitted.size() == 3, "At rest again: computed");
 }
 
 void composer_without_a_service() {
@@ -404,7 +549,9 @@ auto main() -> int {
     composer_stale_and_recomputed();
     composer_files_generation_is_an_input();
     composer_tools_are_inputs();
-    composer_start_state_is_frozen_while_running();
+    composer_plan_of_before_the_run();
+    composer_block_delete_during_a_run();
+    composer_no_start_state();
     composer_without_a_service();
     worker_computes_the_newest();
     worker_hands_the_submitted_tools_on();

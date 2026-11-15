@@ -17,9 +17,19 @@ namespace coffeecnc {
 // It counts from 1 and goes up by one with every change, so two different sets of inputs never
 // share a context and nothing depends on a hash. 0.0 and -0.0 are the same value.
 //
-// While a program runs the interpreter's state is the program's doing, not a new start state:
-// with `running` the start state seen last before the run stays in force, and a change of it
-// counts once the run has ended. The other inputs count at once in either case.
+// While a program runs, the machine's state is the program's doing so far: a G92, a G10 L2, a
+// tool change of the program itself change offsets and tool table, and a preview computed
+// from them would replay the program from its first line with values that exist only because
+// part of it has run. With `running` every input that is machine state stays what it was
+// before the run: the start state, the work systems, G92, the tool table. The preview of the
+// context of the run's start stays the current one for the whole run, paused included, and
+// what the machine is when the run has ended counts then, as one new context. A change made
+// from outside the program during the run (another client's G10 in a pause) cannot be told
+// from the program's own and is frozen with it: it counts when the run has ended.
+//
+// What is not machine state counts at once also while running: another program or a reload,
+// a changed file (files_generation), and block delete, which the operator can switch in a
+// pause.
 //
 // Pure logic, NOT thread-safe.
 class PreviewContext {

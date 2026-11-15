@@ -27,8 +27,16 @@ auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
 
 auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::uint64_t {
   PreviewInputs now = inputs;
-  if (running && last_)
+  if (running && last_) {
+    // What the machine is while the program runs is the program's doing so far: a preview
+    // computed from it would replay the program from its first line with offsets and tools
+    // that exist only because part of it has run.
     now.start = last_->start;
+    now.systems = last_->systems;
+    now.g92 = last_->g92;
+    now.tools = last_->tools;
+    now.raw_tools = last_->raw_tools;
+  }
   if (!last_ || !same_inputs(now, *last_)) {
     ++context_;
     last_ = std::move(now);

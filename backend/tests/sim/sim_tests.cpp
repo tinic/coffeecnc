@@ -46,6 +46,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -2040,6 +2041,192 @@ void oracle_path(PreviewOracle& oracle) {
                                     was.g5x[1], was.g5x[2], was.rotation_xy)));
 }
 
+// A service that only counts what it is asked to compute.
+class CountingService final : public PreviewService {
+public:
+  void submit(std::uint64_t context, const PreviewInputs&) override { contexts.push_back(context); }
+  [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override { return {}; }
+  [[nodiscard]] auto files_generation() const -> std::uint64_t override { return 0; }
+  std::vector<std::uint64_t> contexts;
+};
+
+// A program that changes G92, a work offset and the tool while it runs: for the whole run,
+// paused included, the preview context stays the one of its start and nothing is computed;
+// when it has ended, what it left is one new context.
+void preview_context_during_a_run(PreviewOracle& oracle) {
+  Rig& rig = oracle.rig;
+  const auto mdi = [&](std::string_view text) -> void {
+    static_cast<void>(rig.send(std::format(R"("type":"mdi","text":"{}")", text)));
+    rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
+  };
+  mdi("G21 G90 G54 G49");
+  mdi("G0 X0 Y0 Z20");
+  if (rig.snapshot().tool_in_spindle != 1) {
+    static_cast<void>(rig.send(R"("type":"mdi","text":"T1 M6")"));
+    rig.pump_until(10s, [&]() -> bool { return rig.snapshot().requested_tool.has_value(); });
+    static_cast<void>(rig.send(R"("type":"tool_changed")"));
+    rig.pump_until(10s, [&]() -> bool { return rig.idle() && rig.snapshot().tool_in_spindle == 1; });
+  }
+  const auto was = rig.status();
+  {
+    std::ofstream out{oracle.program};
+    out << "G21 G90\n"             // 1
+           "G1 X2 F600\n"          // 2
+           "G92 X10\n"             // 3
+           "G1 X12\n"              // 4
+           "M0\n"                  // 5
+           "G10 L2 P1 Y3\n"        // 6
+           "G1 Y2\n"               // 7
+           "T2 M6\n"               // 8
+           "G43\n"                 // 9
+           "G1 Z25\n"              // 10
+           "G4 P0.3\n"             // 11
+           "G92.1\n"               // 12
+           "M2\n";                 // 13
+  }
+  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", oracle.program));
+  rig.settle();
+  CountingService service;
+  PanelComposer composer{oracle.source.hello(), &service};
+  std::uint64_t context = 0;
+  const auto step = [&]() -> std::uint64_t {
+    const auto reading = oracle.source.read();
+    const auto messages = composer.compose(reading, PageToken{1}, false, 0ms);
+    if (messages)
+      for (const auto& text : *messages)
+        if (const auto message = Json::parse(text); message.at("type") == "status")
+          context = message.at("preview_context").get<std::uint64_t>();
+    return context;
+  };
+  // At rest with the program loaded: the context of the run's start.
+  for (int i = 0; i < 20; ++i) {
+    rig.pump(50ms);
+    step();
+  }
+  const auto at_start = context;
+  const auto computed_at_start = service.contexts.size();
+  const auto run = rig.send(R"("type":"run")");
+  std::set<std::uint64_t> during;
+  bool paused_seen = false;
+  bool g92_seen = false;
+  bool offset_seen = false;
+  bool tool_seen = false;
+  const bool ended = rig.pump_until(60s, [&]() -> bool {
+    static auto next = Clock::now();
+    const auto status = rig.status();
+    const bool running = status.controller.interp != InterpState::idle;
+    if (Clock::now() >= next) {
+      next = Clock::now() + 50ms;
+      const auto now = step();
+      if (running && rig.status().controller.interp != InterpState::idle)
+        during.insert(now);
+    }
+    g92_seen = g92_seen || std::fabs(status.g92[0]) > 0.001;
+    offset_seen = offset_seen || !near(status.g5x[1], was.g5x[1], 0.001);
+    tool_seen = tool_seen || status.controller.tool_in_spindle == 2;
+    if (status.paused && running) {
+      paused_seen = true;
+      // Paused at M0 with G92 in force: still the same context after a while.
+      for (int i = 0; i < 6; ++i) {
+        rig.pump(50ms);
+        during.insert(step());
+      }
+      static_cast<void>(rig.send(R"("type":"resume")"));
+    }
+    if (rig.snapshot().requested_tool)
+      static_cast<void>(rig.send(R"("type":"tool_changed")"));
+    return during.size() > 0 && rig.idle() && !status.paused && tool_seen;
+  });
+  const auto computed_during = service.contexts.size();
+  // Ended: what the program left is a new context, one.
+  for (int i = 0; i < 30; ++i) {
+    rig.pump(50ms);
+    step();
+  }
+  check("preview_context_frozen_during_a_run",
+        open.accepted() && run.accepted() && ended && paused_seen && g92_seen && offset_seen &&
+            tool_seen && during == std::set<std::uint64_t>{at_start} &&
+            computed_during == computed_at_start && context == at_start + 1 &&
+            service.contexts.size() == computed_at_start + 1,
+        std::format("open={} run={} ended={} paused={} g92_seen={} offset_seen={} tool_seen={} "
+                    "context_at_start={} contexts_during={} computations_during={} "
+                    "context_after={} computations_after={}",
+                    open.text(), run.text(), ended, paused_seen, g92_seen, offset_seen, tool_seen,
+                    at_start, during.size(), computed_during - computed_at_start, context,
+                    service.contexts.size() - computed_at_start));
+  mdi("G21 G90 G49");
+  mdi(std::format("G10 L2 P1 X{:.6f} Y{:.6f} Z{:.6f} R{:.6f}", was.g5x[0], was.g5x[1], was.g5x[2],
+                  was.rotation_xy));
+}
+
+// The executable's source and composer attached to a task that is in the middle of a
+// program: there is no start state, nothing is computed until the program was seen at rest.
+void preview_attached_mid_program(PreviewOracle& oracle) {
+  Rig& rig = oracle.rig;
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54 G0 X0 Y0")"));
+  rig.pump_until(20s, [&]() -> bool { return rig.idle(); });
+  {
+    std::ofstream out{oracle.program};
+    out << "G21 G90\nG1 X20 F600\nG1 X0\nM2\n";
+  }
+  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", oracle.program));
+  rig.settle();
+  const auto run = rig.send(R"("type":"run")");
+  const bool moving = rig.pump_until(5s, [&]() -> bool { return rig.status().motion_line >= 2; });
+  // Only now does a source of its own begin to read.
+  NmlPanelSource source{rig.config, *rig.mailbox,
+                        [&]() -> std::optional<std::vector<LoadedTool>> {
+                          return loaded_tools(oracle.table.read_raw(),
+                                              rig.config.millimetres_per_unit);
+                        },
+                        [&](std::string_view path, std::uint64_t revision)
+                            -> std::expected<ProgramText, std::string> {
+                          return rig.programs.read_program(path, revision);
+                        },
+                        rig.loads};
+  CountingService service;
+  PanelComposer composer{source.hello(), &service};
+  Json preview;
+  const auto step = [&]() -> void {
+    const auto messages = composer.compose(source.read(), PageToken{1}, false, 0ms);
+    if (messages)
+      for (const auto& text : *messages)
+        if (auto message = Json::parse(text); message.at("type") == "preview")
+          preview = std::move(message);
+  };
+  std::size_t computed_during = 0;
+  Json during;
+  bool seen_running = false;
+  const bool ended = rig.pump_until(30s, [&]() -> bool {
+    static auto next = Clock::now();
+    if (Clock::now() < next)
+      return false;
+    next = Clock::now() + 50ms;
+    const bool running = !rig.idle();
+    step();
+    if (running && !rig.idle()) {
+      seen_running = true;
+      computed_during = service.contexts.size();
+      during = preview;
+    }
+    return seen_running && rig.idle() && !rig.status().paused;
+  });
+  for (int i = 0; i < 10; ++i) {
+    rig.pump(50ms);
+    step();
+  }
+  check("preview_attached_mid_program_has_no_start_state",
+        open.accepted() && run.accepted() && moving && ended && seen_running &&
+            computed_during == 0 && during.is_object() && during.at("state") == "unavailable" &&
+            during.at("error").at("line") == 0 &&
+            during.at("error").at("text") == PanelComposer::no_start_state_reason &&
+            service.contexts.size() == 1 && preview.at("state") == "pending",
+        std::format("run={} moving={} ended={} computations_during={} preview_during={} "
+                    "computations_after={} preview_after={}",
+                    run.text(), moving, ended, computed_during, during.dump().substr(0, 200),
+                    service.contexts.size(), preview.value("state", "-")));
+}
+
 void tools(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G49")"));
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
@@ -2581,6 +2768,8 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   abort_overtakes_what_waits_for_the_gate(rig);
   tools(rig);
   oracle_path(oracle);
+  preview_context_during_a_run(oracle);
+  preview_attached_mid_program(oracle);
   stale_link(rig);
   power_off(rig);
   for (const auto& message : rig.all_messages())

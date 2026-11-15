@@ -1,6 +1,6 @@
 # Native backend
 
-C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md).
+C++23 sources of the `coffeecnc` executable, a LinuxCNC `DISPLAY` program that shows the panel of `ui/` in a GTK/WebKit window. It has run only against LinuxCNC 2.9.4 in a simulation configuration; nothing here has operated a machine. Window, threads, start-up and qualification: [`docs/shell.md`](../docs/shell.md). Toolpath preview: [`docs/preview.md`](../docs/preview.md).
 
 ## Layers
 
@@ -47,18 +47,21 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | `status_publishing` | | Sequence numbers, change detection, snapshots after `ready`, `preview_context` |
 | `program_store` | | Path containment, symlink escapes, listing caps, program text |
 | `panel_assets` | | Panel file resolution: missing 404, traversal and absolute path 403, media types |
+| `preview_service` | | Composer and preview worker on fakes: pending, result, stale and recomputed, frozen inputs during a run, block delete during a run, coherent start, reuse after revalidation |
+| `preview_wire` | | Request round trip; hostile helper results, each with a time bound; refused blocks, O-word names, forbidden comments; bounded name collection |
+| `preview_engine` | | The real helper on `librs274`: lines, arcs, units, offsets, tools, subroutine files, every refusal, limits, helper endings, file manifest, repository samples. Built with the adapter |
 | `panel_feed` | | Publisher thread: period, snapshots after every `ready`, no reading begun after stop |
 | `panel_mapping` | | LinuxCNC status to panel messages: link age, prepared tool, programmed feed across G20/G21, wait order, tool-table load bracketing. Built with the adapter |
 | `session_lifecycle` | | Page generations, ready gate, ids, policy, mode switching, stop decisions, hold and reconcile, release latch, tracked increments, cancellation, on a stepped driver |
 | `runtime_threads` | | The same on real threads: dead-man on time while the worker blocks, stale actions dropped, stop priority, bounded queues, bounded safe shutdown; about 4 s |
 | `hal_control` | | Pin ownership by the control thread, tool-change confirmation bound to its request. Built with the adapter |
 | `machine_config` | | INI reading: units, limits, per-axis jog ceilings, increments, spindle ceiling, homing requirement, optional signals. Built with the adapter |
-| `linuxcnc_sim_mm`, `linuxcnc_sim_inch` | `linuxcnc` | The real `Session` on `NmlPort` against LinuxCNC in simulation, through the `Runtime`, 104 checks, about 53 s each |
+| `linuxcnc_sim_mm`, `linuxcnc_sim_inch` | `linuxcnc` | The real `Session` on `NmlPort` against LinuxCNC in simulation, through the `Runtime`; line counters; the preview compared with what the simulated machine does; 121 checks, about 85 s each |
 | `linuxcnc_sim_g0759` | `linuxcnc` | The same against a profile with the G0759's values (`run.sh -p g0759`): unhomed MDI and run, per-axis ceilings, spindle ceiling, tool change without tool lengths, optional signals; about 13 s |
 | `linuxcnc_sim_runner` | `linuxcnc` | `tests/sim/run.sh` ends every process after a timeout, SIGTERM and SIGHUP, and fails a program that prints `exit=0` and then exits 7, dies of a signal, or prints a failure and exits 0; a program that prints nothing and exits 0 passes; about 110 s. SIGINT is handled by the same trap but not tested: bash starts a background job with it ignored |
 | `coffeecnc_cli` | | Command line and start-up refusals of the executable; no LinuxCNC, no display |
 | `panel_bundle`, `panel_stamp` | | Build `ui/dist` from this checkout; the stamp checker refuses a changed source, a changed bundle and an unbuilt source |
-| `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 202 checks, about 31 s each. Not registered in the `tsan` preset |
+| `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 229 checks, about 32 s each, with a paired STEP sample over a computed preview. Not registered in the `tsan` preset |
 | `linuxcnc_coffeecnc_start` | `linuxcnc` | The executable starts, shows the panel, and SIGTERM ends it and LinuxCNC with no process left. Not registered in the `tsan` preset |
 
 `ctest --preset dev -LE linuxcnc` skips the simulation tests; they exist only where the adapter builds. One LinuxCNC runs per host: `run.sh` refuses to start while another instance or `/tmp/linuxcnc.lock` exists. Each simulation test runs in `build/<preset>/sim/<CTest name>/`. `run.sh` goes by how the DISPLAY program really ended (`display.status`: exit code or signal) and prints `printed_exit=` and `child_status=`. Keep the logs of a failing run before re-running (`build/sim-history/<commit>/<preset>/`, with `Testing/Temporary/LastTest.log`). Simulation output is one `check=<name> result=pass|fail detail=…` line per check. A shell test first checks that `ui/dist` was built from the `ui/` sources of the checkout (`tests/sim/check-panel-stamp.mjs`).
@@ -77,7 +80,9 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | Home all is refused unless every joint has a `HOME_SEQUENCE`: LinuxCNC would accept it and do nothing | `NmlPort::home` |
 | A program path must resolve to a regular file inside `[DISPLAY] PROGRAM_PREFIX`, through symlinks, and be at most 254 bytes | `ProgramStore`, `Session` |
 | A listing shows at most 1000 entries and a program at most 16 MiB of whole lines; both say `truncated` | `ProgramStore` |
-| `preview_context` goes up by one whenever a preview input changes: program, offsets, G92, tool table, block delete, and the interpreter start state, which is frozen while a program runs | `PreviewContext` |
+| `preview_context` goes up by one whenever a preview input changes: program, files of the program, block delete, and the machine state (work systems, G92, the tool table with every field, interpreter start state). The machine state is frozen while a program runs or is paused | `PreviewContext` |
+| A preview is computed only from a coherent start: at rest, tool table accepted, link live, for that program revision. During a run it is the plan from before the run | `PanelComposer` |
+| Every `ctest` checkpoint of a C++ change includes a build of the `analyze` preset | |
 | No non-finite number reaches the wire: the encoder refuses the message | `encode_*` |
 | Joint jog until all axes are homed, axis jog after | `Decision::jog_space`, `NmlPort::start_jog` |
 | A page load is a generation; messages of another page are dropped; ids strictly increase | `Session::begin_page`, `handle` |
@@ -109,10 +114,10 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | Tool-change generation | A request withdrawn and raised again for the same tool within one control period is not told apart |
 | Adapter tests | Adapter cancellation is tested in simulation only; there is no fake channel layer |
 | ThreadSanitizer | It does not see inside libnml; the argument for libnml rests on the gate |
-| Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. Preview and run need an immutable copy before live use |
-| Preview | No interpreter preview: `Preview` is sent as `unavailable`. The panel hides an imported part without one, so the STEP overlay is not qualified |
+| Program path | The path check and LinuxCNC's own open are separate calls: a path changed in between is not caught. The preview works on a private copy and is stale within 1 s of a change; the copy does not bind what task opens at run |
+| Preview | Public interpreter API only. A program stops being previewed at the first parameter (`#`), `M100`–`M199`, probe, `M66`, `G28`/`G30`, or a work system other than the active one; programs with comments that run code or write files, and configurations with `[RS274NGC] REMAP`, are refused. See `docs/preview.md` |
 | Work offsets | `EMC_STAT` carries only the active system; the other eight are sent `available: false` with zeros |
-| Tool table | Shown from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Comments come from the file at load time |
+| Tool table | Shown, and used for the preview with every field, from LinuxCNC's tool data memory after two identical passes with task idle between them: a stability check on samples, not an atomic read. A program that writes the memory directly is not bracketed. Comments come from the file at load time |
 | ThreadSanitizer and the GUI | Unqualified: GLib, GTK and WebKit are not instrumented. Run by hand at 4588b3b: 133, 140 and 76 reports, none with an access-origin stack in CoffeeCNC code; no suppression |
 | LeakSanitizer | Suppressed in asan builds: `libfontconfig.so`, `libGLX_mesa.so`, `libjavascriptcoregtk-4.1.so`, nothing else; a leak this program causes through an allocation in one of them is hidden too. The GUI tests run with `NO_AT_BRIDGE=1`: with GTK's accessibility bridge on, libdbus holds 800 to 1216 bytes at exit. The executable does not set it; execution with accessibility is unqualified for leaks |
 | Start-up signal | SIGTERM before the window runs is not handled; the HAL component is then left to LinuxCNC's shutdown |

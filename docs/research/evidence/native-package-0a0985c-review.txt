@@ -1,0 +1,60 @@
+CoffeeCNC packaging review, 2026-11-15 03:59 UTC
+
+Code: 0a0985c0b7cbff4bb2c94853d0afff8f5ac6c1d5.
+PR: https://github.com/tinic/coffeecnc/pull/18
+Reviewed PR head: 30ac421f2ca8e42dd1c1e2bab86cf07857594cc8, draft.
+Changes after the code checkpoint are a merge of main and documentation;
+no further production/test source changes. All four fix files and the
+subsequent documentation changes were read. No hardware was operated.
+
+Stale E-stop confirmation finding
+
+The result now requires a live status, a command successfully written by
+this action, and a status echo serial at least that command's serial. Both
+the settling predicate and the final result use these requirements. Cached
+ESTOP, OFF or ON without this evidence cannot confirm or describe the result
+as a current controller state. The original command failure remains an
+operator message. Portable checks cover stale/down links, pre-command state,
+missing state, live confirmed ESTOP and live unconfirmed OFF/ON.
+
+The native regression freezes LinuxCNC task, requests E-stop through the
+port, verifies failed/unconfirmed despite the readable cached status, then
+resumes task and waits for a live link. The source fix closes the finding
+from the 69880e8 review for the tested cases below.
+
+Retained development evidence independently copied and read
+
+Host: /home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/0a0985c/dev/
+Local: /tmp/coffeecnc-packaging-0a0985c-review/dev/
+
+Provenance records this code head, tracked dirty=0, configure_exit=0,
+build_exit=0 and ctest_exit=0, with no CTest selection filter. The only
+git-status entry is untracked ../concept.png. Full development CTest passes
+35/35 in 573.78s, including 120 core-behavior checks. This is not a fresh
+production rebuild claim.
+
+The frozen-task E-stop regression and link recovery pass in all four native
+adapter scenarios: metric, inch, the G0759-shaped profile and the actual
+G0759 configuration with simulated hardware. All ten top-level DISPLAY runs
+report actual child_status=0 and processes_left=0. No failing check lines.
+The runner contention/cleanup checks, all six G0759 E-stop preparations,
+software-request OFF wording, external-input ESTOP observations, reset
+recovery, both shell suites and installed prefix/unpacked-package startup
+also pass. Machine source is clean e11000c.
+
+Both shell tests serve the old preview bundle, not the pending persistence
+UI or Reset-while-OFF control:
+  inputs a1cd52cfb90eec6626b810d7a9e001f0b57e6bef1c871b70cba2cb8aa626b60d
+  assets ff90e920d574813037ed865390c45f5ed4d7dd96ebbf7a5147f9505fd679cca1
+
+PR documentation review
+
+The install/package reference, backend README and interface additions were
+reviewed through bc57a7b. Corrections in 432783e and 30ac421 remove unsupported
+sampling-interval/external-stop bounds, scope user-enable-out observations
+to the G0759 simulation, include reset from ESTOP, and identify the OFF-state
+reset control as pending UI integration. Their diff is documentation only.
+
+Fresh analyzer and Release qualification for this code checkpoint remain
+pending. Prior successful 69880e8 builds do not test the new stale-status
+regression. PR #18 remains unmerged at this checkpoint.

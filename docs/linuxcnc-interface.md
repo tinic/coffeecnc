@@ -78,6 +78,11 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | `task.heartbeat` | Counts on 2.9.4 (Elle saw 0 on its build) | Not used |
 | Machine on from E-stop | `EMC_TASK_SET_STATE` ON returns `RCS_DONE`; the state stays ESTOP | Verify the reported state, not the command status |
 | Machine off | Reported as ESTOP_RESET, never as OFF | Protocol `off` |
+| E-stop reset | `off` sent while the machine is on is a power-off; only `off` sent while off is the E-stop reset that sets `iocontrol.0.user-enable-out`. After an E-stop request, `on` alone is accepted with `user-enable-out` still false. A reset sent within one io cycle (100 ms) of the E-stop input closing is undone by task | The panel offers the reset while off; a machine whose chain reads `user-enable-out` needs it before on |
+| E-stop where `emc-enable-in` is an external input only | A display program's request ends with the machine reported off, no E-stop sample (sequence on, off; 426 to 432 samples of about 20 ms); motion and spindle enable end. The external input opening reports E-stop within two io cycles. Sampled in simulation on the G0759's HAL files; not stop-latency evidence for a machine | The request's result is `failed`: E-stop was not confirmed |
+| Status buffer | Keeps what task wrote last when task stops | A state counts only from a live status that echoes the command's serial number |
+| INI lines | LinuxCNC reads 255 characters of a line | The DISPLAY line carries the program only; arguments go into a wrapper |
+| Second display program | A second start of the post-GUI file under one running LinuxCNC fails at `loadrt` (already loaded) | The application is started once per LinuxCNC session |
 | Home all | `EMC_JOINT_HOME` with joint −1; needs joint mode; 2–4 s in simulation | |
 | Teleop | Task enters teleop by itself when all joints are homed; `EMC_TRAJ_SET_TELEOP_ENABLE` is needed to leave it for homing or a joint jog | Corrects the Commands table: the message is for leaving, not entering |
 | Axis jog while unhomed | Moves 0 without teleop; with teleop enabled an unhomed axis jog moves (2.3 mm in 300 ms). Neither task nor motion ties teleop to homing | CoffeeCNC still uses joint jogs until all axes are homed |

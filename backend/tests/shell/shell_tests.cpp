@@ -372,10 +372,10 @@ void first_page(const Rig& rig) {
     rows = offsets.at("systems").at(i).at("available") == (i == 0);
   check("work_offsets_only_active_available", rows, offsets.dump());
   const auto preview = rig.js("return __t.last.preview;");
-  check("preview_unavailable_with_reason",
+  check("preview_unavailable_without_a_program",
         preview.is_object() && preview.at("state") == "unavailable" &&
             preview.at("context") == status.at("preview_context") &&
-            preview.at("error").is_object(),
+            preview.at("error").is_null() && preview.at("segments").empty(),
         preview.dump());
   const auto tools = rig.js("return __t.last.tool_table;");
   fact("tool_table", tools.dump());
@@ -890,6 +890,69 @@ void tool_table(const Rig& rig) {
         rig.js("return __t.last.tool_table;").dump());
 }
 
+// The preview of part.ngc as the page receives it: computed by LinuxCNC's interpreter in the
+// helper for the status's context, stale when a work offset changes, and computed again.
+void preview_of_the_loaded_program(const Rig& rig) {
+  const std::string current = "__t.last.preview && __t.last.preview.state === 'ready' && "
+                              "__t.last.preview.context === __t.last.status.preview_context";
+  const bool ready = rig.wait_js(current, 20s);
+  const auto first = rig.js("return [__t.last.preview, __t.last.status.preview_context, "
+                            "__t.last.status.offsets, __t.counts.preview];");
+  const auto& preview = first.at(0);
+  bool path = ready && preview.is_object() && preview.at("segments").size() == 3 &&
+              preview.at("error").is_null() && preview.at("bounds").is_object();
+  const std::array lines{3, 5, 7};
+  for (std::size_t i = 0; path && i < lines.size(); ++i) {
+    const auto& segment = preview.at("segments").at(i);
+    path = segment.at("line") == lines.at(i) && segment.at("kind") == "feed" &&
+           segment.at("tool") == (i == 0 ? 0 : 2) && segment.at("points").size() == 6;
+  }
+  // G1 X10 Y0, X14, X16 in G54: machine X is the work offset further.
+  const double offset = first.at(2).at("g5x").at(0).get<double>();
+  const auto x_of = [](const Json& of, std::size_t segment) -> double {
+    return of.at("segments").at(segment).at("points").at(3).get<double>();
+  };
+  path = path && near(x_of(preview, 0), 10 + offset, 0.001) &&
+         near(x_of(preview, 1), 14 + offset, 0.001) && near(x_of(preview, 2), 16 + offset, 0.001);
+  check("preview_of_loaded_program", path,
+        std::format("ready={} context={} status_context={} g5x_x={} preview={}", ready,
+                    preview.is_object() ? preview.at("context").dump() : "-", first.at(1).dump(),
+                    offset, preview.dump().substr(0, 700)));
+
+  // Another client moves the work offset of G54 by 1.5 machine units.
+  const double unit = rig.config.millimetres_per_unit;
+  const auto mdi = [&](double x_offset_mm) -> bool {
+    return std::system(std::format(
+                           "python3 -c \"import linuxcnc; c = linuxcnc.command(); "
+                           "c.mode(linuxcnc.MODE_MDI); c.wait_complete(); "
+                           "c.mdi('G10 L2 P1 X{:.6f}'); c.wait_complete()\"",
+                           x_offset_mm / unit)
+                           .c_str()) == 0;
+  };
+  const bool moved = mdi(offset + 1.5 * unit);
+  // The status says so at once: its context is past the preview's.
+  const bool stale = rig.wait_js(std::format(
+      "__t.last.status.preview_context > {0} && Math.abs(__t.last.status.offsets.g5x[0] - {1}) < 0.001",
+      first.at(1).dump(), offset + 1.5 * unit));
+  const bool again = rig.wait_js(current, 20s);
+  const auto second = rig.js("return [__t.last.preview, __t.last.status.preview_context, "
+                             "__t.counts.preview];");
+  check("preview_stale_and_recomputed_after_work_offset_change",
+        moved && stale && again && second.at(0).at("context") == second.at(1) &&
+            second.at(1).get<std::uint64_t>() > first.at(1).get<std::uint64_t>() &&
+            second.at(2).get<int>() >= first.at(3).get<int>() + 2 &&
+            near(x_of(second.at(0), 0), 10 + offset + 1.5 * unit, 0.001),
+        std::format("mdi={} stale={} ready_again={} contexts={}->{} previews={}->{} x={}", moved,
+                    stale, again, first.at(1).dump(), second.at(1).dump(), first.at(3).dump(),
+                    second.at(2).dump(), again ? x_of(second.at(0), 0) : 0.0));
+  // Back, for what follows.
+  const bool back = mdi(offset) && rig.wait_js(std::format(
+                        "Math.abs(__t.last.status.offsets.g5x[0] - {}) < 0.001 && {}", offset,
+                        current), 20s);
+  check("preview_follows_the_offset_back", back &&
+            near(x_of(rig.js("return __t.last.preview;"), 0), 10 + offset, 0.001));
+}
+
 void program_with_tool_change(const Rig& rig, const std::filesystem::path& programs) {
   write(programs / "part.ngc",
         "G21 G90 G54\nF400\nG1 X10 Y0\nT2 M6\nG1 X14\nG4 P1.5\nG1 X16\nM2\n");
@@ -924,6 +987,8 @@ void program_with_tool_change(const Rig& rig, const std::filesystem::path& progr
                     rig.js("return [__t.last.program.revision, __t.last.status.preview_context, "
                            "__t.counts.program];")
                         .dump()));
+
+  preview_of_the_loaded_program(rig);
 
   check("panel_runs_program",
         rig.wait_js("__t.last.status.interp === 'idle' && !__t.find('button.main-action').disabled") &&
@@ -1147,12 +1212,11 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
                                result.at("size").get<std::string>().find("80") != std::string::npos &&
                                result.at("size").get<std::string>().find("20") != std::string::npos,
         result.at("size").dump());
-  // (b) Overlay rendering: the panel draws a part only over a current toolpath preview, and
-  // there is none yet. The model is attached and hidden, and says why; no check here sees a
-  // part drawn.
-  check("step_overlay_hidden_without_preview",
-        result.at("summary").get<std::string>().find("Part hidden: waiting for the current toolpath") !=
-            std::string::npos,
+  // (b) Overlay rendering: with a current toolpath preview (part.ngc is loaded and previewed)
+  // the panel attaches the model and waits for its placement to be confirmed. No check here
+  // sees a part drawn.
+  check("step_overlay_waits_for_placement",
+        result.at("summary").get<std::string>().find("Placement unconfirmed") != std::string::npos,
         result.at("summary").dump());
   // Cancelling the chooser leaves the attachment alone; choosing the same file again works.
   const auto cancelled = import({}, 1s);

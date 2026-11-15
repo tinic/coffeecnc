@@ -11,6 +11,12 @@ target_compile_features(coffeecnc_application PUBLIC cxx_std_23)
 # Where a development build finds the panel when none is installed beside it.
 target_compile_definitions(coffeecnc_application PRIVATE
   COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist")
+if(TARGET coffeecnc_preview)
+  # Where a development build finds the preview helper when none is installed beside it.
+  target_compile_definitions(coffeecnc_application PRIVATE
+    COFFEECNC_PREVIEW_HELPER_BUILT="$<TARGET_FILE:coffeecnc_preview>")
+  add_dependencies(coffeecnc_application coffeecnc_preview)
+endif()
 target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linuxcnc coffeecnc_shell
   PRIVATE coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc_application)

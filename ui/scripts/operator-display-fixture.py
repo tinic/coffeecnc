@@ -4,7 +4,7 @@
 Build the UI first, then run this script and open the printed URL. This has no
 LinuxCNC connection. Power and homing commands change only the displayed fixture;
 other commands are rejected with a long layout-test message. The touch URL flag
-emulates a numeric-field touch pointer; it does not test the native GNOME keyboard.
+emulates touch pointer events; it does not test the native GNOME keyboard.
 The underlying sample status is illustrative, not a physical machine setup.
 """
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer

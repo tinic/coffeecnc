@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { theme, toggleTheme } from '../appearance'
 import { dismissNotice, live, onResult, panel, reported, send } from '../machine'
@@ -80,8 +81,8 @@ const subtitle = computed(() => {
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
-      <span class="connection" :class="{ disconnected: !live }" :title="linkLabel"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
-      <button class="estop" type="button" title="Assert LinuxCNC software E-stop" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
+      <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
+      <button v-tooltip="'Assert LinuxCNC software E-stop'" class="estop" type="button" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
       <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button>
     </div>
   </header>
@@ -118,7 +119,7 @@ const subtitle = computed(() => {
         <p v-if="!panel.notice" class="no-message">No new messages</p>
       </div>
       <button class="message-log" type="button" @click="emit('log')">Message log · {{ panel.log.length }}</button>
-      <button v-if="panel.notice" class="dismiss" type="button" title="Dismiss this message; keep it in the message log" @click="dismissNotice">Dismiss</button>
+      <button v-if="panel.notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
     </div>
   </section>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Tools and offsets: the tool table, the tool in the spindle with its length touch-off, and the
 // nine work coordinate systems.
 import { computed, reactive, ref } from 'vue'
@@ -130,7 +131,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         <span class="hint">{{ unit }}</span>
         <span class="spacer"></span>
         <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
-        <button class="btn" type="button" :disabled="editBlock !== null" :title="editBlock ?? 'Add a tool'" @click="add">
+        <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
           <AppIcon name="plus" />Add tool
         </button>
       </div>
@@ -153,10 +154,10 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
           </span>
         </div>
         <button
+          v-tooltip="touchBlock ?? 'Set the length of the loaded tool from its present position'"
           class="btn"
           type="button"
           :disabled="touchBlock !== null"
-          :title="touchBlock ?? 'Set the length of the loaded tool from its present position'"
           @click="touching = true"
         >
           <AppIcon name="target" />Touch off length
@@ -173,7 +174,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
           <thead>
             <tr>
               <th class="num">Tool</th>
-              <th class="num" title="LinuxCNC tool-length offset, not physical tool length">Z offset</th>
+              <th v-tooltip="'LinuxCNC tool-length offset, not physical tool length'" class="num">Z offset</th>
               <th class="num">Diameter</th>
               <th>Description</th>
               <th></th>
@@ -184,20 +185,20 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
               <td class="num mono">T{{ tool.number }}</td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
-              <td class="comment" :title="tool.comment">
+              <td v-tooltip="tool.comment" class="comment">
                 {{ tool.comment }}
                 <span v-if="tool.number === loaded" class="inspindle">in spindle</span>
                 <button class="model-link" type="button" :disabled="modelSettingsPending" :aria-label="`Preview model for T${tool.number}`" @click="modelEditor = { tool }">{{ modelLabel(tool) }}</button>
               </td>
               <td class="actions">
-                <button class="btn square" type="button" :disabled="editBlock !== null" :title="editBlock ?? `Edit tool ${tool.number}`" @click="edit(tool)">
+                <button v-tooltip="editBlock ?? `Edit tool ${tool.number}`" class="btn square" type="button" :disabled="editBlock !== null" @click="edit(tool)">
                   <AppIcon name="edit" />
                 </button>
                 <button
+                  v-tooltip="editBlock ?? (tool.number === loaded ? 'The tool is in the spindle' : `Remove tool ${tool.number}`)"
                   class="btn square"
                   type="button"
                   :disabled="editBlock !== null || tool.number === loaded"
-                  :title="editBlock ?? (tool.number === loaded ? 'The tool is in the spindle' : `Remove tool ${tool.number}`)"
                   @click="removing = tool"
                 >
                   <AppIcon name="trash" />
@@ -236,10 +237,10 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
                 <span v-if="system.active" class="chip go">active</span>
                 <button
                   v-else
+                  v-tooltip="mdiBlock ?? `Make ${wcsName(system.wcs)} the active work system. The machine does not move.`"
                   class="btn select"
                   type="button"
                   :disabled="mdiBlock !== null || status?.link !== 'live'"
-                  :title="mdiBlock ?? `Make ${wcsName(system.wcs)} the active work system. The machine does not move.`"
                   @click="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
                   Select

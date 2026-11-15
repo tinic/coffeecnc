@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import ManualTab from '../src/components/ManualTab.vue'
 import RunBar from '../src/components/RunBar.vue'
 import StatusBar from '../src/components/StatusBar.vue'
 import { panel, send } from '../src/machine'
+import { touchInput } from '../src/numeric-input'
 import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
@@ -32,7 +33,7 @@ beforeEach(() => {
   panel.hello = { ...hello, max_jog_velocity: 1500, axis_max_jog_velocity: { x: 1500, y: 1500, z: 750 } }
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
-  panel.link = 'live'
+  panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {
@@ -42,6 +43,34 @@ afterEach(() => {
 })
 
 describe('capability-aware controls', () => {
+  it('has no native hover titles on touch controls, including changing blocked reasons', async () => {
+    wrapper = mount(defineComponent({ components: { StatusBar, ManualTab, RunBar }, template: '<div><StatusBar/><ManualTab/><RunBar/></div>' }))
+    expect(wrapper.find('[title]').exists()).toBe(true)
+    touchInput.value = true; await nextTick()
+    expect(wrapper.find('[title]').exists()).toBe(false)
+    if (panel.status) panel.status.machine = 'off'
+    await nextTick()
+    expect(wrapper.find('[title]').exists()).toBe(false)
+    expect(wrapper.find('[aria-description]').exists()).toBe(true)
+  })
+  it('uses exact inch presets and requires a new step choice after changing units', async () => {
+    wrapper = mount(ManualTab)
+    panel.unit = 'inch'; await nextTick()
+    expect(wrapper.text()).toContain('Choose a step in inches')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight' }))
+    expect(send).not.toHaveBeenCalled()
+    const step = wrapper.findAll('.increments button').find((button) => button.text() === '0.001')
+    expect(step).toBeDefined(); await step?.trigger('click')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'jog_step', axis: 'x', distance: 0.0254, velocity: 1500 })
+    vi.mocked(send).mockClear(); panel.unit = 'mm'; await nextTick()
+    expect(wrapper.text()).toContain('Choose a step in millimeters')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('allows an explicit E-stop reset while off without powering on', async () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.machine = 'off'

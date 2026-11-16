@@ -24,5 +24,13 @@ Final build stamp:
 - inputs_digest: abda2c686b708b526abd440ac905516d54e020d2168cb2518bcdbff293b0523a
 - assets_digest: d4f713f20c67554de412d6ed531deaf99b6dea602dc9055dd3e89f9f5db9ba3c
 
-Deployment: pending. Claude owns the G0759 rebuild and installation.
+G0759 deployment verified:
+- Claude reported switching the machine off before installation and a 26/26
+  successful build, with deployment complete at 18:26:24 UTC.
+- Deployed source: 0dd48c196b62e71a51c590f2baf6b20185ee11a3.
+- Read-only SSH confirmed PID 46468 and matching installed/running binary
+  SHA256 d09433b8b676cea22116b7178edf30da4fb0e6f2d35b8688c9ece29af113557f.
+- Both installed UI digests match the tested stamp above.
+- Physical deployment artifacts were verified. Probe and spindle behavior
+  was exercised against the LinuxCNC simulator.
 The separate probe-based length measurement proposal is draft PR43.

@@ -287,7 +287,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       <p v-if="replaces" class="blocked">Tool {{ parsed?.number }} exists. Saving replaces it.</p>
       <div class="model-controls">
         <span class="label">Preview only</span>
-        <button v-if="editingTool !== null" class="btn" type="button" :disabled="modelSettingsPending || editorBlock !== null" @click="modelEditor = { tool: editingTool }">{{ modelLabel(editingTool) }}</button>
+        <button v-if="editingTool !== null" class="btn model-link" type="button" :disabled="modelSettingsPending || editorBlock !== null" :aria-label="`Preview model for T${editingTool.number}`" @click="modelEditor = { tool: editingTool }">{{ modelLabel(editingTool) }}</button>
         <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
       </div>
       <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>

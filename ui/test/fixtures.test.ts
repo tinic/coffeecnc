@@ -98,6 +98,13 @@ const examples: Examples = {
         "overallLength": 70,
         "stickout": 35,
         "tipAngle": 90
+      },
+      "touch-probe": {
+        "diameter": 4,
+        "shankDiameter": 12,
+        "bodyDiameter": 28,
+        "bodyLength": 32,
+        "stylusLength": 20
       }
     }
   },

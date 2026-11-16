@@ -3,8 +3,9 @@ import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch }
 import { panel } from '../machine'
 import { vNumeric } from '../numeric-input'
 import type { Tool } from '../protocol'
-import { factoryToolDefaults, pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity,
-  type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
+import { dimensionKeys, factoryToolDefaults, pointedTool, readToolDimensions, resolveToolModel, setToolDefault,
+  shapeOverrides, toolDimensionError, toolFamilies, toolIdentity,
+  type DimensionKey, type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
 import { toolModelSettings, toolModels } from '../tool-models'
 import { parseNumericExpression } from '../numeric-expression'
 import { fromDisplay, toDisplay } from '../units'
@@ -35,20 +36,29 @@ const identity = props.tool === null ? '' : toolIdentity(props.tool)
 const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number)
 const family = ref<ToolFamily>(saved?.identity === identity ? saved.family : 'end-mill')
 const custom = ref<boolean>(saved?.identity === identity && Object.keys(saved.overrides).length > 0)
-const fields: { key: keyof ToolDimensions; label: string }[] = [
+const fields: { key: DimensionKey; label: string }[] = [
   { key: 'diameter', label: defaultsMode ? 'Reference diameter' : 'Cutting diameter' },
   { key: 'shankDiameter', label: 'Shank diameter' },
   { key: 'cuttingLength', label: 'Cutting length' },
   { key: 'overallLength', label: 'Overall length' },
   { key: 'stickout', label: 'Stick-out' },
   { key: 'tipAngle', label: 'Included tip angle' },
+  { key: 'bodyDiameter', label: 'Body diameter' }, { key: 'bodyLength', label: 'Body length' },
+  { key: 'stylusLength', label: 'Stylus length' },
 ]
-const form = reactive<Record<keyof ToolDimensions, string>>({ diameter: '', cuttingLength: '', shankDiameter: '', overallLength: '', stickout: '', tipAngle: '' })
+const visibleFields = computed(() => {
+  const keys = dimensionKeys(family.value)
+  return fields.filter(({ key }) => keys.includes(key) && (key !== 'tipAngle' || pointedTool(family.value)))
+})
+const form = reactive<Record<DimensionKey, string>>({ diameter: '', cuttingLength: '', shankDiameter: '', overallLength: '', stickout: '', tipAngle: '', bodyDiameter: '', bodyLength: '', stylusLength: '' })
 const draftDefaults = reactive(factoryToolDefaults())
-for (const { id } of toolFamilies) draftDefaults[id] = { ...toolModels.defaults[id] }
+for (const { id } of toolFamilies) setToolDefault(draftDefaults, id, { ...toolModels.defaults[id] })
 const baseline = computed(() => props.tool === null ? null : resolveToolModel(props.tool, { identity, family: family.value, overrides: {} }, draftDefaults))
 function fill(d: ToolDimensions): void {
-  for (const { key } of fields) form[key] = String(Number((key === 'tipAngle' ? d[key] : toDisplay(d[key], unit)).toFixed(6)))
+  for (const key of dimensionKeys(family.value)) {
+    const value = Reflect.get(d, key) as number
+    form[key] = String(Number((key === 'tipAngle' ? value : toDisplay(value, unit)).toFixed(6)))
+  }
 }
 function load(): void {
   fill(defaultsMode ? draftDefaults[family.value] : baseline.value?.dimensions ?? draftDefaults[family.value])
@@ -58,16 +68,14 @@ if (custom.value && props.tool !== null && saved !== undefined) {
   const resolved = resolveToolModel(props.tool, saved, draftDefaults)
   if (resolved !== null) fill(resolved.dimensions)
 }
-const dimensions = computed((): ToolDimensions => {
-  const d = { ...draftDefaults[family.value] }
-  for (const { key } of fields) {
+function dimensionsOf(kind: ToolFamily): ToolDimensions {
+  return readToolDimensions(kind, (key) => {
+    if (key === 'diameter' && !defaultsMode && baseline.value !== null) return baseline.value.dimensions.diameter
     const n = parseNumericExpression(form[key], key === 'tipAngle' ? '°' : unit) ?? NaN
-    d[key] = key === 'tipAngle' ? n : fromDisplay(n, unit)
-  }
-  // Never round or override the controller's diameter via the visual editor.
-  if (!defaultsMode && baseline.value !== null) d.diameter = baseline.value.dimensions.diameter
-  return d
-})
+    return key === 'tipAngle' ? n : fromDisplay(n, unit)
+  })
+}
+const dimensions = computed(() => dimensionsOf(family.value))
 const model = computed((): ToolModel => ({ family: family.value,
   dimensions: !defaultsMode && !custom.value && baseline.value !== null ? baseline.value.dimensions : dimensions.value,
   nominalDiameter: baseline.value?.nominalDiameter ?? true, customized: custom.value }))
@@ -76,8 +84,8 @@ const changedTool = computed(() => props.tool !== null && !panel.toolTable?.tool
 watch(family, (_current, previous) => {
   // Preserve valid edits while browsing family defaults; invalid drafts are not stored.
   if (defaultsMode) {
-    const d = { ...dimensions.value }
-    if (toolDimensionError(previous, d) === null) draftDefaults[previous] = d
+    const d = dimensionsOf(previous)
+    if (toolDimensionError(previous, d) === null) setToolDefault(draftDefaults, previous, d)
   }
   custom.value = false
   load()
@@ -90,14 +98,12 @@ async function save(): Promise<void> {
   saveError.value = ''
   let result
   if (defaultsMode) {
-    draftDefaults[family.value] = { ...dimensions.value }
+    setToolDefault(draftDefaults, family.value, dimensions.value)
     const copy = factoryToolDefaults()
-    for (const { id } of toolFamilies) copy[id] = { ...draftDefaults[id] }
+    for (const { id } of toolFamilies) setToolDefault(copy, id, { ...draftDefaults[id] })
     result = await toolModelSettings.saveDefaults(copy, editContext)
   } else {
-    const { cuttingLength, shankDiameter, overallLength, stickout, tipAngle } = model.value.dimensions
-    const overrides = { cuttingLength, shankDiameter, overallLength, stickout, tipAngle }
-    result = await toolModelSettings.saveAssignment(props.tool, family.value, custom.value ? overrides : {}, editContext)
+    result = await toolModelSettings.saveAssignment(props.tool, family.value, custom.value ? shapeOverrides(model.value.dimensions) : {}, editContext)
   }
   saving.value = false
   if (result.saved) { if (open) emit('close') }
@@ -121,18 +127,18 @@ async function clearAssignment(): Promise<void> {
         <label class="entry"><span class="label">Tool family</span>
           <select v-model="family" class="field" :disabled="saving"><option v-for="f in toolFamilies" :key="f.id" :value="f.id">{{ f.name }}</option></select>
         </label>
-        <p v-if="defaultsMode" class="hint explanation">Lengths scale from the reference diameter to each tool's table diameter. Tip angle stays fixed.</p>
+        <p v-if="defaultsMode" class="hint explanation">{{ family === 'touch-probe' ? 'Probe dimensions stay fixed when the ball diameter changes.' : 'Lengths scale from the reference diameter to each tool’s table diameter. Tip angle stays fixed.' }}</p>
         <template v-else>
           <label class="check"><input v-model="custom" type="checkbox" :disabled="saving" />Override dimensions for this tool</label>
           <p class="hint explanation">{{ model.nominalDiameter ? 'No table diameter: using the family’s nominal diameter.' : 'Cutting diameter comes from the tool table.' }} {{ custom ? 'Overrides are absolute dimensions.' : 'Other lengths use the family’s scaled defaults.' }}</p>
         </template>
         <div class="dimensions">
-          <label v-for="field in fields.filter((f) => f.key !== 'tipAngle' || pointedTool(family))" :key="field.key" class="entry">
-            <span class="label">{{ field.label }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
+          <label v-for="field in visibleFields" :key="field.key" class="entry">
+            <span class="label">{{ field.key === 'diameter' && family === 'touch-probe' ? 'Ball diameter' : field.label }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
             <input v-model="form[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving || !defaultsMode && (!custom || field.key === 'diameter')" />
           </label>
         </div>
-        <p class="hint explanation">Stick-out runs from the tip to the holder face. These dimensions are independent of the LinuxCNC Z offset.</p>
+        <p class="hint explanation">{{ family === 'touch-probe' ? 'Stylus length runs from the top of the ball to the bottom of the housing.' : 'Stick-out runs from the tip to the holder face. These dimensions are independent of the LinuxCNC Z offset.' }}</p>
         <p class="scope hint">{{ scope }} Simplified envelopes; flutes, inserts and holder geometry are not represented.</p>
       </div>
       <div class="preview">

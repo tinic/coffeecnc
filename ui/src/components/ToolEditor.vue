@@ -5,9 +5,9 @@ import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import type { Tool } from '../protocol'
 import { sameTool, saveTool } from '../save-tool'
-import { pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity,
-  type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
-import { toolModelSettings, toolModels } from '../tool-models'
+import { dimensionKeys, pointedTool, readToolDimensions, resolveToolModel, shapeOverrides, toolDimensionError, toolFamilies, toolIdentity,
+  type DimensionKey, type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
+import { savedProbe, toolModelSettings, toolModels } from '../tool-models'
 import { parseLength, parseNumber, toDisplay } from '../units'
 import ModalDialog from './ModalDialog.vue'
 
@@ -42,20 +42,33 @@ const block = computed(() => linkBlock.value ?? (panel.hello !== hello ? 'The ma
   : panel.status?.interp !== 'idle' ? 'Stop execution before editing the tool.'
     : !saving.value && original.value !== null && !sameTool(current.value, original.value) ? 'The tool table changed. Reopen this editor.'
       : null))
-const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number)
+const probe = props.tool === null ? undefined : savedProbe(props.tool.number)
+const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number) ??
+  (probe === undefined ? undefined : { identity: toolIdentity(props.tool), family: probe.family, overrides: probe.overrides })
 const savedModel = props.tool === null ? null : resolveToolModel(props.tool, saved, toolModels.defaults)
 const family = ref<ToolFamily | 'none'>(savedModel?.family ?? ((props.tool?.diameter ?? 0) > 0 ? 'end-mill' : 'none'))
-const fields: { key: Exclude<keyof ToolDimensions, 'diameter'>; label: string }[] = [
+const fields: { key: Exclude<DimensionKey, 'diameter'>; label: string }[] = [
   { key: 'shankDiameter', label: 'Shank diameter' }, { key: 'cuttingLength', label: 'Cutting length' },
   { key: 'overallLength', label: 'Overall length' }, { key: 'stickout', label: 'Stick-out' },
   { key: 'tipAngle', label: 'Tip angle' },
+  { key: 'bodyDiameter', label: 'Body diameter' }, { key: 'bodyLength', label: 'Body length' },
+  { key: 'stylusLength', label: 'Stylus length' },
 ]
-const shape = reactive({ shankDiameter: '', cuttingLength: '', overallLength: '', stickout: '', tipAngle: '' })
+const visibleFields = computed(() => {
+  const kind = family.value
+  if (kind === 'none') return []
+  const keys = dimensionKeys(kind)
+  return fields.filter(({ key }) => keys.includes(key) && (key !== 'tipAngle' || pointedTool(kind)))
+})
+const shape = reactive({ shankDiameter: '', cuttingLength: '', overallLength: '', stickout: '', tipAngle: '', bodyDiameter: '', bodyLength: '', stylusLength: '' })
 let precise: ToolDimensions | null = null
 const initialShape = { ...shape }
 function fill(d: ToolDimensions): void {
   precise = { ...d }
-  for (const { key } of fields) shape[key] = initialShape[key] = key === 'tipAngle' ? String(d[key]) : text(d[key])
+  for (const { key } of fields) {
+    const value: unknown = Reflect.get(d, key)
+    if (typeof value === 'number') shape[key] = initialShape[key] = key === 'tipAngle' ? String(value) : text(value)
+  }
 }
 function resetShape(): void {
   if (family.value === 'none') return
@@ -66,13 +79,21 @@ function resetShape(): void {
 if (savedModel !== null) fill(savedModel.dimensions); else resetShape()
 const model = computed((): ToolModel | null => {
   if (family.value === 'none') return null
-  const dimensions: ToolDimensions = { diameter: parsed.value?.diameter ?? NaN, cuttingLength: NaN, shankDiameter: NaN, overallLength: NaN, stickout: NaN, tipAngle: NaN }
-  for (const { key } of fields) dimensions[key] = precise !== null && shape[key] === initialShape[key] ? precise[key]
-    : (key === 'tipAngle' ? parseNumericExpression(shape[key], '°') : parseLength(shape[key], unit)) ?? NaN
+  const dimensions = readToolDimensions(family.value, (key) => {
+    if (key === 'diameter') return parsed.value?.diameter ?? NaN
+    const originalValue: unknown = precise === null ? null : Reflect.get(precise, key)
+    if (shape[key] === initialShape[key] && typeof originalValue === 'number') return originalValue
+    return (key === 'tipAngle' ? parseNumericExpression(shape[key], '°') : parseLength(shape[key], unit)) ?? NaN
+  })
   return { family: family.value, dimensions, nominalDiameter: false, customized: true }
 })
 const shapeError = computed(() => model.value === null ? null : toolDimensionError(model.value.family, model.value.dimensions))
-const modelBlock = computed(() => saving.value ? null : toolModelSettings.block(modelContext))
+const modelBlock = computed(() => {
+  if (saving.value) return null
+  if (family.value === 'touch-probe' && !panel.simulated && toolModels.storage === 'session_only')
+    return 'Touch probes require saved tool models for this machine.'
+  return toolModelSettings.block(modelContext)
+})
 const replaces = computed(() => original.value === null && panel.toolTable?.tools.some((tool) => tool.number === parsed.value?.number))
 async function save(): Promise<void> {
   const tool = parsed.value
@@ -88,9 +109,8 @@ async function save(): Promise<void> {
   }
   if (!open) return
   // Binding uses the freshly acknowledged row, including a newly edited diameter/description.
-  const { cuttingLength, shankDiameter, overallLength, stickout, tipAngle } = preview?.dimensions ?? toolModels.defaults['end-mill']
   const result = await toolModelSettings.saveAssignment(tool, preview?.family ?? null,
-    preview === null ? {} : { cuttingLength, shankDiameter, overallLength, stickout, tipAngle }, modelContext)
+    preview === null ? {} : shapeOverrides(preview.dimensions), modelContext)
   saving.value = false
   if (result.saved) { if (isOpen()) emit('close') }
   else feedback.value = `${tableWritten ? 'Tool details saved; preview shape was not saved. ' : ''}${result.reason}`
@@ -121,8 +141,9 @@ function remove(): void {
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
-          <p class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
-          <div class="dimensions"><label v-for="field in fields.filter((item) => item.key !== 'tipAngle' || pointedTool(family as ToolFamily))" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
+          <p class="diameter-source hint">{{ family === 'touch-probe' ? 'Effective ball diameter' : 'Cutting diameter' }}: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
+          <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
+          <p v-if="family === 'touch-probe'" class="hint">Touch off Length at the bottom of the ball. T99 is a common choice for a probe.</p>
         </template>
       </div>
     </div>

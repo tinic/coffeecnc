@@ -1,13 +1,12 @@
 import type { Tool, ToolModels } from './protocol'
-import { factoryToolDefaults, toolDimensionError, toolFamilies, toolIdentity,
+import { cutterKeys, dimensionKeys, factoryToolDefaults, probeKeys, readToolDimensions, setToolDefault, toolDimensionError, toolFamilies, toolIdentity,
   type ToolDefaults, type ToolDimensions, type ToolFamily, type ToolModelAssignment, type ToolOverrides } from './tool-model'
 
 export const maxToolModelBytes = 1024 * 1024
 export const maxToolModelAssignments = 1001
 const maxToolInteger = 2147483647
-const dimensionKeys = ['diameter', 'cuttingLength', 'shankDiameter', 'overallLength', 'stickout', 'tipAngle'] as const
-const overrideKeys = ['cuttingLength', 'shankDiameter', 'overallLength', 'stickout', 'tipAngle'] as const
 const familyIds = toolFamilies.map(({ id }) => id)
+const legacyFamilies = familyIds.filter((id) => id !== 'touch-probe')
 
 /** Exact reported values: diameter is already mm; Z is deliberately not identity. */
 export type ToolModelBinding = Pick<Tool, 'number' | 'pocket' | 'diameter' | 'comment'>
@@ -45,17 +44,14 @@ function dimension(value: unknown, angle: boolean): value is number {
 }
 
 function dimensions(value: unknown, kind: ToolFamily): ToolDimensions | null {
-  if (!fields(value, dimensionKeys)) return null
-  const copy = {} as ToolDimensions
-  for (const key of dimensionKeys) {
-    const n = value[key]
-    if (!dimension(n, key === 'tipAngle')) return null
-    copy[key] = n
-  }
+  const keys = dimensionKeys(kind)
+  if (!fields(value, keys) || !keys.every((key) => dimension(value[key], key === 'tipAngle'))) return null
+  const copy = readToolDimensions(kind, (key) => Number(value[key]))
   return toolDimensionError(kind, copy) === null ? copy : null
 }
 
-function overrides(value: unknown): ToolOverrides | null {
+function overrides(value: unknown, kind: ToolFamily): ToolOverrides | null {
+  const overrideKeys = (kind === 'touch-probe' ? probeKeys : cutterKeys).filter((key) => key !== 'diameter')
   if (!fields(value, [], overrideKeys)) return null
   const copy: ToolOverrides = {}
   for (const key of overrideKeys) {
@@ -112,20 +108,21 @@ export function decodeToolModels(value: unknown): ToolModels | null {
 /** Strict native documents are all-or-nothing; corrupt input is not an empty saved catalog. */
 export function decodeToolModelDocument(value: unknown): ToolModelDocument | null {
   if (!fields(value, ['version', 'defaults', 'assignments']) || value['version'] !== 1 ||
-    !fields(value['defaults'], familyIds) || !Array.isArray(value['assignments']) ||
+    !fields(value['defaults'], legacyFamilies, ['touch-probe']) || !Array.isArray(value['assignments']) ||
     value['assignments'].length > maxToolModelAssignments) return null
   const defaults = factoryToolDefaults()
   for (const id of familyIds) {
+    if (id === 'touch-probe' && !Object.hasOwn(value['defaults'], id)) continue
     const d = dimensions(value['defaults'][id], id)
     if (d === null) return null
-    defaults[id] = d
+    setToolDefault(defaults, id, d)
   }
   const assignments: SavedToolModelAssignment[] = []
   const used = new Set<number>()
   for (const entry of value['assignments']) {
     if (!fields(entry, ['tool', 'family', 'overrides']) || !family(entry['family'])) return null
     const tool = binding(entry['tool'])
-    const custom = overrides(entry['overrides'])
+    const custom = overrides(entry['overrides'], entry['family'])
     if (tool === null || custom === null || used.has(tool.number)) return null
     used.add(tool.number)
     assignments.push({ tool, family: entry['family'], overrides: custom })

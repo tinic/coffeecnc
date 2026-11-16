@@ -379,7 +379,7 @@ void wire_text() {
               message.at("availability") == "available" && message.at("reason") == "",
           "The snapshot has the contract's six fields");
   const auto& sent = message.at("document");
-  require(sent.size() == 3 && sent.at("version") == 1 && sent.at("defaults").size() == 7 &&
+  require(sent.size() == 3 && sent.at("version") == 1 && sent.at("defaults").size() == 8 &&
               sent.at("defaults").at("drill") ==
                   Json{{"diameter", 10},      {"cuttingLength", 60}, {"shankDiameter", 10},
                        {"overallLength", 100}, {"stickout", 75},      {"tipAngle", 118}} &&
@@ -406,7 +406,8 @@ void wire_text() {
       R"("spot-drill":{"diameter":10,"cuttingLength":15,"shankDiameter":10,"overallLength":60,"stickout":30,"tipAngle":90},)"
       R"("chamfer":{"diameter":10,"cuttingLength":12,"shankDiameter":10,"overallLength":60,"stickout":30,"tipAngle":90},)"
       R"("face-mill":{"diameter":50,"cuttingLength":12,"shankDiameter":20,"overallLength":70,"stickout":40,"tipAngle":90},)"
-      R"("generic":{"diameter":10,"cuttingLength":20,"shankDiameter":10,"overallLength":70,"stickout":35,"tipAngle":90}})");
+      R"("generic":{"diameter":10,"cuttingLength":20,"shankDiameter":10,"overallLength":70,"stickout":35,"tipAngle":90},)"
+      R"("touch-probe":{"diameter":4,"shankDiameter":12,"bodyDiameter":28,"bodyLength":32,"stylusLength":20}})");
   const auto fresh = encode_tool_models(
       {"mill-1", 0, ToolModelAvailability::available, "",
        ToolModelDocument{factory_tool_defaults(), {}}});
@@ -424,7 +425,8 @@ void wire_text() {
                        R"("end-mill":{"cuttingLength":22.0,"diameter":10.0,"overallLength":72.0,"shankDiameter":10.0,"stickout":35.0,"tipAngle":90.0},)"
                        R"("face-mill":{"cuttingLength":12.0,"diameter":50.0,"overallLength":70.0,"shankDiameter":20.0,"stickout":40.0,"tipAngle":90.0},)"
                        R"("generic":{"cuttingLength":20.0,"diameter":10.0,"overallLength":70.0,"shankDiameter":10.0,"stickout":35.0,"tipAngle":90.0},)"
-                       R"("spot-drill":{"cuttingLength":15.0,"diameter":10.0,"overallLength":60.0,"shankDiameter":10.0,"stickout":30.0,"tipAngle":90.0}},)"
+                       R"("spot-drill":{"cuttingLength":15.0,"diameter":10.0,"overallLength":60.0,"shankDiameter":10.0,"stickout":30.0,"tipAngle":90.0},)"
+                       R"("touch-probe":{"bodyDiameter":28.0,"bodyLength":32.0,"diameter":4.0,"shankDiameter":12.0,"stylusLength":20.0}},)"
                        R"("version":1},"machine_id":"mill-1","reason":"","revision":0,"type":"tool_models"})"),
           "and these are its bytes: keys in alphabetical order, whole numbers with .0");
   const auto inherited = encode_tool_models(
@@ -632,9 +634,9 @@ void file_refusals() {
          "An unknown assignment field");
   change([&](Json& j) -> void { first_saved(j).erase("overrides"); }, "An assignment lacks",
          "An assignment without overrides");
-  change([&](Json& j) -> void { first_saved(j)["family"] = "lathe"; }, "family must be one of",
+  change([&](Json& j) -> void { first_saved(j)["family"] = "lathe"; }, "family must be a supported",
          "An unknown family name");
-  change([&](Json& j) -> void { first_saved(j)["family"] = nullptr; }, "family must be one of",
+  change([&](Json& j) -> void { first_saved(j)["family"] = nullptr; }, "family must be a supported",
          "A saved assignment without a family");
   change([&](Json& j) -> void { first_saved(j)["overrides"]["diameter"] = 6; },
          "overrides has an unknown field", "A diameter override");

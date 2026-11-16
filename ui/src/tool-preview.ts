@@ -1,5 +1,5 @@
 import type { Status, Tool, Vec3 } from './protocol'
-import { resolveToolModel, toolDimensionError, type ToolDefaults, type ToolModel, type ToolModelAssignment } from './tool-model'
+import { resolveToolModel, toolDimensionError, toolEnvelope, type ToolDefaults, type ToolModel, type ToolModelAssignment } from './tool-model'
 
 export interface ToolPreview { number: number; tip: Vec3; model: ToolModel }
 
@@ -26,7 +26,8 @@ export function loadedToolPreview(status: Status | null, live: boolean, tools: T
 
 export function toolPreviewBounds(preview: ToolPreview): { min: Vec3; max: Vec3 } {
   const { dimensions: d } = preview.model
-  const radius = Math.max(d.diameter * 0.6, d.shankDiameter * 0.7)
+  const { diameter, overallLength } = toolEnvelope(d)
+  const radius = 'bodyDiameter' in d ? diameter / 2 : Math.max(d.diameter * 0.6, d.shankDiameter * 0.7)
   const [x, y, z] = preview.tip
-  return { min: [x - radius, y - radius, z], max: [x + radius, y + radius, z + d.overallLength] }
+  return { min: [x - radius, y - radius, z], max: [x + radius, y + radius, z + overallLength] }
 }

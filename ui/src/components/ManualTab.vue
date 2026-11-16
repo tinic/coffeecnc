@@ -15,6 +15,7 @@ import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
+import { touchProbeLoaded } from '../tool-models'
 import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
@@ -317,6 +318,7 @@ const rpmText = computed({
 })
 const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
 const spindleBlock = computed((): string | null => {
+  if (touchProbeLoaded.value) return 'A touch probe is loaded'
   if (manualBlock.value !== null) {
     return manualBlock.value
   }
@@ -332,9 +334,10 @@ function spindle(direction: 'forward' | 'reverse'): void {
 
 function confirmSpindleSpeed(event: Event): void {
   if (event instanceof KeyboardEvent && event.repeat) return
-  if (rpmDraft.value === null || spindleBlock.value !== null || rpm.value === null) return
+  if (rpmDraft.value === null || manualBlock.value !== null || rpm.value === null || rpm.value <= 0) return
   const direction = status.value?.spindle.direction
   if (direction === 'forward' || direction === 'reverse') {
+    if (touchProbeLoaded.value) return
     send({ type: 'set_spindle', direction, rpm: rpm.value })
     presetRpm.value = null
   } else {

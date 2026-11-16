@@ -8,11 +8,13 @@ export const toolFamilies = [
   { id: 'chamfer', name: 'Chamfer mill' },
   { id: 'face-mill', name: 'Face mill' },
   { id: 'generic', name: 'Generic cylinder' },
+  { id: 'touch-probe', name: 'Touch probe' },
 ] as const
 export type ToolFamily = typeof toolFamilies[number]['id']
+type CutterFamily = Exclude<ToolFamily, 'touch-probe'>
 
 /** Physical envelope in mm; never LinuxCNC's tool-length (Z) offset. */
-export interface ToolDimensions {
+export interface CutterDimensions {
   diameter: number
   cuttingLength: number
   shankDiameter: number
@@ -22,8 +24,18 @@ export interface ToolDimensions {
   /** Included angle, degrees; used only by pointed tool families. */
   tipAngle: number
 }
-export type ToolDefaults = Record<ToolFamily, ToolDimensions>
-export type ToolOverrides = Partial<Omit<ToolDimensions, 'diameter'>>
+export interface ProbeDimensions {
+  diameter: number
+  shankDiameter: number
+  bodyDiameter: number
+  bodyLength: number
+  /** From the top of the ball to the bottom of the housing. */
+  stylusLength: number
+}
+export type ToolDimensions = CutterDimensions | ProbeDimensions
+export type DimensionKey = keyof CutterDimensions | keyof ProbeDimensions
+export type ToolDefaults = Record<CutterFamily, CutterDimensions> & { 'touch-probe': ProbeDimensions }
+export type ToolOverrides = Partial<Record<Exclude<DimensionKey, 'diameter'>, number>>
 export interface ToolModelAssignment {
   identity: string
   family: ToolFamily
@@ -46,6 +58,7 @@ export function factoryToolDefaults(): ToolDefaults {
     chamfer: { diameter: 10, cuttingLength: 12, shankDiameter: 10, overallLength: 60, stickout: 30, tipAngle: 90 },
     'face-mill': { diameter: 50, cuttingLength: 12, shankDiameter: 20, overallLength: 70, stickout: 40, tipAngle: 90 },
     generic: { diameter: 10, cuttingLength: 20, shankDiameter: 10, overallLength: 70, stickout: 35, tipAngle: 90 },
+    'touch-probe': { diameter: 4, shankDiameter: 12, bodyDiameter: 28, bodyLength: 32, stylusLength: 20 },
   }
 }
 
@@ -54,8 +67,15 @@ export function pointedTool(family: ToolFamily): boolean {
 }
 
 export function toolDimensionError(family: ToolFamily, d: ToolDimensions): string | null {
+  if (family === 'touch-probe') {
+    if (!('bodyDiameter' in d) || ![d.diameter, d.shankDiameter, d.bodyDiameter, d.bodyLength, d.stylusLength].every(validLength)) {
+      return 'Dimensions must be between 0.001 and 10,000 mm.'
+    }
+    return null
+  }
+  if (!('cuttingLength' in d)) return 'Cutter dimensions are required.'
   const lengths = [d.diameter, d.cuttingLength, d.shankDiameter, d.overallLength, d.stickout]
-  if (lengths.some((n) => !Number.isFinite(n) || n < 0.001 || n > 10_000)) return 'Dimensions must be between 0.001 and 10,000 mm.'
+  if (!lengths.every(validLength)) return 'Dimensions must be between 0.001 and 10,000 mm.'
   if (!Number.isFinite(d.tipAngle) || d.tipAngle < 1 || d.tipAngle > 179) return 'Included tip angle must be between 1° and 179°.'
   if (d.cuttingLength > d.stickout || d.stickout > d.overallLength || d.cuttingLength >= d.overallLength) {
     return 'Cutting length must fit within stick-out, and stick-out within overall length. Leave some shank above the cutting section.'
@@ -65,6 +85,33 @@ export function toolDimensionError(family: ToolFamily, d: ToolDimensions): strin
     return 'The pointed tip does not fit within the cutting length at this diameter and angle.'
   }
   return null
+}
+
+function validLength(n: number): boolean { return Number.isFinite(n) && n >= 0.001 && n <= 10_000 }
+
+export const cutterKeys = ['diameter', 'shankDiameter', 'cuttingLength', 'overallLength', 'stickout', 'tipAngle'] as const
+export const probeKeys = ['diameter', 'shankDiameter', 'bodyDiameter', 'bodyLength', 'stylusLength'] as const
+export function dimensionKeys(family: ToolFamily): readonly DimensionKey[] {
+  return family === 'touch-probe' ? probeKeys : cutterKeys
+}
+
+export function readToolDimensions(family: ToolFamily, read: (key: DimensionKey) => number): ToolDimensions {
+  const common = { diameter: read('diameter'), shankDiameter: read('shankDiameter') }
+  if (family === 'touch-probe') return {
+    ...common, bodyDiameter: read('bodyDiameter'), bodyLength: read('bodyLength'), stylusLength: read('stylusLength'),
+  }
+  return { ...common, cuttingLength: read('cuttingLength'), overallLength: read('overallLength'),
+    stickout: read('stickout'), tipAngle: read('tipAngle') }
+}
+
+export function shapeOverrides(d: ToolDimensions): ToolOverrides {
+  const { diameter: _diameter, ...overrides } = d
+  return overrides
+}
+
+export function setToolDefault(defaults: ToolDefaults, family: ToolFamily, dimensions: ToolDimensions): void {
+  if (family === 'touch-probe' && 'bodyDiameter' in dimensions) defaults[family] = dimensions
+  else if (family !== 'touch-probe' && 'cuttingLength' in dimensions) defaults[family] = dimensions
 }
 
 /** A changed description, diameter or pocket invalidates the session's visual assignment.
@@ -80,11 +127,12 @@ export function resolveToolModel(tool: Tool, assignment: ToolModelAssignment | u
   const nominalDiameter = !Number.isFinite(tool.diameter) || tool.diameter <= 0
   const diameter = nominalDiameter ? preset.diameter : tool.diameter
   const scale = diameter / preset.diameter
-  const dimensions: ToolDimensions = {
-    diameter, cuttingLength: preset.cuttingLength * scale, shankDiameter: preset.shankDiameter * scale,
-    overallLength: preset.overallLength * scale, stickout: preset.stickout * scale, tipAngle: preset.tipAngle,
-    ...assignment.overrides,
-  }
+  // Probe housings and styli do not scale when the replaceable ball diameter changes.
+  const dimensions = readToolDimensions(assignment.family, (key) => {
+    if (key === 'diameter') return diameter
+    const nominal = Reflect.get(preset, key) as number
+    return assignment.overrides[key] ?? nominal * (assignment.family === 'touch-probe' || key === 'tipAngle' ? 1 : scale)
+  })
   return { family: assignment.family, dimensions, nominalDiameter, customized: Object.keys(assignment.overrides).length > 0 }
 }
 
@@ -94,6 +142,7 @@ export function toolProfiles(model: ToolModel): { cutting: [number, number][]; s
   const d = model.dimensions
   const error = toolDimensionError(model.family, d)
   if (error !== null) throw new Error(error)
+  if (!('cuttingLength' in d)) throw new Error('The probe uses separate ball, stem, housing and shank geometry.')
   const radius = d.diameter / 2
   const cutting: [number, number][] = [[0, 0]]
   if (model.family === 'ball-mill') {
@@ -109,6 +158,20 @@ export function toolProfiles(model: ToolModel): { cutting: [number, number][]; s
     [d.shankDiameter / 2, d.overallLength], [0, d.overallLength]] }
 }
 
+/** Dimensions from the ball bottom, which is also the model's Z datum. */
+export function probeEnvelope(d: ProbeDimensions): { bodyStart: number; bodyEnd: number; overallLength: number; stylusDiameter: number } {
+  const bodyStart = d.diameter + d.stylusLength
+  const bodyEnd = bodyStart + d.bodyLength
+  return { bodyStart, bodyEnd, overallLength: bodyEnd + d.shankDiameter, stylusDiameter: Math.min(d.diameter * 0.45, d.bodyDiameter * 0.25) }
+}
+
+export function toolEnvelope(d: ToolDimensions): { diameter: number; overallLength: number } {
+  if ('bodyDiameter' in d) return {
+    diameter: Math.max(d.diameter, d.bodyDiameter, d.shankDiameter), overallLength: probeEnvelope(d).overallLength,
+  }
+  return { diameter: Math.max(d.diameter, d.shankDiameter), overallLength: d.overallLength }
+}
+
 /** Persisted preferences are untrusted, versioned, and validated before use. */
 export function decodeToolDefaults(text: string | null): ToolDefaults {
   const fallback = factoryToolDefaults()
@@ -121,10 +184,10 @@ export function decodeToolDefaults(text: string | null): ToolDefaults {
     for (const { id } of toolFamilies) {
       const candidate: unknown = Reflect.get(defaults, id)
       if (typeof candidate !== 'object' || candidate === null) continue
-      const fields = Object.keys(fallback[id]) as (keyof ToolDimensions)[]
+      const fields = dimensionKeys(id)
       if (!fields.every((key) => typeof Reflect.get(candidate, key) === 'number')) continue
-      const dimensions = Object.fromEntries(fields.map((key) => [key, Reflect.get(candidate, key)])) as unknown as ToolDimensions
-      if (toolDimensionError(id, dimensions) === null) fallback[id] = dimensions
+      const dimensions = readToolDimensions(id, (key) => Reflect.get(candidate, key) as number)
+      if (toolDimensionError(id, dimensions) === null) setToolDefault(fallback, id, dimensions)
     }
   } catch { /* Ignore corrupt or unavailable preferences. */ }
   return fallback

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <format>
 #include <iostream>
@@ -71,6 +72,75 @@ constexpr auto hold_reason = "A jog stop is in progress.";
 // ten 10 ms control periods, below the 300 ms timeout of the HAL watchdog in the post-GUI file.
 constexpr auto control_fresh = std::chrono::milliseconds{100};
 constexpr auto no_tool_models_reason = "Tool model storage is not part of this session.";
+constexpr auto probe_loaded_reason = "A touch probe is loaded";
+constexpr std::string_view probe_code_unknown =
+    "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.";
+
+// Check the accepted subset of RS274 before dispatch. LinuxCNC ignores case and spaces between
+// digits. O-words, indirect M-codes, state restore and custom M-codes can hide spindle actions.
+auto probe_code_block(std::string_view line) -> std::string_view {
+  std::string code;
+  std::string comment;
+  bool inside = false;
+  bool semicolon = false;
+  const auto active_comment = [&]() {
+    return comment.starts_with("py,") || comment.starts_with("pyrun,") ||
+           comment.starts_with("pyreload");
+  };
+  for (char c : line) {
+    if (c == '\0' || c == '\r' || c == '\n')
+      return probe_code_unknown;
+    if (c >= 'A' && c <= 'Z')
+      c = static_cast<char>(c - 'A' + 'a');
+    if (c == ' ' || c == '\t')
+      continue;
+    if (semicolon) {
+      comment += c;
+      continue;
+    }
+    if (inside) {
+      if (c == '(')
+        return probe_code_unknown;
+      if (c != ')') {
+        comment += c;
+        continue;
+      }
+      if (active_comment())
+        return probe_code_unknown;
+      comment.clear();
+      inside = false;
+    } else if (c == ';') {
+      // LinuxCNC can interpret the final semicolon comment as an active comment too.
+      semicolon = true;
+    } else if (c == '(') {
+      inside = true;
+    } else {
+      code += c;
+    }
+  }
+  if (inside || active_comment())
+    return probe_code_unknown;
+  if (code.find_first_of("o#[]<>") != std::string::npos)
+    return probe_code_unknown;
+  constexpr std::array ordinary_m_codes{0, 1, 2, 5, 6, 7, 8, 9, 30, 48, 49, 50, 51, 52, 53,
+                                       60, 61, 62, 63, 64, 65, 66, 67, 68, 70, 71};
+  for (std::size_t pos = code.find('m'); pos != std::string::npos; pos = code.find('m', pos + 1)) {
+    const char* first = code.data() + pos + 1;
+    const char* last = code.data() + code.size();
+    if (first != last && *first == '+')
+      ++first;
+    double value = 0;
+    const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
+    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 199)
+      return probe_code_unknown;
+    const auto number = static_cast<int>(std::round(value));
+    if (number == 3 || number == 4 || number == 19)
+      return probe_loaded_reason;
+    if (value != number || std::ranges::find(ordinary_m_codes, number) == ordinary_m_codes.end())
+      return probe_code_unknown;
+  }
+  return {};
+}
 
 // The tool-model command in a request, if it is one.
 auto tool_model_command(Command& command) -> std::optional<ToolModelCommand> {
@@ -624,6 +694,10 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (!wanted(request))
     return cancelled();
   auto decision = policy_.evaluate(command, state);
+  if (decision.allowed) {
+    if (auto reason = probe_block(command, state); !reason.empty())
+      decision = {false, {}, std::move(reason), {}};
+  }
   if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
     // No jog survives a mode change; none is left running if the change fails either.
     cancel_jogs(&request);
@@ -645,6 +719,10 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     if (!wanted(request))
       return cancelled();
     decision = policy_.evaluate(command, state);
+    if (decision.allowed) {
+      if (auto reason = probe_block(command, state); !reason.empty())
+        decision = {false, {}, std::move(reason), {}};
+    }
     if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
       forget_press(request);
       return answer({CommandOutcome::failed, "LinuxCNC did not enter the required mode."});
@@ -658,6 +736,39 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
                    std::move(decision.reason)});
   }
   return perform(request, decision, state, clock);
+}
+
+auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
+  const auto* spindle = std::get_if<SetSpindle>(&command);
+  const auto* mdi = std::get_if<Mdi>(&command);
+  const bool program = std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command) ||
+                       std::holds_alternative<Resume>(command);
+  if (tool_models_ == nullptr || (!program && mdi == nullptr &&
+                                 (spindle == nullptr || spindle->direction == SpindleDirection::stopped)))
+    return {};
+  const auto loaded = tool_models_->touch_probe_loaded(state.tool_in_spindle);
+  if (!loaded)
+    return "Cannot verify the loaded tool type. Check tool model storage.";
+  if (!*loaded)
+    return {};
+  if (mdi != nullptr)
+    return std::string(probe_code_block(mdi->text));
+  if (spindle != nullptr || state.spindle_active)
+    return probe_loaded_reason;
+  if (std::holds_alternative<Resume>(command) && state.mode != TaskMode::automatic)
+    return std::string(probe_code_unknown);
+  const auto text = programs_.read_program(state.program_file, 0);
+  if (!text || text->truncated)
+    return std::string(probe_code_unknown);
+  for (const auto& line : text->lines)
+    if (const auto reason = probe_code_block(line); !reason.empty())
+      return std::string(reason);
+  // The source can have changed while being read through a different controller client.
+  const auto now = port_.snapshot();
+  if (now.link != Link::live || now.program_file != state.program_file ||
+      now.tool_in_spindle != state.tool_in_spindle || now.spindle_active)
+    return "A touch probe is loaded. Machine state changed during the spindle check.";
+  return {};
 }
 
 auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,

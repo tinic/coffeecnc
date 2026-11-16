@@ -161,6 +161,8 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     edit: ModelEditContext): Promise<ModelSaveResult> {
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
+    if (family === 'touch-probe' && !panel.simulated && state.storage !== 'available')
+      return Promise.resolve(fail('Touch probes require saved tool models for this machine.'))
     const binding = toolModelBinding(tool)
     if (binding === null) return Promise.resolve(fail(tool.number <= 0
       ? 'Choose a numbered tool to save its preview shape.'

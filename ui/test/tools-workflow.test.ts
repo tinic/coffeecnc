@@ -80,8 +80,8 @@ describe('tool table workflow', () => {
   it('opens editing from a row, keeps model controls inside, and confirms deletion there', async () => {
     mountTools()
     expect(getWrapper().text()).not.toContain('Model defaults')
-    expect(getWrapper().findAll('.tool-row button').map((button) => button.text())).toEqual(['Load', 'Load'])
-    await getWrapper().findAll('.tool-row')[1]?.trigger('click')
+    expect(getWrapper().findAll('.tool-row button').map((button) => button.text())).toEqual(['Edit', 'Load', 'Edit', 'Load'])
+    await getWrapper().get('[aria-label="Edit tool 2"]').trigger('click')
     expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Edit tool 2')
     expect(getWrapper().get('[role="dialog"]').text()).toContain('Model defaults')
     await press('Delete'); expect(send).not.toHaveBeenCalled()

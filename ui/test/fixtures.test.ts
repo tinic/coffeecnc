@@ -120,6 +120,7 @@ const examples: Examples = {
   quit: { id: 27, type: 'quit' },
   set_operator_settings: { id: 28, type: 'set_operator_settings', machine_id: 'G0759', base_revision: 0,
     document: { version: 1, startup_units: 'inch', enabled_wcs: [1, 2, 3], default_spindle_rpm: 1200, default_jog_velocity: 600, tool_reference_height: 6.35 } },
+  set_work_offset: { id: 29, type: 'set_work_offset', wcs: 2, offset: [25.4, -50.8, 0] },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -220,6 +220,21 @@ auto command(const Json& object) -> Command {
     fields(object, {"id", "type", "axis", "value"});
     return TouchOff{axis(object), number(object, "value")};
   }
+  if (type == "set_work_offset") {
+    fields(object, {"id", "type", "wcs", "offset"});
+    const auto& offset = field(object, "offset");
+    if (!offset.is_array() || offset.size() != 3)
+      throw InvalidRequest("Work offset must contain three XYZ numbers.");
+    std::array<double, 3> values{};
+    for (std::size_t i = 0; i < values.size(); ++i) {
+      if (!offset.at(i).is_number())
+        throw InvalidRequest("Work offset must contain three XYZ numbers.");
+      values[i] = offset.at(i).get<double>();
+      if (!std::isfinite(values[i]))
+        throw InvalidRequest("Work offsets must be finite.");
+    }
+    return SetWorkOffset{integer(object, "wcs"), values};
+  }
   if (type == "tool_touch_off") {
     fields(object, {"id", "type", "value"});
     return ToolTouchOff{number(object, "value")};

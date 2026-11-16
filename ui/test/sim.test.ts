@@ -657,6 +657,25 @@ describe('the built-in programs', () => {
 })
 
 describe('offsets and tools', () => {
+  it('edits, copies and clears explicit XYZ origins without moving or changing modal context', () => {
+    const r = rig(); r.home()
+    r.send({ type: 'mdi', text: 'G10 L2 P2 R15' }); r.finish()
+    r.send({ type: 'mdi', text: 'G92 X7 Y8 Z9' }); r.finish()
+    r.send({ type: 'mdi', text: 'G20 G91' }); r.finish()
+    const before = r.status()
+    for (const offset of [[25.4, -50.8, 3.5], [1, 2, 3], [0, 0, 0]] as const) {
+      expect(r.send({ type: 'set_work_offset', wcs: 2, offset: [...offset] }).outcome).toBe('accepted')
+      const table = r.out.findLast((message) => message.type === 'work_offsets')
+      expect(table?.type === 'work_offsets' ? table.systems[1] : null).toMatchObject({ wcs: 2, offset: [...offset], rotation_xy: 15 })
+      expect(machinePosition(r.status())).toEqual(machinePosition(before))
+      expect(r.status().offsets.wcs).toBe(before.offsets.wcs)
+      expect(r.status().offsets.g92).toEqual(before.offsets.g92)
+      expect(r.status().program_units).toBe('inch')
+      expect(r.status().active_codes).toContain('G91')
+    }
+    r.send({ type: 'set_machine', state: 'off' })
+    expect(r.send({ type: 'set_work_offset', wcs: 2, offset: [1, 2, 3] }).outcome).toBe('rejected')
+  })
   it('touch-off makes the axis read the value in the active system', () => {
     const r = rig()
     r.home()

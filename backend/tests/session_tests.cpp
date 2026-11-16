@@ -951,6 +951,16 @@ void composed_mdi() {
   rig.acted({"mdi G10 L10 P3 Z2", "mdi G43"}, "Tool touch-off converts as well");
   rig.port.state.program_units = LengthUnit::mm;
 
+  rig.accepted(R"("type":"set_work_offset","wcs":9,"offset":[25.4,-50.8,0])");
+  rig.acted({"mdi G10 L2 P9 X25.4 Y-50.8 Z0"},
+            "Writes an explicit system without selecting it or replacing rotation/G92");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(R"("type":"set_work_offset","wcs":2,"offset":[25.4,-50.8,0])");
+  rig.acted({"mdi G10 L2 P2 X1 Y-2 Z0"}, "Work origins convert protocol mm to interpreter inches");
+  rig.accepted(R"("type":"set_work_offset","wcs":2,"offset":[0,0,0])");
+  rig.acted({"mdi G10 L2 P2 X0 Y0 Z0"}, "Clear is the same explicit XYZ command");
+  rig.port.state.program_units = LengthUnit::mm;
+
   rig.accepted(R"("type":"tool_touch_off","value":25.4)");
   rig.acted({"mdi G10 L10 P3 Z25.4", "mdi G43"},
             "Tool length is set for the loaded tool, then applied");

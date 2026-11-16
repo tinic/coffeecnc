@@ -49,6 +49,14 @@ Native verification on playhouse2:
   panel_mapping rerun; both full native shell unit profiles and native model
   save/restart checks passed. Test runner left no LinuxCNC child processes.
 
-Deployment: pending. Native rebuild required for editable-row publication change.
+Deployment: Claude rebuilt and installed PR44 on the G0759, reported 17:55:27 UTC.
+- Deployed source: 82152549f444fd24a9c629011dcec85652e91ba2.
+- Claude reported a successful 26/26 build and switching the machine off first.
+- Codex independently verified the checkout, running process and installed UI
+  through read-only SSH during the 17:55 UTC heartbeat.
+- PID 42229 runs /usr/bin/coffeecnc. Running and installed binary SHA256 both:
+  ec39a8f6233e87adbe60ccdc50ed2d7836792d3416e134915b9b29fb5691a290
+- Installed inputs_digest and assets_digest exactly match the tested UI above.
+- This verifies deployed artifacts; physical operator workflow validation is separate.
 Claude owns physical G0759 installation/restart. Codex has not moved or restarted it.
 The separate probing proposal is draft PR43; this change adds no probing motion.

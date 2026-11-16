@@ -695,6 +695,20 @@ void source_preview_tools() {
 }
 
 // A table is shown only with the comments read for it: a saved tool model is bound to them.
+void source_hides_no_tool_placeholders() {
+  Rig rig;
+  write(rig.config.tool_table, "T0 P0 Z0 D0\nT1 P1 Z10 D6.35\n");
+  rig.loaded = std::vector<LoadedTool>{{1, {0, 0, 0, 0, ""}}, {2, {1, 1, 10, 6.35, ""}}};
+  static_cast<void>(rig.step());
+  const auto r = rig.step();
+  require(r.tool_table.tools == std::vector<Tool>{{1, 1, 10, 6.35, ""}},
+          "T0 placeholder is hidden; an uncommented T1 keeps exact binding fields");
+  auto status = rig.status();
+  status.prepared_pocket = 1;
+  require(rig.step(status).status.tool.prepared == 0,
+          "The placeholder still resolves to T0 for a prepared unload");
+}
+
 void source_table_is_withheld_without_its_comments() {
   Rig rig;
   write(rig.config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");
@@ -885,6 +899,7 @@ auto main(int argc, char** argv) -> int {
     source_program_loads();
     source_lines_belong_to_the_revision();
     source_tool_table();
+    source_hides_no_tool_placeholders();
     source_table_is_withheld_without_its_comments();
     source_survives_an_unreadable_tool_table();
     source_preview_tools();

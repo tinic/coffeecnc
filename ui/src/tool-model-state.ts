@@ -162,7 +162,9 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
     const binding = toolModelBinding(tool)
-    if (binding === null) return Promise.resolve(fail('The current tool row cannot be saved as a model binding.'))
+    if (binding === null) return Promise.resolve(fail(tool.number <= 0
+      ? 'Choose a numbered tool to save its preview shape.'
+      : 'This tool has incomplete details. Close and reopen its editor before saving the preview shape.'))
     if (!panel.toolTable?.tools.some((row) => toolIdentity(row) === toolIdentity(tool)) ||
       !panel.simulated && panel.link !== 'live') {
       return Promise.resolve(fail('A current matching tool table is required. Reopen this editor when the machine connection is live.'))

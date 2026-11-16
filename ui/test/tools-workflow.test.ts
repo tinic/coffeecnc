@@ -83,7 +83,8 @@ describe('tool table workflow', () => {
     expect(getWrapper().findAll('.tool-row button').map((button) => button.text())).toEqual(['Edit', 'Load', 'Edit', 'Load'])
     await getWrapper().get('[aria-label="Edit tool 2"]').trigger('click')
     expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Edit tool 2')
-    expect(getWrapper().get('[role="dialog"]').text()).toContain('Model defaults')
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('Preview shape')
+    expect(getWrapper().get('[role="dialog"]').text()).not.toContain('Model defaults')
     await press('Delete'); expect(send).not.toHaveBeenCalled()
     expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Remove tool 2?')
     await press('Remove tool'); expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'remove_tool', number: 2 })
@@ -93,7 +94,7 @@ describe('tool table workflow', () => {
     const deletion = getWrapper().findAll('button').find((button) => button.text() === 'Delete')
     expect(deletion?.attributes('disabled')).toBeDefined()
     const tool = panel.toolTable?.tools[0]; if (!tool) throw new Error('Missing tool')
-    tool.length = 100; await nextTick(); await press('Save to tool table')
+    tool.length = 100; await nextTick(); await press('Save tool')
     expect(send).not.toHaveBeenCalled()
   })
   it('keeps unchanged length and diameter exact when editing a description in inches', async () => {
@@ -102,7 +103,7 @@ describe('tool table workflow', () => {
     tool.length = 1.234567891; tool.diameter = 6.123456789
     mountTools(); await getWrapper().get('.tool-row').trigger('click')
     await getWrapper().get('.description-entry input').setValue('Updated description')
-    await press('Save to tool table')
+    await press('Save tool')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_tool', tool: { ...tool, comment: 'Updated description' } })
   })
   it.each(['mm', 'inch'] as const)('prefills reference height in %s and retains the draft during position updates', async (unit) => {

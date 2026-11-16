@@ -75,6 +75,17 @@ function saved(): ToolModelDocument {
 }
 
 describe('tool model persistence state', () => {
+  it('saves uncommented T1 and refuses a no-tool placeholder with operator wording', async () => {
+    const r = rig(true)
+    const bare: Tool = { number: 1, pocket: 1, length: 10, diameter: 6.35, comment: '' }
+    r.table([bare])
+    expect(await r.models.saveAssignment(bare, 'end-mill', {}, r.models.context())).toEqual({ saved: true, reason: '' })
+    const zero = { ...bare, number: 0 }
+    r.table([zero])
+    const result = await r.models.saveAssignment(zero, 'end-mill', {}, r.models.context())
+    expect(result.saved).toBe(false); expect(result.reason).toContain('Choose a numbered tool')
+    expect(result.reason).not.toContain('binding')
+  })
   it('never reads or writes browser storage from a native transport, even for a simulated machine', async () => {
     const r = rig()
     r.connect('G0759', false)

@@ -13,11 +13,13 @@ auto scenario(const std::filesystem::path& directory, bool broken, bool wrong_pa
   std::filesystem::create_directories(directory);
   {
     std::ofstream html{directory / "index.html"};
-    html << "<html><body><script>window.coffeecncReceive = (m) => {"
+    html << "<html><body><script src=\"test.js\"></script></body></html>";
+    std::ofstream script{directory / "test.js"};
+    script << "window.coffeecncReceive = (m) => {"
          << (broken ? "throw new Error('test receiver failure');" :
              "const until=performance.now()+100;while(performance.now()<until){};"
              "window.webkit.messageHandlers.coffeecnc.postMessage('received');")
-         << "};window.webkit.messageHandlers.coffeecnc.postMessage('ready');</script></body></html>";
+         << "};window.webkit.messageHandlers.coffeecnc.postMessage('ready');";
   }
   bool received = false;
   bool timed_out = false;

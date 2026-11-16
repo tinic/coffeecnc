@@ -21,7 +21,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport defer :to="expanded ? '#workspace-dialogs' : '#dialogs'">
-    <div v-fresh-gesture="freshGesture" class="scrim" @pointerdown.self="emit('close')" @keydown.esc="emit('close')">
+    <div v-fresh-gesture="freshGesture" class="scrim" @pointerdown.self="emit('close')" @touchend.self.prevent="emit('close')" @keydown.esc="emit('close')">
       <section class="dialog" :class="size" role="dialog" :aria-label="title">
         <header>
           <h2>{{ title }}</h2>

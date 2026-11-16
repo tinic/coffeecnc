@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
+import { vPopover } from '../popover'
 // Always visible, always in the same place: the controls of a running program, the overrides and
 // what the machine reports about feed, spindle and coolant.
 import { computed } from 'vue'
@@ -82,7 +83,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
     <OverrideControl label="Feed override" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
     <OverrideControl label="Spindle override" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
-      <details class="more">
+      <details v-popover class="more">
         <summary class="more-button" aria-label="More execution controls">···</summary>
         <div class="popover">
           <h3>Execution controls</h3>

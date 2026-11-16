@@ -102,6 +102,19 @@ describe('touching the coordinate readout', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: 0 })
   })
 
+  it('preserves an entered zero while position feedback updates', async () => {
+    await wrapper.get('.axis').trigger('click')
+    await press('Zero')
+    const input = field()
+    if (!panel.status) throw new Error('Missing status')
+    panel.status = { ...panel.status, axes: panel.status.axes.map((axis) => ({ ...axis, work: axis.work + 0.0002 })) }
+    await nextTick()
+    expect(field()).toBe(input)
+    expect(field().value).toBe('0')
+    await press('Set G54 X')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: 0 })
+  })
+
   it('prefills inches and converts an edited target back to millimeters', async () => {
     panel.unit = 'inch'; await nextTick()
     await wrapper.findAll('.axis')[1]?.trigger('click')
@@ -173,14 +186,37 @@ describe('quick coordinate actions', () => {
     await press('Set Y to zero')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'y', value: 0 })
   })
-  it.each(['position', 'wcs', 'session', 'units', 'blocked', 'basis'])('discards a quick confirmation after %s changes', async (change) => {
+  it.each(['Zero', 'Half'] as const)('keeps the menu and %s confirmation open through feedback changes', async (operation) => {
+    if (!panel.status?.axes[0]) throw new Error('Missing axis')
+    const menu = wrapper.get('.axis-actions').element as HTMLDetailsElement
+    menu.open = true
+    panel.status.axes[0].work += 0.0001
+    await nextTick()
+    expect(menu.open).toBe(true)
+    await wrapper.get(`button[aria-label="${operation} X"]`).trigger('click')
+    const dialog = wrapper.get('[role="dialog"]').element
+    const focus = document.activeElement
+    for (const current of [12.345901, 12.345101, 12.345987]) {
+      panel.status = { ...panel.status, axes: panel.status.axes.map((axis) => axis.axis === 'x' ? { ...axis, work: current } : axis) }
+      await nextTick()
+      expect(wrapper.get('[role="dialog"]').element).toBe(dialog)
+      expect(document.activeElement).toBe(focus)
+      expect(wrapper.findComponent(CoordinateConfirm).props('current')).toBe(current)
+      expect(wrapper.findComponent(CoordinateConfirm).props('target')).toBe(operation === 'Half' ? current / 2 : 0)
+      expect(send).not.toHaveBeenCalled()
+    }
+    await press(`Set X to ${operation.toLowerCase()}`)
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: operation === 'Half' ? 12.345987 / 2 : 0 })
+  })
+  it.each(['wcs', 'session', 'units', 'blocked', 'basis', 'missing axis', 'invalid coordinate'])('discards a quick confirmation after %s changes', async (change) => {
     await wrapper.get('button[aria-label="Half X"]').trigger('click')
     const dialog = wrapper.findComponent(CoordinateConfirm)
-    if (change === 'position' && panel.status?.axes[0]) panel.status.axes[0].work = 50
-    else if (change === 'wcs' && panel.status) panel.status.offsets.wcs = 2
+    if (change === 'wcs' && panel.status) panel.status.offsets.wcs = 2
     else if (change === 'session') Object.assign(panel, { hello: {} })
     else if (change === 'units') panel.unit = 'inch'
     else if (change === 'blocked') Object.assign(mdiBlock, { value: 'Machine busy' })
+    else if (change === 'missing axis' && panel.status) panel.status.axes = panel.status.axes.filter((axis) => axis.axis !== 'x')
+    else if (change === 'invalid coordinate' && panel.status?.axes[0]) panel.status.axes[0].work = NaN
     else await wrapper.findAll('.basis-options button')[1]?.trigger('click')
     dialog.vm.$emit('confirm'); await nextTick()
     expect(send).not.toHaveBeenCalled()

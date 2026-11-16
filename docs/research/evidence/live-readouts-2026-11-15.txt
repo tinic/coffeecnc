@@ -1,0 +1,47 @@
+CoffeeCNC stable live readouts — 2026-11-15
+
+User feedback relayed by Claude: changing measured spindle digits move nearby
+content. Apply tabular numerals and reserved space to all live readouts.
+
+Changes:
+- Tabular numerals throughout the panel; existing IBM Plex Mono for telemetry.
+- Reserved feedback fields include stale/unavailable states. Right-aligned RPM
+  digits occupy their own slot, keeping the rpm unit in place.
+- Right-aligned coordinate slots and reserved touch-icon space across workspaces.
+  The existing label/value fonts, 48px hit targets and unit alignment remain.
+- Reserved widths for jog speed, override percentages, spindle/feed telemetry,
+  line counters, message counts, log timestamps and part opacity.
+- No command, precision, unit conversion or availability behavior changes.
+  No elapsed-time counter exists in this panel; log timestamps were audited.
+
+Validation on final source:
+- npm run check: typecheck, lint and 339 tests in 27 files passed.
+- npm run build: passed. Existing Vite config-loader and OCCT externalization
+  warnings remain.
+- Panel stamp matches source:
+  inputs=044a942affafe400650427ccb780d807deba50989ba2abf0bc0de50e57da90d2
+  assets=f5bd973a4b1713ce2f2a801a610a3ae5ada46f9087af0c4a243050257d000864
+- Browser fixture: Manual and Machine, 1280x800 dark and 1600x900 light, each
+  with short, wide, stale and missing readouts (16 states). All measured visible
+  boxes have identical x/y/width/height within each workspace/viewport group.
+  RPM numeric boxes also match across short, wide and stale states.
+- Short/wide cases vary RPM 1 to 999999, work position 0.001 to -888.888,
+  message count 1 to 120, overrides 1% to 120% / 90% to 150%, feed 1 to 999999,
+  and program line 1 to 999. These extreme values are fabricated layout inputs.
+- No browser warning/error entries. Both retained screenshots visually checked.
+- Exact DOM measurements: live-readouts-2026-11-15.json alongside this record.
+- Screenshots: ui/screenshots/stable-readouts-manual.png (1280x800, stale),
+  ui/screenshots/stable-readouts-program.png (1600x900, wide).
+
+The fixture has no controller connection and does not establish native WebKit,
+physical touch or machine operation. Native deployment is pending at this
+record's initial commit; Claude owns the combined deployment with PR25.
+
+Integration and native status at 19:53 UTC:
+- PR27 merged as 60b76966970cd7e47d5bbcee834237a04ef7fb82 from source
+  8cded45d66aefbe16af15c04d1ac161da64ca3e8. Main includes PR25 as well.
+- Exact merge SHA and expected UI stamp were sent to Claude on AgentNet.
+- Read-only SSH still observed checkout 9721dff655cde89748156830154fb05b88ba4ee9,
+  process 33673 and the older installed PR24 stamp (inputs56fb4f3f/assets16de1b80).
+  Neither this readout fix nor coordinate touch-off is confirmed deployed yet.
+- No Codex installation, restart or machine command occurred.

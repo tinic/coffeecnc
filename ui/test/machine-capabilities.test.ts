@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { axisJogVelocity, requiresHoming } from '../src/machine-capabilities'
+import { axisJogVelocity, displayJogIncrements, requiresHoming } from '../src/machine-capabilities'
 import type { CommandBody, FromMachine, Hello } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
 
 describe('machine capabilities', () => {
+  it('retains native increments and offers bounded round presets in the other unit', () => {
+    const metric = { ...hello, machine_units: 'mm' as const, jog_increments: [5, 1, 0.5, 0.1, 0.05, 0.01, 0.005] }
+    expect(displayJogIncrements(metric, 'mm')).toEqual(metric.jog_increments)
+    expect(displayJogIncrements(metric, 'inch').map((mm) => Number((mm / 25.4).toFixed(4))))
+      .toEqual([0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001])
+    const imperial = { ...hello, machine_units: 'inch' as const, jog_increments: [2.54, 0.254, 0.0254] }
+    expect(displayJogIncrements(imperial, 'inch')).toEqual(imperial.jog_increments)
+    expect(displayJogIncrements(imperial, 'mm')).toEqual([1, 0.5, 0.1, 0.05, 0.01, 0.005])
+    expect(displayJogIncrements(null, 'inch')).toEqual([])
+    expect(displayJogIncrements({ ...metric, jog_increments: [] }, 'inch')).toEqual([])
+  })
   it('keeps older v1 peers restrictive and clamps an asymmetric axis independently', () => {
     const legacy: Hello = { ...hello }
     delete legacy.axis_max_jog_velocity

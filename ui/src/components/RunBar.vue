@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Always visible, always in the same place: the controls of a running program, the overrides and
 // what the machine reports about feed, spindle and coolant.
 import { computed } from 'vue'
@@ -87,23 +88,22 @@ function option(which: 'optional_stop' | 'block_delete'): void {
           <h3>Execution controls</h3>
           <OverrideControl label="Rapid override" which="rapid" :value="status?.motion.rapid_override ?? null" :min="0" :max="1" :disabled="!live" />
           <div class="actions">
-            <button class="btn" type="button" :disabled="stepBlock !== null" :title="stepBlock ?? 'Execute one block, then pause'" @click="send({ type: 'step' })"><AppIcon name="step" />Single block</button>
+            <button v-tooltip="stepBlock ?? 'Execute one block, then pause'" class="btn" type="button" :disabled="stepBlock !== null" @click="send({ type: 'step' })"><AppIcon name="step" />Single block</button>
             <button class="btn" type="button" :class="{ on: status?.program.optional_stop }" :disabled="!live" @click="option('optional_stop')">Optional stop M1</button>
             <button class="btn" type="button" :class="{ on: status?.program.block_delete }" :disabled="!live" @click="option('block_delete')">Block delete /</button>
           </div>
         </div>
       </details>
-      <button class="btn stop-button" type="button" title="Stop the program, MDI, jogging and spindle" @click="send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
-      <button class="btn primary main-action" type="button" :disabled="primary.blocked !== null" :title="primary.blocked ?? primary.label" @click="send({ type: primary.type })"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
+      <button v-tooltip="'Stop the program, MDI, jogging and spindle'" class="btn stop-button" type="button" @click="send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
+      <button v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null" @click="send({ type: primary.type })"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
   </footer>
 </template>
 
 <style scoped>
-.runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 30px; align-items: center; flex: none; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--panel); }
+.runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 30px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
 .command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
 .stop-button { color: var(--stop); min-width: 88px; }.main-action { min-width: 156px; }
 .more { position: relative; }.more-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; color: var(--text-dim); }
 .popover { bottom: calc(100% + 16px); right: -100px; }
-@media (max-height: 760px) { .runbar { padding-block: 12px; } }
 </style>

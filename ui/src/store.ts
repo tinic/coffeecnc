@@ -240,7 +240,7 @@ export function createPanel(options: PanelOptions): Panel {
     if (last?.level === level && last.text === text && last.context === context && time - last.time < collapseWindowMs) {
       last.count += 1
       last.time = time
-      state.notice = last
+      if (level === 'error' || state.notice?.level !== 'error') state.notice = last
       return
     }
     state.log.push({ id: nextLogId, level, text, context, time, count: 1 })
@@ -248,7 +248,8 @@ export function createPanel(options: PanelOptions): Panel {
     if (state.log.length > maxLogEntries) {
       state.log.splice(0, state.log.length - maxLogEntries)
     }
-    state.notice = state.log.at(-1) ?? null
+    // An informational message must not hide an error before the operator dismisses it.
+    if (level === 'error' || state.notice?.level !== 'error') state.notice = state.log.at(-1) ?? null
   }
 
   function updateLink(): void {

@@ -146,7 +146,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <button v-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
-      Follow line {{ active }}
+      Follow line <span class="follow-count mono">{{ active }}</span>
     </button>
   </div>
 </template>
@@ -226,4 +226,5 @@ onBeforeUnmount(() => {
   border-color: var(--accent);
   background: var(--panel-raised);
 }
+.follow-count { width: 7ch; min-width: 7ch; text-align: right; }
 </style>

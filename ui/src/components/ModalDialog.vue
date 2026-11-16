@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // A dialog over the workspace. It never covers the status bar or the run bar: stop and E-stop
 // stay reachable whatever is open.
 import { onBeforeUnmount, onMounted } from 'vue'
 
 import { openDialogs } from '../dialogs'
+import { vFreshGesture } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ title: string; size: 'small' | 'medium' | 'large'; contained?: boolean; expanded?: boolean }>()
+defineProps<{ title: string; size: 'small' | 'medium' | 'large'; contained?: boolean; expanded?: boolean; freshGesture?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 onMounted(() => {
@@ -19,11 +21,11 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport defer :to="expanded ? '#workspace-dialogs' : '#dialogs'">
-    <div class="scrim" @pointerdown.self="emit('close')" @keydown.esc="emit('close')">
+    <div v-fresh-gesture="freshGesture" class="scrim" @pointerdown.self="emit('close')" @keydown.esc="emit('close')">
       <section class="dialog" :class="size" role="dialog" :aria-label="title">
         <header>
           <h2>{{ title }}</h2>
-          <button class="btn quiet square" type="button" title="Close" @click="emit('close')">
+          <button v-tooltip="'Close'" class="btn quiet square" type="button" @click="emit('close')">
             <AppIcon name="close" />
           </button>
         </header>

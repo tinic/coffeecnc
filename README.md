@@ -8,9 +8,18 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
+![CoffeeCNC running on the G0759 controller with larger jog controls and aligned coordinates](ui/screenshots/g0759-operator-f0a4264.png)
+
+*Current operator layout on the G0759 controller at 1600 × 900, deployed on 15 November 2026 from UI revision `f0a4264` with Claude's jog-stop fix. The machine is off and axes are not homed. Larger jog controls, aligned coordinates and unit buttons, expanded MDI and the bottom-aligned work coordinate selector are visible. Physical touch retesting remains pending. See [deployment evidence](docs/research/evidence/operator-touch-followup-2026-11-15.txt) and [touch behavior](ui/README.md#touch-operation-and-stable-feedback).*
+
+<details>
+<summary>First G0759 controller launch</summary>
+
 ![CoffeeCNC Manual workspace on the G0759 controller, machine off and axes not homed](ui/screenshots/g0759-controller-first-launch.png)
 
 *First G0759 controller launch reported by Claude on 15 November 2026. The supplied screenshot shows the machine off, all axes not homed, and jogging/MDI unavailable. Probe input is reported as Tripped; its physical meaning remains a commissioning question. See [launch evidence and scope](docs/machines/g0759.md#first-g0759-controller-launch).*
+
+</details>
 
 ![Native CoffeeCNC operator panel with Task 17 toolpaths and STEP stock](ui/screenshots/native-task17a-stock-5a04f40.png)
 
@@ -56,6 +65,7 @@ The concept established the panel's visual direction: readable coordinates, a pa
 
 ## Research and design material
 
+- [Logo concepts](docs/design/branding/README.md): the initial bean mark and the revised end-mill direction, with transparent artwork and generation prompts.
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
 - [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
 - [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks, browser and native overlay qualification.

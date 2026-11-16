@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Browses the machine's program directory and opens a program.
 import { computed, onMounted } from 'vue'
 
@@ -40,10 +41,10 @@ onMounted(() => {
   <ModalDialog title="Open program" size="medium" @close="emit('close')">
     <div class="path">
       <button
+        v-tooltip="'Up one directory'"
         class="btn"
         type="button"
         :disabled="directory === null || directory.parent === null"
-        title="Up one directory"
         @click="list(directory?.parent ?? null)"
       >
         <AppIcon name="up" />Up

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // The path view: the planned path from the preview, the part of it the machine has executed, the
 // tool position the machine reports, the active work origin and the machine travel.
 //
@@ -470,8 +471,8 @@ onBeforeUnmount(() => {
         <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
         <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
         <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
-        <button type="button" title="Fit toolpath and visible models" aria-label="Fit toolpath and visible models" @click="fitButton('path')"><AppIcon name="fit" /></button>
-        <button type="button" title="Show and fit machine travel" @click="fitButton('machine')">Travel</button>
+        <button v-tooltip="'Fit toolpath and visible models'" type="button" aria-label="Fit toolpath and visible models" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button v-tooltip="'Show and fit machine travel'" type="button" @click="fitButton('machine')">Travel</button>
       </div>
     </div>
   </div>

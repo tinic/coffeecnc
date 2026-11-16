@@ -1,0 +1,4675 @@
+{
+  "source": "display-only browser fixture; no controller",
+  "comparisons": [
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "wide",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "stale",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "missing",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "wide",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "stale",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "missing",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "wide",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "stale",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "missing",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "wide",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "stale",
+      "changed": []
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "missing",
+      "changed": []
+    }
+  ],
+  "measurements": [
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "short",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 1",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 127.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 201,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 451,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 701,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 203.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 225.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 652,
+          "x": 604,
+          "y": 266.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle1 rpmAt speedNoProbe inputClear",
+          "width": 652,
+          "x": 604,
+          "y": 501.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "1 rpm",
+          "width": 144,
+          "x": 723.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "No",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono",
+          "text": "Clear",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 652,
+          "x": 604,
+          "y": 633.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "1 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "90 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "1",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 595.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "wide",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 127.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 203.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 225.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 652,
+          "x": 604,
+          "y": 266.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle999999 rpmAt speedYesProbe inputTripped",
+          "width": 652,
+          "x": 604,
+          "y": 501.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "999999 rpm",
+          "width": 144,
+          "x": 723.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "Yes",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono tripped",
+          "text": "Tripped",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 652,
+          "x": 604,
+          "y": 633.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 595.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "stale",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 127.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 203.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 225.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run MDI unavailable: LinuxCNC has stopped updating its status",
+          "width": 652,
+          "x": 604,
+          "y": 266.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle999999 rpm · staleAt speedYes · staleProbe inputTripped · stale",
+          "width": 652,
+          "x": 604,
+          "y": 501.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono stale",
+          "text": "999999 rpm · stale",
+          "width": 144,
+          "x": 723.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono stale",
+          "text": "Yes · stale",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono stale",
+          "text": "Tripped · stale",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 652,
+          "x": 604,
+          "y": 633.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 595.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "manual",
+      "mode": "missing",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 127.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 203.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 203.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 203.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 203.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 197.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 225.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 652,
+          "x": 604,
+          "y": 266.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindleUnavailableAt speedUnavailableProbe inputUnavailable",
+          "width": 652,
+          "x": 604,
+          "y": 501.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono unknown",
+          "text": "Unavailable",
+          "width": 144,
+          "x": 723.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono unknown",
+          "text": "Unavailable",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono unknown",
+          "text": "Unavailable",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 595.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 652,
+          "x": 604,
+          "y": 633.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": null
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "short",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 1",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 131.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 201,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 451,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 701,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 207.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 201.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 201.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 551.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1 rpm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 572.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1 mm/min",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 593.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 643.359375,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "1 rpm",
+          "width": 144,
+          "x": 749.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 909.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "No",
+          "width": 79.1953125,
+          "x": 967.8203125,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 1 / 1000",
+          "width": 196.984375,
+          "x": 1059.015625,
+          "y": 706
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "1 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "90 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "1",
+        "width": 57.59375,
+        "x": 749.765625,
+        "y": 704.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "wide",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 131.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 207.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 201.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 201.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 551.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 572.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 593.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 643.359375,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "999999 rpm",
+          "width": 144,
+          "x": 749.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 909.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "Yes",
+          "width": 79.1953125,
+          "x": 967.8203125,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 999 / 1000",
+          "width": 196.984375,
+          "x": 1059.015625,
+          "y": 706
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 749.765625,
+        "y": 704.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "stale",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 131.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 207.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 201.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 201.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 551.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 572.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 593.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 643.359375,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono stale",
+          "text": "999999 rpm · stale",
+          "width": 144,
+          "x": 749.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 909.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono stale",
+          "text": "Yes · stale",
+          "width": 79.1953125,
+          "x": 967.8203125,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "1000 lines",
+          "width": 196.984375,
+          "x": 1059.015625,
+          "y": 706
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 749.765625,
+        "y": 704.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "workspace": "program",
+      "mode": "missing",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1047.6796875,
+          "y": 131.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 207.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 208.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 208.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 207.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 201.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 201.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 551.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 572.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1142.6015625,
+          "y": 593.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 643.359375,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono unknown",
+          "text": "Unavailable",
+          "width": 144,
+          "x": 749.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 909.765625,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono unknown",
+          "text": "Unavailable",
+          "width": 79.1953125,
+          "x": 967.8203125,
+          "y": 704.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 999 / 1000",
+          "width": 196.984375,
+          "x": 1059.015625,
+          "y": 706
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 406,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 142,
+          "y": 747
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 874,
+          "y": 747
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 256,
+          "x": 610,
+          "y": 747
+        }
+      ],
+      "rpm": null
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "short",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 1",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 145.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 201,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 451,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 701,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 231.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 291.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 972,
+          "x": 604,
+          "y": 300.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle1 rpmAt speedNoProbe inputClear",
+          "width": 972,
+          "x": 604,
+          "y": 601.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "1 rpm",
+          "width": 144,
+          "x": 723.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "No",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono",
+          "text": "Clear",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 972,
+          "x": 604,
+          "y": 733.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "1 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "90 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "1",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 695.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "wide",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 145.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 231.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 291.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 972,
+          "x": 604,
+          "y": 300.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle999999 rpmAt speedYesProbe inputTripped",
+          "width": 972,
+          "x": 604,
+          "y": 601.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "999999 rpm",
+          "width": 144,
+          "x": 723.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "Yes",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono tripped",
+          "text": "Tripped",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 972,
+          "x": 604,
+          "y": 733.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 695.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "stale",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 145.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 231.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 291.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run MDI unavailable: LinuxCNC has stopped updating its status",
+          "width": 972,
+          "x": 604,
+          "y": 300.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindle999999 rpm · staleAt speedYes · staleProbe inputTripped · stale",
+          "width": 972,
+          "x": 604,
+          "y": 601.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono stale",
+          "text": "999999 rpm · stale",
+          "width": 144,
+          "x": 723.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono stale",
+          "text": "Yes · stale",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono stale",
+          "text": "Tripped · stale",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 972,
+          "x": 604,
+          "y": 733.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 723.40625,
+        "y": 695.8046875
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "manual",
+      "mode": "missing",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 145.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 231.390625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 231.84375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 231.84375
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 231.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 225.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 291.015625,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "card mdi",
+          "text": "MDINo commands sent in this session. Run",
+          "width": 972,
+          "x": 604,
+          "y": 300.390625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 122.1953125,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "card utilities",
+          "text": "Spindle and coolantrpmReverse Stop Forward CoolantFlood  Mist Measured spindleUnavailableAt speedUnavailableProbe inputUnavailable",
+          "width": 972,
+          "x": 604,
+          "y": 601.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 617,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono unknown",
+          "text": "Unavailable",
+          "width": 144,
+          "x": 723.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 883.40625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono unknown",
+          "text": "Unavailable",
+          "width": 79.1953125,
+          "x": 941.4609375,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Probe input",
+          "width": 64.671875,
+          "x": 1036.65625,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "probe mono unknown",
+          "text": "Unavailable",
+          "width": 108,
+          "x": 1109.328125,
+          "y": 695.8046875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 89.3984375,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "card work-system",
+          "text": "Work coordinate systemG54G55G56G57G58G59G59.1G59.2G59.3",
+          "width": 972,
+          "x": 604,
+          "y": 733.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 24,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": null
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "short",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 1",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 149.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 201,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 451,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "0.001",
+          "width": 133,
+          "x": 701,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 235.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 229.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 229.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 619.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1 rpm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 646.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1 mm/min",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 673.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 963.359375,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "1 rpm",
+          "width": 144,
+          "x": 1069.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 1229.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "No",
+          "width": 79.1953125,
+          "x": 1287.8203125,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 1 / 1000",
+          "width": 196.984375,
+          "x": 1379.015625,
+          "y": 806
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "1 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "90 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "1",
+        "width": 57.59375,
+        "x": 1069.765625,
+        "y": 804.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "wide",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 149.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 235.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 229.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 229.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 619.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 646.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 673.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 963.359375,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono",
+          "text": "999999 rpm",
+          "width": 144,
+          "x": 1069.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 1229.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono",
+          "text": "Yes",
+          "width": 79.1953125,
+          "x": 1287.8203125,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 999 / 1000",
+          "width": 196.984375,
+          "x": 1379.015625,
+          "y": 806
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 1069.765625,
+        "y": 804.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "stale",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 149.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 235.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 229.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 229.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 619.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 646.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 673.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 963.359375,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono stale",
+          "text": "999999 rpm · stale",
+          "width": 144,
+          "x": 1069.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 1229.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono stale",
+          "text": "Yes · stale",
+          "width": 79.1953125,
+          "x": 1287.8203125,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "1000 lines",
+          "width": 196.984375,
+          "x": 1379.015625,
+          "y": 806
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": {
+        "height": 16.796875,
+        "text": "999999",
+        "width": 57.59375,
+        "x": 1069.765625,
+        "y": 804.6015625
+      }
+    },
+    {
+      "size": {
+        "width": 1600,
+        "height": 900
+      },
+      "workspace": "program",
+      "mode": "missing",
+      "bounds": [
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 0,
+          "numeric": "tabular-nums",
+          "selector": "message-log",
+          "text": "Message log · 120",
+          "width": 120.5390625,
+          "x": 1367.6796875,
+          "y": 149.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 1,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "X",
+          "width": 20,
+          "x": 169,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 2,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 201,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 3,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 346,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 4,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Y",
+          "width": 20,
+          "x": 419,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 5,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 451,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 6,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 596,
+          "y": 235.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 7,
+          "numeric": "tabular-nums",
+          "selector": "letter mono",
+          "text": "Z",
+          "width": 20,
+          "x": 669,
+          "y": 236.25
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 35.09375,
+          "index": 8,
+          "numeric": "tabular-nums",
+          "selector": "number mono",
+          "text": "-888.888",
+          "width": 133,
+          "x": 701,
+          "y": 236.25
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 36,
+          "index": 9,
+          "numeric": "tabular-nums",
+          "selector": "touch hidden",
+          "text": "",
+          "width": 36,
+          "x": 846,
+          "y": 235.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 10,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "mm",
+          "width": 52,
+          "x": 916,
+          "y": 229.796875
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 48,
+          "index": 11,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "in",
+          "width": 52,
+          "x": 971,
+          "y": 229.796875
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 12,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "48.200 mm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 619.8125
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 13,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "1499999 rpm",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 646.609375
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 14,
+          "numeric": "tabular-nums",
+          "selector": "mono",
+          "text": "999999 mm/min",
+          "width": 92.3984375,
+          "x": 1462.6015625,
+          "y": 673.40625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 15,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "Measured spindle",
+          "width": 98.40625,
+          "x": 963.359375,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 16,
+          "numeric": "tabular-nums",
+          "selector": "rpm mono unknown",
+          "text": "Unavailable",
+          "width": 144,
+          "x": 1069.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 16.796875,
+          "index": 17,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "At speed",
+          "width": 50.0546875,
+          "x": 1229.765625,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 16.796875,
+          "index": 18,
+          "numeric": "tabular-nums",
+          "selector": "at-speed mono unknown",
+          "text": "Unavailable",
+          "width": 79.1953125,
+          "x": 1287.8203125,
+          "y": 804.6015625
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 14,
+          "index": 19,
+          "numeric": "tabular-nums",
+          "selector": "line-count mono",
+          "text": "Line 999 / 1000",
+          "width": 196.984375,
+          "x": 1379.015625,
+          "y": 806
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 20,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "120 %",
+          "width": 56,
+          "x": 566,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 21,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 142,
+          "y": 847
+        },
+        {
+          "font": "\"IBM Plex Mono\", monospace",
+          "height": 44,
+          "index": 22,
+          "numeric": "tabular-nums",
+          "selector": "value mono",
+          "text": "150 %",
+          "width": 56,
+          "x": 1194,
+          "y": 847
+        },
+        {
+          "font": "\"DM Sans\", system-ui, sans-serif",
+          "height": 44,
+          "index": 23,
+          "numeric": "tabular-nums",
+          "selector": "",
+          "text": "",
+          "width": 416,
+          "x": 770,
+          "y": 847
+        }
+      ],
+      "rpm": null
+    }
+  ]
+}

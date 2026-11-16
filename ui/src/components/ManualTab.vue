@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Manual workspace: homing, jogging, MDI, spindle, coolant and work system selection.
 //
 // Jogging follows jogHold.ts: a jog runs only while a finger, mouse button or key is known to be
@@ -7,8 +8,9 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { openDialogs } from '../dialogs'
+import { vNumeric } from '../numeric-input'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
-import { axisJogVelocity } from '../machine-capabilities'
+import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
 import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
@@ -38,7 +40,9 @@ const keyboard: Readonly<Record<string, JogKey>> = {
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
 const held = reactive(new Set<JogKey>())
-const jogUnavailable = computed(() => manualBlock.value ?? (homingActive.value ? 'Homing is in progress' : null))
+const increments = computed(() => displayJogIncrements(panel.hello, unit.value))
+const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? `Choose a step in ${unit.value === 'inch' ? 'inches' : 'millimeters'}` : null)
+const jogUnavailable = computed(() => manualBlock.value ?? (homingActive.value ? 'Homing is in progress' : stepUnavailable.value))
 
 const jogHold = new JogHold<JogKey>(
   {
@@ -203,6 +207,7 @@ watch(jogUnavailable, (reason) => {
   if (reason !== null) lostAttention()
 }, { flush: 'sync' })
 watch(allHomed, lostAttention, { flush: 'sync' })
+watch(unit, lostAttention, { flush: 'sync' })
 
 onBeforeUnmount(() => {
   window.removeEventListener('touchend', touchesEnded, true)
@@ -335,66 +340,67 @@ function coolant(which: 'flood' | 'mist'): void {
   <div class="manual">
     <section class="card jog">
       <h2>Jog</h2>
-      <p v-if="manualBlock" class="blocked">Jog and homing unavailable: {{ manualBlock }}</p>
-      <div class="pads">
-        <div class="pad">
-          <button
-            v-for="[key, area, icon] in pad"
-            :key="key"
-            class="btn jogbtn"
-            type="button"
-            :class="{ held: held.has(key) }"
-            :style="{ gridArea: area }"
-            :disabled="jogBlock(key) !== null"
-            :title="jogBlock(key) ?? `Jog ${jogLabel(key)}`"
-            @touchstart.prevent="jogTouchStart(key, $event)"
-            @touchend.prevent="jogTouchEnd(key, $event)"
-            @touchcancel="jogTouchEnd(key, $event)"
-            @pointerdown="jogPointerDown(key, $event)"
-            @pointerup="jogHold.release(key)"
-            @pointercancel="jogHold.release(key)"
-            @lostpointercapture="jogHold.release(key)"
-            @contextmenu.prevent
-          >
-            <AppIcon :name="icon" />
-            <span class="mono">{{ jogLabel(key) }}</span>
-          </button>
-          <button
-            class="btn danger jogbtn stopjog"
-            type="button"
-            title="Stop all jogging"
-            @touchstart.prevent="stopTouch"
-            @pointerdown="stopPointerDown"
-          >
-            Stop jog
-          </button>
+      <p v-tooltip="jogUnavailable ?? undefined" class="blocked reserved"><template v-if="jogUnavailable">Jog unavailable: {{ jogUnavailable }}</template></p>
+      <div class="jog-controls">
+        <div class="pads">
+          <div class="pad">
+            <button
+              v-for="[key, area, icon] in pad"
+              :key="key"
+              v-tooltip="jogBlock(key) ?? `Jog ${jogLabel(key)}`"
+              class="btn jogbtn"
+              type="button"
+              :class="{ held: held.has(key) }"
+              :style="{ gridArea: area }"
+              :disabled="jogBlock(key) !== null"
+              @touchstart.prevent="jogTouchStart(key, $event)"
+              @touchend.prevent="jogTouchEnd(key, $event)"
+              @touchcancel="jogTouchEnd(key, $event)"
+              @pointerdown="jogPointerDown(key, $event)"
+              @pointerup="jogHold.release(key)"
+              @pointercancel="jogHold.release(key)"
+              @lostpointercapture="jogHold.release(key)"
+              @contextmenu.prevent
+            >
+              <AppIcon :name="icon" />
+              <span class="mono">{{ jogLabel(key) }}</span>
+            </button>
+            <button
+              v-tooltip="'Stop all jogging'"
+              class="btn danger jogbtn stopjog"
+              type="button"
+              @touchstart.prevent="stopTouch"
+              @pointerdown="stopPointerDown"
+            >
+              Stop jog
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div class="line">
-        <span class="label">Step</span>
-        <div class="segmented">
-          <button
-            class="btn"
-            type="button"
-            :class="{ on: panel.jogIncrement === null }"
-            title="Jog while the button or key is held"
-            @click="panel.jogIncrement = null"
-          >
-            Continuous
-          </button>
-          <button
-            v-for="increment in panel.hello?.jog_increments ?? []"
-            :key="increment"
-            class="btn mono"
-            type="button"
-            :class="{ on: panel.jogIncrement === increment }"
-            @click="panel.jogIncrement = increment"
-          >
-            {{ formatIncrement(increment, unit) }}
-          </button>
+        <div class="steps">
+          <div class="step-heading"><span class="label">Step</span><span class="hint">{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
+          <div class="increments">
+            <button
+              v-tooltip="'Jog while the button or key is held'"
+              class="btn"
+              type="button"
+              :class="{ on: panel.jogIncrement === null }"
+              @click="panel.jogIncrement = null"
+            >
+              Continuous
+            </button>
+            <button
+              v-for="increment in increments"
+              :key="increment"
+              class="btn mono"
+              type="button"
+              :class="{ on: panel.jogIncrement === increment }"
+              @click="panel.jogIncrement = increment"
+            >
+              {{ formatIncrement(increment, unit) }}
+            </button>
+          </div>
         </div>
-        <span class="hint">{{ unit }}</span>
       </div>
 
       <div class="line">
@@ -413,15 +419,15 @@ function coolant(which: 'flood' | 'mist'): void {
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
 
-      <p v-if="limitedSpeeds" class="hint">Axis limits: {{ limitedSpeeds }}</p>
+      <p v-tooltip="limitedSpeeds || undefined" class="hint reserved"><template v-if="limitedSpeeds">Axis limits: {{ limitedSpeeds }}</template></p>
 
       <div class="line">
         <span class="label">Home</span>
         <button
+          v-tooltip="homeBlock ?? 'Home all axes using the configured sequence'"
           class="btn"
           type="button"
           :disabled="homeBlock !== null"
-          :title="homeBlock ?? 'Home all axes using the configured sequence'"
           @click="send({ type: 'home', axis: 'all' })"
         >
           <AppIcon name="home" />All
@@ -429,10 +435,10 @@ function coolant(which: 'flood' | 'mist'): void {
         <button
           v-for="axis in axes"
           :key="axis.axis"
+          v-tooltip="homeBlock ?? `Home ${axis.axis.toUpperCase()}`"
           class="btn homeaxis"
           type="button"
           :disabled="homeBlock !== null"
-          :title="homeBlock ?? `Home ${axis.axis.toUpperCase()}`"
           @click="send({ type: 'home', axis: axis.axis })"
         >
           {{ axis.axis.toUpperCase() }}
@@ -441,7 +447,7 @@ function coolant(which: 'flood' | 'mist'): void {
           }}</span>
         </button>
       </div>
-      <p class="hint keys" title="Keyboard jogging is active only in Manual with no input field focused.">
+      <p v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
     </section>
@@ -454,10 +460,10 @@ function coolant(which: 'flood' | 'mist'): void {
           <button
             v-for="entry in panel.mdi"
             :key="entry.id"
+            v-tooltip="'Copy to the entry field'"
             class="entry"
             type="button"
             :class="entry.outcome"
-            title="Copy to the entry field"
             @click="mdiText = entry.text"
           >
             <span class="mono text">{{ entry.text }}</span>
@@ -481,11 +487,11 @@ function coolant(which: 'flood' | 'mist'): void {
             @keydown.up.prevent="recallMdi(-1)"
             @keydown.down.prevent="recallMdi(1)"
           />
-          <button class="btn primary" type="submit" :disabled="mdiBlock !== null || mdiText.trim() === ''" :title="mdiBlock ?? 'Run this command'">
+          <button v-tooltip="mdiBlock ?? 'Run this command'" class="btn primary" type="submit" :disabled="mdiBlock !== null || mdiText.trim() === ''">
             Run
           </button>
         </form>
-        <p v-if="mdiBlock" class="blocked">MDI unavailable: {{ mdiBlock }}</p>
+        <p v-tooltip="mdiBlock ?? undefined" class="blocked reserved"><template v-if="mdiBlock">MDI unavailable: {{ mdiBlock }}</template></p>
       </section>
 
       <section class="card utilities">
@@ -493,6 +499,7 @@ function coolant(which: 'flood' | 'mist'): void {
         <div class="line">
           <input
             v-model="rpmText"
+            v-numeric
             class="field mono rpm"
             type="text"
             inputmode="decimal"
@@ -501,39 +508,39 @@ function coolant(which: 'flood' | 'mist'): void {
             aria-label="Spindle speed, rpm"
           />
           <span class="hint">rpm</span>
-          <button class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :disabled="spindleBlock !== null" :title="spindleBlock ?? 'Spindle reverse (M4)'" @click="spindle('reverse')">
+          <button v-tooltip="spindleBlock ?? 'Spindle reverse (M4)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :disabled="spindleBlock !== null" @click="spindle('reverse')">
             <AppIcon name="reverse" />Reverse
           </button>
-          <button class="btn" type="button" :disabled="manualBlock !== null" :title="manualBlock ?? 'Spindle stop (M5)'" @click="send({ type: 'set_spindle', direction: 'stopped', rpm: 0 })">
+          <button v-tooltip="manualBlock ?? 'Spindle stop (M5)'" class="btn" type="button" :disabled="manualBlock !== null" @click="send({ type: 'set_spindle', direction: 'stopped', rpm: 0 })">
             <AppIcon name="stop" />Stop
           </button>
-          <button class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :disabled="spindleBlock !== null" :title="spindleBlock ?? 'Spindle forward (M3)'" @click="spindle('forward')">
+          <button v-tooltip="spindleBlock ?? 'Spindle forward (M3)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :disabled="spindleBlock !== null" @click="spindle('forward')">
             <AppIcon name="forward" />Forward
           </button>
         </div>
         <div class="line">
           <span class="label">Coolant</span>
-          <button class="btn" type="button" :class="{ on: status?.coolant.flood }" :disabled="coolantBlock !== null" :title="coolantBlock ?? 'Flood coolant (M8)'" @click="coolant('flood')">
+          <button v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :disabled="coolantBlock !== null" @click="coolant('flood')">
             <AppIcon name="drop" />Flood
           </button>
-          <button class="btn" type="button" :class="{ on: status?.coolant.mist }" :disabled="coolantBlock !== null" :title="coolantBlock ?? 'Mist coolant (M7)'" @click="coolant('mist')">
+          <button v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :disabled="coolantBlock !== null" @click="coolant('mist')">
             Mist
           </button>
         </div>
         <MachineFeedback show-probe class="sensor-feedback" />
       </section>
 
-      <section class="card">
+      <section class="card work-system">
         <h2>Work coordinate system</h2>
         <div class="segmented wcs">
           <button
             v-for="(name, index) in wcsNames"
             :key="name"
+            v-tooltip="mdiBlock ?? `Make ${name} the active work system. The machine does not move.`"
             class="btn mono"
             type="button"
             :class="{ on: status?.offsets.wcs === index + 1 }"
             :disabled="mdiBlock !== null"
-            :title="mdiBlock ?? `Make ${name} the active work system. The machine does not move.`"
             @click="send({ type: 'select_wcs', wcs: index + 1 })"
           >
             {{ name }}
@@ -547,7 +554,7 @@ function coolant(which: 'flood' | 'mist'): void {
 <style scoped>
 .manual {
   display: grid;
-  grid-template-columns: 440px minmax(0, 1fr);
+  grid-template-columns: 570px minmax(0, 1fr);
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -570,9 +577,12 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .jog {
   gap: 6px;
+  align-self: start;
+  max-height: 100%;
   overflow-y: auto;
 }
 
+.jog-controls { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; align-items: center; }
 .pads {
   display: flex;
   justify-content: center;
@@ -585,7 +595,7 @@ function coolant(which: 'flood' | 'mist'): void {
     'xneg stop xpos gap .'
     '. yneg . gap zneg';
   grid-template-columns: 68px 68px 68px 12px 68px;
-  grid-template-rows: 44px 44px 44px;
+  grid-template-rows: 68px 68px 68px;
   gap: 4px;
 }
 
@@ -593,7 +603,7 @@ function coolant(which: 'flood' | 'mist'): void {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  font-size: 15px;
+  font-size: 20px;
   touch-action: none;
 }
 
@@ -617,12 +627,16 @@ function coolant(which: 'flood' | 'mist'): void {
   flex: 1;
 }
 
-.jog .segmented .btn {
-  padding: 0 10px;
-}
+.steps { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.step-heading { display: flex; justify-content: space-between; }
+.increments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.increments > :first-child { grid-column: 1 / -1; }
+.increments .btn { min-width: 44px; padding: 0 10px; }
 
 .speed {
-  width: 44px;
+  flex: none;
+  width: 7ch;
+  min-width: 7ch;
   text-align: right;
   font-weight: 600;
 }
@@ -654,18 +668,18 @@ function coolant(which: 'flood' | 'mist'): void {
 .blocked {
   margin: 0;
 }
+.reserved { height: 30px; flex: none; margin: 0; font-size: 11px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-.mdi {
-  flex: 1;
-  min-height: 150px;
-}
+.side > .mdi { flex: 1; min-height: 184px; }
+.work-system { margin-top: auto; }
 
 .history {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 2px;
-  min-height: 44px;
+  min-height: 64px;
+  height: 64px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -696,10 +710,13 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .entry .result {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-dim);
   text-align: right;
 }
+.entry .text { flex: none; max-width: 45%; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 
 .entry.rejected .result,
 .entry.failed .result,
@@ -727,6 +744,7 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .rpm {
+  flex: none;
   width: 78px;
   text-align: right;
 }
@@ -751,4 +769,5 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
+@media (max-height: 820px) { .jog { gap: 4px; }.reserved { height: 15px; -webkit-line-clamp: 1; } }
 </style>

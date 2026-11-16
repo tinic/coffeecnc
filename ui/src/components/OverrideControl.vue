@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // One override. The number and the slider show what the machine reports; moving the slider only
 // asks for a new value.
 import { computed } from 'vue'
@@ -32,10 +33,10 @@ function slide(event: Event): void {
     <div class="top">
       <span class="caption">{{ label }}</span>
       <button
+        v-tooltip="'Back to 100 %'"
         class="value mono"
         type="button"
         :disabled="disabled || percent === 100"
-        title="Back to 100 %"
         @click="set(1)"
       >
         {{ value === null ? '—' : formatPercent(value) }}
@@ -58,21 +59,24 @@ function slide(event: Event): void {
 
 <style scoped>
 .override {
-  display: flex;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 56px;
+  align-items: center;
   flex: 1 1 0;
-  flex-direction: column;
-  gap: 2px;
+  gap: 8px;
   min-width: 0;
 }
 
 .top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  height: 20px;
+  display: contents;
 }
 
 .value {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 44px;
+  min-width: 56px;
+  text-align: right;
   padding: 0 4px;
   border: 0;
   background: none;
@@ -90,6 +94,8 @@ function slide(event: Event): void {
 }
 
 .row {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -99,5 +105,5 @@ input {
   flex: 1;
   height: 28px;
 }
-.caption { font-size: 12px; color: var(--text-dim); }
+.caption { grid-column: 1; grid-row: 1; font-size: 12px; color: var(--text-dim); }
 </style>

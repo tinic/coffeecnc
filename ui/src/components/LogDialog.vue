@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // Everything the operator has been told in this session, newest first. On the simulator it also
 // holds the link-fault test control.
 import { computed } from 'vue'
@@ -41,10 +42,10 @@ const faults: readonly (readonly [LinkFault, string, string])[] = [
           <button
             v-for="[fault, label, title] in faults"
             :key="fault"
+            v-tooltip="title"
             class="btn"
             type="button"
             :class="{ on: panel.simulatorFault === fault }"
-            :title="title"
             @click="setSimulatorFault(fault)"
           >
             {{ label }}
@@ -80,6 +81,8 @@ li.error {
 }
 
 .when {
+  flex: none;
+  min-width: 8ch;
   padding-top: 1px;
   font-size: 13px;
   color: var(--text-dim);

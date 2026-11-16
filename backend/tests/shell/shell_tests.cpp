@@ -850,7 +850,7 @@ void tool_table(const Rig& rig) {
       "print(c.wait_complete(5))'");
   fact("load_tool_table", "rcs=" + loaded);
   const bool followed = rig.wait_js(
-      std::format("__t.last.tool_table.tools.length === 4 && "
+      std::format("__t.last.tool_table.tools.length === 3 && "
                   "__t.last.tool_table.tools[0].number === 9 && __t.last.tool_table.revision > {}",
                   before.at("revision").dump()),
       5s);
@@ -861,13 +861,13 @@ void tool_table(const Rig& rig) {
     return;
   const auto& tools = table.at("tools");
   check("loaded_table_rows_in_mm",
-        tools.at(1).at("number") == 0 && tools.at(2).at("number") == 4 &&
-            tools.at(3).at("number") == 2 && near(tools.at(0).at("length").get<double>(), 12.7) &&
+        tools.at(1).at("number") == 4 && tools.at(2).at("number") == 2 &&
+            near(tools.at(0).at("length").get<double>(), 12.7) &&
             near(tools.at(0).at("diameter").get<double>(), 6.35) &&
-            near(tools.at(2).at("length").get<double>(), 25.4) &&
-            near(tools.at(3).at("diameter").get<double>(), 3.175) &&
-            tools.at(0).at("comment") == "nine" && tools.at(3).at("comment") == "eighth inch" &&
-            tools.at(2).at("comment") == "",
+            near(tools.at(1).at("length").get<double>(), 25.4) &&
+            near(tools.at(2).at("diameter").get<double>(), 3.175) &&
+            tools.at(0).at("comment") == "nine" && tools.at(2).at("comment") == "eighth inch" &&
+            tools.at(1).at("comment") == "",
         tools.dump());
   // A prepared tool is an index into that table: the panel is told the tool number.
   check("panel_manual_tab_for_tools", rig.click("nav.em-nav button", "Manual") == "ok");
@@ -897,7 +897,7 @@ void tool_table(const Rig& rig) {
         "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.load_tool_table(); "
         "c.set_optional_stop(True); c.set_block_delete(True); print(c.wait_complete(5))'");
     const bool shown = rig.wait_js(
-        std::format("__t.last.tool_table.tools.length === {}", three ? 3 : 6), 5s);
+        std::format("__t.last.tool_table.tools.length === {}", three ? 3 : 5), 5s);
     check(std::format("reload_then_command_round_{}", round), shown,
           std::format("rcs={} tools={}", done,
                       rig.js("return __t.last.tool_table.tools.map((t) => t.number);").dump()));
@@ -907,7 +907,7 @@ void tool_table(const Rig& rig) {
   bool whole = true;
   for (const auto& numbers : tables)
     whole = whole && (numbers == Json::array({9, 4, 2}) ||
-                      numbers == Json::array({9, 0, 4, 2, 5, 6}));
+                      numbers == Json::array({9, 4, 2, 5, 6}));
   check("no_half_loaded_table_shown", whole && tables.size() >= 6, tables.dump());
   // Back to the table the program below uses.
   write(rig.config.tool_table, inch ? "T9 P1 Z0.5 D0.25 ;nine\nT0 P4 ;none\nT4 P2 Z1 D0.5\n"
@@ -916,8 +916,8 @@ void tool_table(const Rig& rig) {
                                       "T2 P3 Z50.8 D3.175 ;eighth inch\n");
   static_cast<void>(output_of("python3 -c 'import linuxcnc; c = linuxcnc.command(); "
                               "c.load_tool_table(); print(c.wait_complete(5))'"));
-  check("table_restored", rig.wait_js("__t.last.tool_table.tools.length === 4 && "
-                                      "__t.last.tool_table.tools[3].comment === 'eighth inch'", 5s),
+  check("table_restored", rig.wait_js("__t.last.tool_table.tools.length === 3 && "
+                                      "__t.last.tool_table.tools[2].comment === 'eighth inch'", 5s),
         rig.js("return __t.last.tool_table;").dump());
 }
 

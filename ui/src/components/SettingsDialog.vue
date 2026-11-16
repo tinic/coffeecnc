@@ -83,7 +83,6 @@ async function save(): Promise<void> {
           <div class="speed-entry"><input id="settings-jog" v-model="jog" v-numeric :disabled="startupDisabled" class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Jog speed per minute at startup." /><span>{{ velocityUnit(unit) }}</span></div>
           <p class="hint">Formulas work here too: <span class="mono">600/2</span> or <span class="mono">10in</span> per minute.</p>
         </fieldset>
-        <button class="btn templates" type="button" :disabled="settings.state.saving" @click="templates = true">Tool shape templates</button>
       </section>
       <section class="coordinates">
         <h3>Work system shortcuts</h3>
@@ -101,6 +100,7 @@ async function save(): Promise<void> {
       </section>
     </div>
     <template #footer>
+      <button class="btn templates" type="button" :disabled="settings.state.saving" @click="templates = true">Tool shape templates</button>
       <div class="save-state"><span>{{ storageLabel }}</span><p v-if="settings.state.error || blocked || invalid" role="status">{{ settings.state.error || blocked || invalid }}</p><p v-else-if="settings.state.storage === 'session_only'">{{ settings.state.reason }}</p></div>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
       <button class="btn go" type="button" :disabled="blocked !== null || invalid !== null" @click="save">{{ settings.state.saving ? 'Saving…' : settings.state.storage === 'session_only' ? 'Apply' : 'Save settings' }}</button>
@@ -110,7 +110,7 @@ async function save(): Promise<void> {
 
 <style scoped>
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-.templates { margin-top: 8px; min-height: 44px; }
+.templates { min-height: 44px; }
 h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .hint { margin: 2px 0 4px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }

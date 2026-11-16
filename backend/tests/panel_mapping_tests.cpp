@@ -694,7 +694,7 @@ void source_preview_tools() {
           "Identical passes with task idle between: accepted, in one step");
 }
 
-// A table is shown only with the comments read for it: a saved tool model is bound to them.
+// Editable rows omit the no-tool placeholder without renumbering internal loaded entries.
 void source_hides_no_tool_placeholders() {
   Rig rig;
   write(rig.config.tool_table, "T0 P0 Z0 D0\nT1 P1 Z10 D6.35\n");
@@ -709,6 +709,7 @@ void source_hides_no_tool_placeholders() {
           "The placeholder still resolves to T0 for a prepared unload");
 }
 
+// A table is shown only with the comments read for it: a saved tool model is bound to them.
 void source_table_is_withheld_without_its_comments() {
   Rig rig;
   write(rig.config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");

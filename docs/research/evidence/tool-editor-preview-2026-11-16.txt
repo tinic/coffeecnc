@@ -1,0 +1,54 @@
+CoffeeCNC combined tool editor — 2026-11-16
+
+Implementation source: e43f18c; final native test source: 3076168.
+Base: 7af23f46c80e8b097f4a2bcb06b37fd35da0f2e8, deployed independently verified.
+
+Behavior:
+- One editor for table details and Preview shape, with live 3D view on the left.
+- Direct type/dimension controls; cutting diameter comes from the table Diameter field.
+- Settings -> Tool shape templates, visible in the footer at 1280 x 720.
+- Changed table rows require accepted result AND matching readback before model binding.
+- Partial failure retains the draft and reports which write succeeded.
+- T0 is excluded at editable-row publication only; raw prepared/unload mapping is retained.
+
+G0759 diagnosis (read-only, 2026-11-16 around 17:38 UTC):
+- Stable /home/turo/.tool.mmap reads exposed T0/P0/Z0/D0 at loaded index 1,
+  and T1/P1/Z10/D6.35 with an empty comment at index 2.
+- linuxcnc.stat().tool_table independently reported the valid T1 values.
+- An empty comment is valid. Regression tests save this exact T1 binding.
+- The prior failed UI request was not captured. The exposed T0 row provides a
+  concrete invalid-binding path; this is not proof of which row was clicked.
+
+UI verification:
+- npm run check: 512 tests across 36 files, typecheck and lint passed.
+- npm run build: passed. Existing Vite config-loader and OCCT externals warnings.
+- Browser simulator: edit T2 to ball-nose, Diameter 1/4in, save and reopen;
+  6.35 mm and the selected shape retained.
+- Visually inspected the combined editor and Settings at 1280 x 720.
+- Templates open from Settings and return to Settings on Cancel.
+- Screenshots: ui/screenshots/tool-editor-preview-1280.png and
+  ui/screenshots/settings-templates-1280.png. These are simulator images.
+- Build inputs_digest: d8201f8e1b018e03d2f0c47213b3c4570d644fdbc7d539cf4d24a0fcc1166119
+- Build assets_digest: 2ae05c0896a568986a5162d73d406bd06dc0f4399ae74e26e7b4904628393802
+
+Native verification on playhouse2:
+- GCC warnings-as-errors build passed.
+- 27 of 28 base CTests initially passed; old visible-T0 expectation corrected.
+- panel_mapping then passed, including T0 exclusion and unchanged prepared mapping.
+- linuxcnc_shell_tool_models passed: template save, explicit per-tool shape save,
+  persisted file and restoration across complete LinuxCNC/application restart.
+- Metric shell initially failed only its old visible-T0 table expectation;
+  all remaining checks in that run passed. Table reload assertions updated.
+- Reload stress checks also needed a new-revision wait when the old and new
+  visible tables both contained three rows; fixed without reducing coverage.
+- Final native source 3076168: panel_mapping, panel_bundle, linuxcnc_shell_mm
+  and linuxcnc_shell_inch all passed, 77.95 seconds total. Metric and inch
+  shell workflows each took 38.82 seconds.
+- Model restart rerun on unchanged product source e43f18c passed, 6.99 seconds.
+- In total, all 28 base CTests passed across the initial run and corrected
+  panel_mapping rerun; both full native shell unit profiles and native model
+  save/restart checks passed. Test runner left no LinuxCNC child processes.
+
+Deployment: pending. Native rebuild required for editable-row publication change.
+Claude owns physical G0759 installation/restart. Codex has not moved or restarted it.
+The separate probing proposal is draft PR43; this change adds no probing motion.

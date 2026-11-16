@@ -850,7 +850,7 @@ void tool_table(const Rig& rig) {
       "print(c.wait_complete(5))'");
   fact("load_tool_table", "rcs=" + loaded);
   const bool followed = rig.wait_js(
-      std::format("__t.last.tool_table.tools.length === 4 && "
+      std::format("__t.last.tool_table.tools.length === 3 && "
                   "__t.last.tool_table.tools[0].number === 9 && __t.last.tool_table.revision > {}",
                   before.at("revision").dump()),
       5s);
@@ -861,13 +861,13 @@ void tool_table(const Rig& rig) {
     return;
   const auto& tools = table.at("tools");
   check("loaded_table_rows_in_mm",
-        tools.at(1).at("number") == 0 && tools.at(2).at("number") == 4 &&
-            tools.at(3).at("number") == 2 && near(tools.at(0).at("length").get<double>(), 12.7) &&
+        tools.at(1).at("number") == 4 && tools.at(2).at("number") == 2 &&
+            near(tools.at(0).at("length").get<double>(), 12.7) &&
             near(tools.at(0).at("diameter").get<double>(), 6.35) &&
-            near(tools.at(2).at("length").get<double>(), 25.4) &&
-            near(tools.at(3).at("diameter").get<double>(), 3.175) &&
-            tools.at(0).at("comment") == "nine" && tools.at(3).at("comment") == "eighth inch" &&
-            tools.at(2).at("comment") == "",
+            near(tools.at(1).at("length").get<double>(), 25.4) &&
+            near(tools.at(2).at("diameter").get<double>(), 3.175) &&
+            tools.at(0).at("comment") == "nine" && tools.at(2).at("comment") == "eighth inch" &&
+            tools.at(1).at("comment") == "",
         tools.dump());
   // A prepared tool is an index into that table: the panel is told the tool number.
   check("panel_manual_tab_for_tools", rig.click("nav.em-nav button", "Manual") == "ok");
@@ -891,13 +891,15 @@ void tool_table(const Rig& rig) {
   rig.js("__t.received = __t.received.filter((m) => m.type !== 'tool_table'); return 1;");
   for (int round = 0; round < 6; ++round) {
     const bool three = round % 2 == 0;
+    const auto revision = rig.js("return __t.last.tool_table.revision;");
     write(rig.config.tool_table, three ? "T9 P1 ;nine\nT4 P2\nT2 P3 ;two\n"
                                        : "T9 P1 ;nine\nT0 P4\nT4 P2\nT2 P3 ;two\nT5 P5\nT6 P6\n");
     const auto done = output_of(
         "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.load_tool_table(); "
         "c.set_optional_stop(True); c.set_block_delete(True); print(c.wait_complete(5))'");
     const bool shown = rig.wait_js(
-        std::format("__t.last.tool_table.tools.length === {}", three ? 3 : 6), 5s);
+        std::format("__t.last.tool_table.tools.length === {} && "
+                    "__t.last.tool_table.revision > {}", three ? 3 : 5, revision.dump()), 5s);
     check(std::format("reload_then_command_round_{}", round), shown,
           std::format("rcs={} tools={}", done,
                       rig.js("return __t.last.tool_table.tools.map((t) => t.number);").dump()));
@@ -907,7 +909,7 @@ void tool_table(const Rig& rig) {
   bool whole = true;
   for (const auto& numbers : tables)
     whole = whole && (numbers == Json::array({9, 4, 2}) ||
-                      numbers == Json::array({9, 0, 4, 2, 5, 6}));
+                      numbers == Json::array({9, 4, 2, 5, 6}));
   check("no_half_loaded_table_shown", whole && tables.size() >= 6, tables.dump());
   // Back to the table the program below uses.
   write(rig.config.tool_table, inch ? "T9 P1 Z0.5 D0.25 ;nine\nT0 P4 ;none\nT4 P2 Z1 D0.5\n"
@@ -916,8 +918,8 @@ void tool_table(const Rig& rig) {
                                       "T2 P3 Z50.8 D3.175 ;eighth inch\n");
   static_cast<void>(output_of("python3 -c 'import linuxcnc; c = linuxcnc.command(); "
                               "c.load_tool_table(); print(c.wait_complete(5))'"));
-  check("table_restored", rig.wait_js("__t.last.tool_table.tools.length === 4 && "
-                                      "__t.last.tool_table.tools[3].comment === 'eighth inch'", 5s),
+  check("table_restored", rig.wait_js("__t.last.tool_table.tools.length === 3 && "
+                                      "__t.last.tool_table.tools[2].comment === 'eighth inch'", 5s),
         rig.js("return __t.last.tool_table;").dump());
 }
 
@@ -1553,14 +1555,13 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("no_console_errors_after_step", rig.js("return __t.errors.length;") == 0, rig.errors());
   fact("page_errors_after_step", rig.errors());
 
-  // Tool model rendering: a tool row's editor opens "Model defaults" in a WebGL2
+  // Tool model rendering: the combined tool editor contains its own WebGL2
   // canvas of its own. The context must be alive and the model must be on the screen: pixels
   // of the window where the canvas is, read from a snapshot, that are not background.
   check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
   check("panel_opens_tool_row", rig.wait_js("!!document.querySelector('.tool-row')") &&
                                    rig.click(".tool-row", "") == "ok");
-  check("panel_opens_tool_model", rig.wait_js("!!__t.find('button', 'Model defaults')") &&
-                                      rig.click("button", "Model defaults") == "ok");
+  check("panel_opens_tool_model", rig.wait_js("!!document.querySelector('.tool-editor .preview')"));
   const bool canvas_shown = rig.wait_js(
       "!!document.querySelector('.model-canvas canvas') && "
       "document.querySelector('.model-canvas canvas').getBoundingClientRect().width > 50",
@@ -1594,8 +1595,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   rig.snapshot("tool-model");
   status_gaps(rig, "platform.tool_model");
   check("panel_closes_tool_model", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
-  check("panel_returns_to_tool_editor", rig.wait_js("!!document.querySelector('.tool-fields')"));
-  check("panel_closes_tool_editor", rig.click("section.dialog button", "Cancel") == "ok");
+  check("panel_closes_combined_editor", rig.wait_js("!document.querySelector('.tool-fields')"));
   rig.snapshot("tools-tab");
   // The work offset table of the Tools tab: only the active system has numbers.
   const auto offsets_text = rig.js("return __t.text(document.querySelector('main.middle'));");
@@ -1724,6 +1724,13 @@ auto click_when_ready(const Rig& rig, const std::string& selector, const std::st
   return rig.click(selector, text);
 }
 
+auto open_shape_templates(const Rig& rig) -> bool {
+  return click_when_ready(rig, "summary.app-menu-toggle", "") == "ok" &&
+         click_when_ready(rig, "button.settings", "Settings") == "ok" &&
+         click_when_ready(rig, "button.templates", "Tool shape templates") == "ok" &&
+         rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s);
+}
+
 // The positions, among the messages the page received, of the first snapshot at `revision`
 // and of the result of the last command of `type` the page sent: [snapshot, result, outcome].
 auto save_order(const Rig& rig, std::string_view type, int revision) -> Json {
@@ -1762,11 +1769,8 @@ void tool_models_saved(const Rig& rig) {
   const auto offsets = rig.panel_status().at("offsets");
 
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
-  check("tool_models_tool_row_editor", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   // The family defaults: the end mill's stick-out.
-  check("tool_models_defaults_editor",
-        click_when_ready(rig, "button", "Model defaults") == "ok" &&
-            rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s));
+  check("tool_models_defaults_editor", open_shape_templates(rig));
   const auto typed = rig.js(R"(
     const input = __t.find('section.dialog label.entry', 'Stick-out').querySelector('input');
     const before = input.value;
@@ -1776,9 +1780,7 @@ void tool_models_saved(const Rig& rig) {
     return [before, input.value];)");
   const auto saving = click_when_ready(rig, "section.dialog button.primary", "Save defaults");
   const bool saved = rig.wait_js("__t.last.tool_models.revision === 1 && "
-                                 "!!document.querySelector('.tool-fields') && "
-                                 "document.body.textContent.includes('Tool models saved for "
-                                 "shell-mill.')",
+                                 "!!document.querySelector('.settings-grid')",
                                  15s);
   auto order = save_order(rig, "set_tool_model_defaults", 1);
   check("tool_models_defaults_saved_by_the_editor",
@@ -1799,8 +1801,9 @@ void tool_models_saved(const Rig& rig) {
         std::format("file={} bytes={}", file.string(), contents(file).size()));
 
   // A model for T1, as the tool table shows that row.
+  check("tool_models_close_settings", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_assignment_editor",
-        click_when_ready(rig, "button.model-link", "Preview model for T1") == "ok" &&
+        click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok" &&
             rig.wait_js("__t.find('section.dialog select')", 10s));
   const auto chosen = rig.js(R"(
     const select = __t.find('section.dialog select');
@@ -1809,9 +1812,9 @@ void tool_models_saved(const Rig& rig) {
     await new Promise((r) => setTimeout(r, 100));
     return select.value;)");
   const auto assigning =
-      click_when_ready(rig, "section.dialog button.primary", "Save preview model");
+      click_when_ready(rig, "section.dialog button.primary", "Save tool");
   const bool assigned =
-      rig.wait_js("__t.last.tool_models.revision === 2 && !!document.querySelector('.tool-fields')",
+      rig.wait_js("__t.last.tool_models.revision === 2 && !document.querySelector('.tool-fields')",
                   15s);
   order = save_order(rig, "set_tool_model_assignment", 2);
   const auto row = *std::ranges::find_if(
@@ -1831,13 +1834,13 @@ void tool_models_saved(const Rig& rig) {
   check("tool_models_assignment_on_disk",
         on_disk.is_object() && on_disk.value("revision", 0) == 2 &&
             on_disk.at("document").at("assignments") ==
-                Json::array({{{"tool", binding}, {"family", "drill"}, {"overrides", Json::object()}}}) &&
+                Json::array({{{"tool", binding}, {"family", "drill"}, {"overrides", order.at(3).at("overrides")}}}) &&
             on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5,
         word(on_disk.is_object() ? on_disk.at("document").at("assignments").dump() : "unreadable"));
+  check("tool_models_reopen_assignment", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   check("tool_models_assignment_shown",
-        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill'",
-                    5s),
-        rig.js("return __t.text(__t.find('button.model-link', 'Preview model for T1'));").dump());
+        rig.wait_js("__t.find('.type-entry select').value === 'drill'", 5s),
+        rig.js("return __t.find('.type-entry select').value;").dump());
   rig.snapshot("tool-models-saved");
   check("tool_models_linuxcnc_unchanged",
         contents(rig.config.tool_table) == table_file &&
@@ -1870,15 +1873,14 @@ void tool_models_restored(const Rig& rig) {
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
   check("tool_models_restored_tool_row", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   check("tool_models_restored_assignment_shown",
-        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill'",
-                    10s),
-        rig.js("return __t.all('button.model-link').map((b) => __t.text(b));").dump());
+        rig.wait_js("__t.find('.type-entry select').value === 'drill'", 10s),
+        rig.js("return __t.find('.type-entry select').value;").dump());
   check("tool_models_close_first_row", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_restored_second_row", click_when_ready(rig, ".tool-row", "Edit tool 2:") == "ok");
   check("tool_models_unassigned_row_shown",
-        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T2')) === 'Set model'", 5s));
-  const bool editor = click_when_ready(rig, "button", "Model defaults") == "ok" &&
-                      rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s);
+        rig.wait_js("__t.find('.type-entry select').value === 'end-mill'", 5s));
+  check("tool_models_close_second_row", rig.click("section.dialog button", "Cancel") == "ok");
+  const bool editor = open_shape_templates(rig);
   const auto value = editor ? rig.js("return __t.find('section.dialog label.entry', 'Stick-out')"
                                      ".querySelector('input').value;")
                             : Json();

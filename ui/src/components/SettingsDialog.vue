@@ -7,9 +7,11 @@ import type { OperatorPreferences } from '../operator-settings'
 import type { OperatorSettingsController } from '../operator-settings-state'
 import { fromDisplay, toDisplay, velocityUnit, wcsNames } from '../units'
 import ModalDialog from './ModalDialog.vue'
+import ToolModelDialog from './ToolModelDialog.vue'
 
 const props = defineProps<{ settings: OperatorSettingsController }>()
 const emit = defineEmits<{ close: [] }>()
+const templates = ref(false)
 let closed = false
 onBeforeUnmount(() => { closed = true })
 const startupDisabled = computed(() => props.settings.state.saving || props.settings.state.storage === 'session_only')
@@ -63,7 +65,8 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <ModalDialog title="Settings" size="large" expanded @close="emit('close')">
+  <ToolModelDialog v-if="templates" :tool="null" @close="templates = false" />
+  <ModalDialog v-else title="Settings" size="large" expanded @close="emit('close')">
     <div class="settings-grid">
       <section class="startup">
         <h3>At startup</h3>
@@ -97,6 +100,7 @@ async function save(): Promise<void> {
       </section>
     </div>
     <template #footer>
+      <button class="btn templates" type="button" :disabled="settings.state.saving" @click="templates = true">Tool shape templates</button>
       <div class="save-state"><span>{{ storageLabel }}</span><p v-if="settings.state.error || blocked || invalid" role="status">{{ settings.state.error || blocked || invalid }}</p><p v-else-if="settings.state.storage === 'session_only'">{{ settings.state.reason }}</p></div>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
       <button class="btn go" type="button" :disabled="blocked !== null || invalid !== null" @click="save">{{ settings.state.saving ? 'Saving…' : settings.state.storage === 'session_only' ? 'Apply' : 'Save settings' }}</button>
@@ -106,6 +110,7 @@ async function save(): Promise<void> {
 
 <style scoped>
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.templates { min-height: 44px; }
 h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .hint { margin: 2px 0 4px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }

@@ -115,7 +115,7 @@ async function clearAssignment(): Promise<void> {
 </script>
 
 <template>
-  <ModalDialog :title="defaultsMode ? 'Tool model defaults' : `T${tool?.number} · preview model`" size="large" contained expanded @close="emit('close')">
+  <ModalDialog :title="defaultsMode ? 'Tool shape templates' : `T${tool?.number} · preview model`" size="large" contained expanded @close="emit('close')">
     <div class="editor">
       <div class="settings">
         <label class="entry"><span class="label">Tool family</span>

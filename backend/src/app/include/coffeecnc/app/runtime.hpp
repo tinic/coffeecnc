@@ -44,7 +44,7 @@ class Runtime {
 public:
   using Sink = std::function<void(const Outcome&)>;
   // Called on the worker thread after the sink has the reply to an accepted `quit`.
-  using Quit = std::function<void()>;
+  using Quit = std::function<void(PageToken)>;
   static constexpr auto control_period = std::chrono::milliseconds{10};
   static constexpr auto status_period = std::chrono::milliseconds{5};
 

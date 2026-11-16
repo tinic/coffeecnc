@@ -37,7 +37,7 @@ struct Outbox {
   // The window is gone: nothing is taken any more.
   bool closed{};
   // Close the window once the messages posted before have been delivered.
-  bool close_requested{};
+  std::optional<PageToken> close_requested;
 };
 
 struct PanelWindow::Impl {
@@ -54,6 +54,9 @@ struct PanelWindow::Impl {
   std::array<guint, 3> signal_sources{};
   guint reload_source{};
   bool running{};
+  std::size_t pending_deliveries{};
+  std::optional<PageToken> close_when_delivered;
+  bool delivery_failed{};
 
   // What tests ask about.
   std::uint64_t commits{};
@@ -77,6 +80,7 @@ struct PanelWindow::Impl {
   [[nodiscard]] auto on_gtk_thread(std::vector<std::function<void()>> work) -> bool;
   // GTK thread: takes what waits in the outbox.
   void drain();
+  void finish_close();
 };
 
 } // namespace coffeecnc

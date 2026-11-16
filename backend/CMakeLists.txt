@@ -11,6 +11,7 @@ include(cmake/ProjectOptions.cmake)
 set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
   GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 include(cmake/StaticAnalyzers.cmake)
+include(CTest)
 add_subdirectory(src/core)
 option(COFFEECNC_BUILD_APP "Build the app protocol layer (requires nlohmann_json)" ON)
 # ON: an executable that finds no panel or preview helper installed beside it uses the panel of
@@ -30,7 +31,6 @@ if(TARGET coffeecnc)
   include(cmake/Packaging.cmake)
 endif()
 
-include(CTest)
 if(BUILD_TESTING)
   add_executable(coffeecnc_core_tests tests/core_tests.cpp)
   target_link_libraries(coffeecnc_core_tests PRIVATE coffeecnc_core coffeecnc_project_options)

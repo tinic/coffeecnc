@@ -391,6 +391,13 @@ void power(Rig& rig) {
   check("link_live", link == Link::live, std::string(name(link)));
   check("starts_in_estop", state.machine == MachineState::estop);
   check("watchdog_armed", rig.probe.watchdog_ok());
+  // Quit can reach the adapter after an E-stop superseded the session's ON snapshot.
+  // Its stop-only path must preserve that E-stop instead of sending ESTOP_RESET.
+  rig.direct([&]() -> void {
+    const auto off = rig.port.power_off();
+    check("quit_power_off_preserves_estop", off.status == ActionStatus::accepted &&
+          rig.port.snapshot().machine == MachineState::estop, off.reason);
+  });
 
   check("ready", rig.ready.accepted() && rig.ready.send_snapshots, rig.ready.text());
   const auto early = rig.send(R"("type":"set_machine","state":"on")");

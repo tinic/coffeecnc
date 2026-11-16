@@ -46,3 +46,14 @@ target_compile_options(coffeecnc_shell_test_hooks PRIVATE ${COFFEECNC_WEBKIT_CFL
 target_link_libraries(coffeecnc_shell_test_hooks PUBLIC coffeecnc_shell
   PRIVATE coffeecnc_project_options ${COFFEECNC_WEBKIT_LINK_LIBRARIES})
 coffeecnc_enable_analyzers(coffeecnc_shell_test_hooks)
+
+if(BUILD_TESTING AND NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+  add_executable(coffeecnc_quit_delivery_tests ../../tests/shell/quit_delivery_tests.cpp)
+  target_include_directories(coffeecnc_quit_delivery_tests PRIVATE src)
+  target_include_directories(coffeecnc_quit_delivery_tests SYSTEM PRIVATE ${COFFEECNC_WEBKIT_INCLUDE_DIRS})
+  target_link_libraries(coffeecnc_quit_delivery_tests PRIVATE coffeecnc_shell
+    coffeecnc_project_options ${COFFEECNC_WEBKIT_LINK_LIBRARIES})
+  add_test(NAME quit_delivery COMMAND xvfb-run -a $<TARGET_FILE:coffeecnc_quit_delivery_tests>
+    ${PROJECT_BINARY_DIR}/quit-delivery-panel)
+  set_tests_properties(quit_delivery PROPERTIES TIMEOUT 20)
+endif()

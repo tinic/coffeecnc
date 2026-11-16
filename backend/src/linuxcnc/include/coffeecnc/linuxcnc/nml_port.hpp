@@ -191,6 +191,7 @@ public:
   // edit. The tool change confirmation asks at the moment it is handed to the control thread.
   [[nodiscard]] auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult override;
+  [[nodiscard]] auto power_off() -> ActionResult override;
   [[nodiscard]] auto set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult override;
   // Homing all axes fails, with nothing sent, unless MachineConfig::home_all_configured.
   [[nodiscard]] auto home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResult override;

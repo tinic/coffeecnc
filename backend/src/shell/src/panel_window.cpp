@@ -281,13 +281,13 @@ void PanelWindow::Impl::receive(std::string_view raw) {
 void PanelWindow::Impl::drain() {
   std::vector<std::pair<PageToken, std::vector<std::string>>> waiting;
   std::vector<std::function<void()>> work;
-  bool close_now = false;
+  std::optional<PageToken> close_now;
   {
     const std::scoped_lock lock{outbox->mutex};
     waiting.swap(outbox->waiting);
     work.swap(outbox->work);
     outbox->scheduled = false;
-    close_now = std::exchange(outbox->close_requested, false);
+    close_now = std::exchange(outbox->close_requested, std::nullopt);
   }
   // Work that waits behind work that closed the window is dropped, not run.
   for (const auto& task : work) {
@@ -300,8 +300,9 @@ void PanelWindow::Impl::drain() {
   }
   for (const auto& [token, messages] : waiting)
     deliver(token, messages);
-  if (close_now && window != nullptr)
-    gtk_widget_destroy(window);
+  if (close_now && page == close_now)
+    close_when_delivered = close_now;
+  finish_close();
 }
 
 auto PanelWindow::Impl::on_gtk_thread(std::vector<std::function<void()>> work) -> bool {
@@ -318,6 +319,8 @@ auto PanelWindow::Impl::on_gtk_thread(std::vector<std::function<void()>> work) -
 }
 
 void PanelWindow::Impl::begin_page() {
+  delivery_failed = false;
+  close_when_delivered.reset();
   identity.clear();
   handler_at_start.reset();
   ++commits;
@@ -326,6 +329,7 @@ void PanelWindow::Impl::begin_page() {
 }
 
 void PanelWindow::Impl::end_page() {
+  close_when_delivered.reset();
   if (!page)
     return;
   const auto ended = *page;
@@ -340,21 +344,65 @@ void PanelWindow::Impl::reload_later() {
     reload_source = g_timeout_add(reload_delay_ms, on_reload, this);
 }
 
+void PanelWindow::Impl::finish_close() {
+  if (!close_when_delivered || pending_deliveries != 0)
+    return;
+  const auto requested = std::exchange(close_when_delivered, std::nullopt);
+  if (page == requested && !delivery_failed && window != nullptr)
+    gtk_widget_destroy(window);
+}
+
 void PanelWindow::Impl::deliver(PageToken token, const std::vector<std::string>& messages) {
   if (view == nullptr || !page || *page != token || identity.empty()) {
     dropped += messages.size();
     return;
   }
-  // Each message is JSON, which is a JavaScript expression: the page receives objects. One
-  // message that throws in the page does not keep the others from it.
-  std::string script = "if(window.__coffeecncPage===\"" + identity +
-                       "\"){const r=window.coffeecncReceive;if(r)for(const m of[";
+  // The callback, not submission to WebKit, marks a delivery complete. Returning true
+  // proves that this document's receiver ran for every message without throwing.
+  std::string script = "(()=>{if(window.__coffeecncPage!==\"" + identity +
+                       "\")return false;const r=window.coffeecncReceive;if(!r)return false;"
+                       "let ok=true;for(const m of[";
   for (const auto& message : messages)
     script.append(message).append(",");
-  script.append("]){try{r(m)}catch(e){console.error(e)}}}");
-  webkit_web_view_evaluate_javascript(view, script.c_str(), static_cast<gssize>(script.size()),
-                                      nullptr, nullptr, nullptr, nullptr, nullptr);
-  delivered += messages.size();
+  script.append("]){try{r(m)}catch(e){ok=false;console.error(e)}}return ok;})()");
+  struct Delivery {
+    std::shared_ptr<Outbox> outbox;
+    PageToken page;
+    std::size_t count;
+  };
+  ++pending_deliveries;
+  webkit_web_view_evaluate_javascript(
+      view, script.c_str(), static_cast<gssize>(script.size()), nullptr, nullptr, nullptr,
+      [](GObject* source, GAsyncResult* result, gpointer data) -> void {
+        const std::unique_ptr<Delivery> delivery{static_cast<Delivery*>(data)};
+        GError* error = nullptr;
+        JSCValue* value = webkit_web_view_evaluate_javascript_finish(
+            WEBKIT_WEB_VIEW(source), result, &error);
+        const bool success = value != nullptr && jsc_value_is_boolean(value) &&
+                             jsc_value_to_boolean(value);
+        g_clear_object(&value);
+        g_clear_error(&error);
+        // A completion can outlive the window (or arrive during a later window's
+        // main loop). The outbox identity avoids retaining or dereferencing Impl.
+        Impl* self = nullptr;
+        {
+          const std::scoped_lock lock{window_mutex};
+          if (the_window != nullptr && the_window->outbox == delivery->outbox)
+            self = the_window;
+        }
+        if (self == nullptr)
+          return;
+        --self->pending_deliveries;
+        if (self->page == delivery->page) {
+          if (success)
+            self->delivered += delivery->count;
+          else {
+            self->delivery_failed = true;
+            g_warning("CoffeeCNC message delivery failed; pending Quit will not close the window.");
+          }
+        }
+        self->finish_close();
+      }, new Delivery{outbox, token, messages.size()});
 }
 
 auto initialise_display() -> bool { return gtk_init_check(nullptr, nullptr) != FALSE; }
@@ -474,13 +522,13 @@ void PanelWindow::close() {
     gtk_widget_destroy(impl_->window);
 }
 
-void PanelWindow::close_after_posts() {
+void PanelWindow::close_after_posts(PageToken page) {
   const auto& outbox = impl_->outbox;
   {
     const std::scoped_lock lock{outbox->mutex};
     if (outbox->closed)
       return;
-    outbox->close_requested = true;
+    outbox->close_requested = page;
     if (std::exchange(outbox->scheduled, true))
       return;
   }

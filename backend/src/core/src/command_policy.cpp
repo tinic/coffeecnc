@@ -94,11 +94,6 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           return allow();
         // Visual preferences of the panel: nothing of the machine's state decides about them,
         // and nothing of them reaches the controller.
-        if constexpr (std::is_same_v<T, Quit>) {
-          if (s.interp != InterpState::idle)
-            return reject("Stop the program before quitting.");
-          return allow();
-        }
         if constexpr (std::is_same_v<T, SetToolModelDefaults> ||
                       std::is_same_v<T, SetToolModelAssignment>)
           return allow();
@@ -122,6 +117,12 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         }
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
+
+        if constexpr (std::is_same_v<T, Quit>) {
+          if (s.interp != InterpState::idle)
+            return reject("Stop the program before quitting.");
+          return allow();
+        }
 
         if constexpr (std::is_same_v<T, SetMachine>) {
           if (c.state != MachineState::on)

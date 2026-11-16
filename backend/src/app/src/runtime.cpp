@@ -98,7 +98,7 @@ void Runtime::work_loop() {
     if (sink_ && !work.outcome.messages.empty())
       sink_(work.outcome);
     if (work.quit && quit_)
-      quit_();
+      quit_(work.outcome.page);
     if (work.status == WorkStatus::done)
       continue;
     if (closing)

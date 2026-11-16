@@ -338,7 +338,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
-        models.get(), [&window]() -> void { window.close_after_posts(); });
+        models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); });
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source,

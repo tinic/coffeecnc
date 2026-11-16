@@ -96,6 +96,7 @@ public:
                                        : machine == MachineState::off ? "off"
                                                                       : "estop");
   }
+  auto power_off() -> ActionResult override { return record("power_off", ""); }
   auto set_task_mode(TaskMode mode, const Wanted&) -> ActionResult override {
     auto result = record("set_task_mode", name(mode));
     if (result.status == ActionStatus::accepted && follows_mode)
@@ -1866,7 +1867,7 @@ void quit() {
   {
     Rig rig;
     rig.accepted(R"("type":"quit")");
-    rig.acted({"set_machine_state off"}, "A machine that is on is switched off");
+    rig.acted({"power_off"}, "A machine that is on is switched off");
     require(rig.driver.quit, "then the application closes");
   }
   for (const auto machine : {MachineState::off, MachineState::estop}) {
@@ -1878,10 +1879,33 @@ void quit() {
   }
   {
     Rig rig;
-    rig.port.script["set_machine_state"] = {{ActionStatus::failed, "LinuxCNC did not answer."}};
+    rig.port.script["power_off"] = {{ActionStatus::failed, "LinuxCNC did not answer."}};
     rig.expect(R"("type":"quit")", "failed", "LinuxCNC did not answer.");
     require(!rig.driver.quit, "A failed switch-off keeps the application open");
   }
+  for (const auto link : {Link::stale, Link::down}) {
+    Rig rig;
+    rig.port.state.link = link;
+    rig.expect(R"("type":"quit")", "rejected", "Controller status is unavailable or stale.");
+    rig.acted({}, "An unknown controller state must not authorize Quit");
+    require(!rig.driver.quit, "An unavailable controller never closes the application");
+  }
+  for (const bool replace_page : {false, true}) {
+    Rig rig;
+    rig.port.during["power_off"] = [&]() -> void {
+      rig.session.end_page(rig.page);
+      if (replace_page)
+        rig.page = rig.session.begin_page();
+    };
+    require(rig.send(R"("type":"quit")").messages.empty(), "Ended page gets no Quit result");
+    require(!rig.driver.quit, "Ended or replaced page cannot close the application");
+    if (!replace_page)
+      rig.page = rig.begin_page();
+    rig.accepted(R"("type":"ready")");
+    rig.accepted(R"("type":"set_override","which":"feed","value":1)");
+    require(!rig.driver.quit, "Later accepted requests cannot inherit Quit intent");
+  }
+
 }
 
 void new_page() {

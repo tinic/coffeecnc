@@ -289,6 +289,7 @@ private:
     StageKind kind{StageKind::reply};
     Reply reply;
     std::vector<std::string> produced; // messages sent before the result
+    bool quit{}; // belongs only to this request and its page
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
@@ -348,8 +349,6 @@ private:
   std::uint64_t level_epoch_{};
   // When the last control period ran.
   JogLease::Time control_at_{};
-  // A `quit` was carried out; taken into its Work.
-  bool quitting_{};
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;

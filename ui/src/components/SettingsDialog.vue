@@ -107,14 +107,14 @@ async function save(): Promise<void> {
 <style scoped>
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-.hint { margin: 2px 0 6px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
+.hint { margin: 2px 0 4px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
 .units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }.units .btn:first-child { flex: 1.8; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
 .wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 13px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
-.shift-note { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 32px; padding-block: 4px; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
-.tool-reference { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.shift-note { border-top: 1px solid var(--line); padding-top: 4px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 28px; padding-block: 0; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+.tool-reference { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .save-state { flex: 1; min-width: 0; align-self: center; color: var(--text-dim); font-size: 12px; }.save-state p { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } }
 </style>

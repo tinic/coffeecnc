@@ -303,7 +303,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_tool_models(in_use));
   messages.push_back(
       encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
-                                OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600}}));
+                                OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600, 6.35}}));
   messages.push_back(encode_operator_settings(
       {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(encode_operator_settings(

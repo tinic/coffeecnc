@@ -267,22 +267,22 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
 
     <ModalDialog v-if="editing !== null && modelEditor === null && removing === null" :title="editing === 'add' ? 'Add tool' : `Edit tool ${form.number}`" size="medium" expanded @close="editing = null">
       <div class="tool-fields">
-      <label class="entry">
-        <span class="label">Tool number</span>
-        <input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
-      </label>
-      <label class="entry">
-        <span class="label">Length, {{ editUnit }}</span>
-        <input v-model="form.length" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
-      </label>
-      <label class="entry">
-        <span class="label">Diameter, {{ editUnit }}</span>
-        <input v-model="form.diameter" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
-      </label>
-      <label class="entry description-entry">
-        <span class="label">Description</span>
-        <input v-model="form.comment" class="field" type="text" autocomplete="off" />
-      </label>
+        <label class="entry">
+          <span class="label">Tool number</span>
+          <input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
+        </label>
+        <label class="entry">
+          <span class="label">Length, {{ editUnit }}</span>
+          <input v-model="form.length" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        </label>
+        <label class="entry">
+          <span class="label">Diameter, {{ editUnit }}</span>
+          <input v-model="form.diameter" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        </label>
+        <label class="entry description-entry">
+          <span class="label">Description</span>
+          <input v-model="form.comment" class="field" type="text" autocomplete="off" />
+        </label>
       </div>
       <p v-if="replaces" class="blocked">Tool {{ parsed?.number }} exists. Saving replaces it.</p>
       <div class="model-controls">

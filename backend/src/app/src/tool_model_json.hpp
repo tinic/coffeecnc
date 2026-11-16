@@ -14,10 +14,10 @@
 // type all fail, with the reason. Ranges of dimensions are not judged here (tool_models.hpp).
 namespace coffeecnc::tool_model_json {
 
-// All seven families, each with its six numbers.
+// Seven cutter families plus the probe. Legacy documents supply only cutter families.
 [[nodiscard]] auto defaults(const nlohmann::json& value)
     -> std::expected<ToolDefaults, std::string>;
-// Any of cuttingLength, shankDiameter, overallLength, stickout, tipAngle; never diameter.
+// Overrides by family, without diameter. Family-specific validation follows decoding.
 [[nodiscard]] auto overrides(const nlohmann::json& value)
     -> std::expected<ToolOverrides, std::string>;
 // number and pocket as integers of 32 bits, diameter, comment.

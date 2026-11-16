@@ -89,6 +89,8 @@ The tool editor combines Length, Diameter and Description with **Preview shape**
 
 *Browser simulator, 16 November 2026, at 1280 × 720. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes. [Validation and deployment status](docs/research/evidence/tool-editor-preview-2026-11-16.txt).*
 
+The **Touch probe** shape uses the tool table diameter as its effective ruby ball diameter and places the ball bottom at the Length touch-off datum. A saved probe assignment blocks spindle starts and checks programs before Cycle Start when the probe is loaded. [Touch probe setup and preview](docs/design/tool-models.md#touch-probe).
+
 ![Configured loaded tool in the CoffeeCNC Machine preview](ui/screenshots/loaded-tool-preview.jpg)
 
 *The T2 envelope follows the reported tool tip in the browser simulator. Its blue ring marks the holder-face datum; no holder or collision simulation is implied.*

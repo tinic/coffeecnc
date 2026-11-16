@@ -308,8 +308,9 @@ struct Rig {
   RequestId next_id{1};
   std::chrono::milliseconds clock{};
 
-  explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000})
-      : session(port, limits, programs), page(driver.begin_page()) {
+  explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
+               ToolModelService* models = nullptr)
+      : session(port, limits, programs, models), page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
     files.directory("/home/cnc/nc_files/fixtures", 1700000000000);
@@ -402,6 +403,7 @@ public:
   std::vector<std::uint64_t> ended;
   // Not empty: the next commands are refused with it.
   std::optional<std::string> refusal;
+  std::optional<int> probe;
 
   auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<std::string> override {
@@ -409,12 +411,65 @@ public:
     return refusal;
   }
   void page_ended(PageToken page) override { ended.push_back(page.value); }
+  auto touch_probe_loaded(int number) -> std::optional<bool> override { return probe == number; }
   [[nodiscard]] auto taken() const -> std::size_t { return submitted.size(); }
   [[nodiscard]] auto ends() const -> std::size_t { return ended.size(); }
   [[nodiscard]] auto last_ended() const -> std::uint64_t {
     return ended.empty() ? 0 : ended.back();
   }
 };
+
+void touch_probe_blocks_spindle_commands_before_dispatch() {
+  FakeToolModels models;
+  models.probe = 99;
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, &models};
+  rig.port.state.tool_in_spindle = 99;
+  rig.port.state.program_file = "/home/cnc/nc_files/part.ngc";
+  constexpr auto reason = "A touch probe is loaded";
+  for (const auto* body : {R"("type":"set_spindle","direction":"forward","rpm":200)",
+                           R"("type":"set_spindle","direction":"reverse","rpm":200)",
+                           R"("type":"mdi","text":"S200 m +0 3")"}) {
+    rig.expect(body, "rejected", reason);
+    rig.acted({}, "A probe rejects spindle starts before mode change or dispatch");
+  }
+  rig.accepted(R"("type":"set_spindle","direction":"stopped","rpm":0)");
+  rig.acted({"set_spindle stopped 0"}, "Spindle stop remains available");
+
+  rig.port.state.spindle_active = true;
+  rig.expect(R"("type":"run")", "rejected", reason);
+  rig.acted({}, "An already-running spindle blocks Cycle Start");
+  rig.port.state.spindle_active = false;
+  rig.files.file(rig.port.state.program_file, "G0 X1\n/ N10 S200 m 0 4\nM2\n");
+  rig.expect(R"("type":"run")", "rejected", reason);
+  rig.expect(R"("type":"step")", "rejected", reason);
+  rig.acted({}, "Run and Single Block both check the entire program");
+  rig.files.file(rig.port.state.program_file, "O<other> call\nM2\n");
+  rig.expect(R"("type":"run")", "rejected",
+             "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
+  rig.acted({}, "Unverifiable subroutine calls cannot run with a probe");
+  rig.files.file(rig.port.state.program_file, "G 8 4 X1 Z-1 R2 F20\nM2\n");
+  rig.expect(R"("type":"run")", "rejected", reason);
+  rig.acted({}, "A tapping cycle that can reverse the spindle cannot run with a probe");
+  rig.files.file(rig.port.state.program_file, "S200 (M3 in a comment)\nG0 X1 ; M4\nM05\nM2\n");
+  rig.accepted(R"("type":"run")");
+  rig.acted({"set_task_mode auto", "open_program /home/cnc/nc_files/part.ngc", "run"},
+            "The checked path is reopened and a speed preset, comments and spindle stop are allowed");
+  rig.port.state.interp = InterpState::paused;
+  rig.accepted(R"("type":"resume")");
+  rig.acted({"resume"}, "A checked program can resume with the probe loaded");
+  rig.port.state.interp = InterpState::idle;
+
+  rig.port.state.tool_in_spindle = 3;
+  rig.files.file(rig.port.state.program_file, "M3 S200\nM2\n");
+  rig.accepted(R"("type":"run")");
+  rig.acted({"run"}, "An ordinary tool retains existing program behavior");
+  rig.port.state.tool_in_spindle = 99;
+  rig.port.state.interp = InterpState::paused;
+  rig.files.file(rig.port.state.program_file, "G0 X1\nM2\n");
+  rig.expect(R"("type":"resume")", "rejected",
+             "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
+  rig.acted({}, "Editing the source cannot certify a paused run that started without a probe");
+}
 
 constexpr auto remove_model =
     R"("type":"set_tool_model_assignment","machine_id":"mill-1","base_revision":3,)"
@@ -2125,6 +2180,7 @@ auto main(int argc, char** argv) -> int {
     stale_pages_are_dropped();
     ready_gate();
     tool_model_commands_go_to_their_service();
+    touch_probe_blocks_spindle_commands_before_dispatch();
     operator_settings_go_to_storage();
     ids_strictly_increase();
     decode_errors();

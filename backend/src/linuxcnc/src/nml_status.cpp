@@ -120,6 +120,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.feed_override = motion.traj.scale;
   out.rapid_override = motion.traj.rapid_scale;
   const auto& spindle = motion.spindle[0];
+  c.spindle_active = spindle.enabled != 0 || spindle.direction != 0 ||
+                     (out.spindle_actual_rpm && std::abs(*out.spindle_actual_rpm) >= 1.0);
   out.spindle_direction = spindle.direction > 0   ? SpindleDirection::forward
                           : spindle.direction < 0 ? SpindleDirection::reverse
                                                   : SpindleDirection::stopped;
@@ -130,6 +132,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   if (s.io.tool.pocketPrepped >= 0)
     out.prepared_pocket = s.io.tool.pocketPrepped;
   out.program_file = text_of(task.file);
+  c.program_file = out.program_file;
   out.current_line = task.currentLine;
   out.motion_line = task.motionLine;
   out.optional_stop = task.optional_stop_state;

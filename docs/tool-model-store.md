@@ -27,7 +27,7 @@ Saved tool-model defaults and per-tool assignments of the panel, kept by the bac
 |---|---|
 | `Hello.machine_id`, `Hello.tool_model_storage: 1` | A valid ID or null |
 | `tool_models` | After every `ready` and every write: `machine_id`, `revision`, `availability`, `reason`, `document` or null |
-| `set_tool_model_defaults` | All seven families; keeps assignments |
+| `set_tool_model_defaults` | Family templates, including Touch probe; keeps assignments |
 | `set_tool_model_assignment` | One tool; `family: null` with `overrides: {}` removes it |
 | Order | The snapshot precedes its result: after a durable write, after a stale `base_revision`, after an uncertain write |
 | Policy | Permitted whatever the machine and link state; a wrong `machine_id` is rejected |

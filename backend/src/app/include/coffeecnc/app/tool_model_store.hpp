@@ -273,6 +273,7 @@ public:
                                               SetOperatorSettings command)
       -> std::optional<std::string> override;
   void page_ended(PageToken page) override;
+  [[nodiscard]] auto touch_probe_loaded(int tool_number) -> std::optional<bool> override;
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
   // writer gets to them are one snapshot, for the page of the last.
   void send_snapshot(PageToken page);
@@ -284,6 +285,7 @@ private:
     std::variant<ToolModelCommand, SetOperatorSettings> command;
   };
   void loop();
+  void refresh_probe_tools();
 
   ToolModelLocation location_;
   Deliver deliver_;
@@ -292,6 +294,9 @@ private:
   std::mutex mutex_;
   std::condition_variable wake_;
   std::deque<Pending> pending_;
+  std::vector<int> probe_tools_;
+  bool probe_catalog_ready_{};
+  std::optional<int> changing_probe_;
   std::optional<PageToken> snapshot_due_;
   // Every page up to this one has ended.
   std::uint64_t ended_through_{};

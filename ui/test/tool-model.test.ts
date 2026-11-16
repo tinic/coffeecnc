@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { LatheGeometry, Vector2 } from 'three'
+import { Box3, LatheGeometry, Mesh, Vector2 } from 'three'
 import type { Tool } from '../src/protocol'
 import { decodeToolDefaults, factoryToolDefaults, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity, toolProfiles,
   type ToolFamily, type ToolModelAssignment } from '../src/tool-model'
+import { ToolMesh } from '../src/tool-mesh'
 
 const tool: Tool = { number: 4, pocket: 7, diameter: 6, length: -143.52, comment: 'shop tool' }
 function assignment(family: ToolFamily = 'end-mill'): ToolModelAssignment {
@@ -10,12 +11,12 @@ function assignment(family: ToolFamily = 'end-mill'): ToolModelAssignment {
 }
 
 describe('parametric tool geometry', () => {
-  it.each(toolFamilies)('builds a finite $name envelope, tip at Z=0 and shank along +Z', ({ id }) => {
+  it.each(toolFamilies.filter(({ id }) => id !== 'touch-probe'))('builds a finite $name envelope, tip at Z=0 and shank along +Z', ({ id }) => {
     const defaults = factoryToolDefaults()
     expect(toolDimensionError(id, defaults[id])).toBeNull()
     const model = resolveToolModel(tool, assignment(id), defaults)
     expect(model).not.toBeNull()
-    if (model === null) return
+    if (model === null || !('cuttingLength' in model.dimensions)) throw new Error('Missing cutter')
     const profiles = toolProfiles(model)
     const bounds = Object.values(profiles).map((profile) => {
       const g = new LatheGeometry(profile.map(([r, z]) => new Vector2(r, z)), 64).rotateX(Math.PI / 2)
@@ -30,10 +31,27 @@ describe('parametric tool geometry', () => {
     expect(bounds[1]?.max.z).toBeCloseTo(model.dimensions.overallLength)
     expect(bounds[0]?.max.x).toBeCloseTo(tool.diameter / 2)
   })
+  it('builds a spherical probe ball from the table diameter, with its bottom at Z=0', () => {
+    const model = resolveToolModel(tool, assignment('touch-probe'), factoryToolDefaults())
+    if (model === null) throw new Error('Missing probe')
+    const mesh = new ToolMesh()
+    try {
+      mesh.build(model)
+      const [ball, stem, body, shank] = mesh.group.children
+      expect(ball).toBeInstanceOf(Mesh)
+      if (!ball || !stem || !body || !shank) throw new Error('Missing probe geometry')
+      expect(new Box3().setFromObject(ball).min.z).toBeCloseTo(0)
+      expect(new Box3().setFromObject(ball).max.z).toBeCloseTo(6)
+      expect(new Box3().setFromObject(body).max.x).toBeCloseTo(14)
+      expect(new Box3().setFromObject(body).min.z).toBeCloseTo(26)
+      expect(new Box3().setFromObject(shank).max.z).toBeCloseTo(70)
+    } finally { mesh.dispose() }
+  })
   it('scales family lengths with diameter, never with the controller Z offset', () => {
     const model = resolveToolModel(tool, assignment(), factoryToolDefaults())
-    expect(model?.dimensions.cuttingLength).toBeCloseTo(13.2)
-    expect(model?.dimensions.overallLength).toBeCloseTo(43.2)
+    if (model === null || !('cuttingLength' in model.dimensions)) throw new Error('Missing cutter')
+    expect(model.dimensions.cuttingLength).toBeCloseTo(13.2)
+    expect(model.dimensions.overallLength).toBeCloseTo(43.2)
     expect(resolveToolModel({ ...tool, length: 98765 }, assignment(), factoryToolDefaults())).toEqual(model)
     expect(resolveToolModel(tool, { ...assignment(), overrides: { shankDiameter: 8, stickout: 30 } }, factoryToolDefaults())?.dimensions)
       .toMatchObject({ diameter: 6, shankDiameter: 8, stickout: 30, cuttingLength: 13.2 })

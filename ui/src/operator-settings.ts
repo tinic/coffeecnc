@@ -38,7 +38,7 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
   if (typeof rpm !== 'number' || !Number.isFinite(rpm) || rpm < 0 || rpm > 1e9 ||
       typeof jog !== 'number' || !Number.isFinite(jog) || jog <= 0 || jog > 1e9) return null
   return { version: 1, startup_units: v['startup_units'] as OperatorPreferences['startup_units'],
-    enabled_wcs: [...systems] as number[], default_spindle_rpm: rpm, default_jog_velocity: jog }
+    enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog }
 }
 
 export function decodeOperatorSettings(value: unknown): OperatorSettings | null {

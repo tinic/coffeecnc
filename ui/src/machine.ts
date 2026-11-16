@@ -3,6 +3,7 @@
 
 import { computed, watch, type ComputedRef } from 'vue'
 
+import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
 import { requiresHoming } from './machine-capabilities'
 import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
@@ -11,6 +12,7 @@ import { createPanel, tabs, type PanelState, type ResultListener } from './store
 const instance = createPanel({ transport: createTransport() })
 
 export const panel: PanelState = instance.state
+export const operatorSettings = createOperatorSettingsState(panel, instance)
 
 export function send(command: CommandBody): number {
   return instance.send(command)

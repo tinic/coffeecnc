@@ -20,6 +20,7 @@ import type {
   WorkOffsets,
 } from './protocol'
 import { protocolVersion } from './protocol'
+import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPreferences, type OperatorSettings } from './operator-settings'
 import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { wcsName } from './units'
@@ -73,6 +74,10 @@ export interface PanelState {
   toolTable: ToolTable | null
   /** Null until a valid snapshot arrives for the current hello. Never implies an empty file. */
   toolModels: ToolModels | null
+  operatorSettings: OperatorSettings | null
+  preferences: OperatorPreferences
+  /** Startup preset only; never a controller command. */
+  startupSpindleRpm: number
   workOffsets: WorkOffsets | null
   program: ProgramText | null
   preview: Preview | null
@@ -215,6 +220,9 @@ export function createPanel(options: PanelOptions): Panel {
     silentFor: 0,
     toolTable: null,
     toolModels: null,
+    operatorSettings: null,
+    preferences: defaultOperatorPreferences(),
+    startupSpindleRpm: 0,
     workOffsets: null,
     program: null,
     preview: null,
@@ -304,6 +312,7 @@ export function createPanel(options: PanelOptions): Panel {
     if (protocolError !== null && message.type !== 'hello') return
     switch (message.type) {
       case 'hello':
+        state.operatorSettings = null
         state.toolModels = null
         state.toolTable = null
         if (message.protocol !== protocolVersion) {
@@ -325,8 +334,8 @@ export function createPanel(options: PanelOptions): Panel {
         if (state.hello === null) {
           state.unit = message.machine_units
         }
-        state.hello = message
         state.jogVelocity = Math.min(state.jogVelocity, message.max_jog_velocity)
+        state.hello = message
         updateLink()
         break
       case 'status':
@@ -356,6 +365,20 @@ export function createPanel(options: PanelOptions): Panel {
         } else if (state.toolModels === null || decoded.availability !== 'available' ||
           state.toolModels.availability !== 'available' || decoded.revision >= state.toolModels.revision) {
           state.toolModels = decoded
+        }
+        break
+      }
+      case 'operator_settings': {
+        if (state.hello?.operator_settings_storage !== 1 || message.machine_id !== state.hello.machine_id) break
+        const decoded = decodeOperatorSettings(message)
+        if (decoded === null) {
+          const reason = 'Invalid operator settings received. Saving is unavailable.'
+          state.operatorSettings = { type: 'operator_settings', machine_id: validMachineId(message.machine_id) ? message.machine_id : null,
+            revision: 0, availability: 'unavailable', reason, document: null }
+          log('error', reason, 'Settings', now())
+        } else if (state.operatorSettings === null || decoded.availability !== 'available' ||
+          state.operatorSettings.availability !== 'available' || decoded.revision >= state.operatorSettings.revision) {
+          state.operatorSettings = decoded
         }
         break
       }

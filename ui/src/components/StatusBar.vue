@@ -9,15 +9,16 @@ import { baseName, wcsName } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
-const emit = defineEmits<{ log: []; open: []; quit: [] }>()
+const emit = defineEmits<{ log: []; open: []; quit: []; settings: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
-function openQuit(): void {
+function openAppDialog(dialog: 'quit' | 'settings'): void {
   if (menu.value) {
     menu.value.open = false
     menu.value.querySelector('summary')?.focus({ preventScroll: true })
   }
-  emit('quit')
+  if (dialog === 'quit') emit('quit')
+  else emit('settings')
 }
 type PowerCommand = Extract<CommandBody, { type: 'set_machine' }>
 const pendingPower = shallowRef<{ command: PowerCommand; hello: Hello | null; before: Status | null; accepted: boolean } | null>(null)
@@ -124,7 +125,8 @@ const subtitle = computed(() => {
           </div>
           <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
           <div class="application-actions">
-            <button class="btn quit" type="button" @click="openQuit"><AppIcon name="power" />Quit CoffeeCNC…</button>
+            <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />Settings</button>
+            <button class="btn quit" type="button" @click="openAppDialog('quit')"><AppIcon name="power" />Quit CoffeeCNC…</button>
           </div>
         </div>
       </details>
@@ -174,8 +176,8 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill { display: inline-flex; align-items: center; gap: 8px; }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
-.application-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.quit, .menu-log { width: 100%; justify-content: flex-start; min-height: 48px; }
+.application-actions { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.quit, .menu-log, .settings { width: 100%; justify-content: flex-start; min-height: 48px; }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }

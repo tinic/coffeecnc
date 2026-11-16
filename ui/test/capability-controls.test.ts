@@ -10,8 +10,9 @@ import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
+  const { defaultOperatorPreferences } = await import('../src/operator-settings')
   const { requiresHoming } = await import('../src/machine-capabilities')
-  const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
+  const panel = reactive({ preferences: defaultOperatorPreferences(), startupSpindleRpm: 0, hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), dismissNotice: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
     live: computed(() => panel.link === 'live'),
@@ -35,6 +36,7 @@ beforeEach(() => {
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
   panel.workOffsets = null
+  panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {

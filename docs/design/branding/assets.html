@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoffeeCNC identity assets</title>
+<style>
+  @font-face { font-family: DM Sans; src: url('../../../ui/public/fonts/DM-Sans-400-700.woff2'); font-weight: 400 700; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 48px; background: #edf0f2; color: #20272c; font: 15px/1.5 'DM Sans', sans-serif; }
+  main { max-width: 1160px; margin: auto; }
+  h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -1px; }
+  p { margin: 0 0 32px; color: #68747d; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  section { padding: 32px; border-radius: 16px; background: #fff; }
+  h2 { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: #68747d; }
+  .lockup { display: block; width: 100%; max-width: 420px; margin: 36px auto; }
+  .dark { color: #edf0f2; background: #202326; }
+  .dark h2 { color: #a0aab3; }
+  .icons { display: flex; align-items: end; justify-content: space-between; gap: 20px; min-height: 200px; padding-top: 28px; }
+  figure { margin: 0; text-align: center; }
+  figure img { display: block; margin: 0 auto 12px; }
+  figcaption { color: #68747d; font-size: 12px; }
+  .row { margin-top: 20px; }
+  a { color: #377ef2; }
+  @media(max-width: 760px) { body { padding: 20px; }.pair { grid-template-columns: 1fr; }section { padding: 24px; }.icons { flex-wrap: wrap; } }
+</style>
+<main>
+  <h1>CoffeeCNC identity</h1>
+  <p>An end mill at a glance. A coffee-bean curve in the flute.</p>
+  <div class="pair">
+    <section><h2>Light surfaces</h2><img class="lockup" src="../../../ui/public/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC blue and graphite logo"></section>
+    <section class="dark"><h2>Dark surfaces</h2><img class="lockup" src="../../../ui/public/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC blue and pale logo"></section>
+  </div>
+  <section class="row">
+    <h2>Favicon &amp; application icon · actual sizes</h2>
+    <div class="icons">
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="16" height="16" alt="16 pixel icon"><figcaption>16 px</figcaption></figure>
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="24" height="24" alt="24 pixel icon"><figcaption>24 px</figcaption></figure>
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="32" height="32" alt="32 pixel icon"><figcaption>32 px</figcaption></figure>
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="48" height="48" alt="48 pixel icon"><figcaption>48 px</figcaption></figure>
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="64" height="64" alt="64 pixel icon"><figcaption>64 px</figcaption></figure>
+      <figure><img src="../../../ui/public/branding/coffeecnc-icon.svg" width="128" height="128" alt="128 pixel icon"><figcaption>128 px</figcaption></figure>
+    </div>
+  </section>
+  <section class="row"><h2>Single ink</h2><img class="lockup" src="../../../ui/public/branding/coffeecnc-logo-mono.svg" alt="CoffeeCNC monochrome logo"></section>
+</main>
+</html>

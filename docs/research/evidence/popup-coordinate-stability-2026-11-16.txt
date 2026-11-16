@@ -1,0 +1,37 @@
+CoffeeCNC popup dismissal and coordinate stability — 16 November 2026
+
+User reports:
+- Popups did not close when tapping outside them.
+- Zero/Half confirmation disappeared whenever live position feedback changed,
+  making zeroing unusable with encoder fluctuations.
+
+Changes:
+- Shared popover directive on app, axis and execution menus handles outside
+  pointer/touch/click events, switching menus and Escape within a menu.
+- Inside controls remain usable; outside Stop/E-stop events are not swallowed.
+- Modal backdrop also handles touch-only release, cancelling without applying.
+- Quick coordinate drafts retain axis/operation while the preview tracks current
+  feedback. Zero always targets zero; Half uses the latest exact work coordinate.
+  Position updates keep the same dialog and focus. Invalid/missing coordinates,
+  session/WCS/unit/basis and command-availability changes still invalidate it.
+- The previous position-change cancellation documented in manual-usability is
+  superseded by this fix. Numeric keypad drafts remain stable through updates.
+
+Validation:
+- 459 UI tests in 32 files; typecheck, lint and production build pass.
+- Regression cases cover outside pointer/touch/click, touch compatibility events,
+  inside actions, menu switching, Escape focus, listener cleanup and touch-only
+  dialog cancellation.
+- Repeated status replacement with encoder-scale position changes preserves
+  Zero/Half dialogs and focus; confirmation sends zero or the latest exact half.
+- Browser simulator: app and X/Y/Z menus dismiss outside; switching axes closes
+  the previous menu; execution menu stays open inside and closes outside.
+- Outside confirmation cancellation leaves X at -12.400; a subsequent explicit
+  Zero confirmation changes simulated X to 0.000. Console clean.
+
+Expected UI stamp:
+inputs d53651cab6d335aa3882fac9f9b8be455ac8117e5280d723d243c7938b436fea
+assets 2d6159ce1b6111227740d33f34b83b9d33bf683f118ea32fd8cd4a8e1f94eab7
+
+Deployment is handed to Claude; physical touch retesting is not established by
+these component/browser checks. Codex performed no physical machine operations.

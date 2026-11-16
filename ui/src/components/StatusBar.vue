@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
+import { vPopover } from '../popover'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { theme, toggleTheme } from '../appearance'
 import { dismissNotice, live, onResult, panel, reported, send } from '../machine'
@@ -108,7 +109,7 @@ const subtitle = computed(() => {
     <div class="machine-controls">
       <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />E-STOP</button>
       <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
-      <details ref="menu" class="state-menu">
+      <details ref="menu" v-popover class="state-menu">
         <summary v-tooltip="'App menu'" class="app-menu-toggle" aria-label="App menu"><AppIcon name="menu" /></summary>
         <div class="popover">
           <h3>Machine</h3>

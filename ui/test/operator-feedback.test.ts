@@ -31,20 +31,25 @@ function snapshot(machine: Status['machine'], link: Status['link'] = 'live'): vo
   wire.receive({ ...status, machine, link })
 }
 function isOpen(): boolean { return (wrapper.get('details').element as HTMLDetailsElement).open }
+async function openMenu(): Promise<void> {
+  ;(wrapper.get('details').element as HTMLDetailsElement).open = true
+  await wrapper.get('details').trigger('toggle')
+}
 beforeEach(async () => {
   wire.send.mockReset()
   status = new SimMachine({ emit: (): void => undefined }).status()
   wire.receive({ ...hello }); snapshot('off')
   panel.notice = null; panel.log = []
   wrapper = mount(StatusBar, { attachTo: document.body })
-  ;(wrapper.get('details').element as HTMLDetailsElement).open = true
-  await wrapper.get('details').trigger('toggle')
+  await openMenu()
 })
 afterEach(() => { wrapper.unmount() })
 
 describe('power menu confirmation', () => {
   it.each(['status first', 'result first'])('closes only after accepted and fresh matching state: %s', async (order) => {
     await button('Machine on').trigger('click')
+    expect(isOpen()).toBe(false) // Direct power is outside the app menu.
+    await openMenu() // Reopening must still show the pending request.
     expect(isOpen()).toBe(true)
     if (order === 'status first') snapshot('on'); else result('accepted')
     await nextTick(); expect(isOpen()).toBe(true)
@@ -61,12 +66,14 @@ describe('power menu confirmation', () => {
   })
   it('keeps a failed request visible even if the reported state subsequently matches', async () => {
     await button('Machine on').trigger('click')
+    await openMenu()
     result('failed'); snapshot('on'); await nextTick()
     expect(isOpen()).toBe(true)
     expect(wrapper.get('[role="alert"]').text()).toContain('Power request failed')
   })
   it.each(['stale', 'hello'])('does not close on confirmation spanning %s', async (change) => {
     await button('Machine on').trigger('click')
+    await openMenu()
     if (change === 'stale') snapshot('on', 'stale'); else wire.receive({ ...hello })
     await nextTick()
     result('accepted'); snapshot('on'); await nextTick()
@@ -74,7 +81,7 @@ describe('power menu confirmation', () => {
   })
   it('resets E-stop without powering on, then offers power-on only after confirmation', async () => {
     snapshot('estop'); await nextTick()
-    await button('Reset E-stop').trigger('click'); result('accepted'); await nextTick()
+    await button('Reset E-stop').trigger('click'); await openMenu(); result('accepted'); await nextTick()
     expect(isOpen()).toBe(true)
     snapshot('off'); await nextTick(); expect(isOpen()).toBe(false)
     expect(wire.send.mock.calls.map(([c]) => c.type === 'set_machine' && c.state)).toEqual(['off'])

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
+import { vPopover } from '../popover'
 import { computed, ref, watch } from 'vue'
 import { startDialog } from '../dialogs'
 import { axes, live, mdiBlock, panel, reported, send } from '../machine'
@@ -13,7 +14,13 @@ const basis = ref<'work' | 'machine' | 'dtg'>('work')
 const unit = computed(() => panel.unit)
 const wcs = computed(() => wcsName(reported.value?.offsets.wcs ?? 1))
 const touching = ref<{ key: number; axis: AxisLetter; initial: string; millimeters: number } | null>(null)
-const quick = ref<{ axis: AxisLetter; current: number; target: number; operation: 'Zero' | 'Half' } | null>(null)
+const quick = ref<{ axis: AxisLetter; operation: 'Zero' | 'Half' } | null>(null)
+const quickValues = computed(() => {
+  const draft = quick.value
+  const current = axes.value.find((axis) => axis.axis === draft?.axis)?.work
+  if (!draft || current === undefined || !Number.isFinite(current)) return null
+  return { current, target: draft.operation === 'Half' ? current / 2 : 0 }
+})
 const bases = [['work', 'Work'], ['machine', 'Machine'], ['dtg', 'To go']] as const
 let nextTouch = 0
 const touchBlock = computed(() => panel.tab !== 'manual' ? 'Open Manual to touch off'
@@ -25,7 +32,7 @@ const toolLength = computed(() => reported.value?.offsets.tool[2])
 function openQuick(axis: AxisStatus, operation: 'Zero' | 'Half'): void {
   if (touchBlock.value !== null || !Number.isFinite(axis.work)) return
   touching.value = null
-  quick.value = { axis: axis.axis, current: axis.work, target: operation === 'Half' ? axis.work / 2 : 0, operation }
+  quick.value = { axis: axis.axis, operation }
 }
 function quickFromMenu(axis: AxisStatus, operation: 'Zero' | 'Half', event: MouseEvent): void {
   const menu = (event.currentTarget as HTMLElement).closest('details')
@@ -34,8 +41,9 @@ function quickFromMenu(axis: AxisStatus, operation: 'Zero' | 'Half', event: Mous
 }
 function confirmQuick(): void {
   const draft = quick.value
-  if (draft && touchBlock.value === null && axes.value.find((axis) => axis.axis === draft.axis)?.work === draft.current) {
-    send({ type: 'touch_off', axis: draft.axis, value: draft.target })
+  const values = quickValues.value
+  if (draft && values && touchBlock.value === null) {
+    send({ type: 'touch_off', axis: draft.axis, value: values.target })
   }
   quick.value = null
 }
@@ -59,8 +67,10 @@ function touchOff(value: number, text: string): void {
   touching.value = null
 }
 watch([(): unknown => panel.hello, (): string => panel.tab, unit, basis, wcs, touchBlock], () => { touching.value = null; quick.value = null }, { flush: 'sync' })
-watch(() => axes.value.find((axis) => axis.axis === quick.value?.axis)?.work, (position) => {
-  if (quick.value && position !== quick.value.current) quick.value = null
+// Encoder feedback can fluctuate while stationary. Update the preview without
+// interrupting the operator; only loss of a usable coordinate invalidates it.
+watch(quickValues, (values) => {
+  if (quick.value && values === null) quick.value = null
 }, { flush: 'sync' })
 let previewRequested = startDialog === 'touchoff'
 watch([axes, touchBlock], () => {
@@ -82,7 +92,7 @@ watch([axes, touchBlock], () => {
         <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? 'Last reported' : marker(axis) }}</span></span>
         <span v-if="panel.tab !== 'manual'" class="touch hidden" aria-hidden="true"><AppIcon name="target" /></span>
       </button>
-      <details v-if="panel.tab === 'manual'" class="axis-actions">
+      <details v-if="panel.tab === 'manual'" v-popover class="axis-actions">
         <summary :aria-label="`${axis.axis.toUpperCase()} coordinate actions`">···</summary>
         <div class="popover">
           <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
@@ -104,7 +114,7 @@ watch([axes, touchBlock], () => {
       <span class="tool-length">Z length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
-    <CoordinateConfirm v-if="quick" :axis="quick.axis" :wcs="wcs" :current="quick.current" :target="quick.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />
+    <CoordinateConfirm v-if="quick && quickValues" :axis="quick.axis" :wcs="wcs" :current="quickValues.current" :target="quickValues.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />
   </section>
 </template>
 

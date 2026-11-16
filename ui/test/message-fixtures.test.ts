@@ -1094,12 +1094,46 @@ const examples = [
     "availability": "unavailable",
     "reason": "Tool model settings are already in use",
     "document": null
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": "G0759",
+    "revision": 2,
+    "availability": "available",
+    "reason": "",
+    "document": {
+      "version": 1,
+      "startup_units": "inch",
+      "enabled_wcs": [
+        1,
+        2,
+        3
+      ],
+      "default_spindle_rpm": 1800,
+      "default_jog_velocity": 600
+    }
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": null,
+    "revision": 0,
+    "availability": "session_only",
+    "reason": "No machine identity configured",
+    "document": null
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": "G0759",
+    "revision": 0,
+    "availability": "unavailable",
+    "reason": "Operator settings file is corrupt",
+    "document": null
   }
 ] satisfies FromMachine[]
 
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
-  hello: true, status: true, tool_table: true, tool_models: true, work_offsets: true, program: true,
+  hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
   preview: true, message: true, result: true, directory: true,
 }
 

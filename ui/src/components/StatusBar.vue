@@ -119,7 +119,7 @@ const subtitle = computed(() => {
         </div>
         <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
         <div class="application-actions">
-          <button class="btn quiet quit" type="button" @click="openQuit">Quit CoffeeCNC…</button>
+          <button class="btn quit" type="button" @click="openQuit"><AppIcon name="power" />Quit CoffeeCNC…</button>
         </div>
       </div>
     </details>
@@ -164,7 +164,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
 .application-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.quit { width: 100%; justify-content: flex-start; min-height: 44px; }
+.quit { width: 100%; justify-content: flex-start; min-height: 48px; }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }

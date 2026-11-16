@@ -15,9 +15,12 @@ const unit = panel.unit
 const startupUnits = ref<OperatorPreferences['startup_units']>(panel.preferences.startup_units)
 const enabled = ref([...panel.preferences.enabled_wcs])
 const spindle = ref(String(panel.preferences.default_spindle_rpm))
-const jog = ref(String(Number(toDisplay(panel.preferences.default_jog_velocity, unit).toFixed(6))))
+const initialJog = panel.preferences.default_jog_velocity
+const initialJogText = String(Number(toDisplay(initialJog, unit).toFixed(6)))
+const jog = ref(initialJogText)
 const rpm = computed(() => parseNumericExpression(spindle.value, 'rpm'))
 const velocity = computed(() => {
+  if (jog.value === initialJogText) return initialJog
   const value = parseNumericExpression(jog.value, unit)
   return value === null ? null : fromDisplay(value, unit)
 })
@@ -52,8 +55,8 @@ async function save(): Promise<void> {
     <div class="settings-grid">
       <section class="startup">
         <h3>At startup</h3>
-        <p class="hint">Applied next time CoffeeCNC opens.</p>
-        <fieldset :disabled="settings.state.saving">
+        <p class="hint">{{ settings.state.storage === 'session_only' ? 'Startup defaults require saved settings.' : 'Applied next time CoffeeCNC opens.' }}</p>
+        <fieldset :disabled="settings.state.saving || settings.state.storage === 'session_only'">
           <legend>Display units</legend>
           <div class="units segmented" aria-label="Startup units">
             <button v-for="option in (['machine', 'mm', 'inch'] as const)" :key="option" class="btn" :class="{ on: startupUnits === option }" type="button" :aria-pressed="startupUnits === option" @click="startupUnits = option">{{ option === 'machine' ? 'Machine default' : option === 'inch' ? 'Inch' : 'mm' }}</button>

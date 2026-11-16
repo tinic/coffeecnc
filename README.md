@@ -17,6 +17,17 @@ Native interpreter preview, STEP overlay and the tool-model editor now work in L
 
 *Current Manual layout at 1600 × 900 in the browser simulator, captured on 16 November 2026. Direct power controls, compact axis-action menus, tappable coordinates and work offsets are implemented. [Native simulation checks and layout evidence](docs/research/evidence/manual-usability-2026-11-16.txt) · [Formula entry](docs/numeric-entry.md).*
 
+The app menu now includes Settings for startup display units, work system shortcuts, default spindle RPM and default jog speed. Native preferences are saved per machine; speed presets never start motion. The Manual selector keeps five shortcuts visible and puts the rest under More, always retaining the active system. Applied G92/G52 shifts are shown separately. [Settings design](docs/design/operator-settings.md) · [Research across other controls](docs/research/coordinate-system-controls-2026-11-16.md).
+
+<details>
+<summary>Settings panel at 1280 × 720</summary>
+
+![CoffeeCNC operator settings in the browser simulator](ui/screenshots/settings-1280.png)
+
+*Browser simulator, 16 November 2026. Native G0759 deployment pending.*
+
+</details>
+
 <details>
 <summary>Earlier G0759 controller deployment screenshot</summary>
 

@@ -57,6 +57,21 @@ describe('explicit spindle speed confirmation', () => {
   }
   const selector = 'input[aria-label="Spindle speed, rpm"]'
 
+  it('uses a startup preset only for an unset stopped spindle, without starting it', async () => {
+    panel.startupSpindleRpm = 1800
+    const view = setup('stopped')
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('1200')
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.spindle.commanded_rpm = 0
+    await nextTick()
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('1800')
+    expect(send).not.toHaveBeenCalled()
+    panel.status.spindle.direction = 'forward'
+    await nextTick()
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('0')
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('evaluates an RPM formula only when Enter confirms it', async () => {
     const view = setup('reverse')
     await view.get(selector).setValue('2400/2+300')

@@ -68,11 +68,21 @@ void hello_rules() {
   require(hello.at("axis_max_jog_velocity") == Json{{"x", 1500}, {"y", 1500}, {"z", 750}},
           "Per-axis jog ceilings are keyed by lowercase axis letter");
   require(hello.at("homing_required") == false, "homing_required is sent when false");
-  require(hello.size() == 16, "Hello has the fields of protocol v1 and no other");
+  require(hello.size() == 17, "Hello has the fields of protocol v1 and no other");
   require(hello.at("quit_supported") == true, "quit is supported");
   require(hello.at("machine_id").is_null() && hello.at("tool_model_storage") == 1 &&
               hello.at("tool_model_storage").is_number_integer(),
           "Without a machine ID it is sent as null; the storage capability is always 1");
+  require(hello.at("operator_settings_storage") == 1,
+          "Operator settings storage capability is advertised");
+  auto limited = valid_hello();
+  limited.max_spindle_rpm = 3000;
+  require(parsed(encode_hello(limited)).at("max_spindle_rpm") == 3000,
+          "Spindle preset ceiling is sent");
+  for (const auto bad : {0.0, -1.0, nan, infinity}) {
+    limited.max_spindle_rpm = bad;
+    refused(encode_hello(limited), "max_spindle_rpm");
+  }
   require(!hello.contains("coolant"), "Unknown coolant outputs are not sent");
   auto cooled = valid_hello();
   cooled.coolant = CoolantOutputs{.flood = true, .mist = false};

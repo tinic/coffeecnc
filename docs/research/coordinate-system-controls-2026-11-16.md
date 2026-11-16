@@ -1,6 +1,6 @@
 # Coordinate-system control patterns
 
-Research on16 November2026, from manufacturer/project documentation. These are interface patterns, not interchangeable controller semantics.
+Research on 16 November 2026, from manufacturer/project documentation. These are interface patterns, not interchangeable controller semantics.
 
 | Control | Documented treatment | Implication for CoffeeCNC |
 | --- | --- | --- |

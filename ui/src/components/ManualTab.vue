@@ -306,8 +306,13 @@ watch(
 
 const rpmDraft = ref<string | null>(null)
 const presetRpm = ref<number | null>(null)
+const reportedRpm = computed(() => {
+  const spindle = status.value?.spindle
+  return spindle && (spindle.commanded_rpm > 0 || spindle.direction !== 'stopped')
+    ? spindle.commanded_rpm : panel.startupSpindleRpm
+})
 const rpmText = computed({
-  get: () => rpmDraft.value ?? String(presetRpm.value ?? ((status.value?.spindle.commanded_rpm ?? 0) > 0 ? status.value?.spindle.commanded_rpm : panel.startupSpindleRpm)),
+  get: () => rpmDraft.value ?? String(presetRpm.value ?? reportedRpm.value),
   set: (value: string) => { rpmDraft.value = value },
 })
 const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))

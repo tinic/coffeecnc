@@ -1,6 +1,7 @@
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 #include <coffeecnc/core/text_file.hpp>
 
+#include <coffeecnc/core/jog_stop_report.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
@@ -14,6 +15,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <mutex>
 #include <numbers>
@@ -41,6 +43,9 @@ constexpr auto poll_interval = std::chrono::milliseconds{1};
 // An operator error is published a few task cycles after the status that reports the failure.
 constexpr auto error_text_time = std::chrono::milliseconds{50};
 constexpr auto error_companion_time = std::chrono::milliseconds{20};
+// How long a jog-stop text that is not CoffeeCNC's own waits for the control thread to read the
+// pins once more: three of its 10 ms periods.
+constexpr auto fresh_pins_time = std::chrono::milliseconds{30};
 constexpr double seconds_per_minute = 60;
 
 auto failed(std::string_view reason) -> ActionResult {
@@ -133,6 +138,14 @@ struct NmlPort::Impl {
   // The joint or axis of the jog stop that is the last command written, until task echoes it.
   std::optional<int> unanswered_stop;
   std::vector<ControllerMessage> messages;
+  // A jog-stop text read in the present collect(), not yet attributed.
+  struct JogStopText {
+    std::string text;
+    Clock::time_point read_at;
+  };
+  std::vector<JogStopText> jog_stop_texts;
+  // The watchdog trip the operator was last told about.
+  std::optional<Clock::time_point> told_watchdog;
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -146,6 +159,81 @@ struct NmlPort::Impl {
       messages.push_back({error, std::move(text)});
   }
 
+  void add_error(std::span<const char> field) {
+    auto text = text_of(field);
+    if (text.empty())
+      return;
+    if (is_jog_stop_text(text))
+      jog_stop_texts.push_back({std::move(text), Clock::now()});
+    else
+      messages.push_back({true, std::move(text)});
+  }
+
+  // LinuxCNC's "Jog aborted by jog-stop" texts of one collect(): CoffeeCNC's own stops go to the
+  // log, a watchdog stop is told in CoffeeCNC's words, anything else is passed on unchanged.
+  // None of them is ever an action's reason unless it is passed on.
+  void attribute_jog_stops() {
+    if (jog_stop_texts.empty())
+      return;
+    const auto last_read = jog_stop_texts.back().read_at;
+    // CoffeeCNC's level is noted before every write of it, so a level that caused one of these
+    // texts was noted before the text was read: this copy has it.
+    const auto own = hal != nullptr ? hal->jog_stop_history().own_level_high : std::nullopt;
+    std::optional<Clock::time_point> tripped;
+    if (hal != nullptr) {
+      // The watchdog is seen only by the control thread. A watchdog trips only after that thread
+      // has not run for its timeout (300 ms), and it sees the trip before it re-arms it: when it
+      // read the pins within jog_stop_window before the text, any trip behind the text is in
+      // the history already. Otherwise it may have stalled itself: let it read the pins once
+      // more, for a short time only.
+      const auto read = hal->jog_stop_history().read_at;
+      if (!read || last_read - *read >= jog_stop_window)
+        static_cast<void>(until(fresh_pins_time, [&]() -> bool {
+          const auto again = hal->jog_stop_history().read_at;
+          return again && *again >= last_read;
+        }));
+      tripped = hal->jog_stop_history().watchdog_tripped;
+    }
+    // One log line per cause and text in this pass, with the count.
+    struct Logged {
+      JogStopCause cause;
+      std::string text;
+      int count;
+    };
+    std::vector<Logged> logged;
+    for (auto& seen : jog_stop_texts) {
+      const auto cause = classify_jog_stop(seen.text, seen.read_at, own, tripped);
+      if (cause == JogStopCause::unattributed) {
+        messages.push_back({true, std::move(seen.text)});
+        continue;
+      }
+      if (cause == JogStopCause::watchdog &&
+          (!told_watchdog || *tripped - *told_watchdog > jog_stop_window)) {
+        told_watchdog = tripped;
+        messages.push_back({true, std::string(watchdog_stop_text)});
+      }
+      if (!logged.empty() && logged.back().cause == cause && logged.back().text == seen.text)
+        ++logged.back().count;
+      else
+        logged.push_back({cause, std::move(seen.text), 1});
+    }
+    jog_stop_texts.clear();
+    for (const auto& line : logged) {
+      const auto since = [](std::optional<Clock::time_point> at,
+                            Clock::time_point read) -> std::string {
+        return at ? std::format(
+                        "{}",
+                        std::chrono::duration_cast<std::chrono::milliseconds>(read - *at).count())
+                  : std::string("none");
+      };
+      std::cerr << std::format("coffeecnc: jog_stop_text cause={} count={} "
+                               "own_level_ms_before={} watchdog_tripped_ms_before={} text=\"{}\"\n",
+                               line.cause == JogStopCause::own ? "own" : "watchdog", line.count,
+                               since(own, last_read), since(tripped, last_read), line.text)
+                << std::flush;
+    }
+  }
+
   // Moves everything on the error channel into `messages`. Reading consumes.
   void collect() {
     const auto read = [&]() -> NMLTYPE {
@@ -156,18 +244,19 @@ struct NmlPort::Impl {
       // is in this channel's own buffer until the next read.
       NMLmsg* message = errors.call([](NML& channel) -> NMLmsg* { return channel.get_address(); });
       if (type == EMC_OPERATOR_ERROR_TYPE)
-        add(true, static_cast<EMC_OPERATOR_ERROR*>(message)->error);
+        add_error(static_cast<EMC_OPERATOR_ERROR*>(message)->error);
       else if (type == EMC_OPERATOR_TEXT_TYPE)
         add(false, static_cast<EMC_OPERATOR_TEXT*>(message)->text);
       else if (type == EMC_OPERATOR_DISPLAY_TYPE)
         add(false, static_cast<EMC_OPERATOR_DISPLAY*>(message)->display);
       else if (type == NML_ERROR_TYPE)
-        add(true, static_cast<NML_ERROR*>(message)->error);
+        add_error(static_cast<NML_ERROR*>(message)->error);
       else if (type == NML_TEXT_TYPE)
         add(false, static_cast<NML_TEXT*>(message)->text);
       else if (type == NML_DISPLAY_TYPE)
         add(false, static_cast<NML_DISPLAY*>(message)->display);
     }
+    attribute_jog_stops();
   }
 
   // Where the messages of the action that starts now will begin.
@@ -287,7 +376,11 @@ struct NmlPort::Impl {
 
   // Waits until task has echoed the serial number of the command written last.
   [[nodiscard]] auto echoed() -> ActionResult {
-    const bool echo = until(echo_timeout, [&]() -> bool { return answered(stat()); });
+    // The error channel is read in every poll of every wait: jog_stop_window relies on it.
+    const bool echo = until(echo_timeout, [&]() -> bool {
+      collect();
+      return answered(stat());
+    });
     if (!echo)
       return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command."};
     unanswered_stop.reset();
@@ -306,6 +399,7 @@ struct NmlPort::Impl {
   [[nodiscard]] auto outcome(std::chrono::milliseconds timeout) -> int {
     int rcs = RCS_EXEC;
     static_cast<void>(until(timeout, [&]() -> bool {
+      collect();
       const EMC_STAT* s = stat();
       if (s == nullptr)
         return false;

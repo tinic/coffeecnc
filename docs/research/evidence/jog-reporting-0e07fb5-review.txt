@@ -1,0 +1,62 @@
+CoffeeCNC PR26 follow-up source review — 16 November 2026
+
+Reviewed correction 3bfa640 at branch head
+0e07fb55a99a42aa02059195a7a81cf0d8f3b7e8 against b930c3c.
+No independent backend execution or physical-machine tests in this review.
+
+Resolved in source:
+- is_jog_stop_text now matches ordinary jog-stop only. Immediate text passes
+  through even during own-level and watchdog history windows. Both overlapping
+  histories have core regression assertions; the simulation check now exercises
+  immediate stop inside the own-level attribution window.
+- A release with no subsequent control period no longer suppresses an inhibit
+  refusal. A new level_epoch_ gate and corresponding regression cover that order.
+
+Remaining delayed-observation case:
+1. A start is in flight; release advances epoch_.
+2. One control period with {jog_stop_high=false, watchdog_ok=true} advances
+   level_epoch_ and asks for the own stop level high.
+3. The control thread then stalls past the watchdog timeout.
+4. The inhibit refusal returns before control observes the watchdog trip.
+
+level_epoch_ is now greater than request.epoch and has no freshness timestamp.
+watchdog_epoch_ is still old. Session::jog therefore still turns the refusal into
+accepted. The added test only covers the absence of step 2; it does not advance
+the clock beyond the watchdog timeout after an own-level period. Later control
+observation records the watchdog epoch but does not revise this answered start.
+
+Requested follow-up on AgentNet: add this ordering regression and either require
+fresh own-stop/no-watchdog evidence or retain the inhibit failure when control
+observation is stale. This concerns missing/misattributed operator feedback;
+no failure of the underlying stop is established by this source review.
+
+PR body still describes b930c3c testing and a known watchdog gap. Updated-head
+portable/native regression evidence is needed before merge.
+
+Read-only controller observation around 13:11 UTC:
+checkout 0e07fb55a99a42aa02059195a7a81cf0d8f3b7e8, process 2502.
+Installed UI remains PR24:
+inputs 56fb4f3fbf2fe3da8eb1788d9a1ae1c8bc8201444d803ad0b9a7f4b07653c4c2
+assets 16de1b8084a96fa85838dec63989381846e93125ca129aa8c36764929df8c335
+The new checkout does not establish deployment of PR25/27/28 UI.
+
+Resolution — 16 November 2026, 13:26 UTC
+
+Correction 4d33e16cada0573b3241875faf01190c25d45a1b adds a 100 ms freshness
+bound on the control observation, below the shipped watchdog's 300 ms timeout.
+Session::jog samples the monotonic clock after the start returns and retains the
+inhibit failure if control observation is stale. Tests include the own-level
+period followed by a 400 ms stall and the accepted 100 ms boundary.
+
+Codex independently reviewed this source delta and Claude's retained logs at
+playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/4d33e16/review-fix2/.
+Development CTest: 7/7 passed in 392 seconds: core_behavior, session_lifecycle,
+linuxcnc_sim_mm, linuxcnc_sim_inch, linuxcnc_sim_g0759, linuxcnc_sim_runner and
+sim_data_directory. Simulation logs: mm134 + inch131 + G0759 69 =334 pass, 0 fail.
+Both unit systems passed own/foreign/watchdog message checks; metric rapid taps
+passed with 20 accepted results and zero measured movement after release.
+
+Both review findings are resolved at this source head. PR26 merged as
+305abf5d16c40f0dd009f936efb8e678a74b86cd. These are reviewed retained execution
+results, not a separate Codex backend test run. Full sanitizer suites were not
+rerun on this head. No physical-machine qualification is implied.

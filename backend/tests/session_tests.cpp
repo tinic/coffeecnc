@@ -437,8 +437,8 @@ void tool_model_commands_go_to_their_service() {
   static_cast<void>(send(page, R"("type":"ready")"));
 
   outcome = send(page, assign_model);
-  require(outcome.messages.empty() && models.taken() == 1 &&
-              models.submitted.back().page == page && models.submitted.back().id == id,
+  require(outcome.messages.empty() && models.taken() == 1 && models.submitted.back().page == page &&
+              models.submitted.back().id == id,
           "After ready it is handed to the service, and answered from there");
   const auto* handed = std::get_if<SetToolModelAssignment>(&models.submitted.back().command);
   require(handed != nullptr && handed->machine_id == "mill-1" && handed->base_revision == 3 &&
@@ -446,8 +446,7 @@ void tool_model_commands_go_to_their_service() {
               handed->family == ToolFamily::drill && handed->overrides.tip_angle == 135,
           "as decoded");
   outcome = send(page, remove_model);
-  require(outcome.messages.empty() && models.taken() == 2,
-          "A removal goes the same way");
+  require(outcome.messages.empty() && models.taken() == 2, "A removal goes the same way");
   require(port.calls.empty() && port.snapshots == 0,
           "Neither reached the controller: no snapshot, no command, with the link down");
   const auto work = session.work([]() -> Instant { return at(0ms); });
@@ -475,7 +474,8 @@ void tool_model_commands_go_to_their_service() {
 
   // The ID rule and the decoder's refusals are the session's, as for every command.
   // Four commands were handed over so far.
-  const auto replay = driver.handle(page, std::format("{{\"id\":{},{}}}", id, assign_model), at(0ms));
+  const auto replay =
+      driver.handle(page, std::format("{{\"id\":{},{}}}", id, assign_model), at(0ms));
   require(replay.messages.empty() && models.taken() == 4,
           "A replayed ID is dropped before the service sees it");
   outcome = send(page, R"("type":"set_tool_model_assignment","machine_id":"mill-1")");
@@ -497,14 +497,12 @@ void tool_model_commands_go_to_their_service() {
   id = 0;
   static_cast<void>(send(next, R"("type":"ready")"));
   outcome = send(next, assign_model);
-  require(outcome.messages.empty() && models.taken() == 5 &&
-              models.submitted.back().page == next,
+  require(outcome.messages.empty() && models.taken() == 5 && models.submitted.back().page == next,
           "The new page's command carries the new page");
   driver.end_page(next);
   require(models.last_ended() == next.value, "A page that ends is ended for the service");
   outcome = send(next, assign_model);
-  require(outcome.messages.empty() && models.taken() == 5,
-          "After its end nothing is handed over");
+  require(outcome.messages.empty() && models.taken() == 5, "After its end nothing is handed over");
   session.close();
   require(models.last_ended() == next.value && models.ends() == 3,
           "Closing ends the last page for the service");
@@ -1025,6 +1023,115 @@ void jog_failures() {
   rig.port.state.mode = TaskMode::mdi; // changed behind the session's back
   rig.expect(hold_x, "rejected", release_reason);
   rig.acted({"stop_jog x"}, "A refresh never changes the mode to start its jog again");
+}
+
+// A start still in flight when a stop decision raised the level reaches motion under
+// jog-inhibit and is refused: the tap ended before its jog began.
+void late_jog_starts() {
+  constexpr auto inhibit = "Cannot jog while jog-inhibit is active.";
+  struct Row {
+    std::string name;
+    // Runs inside start_jog, after the start was written: what happened while it was in flight.
+    std::function<void(Rig&)> meanwhile;
+    std::string_view outcome;
+    std::string_view reason;
+    Calls calls;
+  };
+  const std::vector<Row> rows{
+      {"released in flight",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {false, true}));
+       },
+       "accepted",
+       "",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      // The control thread stalls after the release: the watchdog may trip before any period
+      // reads it, and no period raised CoffeeCNC's level. The refusal stays visible.
+      {"released, refused before a period raised the level",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+       },
+       "failed",
+       inhibit,
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      // A period raised the level, then the control thread stalled past the watchdog timeout and
+      // the refusal returned before another period: the trip may be unread. It stays visible.
+      {"released, the level raised, then the control thread stalled",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {false, true}));
+         rig.driver.now = at(rig.clock + 400ms);
+       },
+       "failed",
+       inhibit,
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"released, the last period 100 ms before the refusal",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {false, true}));
+         rig.driver.now = at(rig.clock + 100ms);
+       },
+       "accepted",
+       "",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"not released",
+       [](Rig&) -> void {},
+       "failed",
+       inhibit,
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"the watchdog tripped in flight",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.control(at(rig.clock), {false, false}));
+       },
+       "failed",
+       "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
+       "watchdog timeout.",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      {"released, then the watchdog tripped",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {true, false}));
+       },
+       "failed",
+       "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
+       "watchdog timeout.",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+  };
+  for (const auto& row : rows) {
+    Rig rig;
+    rig.port.script["start_jog"] = {{ActionStatus::failed, inhibit}};
+    rig.port.during["start_jog"] = [&rig, &row]() -> void { row.meanwhile(rig); };
+    const auto pressed = rig.next_id;
+    const auto outcome = rig.send(hold_x);
+    std::optional<Json> press;
+    bool error = false;
+    for (const auto& text : outcome.messages) {
+      auto message = Json::parse(text);
+      if (message.at("type") == "result" && message.at("id") == pressed)
+        press = message;
+      else if (message.at("type") == "result")
+        require(message.at("outcome") == "accepted", row.name + ": the release is accepted");
+      else
+        error = true;
+    }
+    require(press && press->at("outcome") == row.outcome && press->at("reason") == row.reason,
+            std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
+                        press ? press->dump() : std::string("none")));
+    require(!error, row.name + ": no operator message");
+    rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");
+    rig.clock += 10ms;
+    static_cast<void>(rig.tick(at(rig.clock)));
+    require(rig.driver.level, row.name + ": the level is held until a period has seen it high");
+    rig.clock += 10ms;
+    static_cast<void>(rig.tick(at(rig.clock)));
+    require(!rig.driver.level, row.name + ": then released as for any stop");
+  }
 }
 
 void stop_all_and_cancellation() {
@@ -1937,6 +2044,7 @@ auto main(int argc, char** argv) -> int {
     composed_mdi();
     jog_presses_and_refreshes();
     jog_failures();
+    late_jog_starts();
     stop_all_and_cancellation();
     lease_expiry();
     lost_machine_cancels_jogs();

@@ -25,7 +25,7 @@ const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};
@@ -33,6 +33,18 @@ void documents_and_limits() {
   require(encoded.has_value(), "File encodes");
   const auto decoded = decode_operator_settings_file(encoded.value_or(""));
   require(decoded && decoded->document == value.document, "Numeric preferences round trip exactly");
+  auto legacy = Json::parse(*encoded);
+  legacy["document"].erase("tool_reference_height");
+  const auto upgraded = decode_operator_settings_file(legacy.dump());
+  auto expected = value.document;
+  expected.tool_reference_height = 0;
+  require(upgraded && upgraded->document == expected,
+          "Existing v1 settings retain all preferences with zero reference height");
+  for (const auto& height : {Json(-1), Json("6.35"), Json(nullptr), Json(1e10)}) {
+    auto invalid = Json::parse(*encoded);
+    invalid["document"]["tool_reference_height"] = height;
+    require(!decode_operator_settings_file(invalid.dump()), "Invalid reference height rejected");
+  }
   auto broken = Json::parse(*encoded);
   for (const auto& systems : {Json::array(), Json::array({1, 1}), Json::array({1, 10}),
                               Json::array({1.5}), Json::array({true})}) {

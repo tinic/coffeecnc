@@ -13,10 +13,13 @@ Hello adds optional operator_settings_storage: 1 and optional max_spindle_rpm (f
   startup_units: 'machine' | 'mm' | 'inch',
   enabled_wcs: number[],
   default_spindle_rpm: number,
-  default_jog_velocity: number }
+  default_jog_velocity: number,
+  tool_reference_height: number }
 ```
 
-Document fields are exact. enabled_wcs contains 1–9 unique integers in the inclusive range 1–9, ascending when saved. At least one shortcut is required. RPM is finite 0..1e9; jog velocity finite >0..1e9 mm/min. Native saves additionally reject values above the configured spindle/jog limits. Preserve saved values if INI limits change; startup use clamps to current machine limits. Missing file defaults: machine units, all nine systems, spindle 0, jog min(600, configured ceiling). Revision0 is unsaved factory defaults.
+Document fields are exact, except older v1 documents may omit tool_reference_height; the reader supplies zero without losing other preferences. New writes include it. enabled_wcs contains 1–9 unique integers in the inclusive range 1–9, ascending when saved. At least one shortcut is required. RPM is finite 0..1e9; jog velocity finite >0..1e9 mm/min. Native saves additionally reject values above the configured spindle/jog limits. Preserve saved values if INI limits change; startup use clamps to current machine limits. Missing file defaults: machine units, all nine systems, spindle 0, jog min(600, configured ceiling), reference height 0. Revision0 is unsaved factory defaults.
+
+Tool reference height is finite 0..1e9 mm. It describes a gauge block or setter contact height above the active work system's Z zero. It prefills the next Touch off length dialog in display units; confirmation alone issues the existing tool_touch_off command. An unchanged offered value retains full precision. Changing work system, loaded tool, units, connection or MDI availability invalidates the dialog; position feedback does not dismiss it. This is a contact-height preset for manual touch-off, not a calibrated absolute machine-coordinate setter position or automatic probe routine.
 
 Command: `{type:'set_operator_settings', id, machine_id, base_revision, document}`. UI/protocol.ts and ui/operator-settings.ts define exact shapes. Shared command fixture id28. Save is independent of machine power and has no controller side effects. Older peers without capability offer session-only work-system shortcuts and receive no new command; startup fields are disabled because they cannot survive restart. Pending or stale saves do not claim success. New sessions discard old pending edits and load their own document.
 

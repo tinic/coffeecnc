@@ -47,9 +47,17 @@ function rig(simulated = false, saved: OperatorPreferences | null = null): Rig {
     receive: (message: FromMachine): void => { receive(message) }, pass: (ms: number): void => { now += ms; timer?.() } }
 }
 const custom = (): OperatorPreferences => ({ ...defaultOperatorPreferences(), startup_units: 'inch',
-  default_spindle_rpm: 1800, default_jog_velocity: 800, enabled_wcs: [1, 9] })
+  default_spindle_rpm: 1800, default_jog_velocity: 800, enabled_wcs: [1, 9], tool_reference_height: 6.35 })
 
 describe('operator settings', () => {
+  it('upgrades an earlier settings document without losing saved defaults', () => {
+    const legacy: Record<string, unknown> = { ...custom() }
+    delete legacy['tool_reference_height']
+    expect(decodeOperatorPreferences(legacy)).toEqual({ ...custom(), tool_reference_height: 0 })
+    for (const height of [-1, Infinity, NaN, '6.35', null]) {
+      expect(decodeOperatorPreferences({ ...custom(), tool_reference_height: height })).toBeNull()
+    }
+  })
   it('applies startup values once, clamps lowered limits, and never sends controller commands', () => {
     const r = rig(); r.connect()
     r.snapshot(2, { ...custom(), default_spindle_rpm: 5000, default_jog_velocity: 2000 })

@@ -9,6 +9,8 @@ export interface OperatorPreferences {
   default_spindle_rpm: number
   /** mm/min, independent of display units. */
   default_jog_velocity: number
+  /** mm above work Z zero at contact; offered by the tool length touch-off dialog. */
+  tool_reference_height: number
 }
 
 export type OperatorSettings = {
@@ -21,24 +23,28 @@ export type OperatorSettings = {
 
 export function defaultOperatorPreferences(): OperatorPreferences {
   return { version: 1, startup_units: 'machine', enabled_wcs: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    default_spindle_rpm: 0, default_jog_velocity: 600 }
+    default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0 }
 }
 
 export function decodeOperatorPreferences(value: unknown): OperatorPreferences | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const keys = ['version', 'startup_units', 'enabled_wcs', 'default_spindle_rpm', 'default_jog_velocity']
-  if (Object.keys(v).length !== keys.length || Object.keys(v).some((key) => !keys.includes(key)) ||
+  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height'].includes(key)) ||
       v['version'] !== 1 || !['machine', 'mm', 'inch'].includes(String(v['startup_units']))) return null
   const systems = v['enabled_wcs']
   if (!Array.isArray(systems) || systems.length < 1 || systems.length > 9 ||
       systems.some((wcs: unknown) => typeof wcs !== 'number' || !Number.isInteger(wcs) || wcs < 1 || wcs > 9) ||
       new Set(systems).size !== systems.length) return null
   const rpm = v['default_spindle_rpm'], jog = v['default_jog_velocity']
+  // Older v1 documents have no reference height. Preserve every saved preference.
+  const reference = 'tool_reference_height' in v ? v['tool_reference_height'] : 0
   if (typeof rpm !== 'number' || !Number.isFinite(rpm) || rpm < 0 || rpm > 1e9 ||
-      typeof jog !== 'number' || !Number.isFinite(jog) || jog <= 0 || jog > 1e9) return null
+      typeof jog !== 'number' || !Number.isFinite(jog) || jog <= 0 || jog > 1e9 ||
+      typeof reference !== 'number' || !Number.isFinite(reference) || reference < 0 || reference > 1e9) return null
   return { version: 1, startup_units: v['startup_units'] as OperatorPreferences['startup_units'],
-    enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog }
+    enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog,
+    tool_reference_height: reference }
 }
 
 export function decodeOperatorSettings(value: unknown): OperatorSettings | null {

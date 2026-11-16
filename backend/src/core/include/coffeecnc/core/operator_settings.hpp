@@ -13,6 +13,7 @@ struct OperatorPreferences {
   std::vector<int> enabled_wcs{1, 2, 3, 4, 5, 6, 7, 8, 9};
   double default_spindle_rpm{};
   double default_jog_velocity{600}; // mm/min
+  double tool_reference_height{}; // mm above work Z zero; touch-off dialog preset
   friend auto operator==(const OperatorPreferences&, const OperatorPreferences&) -> bool = default;
 };
 

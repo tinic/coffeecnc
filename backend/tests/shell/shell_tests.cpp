@@ -1553,10 +1553,12 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("no_console_errors_after_step", rig.js("return __t.errors.length;") == 0, rig.errors());
   fact("page_errors_after_step", rig.errors());
 
-  // Tool model rendering: the Tools tab's "Model defaults" opens a tool model in a WebGL2
+  // Tool model rendering: a tool row's editor opens "Model defaults" in a WebGL2
   // canvas of its own. The context must be alive and the model must be on the screen: pixels
   // of the window where the canvas is, read from a snapshot, that are not background.
   check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  check("panel_opens_tool_row", rig.wait_js("!!document.querySelector('.tool-row')") &&
+                                   rig.click(".tool-row", "") == "ok");
   check("panel_opens_tool_model", rig.wait_js("!!__t.find('button', 'Model defaults')") &&
                                       rig.click("button", "Model defaults") == "ok");
   const bool canvas_shown = rig.wait_js(
@@ -1592,6 +1594,8 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   rig.snapshot("tool-model");
   status_gaps(rig, "platform.tool_model");
   check("panel_closes_tool_model", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
+  check("panel_returns_to_tool_editor", rig.wait_js("!!document.querySelector('.tool-fields')"));
+  check("panel_closes_tool_editor", rig.click("section.dialog button", "Cancel") == "ok");
   rig.snapshot("tools-tab");
   // The work offset table of the Tools tab: only the active system has numbers.
   const auto offsets_text = rig.js("return __t.text(document.querySelector('main.middle'));");
@@ -1758,6 +1762,7 @@ void tool_models_saved(const Rig& rig) {
   const auto offsets = rig.panel_status().at("offsets");
 
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  check("tool_models_tool_row_editor", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   // The family defaults: the end mill's stick-out.
   check("tool_models_defaults_editor",
         click_when_ready(rig, "button", "Model defaults") == "ok" &&
@@ -1771,7 +1776,7 @@ void tool_models_saved(const Rig& rig) {
     return [before, input.value];)");
   const auto saving = click_when_ready(rig, "section.dialog button.primary", "Save defaults");
   const bool saved = rig.wait_js("__t.last.tool_models.revision === 1 && "
-                                 "!document.querySelector('section.dialog') && "
+                                 "!!document.querySelector('.tool-fields') && "
                                  "document.body.textContent.includes('Tool models saved for "
                                  "shell-mill.')",
                                  15s);
@@ -1806,7 +1811,7 @@ void tool_models_saved(const Rig& rig) {
   const auto assigning =
       click_when_ready(rig, "section.dialog button.primary", "Save preview model");
   const bool assigned =
-      rig.wait_js("__t.last.tool_models.revision === 2 && !document.querySelector('section.dialog')",
+      rig.wait_js("__t.last.tool_models.revision === 2 && !!document.querySelector('.tool-fields')",
                   15s);
   order = save_order(rig, "set_tool_model_assignment", 2);
   const auto row = *std::ranges::find_if(
@@ -1863,11 +1868,15 @@ void tool_models_restored(const Rig& rig) {
                 0,
         word(snapshot.dump().substr(0, 300)));
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
+  check("tool_models_restored_tool_row", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   check("tool_models_restored_assignment_shown",
-        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill' && "
-                    "__t.text(__t.find('button.model-link', 'Preview model for T2')) === 'Set model'",
+        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T1')) === 'Drill'",
                     10s),
         rig.js("return __t.all('button.model-link').map((b) => __t.text(b));").dump());
+  check("tool_models_close_first_row", rig.click("section.dialog button", "Cancel") == "ok");
+  check("tool_models_restored_second_row", click_when_ready(rig, ".tool-row", "Edit tool 2:") == "ok");
+  check("tool_models_unassigned_row_shown",
+        rig.wait_js("__t.text(__t.find('button.model-link', 'Preview model for T2')) === 'Set model'", 5s));
   const bool editor = click_when_ready(rig, "button", "Model defaults") == "ok" &&
                       rig.wait_js("__t.find('section.dialog label.entry', 'Stick-out')", 10s);
   const auto value = editor ? rig.js("return __t.find('section.dialog label.entry', 'Stick-out')"

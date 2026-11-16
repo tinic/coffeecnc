@@ -226,6 +226,8 @@ struct Driver {
   // The jog-stop level: follows what the control step asks for.
   bool level{};
   Instant now{};
+  // A worker pass asked to close the application.
+  bool quit{};
   // Messages of work done outside a request or period (page changes): sent with the next.
   std::vector<std::string> backlog;
 
@@ -236,6 +238,7 @@ struct Driver {
       if (steps > 1000)
         throw std::runtime_error("The worker does not come to rest");
       auto work = session.work([this]() -> Instant { return now; });
+      quit = quit || work.quit;
       if (work.outcome.page != PageToken{})
         outcome.page = work.outcome.page;
       for (auto& message : work.outcome.messages)
@@ -1850,6 +1853,37 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.acted({}, "An accepted stop ends the retries");
 }
 
+// quit: refused while the interpreter is busy; else power off when on, no E-stop reset, and
+// the worker asks to close only after an accepted reply.
+void quit() {
+  {
+    Rig rig;
+    rig.port.state.interp = InterpState::reading;
+    rig.expect(R"("type":"quit")", "rejected", "Stop the program before quitting.");
+    rig.acted({}, "A busy interpreter sends nothing");
+    require(!rig.driver.quit, "and does not close");
+  }
+  {
+    Rig rig;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({"set_machine_state off"}, "A machine that is on is switched off");
+    require(rig.driver.quit, "then the application closes");
+  }
+  for (const auto machine : {MachineState::off, MachineState::estop}) {
+    Rig rig;
+    rig.port.state.machine = machine;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({}, "Off or in E-stop: no state change, an E-stop stays set");
+    require(rig.driver.quit, "and the application closes");
+  }
+  {
+    Rig rig;
+    rig.port.script["set_machine_state"] = {{ActionStatus::failed, "LinuxCNC did not answer."}};
+    rig.expect(R"("type":"quit")", "failed", "LinuxCNC did not answer.");
+    require(!rig.driver.quit, "A failed switch-off keeps the application open");
+  }
+}
+
 void new_page() {
   Rig rig;
   rig.accepted(hold_x);
@@ -2048,6 +2082,7 @@ auto main(int argc, char** argv) -> int {
     stop_all_and_cancellation();
     lease_expiry();
     lost_machine_cancels_jogs();
+    quit();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

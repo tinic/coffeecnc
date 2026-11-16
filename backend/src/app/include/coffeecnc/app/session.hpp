@@ -84,6 +84,8 @@ enum class WorkStatus : std::uint8_t {
 struct Work {
   WorkStatus status{WorkStatus::idle};
   Outcome outcome;
+  // A `quit` was accepted: close the application once `outcome` has been sent.
+  bool quit{};
 };
 
 // The single owner of request handling: page generations, the ready gate, request identity,
@@ -346,6 +348,8 @@ private:
   std::uint64_t level_epoch_{};
   // When the last control period ran.
   JogLease::Time control_at_{};
+  // A `quit` was carried out; taken into its Work.
+  bool quitting_{};
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;

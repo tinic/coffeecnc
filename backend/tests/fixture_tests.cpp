@@ -35,15 +35,33 @@ void require(bool condition, const std::string& message) {
 // the variant without a name here, or without an example in the fixture file, fails below; so
 // does an example the decoder does not know.
 constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
-    "ready",       "set_machine",    "home",
-    "jog",         "jog_step",       "jog_stop_all",
-    "mdi",         "list_directory", "open_program",
-    "run",         "pause",          "resume",
-    "step",        "abort",          "set_override",
-    "set_spindle", "set_coolant",    "set_program_option",
-    "select_wcs",  "touch_off",      "tool_touch_off",
-    "set_tool",    "remove_tool",    "tool_changed",
-    "set_tool_model_defaults",       "set_tool_model_assignment"};
+    "ready",
+    "set_machine",
+    "home",
+    "jog",
+    "jog_step",
+    "jog_stop_all",
+    "mdi",
+    "list_directory",
+    "open_program",
+    "run",
+    "pause",
+    "resume",
+    "step",
+    "abort",
+    "set_override",
+    "set_spindle",
+    "set_coolant",
+    "set_program_option",
+    "select_wcs",
+    "touch_off",
+    "tool_touch_off",
+    "set_tool",
+    "remove_tool",
+    "tool_changed",
+    "set_tool_model_defaults",
+    "set_tool_model_assignment",
+    "quit"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};

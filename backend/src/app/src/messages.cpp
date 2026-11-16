@@ -226,7 +226,8 @@ auto encode_hello(const Hello& hello) -> Encoded {
        {"min_spindle_override", fields.real(hello.min_spindle_override, "min_spindle_override")},
        {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")},
        {"machine_id", nullable(hello.machine_id)},
-       {"tool_model_storage", tool_model_storage_version}});
+       {"tool_model_storage", tool_model_storage_version},
+       {"quit_supported", true}});
 }
 
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {

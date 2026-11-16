@@ -58,8 +58,8 @@ auto run_halcmd(std::string ini, std::string file, const std::string& directory)
   std::string ini_option{"-i"};
   std::string file_option{"-f"};
   // posix_spawnp takes char*, which only a string that is not const gives.
-  std::array<char*, 6> argv{program.data(), ini_option.data(), ini.data(),
-                            file_option.data(), file.data(), nullptr};
+  std::array<char*, 6> argv{program.data(),     ini_option.data(), ini.data(),
+                            file_option.data(), file.data(),       nullptr};
   posix_spawn_file_actions_t actions;
   if (posix_spawn_file_actions_init(&actions) != 0)
     return std::unexpected(std::string("cannot start halcmd"));
@@ -284,17 +284,16 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   // One pass over LinuxCNC's tool data per period, by the publisher thread: shown, and kept
   // with every field for the preview.
   std::vector<RawTool> pass;
-  NmlPanelSource source{
-      *config, mailbox,
-      [&]() -> std::optional<std::vector<LoadedTool>> {
-        pass = tools->read_raw();
-        return loaded_tools(pass, config->millimetres_per_unit);
-      },
-      [&programs](std::string_view path,
-                  std::uint64_t revision) -> std::expected<ProgramText, std::string> {
-        return programs.read_program(path, revision);
-      },
-      &loads};
+  NmlPanelSource source{*config, mailbox,
+                        [&]() -> std::optional<std::vector<LoadedTool>> {
+                          pass = tools->read_raw();
+                          return loaded_tools(pass, config->millimetres_per_unit);
+                        },
+                        [&programs](std::string_view path, std::uint64_t revision)
+                            -> std::expected<ProgramText, std::string> {
+                          return programs.read_program(path, revision);
+                        },
+                        &loads};
   source.raw_tools([&pass]() -> std::vector<PreviewTool> { return pass; });
 
   // Declared in the order they are made; destroyed in reverse: the publisher first, then the
@@ -312,22 +311,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
-  PanelWindow window{
-      {.ui_directory = *ui,
-       .windowed = options.windowed,
-       .developer_tools = options.developer_tools},
-      {.begin_page = [&]() -> PageToken { return runtime->begin_page(); },
-       .end_page = [&](PageToken page) -> void {
-         feed->page_ended(page);
-         runtime->end_page(page);
-       },
-       .message = [&](PageToken page, std::string_view json) -> void {
-         auto outcome = runtime->submit(page, json);
-         const bool ready = outcome.send_snapshots;
-         window.post(outcome.page, std::move(outcome.messages));
-         if (ready)
-           feed->page_ready(page);
-       }}};
+  PanelWindow window{{.ui_directory = *ui,
+                      .windowed = options.windowed,
+                      .developer_tools = options.developer_tools},
+                     {.begin_page = [&]() -> PageToken { return runtime->begin_page(); },
+                      .end_page = [&](PageToken page) -> void {
+                        feed->page_ended(page);
+                        runtime->end_page(page);
+                      },
+                      .message = [&](PageToken page, std::string_view json) -> void {
+                        auto outcome = runtime->submit(page, json);
+                        const bool ready = outcome.send_snapshots;
+                        window.post(outcome.page, std::move(outcome.messages));
+                        if (ready)
+                          feed->page_ready(page);
+                      }}};
   int code = 0;
   try {
     models = std::make_unique<ToolModelStore>(
@@ -340,10 +338,11 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
-        models.get());
+        models.get(), [&window]() -> void { window.close_after_posts(); });
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
-        source, [&window](PageToken page, std::vector<std::string> messages) -> void {
+        source,
+        [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
         &preview, [&models](PageToken page) -> void { models->send_snapshot(page); });

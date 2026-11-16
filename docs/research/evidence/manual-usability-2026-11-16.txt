@@ -58,3 +58,14 @@ Coolant integration (PR35, source8d5946d):
   All four verify clean Quit and LinuxCNC cleanup in simulation.
 - Final subsequent UI-only cleanup removes Software under E-stop and the Stop
   scope caption. UI444/typecheck/lint/build passed and screenshots refreshed.
+
+Merged main adee31e17e7278f2f34b24be39f6e31ff4907986 (PR35 also integrated PR32).
+Final Mac and Linux UI builds match:
+inputs 4541e8e9dda14b2115a2c75432a7ac50d4b9133614b4b1a97af5ffc31092d722
+assets 53f6bd9b4b728380378b6caa30bb6deb59ce5ec7ee30e117b4cd4c8eb2b7e02b
+Raw native CTest output: manual-coolant-native-2026-11-16.log.
+
+Deployment handoff sent to working Claude via #coffeecnc at 14:49 UTC.
+Read-only check at approximately 14:50 UTC still reports the earlier deployment:
+source67c89be, PID13659, UI inputsb6ed1c7e/assets8577a280. The new Manual pass
+is merged and ready, but its physical deployment is not yet verified.

@@ -236,6 +236,8 @@ if(BUILD_TESTING)
         add_test(NAME panel_bundle COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/build_panel.sh
           ${PROJECT_SOURCE_DIR}/..)
         set_tests_properties(panel_bundle PROPERTIES FIXTURES_SETUP panel TIMEOUT 600)
+        # The CLI's development-path check also needs the checkout's built panel.
+        set_tests_properties(coffeecnc_cli PROPERTIES FIXTURES_REQUIRED panel)
         # The stamp checker refuses a changed source, a changed bundle and an unbuilt source.
         add_test(NAME panel_stamp COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/panel_stamp_tests.sh
           ${PROJECT_SOURCE_DIR}/.. ${PROJECT_BINARY_DIR})

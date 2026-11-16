@@ -73,6 +73,11 @@ void hello_rules() {
   require(hello.at("machine_id").is_null() && hello.at("tool_model_storage") == 1 &&
               hello.at("tool_model_storage").is_number_integer(),
           "Without a machine ID it is sent as null; the storage capability is always 1");
+  require(!hello.contains("coolant"), "Unknown coolant outputs are not sent");
+  auto cooled = valid_hello();
+  cooled.coolant = CoolantOutputs{.flood = true, .mist = false};
+  require(parsed(encode_hello(cooled)).at("coolant") == Json{{"flood", true}, {"mist", false}},
+          "Known coolant outputs are sent as coolant.flood and coolant.mist");
   auto named = valid_hello();
   named.machine_id = "mill-1";
   require(parsed(encode_hello(named)).at("machine_id") == "mill-1" &&

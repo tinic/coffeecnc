@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_MACHINE_CONFIG_HPP
 
 #include <coffeecnc/core/command_policy.hpp>
+#include <coffeecnc/core/panel_messages.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
 #include <array>
@@ -47,7 +48,7 @@ struct MachineConfig {
   // [COFFEECNC] SPINDLE_RPM_SIGNAL, SPINDLE_AT_SPEED_SIGNAL, PROBE_SIGNAL: `yes` where the
   // machine's HAL files connect that pin of the coffeecnc component. Absent means not connected.
   HalSignals signals;
-  std::string tool_table;      // [EMCIO] TOOL_TABLE, absolute; empty when not configured
+  std::string tool_table; // [EMCIO] TOOL_TABLE, absolute; empty when not configured
   // [RS274NGC] PARAMETER_FILE, absolute; empty when not configured. The interpreter keeps the
   // work coordinate systems in it.
   std::string parameter_file;
@@ -57,6 +58,8 @@ struct MachineConfig {
   // when the key is absent. They say where the tool models are saved (app layer:
   // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.
   std::optional<std::string> machine_id;
+  // Found in HAL once the post-GUI file is loaded; not read from the INI.
+  std::optional<CoolantOutputs> coolant;
   std::optional<std::string> data_directory;
 };
 

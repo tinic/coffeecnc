@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace coffeecnc {
 auto to_hello(const MachineConfig& config) -> Hello {
@@ -21,12 +25,37 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.max_spindle_override = config.limits.max_spindle_override;
   if (config.machine_id && valid_machine_id(*config.machine_id))
     hello.machine_id = config.machine_id;
+  hello.coolant = config.coolant;
   return hello;
 }
 
+auto pin_signal(std::string_view shown, std::string_view pin) -> std::optional<std::string> {
+  // `halcmd -s show pin <pin>`: one line per matching pin, `comp type dir value name [==> sig]`.
+  std::istringstream lines{std::string(shown)};
+  for (std::string line; std::getline(lines, line);) {
+    std::istringstream words{line};
+    std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
+    if (word.size() == 7 && word[4] == pin && (word[5] == "==>" || word[5] == "<=="))
+      return word[6];
+  }
+  return std::nullopt;
+}
+
+auto signal_has_reader(std::string_view shown, std::string_view signal) -> bool {
+  // `halcmd -s show sig <sig>`: one line per matching signal, `type value name` followed by
+  // `<== writer` and `==> reader` pairs.
+  std::istringstream lines{std::string(shown)};
+  for (std::string line; std::getline(lines, line);) {
+    std::istringstream words{line};
+    std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
+    if (word.size() >= 3 && word[2] == signal)
+      return std::ranges::find(word, "==>") != word.end();
+  }
+  return false;
+}
+
 auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
-                     std::span<const LoadedTool> tools, std::uint64_t program_revision)
-    -> Status {
+                     std::span<const LoadedTool> tools, std::uint64_t program_revision) -> Status {
   const auto& controller = reading.controller;
   const bool known = controller.link != Link::down;
   Status status;

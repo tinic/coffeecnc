@@ -8,7 +8,10 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 
 namespace coffeecnc {
 
@@ -16,6 +19,12 @@ namespace coffeecnc {
 
 // The protocol `hello` of a machine driven through LinuxCNC.
 [[nodiscard]] auto to_hello(const MachineConfig& config) -> Hello;
+
+// From `halcmd -s show pin <pin>`: the signal the pin is linked to, if any.
+[[nodiscard]] auto pin_signal(std::string_view shown, std::string_view pin)
+    -> std::optional<std::string>;
+// From `halcmd -s show sig <signal>`: the signal has at least one reader.
+[[nodiscard]] auto signal_has_reader(std::string_view shown, std::string_view signal) -> bool;
 
 // The protocol `status` of one reading. `tools` is the table LinuxCNC has loaded: it reports
 // the prepared tool as an index into that table, and the panel is told the tool number of the
@@ -30,8 +39,7 @@ namespace coffeecnc {
 // a dwell with time left.
 [[nodiscard]] auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
                                    std::span<const LoadedTool> tools,
-                                   std::uint64_t program_revision)
-    -> Status;
+                                   std::uint64_t program_revision) -> Status;
 
 // G54 ... G59.3 as one reading knows them: the active system is available, with the offset
 // and rotation task reports; every other one is not, and holds zeros. With Link::down none is.

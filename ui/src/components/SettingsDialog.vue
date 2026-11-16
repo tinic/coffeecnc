@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { panel } from '../machine'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
@@ -10,6 +10,9 @@ import ModalDialog from './ModalDialog.vue'
 
 const props = defineProps<{ settings: OperatorSettingsController }>()
 const emit = defineEmits<{ close: [] }>()
+let closed = false
+onBeforeUnmount(() => { closed = true })
+const startupDisabled = computed(() => props.settings.state.saving || props.settings.state.storage === 'session_only')
 const context = props.settings.context()
 const unit = panel.unit
 const startupUnits = ref<OperatorPreferences['startup_units']>(panel.preferences.startup_units)
@@ -46,7 +49,7 @@ async function save(): Promise<void> {
   if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null) return
   const result = await props.settings.save({ version: 1, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
     default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value }, context)
-  if (result.saved) emit('close')
+  if (result.saved && !closed) emit('close')
 }
 </script>
 
@@ -56,16 +59,16 @@ async function save(): Promise<void> {
       <section class="startup">
         <h3>At startup</h3>
         <p class="hint">{{ settings.state.storage === 'session_only' ? 'Startup defaults require saved settings.' : 'Applied next time CoffeeCNC opens.' }}</p>
-        <fieldset :disabled="settings.state.saving || settings.state.storage === 'session_only'">
+        <fieldset :disabled="startupDisabled">
           <legend>Display units</legend>
           <div class="units segmented" aria-label="Startup units">
             <button v-for="option in (['machine', 'mm', 'inch'] as const)" :key="option" class="btn" :class="{ on: startupUnits === option }" type="button" :aria-pressed="startupUnits === option" @click="startupUnits = option">{{ option === 'machine' ? 'Machine default' : option === 'inch' ? 'Inch' : 'mm' }}</button>
           </div>
           <label class="speed-label" for="settings-spindle">Default spindle speed</label>
-          <div class="speed-entry"><input id="settings-spindle" v-model="spindle" v-numeric class="field mono" type="text" inputmode="decimal" data-numeric-unit="rpm" data-numeric-effect="Startup preset only. Does not start the spindle." /><span>rpm</span></div>
+          <div class="speed-entry"><input id="settings-spindle" v-model="spindle" v-numeric :disabled="startupDisabled" class="field mono" type="text" inputmode="decimal" data-numeric-unit="rpm" data-numeric-effect="Startup preset only. Does not start the spindle." /><span>rpm</span></div>
           <p class="hint">Zero leaves the speed unset; never starts the spindle.</p>
           <label class="speed-label" for="settings-jog">Default jog speed</label>
-          <div class="speed-entry"><input id="settings-jog" v-model="jog" v-numeric class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Jog speed per minute at startup." /><span>{{ velocityUnit(unit) }}</span></div>
+          <div class="speed-entry"><input id="settings-jog" v-model="jog" v-numeric :disabled="startupDisabled" class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Jog speed per minute at startup." /><span>{{ velocityUnit(unit) }}</span></div>
           <p class="hint">Formulas work here too: <span class="mono">600/2</span> or <span class="mono">10in</span> per minute.</p>
         </fieldset>
       </section>

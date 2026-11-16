@@ -66,6 +66,7 @@ void documents_and_limits() {
 }
 void archive_and_restart() {
   FakeDisk disk;
+  disk.files[location.directory + "/tool-models.json"] = "corrupt models";
   FakeToolModelFiles files{disk};
   ToolModelArchive owner{files, location};
   owner.open();
@@ -80,8 +81,8 @@ void archive_and_restart() {
   require(archive.settings().revision == 1 &&
               archive.settings().document->enabled_wcs == std::vector<int>{1, 9},
           "New revision and sorted shortcuts");
-  require(!disk.files.contains(location.directory + "/tool-models.json"),
-          "Operator save leaves tool models alone");
+  require(disk.files.at(location.directory + "/tool-models.json") == "corrupt models",
+          "Operator save leaves a corrupt tool-model file alone");
   const auto saved = disk.files.at(file);
   require(archive.apply(command()).outcome == CommandOutcome::rejected &&
               disk.files.at(file) == saved,

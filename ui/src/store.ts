@@ -170,6 +170,8 @@ export function describeCommand(command: CommandBody): string {
       return command.option === 'optional_stop' ? 'Optional stop' : 'Block delete'
     case 'select_wcs':
       return `Select ${wcsName(command.wcs)}`
+    case 'set_work_offset':
+      return `Set ${wcsName(command.wcs)} XYZ origins`
     case 'touch_off':
       return `Touch off ${command.axis.toUpperCase()}`
     case 'tool_touch_off':

@@ -749,6 +749,13 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return answer(
                 {CommandOutcome::rejected, "Work coordinate system must be G54 through G59.3."});
           return mdi(request, std::string(wcs_words[static_cast<std::size_t>(c.wcs) - 1]));
+        } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
+          // An explicit P index: editing an inactive system must not select it.
+          // Omit R so XYZ editing, copying and clearing preserve the XY rotation.
+          return mdi(request, "G10 L2 P" + std::to_string(c.wcs) +
+                                  " X" + length(c.offset[0], state) +
+                                  " Y" + length(c.offset[1], state) +
+                                  " Z" + length(c.offset[2], state));
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
           return mdi(request, std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));

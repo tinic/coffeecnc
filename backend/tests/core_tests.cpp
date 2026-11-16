@@ -67,6 +67,33 @@ void execution_gates() {
   s.requested_tool = 0;
   require(policy.evaluate(ToolChanged{}, s).allowed, "tool zero is a valid unload request");
 }
+void work_origin_gates() {
+  CommandPolicy policy{simulator_limits()};
+  const SetWorkOffset command{2, {25.4, -50.8, 0}};
+  auto s = ready();
+  const auto allowed = policy.evaluate(command, s);
+  require(allowed.allowed && allowed.required_mode == TaskMode::mdi, "Work origins use MDI");
+  for (int scenario = 0; scenario < 8; ++scenario) {
+    s = ready();
+    switch (scenario) {
+    case 0: s.link = Link::stale; break;
+    case 1: s.machine = MachineState::off; break;
+    case 2: s.interp = InterpState::reading; break;
+    case 3: s.in_position = false; break;
+    case 4: s.requested_tool = 2; break;
+    case 5: s.axes[2].homing = true; break;
+    case 6: s.axes[2].homed = false; break;
+    case 7: s.axes[2].enabled = false; break;
+    }
+    require(!policy.evaluate(command, s).allowed, "Work origin write respects execution gates");
+  }
+  s = ready();
+  for (const int wcs : {0, 10})
+    require(!policy.evaluate(SetWorkOffset{wcs, {0, 0, 0}}, s).allowed, "No implicit/invalid WCS");
+  for (const double value : {std::numeric_limits<double>::infinity(),
+                             std::numeric_limits<double>::quiet_NaN()})
+    require(!policy.evaluate(SetWorkOffset{1, {0, value, 0}}, s).allowed, "No nonfinite origins");
+}
 // A machine LinuxCNC runs unhomed ([TRAJ] NO_FORCE_HOMING): execution is allowed, jog rules stay.
 void homing_capability() {
   const Limits unforced{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false};
@@ -387,6 +414,7 @@ void jog_stop_attribution() {
 auto main() -> int {
   try {
     execution_gates();
+    work_origin_gates();
     homing_capability();
     axis_jog_ceilings();
     stops_survive_lost_state();

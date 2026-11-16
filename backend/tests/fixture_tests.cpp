@@ -63,7 +63,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "set_tool_model_defaults",
     "set_tool_model_assignment",
     "quit",
-    "set_operator_settings"};
+    "set_operator_settings",
+    "set_work_offset"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};

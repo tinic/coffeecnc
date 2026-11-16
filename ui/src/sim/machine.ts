@@ -889,6 +889,15 @@ export class SimMachine {
         }
         return this.internal(`G10 L20 P0 ${command.axis.toUpperCase()}${command.value.toFixed(6)}`)
       }
+      case 'set_work_offset': {
+        if (!Number.isInteger(command.wcs) || command.wcs < 1 || command.wcs > 9 ||
+            !command.offset.every(Number.isFinite)) return reject('Invalid work offset')
+        const blocked = this.offsetCommand('set work offsets')
+        if (blocked !== null) return blocked
+        const decimal = (value: number): string => value.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })
+        const [x, y, z] = command.offset
+        return this.internal(`G10 L2 P${String(command.wcs)} X${decimal(x)} Y${decimal(y)} Z${decimal(z)}`)
+      }
       case 'tool_touch_off': {
         if (!Number.isFinite(command.value)) {
           return reject('Touch-off value is not a number')

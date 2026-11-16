@@ -16,6 +16,7 @@ import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
 import ToolModelDialog from './ToolModelDialog.vue'
+import WorkOffsetDialog from './WorkOffsetDialog.vue'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -169,6 +170,10 @@ watch([(): unknown => panel.hello, loaded, mdiBlock], () => { loading.value = nu
 
 const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, panel.link))
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
+const offsetEditor = ref<number | null>(null)
+function editOffset(wcs: number): void {
+  if (mdiBlock.value === null && panel.link === 'live' && status.value?.link === 'live') offsetEditor.value = wcs
+}
 </script>
 
 <template>
@@ -236,7 +241,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" :class="{ loaded: system.active }">
+            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="`Edit ${wcsName(system.wcs)} work origins`" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
               <td class="mono">{{ wcsName(system.wcs) }}<small v-if="system.offset === null" class="offset-note">Unavailable</small><small v-else-if="system.stale" class="offset-note stale">Stale</small></td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
@@ -248,7 +253,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
                   class="btn select"
                   type="button"
                   :disabled="mdiBlock !== null || status?.link !== 'live'"
-                  @click="send({ type: 'select_wcs', wcs: system.wcs })"
+                  @click.stop="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
                   Select
                 </button>
@@ -314,6 +319,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
     </ModalDialog>
 
     <ToolModelDialog v-if="modelEditor !== null" :tool="modelEditor.tool" @close="modelEditor = null" />
+    <WorkOffsetDialog v-if="offsetEditor !== null" :wcs="offsetEditor" @close="offsetEditor = null" />
 
     <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">
       <p class="confirm"><strong>{{ loading.comment || `Tool ${loading.number}` }}</strong><br />Length {{ formatLength(loading.length, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }} · Diameter {{ formatLength(loading.diameter, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }}</p>
@@ -376,6 +382,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
 .tool-row.editable { cursor: pointer; }
 .tool-row.editable:hover td { background: var(--accent-soft); }
 .tool-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .load-tool { width: 64px; min-height: 44px; }
 
 .scroll {

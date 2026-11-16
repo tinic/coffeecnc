@@ -247,6 +247,14 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           if (c.wcs < 1 || c.wcs > 9)
             return reject("Work coordinate system must be G54 through G59.3.");
           return idle(s, TaskMode::mdi, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
+          if (s.requested_tool)
+            return reject("Finish the tool change before editing work origins.");
+          if (c.wcs < 1 || c.wcs > 9 ||
+              !std::ranges::all_of(c.offset, [](double value) -> bool { return std::isfinite(value); }) ||
+              !axis_state(s, Axis::x) || !axis_state(s, Axis::y) || !axis_state(s, Axis::z))
+            return reject("Provide G54 through G59.3 and finite XYZ offsets.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           if (!axis_state(s, c.axis) || !std::isfinite(c.value))
             return reject("Invalid touch-off axis or value.");

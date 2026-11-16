@@ -422,6 +422,12 @@ export interface SelectWcs extends CommandBase {
   type: 'select_wcs'
   wcs: number
 }
+/** Replaces XYZ origins in machine coordinates (mm), preserving rotation and G92/G52. */
+export interface SetWorkOffset extends CommandBase {
+  type: 'set_work_offset'
+  wcs: number
+  offset: Vec3
+}
 /** Sets the work offset so the axis reads `value` at its present position (G10 L20). */
 export interface TouchOff extends CommandBase {
   type: 'touch_off'
@@ -503,6 +509,7 @@ export type ToMachine =
   | SetToolModelDefaults
   | SetToolModelAssignment
   | SetOperatorSettings
+  | SetWorkOffset
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

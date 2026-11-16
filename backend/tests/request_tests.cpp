@@ -79,6 +79,10 @@ void protocol_forms() {
       R"({"id":42,"type":"set_program_option","option":"block_delete","on":true})");
   require(option.option == ProgramOption::block_delete && option.on, "Program option");
   require(body<SelectWcs>(R"({"id":42,"type":"select_wcs","wcs":9})").wcs == 9, "G59.3 index");
+  const auto origin = body<SetWorkOffset>(
+      R"({"id":42,"type":"set_work_offset","wcs":2,"offset":[25.4,-50.8,0]})");
+  require(origin.wcs == 2 && origin.offset == std::array<double, 3>{25.4, -50.8, 0},
+          "Explicit system and XYZ machine origins in millimetres");
   const auto touch = body<TouchOff>(R"({"id":42,"type":"touch_off","axis":"z","value":-2.5})");
   require(touch.axis == Axis::z && touch.value == -2.5, "Touch-off value");
   require(body<ToolTouchOff>(R"({"id":42,"type":"tool_touch_off","value":25.4})").value == 25.4,
@@ -134,6 +138,12 @@ void strict_shapes() {
        R"({"id":42,"type":"set_override","which":"rapid","value":true})",
        R"({"id":42,"type":"set_override","which":"feed","value":null})",
        R"({"id":42,"type":"select_wcs","wcs":1.5})",
+       R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,2]})",
+       R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,2,3,4]})",
+       R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,2,"3"]})",
+       R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,null,3]})",
+       R"({"id":42,"type":"set_work_offset","wcs":1.5,"offset":[1,2,3]})",
+       R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,2,3],"rotation":90})",
        R"({"id":42,"type":"remove_tool","number":2147483648})",
        R"({"id":42,"type":"remove_tool","number":-2147483649})",
        R"({"id":42,"type":"set_tool","tool":[]})",

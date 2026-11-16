@@ -138,6 +138,10 @@ struct SetProgramOption {
 struct SelectWcs {
   int wcs;
 };
+struct SetWorkOffset {
+  int wcs;
+  std::array<double, 3> offset; // XYZ origin in machine coordinates, millimetres
+};
 struct TouchOff {
   Axis axis;
   double value;
@@ -167,7 +171,7 @@ using Command = std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, 
                              OpenProgram, Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle,
                              SetCoolant, SetProgramOption, SelectWcs, TouchOff, ToolTouchOff,
                              SetTool, RemoveTool, ToolChanged, SetToolModelDefaults,
-                             SetToolModelAssignment, Quit, SetOperatorSettings>;
+                             SetToolModelAssignment, Quit, SetOperatorSettings, SetWorkOffset>;
 
 struct Decision {
   bool allowed{};

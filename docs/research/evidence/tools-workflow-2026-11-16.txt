@@ -1,7 +1,11 @@
 CoffeeCNC Tools workflow — 16 November 2026
 Implementation source: fd101bd (codex/tools-workflow).
-Physical deployment: pending Claude. Native backend rebuild required for the
-additive tool_reference_height setting and legacy-document migration.
+Physical deployment: Claude deployed main a4ed7c4f59ab48675ba5bc828cdb40cfe59013e6
+with machine off, reported at 17:24 UTC. Codex independently verified via read-only
+SSH at 17:26 UTC: PID 34383, installed and /proc/34383/exe SHA-256 both
+6a9fa16d99f98354c0bb2d4fd677e89e8b72ec7f3723542e2546f82590060246;
+both installed UI digests exactly match below. Native backend was rebuilt for
+the additive tool_reference_height setting and legacy-document migration.
 
 UI: typecheck, ESLint and 488 tests in 34 files passed; production bundle built.
 Tests cover separate tool-load confirmation; stale/busy/off/reconnected/changed

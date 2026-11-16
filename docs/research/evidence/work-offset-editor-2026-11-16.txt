@@ -1,0 +1,30 @@
+CoffeeCNC work-origin editor — 16 November 2026
+Application source: 91ee24a; native integration tests: 43248af;
+visible Edit-button follow-up: 8f7be1d (codex/work-offset-editor).
+Physical deployment: pending Claude; native backend and UI rebuild required.
+
+UI: typecheck, ESLint, 504 tests in 35 files passed; production bundle built.
+Checks cover formulas in mm/inch display, exact unedited precision, edit versus
+selection, confirmed Copy/Clear, unknown origins staying blank, source/destination
+change detection, off/busy/stale/reconnect/unit changes, and position feedback
+not dismissing the draft or confirmation. The browser simulator preserves machine
+position, selected WCS, rotation, G92, G20 and G91 across writes.
+
+Browser: 1280x720 and 1600x900 layouts checked. Visible outlined tool Edit buttons
+open the editor beside independent Load buttons. Work origins have explicit Edit
+buttons too. No horizontal table overflow at 1280. Edited G55 with 1/4in, 7mm/2
+and 7/2mm; reviewed and confirmed [6.35,3.5,3.5], copied to G56 and confirmed clear
+back to zero. G54 remained active. Tool T2 Load still uses its separate confirm
+and simulated manual-change prompt. README screenshot refreshed.
+
+Native: GCC warnings-as-errors build passed in Codex's playhouse2 checkout.
+All 28 base CTests passed. linuxcnc_sim_mm passed in 110.12 s and
+linuxcnc_sim_inch passed in 107.09 s. New cases exercise explicit P3 writes in
+G20/G91, preserve the selected system until explicitly selected, read back
+25.4/-50.8/3.5 mm, retain 15-degree rotation and G92, verify no movement, clear
+active XYZ without clearing rotation/shift, then restore test context.
+Native WebKitGTK final UI regression: in progress.
+
+No physical machine commands were issued by Codex.
+UI inputs_digest: 067ae031d3cb1f0ce5ba2cee2edbc220a5bfe408db9183ff9341153178e2ff6b
+UI assets_digest: 48c66cf3ccf5703a9edd39f596439539e29575a4d10e34d4f4557d16b802284c

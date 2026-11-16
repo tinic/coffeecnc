@@ -66,11 +66,22 @@ Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity 
 
 Numeric fields accept formulas such as `1/4in`, `7mm/2` and `7/2mm`, with a result preview in the touch keypad. See [numeric entry and unit conversion](docs/numeric-entry.md).
 
-In **Tools**, tap a row to edit it, or use **Load** to confirm a tool change and apply its length. **Settings → Tool reference height** prefills manual length touch-off with the gauge block or setter contact height above work Z zero. The table keeps descriptions readable and puts deletion behind confirmation in the editor. See [the tool workflow](docs/design/tools-workflow.md).
+In **Tools**, use **Edit** or tap a row to edit it, or use **Load** to confirm a tool change and apply its length. **Settings → Tool reference height** prefills manual length touch-off with the gauge block or setter contact height above work Z zero. The table keeps descriptions readable and puts deletion behind confirmation in the editor. See [the tool workflow](docs/design/tools-workflow.md).
 
 ![CoffeeCNC Tools table with confirmed loading and a compact spindle header](ui/screenshots/tools-workflow-1600.png)
 
 *Browser simulator, 16 November 2026. T2 has been loaded through the manual-change prompt and G43 is applied. The tool editor, table and reference-height entry were checked at 1280 × 720 and 1600 × 900. [Validation and deployment status](docs/research/evidence/tools-workflow-2026-11-16.txt).*
+
+Use **Edit** or tap a work-system row to edit its XYZ machine-coordinate origins. **Copy XYZ** and **Clear XYZ** also require a before/after confirmation. Rotation and G92/G52 shifts stay unchanged; opening the editor does not select the system. Unknown origins remain blank until entered explicitly.
+
+<details>
+<summary>Confirmed work-origin editing at 1280 × 720</summary>
+
+![CoffeeCNC reviewing XYZ origins before writing G55](ui/screenshots/work-offset-review-1280.png)
+
+*Browser simulator, 16 November 2026. Formulas 1/4in, 7mm/2 and 7/2mm resolve to millimetres before confirmation. [Workflow](docs/design/tools-workflow.md#work-origins) · [Validation and deployment status](docs/research/evidence/work-offset-editor-2026-11-16.txt).*
+
+</details>
 
 Inside the tool editor, **Model defaults** configures common cutter families and **Set model** selects a family and physical dimensions for that tool. The editor includes a live 3D envelope preview. In the browser demo, defaults persist and per-tool assignments last for the page session. Native CoffeeCNC saves both per machine when `[COFFEECNC] MACHINE_ID` is configured; see [saved tool models](docs/tool-model-store.md). The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
 

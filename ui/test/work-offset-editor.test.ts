@@ -65,7 +65,9 @@ describe('confirmed work origins', () => {
     expect(view().find('[role="dialog"]').exists()).toBe(false)
   })
   it('copies entered XYZ to the chosen destination only after review', async () => {
-    await open(); await view().get('[aria-label="G54 Z origin"]').setValue('-1/4in')
+    wrapper = mount(fixture, { attachTo: document.body })
+    await view().get('[aria-label="Edit G54 origins"]').trigger('click')
+    await view().get('[aria-label="G54 Z origin"]').setValue('-1/4in')
     await view().get('[aria-label="Copy destination"]').setValue(9)
     await press('Copy XYZ…')
     expect(view().get('[role="dialog"]').attributes('aria-label')).toBe('Copy XYZ to G59.3?')

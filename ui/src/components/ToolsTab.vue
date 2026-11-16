@@ -214,6 +214,7 @@ function editOffset(wcs: number): void {
                 {{ tool.comment }}
               </td>
               <td class="actions">
+                <button v-tooltip="editBlock ?? `Edit T${tool.number}`" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="`Edit tool ${tool.number}`" @click.stop="edit(tool)">Edit</button>
                 <button v-tooltip="mdiBlock ?? `Load T${tool.number} and apply its length`" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="`Load tool ${tool.number}`" @click.stop="openLoad(tool)">Load</button>
               </td>
             </tr>
@@ -257,6 +258,7 @@ function editOffset(wcs: number): void {
                 >
                   Select
                 </button>
+                <button class="btn select" type="button" :aria-label="`Edit ${wcsName(system.wcs)} origins`" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">Edit</button>
               </td>
             </tr>
           </tbody>
@@ -345,7 +347,7 @@ function editOffset(wcs: number): void {
 <style scoped>
 .tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 412px;
+  grid-template-columns: minmax(0, 1fr) 480px;
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -378,12 +380,12 @@ function editOffset(wcs: number): void {
 .table .heading { gap: 8px; }
 .table .heading h2 { display: none; }
 .table table { table-layout: fixed; }
-.tool-column { width: 52px; }.dimension-column { width: 92px; }.load-column { width: 76px; }
+.tool-column { width: 52px; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row.editable { cursor: pointer; }
 .tool-row.editable:hover td { background: var(--accent-soft); }
 .tool-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.load-tool { width: 64px; min-height: 44px; }
+.load-tool, .edit-tool { width: 64px; min-height: 44px; }
 
 .scroll {
   flex: 1;
@@ -448,7 +450,9 @@ tr.loaded td {
 .select {
   padding: 0 10px;
   font-size: 13px;
+  min-height: 44px;
 }
+.actions .chip + .btn { margin-left: 8px; }
 
 .offsets td:first-child {
   font-weight: 600;

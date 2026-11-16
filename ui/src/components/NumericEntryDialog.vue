@@ -16,7 +16,7 @@ function confirm(value: number): void {
 <template>
   <NumberDialog
     v-if="numericEntry" :key="numericEntry.key" :title="numericEntry.label" label="Value"
-    unit="" :initial="numericEntry.initial" :integer="numericEntry.integer" :error="error" expanded
+    :unit="numericEntry.unit ?? ''" :initial="numericEntry.initial" :integer="numericEntry.integer" :error="error" expanded
     :effect="numericEntry.effect ?? 'Updates this field only. Apply or run its action separately.'" :action="numericEntry.action ?? 'Use value'"
     @confirm="confirm" @close="numericEntry = null"
   />

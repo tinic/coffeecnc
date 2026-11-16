@@ -38,6 +38,21 @@ beforeEach(() => {
 afterEach(() => { const element = wrapper.element as HTMLElement; wrapper.unmount(); element.remove() })
 
 describe('touching the coordinate readout', () => {
+  it.each(['mm', 'inch'] as const)('confirms mixed-unit formulas as millimeters from a %s readout', async (unit) => {
+    panel.unit = unit; await nextTick()
+    for (const [text, expected] of [['1/4in', 6.35], ['7mm/2', 3.5], ['7/2mm', 3.5]] as const) {
+      await wrapper.get('.axis').trigger('click')
+      await wrapper.get('[role="dialog"] input').setValue(text)
+      expect(send).not.toHaveBeenCalled()
+      await press('Set G54 X')
+      const command = vi.mocked(send).mock.calls[0]?.[0]
+      expect(command?.type).toBe('touch_off')
+      if (command?.type !== 'touch_off') throw new Error('Expected touch-off command')
+      expect(command.axis).toBe('x')
+      expect(command.value).toBeCloseTo(expected, 12)
+      vi.mocked(send).mockClear()
+    }
+  })
   it.each(['.number', '.letter', '.touch'])('opens from %s with the work coordinate and does not send until confirmation', async (target) => {
     await wrapper.get(`.axis ${target}`).trigger('click')
     expect(field().value).toBe('12.346')

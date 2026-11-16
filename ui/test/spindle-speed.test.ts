@@ -55,6 +55,14 @@ describe('explicit spindle speed confirmation', () => {
   }
   const selector = 'input[aria-label="Spindle speed, rpm"]'
 
+  it('evaluates an RPM formula only when Enter confirms it', async () => {
+    const view = setup('reverse')
+    await view.get(selector).setValue('2400/2+300')
+    expect(send).not.toHaveBeenCalled()
+    await view.get(selector).trigger('keydown', { key: 'Enter' })
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_spindle', direction: 'reverse', rpm: 1500 })
+  })
+
   it.each(['forward', 'reverse'] as const)('applies %s RPM once on Enter, never on typing or change', async (direction) => {
     const view = setup(direction)
     const input = view.get<HTMLInputElement>(selector)

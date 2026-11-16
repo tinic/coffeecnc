@@ -265,11 +265,11 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       </label>
       <label class="entry">
         <span class="label">Length, {{ unit }}</span>
-        <input v-model="form.length" v-numeric class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
       <label class="entry">
         <span class="label">Diameter, {{ unit }}</span>
-        <input v-model="form.diameter" v-numeric class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
       <label class="entry">
         <span class="label">Description</span>

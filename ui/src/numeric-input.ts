@@ -9,6 +9,7 @@ interface NumericEntry {
   initial: string
   label: string
   integer: boolean
+  unit?: string
   effect?: string
   action?: string
 }
@@ -75,6 +76,7 @@ export const vNumeric: ObjectDirective<HTMLInputElement, 'inline' | 'integer' | 
         key: ++nextEntry, target: input, initial: input.value,
         label: input.getAttribute('aria-label') ?? input.labels?.[0]?.textContent.trim() ?? 'Number',
         integer: binding.value === 'integer' || inputMode === 'numeric',
+        ...(input.dataset['numericUnit'] ? { unit: input.dataset['numericUnit'] } : {}),
         ...(input.dataset['numericEffect'] ? { effect: input.dataset['numericEffect'] } : {}),
         ...(input.dataset['numericAction'] ? { action: input.dataset['numericAction'] } : {}),
       }

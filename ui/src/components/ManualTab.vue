@@ -9,11 +9,12 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, wat
 
 import { openDialogs } from '../dialogs'
 import { vNumeric } from '../numeric-input'
+import { parseNumericExpression } from '../numeric-expression'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
-import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
+import { formatIncrement, formatVelocity, velocityUnit, wcsNames } from '../units'
 import AppIcon from './AppIcon.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
@@ -304,7 +305,7 @@ const rpmText = computed({
   get: () => rpmDraft.value ?? String(presetRpm.value ?? status.value?.spindle.commanded_rpm ?? 0),
   set: (value: string) => { rpmDraft.value = value },
 })
-const rpm = computed(() => parseNumber(rpmText.value))
+const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
 const spindleBlock = computed((): string | null => {
   if (manualBlock.value !== null) {
     return manualBlock.value
@@ -535,6 +536,7 @@ function coolant(which: 'flood' | 'mist'): void {
             aria-label="Spindle speed, rpm"
             data-numeric-effect="Applies this RPM immediately if the spindle is running. When stopped, sets the speed for the next start."
             data-numeric-action="Set RPM"
+            data-numeric-unit="rpm"
             @numeric-confirm="confirmSpindleSpeed"
             @keydown.enter.prevent="confirmSpindleSpeed"
             @keydown.esc.prevent="discardSpindleEdit"

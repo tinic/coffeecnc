@@ -51,6 +51,8 @@ Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=
 
 Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity and place it in the current work coordinate system. The simulator includes a sample model. Import and display stay local; model placement does not change machine work offsets.
 
+Numeric fields accept formulas such as `1/4in`, `7mm/2` and `7/2mm`, with a result preview in the touch keypad. See [numeric entry and unit conversion](docs/numeric-entry.md).
+
 In **Tools**, open **Model defaults** to configure common cutter families, or **Set model** on a tool to select its family and override physical dimensions. The editor includes a live 3D envelope preview. In the browser demo, defaults persist and per-tool assignments last for the page session. Native CoffeeCNC saves both per machine when `[COFFEECNC] MACHINE_ID` is configured; see [saved tool models](docs/tool-model-store.md). The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
 
 ![Configurable ball-nose tool envelope in the CoffeeCNC editor](ui/screenshots/tool-model-defaults.jpg)

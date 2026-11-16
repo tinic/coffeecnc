@@ -2,6 +2,7 @@
 // here.
 
 import type { FeedMode, LengthUnit } from './protocol'
+import { parseNumericExpression } from './numeric-expression'
 
 export const mmPerInch = 25.4
 
@@ -78,18 +79,14 @@ export function formatPercent(factor: number): string {
   return `${String(Math.round(factor * 100))} %`
 }
 
-/** A number as an operator types it; a decimal comma is accepted. Null when it is not a number. */
+/** Arithmetic entry in a dimensionless field; a decimal comma is also accepted. */
 export function parseNumber(text: string): number | null {
-  const cleaned = text.trim().replace(',', '.')
-  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(cleaned)) {
-    return null
-  }
-  return Number(cleaned)
+  return parseNumericExpression(text)
 }
 
 /** A length typed in the display unit, as millimetres. */
 export function parseLength(text: string, unit: LengthUnit): number | null {
-  const value = parseNumber(text)
+  const value = parseNumericExpression(text, unit)
   return value === null ? null : fromDisplay(value, unit)
 }
 

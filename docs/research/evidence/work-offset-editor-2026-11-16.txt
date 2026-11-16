@@ -23,7 +23,9 @@ linuxcnc_sim_inch passed in 107.09 s. New cases exercise explicit P3 writes in
 G20/G91, preserve the selected system until explicitly selected, read back
 25.4/-50.8/3.5 mm, retain 15-degree rotation and G92, verify no movement, clear
 active XYZ without clearing rotation/shift, then restore test context.
-Native WebKitGTK final UI regression: in progress.
+Native WebKitGTK linuxcnc_shell_mm passed in 38.62 s after rebuilding the final
+Edit-button UI (panel_bundle passed in 6.33 s). 31 distinct native CTests passed
+cumulatively; no failures remain.
 
 No physical machine commands were issued by Codex.
 UI inputs_digest: 067ae031d3cb1f0ce5ba2cee2edbc220a5bfe408db9183ff9341153178e2ff6b

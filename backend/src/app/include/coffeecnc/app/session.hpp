@@ -344,6 +344,8 @@ private:
   ControllerPort& port_;
   const ProgramStore& programs_;
   ToolModelService* tool_models_;
+  // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.
+  std::string verified_probe_program_;
   std::uint64_t pages_{};
   JogLease::Time status_at_{};
   // Goes up with every stop decision.

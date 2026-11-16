@@ -92,7 +92,7 @@ auto probe_code_block(std::string_view line) -> std::string_view {
       return probe_code_unknown;
     if (c >= 'A' && c <= 'Z')
       c = static_cast<char>(c - 'A' + 'a');
-    if (c == ' ' || c == '\t')
+    if (c == ' ' || c == '\t' || c == '\v' || c == '\f')
       continue;
     if (semicolon) {
       comment += c;
@@ -122,6 +122,20 @@ auto probe_code_block(std::string_view line) -> std::string_view {
     return probe_code_unknown;
   if (code.find_first_of("o#[]<>") != std::string::npos)
     return probe_code_unknown;
+  for (std::size_t pos = code.find('g'); pos != std::string::npos; pos = code.find('g', pos + 1)) {
+    const char* first = code.data() + pos + 1;
+    const char* last = code.data() + code.size();
+    if (first != last && *first == '+')
+      ++first;
+    double value = 0;
+    const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
+    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 999)
+      return probe_code_unknown;
+    const auto number = static_cast<int>(std::round(value * 10));
+    // Rigid tapping, tapping and boring cycles can reverse or restart the spindle themselves.
+    if (number == 331 || number == 740 || number == 840 || number == 860 || number == 880)
+      return probe_loaded_reason;
+  }
   constexpr std::array ordinary_m_codes{0, 1, 2, 5, 6, 7, 8, 9, 30, 48, 49, 50, 51, 52, 53,
                                        60, 61, 62, 63, 64, 65, 66, 67, 68, 70, 71};
   for (std::size_t pos = code.find('m'); pos != std::string::npos; pos = code.find('m', pos + 1)) {
@@ -735,7 +749,41 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
                    std::move(decision.reason)});
   }
-  return perform(request, decision, state, clock);
+  const bool fresh_run = state.interp == InterpState::idle &&
+      (std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command));
+  if (fresh_run || std::holds_alternative<OpenProgram>(command) ||
+      std::holds_alternative<Mdi>(command) || cancels_requests(command))
+    verified_probe_program_.clear();
+  const bool checked_run = fresh_run && tool_models_ != nullptr &&
+      tool_models_->touch_probe_loaded(state.tool_in_spindle) == true;
+  if (checked_run) {
+    // LinuxCNC can keep the interpreter's original file open across a pathname replacement.
+    // Reopen the checked path before starting a fresh program and verify the source again.
+    if (!wanted(request))
+      return cancelled();
+    auto reopened = port_.open_program(state.program_file, token(request));
+    if (reopened.status == ActionStatus::cancelled)
+      return cancelled();
+    request.sent = true;
+    if (auto opened = reply(std::move(reopened)); opened.outcome != CommandOutcome::accepted)
+      return answer(std::move(opened));
+    const auto now = port_.snapshot();
+    if (!wanted(request))
+      return cancelled();
+    if (now.program_file != state.program_file || now.tool_in_spindle != state.tool_in_spindle ||
+        now.spindle_active)
+      return answer({CommandOutcome::failed, std::string(probe_code_unknown)});
+    if (auto reason = probe_block(command, now); !reason.empty())
+      return answer({CommandOutcome::failed, std::move(reason)});
+    const auto recheck = policy_.evaluate(command, now);
+    if (!recheck.allowed || now.mode != state.mode)
+      return answer({CommandOutcome::failed, "Machine state changed during the spindle check."});
+    state = now;
+  }
+  auto result = perform(request, decision, state, clock);
+  if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
+    verified_probe_program_ = state.program_file;
+  return result;
 }
 
 auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
@@ -756,6 +804,8 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
   if (spindle != nullptr || state.spindle_active)
     return probe_loaded_reason;
   if (std::holds_alternative<Resume>(command) && state.mode != TaskMode::automatic)
+    return std::string(probe_code_unknown);
+  if (state.interp != InterpState::idle && state.program_file != verified_probe_program_)
     return std::string(probe_code_unknown);
   const auto text = programs_.read_program(state.program_file, 0);
   if (!text || text->truncated)

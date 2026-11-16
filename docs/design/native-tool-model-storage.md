@@ -4,7 +4,7 @@ First increment, implemented on 15 November 2026. The panel and native backend i
 
 ## Scope and identity
 
-Persist the seven family defaults and explicit per-tool model assignments. Exclude STEP files, placement, jobs, work offsets, LinuxCNC tool-table edits, and camera state. The native WebKit context stays ephemeral. Browser demonstration defaults keep their existing localStorage key; they are never silently imported into a native machine.
+Persist family defaults and explicit per-tool model assignments. Exclude STEP files, placement, jobs, work offsets, LinuxCNC tool-table edits, and camera state. The native WebKit context stays ephemeral. Browser demonstration defaults keep their existing localStorage key; they are never silently imported into a native machine.
 
 Native persistence requires an explicit `[COFFEECNC] MACHINE_ID`. No display-name slug, hostname or configuration-path fallback: two machines must not share settings accidentally. Missing or empty identity means session-only models, with that lifetime stated in the editor. An invalid configured identity disables storage with an explanation; it must not resolve to another machine's directory. The draft G0759 integration configuration sets the explicit ID `g0759`.
 
@@ -14,13 +14,13 @@ The backend owns the directory, document and write lifecycle. Default: `$XDG_DAT
 
 One versioned document contains `version: 1`, `defaults` and `assignments`. The disk envelope contains machine_id, revision and document; document is the versioned object described here. The machine ID must match the configured store. Revision and machine identity are authoritative backend values, not editable model fields. Revisions are integers from 0 to 2^53 - 1; refuse further writes at exhaustion rather than wrapping.
 
-`defaults` has exactly the existing families: `end-mill`, `ball-mill`, `drill`, `spot-drill`, `chamfer`, `face-mill`, `generic`. Each has the existing six fields: `diameter`, `cuttingLength`, `shankDiameter`, `overallLength`, `stickout`, `tipAngle`. Lengths are millimetres and the angle is degrees, independent of display units.
+The seven cutter defaults are `end-mill`, `ball-mill`, `drill`, `spot-drill`, `chamfer`, `face-mill` and `generic`. Each has `diameter`, `cuttingLength`, `shankDiameter`, `overallLength`, `stickout` and `tipAngle`. The `touch-probe` default has `diameter`, `shankDiameter`, `bodyDiameter`, `bodyLength` and `stylusLength`. Legacy version 1 documents with seven families get the factory probe template. Lengths are millimetres and the angle is degrees, independent of display units.
 
 `assignments` is an array of unique tool numbers. Each entry contains:
 
 - `tool: { number, pocket, diameter, comment }`, recording the reported row used when the operator assigned the model;
-- `family`, one of the seven IDs;
-- `overrides`, an optional subset of `cuttingLength`, `shankDiameter`, `overallLength`, `stickout`, `tipAngle`; an empty object means inheritance.
+- `family`, one of the default IDs;
+- `overrides`, a subset of the chosen family's fields with diameter supplied by the tool binding. An empty object means inheritance.
 
 The structured `tool` binding replaces the UI's current serialized identity string at the storage boundary. Compare its field values, not C++ versus JavaScript JSON formatting. Z offset is deliberately excluded: touching off does not change physical geometry. Tool-table diameter still supplies cutting diameter; the visual editor cannot override it. Persist the exact reported tool_table diameter in millimetres: loaded_tools already converts raw machine units to mm. Do not convert through display units or compare serialized floating-point text.
 
@@ -67,7 +67,7 @@ Two commands use the existing command ID and page identity:
   tool: { number, pocket, diameter, comment }, family, overrides }
 ```
 
-`set_tool_model_defaults` replaces all seven family defaults together, preserving assignments. This fits within 16 KiB and preserves the editor's multi-family Save action. The assignment command replaces one T entry; `family: null` with `overrides: {}` removes that T entry. It preserves every other assignment and the defaults. Both require the expected configured machine ID and compare-and-swap revision. The full catalog travels only from backend to panel.
+`set_tool_model_defaults` replaces the family defaults together, preserving assignments. This fits within 16 KiB and preserves the editor's multi-family Save action. The assignment command replaces one T entry; `family: null` with `overrides: {}` removes that T entry. It preserves every other assignment and the defaults. Both require the expected configured machine ID and compare-and-swap revision. The full catalog travels only from backend to panel.
 
 The initial loading state does not count as an empty saved document. The editor retains its draft until a confirmed result, distinguishes saving from saved, and reports failures without claiming success. Session-only use stays available with explicit wording. Unsupported/corrupt documents are not overwritten by startup defaults. Corrupt/future-version documents make the store unavailable. This increment has no automatic repair or reset: the operator must explicitly move/remove the file outside the application to recover, and restart. A normal editor Save or Reset family never overwrites that file.
 

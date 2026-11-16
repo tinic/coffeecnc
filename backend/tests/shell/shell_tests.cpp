@@ -1890,10 +1890,52 @@ void tool_models_restored(const Rig& rig) {
   check("tool_models_restored_defaults_in_editor", value == "36.5", value.dump());
   rig.snapshot("tool-models-restored");
   check("tool_models_editor_closes", rig.click("section.dialog button", "Cancel") == "ok");
+  check("tool_models_close_settings", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_file_untouched_by_restart",
         Json::parse(contents(file), nullptr, false) == on_disk &&
             !std::filesystem::exists(file.string() + ".tmp"));
   check("tool_models_no_console_errors", rig.js("return __t.errors.length;") == 0, rig.errors());
+}
+
+// A persisted probe is recognized by both the panel and the controller worker after restart.
+void restored_probe_spindle_guard(const Rig& rig) {
+  power_on(rig);
+  home(rig);
+  check("touch_probe_select_t1_in_simulator",
+        std::system("python3 -c 'import linuxcnc; c = linuxcnc.command(); "
+                    "c.mode(linuxcnc.MODE_MDI); c.wait_complete(); c.mdi(\"M61 Q1\"); "
+                    "c.wait_complete()'") == 0 &&
+            rig.wait_js("__t.last.status.tool.in_spindle === 1 && __t.last.status.interp === 'idle'"));
+  check("touch_probe_manual_spindle_disabled", rig.wait_js(R"((() => {
+    const forward = __t.find('button', 'Forward');
+    const reverse = __t.find('button', 'Reverse');
+    return forward?.disabled && reverse?.disabled;
+  })())"));
+  auto id = rig.js("return Math.max(...__t.sent.map((m) => m?.id || 0));").get<int>();
+  const auto dispatch = [&](Json body, std::string_view expected) {
+    body["id"] = ++id;
+    rig.js(std::format("window.webkit.messageHandlers.coffeecnc.postMessage({}); return true;",
+                       Json(body.dump()).dump()));
+    const auto find = std::format("__t.received.find((m) => m.type === 'result' && m.id === {})", id);
+    if (!rig.wait_js(find, 10s))
+      return false;
+    const auto result = rig.js("return " + find + ";");
+    return result.at("outcome") == expected &&
+           (expected != "rejected" || result.at("reason") == "A touch probe is loaded");
+  };
+  check("touch_probe_native_spindle_refusal",
+        dispatch({{"type", "set_spindle"}, {"direction", "forward"}, {"rpm", 200}}, "rejected"));
+  const auto program = std::filesystem::path(rig.config.program_prefix) / "probe-spindle-check.ngc";
+  write(program, "G21 G90\nS200 M04\nM2\n");
+  check("touch_probe_open_spindle_program",
+        dispatch({{"type", "open_program"}, {"path", program.string()}}, "accepted"));
+  check("touch_probe_native_cycle_start_refusal", dispatch({{"type", "run"}}, "rejected"));
+  check("touch_probe_spindle_remains_off", !rig.status().controller.spindle_active);
+  const auto replacement = program.parent_path() / "probe-spindle-check-new.ngc";
+  write(replacement, "G21 G90 G94 S200\nG4 P0.2\nM2\n");
+  std::filesystem::rename(replacement, program);
+  check("touch_probe_spindle_off_program_runs", dispatch({{"type", "run"}}, "accepted"));
+  check("touch_probe_spindle_off_program_completes", rig.wait_js("__t.last.status.interp === 'idle'"));
 }
 
 // What a run of this program does: everything, or one half of the tool-model scenario.
@@ -1933,8 +1975,10 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     if (scenario != Scenario::everything) {
       if (scenario == Scenario::tool_models_first_run)
         tool_models_saved(rig);
-      else
+      else {
         tool_models_restored(rig);
+        restored_probe_spindle_guard(rig);
+      }
       status_gaps(rig, "tool_models");
       throw ScenarioDone{};
     }

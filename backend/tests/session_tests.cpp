@@ -447,14 +447,28 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   rig.expect(R"("type":"run")", "rejected",
              "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
   rig.acted({}, "Unverifiable subroutine calls cannot run with a probe");
+  rig.files.file(rig.port.state.program_file, "G 8 4 X1 Z-1 R2 F20\nM2\n");
+  rig.expect(R"("type":"run")", "rejected", reason);
+  rig.acted({}, "A tapping cycle that can reverse the spindle cannot run with a probe");
   rig.files.file(rig.port.state.program_file, "S200 (M3 in a comment)\nG0 X1 ; M4\nM05\nM2\n");
   rig.accepted(R"("type":"run")");
-  rig.acted({"set_task_mode auto", "run"}, "A speed preset, comments and spindle stop are allowed");
+  rig.acted({"set_task_mode auto", "open_program /home/cnc/nc_files/part.ngc", "run"},
+            "The checked path is reopened and a speed preset, comments and spindle stop are allowed");
+  rig.port.state.interp = InterpState::paused;
+  rig.accepted(R"("type":"resume")");
+  rig.acted({"resume"}, "A checked program can resume with the probe loaded");
+  rig.port.state.interp = InterpState::idle;
 
   rig.port.state.tool_in_spindle = 3;
   rig.files.file(rig.port.state.program_file, "M3 S200\nM2\n");
   rig.accepted(R"("type":"run")");
   rig.acted({"run"}, "An ordinary tool retains existing program behavior");
+  rig.port.state.tool_in_spindle = 99;
+  rig.port.state.interp = InterpState::paused;
+  rig.files.file(rig.port.state.program_file, "G0 X1\nM2\n");
+  rig.expect(R"("type":"resume")", "rejected",
+             "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
+  rig.acted({}, "Editing the source cannot certify a paused run that started without a probe");
 }
 
 constexpr auto remove_model =

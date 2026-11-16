@@ -141,9 +141,9 @@ function remove(): void {
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
-          <p class="diameter-source hint">{{ family === 'touch-probe' ? 'Effective ball diameter' : 'Cutting diameter' }}: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
+          <p class="diameter-source hint" v-if="family === 'touch-probe'">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from Diameter above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
+          <p class="diameter-source hint" v-else>Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
           <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
-          <p v-if="family === 'touch-probe'" class="hint">Touch off Length at the bottom of the ball. T99 is a common choice for a probe.</p>
         </template>
       </div>
     </div>

@@ -1,0 +1,31 @@
+CoffeeCNC Tools workflow — 16 November 2026
+Implementation source: fd101bd (codex/tools-workflow).
+Physical deployment: pending Claude. Native backend rebuild required for the
+additive tool_reference_height setting and legacy-document migration.
+
+UI: typecheck, ESLint and 488 tests in 34 files passed; production bundle built.
+Tests cover separate tool-load confirmation; stale/busy/off/reconnected/changed
+tool state; row editing; confirmed deletion and loaded-tool protection; exact
+unedited dimensions in inch display; reference-height formulas, persistence and
+legacy settings; and retaining touch-off drafts across position feedback.
+
+Browser simulator: 1280x720 and 1600x900 table layouts checked. Load T2 proceeds
+through the manual-change prompt and shows T2 / Length 48.200 mm / G43 afterward.
+Row editing exposes Delete, Set model and Model defaults. Long descriptions wrap
+without ellipses. At 1280x720 the compact editor and reference-height input fit.
+Saving 1/4in prefills touch-off as 6.35 mm or 0.25 inch. Browser reference default
+restored to zero after checks. No physical machine commands were issued.
+Screenshots: tools-workflow-1280.png, tools-workflow-1600.png, tools-editor-1280.png.
+
+Native: Codex-owned playhouse2 checkout /home/turo/ai/codex-coffeecnc-quit.
+GCC warnings-as-errors build passed. All 28 base CTests passed cumulatively; the
+updated protocol fixture was rerun after correcting its reference-height value.
+linuxcnc_shell_mm passed (38.62 s) after updating the model-editor test path to
+open the tool row first. linuxcnc_shell_tool_models passed (6.57 s), including
+save/restart restoration through the relocated controls and an unchanged tool
+table. linuxcnc_machine_g0759_start passed (7.52 s) with the published machine
+configuration and simulation stubs. 31 distinct native CTests passed in total.
+Earlier fixture/selector failures are resolved, not counted as passing runs.
+
+UI inputs_digest: a0bfbecec248871600cffc18f48b81d4357cba4e8040b70e062f93c1f37dd4c9
+UI assets_digest: 079fe7df648572c1fc1d13cc9bea179a66f2a3b5579977c98a0e71dd489872f9

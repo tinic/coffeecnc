@@ -3,7 +3,10 @@
     "type": "hello",
     "protocol": 1,
     "machine_name": "G0759",
-    "coolant": { "flood": false, "mist": false },
+    "coolant": {
+      "flood": false,
+      "mist": false
+    },
     "simulated": false,
     "axes": [
       "x",
@@ -29,7 +32,9 @@
     "max_spindle_override": 1.5,
     "machine_id": "G0759",
     "tool_model_storage": 1,
-    "quit_supported": true
+    "quit_supported": true,
+    "operator_settings_storage": 1,
+    "max_spindle_rpm": 5000
   },
   {
     "type": "hello",
@@ -59,7 +64,8 @@
     "max_spindle_override": 1,
     "machine_id": null,
     "tool_model_storage": 1,
-    "quit_supported": true
+    "quit_supported": true,
+    "operator_settings_storage": 1
   },
   {
     "type": "status",
@@ -1087,6 +1093,40 @@
     "revision": 0,
     "availability": "unavailable",
     "reason": "Tool model settings are already in use",
+    "document": null
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": "G0759",
+    "revision": 2,
+    "availability": "available",
+    "reason": "",
+    "document": {
+      "version": 1,
+      "startup_units": "inch",
+      "enabled_wcs": [
+        1,
+        2,
+        3
+      ],
+      "default_spindle_rpm": 1800,
+      "default_jog_velocity": 600
+    }
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": null,
+    "revision": 0,
+    "availability": "session_only",
+    "reason": "No machine identity configured",
+    "document": null
+  },
+  {
+    "type": "operator_settings",
+    "machine_id": "G0759",
+    "revision": 0,
+    "availability": "unavailable",
+    "reason": "Operator settings file is corrupt",
     "document": null
   }
 ]

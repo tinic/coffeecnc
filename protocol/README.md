@@ -1,12 +1,16 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 29 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 32 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Tool-model preferences
 
 `hello.machine_id` is an explicit configured identity or null. The optional `hello.tool_model_storage: 1` capability enables the `tool_models` snapshot and the `set_tool_model_defaults` / `set_tool_model_assignment` commands. An older peer without that capability receives no new commands; native visual preferences then remain session-only. No machine name, pathname or display unit supplies a fallback identity.
 
 The [storage contract](../docs/design/native-tool-model-storage.md) defines document validation, size limits, matching tool-table rows, compare-and-swap revisions and durability. Snapshots precede the result of a save. A waiting snapshot is not an empty saved document; a timeout is not cancellation. The panel validates documents and current hello identity before using a revision or restoring an assignment. Browser demonstration preferences remain separate from native settings.
+
+## Operator settings
+
+`hello.operator_settings_storage: 1` enables the `operator_settings` snapshot and `set_operator_settings` command. `hello.max_spindle_rpm` supplies the machine's spindle ceiling. The document contains startup display units, enabled work-system shortcuts, default spindle RPM and default jog velocity in mm/min. Saving never sends controller commands. The snapshot and save revision follow the same identity and durability rules as tool models, with a separate file and the same writer/lock. [Complete contract](../docs/design/operator-settings.md).
 
 ## Version mismatch
 

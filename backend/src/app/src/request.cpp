@@ -1,6 +1,7 @@
 #include <coffeecnc/app/request.hpp>
 
 #include "tool_model_json.hpp"
+#include <coffeecnc/app/operator_settings.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -233,6 +234,13 @@ auto command(const Json& object) -> Command {
   if (type == "remove_tool") {
     fields(object, {"id", "type", "number"});
     return RemoveTool{integer(object, "number")};
+  }
+  if (type == "set_operator_settings") {
+    fields(object, {"type", "id", "machine_id", "base_revision", "document"});
+    return SetOperatorSettings{
+        string(object, "machine_id"),
+        valid(tool_model_json::revision(field(object, "base_revision"))),
+        valid(decode_operator_preferences(field(object, "document").dump()))};
   }
   if (type == "set_tool_model_defaults") {
     fields(object, {"id", "type", "machine_id", "base_revision", "defaults"});

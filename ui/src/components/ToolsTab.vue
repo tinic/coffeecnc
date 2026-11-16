@@ -252,7 +252,7 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
         <p v-if="panel.workOffsets === null" class="hint">No work offsets received.</p>
       </div>
       <p v-if="status?.offsets.g92.some((v) => v !== 0)" class="blocked g92">
-        A G92 offset of
+        A G92/G52 shift of
         <span class="mono">{{ status.offsets.g92.map((v) => formatLength(v, unit)).join('  ') }}</span>
         is added to every system.
       </p>

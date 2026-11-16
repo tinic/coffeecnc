@@ -1,4 +1,5 @@
 #include <coffeecnc/app/messages.hpp>
+#include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/app/tool_models.hpp>
@@ -61,7 +62,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "tool_changed",
     "set_tool_model_defaults",
     "set_tool_model_assignment",
-    "quit"};
+    "quit",
+    "set_operator_settings"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};
@@ -121,6 +123,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   g0759.axes = {Axis::x, Axis::y, Axis::z};
   g0759.jog_increments = {0.01, 0.1, 1, 10};
   g0759.max_jog_velocity = 1500;
+  g0759.max_spindle_rpm = 5000;
   g0759.axis_max_jog_velocity = {1500, 1500, 750};
   g0759.homing_required = false;
   g0759.max_feed_override = 1.2;
@@ -298,6 +301,13 @@ auto encoded_messages() -> std::vector<Encoded> {
   in_use.availability = ToolModelAvailability::unavailable;
   in_use.reason = "Tool model settings are already in use";
   messages.push_back(encode_tool_models(in_use));
+  messages.push_back(
+      encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
+                                OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600}}));
+  messages.push_back(encode_operator_settings(
+      {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
+  messages.push_back(encode_operator_settings(
+      {"G0759", 0, ToolModelAvailability::unavailable, "Operator settings file is corrupt", {}}));
   return messages;
 }
 

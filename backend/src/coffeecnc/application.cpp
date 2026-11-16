@@ -122,7 +122,9 @@ auto halcmd_show(std::string what, std::string name) -> std::optional<std::strin
   int status{};
   pid_t waited = -1;
   if (error == 0) {
-    do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
+    do {
+      waited = waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
   }
   if (error != 0 || !read_ok || waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
     return {};
@@ -409,7 +411,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                                      environment("XDG_DATA_HOME"), environment("HOME")}),
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
-        });
+        },
+        config->limits);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },

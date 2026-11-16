@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_TOOL_MODEL_STORE_HPP
 #define COFFEECNC_APP_TOOL_MODEL_STORE_HPP
 
+#include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/app/tool_models.hpp>
@@ -12,6 +13,7 @@
 #include <deque>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -69,8 +71,8 @@ public:
     bool more{};       // the file is longer
   };
   struct Directory {
-    bool created{};   // by this call
-    unsigned mode{};  // its permission bits now
+    bool created{};  // by this call
+    unsigned mode{}; // its permission bits now
   };
 
   ToolModelFiles() = default;
@@ -188,6 +190,8 @@ public:
   [[nodiscard]] auto models() const -> const ToolModels& { return models_; }
   // The `tool_models` message for `models()`.
   [[nodiscard]] auto snapshot() const -> const std::string& { return snapshot_; }
+  // Same directory and lock for the operator document; file corruption stays independent.
+  [[nodiscard]] auto shared_location() const -> ToolModelLocation;
 
 private:
   [[nodiscard]] auto read() const -> ToolModels;
@@ -202,6 +206,30 @@ private:
   std::string snapshot_;
   // Said with every available snapshot: the machine directory is open to other users.
   std::string note_;
+  bool locked_{};
+};
+
+// Uses the directory lock already held by ToolModelArchive, on that same writer thread.
+// It never opens a second lock and never changes the tool-model document.
+class OperatorSettingsArchive {
+public:
+  OperatorSettingsArchive(ToolModelFiles& files, Limits limits);
+  void open(ToolModelLocation location);
+  [[nodiscard]] auto apply(const SetOperatorSettings& command) -> ToolModelReply;
+  [[nodiscard]] auto settings() const -> const OperatorSettings& { return settings_; }
+  [[nodiscard]] auto snapshot() const -> const std::string& { return snapshot_; }
+  [[nodiscard]] auto limits() const -> const Limits& { return limits_; }
+
+private:
+  [[nodiscard]] auto read() const -> OperatorSettings;
+  [[nodiscard]] auto unavailable(std::string reason) const -> OperatorSettings;
+  [[nodiscard]] auto path(std::string_view name) const -> std::string;
+  void show(OperatorSettings settings);
+  ToolModelFiles& files_;
+  Limits limits_;
+  ToolModelLocation location_;
+  OperatorSettings settings_;
+  std::string snapshot_;
 };
 
 // The archive on its writer thread, behind the session.
@@ -232,13 +260,17 @@ public:
   static constexpr std::string_view busy_reason = "Too many tool model changes are waiting.";
 
   // The files must outlive the store. Starts the thread, which opens the archive.
-  ToolModelStore(ToolModelFiles& files, ToolModelLocation location, Deliver deliver);
+  ToolModelStore(ToolModelFiles& files, ToolModelLocation location, Deliver deliver,
+                 std::optional<Limits> operator_limits = std::nullopt);
   // The command being written is finished; those waiting are dropped; the lock is released.
   ~ToolModelStore() override;
   ToolModelStore(const ToolModelStore&) = delete;
   auto operator=(const ToolModelStore&) -> ToolModelStore& = delete;
 
   [[nodiscard]] auto submit(PageToken page, RequestId id, ToolModelCommand command)
+      -> std::optional<std::string> override;
+  [[nodiscard]] auto submit_operator_settings(PageToken page, RequestId id,
+                                              SetOperatorSettings command)
       -> std::optional<std::string> override;
   void page_ended(PageToken page) override;
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
@@ -249,13 +281,14 @@ private:
   struct Pending {
     PageToken page;
     RequestId id{};
-    ToolModelCommand command;
+    std::variant<ToolModelCommand, SetOperatorSettings> command;
   };
   void loop();
 
   ToolModelLocation location_;
   Deliver deliver_;
   ToolModelArchive archive_; // the writer thread's
+  std::unique_ptr<OperatorSettingsArchive> operator_settings_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::deque<Pending> pending_;

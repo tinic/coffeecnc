@@ -10,8 +10,9 @@ import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
+  const { defaultOperatorPreferences } = await import('../src/operator-settings')
   const { requiresHoming } = await import('../src/machine-capabilities')
-  const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
+  const panel = reactive({ preferences: defaultOperatorPreferences(), startupSpindleRpm: 0, hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), dismissNotice: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
     live: computed(() => panel.link === 'live'),
@@ -35,6 +36,7 @@ beforeEach(() => {
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
   panel.workOffsets = null
+  panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {
@@ -176,6 +178,16 @@ describe('capability-aware controls', () => {
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'jog', held: true }))
     },
   )
+
+  it('shows and sends a fractional startup jog speed without rounding it to a different value', () => {
+    panel.jogVelocity = 3.5
+    wrapper = mount(ManualTab)
+    expect(wrapper.get('.speed').text()).toBe('3.5')
+    expect(wrapper.get('input[aria-label="Jog speed"]').attributes('aria-valuetext')).toBe('3.5 mm/min')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'jog_step', axis: 'x', distance: 1, velocity: 3.5 })
+  })
 
   it('sends clamped keyboard step/hold requests and releases a hold on a new hello', async () => {
     wrapper = mount(ManualTab)

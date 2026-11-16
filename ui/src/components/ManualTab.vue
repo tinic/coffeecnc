@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkSystemSelector from './WorkSystemSelector.vue'
 import { vTooltip } from '../tooltip'
 // Manual workspace: homing, jogging, MDI, spindle, coolant and work system selection.
 //
@@ -14,7 +15,7 @@ import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
-import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName, wcsNames } from '../units'
+import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import MachineFeedback from './MachineFeedback.vue'
@@ -305,8 +306,13 @@ watch(
 
 const rpmDraft = ref<string | null>(null)
 const presetRpm = ref<number | null>(null)
+const reportedRpm = computed(() => {
+  const spindle = status.value?.spindle
+  return spindle && (spindle.commanded_rpm > 0 || spindle.direction !== 'stopped')
+    ? spindle.commanded_rpm : panel.startupSpindleRpm
+})
 const rpmText = computed({
-  get: () => rpmDraft.value ?? String(presetRpm.value ?? status.value?.spindle.commanded_rpm ?? 0),
+  get: () => rpmDraft.value ?? String(presetRpm.value ?? reportedRpm.value),
   set: (value: string) => { rpmDraft.value = value },
 })
 const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
@@ -447,10 +453,11 @@ function coolant(which: 'flood' | 'mist'): void {
           step="10"
           :value="panel.jogVelocity"
           aria-label="Jog speed"
+          :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
           @input="setJogVelocity"
           @change="blur"
         />
-        <span class="speed mono">{{ formatVelocity(panel.jogVelocity, unit) }}</span>
+        <span class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</span>
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
 
@@ -582,20 +589,7 @@ function coolant(which: 'flood' | 'mist'): void {
             <span v-if="activeOffset?.rotation_xy">R {{ activeOffset.rotation_xy }}°</span>
           </div>
         </div>
-        <div class="segmented wcs">
-          <button
-            v-for="(name, index) in wcsNames"
-            :key="name"
-            v-tooltip="mdiBlock ?? `Make ${name} the active work system. The machine does not move.`"
-            class="btn mono"
-            type="button"
-            :class="{ on: status?.offsets.wcs === index + 1 }"
-            :disabled="mdiBlock !== null"
-            @click="send({ type: 'select_wcs', wcs: index + 1 })"
-          >
-            {{ name }}
-          </button>
-        </div>
+        <WorkSystemSelector />
       </section>
     </div>
   </div>

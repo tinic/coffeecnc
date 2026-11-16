@@ -83,7 +83,7 @@ watch([axes, touchBlock], () => {
   <section class="dro" :class="{ distrust: !live }" aria-label="Coordinate readout">
     <div class="basis">
       <div class="basis-options" role="group" aria-label="Coordinate display">
-        <button v-for="[value, label] in bases" :key="value" type="button" :aria-pressed="basis === value" @click="basis = value">{{ label }}<template v-if="value === 'work'"> · {{ wcs }}<small v-if="shifted" class="g92">G92 active</small></template></button>
+        <button v-for="[value, label] in bases" :key="value" type="button" :aria-pressed="basis === value" @click="basis = value">{{ label }}<template v-if="value === 'work'"> · {{ wcs }}<small v-if="shifted" class="g92">G92/G52 active</small></template></button>
       </div>
     </div>
     <div v-for="axis in axes" :key="axis.axis" class="axis-group">

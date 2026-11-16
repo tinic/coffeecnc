@@ -9,8 +9,9 @@ import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
+  const { defaultOperatorPreferences } = await import('../src/operator-settings')
   const { requiresHoming } = await import('../src/machine-capabilities')
-  const panel = reactive({ hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
+  const panel = reactive({ preferences: defaultOperatorPreferences(), startupSpindleRpm: 0, hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), dismissNotice: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
     live: computed(() => panel.link === 'live'),
@@ -33,6 +34,7 @@ beforeEach(() => {
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
+  panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {
@@ -54,6 +56,21 @@ describe('explicit spindle speed confirmation', () => {
     return wrapper
   }
   const selector = 'input[aria-label="Spindle speed, rpm"]'
+
+  it('uses a startup preset only for an unset stopped spindle, without starting it', async () => {
+    panel.startupSpindleRpm = 1800
+    const view = setup('stopped')
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('1200')
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.spindle.commanded_rpm = 0
+    await nextTick()
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('1800')
+    expect(send).not.toHaveBeenCalled()
+    panel.status.spindle.direction = 'forward'
+    await nextTick()
+    expect((view.get(selector).element as HTMLInputElement).value).toBe('0')
+    expect(send).not.toHaveBeenCalled()
+  })
 
   it('evaluates an RPM formula only when Enter confirms it', async () => {
     const view = setup('reverse')

@@ -227,7 +227,13 @@ auto encode_hello(const Hello& hello) -> Encoded {
       {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")},
       {"machine_id", nullable(hello.machine_id)},
       {"tool_model_storage", tool_model_storage_version},
+      {"operator_settings_storage", 1},
       {"quit_supported", true}};
+  if (hello.max_spindle_rpm) {
+    if (*hello.max_spindle_rpm <= 0)
+      fields.fail("max_spindle_rpm", "is not positive");
+    message["max_spindle_rpm"] = fields.real(*hello.max_spindle_rpm, "max_spindle_rpm");
+  }
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
   return fields.finish(std::move(message));

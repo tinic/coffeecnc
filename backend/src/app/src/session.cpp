@@ -218,6 +218,18 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
     return outcome;
   }
 
+  if (auto* settings = std::get_if<SetOperatorSettings>(&request.command)) {
+    const auto decision = policy_.evaluate(request.command, status(now.monotonic));
+    if (!decision.allowed)
+      result(CommandOutcome::rejected, decision.reason);
+    else if (tool_models_ == nullptr)
+      result(CommandOutcome::rejected, "Operator settings storage is not part of this session.");
+    else if (const auto refused =
+                 tool_models_->submit_operator_settings(page, request.id, std::move(*settings)))
+      result(CommandOutcome::rejected, *refused);
+    return outcome;
+  }
+
   // Visual preferences: not the controller's business and not gated by its state. The policy
   // is asked all the same, so that it stays the one place that says what is permitted.
   if (std::holds_alternative<SetToolModelDefaults>(request.command) ||
@@ -670,9 +682,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, Quit>) {
           // Power off when on; an E-stop or a machine already off stays as it is (no reset).
           if (state.machine == MachineState::on) {
-            auto off = act(request, [&](const Wanted&) -> ActionResult {
-              return port_.power_off();
-            });
+            auto off =
+                act(request, [&](const Wanted&) -> ActionResult { return port_.power_off(); });
             cancel_jogs(nullptr);
             if (off.kind != StageKind::reply || off.reply.outcome != CommandOutcome::accepted)
               return off;
@@ -766,7 +777,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           });
         } else {
           static_assert(std::is_same_v<T, SetToolModelDefaults> ||
-                            std::is_same_v<T, SetToolModelAssignment>,
+                            std::is_same_v<T, SetToolModelAssignment> ||
+                            std::is_same_v<T, SetOperatorSettings>,
                         "Every command needs an action.");
           // `submit` hands these to the tool-model service: none is ever queued.
           return answer({CommandOutcome::rejected, no_tool_models_reason});

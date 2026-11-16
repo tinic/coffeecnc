@@ -12,7 +12,7 @@ Part 1: PR33, source d278039, merged main 39f58d4.
   on playhouse2 passed in 38.42s with direct power assertions.
 
 Part 2:
-- Work / Machine / To go are explicit segmented controls; units say Display.
+- Work / Machine / To go are explicit segmented controls.
 - Coordinate entry still opens by tapping the readout.
 - turo rejected the added Zero/Half row because it took too much vertical space.
   Zero/Half now live in each axis's ellipsis menu, followed by a short confirmation.
@@ -20,7 +20,8 @@ Part 2:
   availability changes invalidate the pending confirmation. Cancel has initial focus.
 - The WCS card shows reported active-system offsets, converted to display units.
   Unknown offsets remain an em dash and stale offsets are labelled.
-- Dedicated Reset 100% override buttons and visible Stop scope.
+- Dedicated Reset 100% override buttons. Stop scope and software E-stop remain
+  in accessible names; their visible captions were removed at turo's request.
 - Coolant controls follow optional hello.coolant; absent offers both for older
   peers. Both false hides the entire Coolant row. Backend detection is PR32.
 - Jog slider and pad sizes remain unchanged. At 1280x720 homing fits beside the
@@ -30,7 +31,8 @@ Local validation:
 - 444 UI tests in 30 files; typecheck, lint and production build pass.
 - Browser simulator: Half X -12.400 -> -6.200 only after confirmation.
 - Further user feedback removed the grey caption row: Work G54 is inside the
-  button and Display is inline beside mm/in.
+  button. turo then requested removing the static Display label entirely;
+  the unit toggle now shows only mm/in.
 - 1280x720: DRO height70px, jog and side panels have no scroll overflow.
 - 1600x900: no jog or side overflow; larger MDI history.
 - Browser console has no warnings or errors.
@@ -40,3 +42,19 @@ Local validation:
 
 Physical machine deployment is Claude's responsibility. Codex performed no
 physical motion, spindle, power, homing, restart/install or native Quit actions.
+
+Coolant integration (PR35, source8d5946d):
+- Integrates Claude PR32; command failures, missing/malformed pin/signal rows
+  stay unknown (hello.coolant absent). Confirmed unwired pins/signals are false.
+  Bidirectional HAL consumers count as readers.
+- C++ encoder / JSON fixture / typed TypeScript mirror agree.
+- Read-only G0759 HAL inspection: both coolant signals have only the iocontrol
+  writer and no reader. The panel therefore hides the Coolant row once deployed.
+- Independent Linux build and nine relevant CTests passed: protocol fixtures,
+  message encoding, panel mapping, panel bundle, four native application cases
+  and the full native GTK/WebKit panel (39.42s).
+- Native application cases verify actual hello delivered to WebKit: unwired,
+  reader connected by POSTGUI_HALFILE, failed pin query, failed signal query.
+  All four verify clean Quit and LinuxCNC cleanup in simulation.
+- Final subsequent UI-only cleanup removes Software under E-stop and the Stop
+  scope caption. UI444/typecheck/lint/build passed and screenshots refreshed.

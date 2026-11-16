@@ -13,9 +13,9 @@ The 16 November deployment includes the logo, corrected native Quit, formula ent
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
-![CoffeeCNC native Manual workspace with the end-mill identity](ui/screenshots/native-manual-2026-11-16.png)
+![CoffeeCNC Manual workspace with compact coordinate controls](ui/screenshots/manual-coordinate-controls-1600.png)
 
-*Current GTK/WebKit build at 1280 × 800, captured on 16 November 2026 against LinuxCNC simulation. The end-mill identity, tappable coordinates, formula entry and native Quit are implemented. This image shows simulation, not the physical G0759. [Logo assets](docs/design/branding/README.md) · [Formula entry](docs/numeric-entry.md).*
+*Current Manual layout at 1600 × 900 in the browser simulator, captured on 16 November 2026. Direct power controls, compact axis-action menus, tappable coordinates and work offsets are implemented. [Native simulation checks and layout evidence](docs/research/evidence/manual-usability-2026-11-16.txt) · [Formula entry](docs/numeric-entry.md).*
 
 <details>
 <summary>Earlier G0759 controller deployment screenshot</summary>

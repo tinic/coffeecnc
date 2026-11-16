@@ -74,11 +74,12 @@ describe('capability-aware controls', () => {
     panel.status.offsets.wcs = 1; panel.link = 'stale'; await nextTick()
     expect(wrapper.get('.wcs-values').text()).toContain('Last reported')
   })
-  it('has explicit override reset buttons and visible Stop scope', async () => {
+  it('has explicit override reset buttons and concise Stop text', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.status.motion.feed_override = 0.45
     wrapper = mount(RunBar)
-    expect(wrapper.get('.stop-button').text()).toContain('Program · MDI · jog · spindle')
+    expect(wrapper.get('.stop-button').text()).toBe('Stop')
+    expect(wrapper.get('.stop-button').attributes('aria-label')).toBe('Stop program, MDI, jog and spindle')
     expect(wrapper.findAll('.override .value').every((value) => value.element.tagName === 'SPAN')).toBe(true)
     await wrapper.get('button[aria-label="Reset feed override to 100%"] ').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 1 })

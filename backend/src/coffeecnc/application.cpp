@@ -12,9 +12,11 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
+#include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -75,6 +77,70 @@ auto run_halcmd(std::string ini, std::string file, const std::string& directory)
   if (waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
     return std::unexpected(std::string("halcmd failed"));
   return {};
+}
+
+// Runs `halcmd -s show <what> <name>`. A failed probe is unknown, never "no output".
+auto halcmd_show(std::string what, std::string name) -> std::optional<std::string> {
+  std::string program{"halcmd"};
+  std::string script{"-s"};
+  std::string show{"show"};
+  std::array<char*, 6> argv{program.data(), script.data(), show.data(),
+                            what.data(),    name.data(),   nullptr};
+  std::array<int, 2> pipe_ends{};
+  if (pipe(pipe_ends.data()) != 0)
+    return {};
+  posix_spawn_file_actions_t actions;
+  if (posix_spawn_file_actions_init(&actions) != 0) {
+    close(pipe_ends[0]);
+    close(pipe_ends[1]);
+    return {};
+  }
+  int error = posix_spawn_file_actions_adddup2(&actions, pipe_ends[1], STDOUT_FILENO);
+  if (error == 0)
+    error = posix_spawn_file_actions_addclose(&actions, pipe_ends[0]);
+  pid_t child{};
+  if (error == 0)
+    error = posix_spawnp(&child, argv.front(), &actions, nullptr, argv.data(), environ);
+  posix_spawn_file_actions_destroy(&actions);
+  close(pipe_ends[1]);
+  std::string output;
+  bool read_ok = true;
+  if (error == 0) {
+    std::array<char, 4096> buffer{};
+    for (;;) {
+      const auto got = read(pipe_ends[0], buffer.data(), buffer.size());
+      if (got < 0 && errno == EINTR)
+        continue;
+      if (got <= 0) {
+        read_ok = got == 0;
+        break;
+      }
+      output.append(buffer.data(), static_cast<std::size_t>(got));
+    }
+  }
+  close(pipe_ends[0]);
+  int status{};
+  pid_t waited = -1;
+  if (error == 0) {
+    do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
+  }
+  if (error != 0 || !read_ok || waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    return {};
+  return output;
+}
+
+// iocontrol's coolant pin drives an output: its signal has a reader.
+auto drives_output(const std::string& pin) -> std::optional<bool> {
+  const auto pin_output = halcmd_show("pin", pin);
+  if (!pin_output)
+    return std::nullopt;
+  const auto signal = pin_signal(*pin_output, pin);
+  if (!signal)
+    return std::nullopt;
+  if (signal->empty())
+    return false;
+  const auto signal_output = halcmd_show("sig", *signal);
+  return signal_output ? signal_has_reader(*signal_output, *signal) : std::nullopt;
 }
 
 } // namespace
@@ -225,7 +291,7 @@ private:
 };
 
 auto run_application(const Options& options, const ApplicationHooks& hooks) -> int {
-  const auto config = load_machine_config(options.ini_file);
+  auto config = load_machine_config(options.ini_file);
   if (!config) {
     say(config.error());
     return 1;
@@ -258,6 +324,15 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
       say(std::format("[HAL] POSTGUI_HALFILE {}: {}.", config->postgui_halfile, wired.error()));
       return 1;
     }
+  }
+  const auto flood = drives_output("iocontrol.0.coolant-flood");
+  const auto mist = drives_output("iocontrol.0.coolant-mist");
+  if (flood && mist) {
+    config->coolant = CoolantOutputs{.flood = *flood, .mist = *mist};
+    say(std::format("coolant outputs: flood={} mist={}", *flood, *mist));
+  } else {
+    config->coolant.reset();
+    say("coolant outputs unknown; offering both controls");
   }
   HalShared shared;
   NmlLoads loads;

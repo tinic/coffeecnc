@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace coffeecnc {
 auto to_hello(const MachineConfig& config) -> Hello {
@@ -21,12 +25,54 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.max_spindle_override = config.limits.max_spindle_override;
   if (config.machine_id && valid_machine_id(*config.machine_id))
     hello.machine_id = config.machine_id;
+  hello.coolant = config.coolant;
   return hello;
 }
 
+auto pin_signal(std::string_view shown, std::string_view pin) -> std::optional<std::string> {
+  // `halcmd -s show pin <pin>`: one line per matching pin, `comp type dir value name [==> sig]`.
+  std::istringstream lines{std::string(shown)};
+  for (std::string line; std::getline(lines, line);) {
+    std::istringstream words{line};
+    std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
+    if (word.size() >= 5 && word[4] == pin) {
+      if (word[1] != "bit" || word[2] != "OUT")
+        return std::nullopt;
+      if (word.size() == 5)
+        return std::string{};
+      if (word.size() == 7 && word[5] == "==>")
+        return word[6];
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+auto signal_has_reader(std::string_view shown, std::string_view signal) -> std::optional<bool> {
+  // `halcmd -s show sig <sig>`: one line per matching signal, `type value name` followed by
+  // `<== writer` and `==> reader` pairs.
+  std::istringstream lines{std::string(shown)};
+  for (std::string line; std::getline(lines, line);) {
+    std::istringstream words{line};
+    std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
+    if (word.size() >= 3 && word[2] == signal) {
+      if (word[0] != "bit" || word.size() % 2 != 1)
+        return std::nullopt;
+      bool reader = false;
+      for (std::size_t i = 3; i < word.size(); i += 2) {
+        if (word[i] == "==>" || word[i] == "<=>")
+          reader = true;
+        else if (word[i] != "<==")
+          return std::nullopt;
+      }
+      return reader;
+    }
+  }
+  return std::nullopt;
+}
+
 auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
-                     std::span<const LoadedTool> tools, std::uint64_t program_revision)
-    -> Status {
+                     std::span<const LoadedTool> tools, std::uint64_t program_revision) -> Status {
   const auto& controller = reading.controller;
   const bool known = controller.link != Link::down;
   Status status;

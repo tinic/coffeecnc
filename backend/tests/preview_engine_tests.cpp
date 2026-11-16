@@ -1041,6 +1041,7 @@ void refusals_of_the_settings() {
       .postgui_halfile = {},
       .program_prefix = (rig.root / "nc").string(),
       .machine_id = {},
+      .coolant = {},
       .data_directory = {},
   };
   write(config.ini_file, "[RS274NGC]\nPARAMETER_FILE = mill.var\nSUBROUTINE_PATH = ../subs:macros\n"

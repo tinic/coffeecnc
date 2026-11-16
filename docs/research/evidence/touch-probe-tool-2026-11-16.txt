@@ -1,0 +1,28 @@
+CoffeeCNC Touch probe tool — 2026-11-16
+
+Source: 6a858228c0ccd56ac11096a3aed0a1174ff74198, PR45.
+UI: 513 tests in 36 files, typecheck, lint and production build passed.
+Browser simulator: added T99 with effective diameter 4 mm and reopened its
+saved shape at 1280 x 720. Preview shows housing, stylus and ruby ball.
+The editor displays the ball-bottom Length convention without scrolling.
+Screenshot: ui/screenshots/touch-probe-editor-1280.png.
+
+LinuxCNC simulation on playhouse2:
+- Warnings-as-errors native build, 28 base CTests and both metric and inch
+  shell workflows passed on e01b6f9. Session, catalog and model-restart checks
+  passed after the program reopen/recheck changes on 2d74549.
+- Native restart restored the saved Touch probe, including body and stylus
+  dimensions. After loading the reported tool in simulation, Forward and
+  Reverse were disabled. A direct Forward request and Cycle Start with M4
+  were rejected as “A touch probe is loaded”. Spindle stayed off.
+- The runner replaced the program pathname by rename. CoffeeCNC reopened
+  the spindle-off replacement and completed it with an S speed preset.
+- Session tests cover MDI starts, both spindle directions, already-active
+  spindle, indirect calls, tapping, Step, Resume and ordinary tool behavior.
+
+Final build stamp:
+- inputs_digest: abda2c686b708b526abd440ac905516d54e020d2168cb2518bcdbff293b0523a
+- assets_digest: d4f713f20c67554de412d6ed531deaf99b6dea602dc9055dd3e89f9f5db9ba3c
+
+Deployment: pending. Claude owns the G0759 rebuild and installation.
+The separate probe-based length measurement proposal is draft PR43.

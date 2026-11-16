@@ -1,6 +1,6 @@
 CoffeeCNC combined tool editor — 2026-11-16
 
-Implementation source: e43f18c (plus documentation/screenshots).
+Implementation source: e43f18c; final native test source: 3076168.
 Base: 7af23f46c80e8b097f4a2bcb06b37fd35da0f2e8, deployed independently verified.
 
 Behavior:
@@ -39,7 +39,15 @@ Native verification on playhouse2:
   persisted file and restoration across complete LinuxCNC/application restart.
 - Metric shell initially failed only its old visible-T0 table expectation;
   all remaining checks in that run passed. Table reload assertions updated.
-- Final metric/inch shell and model-restart rerun: pending.
+- Reload stress checks also needed a new-revision wait when the old and new
+  visible tables both contained three rows; fixed without reducing coverage.
+- Final native source 3076168: panel_mapping, panel_bundle, linuxcnc_shell_mm
+  and linuxcnc_shell_inch all passed, 77.95 seconds total. Metric and inch
+  shell workflows each took 38.82 seconds.
+- Model restart rerun on unchanged product source e43f18c passed, 6.99 seconds.
+- In total, all 28 base CTests passed across the initial run and corrected
+  panel_mapping rerun; both full native shell unit profiles and native model
+  save/restart checks passed. Test runner left no LinuxCNC child processes.
 
 Deployment: pending. Native rebuild required for editable-row publication change.
 Claude owns physical G0759 installation/restart. Codex has not moved or restarted it.

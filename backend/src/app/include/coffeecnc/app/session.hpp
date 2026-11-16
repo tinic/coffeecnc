@@ -151,8 +151,10 @@ struct Work {
 // That start is answered `accepted`, with one `jog_late_start` line on stderr: the press ended
 // before its jog began, and nothing moved. When a control period read the watchdog tripped
 // after the start was sent, the answer is `failed` with watchdog_stop_text. A refusal without a
-// stop decision after the send, or before any control period raised the level for that
-// decision, stays `failed` with LinuxCNC's text: its cause is not known to be CoffeeCNC's. An increment refused that
+// stop decision after the send, before any control period raised the level for that decision,
+// or while the last control period is older than control_fresh, stays `failed` with LinuxCNC's
+// text: its cause is not known to be CoffeeCNC's. A control thread that has not run for longer
+// may have let the watchdog trip without reading it. An increment refused that
 // way is `failed` with LinuxCNC's text and is a stop decision, as every increment that is not
 // accepted.
 //
@@ -309,12 +311,13 @@ private:
                          const std::function<ActionResult(const Wanted&)>& send) const -> Stage;
   [[nodiscard]] static auto staged(ActionResult result) -> Stage;
   void drop_requests();
-  [[nodiscard]] auto execute(Queued& request) -> Stage;
+  [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
-                             const ControllerState& state) -> Stage;
-  [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision) -> Stage;
+                             const ControllerState& state, const Clock& clock) -> Stage;
+  [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision,
+                         const Clock& clock) -> Stage;
   [[nodiscard]] auto start_gate(Queued& request, std::size_t index, bool held)
       -> std::optional<Stage>;
   [[nodiscard]] auto stop_all() -> ActionResult;
@@ -341,6 +344,8 @@ private:
   // The epoch in which a control period last asked for the jog-stop level high; 0 before any.
   // Only a period after a stop decision raises the level that can refuse a start in flight.
   std::uint64_t level_epoch_{};
+  // When the last control period ran.
+  JogLease::Time control_at_{};
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;

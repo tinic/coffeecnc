@@ -67,6 +67,9 @@ constexpr auto touch_off_reason = "The tool length was set, but a stop request c
 constexpr auto stopped_reason = "The jog was stopped before it started.";
 constexpr auto release_reason = "Release the jog control before jogging again.";
 constexpr auto hold_reason = "A jog stop is in progress.";
+// How old the last control period may be for the watchdog reading it made to count as current:
+// ten 10 ms control periods, below the 300 ms timeout of the HAL watchdog in the post-GUI file.
+constexpr auto control_fresh = std::chrono::milliseconds{100};
 constexpr auto no_tool_models_reason = "Tool model storage is not part of this session.";
 
 // The tool-model command in a request, if it is one.
@@ -317,6 +320,7 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
 auto Session::control(Instant now, const ControlInput& input) -> bool {
   const std::scoped_lock lock{mutex_};
   jog_stop_high_ = input.jog_stop_high;
+  control_at_ = now.monotonic;
   low_periods_ = jog_stop_high_ ? 0 : std::min(low_periods_ + 1, settled_periods);
   const bool leased =
       std::ranges::any_of(axes, [&](Axis axis) -> bool { return leases_.active(axis); });
@@ -439,7 +443,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   } else if (fate == Fate::stale) {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
-    step = execute(request);
+    step = execute(request, clock);
   }
   if (step.kind == StageKind::blocked) {
     const std::scoped_lock lock{mutex_};
@@ -601,7 +605,7 @@ void Session::drop_requests() {
   std::erase_if(requests_, [](const Queued& request) -> bool { return !request.stop; });
 }
 
-auto Session::execute(Queued& request) -> Stage {
+auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   const auto& command = request.command;
   auto state = port_.snapshot();
   if (!wanted(request))
@@ -640,11 +644,11 @@ auto Session::execute(Queued& request) -> Stage {
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
                    std::move(decision.reason)});
   }
-  return perform(request, decision, state);
+  return perform(request, decision, state, clock);
 }
 
-auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state)
-    -> Stage {
+auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,
+                      const Clock& clock) -> Stage {
   return std::visit(
       [&](const auto& c) -> Stage {
         using T = std::decay_t<decltype(c)>;
@@ -667,7 +671,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.home(c.axis, still);
           });
         } else if constexpr (std::is_same_v<T, Jog>) {
-          return jog(request, c, decision);
+          return jog(request, c, decision, clock);
         } else if constexpr (std::is_same_v<T, JogStep>) {
           return jog_step(request, c, decision);
         } else if constexpr (std::is_same_v<T, JogStopAll>) {
@@ -798,7 +802,8 @@ auto Session::jog_step(Queued& request, const JogStep& command, const Decision& 
   return staged(std::move(result));
 }
 
-auto Session::jog(Queued& request, const Jog& command, const Decision& decision) -> Stage {
+auto Session::jog(Queued& request, const Jog& command, const Decision& decision, const Clock& clock)
+    -> Stage {
   const auto index = axis_index(command.axis);
   if (!index)
     return answer({CommandOutcome::failed, "Unknown axis."});
@@ -835,6 +840,7 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
                : cancelled();
   }
   std::optional<std::uint64_t> late_in;
+  const auto refused_at = clock().monotonic;
   {
     const std::scoped_lock lock{mutex_};
     auto& axis = jog_.at(*index);
@@ -848,8 +854,9 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
       if (watchdog_epoch_ > request.epoch)
         return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
       // No period has raised the level since the stop decision: the inhibit that refused the
-      // start was not ours, or not yet. A stalled control thread may not have read a trip.
-      if (level_epoch_ <= request.epoch)
+      // start was not ours, or not yet. No period for longer than control_fresh: the control
+      // thread is stalled and may not have read a trip.
+      if (level_epoch_ <= request.epoch || refused_at - control_at_ > control_fresh)
         return answer(reply(std::move(started)));
       late_in = epoch_;
     } else {

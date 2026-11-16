@@ -179,6 +179,8 @@ export function describeCommand(command: CommandBody): string {
       return 'Save tool model defaults'
     case 'set_tool_model_assignment':
       return 'Save tool preview model'
+    case 'set_operator_settings':
+      return 'Save settings'
   }
 }
 

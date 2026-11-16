@@ -767,6 +767,7 @@ export class SimMachine {
   private execute(command: ToMachine): Rejection | null {
     switch (command.type) {
       case 'set_tool_model_defaults':
+      case 'set_operator_settings':
       case 'set_tool_model_assignment':
         return reject('Native tool model storage is unavailable in the browser simulator')
       case 'ready':

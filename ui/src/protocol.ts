@@ -11,6 +11,7 @@
 
 import type { ToolDefaults, ToolFamily, ToolOverrides } from './tool-model'
 import type { ToolModelBinding, ToolModelDocument } from './tool-model-settings'
+import type { OperatorPreferences, OperatorSettings } from './operator-settings'
 
 export const protocolVersion = 1
 
@@ -45,6 +46,8 @@ export interface Hello {
   machine_id?: string | null
   /** Native tool-model persistence contract v1; absent means session-only visual settings. */
   tool_model_storage?: 1
+  /** Native, machine-scoped operator settings document and durable save contract v1. */
+  operator_settings_storage?: 1
   /** Native application shutdown; absent/false means the peer cannot handle `quit`. */
   quit_supported?: boolean
   /** Configured coolant outputs. Absent means unknown: offer both for older peers. */
@@ -58,6 +61,8 @@ export interface Hello {
   jog_increments: number[]
   /** Fastest jog, mm/min ([DISPLAY] MAX_LINEAR_VELOCITY). */
   max_jog_velocity: number
+  /** Configured spindle ceiling, rpm; optional for older peers. */
+  max_spindle_rpm?: number
   /** Optional v1 addition, mm/min. When present, includes every configured axis. */
   axis_max_jog_velocity?: Partial<Record<AxisLetter, number>>
   /** Whether MDI/program execution requires homing. Absent means true. */
@@ -301,6 +306,7 @@ export interface Directory {
 }
 
 export type FromMachine =
+  | OperatorSettings
   | Hello
   | Status
   | ToolTable
@@ -451,6 +457,13 @@ export interface SetToolModelDefaults extends CommandBase {
   base_revision: number
   defaults: ToolDefaults
 }
+
+export interface SetOperatorSettings extends CommandBase {
+  type: 'set_operator_settings'
+  machine_id: string
+  base_revision: number
+  document: OperatorPreferences
+}
 /** Replace one T-number binding; null family and empty overrides remove that saved entry. */
 export interface SetToolModelAssignment extends CommandBase {
   type: 'set_tool_model_assignment'
@@ -489,6 +502,7 @@ export type ToMachine =
   | ToolChanged
   | SetToolModelDefaults
   | SetToolModelAssignment
+  | SetOperatorSettings
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

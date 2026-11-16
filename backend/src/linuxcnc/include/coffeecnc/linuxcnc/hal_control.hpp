@@ -67,6 +67,20 @@ public:
   // raised now: a confirmation is waiting and it answers the request in this reading.
   [[nodiscard]] auto exchange(const HalInputs& inputs, Clock::time_point now) -> bool;
 
+  // Control thread: CoffeeCNC's own jog-stop level is high at `now`, or is about to be raised
+  // or lowered. Called before every write of the level, so that a jog-stop text LinuxCNC
+  // publishes about it is always read after the note.
+  void note_jog_stop_high(Clock::time_point now);
+
+  // When the control thread last found or set CoffeeCNC's level high, when it last read the
+  // watchdog not ok, and when it last read the pins. Nothing for what never happened.
+  struct JogStopHistory {
+    std::optional<Clock::time_point> own_level_high;
+    std::optional<Clock::time_point> watchdog_tripped;
+    std::optional<Clock::time_point> read_at;
+  };
+  [[nodiscard]] auto jog_stop_history() const -> JogStopHistory;
+
 private:
   mutable std::mutex mutex_;
   HalInputs inputs_;
@@ -77,6 +91,7 @@ private:
   // The request in inputs_ has been confirmed.
   bool answered_{};
   std::optional<ToolChangeRequest> confirmed_;
+  JogStopHistory history_;
 };
 
 // The control thread's use of the HAL component, as the runtime sees it. Every member is called

@@ -1,11 +1,14 @@
 #include <coffeecnc/app/session.hpp>
 
 #include <coffeecnc/app/messages.hpp>
+#include <coffeecnc/core/jog_stop_report.hpp>
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstddef>
+#include <format>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -64,6 +67,9 @@ constexpr auto touch_off_reason = "The tool length was set, but a stop request c
 constexpr auto stopped_reason = "The jog was stopped before it started.";
 constexpr auto release_reason = "Release the jog control before jogging again.";
 constexpr auto hold_reason = "A jog stop is in progress.";
+// How old the last control period may be for the watchdog reading it made to count as current:
+// ten 10 ms control periods, below the 300 ms timeout of the HAL watchdog in the post-GUI file.
+constexpr auto control_fresh = std::chrono::milliseconds{100};
 constexpr auto no_tool_models_reason = "Tool model storage is not part of this session.";
 
 // The tool-model command in a request, if it is one.
@@ -314,6 +320,7 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
 auto Session::control(Instant now, const ControlInput& input) -> bool {
   const std::scoped_lock lock{mutex_};
   jog_stop_high_ = input.jog_stop_high;
+  control_at_ = now.monotonic;
   low_periods_ = jog_stop_high_ ? 0 : std::min(low_periods_ + 1, settled_periods);
   const bool leased =
       std::ranges::any_of(axes, [&](Axis axis) -> bool { return leases_.active(axis); });
@@ -345,6 +352,10 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   }
   if (stop)
     stop_jogs();
+  // The epoch a tripped watchdog was last seen in: a start refused under jog-inhibit in an
+  // earlier epoch may have been refused by the watchdog.
+  if (!input.watchdog_ok)
+    watchdog_epoch_ = epoch_;
   for (auto& axis : jog_) {
     if (axis.stop_needed && axis.stop_failed && !axis.retry_due && !closing_) {
       axis.retry_due = true;
@@ -360,6 +371,8 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
     wake(); // a start may have waited for the level to fall
   }
   // From close on the level is high for good, whatever was reconciled.
+  if (hold_ || closing_)
+    level_epoch_ = epoch_;
   return hold_ || closing_;
 }
 
@@ -430,7 +443,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   } else if (fate == Fate::stale) {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
-    step = execute(request);
+    step = execute(request, clock);
   }
   if (step.kind == StageKind::blocked) {
     const std::scoped_lock lock{mutex_};
@@ -592,7 +605,7 @@ void Session::drop_requests() {
   std::erase_if(requests_, [](const Queued& request) -> bool { return !request.stop; });
 }
 
-auto Session::execute(Queued& request) -> Stage {
+auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   const auto& command = request.command;
   auto state = port_.snapshot();
   if (!wanted(request))
@@ -631,11 +644,11 @@ auto Session::execute(Queued& request) -> Stage {
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
                    std::move(decision.reason)});
   }
-  return perform(request, decision, state);
+  return perform(request, decision, state, clock);
 }
 
-auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state)
-    -> Stage {
+auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,
+                      const Clock& clock) -> Stage {
   return std::visit(
       [&](const auto& c) -> Stage {
         using T = std::decay_t<decltype(c)>;
@@ -658,7 +671,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.home(c.axis, still);
           });
         } else if constexpr (std::is_same_v<T, Jog>) {
-          return jog(request, c, decision);
+          return jog(request, c, decision, clock);
         } else if constexpr (std::is_same_v<T, JogStep>) {
           return jog_step(request, c, decision);
         } else if constexpr (std::is_same_v<T, JogStopAll>) {
@@ -789,7 +802,8 @@ auto Session::jog_step(Queued& request, const JogStep& command, const Decision& 
   return staged(std::move(result));
 }
 
-auto Session::jog(Queued& request, const Jog& command, const Decision& decision) -> Stage {
+auto Session::jog(Queued& request, const Jog& command, const Decision& decision, const Clock& clock)
+    -> Stage {
   const auto index = axis_index(command.axis);
   if (!index)
     return answer({CommandOutcome::failed, "Unknown axis."});
@@ -825,23 +839,45 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
                ? answer({CommandOutcome::rejected, stopped_reason})
                : cancelled();
   }
+  std::optional<std::uint64_t> late_in;
+  const auto refused_at = clock().monotonic;
   {
     const std::scoped_lock lock{mutex_};
     auto& axis = jog_.at(*index);
     axis.in_flight = false;
     // Stopped while in flight: the stop decision has seen it and asks for the stop.
-    if (request.epoch != epoch_)
-      return answer(reply(std::move(started)));
-    axis.pressed = false;
-    if (started.status == ActionStatus::accepted) {
-      axis.running = true;
-      axis.held = asked;
-      return {};
+    if (request.epoch != epoch_) {
+      // Refused under the jog-inhibit that a stop decision made after the send has raised: a
+      // tap that ended before its jog began, and nothing moved. The stop is still needed.
+      if (started.status != ActionStatus::failed || !is_jog_inhibit_refusal(started.reason))
+        return answer(reply(std::move(started)));
+      if (watchdog_epoch_ > request.epoch)
+        return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
+      // No period has raised the level since the stop decision: the inhibit that refused the
+      // start was not ours, or not yet. No period for longer than control_fresh: the control
+      // thread is stalled and may not have read a trip.
+      if (level_epoch_ <= request.epoch || refused_at - control_at_ > control_fresh)
+        return answer(reply(std::move(started)));
+      late_in = epoch_;
+    } else {
+      axis.pressed = false;
+      if (started.status == ActionStatus::accepted) {
+        axis.running = true;
+        axis.held = asked;
+        return {};
+      }
+      // The axis may be moving: an earlier jog, or a start that was lost on the way back.
+      stop_jogs();
+      need_stop(*index);
+      axis.latched = true;
     }
-    // The axis may be moving: an earlier jog, or a start that was lost on the way back.
-    stop_jogs();
-    need_stop(*index);
-    axis.latched = true;
+  }
+  if (late_in) {
+    std::cerr << std::format("coffeecnc: jog_late_start axis={} sent_epoch={} epoch={} "
+                             "text=\"{}\"\n",
+                             letter(command.axis), request.epoch, *late_in, started.reason)
+              << std::flush;
+    return {};
   }
   flush_stops();
   return answer(reply(std::move(started)));

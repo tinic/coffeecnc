@@ -153,6 +153,36 @@ void threads_share_it() {
 
 } // namespace
 
+// What the control thread noted about the jog-stop level and the watchdog.
+void jog_stop_history_is_noted() {
+  HalShared shared;
+  auto none = shared.jog_stop_history();
+  require(!none.own_level_high && !none.watchdog_tripped && !none.read_at,
+          "nothing before a reading");
+  auto inputs = asking(std::nullopt);
+  static_cast<void>(shared.exchange(inputs, at(0ms)));
+  auto history = shared.jog_stop_history();
+  require(history.read_at == at(0ms) && !history.own_level_high && !history.watchdog_tripped,
+          "a reading with the level low and the watchdog ok notes only the reading");
+  shared.note_jog_stop_high(at(5ms));
+  require(shared.jog_stop_history().own_level_high == at(5ms), "a raised level is noted");
+  inputs.jog_stop_high = true;
+  static_cast<void>(shared.exchange(inputs, at(10ms)));
+  require(shared.jog_stop_history().own_level_high == at(10ms), "a level read high is noted");
+  inputs.jog_stop_high = false;
+  inputs.watchdog_ok = false;
+  static_cast<void>(shared.exchange(inputs, at(20ms)));
+  history = shared.jog_stop_history();
+  require(history.own_level_high == at(10ms) && history.watchdog_tripped == at(20ms) &&
+              history.read_at == at(20ms),
+          "the last high level is kept; a tripped watchdog is noted");
+  inputs.watchdog_ok = true;
+  static_cast<void>(shared.exchange(inputs, at(30ms)));
+  history = shared.jog_stop_history();
+  require(history.watchdog_tripped == at(20ms) && history.read_at == at(30ms),
+          "the last trip is kept once the watchdog is ok again");
+}
+
 auto main() -> int {
   try {
     handshake_completes();
@@ -160,6 +190,7 @@ auto main() -> int {
     replaced_request_is_not_confirmed();
     old_copy_is_not_handed_out();
     threads_share_it();
+    jog_stop_history_is_noted();
     std::cout << checks << " HAL exchange checks passed\n";
     return 0;
   } catch (const std::exception& error) {

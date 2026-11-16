@@ -79,13 +79,19 @@ confirming. A stale/down link or a changed hello prevents submission. Running,
 paused, waiting and executing MDI states say **Stop the program before
 quitting.** An idle machine can quit while on, already off, or in E-stop.
 
-The native backend must independently reject non-idle execution. Accepted
+The native backend independently rejects non-idle execution and unavailable or
+stale controller status. Accepted
 means the request was accepted, not proof of power-off or process exit. Native
 shutdown switches the machine off before closing the window; an active E-stop
 must remain asserted (no ESTOP_RESET). A failed switch-off leaves the window
 open and reports the failure. The panel shows request acceptance while waiting
 for the application to close, and never closes the browser/WebKit itself.
-Backend result delivery and shutdown ordering require native validation.
+Quit uses a dedicated power-off operation that never sends ESTOP_RESET. Close
+intent is bound to the request and page generation; it cannot carry across a
+reload. The shell waits for successful WebKit evaluation of posted messages
+before destroying that page's window. A replaced page or failed delivery
+cancels the close. The native application simulation test observes the accepted
+Quit result in the actual page before window closure and LinuxCNC shutdown.
 
 The browser simulator switches its simulated machine off (preserving E-stop)
 and explicitly reports that the browser stays open. It refuses busy execution

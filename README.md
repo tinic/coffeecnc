@@ -11,12 +11,12 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
-![CoffeeCNC Manual workspace with the end-mill identity](ui/screenshots/branding-manual-light.png)
+![CoffeeCNC native Manual workspace with the end-mill identity](ui/screenshots/native-manual-2026-11-16.png)
 
-*Current browser build at 1600 × 900, captured on 16 November 2026 using a display-only G0759 fixture. The end-mill identity, tappable coordinate readouts and stable numeric fields are implemented. This image is not a controller deployment. [Logo and app-icon assets](docs/design/branding/README.md).*
+*Current GTK/WebKit build at 1280 × 800, captured on 16 November 2026 against LinuxCNC simulation. The end-mill identity, tappable coordinates, formula entry and native Quit are implemented. This image shows simulation, not the physical G0759. [Logo assets](docs/design/branding/README.md) · [Formula entry](docs/numeric-entry.md).*
 
 <details>
-<summary>Last verified G0759 controller deployment</summary>
+<summary>Earlier G0759 controller deployment screenshot</summary>
 
 ![CoffeeCNC running on the G0759 controller with larger jog controls and aligned coordinates](ui/screenshots/g0759-operator-f0a4264.png)
 

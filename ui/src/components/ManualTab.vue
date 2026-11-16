@@ -14,7 +14,8 @@ import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
-import { formatIncrement, formatVelocity, velocityUnit, wcsNames } from '../units'
+import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName, wcsNames } from '../units'
+import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
@@ -40,6 +41,9 @@ const keyboard: Readonly<Record<string, JogKey>> = {
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
+const coolantOutputs = computed(() => panel.hello?.coolant ?? { flood: true, mist: true })
+const activeOffset = computed(() => workOffsetRows(panel.workOffsets ?? null, status.value, panel.link)
+  .find((system) => system.wcs === status.value?.offsets.wcs))
 const held = reactive(new Set<JogKey>())
 const increments = computed(() => displayJogIncrements(panel.hello, unit.value))
 const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? `Choose a step in ${unit.value === 'inch' ? 'inches' : 'millimeters'}` : null)
@@ -355,6 +359,7 @@ const coolantBlock = computed((): string | null => {
 })
 
 function coolant(which: 'flood' | 'mist'): void {
+  if (coolantBlock.value !== null || !coolantOutputs.value[which]) return
   const now = status.value?.coolant ?? { flood: false, mist: false }
   send({
     type: 'set_coolant',
@@ -367,8 +372,10 @@ function coolant(which: 'flood' | 'mist'): void {
 <template>
   <div class="manual">
     <section class="card jog">
-      <h2>Jog</h2>
-      <p v-tooltip="jogUnavailable ?? undefined" class="blocked reserved"><template v-if="jogUnavailable">Jog unavailable: {{ jogUnavailable }}</template></p>
+      <div class="jog-heading">
+        <h2>Jog</h2>
+        <p v-tooltip="jogUnavailable ?? undefined" class="blocked reserved"><template v-if="jogUnavailable">Jog unavailable: {{ jogUnavailable }}</template></p>
+      </div>
       <div class="jog-controls">
         <div class="pads">
           <div class="pad">
@@ -449,7 +456,7 @@ function coolant(which: 'flood' | 'mist'): void {
 
       <p v-tooltip="limitedSpeeds || undefined" class="hint reserved"><template v-if="limitedSpeeds">Axis limits: {{ limitedSpeeds }}</template></p>
 
-      <div class="line">
+      <div class="line homes">
         <span class="label">Home</span>
         <button
           v-tooltip="homeBlock ?? 'Home all axes using the configured sequence'"
@@ -523,7 +530,7 @@ function coolant(which: 'flood' | 'mist'): void {
       </section>
 
       <section class="card utilities">
-        <h2>Spindle and coolant</h2>
+        <h2>{{ coolantOutputs.flood || coolantOutputs.mist ? 'Spindle and coolant' : 'Spindle' }}</h2>
         <div class="line">
           <input
             v-model="rpmText"
@@ -553,12 +560,12 @@ function coolant(which: 'flood' | 'mist'): void {
             <AppIcon name="forward" />Forward
           </button>
         </div>
-        <div class="line">
+        <div v-if="coolantOutputs.flood || coolantOutputs.mist" class="line coolant">
           <span class="label">Coolant</span>
-          <button v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :disabled="coolantBlock !== null" @click="coolant('flood')">
+          <button v-if="coolantOutputs.flood" v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :disabled="coolantBlock !== null" @click="coolant('flood')">
             <AppIcon name="drop" />Flood
           </button>
-          <button v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :disabled="coolantBlock !== null" @click="coolant('mist')">
+          <button v-if="coolantOutputs.mist" v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :disabled="coolantBlock !== null" @click="coolant('mist')">
             Mist
           </button>
         </div>
@@ -566,7 +573,15 @@ function coolant(which: 'flood' | 'mist'): void {
       </section>
 
       <section class="card work-system">
-        <h2>Work coordinate system</h2>
+        <div class="wcs-heading">
+          <h2>Work coordinate system</h2>
+          <div class="wcs-values" aria-label="Active work system offsets">
+            <span>{{ activeOffset?.stale ? 'Last reported' : 'Offset' }} {{ status ? wcsName(status.offsets.wcs) : '—' }}</span>
+            <span v-for="(axis, index) in ['X', 'Y', 'Z']" :key="axis">{{ axis }} <strong class="mono">{{ activeOffset?.offset ? formatLength(activeOffset.offset[index]!, unit) : '—' }}</strong></span>
+            <span>{{ unit === 'inch' ? 'in' : 'mm' }}</span>
+            <span v-if="activeOffset?.rotation_xy">R {{ activeOffset.rotation_xy }}°</span>
+          </div>
+        </div>
         <div class="segmented wcs">
           <button
             v-for="(name, index) in wcsNames"
@@ -705,8 +720,10 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 .reserved { height: 30px; flex: none; margin: 0; font-size: 11px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-.side > .mdi { flex: 1; min-height: 184px; }
+.side > .mdi { flex: 1; min-height: 150px; }
 .work-system { margin-top: auto; }
+.jog-heading h2, .wcs-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
+.wcs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.wcs-heading h2 { flex: none; }
 
 .history {
   display: flex;
@@ -797,6 +814,7 @@ function coolant(which: 'flood' | 'mist'): void {
   padding: 0;
   font-size: 13px;
 }
+.wcs-values { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; font-size: 11px; color: var(--text-dim); }.wcs-values > span { white-space: nowrap; }.wcs-values strong { color: var(--text); font-weight: 400; }
 .utilities { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
 .utilities h2 { grid-column: 1 / -1; }
 .utilities .sensor-feedback { grid-column: 1 / -1; }
@@ -805,4 +823,11 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
 @media (max-height: 820px) { .jog { gap: 4px; }.reserved { height: 15px; -webkit-line-clamp: 1; } }
+@media (max-height: 760px) {
+  .jog { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: 'heading heading' 'pads steps' 'pads homes' 'speed speed' 'limits limits'; align-content: start; column-gap: 12px; }
+  .jog-heading { grid-area: heading; display: flex; align-items: center; gap: 12px; }.jog-heading .blocked { flex: 1; }
+  .jog-controls { display: contents; }.pads { grid-area: pads; align-self: center; }.steps { grid-area: steps; }.homes { grid-area: homes; gap: 4px; }.homes > .label { display: none; }.homes > .btn { padding: 0 5px; }
+  .jog > .line:not(.homes) { grid-area: speed; }.jog > .hint { grid-area: limits; }.keys { display: none; }
+  .side { gap: 6px; }.side > .card { gap: 6px; padding-block: 8px; }.side > .mdi { min-height: 142px; }.history { min-height: 34px; height: 34px; }.history .hint { margin: 2px 8px; }.wcs-values { min-height: 18px; }
+}
 </style>

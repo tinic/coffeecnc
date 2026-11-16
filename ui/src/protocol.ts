@@ -47,6 +47,8 @@ export interface Hello {
   tool_model_storage?: 1
   /** Native application shutdown; absent/false means the peer cannot handle `quit`. */
   quit_supported?: boolean
+  /** Configured coolant outputs. Absent means unknown: offer both for older peers. */
+  coolant?: { flood: boolean; mist: boolean }
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]

@@ -94,16 +94,16 @@ function option(which: 'optional_stop' | 'block_delete'): void {
           </div>
         </div>
       </details>
-      <button v-tooltip="'Stop the program, MDI, jogging and spindle'" class="btn stop-button" type="button" @click="send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
+      <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="send({ type: 'abort' })"><AppIcon name="stop" /><span>Stop<small>Program · MDI · jog · spindle</small></span></button>
       <button v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null" @click="send({ type: primary.type })"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
   </footer>
 </template>
 
 <style scoped>
-.runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 30px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
+.runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 18px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
 .command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
-.stop-button { color: var(--stop); min-width: 88px; }.main-action { min-width: 156px; }
+.stop-button { color: var(--stop); min-width: 180px; }.stop-button small { display: block; font-size: 9px; line-height: 1.5; font-weight: 400; }.main-action { min-width: 156px; }
 .more { position: relative; }.more-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; color: var(--text-dim); }
 .popover { bottom: calc(100% + 16px); right: -100px; }
 </style>

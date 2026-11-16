@@ -4,6 +4,7 @@ import { defineComponent, nextTick } from 'vue'
 import DroPanel from '../src/components/DroPanel.vue'
 import NumericEntryDialog from '../src/components/NumericEntryDialog.vue'
 import NumberDialog from '../src/components/NumberDialog.vue'
+import CoordinateConfirm from '../src/components/CoordinateConfirm.vue'
 import { mdiBlock, panel, send } from '../src/machine'
 import { touchInput } from '../src/numeric-input'
 import { SimMachine } from '../src/sim/machine'
@@ -72,7 +73,7 @@ describe('touching the coordinate readout', () => {
       vi.mocked(send).mockClear()
     }
   })
-  it.each(['.number', '.letter', '.touch'])('opens from %s with the work coordinate and does not send until confirmation', async (target) => {
+  it.each(['.number', '.letter'])('opens from %s with the work coordinate and does not send until confirmation', async (target) => {
     await wrapper.get(`.axis ${target}`).trigger('click')
     expect(field().value).toBe('12.346')
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Touch off X in G54')
@@ -121,7 +122,7 @@ describe('touching the coordinate readout', () => {
   it.each(['machine', 'distance', 'blocked', 'program'])('does not edit %s coordinates', async (mode) => {
     if (mode === 'blocked') Object.assign(mdiBlock, { value: 'Machine is off' })
     else if (mode === 'program') panel.tab = 'program'
-    else { await wrapper.get('.basis').trigger('click'); if (mode === 'distance') await wrapper.get('.basis').trigger('click') }
+    else { await wrapper.findAll('.basis-options button')[mode === 'distance' ? 2 : 1]?.trigger('click') }
     await nextTick()
     expect(wrapper.get('.axis').attributes('disabled')).toBeDefined()
     await wrapper.get('.axis .number').trigger('click')
@@ -137,7 +138,7 @@ describe('touching the coordinate readout', () => {
     else if (change === 'blocked') Object.assign(mdiBlock, { value: 'No current controller status' })
     else if (change === 'workspace') panel.tab = 'tools'
     else if (change === 'session') Object.assign(panel, { hello: {} })
-    else await wrapper.get('.basis').trigger('click')
+    else await wrapper.findAll('.basis-options button')[1]?.trigger('click')
     // Even a confirmation queued before Vue removes the dialog cannot apply the draft.
     dialog.vm.$emit('confirm', 10, '10')
     await nextTick()
@@ -152,5 +153,37 @@ describe('touching the coordinate readout', () => {
     await wrapper.get('[role="dialog"] button[aria-label="Delete the last digit"]').trigger('click')
     expect(field().value).toBe('12.346')
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('quick coordinate actions', () => {
+  it.each(['mm', 'inch'] as const)('halves the exact work coordinate in %s without display rounding', async (unit) => {
+    panel.unit = unit; await nextTick()
+    await wrapper.get('button[aria-label="Half X"]').trigger('click')
+    expect(send).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Half X in G54?')
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    await press('Set X to half')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: 12.345678 / 2 })
+  })
+  it('zeroes only the chosen axis after confirmation and can cancel', async () => {
+    await wrapper.get('button[aria-label="Zero Y"]').trigger('click')
+    await press('Cancel'); expect(send).not.toHaveBeenCalled()
+    await wrapper.get('button[aria-label="Zero Y"]').trigger('click')
+    await press('Set Y to zero')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'y', value: 0 })
+  })
+  it.each(['position', 'wcs', 'session', 'units', 'blocked', 'basis'])('discards a quick confirmation after %s changes', async (change) => {
+    await wrapper.get('button[aria-label="Half X"]').trigger('click')
+    const dialog = wrapper.findComponent(CoordinateConfirm)
+    if (change === 'position' && panel.status?.axes[0]) panel.status.axes[0].work = 50
+    else if (change === 'wcs' && panel.status) panel.status.offsets.wcs = 2
+    else if (change === 'session') Object.assign(panel, { hello: {} })
+    else if (change === 'units') panel.unit = 'inch'
+    else if (change === 'blocked') Object.assign(mdiBlock, { value: 'Machine busy' })
+    else await wrapper.findAll('.basis-options button')[1]?.trigger('click')
+    dialog.vm.$emit('confirm'); await nextTick()
+    expect(send).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 })

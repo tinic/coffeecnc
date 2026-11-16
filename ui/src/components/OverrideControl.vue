@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { vTooltip } from '../tooltip'
 // One override. The number and the slider show what the machine reports; moving the slider only
 // asks for a new value.
 import { computed } from 'vue'
@@ -32,15 +31,10 @@ function slide(event: Event): void {
   <div class="override" :class="{ off: disabled }">
     <div class="top">
       <span class="caption">{{ label }}</span>
-      <button
-        v-tooltip="'Back to 100 %'"
-        class="value mono"
-        type="button"
-        :disabled="disabled || percent === 100"
-        @click="set(1)"
-      >
+      <span class="value mono">
         {{ value === null ? '—' : formatPercent(value) }}
-      </button>
+      </span>
+      <button class="reset" type="button" :aria-label="`Reset ${label.toLowerCase()} to 100%`" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="set(1)">Reset 100%</button>
     </div>
     <div class="row">
       <input
@@ -60,7 +54,7 @@ function slide(event: Event): void {
 <style scoped>
 .override {
   display: grid;
-  grid-template-columns: 110px minmax(0, 1fr) 56px;
+  grid-template-columns: auto minmax(50px, 1fr) 48px 86px;
   align-items: center;
   flex: 1 1 0;
   gap: 8px;
@@ -74,20 +68,16 @@ function slide(event: Event): void {
 .value {
   grid-column: 3;
   grid-row: 1;
-  min-height: 44px;
-  min-width: 56px;
+  min-width: 48px;
   text-align: right;
   padding: 0 4px;
   border: 0;
   background: none;
   font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
 }
-
-.value:disabled {
-  cursor: default;
-}
+.reset { grid-column: 4; grid-row: 1; min-height: 44px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--control); color: var(--text); font-size: 11px; cursor: pointer; }
+.reset:disabled { color: var(--text-faint); cursor: default; }.reset:hover:not(:disabled) { background: var(--accent-soft); }
 
 .off .value {
   color: var(--text-faint);

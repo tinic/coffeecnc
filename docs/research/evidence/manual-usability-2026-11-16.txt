@@ -1,0 +1,38 @@
+CoffeeCNC Manual usability pass — 2026-11-16
+
+Items relayed by Claude from turo's approved Manual review in #coffeecnc.
+
+Part 1: PR33, source d278039, merged main 39f58d4.
+- Fixed red software E-stop and direct Reset E-stop / Machine on / Machine off.
+- No redundant Reset while already off. Power requests wait for accepted result
+  and a new matching controller snapshot; reset never also powers on.
+- Stopped spindle at-speed shows an em dash.
+- Manual shows loaded tool, reported G43/G49 and effective Z tool offset.
+- 430 UI checks, typecheck/lint/build passed. Native GTK/WebKit panel simulation
+  on playhouse2 passed in 38.42s with direct power assertions.
+
+Part 2:
+- Work / Machine / To go are explicit segmented controls; units say Display.
+- Coordinate entry still opens by tapping the readout.
+- turo rejected the added Zero/Half row because it took too much vertical space.
+  Zero/Half now live in each axis's ellipsis menu, followed by a short confirmation.
+  Half uses exact millimeters, with no display rounding. Position/session/WCS/unit/
+  availability changes invalidate the pending confirmation. Cancel has initial focus.
+- The WCS card shows reported active-system offsets, converted to display units.
+  Unknown offsets remain an em dash and stale offsets are labelled.
+- Dedicated Reset 100% override buttons and visible Stop scope.
+- Coolant controls follow optional hello.coolant; absent offers both for older
+  peers. Both false hides the entire Coolant row. Backend detection is PR32.
+- Jog slider and pad sizes remain unchanged. At 1280x720 homing fits beside the
+  pad; WCS remains at the bottom and MDI takes the remaining vertical room.
+
+Local validation:
+- 444 UI tests in 30 files; typecheck, lint and production build pass.
+- Browser simulator: Half X -12.400 -> -6.200 only after confirmation.
+- 1280x720: DRO height84px, jog and side panels have no scroll overflow.
+- 1600x900: no jog or side overflow; larger MDI history.
+- Browser console has no warnings or errors.
+- Simulator screenshots: ui/screenshots/manual-coordinate-controls-{1280,1600}.png.
+
+Physical machine deployment is Claude's responsibility. Codex performed no
+physical motion, spindle, power, homing, restart/install or native Quit actions.

@@ -34,6 +34,7 @@ beforeEach(() => {
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
+  panel.workOffsets = null
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
 afterEach(() => {
@@ -43,6 +44,48 @@ afterEach(() => {
 })
 
 describe('capability-aware controls', () => {
+  it.each([
+    [undefined, ['Flood', 'Mist']],
+    [{ flood: true, mist: false }, ['Flood']],
+    [{ flood: false, mist: true }, ['Mist']],
+    [{ flood: false, mist: false }, []],
+  ] as const)('offers only configured coolant outputs: %j', (outputs, labels) => {
+    if (!panel.hello) throw new Error('Missing hello')
+    if (outputs === undefined) delete panel.hello.coolant
+    else panel.hello.coolant = outputs
+    wrapper = mount(ManualTab)
+    expect(wrapper.findAll('.coolant button').map((b) => b.text())).toEqual(labels)
+    expect(wrapper.find('.coolant').exists()).toBe(labels.length > 0)
+  })
+  it('shows reported active WCS offsets, converts units and preserves unknown values', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.offsets.wcs = 1
+    panel.workOffsets = { type: 'work_offsets', revision: 1, systems: [
+      { wcs: 1, offset: [25.4, -50.8, 0], rotation_xy: 0, available: true },
+      { wcs: 2, offset: [0, 0, 0], rotation_xy: 0, available: false },
+    ] }
+    wrapper = mount(ManualTab)
+    expect(wrapper.get('.wcs-values').text()).toContain('X 25.400')
+    panel.unit = 'inch'; await nextTick()
+    expect(wrapper.get('.wcs-values').text()).toContain('Y -2.0000')
+    panel.status.offsets.wcs = 2; await nextTick()
+    expect(wrapper.get('.wcs-values').text()).toContain('G55')
+    expect(wrapper.get('.wcs-values').text()).toContain('X —')
+    panel.status.offsets.wcs = 1; panel.link = 'stale'; await nextTick()
+    expect(wrapper.get('.wcs-values').text()).toContain('Last reported')
+  })
+  it('has explicit override reset buttons and visible Stop scope', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.motion.feed_override = 0.45
+    wrapper = mount(RunBar)
+    expect(wrapper.get('.stop-button').text()).toContain('Program · MDI · jog · spindle')
+    expect(wrapper.findAll('.override .value').every((value) => value.element.tagName === 'SPAN')).toBe(true)
+    await wrapper.get('button[aria-label="Reset feed override to 100%"] ').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 1 })
+    vi.mocked(send).mockClear(); panel.link = 'stale'; await nextTick()
+    await wrapper.get('button[aria-label="Reset feed override to 100%"] ').trigger('click')
+    expect(send).not.toHaveBeenCalled()
+  })
   it('has no native hover titles on touch controls, including changing blocked reasons', async () => {
     wrapper = mount(defineComponent({ components: { StatusBar, ManualTab, RunBar }, template: '<div><StatusBar/><ManualTab/><RunBar/></div>' }))
     expect(wrapper.find('[title]').exists()).toBe(true)

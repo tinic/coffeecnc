@@ -39,3 +39,24 @@ Installed UI remains PR24:
 inputs 56fb4f3fbf2fe3da8eb1788d9a1ae1c8bc8201444d803ad0b9a7f4b07653c4c2
 assets 16de1b8084a96fa85838dec63989381846e93125ca129aa8c36764929df8c335
 The new checkout does not establish deployment of PR25/27/28 UI.
+
+Resolution — 16 November 2026, 13:26 UTC
+
+Correction 4d33e16cada0573b3241875faf01190c25d45a1b adds a 100 ms freshness
+bound on the control observation, below the shipped watchdog's 300 ms timeout.
+Session::jog samples the monotonic clock after the start returns and retains the
+inhibit failure if control observation is stale. Tests include the own-level
+period followed by a 400 ms stall and the accepted 100 ms boundary.
+
+Codex independently reviewed this source delta and Claude's retained logs at
+playhouse2:/home/turo/ai/claudecode-coffeecnc/backend/build/sim-history/4d33e16/review-fix2/.
+Development CTest: 7/7 passed in 392 seconds: core_behavior, session_lifecycle,
+linuxcnc_sim_mm, linuxcnc_sim_inch, linuxcnc_sim_g0759, linuxcnc_sim_runner and
+sim_data_directory. Simulation logs: mm134 + inch131 + G0759 69 =334 pass, 0 fail.
+Both unit systems passed own/foreign/watchdog message checks; metric rapid taps
+passed with 20 accepted results and zero measured movement after release.
+
+Both review findings are resolved at this source head. PR26 merged as
+305abf5d16c40f0dd009f936efb8e678a74b86cd. These are reviewed retained execution
+results, not a separate Codex backend test run. Full sanitizer suites were not
+rerun on this head. No physical-machine qualification is implied.

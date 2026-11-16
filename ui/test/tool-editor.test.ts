@@ -101,7 +101,7 @@ describe('combined tool and preview editor', () => {
     expect(view().text()).toContain('0.25 inch · from Diameter above')
   })
   it('keeps tool numbers intact and proposes the next number when adding', () => {
-    open(); expect((view().get('.tool-fields input').element as HTMLInputElement).value).toBe('1')
+    open(); expect(view().findAll('.tool-fields label').some((label) => label.text() === 'Tool number')).toBe(false)
     view().unmount(); open(null)
     expect((view().get('.tool-fields input').element as HTMLInputElement).value).toBe('2')
   })

@@ -627,9 +627,9 @@ void source_tool_table() {
   rig.loaded = table;
   static_cast<void>(rig.step(s));
   r = rig.step(s);
-  require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 4 &&
-              r.tool_table.tools[1].number == 0,
-          "The prepared index names the loaded entry; a T0 row is shown as a row");
+  require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 3 &&
+              r.tool_table.tools[1].number == 9,
+          "The prepared index names the loaded entry; T0 is excluded only from editable rows");
 }
 
 // The table with every field, for the preview: accepted like the table shown, on every field.

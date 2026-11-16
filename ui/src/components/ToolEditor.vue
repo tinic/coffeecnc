@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, shallowRef } from 'vue'
 import { linkBlock, panel, send } from '../machine'
 import { vNumeric } from '../numeric-input'
+import { parseNumericExpression } from '../numeric-expression'
 import type { Tool } from '../protocol'
 import { sameTool, saveTool } from '../save-tool'
 import { pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity,
@@ -67,7 +68,7 @@ const model = computed((): ToolModel | null => {
   if (family.value === 'none') return null
   const dimensions: ToolDimensions = { diameter: parsed.value?.diameter ?? NaN, cuttingLength: NaN, shankDiameter: NaN, overallLength: NaN, stickout: NaN, tipAngle: NaN }
   for (const { key } of fields) dimensions[key] = precise !== null && shape[key] === initialShape[key] ? precise[key]
-    : (key === 'tipAngle' ? parseNumber(shape[key]) : parseLength(shape[key], unit)) ?? NaN
+    : (key === 'tipAngle' ? parseNumericExpression(shape[key], '°') : parseLength(shape[key], unit)) ?? NaN
   return { family: family.value, dimensions, nominalDiameter: false, customized: true }
 })
 const shapeError = computed(() => model.value === null ? null : toolDimensionError(model.value.family, model.value.dimensions))
@@ -109,18 +110,19 @@ function remove(): void {
     <div class="tool-editor">
       <div class="preview"><ToolModelCanvas v-if="model !== null && shapeError === null" :model="model" /><p v-else class="hint">{{ family === 'none' ? 'Choose a preview shape.' : 'Enter valid dimensions to preview the tool.' }}</p></div>
       <div class="details">
-        <div class="tool-fields">
-          <label class="entry"><span class="label">Tool number</span><input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="original !== null || saving" /></label>
+        <div class="tool-fields" :class="{ adding: original === null }">
+          <label v-if="original === null" class="entry"><span class="label">Tool number</span><input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="original !== null || saving" /></label>
           <label class="entry"><span class="label">Length, {{ unit }}</span><input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
           <label class="entry"><span class="label">Diameter, {{ unit }}</span><input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
           <label class="entry description-entry"><span class="label">Description</span><input v-model="form.comment" class="field" type="text" :disabled="saving" /></label>
         </div>
-        <div class="shape-heading"><h3>Preview shape</h3><button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button></div>
-        <label class="entry type-entry"><span class="label">Tool type</span><select v-model="family" class="field" :disabled="saving" @change="resetShape"><option value="none">No preview shape</option><option v-for="kind in toolFamilies" :key="kind.id" :value="kind.id">{{ kind.name }}</option></select></label>
+        <div class="shape-heading">
+          <label class="entry type-entry"><span class="label">Preview shape</span><select v-model="family" class="field" aria-label="Tool type" :disabled="saving" @change="resetShape"><option value="none">No preview shape</option><option v-for="kind in toolFamilies" :key="kind.id" :value="kind.id">{{ kind.name }}</option></select></label>
+          <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
+        </div>
         <template v-if="family !== 'none'">
           <p class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
           <div class="dimensions"><label v-for="field in fields.filter((item) => item.key !== 'tipAngle' || pointedTool(family as ToolFamily))" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
-          <p class="hint">Shape dimensions affect the preview. Length above sets the machine’s tool offset.</p>
         </template>
       </div>
     </div>
@@ -134,9 +136,10 @@ function remove(): void {
 .preview { min-height: 0; min-width: 0; }.preview > p { display: grid; place-items: center; height: 100%; margin: 0; padding: 16px; background: var(--bg-sunken); border-radius: 8px; text-align: center; }
 .details { min-width: 0; overflow: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 8px; }
 .tool-fields, .dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
-.entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }.entry .field { width: 100%; min-width: 0; min-height: 44px; }.description-entry { grid-column: 1 / -1; }
+.tool-fields { grid-template-columns: 1fr 1fr 1.8fr; }.tool-fields.adding { grid-template-columns: .7fr 1fr 1fr 1.6fr; }
+.entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }.entry .field { width: 100%; min-width: 0; min-height: 44px; }
 .shape-heading { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 4px; }.shape-heading h3 { font-size: 16px; margin: 0; }.shape-heading .btn { min-height: 36px; }
-.type-entry { flex-direction: row; align-items: center; }.type-entry .label { flex: none; width: 80px; }
+.type-entry { flex: 1; flex-direction: row; align-items: center; margin-right: 6px; }.type-entry .label { flex: none; width: 100px; }
 .hint, .feedback { margin: 0; font-size: 12px; line-height: 1.4; }.feedback { color: var(--warn); }.spacer { flex: 1; }
 @media (max-width: 850px) { .tool-editor { grid-template-columns: minmax(160px, .65fr) minmax(0, 1.6fr); gap: 12px; }.dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

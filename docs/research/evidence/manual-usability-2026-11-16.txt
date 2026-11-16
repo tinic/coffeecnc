@@ -75,3 +75,25 @@ Installed binary and /proc/18107/exe SHA256 both:
 Installed UI input and asset hashes match the final Mac/Linux builds above.
 Claude confirmed Coolant hidden, E-STOP and Machine on buttons, T0/G49 and WCS
 offsets visible. This supersedes the earlier source67c89be/PID13659 deployment.
+
+App menu and E-stop alignment (PR36 and PR37):
+- The right-hand state pill is now an icon-only App menu. Machine state is
+  inside the menu; the separate power button retains its action label.
+- E-STOP moved immediately left of machine power. E-stop, power and menu are
+  all 48px high with matching top coordinates at 1280x720 and 1600x900.
+- Message log has a visible button outline. README simulator screenshots updated.
+- Production build/typecheck, lint and 30 existing operator-feedback/capability
+  tests passed after each change. Browser checks passed with a clean console.
+
+Claude reported deployment at 15:16 UTC; Codex independently verified it by
+read-only SSH at approximately 15:19 UTC:
+source 76dabe87dc12ef67dd33f730ddd3970c8e78f072
+PID 22032, executable /usr/bin/coffeecnc
+Installed binary and /proc/22032/exe SHA256 both:
+959b9b7bcf57cb65f8284b7bbea38300dd38965f655fae119dbcd4fe11a4e20b
+Installed UI matches the tested build:
+inputs 7a12a5d67bf9c105f1befa64e3f74d37a581d2f2e213c3e7ae10627dfe13dc58
+assets 53c8061eae9f4c00f8213353392e0dd18ac170caa6daaba581224655a5b091db
+Claude confirmed the machine was off, E-STOP beside Machine on, and Message log
+rendered as a button. This supersedes source41c4512/PID18107 above.
+Codex performed no physical machine controls, installation or restart.

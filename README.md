@@ -13,9 +13,9 @@ The 16 November deployment includes the logo, corrected native Quit, formula ent
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
-![CoffeeCNC Manual workspace with compact coordinate controls](ui/screenshots/manual-coordinate-controls-1600.png)
+![CoffeeCNC Manual workspace with a single coordinate-view button](ui/screenshots/manual-dro-cycle-1600.png)
 
-*Current Manual layout at 1600 × 900 in the browser simulator, captured on 16 November 2026. Direct power controls, compact axis-action menus, tappable coordinates and work offsets are implemented. [Native simulation checks and layout evidence](docs/research/evidence/manual-usability-2026-11-16.txt) · [Formula entry](docs/numeric-entry.md).*
+*Current Manual layout at 1600 × 900 in the browser simulator, captured on 16 November 2026. The coordinate-view button cycles Work → Machine → To go. Axis-action menus, tappable coordinates and work-system shortcuts remain available. [Native simulation checks and layout evidence](docs/research/evidence/manual-usability-2026-11-16.txt) · [Formula entry](docs/numeric-entry.md).*
 
 The app menu now includes Settings for startup display units, work system shortcuts, default spindle RPM and default jog speed. Native preferences are saved per machine; speed presets never start motion. The Manual selector keeps five shortcuts visible and puts the rest under More, always retaining the active system. Applied G92/G52 shifts are shown separately. [Settings design](docs/design/operator-settings.md) · [Research across other controls](docs/research/coordinate-system-controls-2026-11-16.md).
 

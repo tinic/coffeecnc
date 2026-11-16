@@ -21,7 +21,11 @@ const quickValues = computed(() => {
   if (!draft || current === undefined || !Number.isFinite(current)) return null
   return { current, target: draft.operation === 'Half' ? current / 2 : 0 }
 })
-const bases = [['work', 'Work'], ['machine', 'Machine'], ['dtg', 'To go']] as const
+const basisLabel = computed(() => basis.value === 'work' ? `Work · ${wcs.value}` : basis.value === 'machine' ? 'Machine' : 'To go')
+const nextBasisLabel = computed(() => basis.value === 'work' ? 'Machine' : basis.value === 'machine' ? 'To go' : 'Work')
+function cycleBasis(): void {
+  basis.value = basis.value === 'work' ? 'machine' : basis.value === 'machine' ? 'dtg' : 'work'
+}
 let nextTouch = 0
 const touchBlock = computed(() => panel.tab !== 'manual' ? 'Open Manual to touch off'
   : basis.value !== 'work' ? 'Switch to work position to touch off' : mdiBlock.value)
@@ -82,9 +86,10 @@ watch([axes, touchBlock], () => {
 <template>
   <section class="dro" :class="{ distrust: !live }" aria-label="Coordinate readout">
     <div class="basis">
-      <div class="basis-options" role="group" aria-label="Coordinate display">
-        <button v-for="[value, label] in bases" :key="value" type="button" :aria-pressed="basis === value" @click="basis = value">{{ label }}<template v-if="value === 'work'"> · {{ wcs }}<small v-if="shifted" class="g92">G92/G52 active</small></template></button>
-      </div>
+      <button v-tooltip="`Switch to ${nextBasisLabel} coordinates`" class="btn basis-toggle" type="button" :aria-label="`Coordinate view: ${basisLabel}. Switch to ${nextBasisLabel}`" @click="cycleBasis">
+        <span>{{ basisLabel }}<small v-if="basis === 'work' && shifted" class="g92">G92/G52 active</small></span>
+        <AppIcon name="forward" />
+      </button>
     </div>
     <div v-for="axis in axes" :key="axis.axis" class="axis-group">
       <button v-tooltip="touchBlock ?? `Touch off ${axis.axis.toUpperCase()} in ${wcs}`" class="axis" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="`Touch off ${axis.axis.toUpperCase()} in ${wcs}`" @click="openTouchOff(axis)">
@@ -119,11 +124,10 @@ watch([axes, touchBlock], () => {
 </template>
 
 <style scoped>
-.dro { display: flex; align-items: flex-start; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.basis { display: flex; width: 212px; flex: none; padding: 0 10px; text-align: center; }
-.basis-options { display: flex; padding: 3px; gap: 2px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
-.basis-options button { flex: 1; min-height: 48px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; white-space: nowrap; }
-.basis-options button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }
+.basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; border-color: var(--line-strong); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
 .g92 { display: block; font-size: 9px; line-height: 10px; color: var(--warn); }
 .axis-group { display: flex; align-items: center; flex: 1 1 250px; min-width: 0; border-left: 1px solid var(--line); }
 .axis { display: flex; flex: 1; height: 56px; align-items: center; gap: 10px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
@@ -141,5 +145,5 @@ watch([axes, touchBlock], () => {
 .tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
-@media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-options button { min-height: 44px; } }
+@media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-toggle { min-height: 52px; } }
 </style>

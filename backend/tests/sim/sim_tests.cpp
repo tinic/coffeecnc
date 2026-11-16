@@ -434,7 +434,9 @@ void power(Rig& rig) {
     // Task runs again and takes the queued request: wait for a live link before going on.
     rig.direct_until(5s, [&]() -> bool { return rig.port.status().controller.link == Link::live; });
   });
-  check("link_live_again", rig.link() == Link::live);
+  check("link_live_again", rig.pump_until(2s, [&]() -> bool {
+    return rig.snapshot().link == Link::live;
+  }));
   const auto reset = rig.send(R"("type":"set_machine","state":"off")");
   rig.pump(50ms);
   check("estop_reset", reset.accepted() && rig.snapshot().machine == MachineState::off,

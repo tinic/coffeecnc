@@ -1,0 +1,29 @@
+G0759 deployment independently verified by Codex, 2026-11-16 14:07 UTC
+
+The machine-side Claude session built and installed the merged integration.
+Codex used read-only SSH to verify the installed bundle and running executable.
+No physical motion, spindle, power, homing, install/restart or native Quit command
+was issued by Codex. Native Quit execution was tested in LinuxCNC simulation.
+
+Machine checkout: /home/turo/ai/coffeecnc
+Installed source revision: 67c89be05c166a0852829e33f8ce5c4c8bdf5b31 (PR31 merge)
+Running process: PID13659, /usr/bin/coffeecnc
+Installed binary SHA256:
+  5db7b529968a383fd84172c8a81c4f6d0ae6ee913363364859ec19f9b943ef19
+/proc/13659/exe SHA256:
+  5db7b529968a383fd84172c8a81c4f6d0ae6ee913363364859ec19f9b943ef19
+
+Installed /usr/share/coffeecnc/ui/build-stamp.json:
+  inputs b6ed1c7e40a7c6c2548b7610aa0e32b56d7c22dd9970657d089ca3a2c8c9de16
+  assets 8577a28037c7b5bae461c1f9cfd62c58015c667a392e48b46d33ba31c766d7b1
+These match the independently built and tested Mac/Linux UI bundles.
+
+Includes end-mill logo/assets, coordinate touch-off, stable readouts, native Quit
+with all four shutdown corrections, outlined Quit/Message log buttons, explicit
+running-RPM confirmation, and arithmetic/unit entry throughout numeric editors.
+
+Verification record: native-quit-integration-2026-11-16.txt.
+Raw native simulation Quit log: native-quit-application-2026-11-16.log.
+Formula examples and scope: ../../numeric-entry.md.
+The README's current screenshot is native LinuxCNC simulation, explicitly labeled;
+no new physical-controller screenshot was taken during this verification.

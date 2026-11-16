@@ -7,7 +7,9 @@ A new milling frontend for LinuxCNC, with a native C++ core and a modern web int
 
 CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
 
-**Current status: native operator panel with simulation coverage and a reported first G0759 controller launch.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
+**Current status: native operator panel deployed on the G0759, with LinuxCNC simulation coverage.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
+
+The 16 November deployment includes the logo, corrected native Quit, formula entry and operator-control feedback. The installed UI stamp and running binary were independently verified: [deployment evidence](docs/research/evidence/g0759-deployment-2026-11-16.txt).
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 

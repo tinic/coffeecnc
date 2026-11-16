@@ -1807,7 +1807,7 @@ void tool_models_saved(const Rig& rig) {
             rig.wait_js("__t.find('section.dialog select')", 10s));
   const auto chosen = rig.js(R"(
     const select = __t.find('section.dialog select');
-    select.value = 'drill';
+    select.value = 'touch-probe';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 100));
     return select.value;)");
@@ -1824,7 +1824,7 @@ void tool_models_saved(const Rig& rig) {
                      {"diameter", row.at("diameter")},
                      {"comment", row.at("comment")}};
   check("tool_models_assignment_saved_by_the_editor",
-        chosen == "drill" && assigning == "ok" && assigned && order.at(0).get<int>() >= 0 &&
+        chosen == "touch-probe" && assigning == "ok" && assigned && order.at(0).get<int>() >= 0 &&
             order.at(0).get<int>() < order.at(1).get<int>() && order.at(2) == "accepted" &&
             order.at(3).at("base_revision") == 1 && order.at(3).at("tool") == binding,
         std::format("click={} snapshot_at={} result_at={} outcome={} sent={} errors={}", assigning,
@@ -1834,13 +1834,16 @@ void tool_models_saved(const Rig& rig) {
   check("tool_models_assignment_on_disk",
         on_disk.is_object() && on_disk.value("revision", 0) == 2 &&
             on_disk.at("document").at("assignments") ==
-                Json::array({{{"tool", binding}, {"family", "drill"}, {"overrides", order.at(3).at("overrides")}}}) &&
+                Json::array({{{"tool", binding}, {"family", "touch-probe"}, {"overrides", order.at(3).at("overrides")}}}) &&
             on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5,
         word(on_disk.is_object() ? on_disk.at("document").at("assignments").dump() : "unreadable"));
   check("tool_models_reopen_assignment", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   check("tool_models_assignment_shown",
-        rig.wait_js("__t.find('.type-entry select').value === 'drill'", 5s),
+        rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 5s),
         rig.js("return __t.find('.type-entry select').value;").dump());
+  check("tool_models_probe_ball_preview",
+        rig.wait_js("__t.find('.model-canvas .ruby') && __t.find('.model-canvas canvas')", 10s),
+        rig.errors());
   rig.snapshot("tool-models-saved");
   check("tool_models_linuxcnc_unchanged",
         contents(rig.config.tool_table) == table_file &&
@@ -1873,7 +1876,7 @@ void tool_models_restored(const Rig& rig) {
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
   check("tool_models_restored_tool_row", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
   check("tool_models_restored_assignment_shown",
-        rig.wait_js("__t.find('.type-entry select').value === 'drill'", 10s),
+        rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 10s),
         rig.js("return __t.find('.type-entry select').value;").dump());
   check("tool_models_close_first_row", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_restored_second_row", click_when_ready(rig, ".tool-row", "Edit tool 2:") == "ok");

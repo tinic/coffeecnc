@@ -105,8 +105,11 @@ export function readToolDimensions(family: ToolFamily, read: (key: DimensionKey)
 }
 
 export function shapeOverrides(d: ToolDimensions): ToolOverrides {
-  const { diameter: _diameter, ...overrides } = d
-  return overrides
+  if ('bodyDiameter' in d) return {
+    shankDiameter: d.shankDiameter, bodyDiameter: d.bodyDiameter, bodyLength: d.bodyLength, stylusLength: d.stylusLength,
+  }
+  return { shankDiameter: d.shankDiameter, cuttingLength: d.cuttingLength, overallLength: d.overallLength,
+    stickout: d.stickout, tipAngle: d.tipAngle }
 }
 
 export function setToolDefault(defaults: ToolDefaults, family: ToolFamily, dimensions: ToolDimensions): void {

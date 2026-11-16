@@ -199,10 +199,10 @@ void tool_model_commands() {
       std::string(factory_defaults_json) + "}";
   const auto defaults = body<SetToolModelDefaults>(defaults_wire);
   auto expected = factory_tool_defaults();
-  expected.back().stickout = 35.25;
+  expected.at(static_cast<std::size_t>(ToolFamily::generic)).stickout = 35.25;
   require(defaults.machine_id == "mill-1" && defaults.base_revision == 7 &&
               defaults.defaults == expected,
-          "Defaults: machine, base revision and all seven families");
+          "Legacy defaults preserve all seven cutters and get the factory probe template");
   const std::string assignment_wire =
       R"({"id":42,"type":"set_tool_model_assignment","machine_id":"mill-1","base_revision":0,)"
       R"("tool":{"number":3,"pocket":4,"diameter":6.35,"comment":"Fräser \"6\""},)"

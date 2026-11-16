@@ -48,8 +48,12 @@ auto parse(std::string_view text) -> Json {
       });
 }
 auto read_document(const Json& value) -> OperatorPreferences {
-  exact(value,
-        {"version", "startup_units", "enabled_wcs", "default_spindle_rpm", "default_jog_velocity"});
+  if (value.contains("tool_reference_height"))
+    exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
+                  "default_jog_velocity", "tool_reference_height"});
+  else
+    exact(value,
+          {"version", "startup_units", "enabled_wcs", "default_spindle_rpm", "default_jog_velocity"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -77,6 +81,11 @@ auto read_document(const Json& value) -> OperatorPreferences {
       throw std::runtime_error("Default speeds must be numbers.");
   document.default_spindle_rpm = value.at("default_spindle_rpm").get<double>();
   document.default_jog_velocity = value.at("default_jog_velocity").get<double>();
+  if (value.contains("tool_reference_height")) {
+    if (!value.at("tool_reference_height").is_number())
+      throw std::runtime_error("Tool reference height must be a number.");
+    document.tool_reference_height = value.at("tool_reference_height").get<double>();
+  }
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -86,7 +95,8 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"startup_units", units(document.startup_units)},
           {"enabled_wcs", document.enabled_wcs},
           {"default_spindle_rpm", document.default_spindle_rpm},
-          {"default_jog_velocity", document.default_jog_velocity}};
+          {"default_jog_velocity", document.default_jog_velocity},
+          {"tool_reference_height", document.tool_reference_height}};
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -114,6 +124,9 @@ auto operator_preferences_error(const OperatorPreferences& document) -> std::str
   if (!std::isfinite(document.default_jog_velocity) || document.default_jog_velocity <= 0 ||
       document.default_jog_velocity > 1e9)
     return "Default jog speed must be above zero and at most 1,000,000,000 mm/min.";
+  if (!std::isfinite(document.tool_reference_height) || document.tool_reference_height < 0 ||
+      document.tool_reference_height > 1e9)
+    return "Tool reference height must be between zero and 1,000,000,000 mm.";
   return {};
 }
 auto operator_settings_command_error(const SetOperatorSettings& command, const Limits& limits)

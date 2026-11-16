@@ -2,7 +2,7 @@
 import { vTooltip } from '../tooltip'
 // Tools and offsets: the tool table, the tool in the spindle with its length touch-off, and the
 // nine work coordinate systems.
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 import { startDialog } from '../dialogs'
 import { vNumeric } from '../numeric-input'
@@ -24,6 +24,7 @@ const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
 const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
+const compensation = computed(() => status.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
 const modelEditor = ref<{ tool: Tool | null } | null>(null)
 const modelSettingsPending = computed(() => toolModels.storage === 'loading' || toolModels.saving)
 function modelLabel(tool: Tool): string {
@@ -56,17 +57,38 @@ const lengthMismatch = computed(
 // ---- tool row editor ------------------------------------------------------------------------------
 
 const editing = ref<'add' | 'edit' | null>(null)
+const editingTool = ref<Tool | null>(null)
+const editUnit = ref(panel.unit)
+const editHello = shallowRef(panel.hello)
 const form = reactive({ number: '', length: '', diameter: '', comment: '' })
+const initialDimensions = reactive({ length: '', diameter: '' })
+function sameTool(tool: Tool): boolean {
+  const current = findTool(tool.number)
+  return current !== null && current.pocket === tool.pocket && current.length === tool.length &&
+    current.diameter === tool.diameter && current.comment === tool.comment
+}
+const editorBlock = computed(() => editBlock.value ?? (panel.hello !== editHello.value ? 'The machine connection changed. Reopen this editor.' :
+  editingTool.value !== null && !sameTool(editingTool.value) ? 'The tool table changed. Reopen this editor.' : null))
 
 function edit(tool: Tool): void {
+  if (editBlock.value !== null) return
+  editingTool.value = { ...tool }
+  editUnit.value = unit.value
+  editHello.value = panel.hello
   form.number = String(tool.number)
   form.length = String(Number(toDisplay(tool.length, unit.value).toFixed(5)))
   form.diameter = String(Number(toDisplay(tool.diameter, unit.value).toFixed(5)))
+  initialDimensions.length = form.length
+  initialDimensions.diameter = form.diameter
   form.comment = tool.comment
   editing.value = 'edit'
 }
 
 function add(): void {
+  if (editBlock.value !== null) return
+  editingTool.value = null
+  editUnit.value = unit.value
+  editHello.value = panel.hello
   const free = tools.value.reduce((highest, tool) => Math.max(highest, tool.number), 0) + 1
   form.number = String(free)
   form.length = '0'
@@ -81,9 +103,11 @@ if (startDialog === 'tool') {
 
 const parsed = computed((): Tool | null => {
   const number = parseNumber(form.number)
-  const length = parseLength(form.length, unit.value)
-  const diameter = parseLength(form.diameter, unit.value)
-  if (number === null || !Number.isInteger(number) || number < 1 || length === null || diameter === null || diameter < 0) {
+  const length = editingTool.value !== null && form.length === initialDimensions.length
+    ? editingTool.value.length : parseLength(form.length, editUnit.value)
+  const diameter = editingTool.value !== null && form.diameter === initialDimensions.diameter
+    ? editingTool.value.diameter : parseLength(form.diameter, editUnit.value)
+  if (number === null || !Number.isInteger(number) || number < 1 || number > 2147483647 || length === null || diameter === null || diameter < 0) {
     return null
   }
   const existing = findTool(number)
@@ -95,7 +119,7 @@ const replaces = computed(
 )
 
 function save(): void {
-  if (parsed.value !== null) {
+  if (parsed.value !== null && editorBlock.value === null) {
     send({ type: 'set_tool', tool: parsed.value })
     editing.value = null
   }
@@ -104,20 +128,44 @@ function save(): void {
 const removing = ref<Tool | null>(null)
 
 function remove(): void {
-  if (removing.value !== null) {
+  if (removing.value !== null && editorBlock.value === null && sameTool(removing.value) && removing.value.number !== loaded.value) {
     send({ type: 'remove_tool', number: removing.value.number })
+    editing.value = null
   }
   removing.value = null
 }
 
 // ---- touch-off ---------------------------------------------------------------------------------------
 
-const touching = ref<boolean>(false)
-
-function touchOff(value: number): void {
-  send({ type: 'tool_touch_off', value: fromDisplay(value, unit.value) })
-  touching.value = false
+const touching = ref<{ initial: string; millimeters: number } | null>(null)
+function openTouchOff(): void {
+  if (touchBlock.value !== null) return
+  const millimeters = panel.preferences.tool_reference_height
+  touching.value = { initial: String(Number(toDisplay(millimeters, unit.value).toFixed(6))), millimeters }
 }
+
+function touchOff(value: number, text: string): void {
+  if (touching.value !== null && touchBlock.value === null) {
+    send({ type: 'tool_touch_off', value: text === touching.value.initial ? touching.value.millimeters : fromDisplay(value, unit.value) })
+  }
+  touching.value = null
+}
+// Position feedback never replaces the draft; a changed tool, work system or connection does.
+watch([(): unknown => panel.hello, loaded, wcs, unit, touchBlock], () => { touching.value = null }, { flush: 'sync' })
+
+const loading = ref<Tool | null>(null)
+const loadBlock = computed(() => mdiBlock.value ?? (loading.value !== null && !sameTool(loading.value)
+  ? 'The tool table changed. Select the tool again.' : null))
+function openLoad(tool: Tool): void {
+  if (mdiBlock.value === null) loading.value = { ...tool }
+}
+function loadTool(): void {
+  if (loading.value === null || loadBlock.value !== null) return
+  const number = loading.value.number
+  loading.value = null
+  send({ type: 'mdi', text: `T${String(number)} M6 G43 H${String(number)}` })
+}
+watch([(): unknown => panel.hello, loaded, mdiBlock], () => { loading.value = null }, { flush: 'sync' })
 
 const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, panel.link))
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
@@ -129,80 +177,39 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       <div class="heading">
         <h2>Tool table</h2>
         <span class="hint">{{ unit }}</span>
-        <span class="spacer"></span>
-        <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
+        <span class="spindle-line" :class="{ stale: panel.link !== 'live' }">
+          <template v-if="loaded !== 0"><strong class="mono">T{{ loaded }}</strong> in spindle · Length <span class="mono">{{ formatLength(applied, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }} · {{ compensation }}</template>
+          <template v-else>No tool in spindle</template>
+        </span>
+        <button v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
-          <AppIcon name="plus" />Add tool
+          <AppIcon name="plus" /><span>Add tool</span>
         </button>
       </div>
 
-      <div class="spindle" :class="{ none: loaded === 0 }">
-        <div class="which">
-          <span class="label">In spindle, as reported</span>
-          <span class="tool">
-            <template v-if="loaded === 0">No tool</template>
-            <template v-else>
-              <span class="mono">T{{ loaded }}</span> {{ loadedTool?.comment ?? 'not in the tool table' }}
-            </template>
-          </span>
-          <span class="hint">
-            <template v-if="applied !== 0">Length offset in effect {{ formatLength(applied, unit) }} {{ unit }} (G43)</template>
-            <template v-else>No tool length offset in effect (G49)</template>
-          </span>
-          <span v-if="lengthMismatch" class="blocked">
-            The table length differs from the offset in effect. LinuxCNC applies a new length at the next G43.
-          </span>
-        </div>
-        <button
-          v-tooltip="touchBlock ?? 'Set the length of the loaded tool from its present position'"
-          class="btn"
-          type="button"
-          :disabled="touchBlock !== null"
-          @click="touching = true"
-        >
-          <AppIcon name="target" />Touch off length
-        </button>
-      </div>
-      <p v-if="touchBlock" class="hint reason">Touch-off unavailable: {{ touchBlock }}</p>
-      <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>
-      <p v-else-if="toolModels.saved" class="hint" role="status">{{ toolModels.saved }}</p>
-      <p v-else-if="toolModels.storage === 'loading'" class="hint">Loading tool model settings…</p>
-      <p v-else-if="toolModels.storageReason" class="hint">{{ toolModels.storageReason }}</p>
+      <p v-if="lengthMismatch" class="blocked">Applied length differs from the table. Load the tool again to apply its current length.</p>
 
       <div class="scroll">
         <table>
           <thead>
             <tr>
-              <th class="num">Tool</th>
-              <th v-tooltip="'LinuxCNC tool-length offset, not physical tool length'" class="num">Z offset</th>
-              <th class="num">Diameter</th>
+              <th class="num tool-column">Tool</th>
+              <th v-tooltip="'LinuxCNC tool-length offset, not physical tool length'" class="num dimension-column">Length</th>
+              <th class="num dimension-column">Diameter</th>
               <th>Description</th>
-              <th></th>
+              <th class="load-column"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tool in tools" :key="tool.number" :class="{ loaded: tool.number === loaded }">
+            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, editable: editBlock === null }" :tabindex="editBlock === null ? 0 : -1" :aria-label="`Edit tool ${tool.number}: ${tool.comment}`" @click="edit(tool)" @keydown.enter.self.prevent="edit(tool)" @keydown.space.self.prevent="edit(tool)">
               <td class="num mono">T{{ tool.number }}</td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
-              <td v-tooltip="tool.comment" class="comment">
+              <td class="comment">
                 {{ tool.comment }}
-                <span v-if="tool.number === loaded" class="inspindle">in spindle</span>
-                <button class="model-link" type="button" :disabled="modelSettingsPending" :aria-label="`Preview model for T${tool.number}`" @click="modelEditor = { tool }">{{ modelLabel(tool) }}</button>
               </td>
               <td class="actions">
-                <button v-tooltip="editBlock ?? `Edit tool ${tool.number}`" class="btn square" type="button" :disabled="editBlock !== null" @click="edit(tool)">
-                  <AppIcon name="edit" />
-                </button>
-                <button
-                  v-tooltip="editBlock ?? (tool.number === loaded ? 'The tool is in the spindle' : `Remove tool ${tool.number}`)"
-                  class="btn square"
-                  type="button"
-                  :disabled="editBlock !== null || tool.number === loaded"
-                  @click="removing = tool"
-                >
-                  <AppIcon name="trash" />
-                </button>
+                <button v-tooltip="mdiBlock ?? `Load T${tool.number} and apply its length`" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="`Load tool ${tool.number}`" @click.stop="openLoad(tool)">Load</button>
               </td>
             </tr>
           </tbody>
@@ -258,42 +265,62 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       </p>
     </section>
 
-    <ModalDialog v-if="editing !== null" :title="editing === 'add' ? 'Add tool' : `Edit tool ${form.number}`" size="small" @close="editing = null">
+    <ModalDialog v-if="editing !== null && modelEditor === null && removing === null" :title="editing === 'add' ? 'Add tool' : `Edit tool ${form.number}`" size="medium" expanded @close="editing = null">
+      <div class="tool-fields">
       <label class="entry">
         <span class="label">Tool number</span>
         <input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
       </label>
       <label class="entry">
-        <span class="label">Length, {{ unit }}</span>
-        <input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <span class="label">Length, {{ editUnit }}</span>
+        <input v-model="form.length" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
       <label class="entry">
-        <span class="label">Diameter, {{ unit }}</span>
-        <input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
+        <span class="label">Diameter, {{ editUnit }}</span>
+        <input v-model="form.diameter" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
       </label>
-      <label class="entry">
+      <label class="entry description-entry">
         <span class="label">Description</span>
         <input v-model="form.comment" class="field" type="text" autocomplete="off" />
       </label>
+      </div>
       <p v-if="replaces" class="blocked">Tool {{ parsed?.number }} exists. Saving replaces it.</p>
+      <div class="model-controls">
+        <span class="label">Preview only</span>
+        <button v-if="editingTool !== null" class="btn" type="button" :disabled="modelSettingsPending || editorBlock !== null" @click="modelEditor = { tool: editingTool }">{{ modelLabel(editingTool) }}</button>
+        <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
+      </div>
+      <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>
+      <p v-else-if="toolModels.saved" class="hint" role="status">{{ toolModels.saved }}</p>
+      <p v-else-if="toolModels.storageReason" class="hint">{{ toolModels.storageReason }}</p>
+      <p v-if="editorBlock" class="blocked" role="status">{{ editorBlock }}</p>
       <template #footer>
+        <button v-if="editingTool !== null" v-tooltip="editingTool.number === loaded ? 'The tool is in the spindle' : undefined" class="btn danger" type="button" :disabled="editorBlock !== null || editingTool.number === loaded" @click="removing = editingTool">Delete</button>
+        <span class="spacer"></span>
         <button class="btn" type="button" @click="editing = null">Cancel</button>
-        <button class="btn primary" type="button" :disabled="parsed === null" @click="save">Save to tool table</button>
+        <button class="btn primary" type="button" :disabled="parsed === null || editorBlock !== null" @click="save">Save to tool table</button>
       </template>
     </ModalDialog>
 
-    <ModalDialog v-if="removing !== null" :title="`Remove tool ${removing.number}?`" size="small" @close="removing = null">
+    <ModalDialog v-if="removing !== null" :title="`Remove tool ${removing.number}?`" size="small" expanded fresh-gesture @close="removing = null">
       <p class="confirm">
         <span class="mono">T{{ removing.number }}</span> {{ removing.comment }} will be removed from the machine's tool
         table. Programs that call it will stop with an error.
       </p>
       <template #footer>
         <button class="btn" type="button" @click="removing = null">Cancel</button>
-        <button class="btn danger" type="button" @click="remove">Remove tool</button>
+        <button class="btn danger" type="button" :disabled="editorBlock !== null || removing.number === loaded" @click="remove">Remove tool</button>
       </template>
     </ModalDialog>
 
     <ToolModelDialog v-if="modelEditor !== null" :tool="modelEditor.tool" @close="modelEditor = null" />
+
+    <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">
+      <p class="confirm"><strong>{{ loading.comment || `Tool ${loading.number}` }}</strong><br />Length {{ formatLength(loading.length, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }} · Diameter {{ formatLength(loading.diameter, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }}</p>
+      <p class="confirm">Starts the machine’s tool-change sequence and applies this tool’s length. Follow the tool-change prompt if shown. The configured sequence may move the axes; clear the tool-change area first.</p>
+      <p v-if="loadBlock" class="blocked" role="status">{{ loadBlock }}</p>
+      <template #footer><button class="btn" type="button" @click="loading = null">Cancel</button><button class="btn primary" type="button" :disabled="loadBlock !== null" @click="loadTool">Load T{{ loading.number }}</button></template>
+    </ModalDialog>
 
     <NumberDialog
       v-if="touching"
@@ -301,10 +328,10 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
       :effect="`Sets the length of T${loaded} in the tool table so that Z reads the value below in ${wcs} at the present position, and applies it (G43). The machine does not move.`"
       label="Z is now at"
       :unit="unit"
-      initial="0"
+      :initial="touching.initial"
       :action="`Set T${loaded} length`"
       @confirm="touchOff"
-      @close="touching = false"
+      @close="touching = null"
     />
   </div>
 </template>
@@ -338,36 +365,18 @@ const rotated = computed(() => systems.value.some((system) => system.rotation_xy
   flex: 1;
 }
 
-.spindle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--bg-sunken);
-}
-
-.which {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.tool {
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.spindle.none .tool {
-  color: var(--text-dim);
-}
-
-.reason {
-  margin: 0;
-}
+.spindle-line { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.spindle-line strong { color: var(--text); font-size: 14px; }
+.spindle-line.stale strong { color: var(--text-faint); }
+.heading > .btn { min-height: 44px; white-space: nowrap; padding-inline: 10px; }
+.table .heading { gap: 8px; }
+.table .heading h2 { display: none; }
+.table table { table-layout: fixed; }
+.tool-column { width: 52px; }.dimension-column { width: 92px; }.load-column { width: 76px; }
+.tool-row.editable { cursor: pointer; }
+.tool-row.editable:hover td { background: var(--accent-soft); }
+.tool-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.load-tool { width: 64px; min-height: 44px; }
 
 .scroll {
   flex: 1;
@@ -405,23 +414,17 @@ td {
 }
 
 td.comment {
-  max-width: 0;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.3;
+  padding-block: 6px;
 }
-
-.inspindle {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--go);
-}
-
-.model-link { display: block; max-width: 100%; padding: 1px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
-.model-link:hover { text-decoration: underline; }
+.model-controls { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.model-controls .label { margin-right: auto; }
+.tool-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.tool-fields input { width: 100%; min-width: 0; }
+.description-entry { grid-column: 1 / -1; }
 
 tr.loaded td {
   background: var(--go-soft);

@@ -1113,7 +1113,8 @@ const examples = [
         3
       ],
       "default_spindle_rpm": 1800,
-      "default_jog_velocity": 600
+      "default_jog_velocity": 600,
+      "tool_reference_height": 6.35
     }
   },
   {

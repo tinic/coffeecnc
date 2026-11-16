@@ -116,7 +116,7 @@ watch([axes, touchBlock], () => {
     <div v-if="panel.tab === 'manual'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
       <span class="tool-heading">{{ !live ? 'Last reported tool' : tool === 0 ? 'No tool loaded' : 'Active tool' }}</span>
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
-      <span class="tool-length">Z length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
+      <span class="tool-length">Length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
     <CoordinateConfirm v-if="quick && quickValues" :axis="quick.axis" :wcs="wcs" :current="quickValues.current" :target="quickValues.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />

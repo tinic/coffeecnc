@@ -97,7 +97,7 @@ const subtitle = computed(() => {
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
-      <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" /><span>E-STOP<small>Software</small></span></button>
+      <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />E-STOP</button>
       <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button>
     </div>
   </header>
@@ -156,7 +156,6 @@ const subtitle = computed(() => {
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { width: 32px; height: 36px; background: none; border: 0; color: var(--text-dim); font-size: 18px; cursor: pointer; }
 .estop { display: flex; align-items: center; justify-content: center; gap: 9px; flex: none; min-width: 132px; height: 52px; padding: 0 15px; background: #b9202b; border: 2px solid #941822; border-radius: 9px; box-shadow: 0 2px 0 #74131b; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
-.estop small { display: block; font-size: 10px; font-weight: 500; line-height: 1.1; letter-spacing: .6px; }
 .estop:hover { background: #a51924; }.estop:active { box-shadow: none; transform: translateY(1px); }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .estop :deep(svg) { width: 22px; height: 22px; }
 .machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: 15px; }

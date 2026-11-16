@@ -88,12 +88,12 @@ async function save(): Promise<void> {
           <label v-for="(name, index) in wcsNames" :key="name" :class="{ selected: enabled.includes(index + 1) }"><input v-model="enabled" type="checkbox" :value="index + 1" :disabled="settings.state.saving" /><span class="mono">{{ name }}</span></label>
         </div>
         <p class="hint">Programs can use any system; the active one stays visible.</p>
-        <details class="shift-note"><summary>About G92 / G52 shifts</summary><p>G92/G52 adds an offset to every work system. CoffeeCNC shows it whenever applied. Work system shortcuts do not hide or clear it.</p></details>
         <div class="tool-reference">
           <label class="speed-label" for="settings-reference">Tool reference height</label>
           <div class="speed-entry"><input id="settings-reference" v-model="reference" v-numeric :disabled="settings.state.saving" class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Contact height above work Z zero for tool length touch-off." /><span>{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
           <p class="hint">Gauge block or setter contact height above work Z zero. Prefills Touch off length; does not move the machine.</p>
         </div>
+        <details class="shift-note"><summary>About G92 / G52 shifts</summary><p>G92/G52 adds an offset to every work system. CoffeeCNC shows it whenever applied. Work system shortcuts do not hide or clear it.</p></details>
       </section>
     </div>
     <template #footer>
@@ -112,9 +112,9 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
 .units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }.units .btn:first-child { flex: 1.8; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
-.wcs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 15px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 18px; height: 18px; accent-color: var(--accent); }
+.wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 13px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .shift-note { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 32px; padding-block: 4px; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
-.tool-reference { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tool-reference { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .save-state { flex: 1; min-width: 0; align-self: center; color: var(--text-dim); font-size: 12px; }.save-state p { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } }
 </style>

@@ -40,7 +40,7 @@ void documents_and_limits() {
   expected.tool_reference_height = 0;
   require(upgraded && upgraded->document == expected,
           "Existing v1 settings retain all preferences with zero reference height");
-  for (const auto height : {Json(-1), Json("6.35"), Json(nullptr), Json(1e10)}) {
+  for (const auto& height : {Json(-1), Json("6.35"), Json(nullptr), Json(1e10)}) {
     auto invalid = Json::parse(*encoded);
     invalid["document"]["tool_reference_height"] = height;
     require(!decode_operator_settings_file(invalid.dump()), "Invalid reference height rejected");

@@ -20,7 +20,11 @@ function openQuit(): void {
 }
 type PowerCommand = Extract<CommandBody, { type: 'set_machine' }>
 const pendingPower = shallowRef<{ command: PowerCommand; hello: Hello | null; before: Status | null; accepted: boolean } | null>(null)
+const powerLabel = computed(() => status.value?.machine === 'estop' ? 'Reset E-stop' : status.value?.machine === 'on' ? 'Machine off' : 'Machine on')
+const powerTarget = computed(() => status.value?.machine === 'off' ? 'on' : 'off')
+const powerBlocked = computed(() => pendingPower.value !== null || !live.value || status.value === null)
 function power(state: 'on' | 'off'): void {
+  if (powerBlocked.value) return
   const command: PowerCommand = { type: 'set_machine', state }
   // Install before send: the browser simulator can answer synchronously.
   pendingPower.value = { command, hello: panel.hello, before: panel.status, accepted: false }
@@ -93,7 +97,7 @@ const subtitle = computed(() => {
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
-      <button v-tooltip="'Assert LinuxCNC software E-stop'" class="estop" type="button" @click="send({ type: 'set_machine', state: 'estop' })">E-stop</button>
+      <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" /><span>E-STOP<small>Software</small></span></button>
       <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button>
     </div>
   </header>
@@ -102,27 +106,27 @@ const subtitle = computed(() => {
       <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
       <p class="subtitle">{{ subtitle }}</p>
     </div>
-    <details ref="menu" class="state-menu" @toggle="!menu?.open && (pendingPower = null)">
-      <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
-      <div class="popover">
-        <h3>Machine</h3>
-        <div class="fact"><span>Connection</span><span>{{ linkLabel }}</span></div>
-        <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
-        <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
-        <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
-        <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
-        <div class="actions">
-          <button v-if="status?.machine === 'estop' || status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('off')">Reset E-stop</button>
-          <button v-if="status?.machine === 'off'" class="btn" type="button" :disabled="!live" @click="power('on')">Machine on</button>
-          <button v-else-if="status?.machine === 'on'" class="btn" type="button" :disabled="panel.link === 'incompatible'" @click="power('off')">Machine off</button>
-          <button class="btn menu-log" type="button" @click="emit('log')"><AppIcon name="list" />Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
+    <div class="machine-controls">
+      <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
+      <details ref="menu" class="state-menu">
+        <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
+        <div class="popover">
+          <h3>Machine</h3>
+          <div class="fact"><span>Connection</span><span>{{ linkLabel }}</span></div>
+          <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
+          <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
+          <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
+          <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
+          <div class="actions">
+            <button class="btn menu-log" type="button" @click="emit('log')"><AppIcon name="list" />Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
+          </div>
+          <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
+          <div class="application-actions">
+            <button class="btn quit" type="button" @click="openQuit"><AppIcon name="power" />Quit CoffeeCNC…</button>
+          </div>
         </div>
-        <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
-        <div class="application-actions">
-          <button class="btn quit" type="button" @click="openQuit"><AppIcon name="power" />Quit CoffeeCNC…</button>
-        </div>
-      </div>
-    </details>
+      </details>
+    </div>
   </section>
   <section class="message-area" aria-label="Machine messages">
     <div class="message-band" :class="panel.notice?.level ?? 'empty'">
@@ -151,7 +155,11 @@ const subtitle = computed(() => {
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { width: 32px; height: 36px; background: none; border: 0; color: var(--text-dim); font-size: 18px; cursor: pointer; }
-.estop { min-height: 44px; padding: 0 10px; background: none; border: 1px solid transparent; border-radius: 7px; color: var(--stop); font-size: 11px; cursor: pointer; }.estop:hover { border-color: var(--stop); background: var(--stop-soft); }
+.estop { display: flex; align-items: center; justify-content: center; gap: 9px; flex: none; min-width: 132px; height: 52px; padding: 0 15px; background: #b9202b; border: 2px solid #941822; border-radius: 9px; box-shadow: 0 2px 0 #74131b; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
+.estop small { display: block; font-size: 10px; font-weight: 500; line-height: 1.1; letter-spacing: .6px; }
+.estop:hover { background: #a51924; }.estop:active { box-shadow: none; transform: translateY(1px); }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.estop :deep(svg) { width: 22px; height: 22px; }
+.machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: 15px; }
 .jobbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; gap: 20px; }
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-weight: 550; }
@@ -159,7 +167,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .open { display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
 .open:disabled { opacity: .4; }
 .state-menu { position: relative; flex: none; }
-.state-pill { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 30px; background: var(--panel); font-size: 12px; }
+.state-pill { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 30px; background: var(--panel); font-size: 12px; }
 .state-pill :deep(svg) { width: 12px; height: 12px; color: var(--text-dim); }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }

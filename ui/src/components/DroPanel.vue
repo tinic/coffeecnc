@@ -16,6 +16,9 @@ let nextTouch = 0
 const touchBlock = computed(() => panel.tab !== 'manual' ? 'Open Manual to touch off'
   : basis.value !== 'work' ? 'Switch to work position to touch off' : mdiBlock.value)
 const shifted = computed(() => reported.value?.offsets.g92.some((v) => v !== 0) ?? false)
+const tool = computed(() => reported.value?.tool.in_spindle)
+const compensation = computed(() => reported.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
+const toolLength = computed(() => reported.value?.offsets.tool[2])
 function cycleBasis(): void { basis.value = basis.value === 'work' ? 'machine' : basis.value === 'machine' ? 'dtg' : 'work' }
 function marker(axis: AxisStatus): string {
   if (axis.homing) return 'Homing'
@@ -59,6 +62,11 @@ watch([axes, touchBlock], () => {
       <button type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
       <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
     </div>
+    <div v-if="panel.tab === 'manual'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
+      <span class="tool-heading">{{ live ? 'Active tool' : 'Last reported tool' }}</span>
+      <strong class="mono">{{ tool === undefined ? '—' : tool === 0 ? 'T0 · No tool' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
+      <span class="tool-length">Z length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
+    </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
   </section>
 </template>
@@ -76,6 +84,8 @@ watch([axes, touchBlock], () => {
 .units { display: flex; flex: none; gap: 3px; padding: 3px; margin: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
 .units button { width: 52px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.active-tool { display: flex; flex: 0 0 174px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 16px; border-left: 1px solid var(--line); white-space: nowrap; }
+.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 </style>

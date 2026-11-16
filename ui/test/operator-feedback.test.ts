@@ -72,11 +72,23 @@ describe('power menu confirmation', () => {
     result('accepted'); snapshot('on'); await nextTick()
     expect(isOpen()).toBe(true)
   })
-  it('waits for a new snapshot when resetting while already off', async () => {
+  it('resets E-stop without powering on, then offers power-on only after confirmation', async () => {
+    snapshot('estop'); await nextTick()
     await button('Reset E-stop').trigger('click'); result('accepted'); await nextTick()
     expect(isOpen()).toBe(true)
     snapshot('off'); await nextTick(); expect(isOpen()).toBe(false)
     expect(wire.send.mock.calls.map(([c]) => c.type === 'set_machine' && c.state)).toEqual(['off'])
+    expect(button('Machine on').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Reset E-stop')
+  })
+  it('keeps the direct power action pending when the menu is closed', async () => {
+    await button('Machine on').trigger('click')
+    ;(wrapper.get('details').element as HTMLDetailsElement).open = false
+    await wrapper.get('details').trigger('toggle')
+    await button('Machine on').trigger('click')
+    expect(wire.send).toHaveBeenCalledTimes(1)
+    result('accepted'); snapshot('on'); await nextTick()
+    expect(button('Machine off').attributes('disabled')).toBeUndefined()
   })
 })
 

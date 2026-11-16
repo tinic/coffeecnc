@@ -20,6 +20,14 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount() })
 
 describe('machine feedback presentation', () => {
+  it.each([true, false, null])('shows stopped spindle at-speed as not applicable even when the input is %s', async (atSpeed) => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.spindle.direction = 'stopped'; panel.status.spindle.at_speed = atSpeed
+    wrapper = mount(MachineFeedback)
+    expect(wrapper.get('.at-speed').text()).toBe('—')
+    panel.status.spindle.direction = 'forward'; await nextTick()
+    expect(wrapper.get('.at-speed').text()).toBe(atSpeed === null ? 'Unavailable' : atSpeed ? 'Yes' : 'No')
+  })
   it.each(['null', 'absent'])('shows %s feedback as unavailable, never from the spindle command', (kind) => {
     if (panel.status === null) throw new Error('Missing status')
     if (kind === 'null') {

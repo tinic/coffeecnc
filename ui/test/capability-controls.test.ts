@@ -71,16 +71,14 @@ describe('capability-aware controls', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('allows an explicit E-stop reset while off without powering on', async () => {
+  it('offers direct power-on when already reset, without a redundant reset action', async () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.machine = 'off'
     wrapper = mount(StatusBar)
     const reset = wrapper.findAll('button').find((button) => button.text() === 'Reset E-stop')
     const on = wrapper.findAll('button').find((button) => button.text() === 'Machine on')
-    expect(reset).toBeDefined(); expect(on).toBeDefined()
-    await reset?.trigger('click')
-    expect(vi.mocked(send).mock.calls).toEqual([[{ type: 'set_machine', state: 'off' }]])
-    vi.mocked(send).mockClear()
+    expect(reset).toBeUndefined(); expect(on).toBeDefined()
+    expect(on?.element.closest('details')).toBeNull()
     await on?.trigger('click')
     expect(vi.mocked(send).mock.calls).toEqual([[{ type: 'set_machine', state: 'on' }]])
     panel.status.machine = 'on'
@@ -93,13 +91,15 @@ describe('capability-aware controls', () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.machine = 'off'; panel.link = link
     wrapper = mount(StatusBar)
-    const actions = wrapper.findAll('.actions button').filter((button) => ['Reset E-stop', 'Machine on'].includes(button.text()))
-    expect(actions).toHaveLength(2)
+    const actions = wrapper.findAll('.power-control')
+    expect(actions).toHaveLength(1)
     for (const button of actions) {
       expect(button.attributes('disabled')).toBeDefined()
       await button.trigger('click')
     }
     expect(send).not.toHaveBeenCalled()
+    await wrapper.get('.estop').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_machine', state: 'estop' })
   })
 
   it.each(['stale', 'silent', 'off', 'estop', 'busy', 'homing', 'homed'] as const)(

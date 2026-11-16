@@ -5,6 +5,8 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
@@ -197,6 +199,51 @@ void writer_delivery() {
             "A fresh page receives saved preferences");
   }
 }
+
+void host_file_restart() {
+  std::array<char, 48> pattern{};
+  const std::string prefix = "/tmp/coffeecnc-operator-settings-XXXXXX";
+  std::ranges::copy(prefix, pattern.begin());
+  const auto* made = ::mkdtemp(pattern.data());
+  require(made != nullptr, "Private test directory created");
+  const std::filesystem::path root{made};
+  struct Cleanup {
+    std::filesystem::path path;
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(path, ignored);
+    }
+  } cleanup{root};
+  const ToolModelLocation local{"G0759", ToolModelAvailability::available, "",
+                                (root / "G0759").string()};
+  {
+    LocalToolModelFiles files;
+    ToolModelArchive owner{files, local};
+    owner.open();
+    OperatorSettingsArchive settings{files, limits};
+    settings.open(owner.shared_location());
+    require(settings.apply(command()).outcome == CommandOutcome::accepted,
+            "POSIX write, fsync, rename and directory fsync succeed");
+    const auto permissions =
+        std::filesystem::status(root / "G0759/operator-settings.json").permissions();
+    require((permissions & (std::filesystem::perms::group_all |
+                            std::filesystem::perms::others_all)) == std::filesystem::perms::none,
+            "Operator file is private");
+    owner.close();
+  }
+  {
+    LocalToolModelFiles files;
+    ToolModelArchive owner{files, local};
+    owner.open();
+    OperatorSettingsArchive settings{files, limits};
+    settings.open(owner.shared_location());
+    require(settings.settings().revision == 1 &&
+                settings.settings().document->startup_units == StartupUnits::inch &&
+                settings.settings().document->default_jog_velocity == 88.9,
+            "A fresh file handle and archive restore saved preferences");
+    owner.close();
+  }
+}
 } // namespace
 auto main() -> int {
   try {
@@ -204,6 +251,7 @@ auto main() -> int {
     archive_and_restart();
     failures();
     writer_delivery();
+    host_file_restart();
     std::cout << checks << " operator settings checks passed\n";
     return 0;
   } catch (const std::exception& error) {

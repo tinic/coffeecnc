@@ -2,7 +2,7 @@
 
 Settings opens from the app menu. Startup units (machine default, mm, inch), visible work systems G54–G59.3, default spindle RPM and default jog speed are machine-scoped operator preferences. They do not edit LinuxCNC offsets, INI limits, program units or issue motion/spindle commands. A zero RPM default leaves the speed unset. Speeds apply at startup; shortcut visibility updates when saved. All numeric settings accept formulas and units.
 
-Native storage follows native-[native-tool-model-storage.md](native-tool-model-storage.md), with the WebKit context remaining ephemeral: explicit MACHINE_ID, backend-owned separate operator-settings.json document, revision compare-and-swap, bounded reads/writes, durable replacement and page identity. Reuse the machine directory and existing writer/lock rather than acquiring the same lock a second time. Missing identity is session-only; invalid/corrupt/locked storage is unavailable and never silently overwritten. Browser demo preferences may use localStorage and never import into native mode.
+Native storage follows [native-tool-model-storage.md](native-tool-model-storage.md), with the WebKit context remaining ephemeral: explicit MACHINE_ID, backend-owned separate operator-settings.json document, revision compare-and-swap, bounded reads/writes, durable replacement and page identity. Reuse the machine directory and existing writer/lock rather than acquiring the same lock a second time. Missing identity is session-only; invalid/corrupt/locked storage is unavailable and never silently overwritten. Browser demo preferences may use localStorage and never import into native mode.
 
 ## Protocol v1 addition
 

@@ -141,8 +141,8 @@ function remove(): void {
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
-          <p class="diameter-source hint" v-if="family === 'touch-probe'">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from Diameter above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
-          <p class="diameter-source hint" v-else>Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
+          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from Diameter above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
+          <p v-else class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
           <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
         </template>
       </div>

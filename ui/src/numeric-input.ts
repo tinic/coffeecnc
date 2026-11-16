@@ -9,6 +9,8 @@ interface NumericEntry {
   initial: string
   label: string
   integer: boolean
+  effect?: string
+  action?: string
 }
 export const numericEntry = shallowRef<NumericEntry | null>(null)
 let nextEntry = 0
@@ -50,6 +52,8 @@ export function applyNumericEntry(value: number): boolean {
   target.value = String(value)
   target.dispatchEvent(new Event('input', { bubbles: true }))
   target.dispatchEvent(new Event('change', { bubbles: true }))
+  // Explicit keypad confirmation, distinct from a normal change/blur while typing.
+  target.dispatchEvent(new Event('numeric-confirm', { bubbles: true }))
   numericEntry.value = null
   return true
 }
@@ -71,6 +75,8 @@ export const vNumeric: ObjectDirective<HTMLInputElement, 'inline' | 'integer' | 
         key: ++nextEntry, target: input, initial: input.value,
         label: input.getAttribute('aria-label') ?? input.labels?.[0]?.textContent.trim() ?? 'Number',
         integer: binding.value === 'integer' || inputMode === 'numeric',
+        ...(input.dataset['numericEffect'] ? { effect: input.dataset['numericEffect'] } : {}),
+        ...(input.dataset['numericAction'] ? { action: input.dataset['numericAction'] } : {}),
       }
     }
     const inside = (point: { clientX: number; clientY: number }): boolean => {

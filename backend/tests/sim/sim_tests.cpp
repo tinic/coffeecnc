@@ -1602,6 +1602,41 @@ void mdi(Rig& rig) {
         inches && inch_touch.accepted() && near(status.work[1], 25.4) && near(status.g5x[1], -30.9),
         std::format("units_inch={} work_y={:.3f} g5x_y={:.3f}", inches, status.work[1],
                     status.g5x[1]));
+
+  // The typed Tools command targets an inactive fixture even in G20/G91. Reading
+  // it afterward must preserve rotation, G92 and the stationary machine position.
+  const auto block = [&](std::string_view wire) -> bool {
+    const auto result = rig.send(wire);
+    return result.accepted() && rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  };
+  const bool prepared = block(R"("type":"mdi","text":"G91 G10 L2 P3 R15")") &&
+                        block(R"("type":"mdi","text":"G92 Z1")");
+  const auto before_origin = rig.status();
+  const bool written = block(R"("type":"set_work_offset","wcs":3,"offset":[25.4,-50.8,3.5])");
+  const bool selection_preserved = rig.status().wcs == 1;
+  const bool selected = block(R"("type":"select_wcs","wcs":3)");
+  const auto origin = rig.status();
+  bool stationary = true;
+  for (std::size_t i = 0; i < 3; ++i)
+    stationary = stationary && near(origin.controller.axes[i].machine,
+                                    before_origin.controller.axes[i].machine, 0.0001);
+  check("set_work_origin_in_inch_incremental_mode",
+        prepared && written && selection_preserved && selected && stationary &&
+            near(origin.g5x[0], 25.4, 0.000001) && near(origin.g5x[1], -50.8, 0.000001) &&
+            near(origin.g5x[2], 3.5, 0.000001) && near(origin.rotation_xy, 15) &&
+            origin.g92 == before_origin.g92 && rig.snapshot().program_units == LengthUnit::inch,
+        std::format("selected={} XYZ={},{},{} rotation={} stationary={}", origin.wcs,
+                    origin.g5x[0], origin.g5x[1], origin.g5x[2], origin.rotation_xy, stationary));
+  const bool cleared = block(R"("type":"set_work_offset","wcs":3,"offset":[0,0,0])");
+  const auto clear = rig.status();
+  check("clear_active_work_origin_preserves_rotation_and_shift",
+        cleared && near(clear.g5x[0], 0) && near(clear.g5x[1], 0) && near(clear.g5x[2], 0) &&
+            near(clear.rotation_xy, 15) && clear.g92 == before_origin.g92,
+        std::format("XYZ={},{},{} rotation={}", clear.g5x[0], clear.g5x[1], clear.g5x[2],
+                    clear.rotation_xy));
+  check("work_origin_test_restores_context",
+        block(R"("type":"mdi","text":"G90 G54 G92.1")") &&
+            block(R"("type":"mdi","text":"G10 L2 P3 R0")"));
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21")"));
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
 

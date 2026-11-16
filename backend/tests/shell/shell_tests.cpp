@@ -891,13 +891,15 @@ void tool_table(const Rig& rig) {
   rig.js("__t.received = __t.received.filter((m) => m.type !== 'tool_table'); return 1;");
   for (int round = 0; round < 6; ++round) {
     const bool three = round % 2 == 0;
+    const auto revision = rig.js("return __t.last.tool_table.revision;");
     write(rig.config.tool_table, three ? "T9 P1 ;nine\nT4 P2\nT2 P3 ;two\n"
                                        : "T9 P1 ;nine\nT0 P4\nT4 P2\nT2 P3 ;two\nT5 P5\nT6 P6\n");
     const auto done = output_of(
         "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.load_tool_table(); "
         "c.set_optional_stop(True); c.set_block_delete(True); print(c.wait_complete(5))'");
     const bool shown = rig.wait_js(
-        std::format("__t.last.tool_table.tools.length === {}", three ? 3 : 5), 5s);
+        std::format("__t.last.tool_table.tools.length === {} && "
+                    "__t.last.tool_table.revision > {}", three ? 3 : 5, revision.dump()), 5s);
     check(std::format("reload_then_command_round_{}", round), shown,
           std::format("rcs={} tools={}", done,
                       rig.js("return __t.last.tool_table.tools.map((t) => t.number);").dump()));

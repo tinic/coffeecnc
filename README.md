@@ -24,7 +24,7 @@ The app menu now includes Settings for startup display units, work system shortc
 
 ![CoffeeCNC operator settings in the browser simulator](ui/screenshots/settings-1280.png)
 
-*Browser simulator, 16 November 2026. Native G0759 deployment pending.*
+*Browser simulator, 16 November 2026. The native settings build is deployed on the G0759; [running binary and UI bundle verified](docs/research/evidence/operator-settings-2026-11-16.txt).*
 
 </details>
 

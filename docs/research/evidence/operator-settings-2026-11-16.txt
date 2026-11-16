@@ -1,6 +1,6 @@
 CoffeeCNC operator settings — 16 November 2026
 Implementation source: 2ba3dc028eb0a8f17af72f3deaf5aae31018850c, PR #39
-Physical G0759 deployment: pending Claude; no physical machine commands issued by Codex.
+Physical G0759 deployment: confirmed, deployed by Claude. Codex verified read-only.
 
 UI: typecheck, ESLint, 471 tests in 33 files passed; production bundle built.
 Browser simulator at 1280 x 720: settings layout checked; all primary inputs visible.
@@ -38,3 +38,11 @@ Final UI inputs_digest:
 1a4e143571ab10caa84fcc7591a83998f7b5c17c853b62d2b776ab634c8e483a
 Final UI assets_digest:
 4cbb046e81e8c097a024c6b12d42eec3d6ce4e45a3a8a3ec2af64d98d21baa7d
+
+Deployment verification (16 November 2026):
+Claude reported main d3e87137c822643c8ee287d76d6dd16d9e32bc34 deployed with the machine off.
+Read-only SSH independently confirmed that revision in /home/turo/ai/coffeecnc,
+PID 26444 running /usr/bin/coffeecnc, and matching installed/running binary SHA256:
+5182a1f07d5a40e64d2777d9ac5bbc7f741b2b616e5670e5ca1dccab91074e85
+Installed UI inputs/assets digests match the final values above exactly.
+Codex issued no machine power, motion, spindle, Quit, install or restart command.

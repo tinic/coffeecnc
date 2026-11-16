@@ -16,7 +16,14 @@ bundle built. Browser checks at 1280x720 and 1600x900 confirmed layout and the
 full cycle with corresponding coordinates, then checked Work G59.3 with an
 applied G92/G52 shift. All labels fit. No native controller code changed.
 Screenshots: ui/screenshots/manual-dro-cycle-1280.png and manual-dro-cycle-1600.png.
-Physical deployment pending Claude; the screenshots are from the browser simulator.
+Physical deployment by Claude confirmed and independently verified read-only on
+16 November 2026 at 17:08 UTC. The screenshots are from the browser simulator.
+Mill checkout: 3fc267b985fdf8b00095fdb2c274b2b13d18b2c4.
+Running PID: 30319; executable: /usr/bin/coffeecnc.
+Installed and running executable SHA-256 both:
+5182a1f07d5a40e64d2777d9ac5bbc7f741b2b616e5670e5ca1dccab91074e85.
+The installed UI stamp matches both digests below. Codex issued no physical
+machine commands; Claude owns installation and restart.
 
 UI inputs_digest: ffa4121c3f8b8c3e371f7a5393b94e7852618148525d044e55307071211052a4
 UI assets_digest: dadc2bff6c3cd54740bd793e0c74917e3ff9332a750665acd176bc8f40afdd78

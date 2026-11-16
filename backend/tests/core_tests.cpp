@@ -345,8 +345,11 @@ void jog_stop_attribution() {
   const std::optional<Time> never;
   require(classify_jog_stop(stop, read, read - 12ms, never) == JogStopCause::own,
           "own level high 12 ms before the read: own");
-  require(classify_jog_stop(immediate, read, read - 12ms, never) == JogStopCause::own,
-          "the immediate text is attributed the same way");
+  require(classify_jog_stop(immediate, read, read - 12ms, never) == JogStopCause::not_jog_stop,
+          "the immediate text is not ours: own level high in the window, passed on unchanged");
+  require(classify_jog_stop(immediate, read, read - 12ms, read - 5ms) ==
+              JogStopCause::not_jog_stop,
+          "the immediate text is not the watchdog's either: passed on unchanged");
   require(classify_jog_stop(stop, read, read - 12ms, read - 5ms) == JogStopCause::watchdog,
           "a watchdog seen tripped in the window wins over the own level of the same stall");
   require(classify_jog_stop(stop, read, read - 12ms, read - jog_stop_window - 1ns) ==

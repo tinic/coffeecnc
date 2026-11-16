@@ -1044,9 +1044,20 @@ void late_jog_starts() {
        [](Rig& rig) -> void {
          static_cast<void>(rig.session.submit(
              rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+         static_cast<void>(rig.session.control(at(rig.clock), {false, true}));
        },
        "accepted",
        "",
+       {"start_jog x 1 600 axis", "stop_jog x"}},
+      // The control thread stalls after the release: the watchdog may trip before any period
+      // reads it, and no period raised CoffeeCNC's level. The refusal stays visible.
+      {"released, refused before a period raised the level",
+       [](Rig& rig) -> void {
+         static_cast<void>(rig.session.submit(
+             rig.page, std::format("{{\"id\":{},{}}}", rig.next_id++, release_x), at(rig.clock)));
+       },
+       "failed",
+       inhibit,
        {"start_jog x 1 600 axis", "stop_jog x"}},
       {"not released",
        [](Rig&) -> void {},

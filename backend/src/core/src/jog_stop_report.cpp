@@ -3,7 +3,7 @@
 namespace coffeecnc {
 
 auto is_jog_stop_text(std::string_view text) -> bool {
-  return text == "Jog aborted by jog-stop" || text == "Jog aborted by jog-stop-immediate";
+  return text == "Jog aborted by jog-stop";
 }
 
 auto is_jog_inhibit_refusal(std::string_view reason) -> bool {

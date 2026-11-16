@@ -367,6 +367,8 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
     wake(); // a start may have waited for the level to fall
   }
   // From close on the level is high for good, whatever was reconciled.
+  if (hold_ || closing_)
+    level_epoch_ = epoch_;
   return hold_ || closing_;
 }
 
@@ -845,6 +847,10 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision)
         return answer(reply(std::move(started)));
       if (watchdog_epoch_ > request.epoch)
         return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
+      // No period has raised the level since the stop decision: the inhibit that refused the
+      // start was not ours, or not yet. A stalled control thread may not have read a trip.
+      if (level_epoch_ <= request.epoch)
+        return answer(reply(std::move(started)));
       late_in = epoch_;
     } else {
       axis.pressed = false;

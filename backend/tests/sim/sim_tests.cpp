@@ -510,11 +510,10 @@ void unhomed(Rig& rig) {
     check("own_jog_stop_text_not_shown", !rig.has_message("Jog aborted by jog-stop"));
     // Another driver of motion's jog-stop pins than CoffeeCNC's level and the watchdog: halcmd
     // on motion.jog-stop-immediate, which the post-GUI file leaves unconnected. Its text
-    // reaches the operator unchanged.
-    rig.direct_pump(300ms); // past the attribution window after the level above
+    // reaches the operator unchanged, also inside the attribution window of the level above.
     rig.clear_messages();
     const auto foreign = rig.port.start_jog(Axis::x, 1, 600, JogSpace::joint, always());
-    rig.direct_pump(100ms);
+    rig.direct_pump(30ms);
     const bool raised = halcmd("setp motion.jog-stop-immediate 1");
     rig.direct_pump(50ms);
     const bool lowered = halcmd("setp motion.jog-stop-immediate 0");

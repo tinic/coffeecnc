@@ -8,11 +8,12 @@
 
 namespace coffeecnc {
 
-// Who stopped a jog that LinuxCNC reports as "Jog aborted by jog-stop" or "... by
-// jog-stop-immediate". Motion reports it in every servo period in which one of those pins is
-// high while a jog is active (emc/motion/control.c:542), so every such text was produced while
-// the pin was high. In the shipped post-GUI file motion.jog-stop is driven by CoffeeCNC's own
-// level OR the HAL watchdog, nothing else.
+// Who stopped a jog that LinuxCNC reports as "Jog aborted by jog-stop". Motion reports it in
+// every servo period in which that pin is high while a jog is active (emc/motion/control.c:542),
+// so every such text was produced while the pin was high. In the shipped post-GUI file
+// motion.jog-stop is driven by CoffeeCNC's own level OR the HAL watchdog, nothing else.
+// "Jog aborted by jog-stop-immediate" comes from motion.jog-stop-immediate, which neither
+// drives: it is never attributed and always reaches the operator unchanged.
 //
 // The watchdog is asked first. It trips only after CoffeeCNC's control thread has not run for
 // the watchdog's timeout, and CoffeeCNC raises its own level as soon as that thread runs again

@@ -283,6 +283,20 @@ if(BUILD_TESTING)
         endif()
         # The build tree's GUI tests need the fallbacks: the test program is not installed.
         if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS AND COFFEECNC_DEVELOPMENT_PATHS)
+          add_executable(coffeecnc_quit_application_tests tests/shell/quit_application_tests.cpp)
+          target_include_directories(coffeecnc_quit_application_tests PRIVATE src/coffeecnc src/shell/src)
+          target_include_directories(coffeecnc_quit_application_tests SYSTEM PRIVATE
+            $<TARGET_PROPERTY:coffeecnc_shell,INCLUDE_DIRECTORIES>)
+          target_compile_definitions(coffeecnc_quit_application_tests PRIVATE
+            COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist")
+          target_link_libraries(coffeecnc_quit_application_tests PRIVATE coffeecnc_application
+            coffeecnc_project_options)
+          add_test(NAME linuxcnc_quit_application COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -u mm -t 40 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_quit_application
+            ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+            $<TARGET_FILE:coffeecnc_quit_application_tests>)
+          set_tests_properties(linuxcnc_quit_application PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+            RESOURCE_LOCK linuxcnc TIMEOUT 400 FIXTURES_REQUIRED panel)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
               -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}

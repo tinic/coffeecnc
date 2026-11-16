@@ -24,6 +24,7 @@ const examples = [
       10
     ],
     "max_jog_velocity": 1500,
+    "max_spindle_rpm": 5000,
     "axis_max_jog_velocity": {
       "x": 1500,
       "y": 1500,
@@ -35,6 +36,7 @@ const examples = [
     "max_spindle_override": 1.5,
     "machine_id": "G0759",
     "tool_model_storage": 1,
+    "operator_settings_storage": 1,
     "quit_supported": true
   },
   {
@@ -65,6 +67,7 @@ const examples = [
     "max_spindle_override": 1,
     "machine_id": null,
     "tool_model_storage": 1,
+    "operator_settings_storage": 1,
     "quit_supported": true
   },
   {

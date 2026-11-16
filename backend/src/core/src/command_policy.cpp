@@ -95,7 +95,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         // Visual preferences of the panel: nothing of the machine's state decides about them,
         // and nothing of them reaches the controller.
         if constexpr (std::is_same_v<T, SetToolModelDefaults> ||
-                      std::is_same_v<T, SetToolModelAssignment>)
+                      std::is_same_v<T, SetToolModelAssignment> ||
+                      std::is_same_v<T, SetOperatorSettings>)
           return allow();
         if constexpr (std::is_same_v<T, SetMachine>) {
           if (c.state == MachineState::estop || c.state == MachineState::off)

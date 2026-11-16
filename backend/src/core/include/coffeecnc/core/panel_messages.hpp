@@ -54,6 +54,7 @@ struct Hello {
   std::optional<std::string> machine_id;
   // Not known: the panel offers both.
   std::optional<CoolantOutputs> coolant;
+  std::optional<double> max_spindle_rpm;
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

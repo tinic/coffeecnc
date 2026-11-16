@@ -393,6 +393,12 @@ public:
     ToolModelCommand command;
   };
   std::vector<Submitted> submitted;
+  std::vector<SetOperatorSettings> operator_submitted;
+  auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings command)
+      -> std::optional<std::string> override {
+    operator_submitted.push_back(std::move(command));
+    return refusal;
+  }
   std::vector<std::uint64_t> ended;
   // Not empty: the next commands are refused with it.
   std::optional<std::string> refusal;
@@ -417,6 +423,26 @@ constexpr auto assign_model =
     R"("type":"set_tool_model_assignment","machine_id":"mill-1","base_revision":3,)"
     R"("tool":{"number":2,"pocket":2,"diameter":6,"comment":"drill"},"family":"drill",)"
     R"("overrides":{"tipAngle":135})";
+
+void operator_settings_go_to_storage() {
+  FakePort port;
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  FakeToolModels models;
+  Session session{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs, &models};
+  Driver driver{session, port};
+  const auto page = driver.begin_page();
+  static_cast<void>(driver.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto outcome = driver.handle(
+      page,
+      R"({"id":2,"type":"set_operator_settings","machine_id":"mill-1","base_revision":0,"document":)"
+      R"({"version":1,"startup_units":"inch","enabled_wcs":[1,9],"default_spindle_rpm":1800,"default_jog_velocity":600}})",
+      at(0ms));
+  require(outcome.messages.empty() && models.operator_submitted.size() == 1,
+          "Operator preferences go directly to storage");
+  require(port.calls.empty() && port.snapshots == 0,
+          "Saving preferences issues no controller commands or reads");
+}
 
 void tool_model_commands_go_to_their_service() {
   FakePort port;
@@ -1905,7 +1931,6 @@ void quit() {
     rig.accepted(R"("type":"set_override","which":"feed","value":1)");
     require(!rig.driver.quit, "Later accepted requests cannot inherit Quit intent");
   }
-
 }
 
 void new_page() {
@@ -2090,6 +2115,7 @@ auto main(int argc, char** argv) -> int {
     stale_pages_are_dropped();
     ready_gate();
     tool_model_commands_go_to_their_service();
+    operator_settings_go_to_storage();
     ids_strictly_increase();
     decode_errors();
     policy_rejections_pass_through();

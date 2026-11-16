@@ -110,6 +110,11 @@ if(BUILD_TESTING)
       coffeecnc_project_options nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_tool_model_tests)
     add_test(NAME tool_models COMMAND coffeecnc_tool_model_tests ${PROJECT_BINARY_DIR})
+    add_executable(coffeecnc_operator_settings_tests tests/operator_settings_tests.cpp)
+    target_link_libraries(coffeecnc_operator_settings_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_operator_settings_tests)
+    add_test(NAME operator_settings COMMAND coffeecnc_operator_settings_tests)
     add_executable(coffeecnc_session_tests tests/session_tests.cpp)
     target_link_libraries(coffeecnc_session_tests PRIVATE coffeecnc_app coffeecnc_project_options
       nlohmann_json::nlohmann_json)

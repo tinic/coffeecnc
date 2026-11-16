@@ -52,7 +52,7 @@ async function save(): Promise<void> {
     <div class="settings-grid">
       <section class="startup">
         <h3>At startup</h3>
-        <p class="hint">Units and speeds apply next time CoffeeCNC opens.</p>
+        <p class="hint">Applied next time CoffeeCNC opens.</p>
         <fieldset :disabled="settings.state.saving">
           <legend>Display units</legend>
           <div class="units segmented" aria-label="Startup units">
@@ -60,7 +60,7 @@ async function save(): Promise<void> {
           </div>
           <label class="speed-label" for="settings-spindle">Default spindle speed</label>
           <div class="speed-entry"><input id="settings-spindle" v-model="spindle" v-numeric class="field mono" type="text" inputmode="decimal" data-numeric-unit="rpm" data-numeric-effect="Startup preset only. Does not start the spindle." /><span>rpm</span></div>
-          <p class="hint">Zero leaves the speed unset. Never starts the spindle.</p>
+          <p class="hint">Zero leaves the speed unset; never starts the spindle.</p>
           <label class="speed-label" for="settings-jog">Default jog speed</label>
           <div class="speed-entry"><input id="settings-jog" v-model="jog" v-numeric class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Jog speed per minute at startup." /><span>{{ velocityUnit(unit) }}</span></div>
           <p class="hint">Formulas work here too: <span class="mono">600/2</span> or <span class="mono">10in</span> per minute.</p>
@@ -68,12 +68,12 @@ async function save(): Promise<void> {
       </section>
       <section class="coordinates">
         <h3>Work system shortcuts</h3>
-        <p class="hint">Choose the systems shown in Manual. Five fit on the main row; the rest appear under More.</p>
+        <p class="hint">Five shortcuts on the main row. Others appear under More.</p>
         <div class="wcs-grid">
           <label v-for="(name, index) in wcsNames" :key="name" :class="{ selected: enabled.includes(index + 1) }"><input v-model="enabled" type="checkbox" :value="index + 1" :disabled="settings.state.saving" /><span class="mono">{{ name }}</span></label>
         </div>
-        <p class="hint">The active system always stays visible. Programs can still select every system.</p>
-        <div class="shift-note"><strong>G92 / G52 is a separate shift</strong><p>It adds an offset to all work systems. CoffeeCNC shows it whenever a shift is applied. Your work system shortcuts do not hide or clear it.</p></div>
+        <p class="hint">Programs can use any system; the active one stays visible.</p>
+        <details class="shift-note"><summary>About G92 / G52 shifts</summary><p>G92/G52 adds an offset to every work system. CoffeeCNC shows it whenever applied. Work system shortcuts do not hide or clear it.</p></details>
       </section>
     </div>
     <template #footer>
@@ -86,14 +86,14 @@ async function save(): Promise<void> {
 
 <style scoped>
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
-.hint { margin: 6px 0 14px; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.hint { margin: 2px 0 6px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-legend, .speed-label { display: block; margin: 0 0 8px; font-size: 14px; font-weight: 500; }
-.units { margin-bottom: 18px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }
+legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
+.units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }.units .btn:first-child { flex: 1.8; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
-.wcs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 15px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 18px; height: 18px; accent-color: var(--accent); }
-.shift-note { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }.shift-note strong { font-weight: 500; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+.wcs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 15px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 18px; height: 18px; accent-color: var(--accent); }
+.shift-note { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 32px; padding-block: 4px; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
 .save-state { flex: 1; min-width: 0; align-self: center; color: var(--text-dim); font-size: 12px; }.save-state p { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } }
 </style>

@@ -40,6 +40,10 @@ public:
   // writer, and its one CommandResult comes from there, unless its page ends first.
   [[nodiscard]] virtual auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<std::string> = 0;
+  [[nodiscard]] virtual auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings)
+      -> std::optional<std::string> {
+    return "Operator settings storage is not part of this session.";
+  }
   // This page and every one before it has ended: what waits for them is dropped, and what
   // they are still owed is not sent.
   virtual void page_ended(PageToken page) = 0;
@@ -289,7 +293,7 @@ private:
     StageKind kind{StageKind::reply};
     Reply reply;
     std::vector<std::string> produced; // messages sent before the result
-    bool quit{}; // belongs only to this request and its page
+    bool quit{};                       // belongs only to this request and its page
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;

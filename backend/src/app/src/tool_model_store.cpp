@@ -29,8 +29,7 @@ auto absolute(const std::optional<std::string>& path) -> const std::string* {
 }
 
 auto failure(std::string_view what) -> std::unexpected<std::string> {
-  return std::unexpected(
-      std::format("{}: {}", what, std::generic_category().message(errno)));
+  return std::unexpected(std::format("{}: {}", what, std::generic_category().message(errno)));
 }
 
 auto close_descriptor(int& descriptor) -> bool {
@@ -51,9 +50,9 @@ auto changed(ToolModelDocument document, const ToolModelCommand& command)
   const auto& asked = std::get<SetToolModelAssignment>(command);
   auto& assignments = document.assignments;
   // In rising tool order.
-  const auto place = std::ranges::lower_bound(
-      assignments, asked.tool.number, {},
-      [](const ToolModelAssignment& a) -> int { return a.tool.number; });
+  const auto place =
+      std::ranges::lower_bound(assignments, asked.tool.number, {},
+                               [](const ToolModelAssignment& a) -> int { return a.tool.number; });
   const bool found = place != assignments.end() && place->tool.number == asked.tool.number;
   if (!asked.family) {
     if (found)
@@ -128,7 +127,7 @@ auto LocalToolModelFiles::make_directory(const std::string& path)
   // The umask may have taken bits away; it cannot have added any.
   if (created && ::chmod(path.c_str(), directory_mode) != 0)
     return failure(std::format("the mode of the directory {} cannot be set", path));
-  struct stat info {};
+  struct stat info{};
   if (::stat(path.c_str(), &info) != 0)
     return failure(std::format("the directory {} cannot be examined", path));
   if (!S_ISDIR(info.st_mode))
@@ -138,8 +137,8 @@ auto LocalToolModelFiles::make_directory(const std::string& path)
 
 auto LocalToolModelFiles::lock(const std::string& directory) -> std::expected<void, LockError> {
   const auto error = [](std::string_view what) -> std::unexpected<LockError> {
-    return std::unexpected(LockError{
-        false, std::format("{}: {}", what, std::generic_category().message(errno))});
+    return std::unexpected(
+        LockError{false, std::format("{}: {}", what, std::generic_category().message(errno))});
   };
   unlock();
   const auto file = directory + '/' + std::string(tool_model_lock_name);
@@ -174,7 +173,7 @@ auto LocalToolModelFiles::read(const std::string& path, std::size_t limit)
       return std::optional<Content>{};
     return failure("it cannot be opened");
   }
-  struct stat info {};
+  struct stat info{};
   if (::fstat(file, &info) != 0 || !S_ISREG(info.st_mode)) {
     static_cast<void>(close_descriptor(file));
     return std::unexpected(std::string("it is not a regular file"));
@@ -204,8 +203,8 @@ auto LocalToolModelFiles::read(const std::string& path, std::size_t limit)
 
 auto LocalToolModelFiles::open_temporary(const std::string& path) -> Done {
   static_cast<void>(close_descriptor(temporary_));
-  temporary_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
-                      file_mode);
+  temporary_ =
+      ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, file_mode);
   if (temporary_ < 0)
     return failure("the temporary file cannot be made");
   // Also for one a crashed write left there, and whatever the umask.
@@ -261,7 +260,8 @@ void LocalToolModelFiles::discard(const std::string& path) {
 
 ToolModelArchive::ToolModelArchive(ToolModelFiles& files, ToolModelLocation location)
     : files_(files), location_(std::move(location)) {
-  show({location_.machine_id, 0,
+  show({location_.machine_id,
+        0,
         location_.availability == ToolModelAvailability::session_only
             ? ToolModelAvailability::session_only
             : ToolModelAvailability::unavailable,
@@ -302,11 +302,11 @@ auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
       return std::unexpected(made.error());
     if (made->created) {
       const auto slash = part.rfind('/');
-      const auto parent = slash == 0 || slash == std::string::npos ? std::string("/")
-                                                                   : part.substr(0, slash);
+      const auto parent =
+          slash == 0 || slash == std::string::npos ? std::string("/") : part.substr(0, slash);
       if (const auto durable = files_.sync_directory(parent); !durable)
-        return std::unexpected(std::format("the new directory {} cannot be made durable: {}",
-                                           part, durable.error()));
+        return std::unexpected(
+            std::format("the new directory {} cannot be made durable: {}", part, durable.error()));
     }
     if (end == std::string::npos) {
       if ((made->mode & others) != 0)
@@ -334,10 +334,20 @@ void ToolModelArchive::open() {
                                        location_.directory, locked.error().reason, not_saved)));
     return;
   }
+  locked_ = true;
   show(read());
 }
 
-void ToolModelArchive::close() { files_.unlock(); }
+auto ToolModelArchive::shared_location() const -> ToolModelLocation {
+  if (locked_)
+    return {location_.machine_id, ToolModelAvailability::available, note_, location_.directory};
+  return {location_.machine_id, models_.availability, models_.reason, {}};
+}
+
+void ToolModelArchive::close() {
+  locked_ = false;
+  files_.unlock();
+}
 
 auto ToolModelArchive::read() const -> ToolModels {
   const auto file = path(tool_model_file_name);
@@ -357,8 +367,8 @@ auto ToolModelArchive::read() const -> ToolModels {
     return unavailable(std::format("{} belongs to machine {}, not to {}. {}", file,
                                    saved->machine_id, location_.machine_id.value_or(""),
                                    left_alone));
-  ToolModels held{location_.machine_id, saved->revision, ToolModelAvailability::available,
-                  note_, std::move(saved->document)};
+  ToolModels held{location_.machine_id, saved->revision, ToolModelAvailability::available, note_,
+                  std::move(saved->document)};
   if (const auto encoded = encode_tool_models(held); !encoded)
     return unavailable(std::format("{} is not usable: {} {}", file, encoded.error(), left_alone));
   return held;
@@ -377,14 +387,14 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
              ? unavailable(std::format("{} was changed from outside while CoffeeCNC runs. {} "
                                        "Restart CoffeeCNC to use what it holds.",
                                        file, not_saved))
-             : unavailable(std::format("{} was changed from outside while CoffeeCNC runs: {}",
-                                       file, now.reason)));
+             : unavailable(std::format("{} was changed from outside while CoffeeCNC runs: {}", file,
+                                       now.reason)));
     return {CommandOutcome::rejected, models_.reason, true};
   }
   if (!models_.document)
     return {CommandOutcome::rejected, models_.reason, true};
-  const auto base = std::visit([](const auto& c) -> std::uint64_t { return c.base_revision; },
-                               command);
+  const auto base =
+      std::visit([](const auto& c) -> std::uint64_t { return c.base_revision; }, command);
   if (base != models_.revision)
     return {CommandOutcome::rejected,
             std::format("The tool models were changed since revision {} was shown: they are at "
@@ -399,8 +409,8 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
     return {CommandOutcome::rejected, document.error(), false};
   ToolModels next{location_.machine_id, models_.revision + 1, ToolModelAvailability::available,
                   note_, std::move(*document)};
-  const auto text = encode_tool_model_file(
-      {location_.machine_id.value_or(""), next.revision, *next.document});
+  const auto text =
+      encode_tool_model_file({location_.machine_id.value_or(""), next.revision, *next.document});
   if (const auto message = encode_tool_models(next); !text || !message)
     return {CommandOutcome::rejected,
             std::format("{} Nothing was saved.", text ? message.error() : text.error()), false};
@@ -435,8 +445,12 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
   return {CommandOutcome::accepted, {}, true};
 }
 
-ToolModelStore::ToolModelStore(ToolModelFiles& files, ToolModelLocation location, Deliver deliver)
+ToolModelStore::ToolModelStore(ToolModelFiles& files, ToolModelLocation location, Deliver deliver,
+                               std::optional<Limits> operator_limits)
     : location_(location), deliver_(std::move(deliver)), archive_(files, std::move(location)),
+      operator_settings_(operator_limits
+                             ? std::make_unique<OperatorSettingsArchive>(files, *operator_limits)
+                             : nullptr),
       thread_([this]() -> void { loop(); }) {}
 
 ToolModelStore::~ToolModelStore() {
@@ -452,8 +466,8 @@ auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand comma
     -> std::optional<std::string> {
   if (location_.availability != ToolModelAvailability::available)
     return location_.reason;
-  const auto& machine = std::visit(
-      [](const auto& c) -> const std::string& { return c.machine_id; }, command);
+  const auto& machine =
+      std::visit([](const auto& c) -> const std::string& { return c.machine_id; }, command);
   if (machine != location_.machine_id)
     return std::format("This change is for another machine than this one ({}). Nothing was "
                        "saved.",
@@ -464,6 +478,30 @@ auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand comma
     const std::scoped_lock lock{mutex_};
     if (pending_.size() >= max_pending)
       return std::string(busy_reason);
+    pending_.push_back({page, id, std::move(command)});
+  }
+  wake_.notify_all();
+  return {};
+}
+
+auto ToolModelStore::submit_operator_settings(PageToken page, RequestId id,
+                                              SetOperatorSettings command)
+    -> std::optional<std::string> {
+  if (!operator_settings_)
+    return "Operator settings storage is not part of this session.";
+  if (location_.availability != ToolModelAvailability::available)
+    return location_.reason;
+  if (command.machine_id != location_.machine_id)
+    return "This settings change belongs to another machine.";
+  if (auto error = operator_settings_command_error(command, operator_settings_->limits());
+      !error.empty())
+    return error;
+  {
+    const std::scoped_lock lock{mutex_};
+    if (pending_.size() >= max_pending)
+      return "Too many settings changes are waiting.";
+    if (page.value <= ended_through_)
+      return "This settings page has ended.";
     pending_.push_back({page, id, std::move(command)});
   }
   wake_.notify_all();
@@ -492,6 +530,8 @@ void ToolModelStore::send_snapshot(PageToken page) {
 
 void ToolModelStore::loop() {
   archive_.open();
+  if (operator_settings_)
+    operator_settings_->open(archive_.shared_location());
   const auto send = [this](PageToken page, std::vector<std::string> messages) -> void {
     {
       const std::scoped_lock lock{mutex_};
@@ -517,15 +557,28 @@ void ToolModelStore::loop() {
       }
     }
     if (snapshot) {
-      send(*snapshot, {archive_.snapshot()});
+      std::vector<std::string> messages{archive_.snapshot()};
+      if (operator_settings_)
+        messages.push_back(operator_settings_->snapshot());
+      send(*snapshot, std::move(messages));
       continue;
     }
     if (!next)
       continue;
-    const auto reply = archive_.apply(next->command);
+    ToolModelReply reply;
+    std::string changed_snapshot;
+    if (const auto* settings = std::get_if<SetOperatorSettings>(&next->command)) {
+      reply = operator_settings_->apply(*settings);
+      if (reply.snapshot)
+        changed_snapshot = operator_settings_->snapshot();
+    } else {
+      reply = archive_.apply(std::get<ToolModelCommand>(next->command));
+      if (reply.snapshot)
+        changed_snapshot = archive_.snapshot();
+    }
     std::vector<std::string> messages;
     if (reply.snapshot)
-      messages.push_back(archive_.snapshot());
+      messages.push_back(std::move(changed_snapshot));
     messages.push_back(encode_result(next->id, reply.outcome, reply.reason));
     send(next->page, std::move(messages));
   }

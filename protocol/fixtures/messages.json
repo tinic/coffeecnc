@@ -32,7 +32,9 @@
     "max_spindle_override": 1.5,
     "machine_id": "G0759",
     "tool_model_storage": 1,
-    "quit_supported": true
+    "quit_supported": true,
+    "operator_settings_storage": 1,
+    "max_spindle_rpm": 5000
   },
   {
     "type": "hello",
@@ -62,7 +64,8 @@
     "max_spindle_override": 1,
     "machine_id": null,
     "tool_model_storage": 1,
-    "quit_supported": true
+    "quit_supported": true,
+    "operator_settings_storage": 1
   },
   {
     "type": "status",

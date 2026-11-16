@@ -839,19 +839,31 @@ void coolant_wiring() {
   const std::string pins = "iocontrol bit   OUT FALSE iocontrol.0.coolant-flood ==> coolant-flood\n"
                            "iocontrol bit   OUT FALSE iocontrol.0.coolant-mist ==> coolant-mist\n";
   require(pin_signal(pins, "iocontrol.0.coolant-mist") == "coolant-mist", "pin to its signal");
-  require(!pin_signal("iocontrol bit   OUT FALSE iocontrol.0.coolant-flood\n",
-                      "iocontrol.0.coolant-flood"),
+  require(pin_signal("iocontrol bit   OUT FALSE iocontrol.0.coolant-flood\n",
+                      "iocontrol.0.coolant-flood") == "",
           "an unlinked pin has no signal");
-  require(!signal_has_reader("bit    FALSE  coolant-flood <== iocontrol.0.coolant-flood\n",
-                             "coolant-flood"),
+  require(signal_has_reader("bit    FALSE  coolant-flood <== iocontrol.0.coolant-flood\n",
+                             "coolant-flood") == false,
           "a signal with only its writer drives nothing");
   require(signal_has_reader("bit    FALSE  coolant-flood-out ==> x.y\n"
                             "bit    FALSE  coolant-flood <== iocontrol.0.coolant-flood ==> "
                             "hm2_7i76e.0.7i76.0.0.output-01\n",
-                            "coolant-flood"),
+                            "coolant-flood") == true,
           "a reader drives an output; a longer name with the same prefix is another signal");
   require(!signal_has_reader("bit    FALSE  coolant-flood-out ==> x.y\n", "coolant-flood"),
           "only the exact name counts");
+  require(!pin_signal("", "iocontrol.0.coolant-flood"), "empty probe output is unknown");
+  require(!pin_signal("error looking up pin", "iocontrol.0.coolant-flood"),
+          "unrecognised output is unknown, not unwired");
+  require(!pin_signal("io bit OUT FALSE iocontrol.0.coolant-flood ==>\n",
+                       "iocontrol.0.coolant-flood"), "truncated pin output is unknown");
+  require(!signal_has_reader("", "coolant-flood"), "missing signal is unknown");
+  require(!signal_has_reader("bit FALSE coolant-flood ==>\n", "coolant-flood"),
+          "truncated reader is unknown");
+  require(!signal_has_reader("bit FALSE coolant-flood ??? bad-pin\n", "coolant-flood"),
+          "malformed connections are unknown");
+  require(signal_has_reader("bit FALSE coolant-flood <=> bidirectional-pin\n", "coolant-flood") == true,
+          "bidirectional pins also consume a signal");
 }
 
 auto main(int argc, char** argv) -> int {

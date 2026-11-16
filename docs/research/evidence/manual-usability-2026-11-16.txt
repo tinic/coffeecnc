@@ -12,7 +12,7 @@ Part 1: PR33, source d278039, merged main 39f58d4.
   on playhouse2 passed in 38.42s with direct power assertions.
 
 Part 2:
-- Work / Machine / To go are explicit segmented controls; units say Display.
+- Work / Machine / To go are explicit segmented controls.
 - Coordinate entry still opens by tapping the readout.
 - turo rejected the added Zero/Half row because it took too much vertical space.
   Zero/Half now live in each axis's ellipsis menu, followed by a short confirmation.
@@ -30,7 +30,8 @@ Local validation:
 - 444 UI tests in 30 files; typecheck, lint and production build pass.
 - Browser simulator: Half X -12.400 -> -6.200 only after confirmation.
 - Further user feedback removed the grey caption row: Work G54 is inside the
-  button and Display is inline beside mm/in.
+  button. turo then requested removing the static Display label entirely;
+  the unit toggle now shows only mm/in.
 - 1280x720: DRO height70px, jog and side panels have no scroll overflow.
 - 1600x900: no jog or side overflow; larger MDI history.
 - Browser console has no warnings or errors.

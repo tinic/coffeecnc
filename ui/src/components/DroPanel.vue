@@ -93,7 +93,6 @@ watch([axes, touchBlock], () => {
     </div>
     <span v-if="axes.length === 0" class="unavailable">Position unavailable</span>
     <div class="display-units">
-      <span>Display</span>
       <div class="units" role="group" aria-label="Display units">
         <button type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
         <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
@@ -116,7 +115,6 @@ watch([axes, touchBlock], () => {
 .basis-options button { flex: 1; min-height: 48px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; white-space: nowrap; }
 .basis-options button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .g92 { display: block; font-size: 9px; line-height: 10px; color: var(--warn); }
-.display-units > span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .axis-group { display: flex; align-items: center; flex: 1 1 250px; min-width: 0; border-left: 1px solid var(--line); }
 .axis { display: flex; flex: 1; height: 56px; align-items: center; gap: 10px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }

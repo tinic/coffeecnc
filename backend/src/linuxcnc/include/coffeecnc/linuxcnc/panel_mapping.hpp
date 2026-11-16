@@ -20,11 +20,13 @@ namespace coffeecnc {
 // The protocol `hello` of a machine driven through LinuxCNC.
 [[nodiscard]] auto to_hello(const MachineConfig& config) -> Hello;
 
-// From `halcmd -s show pin <pin>`: the signal the pin is linked to, if any.
+// From `halcmd -s show pin <pin>`: signal name, empty for a confirmed unlinked pin,
+// nullopt when no valid exact pin row was found. Unknown is never treated as unlinked.
 [[nodiscard]] auto pin_signal(std::string_view shown, std::string_view pin)
     -> std::optional<std::string>;
-// From `halcmd -s show sig <signal>`: the signal has at least one reader.
-[[nodiscard]] auto signal_has_reader(std::string_view shown, std::string_view signal) -> bool;
+// From `halcmd -s show sig <signal>`: reader presence, or nullopt for unknown output.
+[[nodiscard]] auto signal_has_reader(std::string_view shown, std::string_view signal)
+    -> std::optional<bool>;
 
 // The protocol `status` of one reading. `tools` is the table LinuxCNC has loaded: it reports
 // the prepared tool as an index into that table, and the panel is told the tool number of the

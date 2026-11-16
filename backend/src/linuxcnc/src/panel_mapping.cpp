@@ -35,23 +35,40 @@ auto pin_signal(std::string_view shown, std::string_view pin) -> std::optional<s
   for (std::string line; std::getline(lines, line);) {
     std::istringstream words{line};
     std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
-    if (word.size() == 7 && word[4] == pin && (word[5] == "==>" || word[5] == "<=="))
-      return word[6];
+    if (word.size() >= 5 && word[4] == pin) {
+      if (word[1] != "bit" || word[2] != "OUT")
+        return std::nullopt;
+      if (word.size() == 5)
+        return std::string{};
+      if (word.size() == 7 && word[5] == "==>")
+        return word[6];
+      return std::nullopt;
+    }
   }
   return std::nullopt;
 }
 
-auto signal_has_reader(std::string_view shown, std::string_view signal) -> bool {
+auto signal_has_reader(std::string_view shown, std::string_view signal) -> std::optional<bool> {
   // `halcmd -s show sig <sig>`: one line per matching signal, `type value name` followed by
   // `<== writer` and `==> reader` pairs.
   std::istringstream lines{std::string(shown)};
   for (std::string line; std::getline(lines, line);) {
     std::istringstream words{line};
     std::vector<std::string> word{std::istream_iterator<std::string>{words}, {}};
-    if (word.size() >= 3 && word[2] == signal)
-      return std::ranges::find(word, "==>") != word.end();
+    if (word.size() >= 3 && word[2] == signal) {
+      if (word[0] != "bit" || word.size() % 2 != 1)
+        return std::nullopt;
+      bool reader = false;
+      for (std::size_t i = 3; i < word.size(); i += 2) {
+        if (word[i] == "==>" || word[i] == "<=>")
+          reader = true;
+        else if (word[i] != "<==")
+          return std::nullopt;
+      }
+      return reader;
+    }
   }
-  return false;
+  return std::nullopt;
 }
 
 auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,

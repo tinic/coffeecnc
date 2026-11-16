@@ -127,6 +127,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   g0759.min_spindle_override = 0.5;
   g0759.max_spindle_override = 1.5;
   g0759.machine_id = "G0759";
+  g0759.coolant = CoolantOutputs{.flood = false, .mist = false};
   messages.push_back(encode_hello(g0759));
 
   Hello demo;

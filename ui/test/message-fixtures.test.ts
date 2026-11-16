@@ -9,6 +9,7 @@ const examples = [
     "type": "hello",
     "protocol": 1,
     "machine_name": "G0759",
+    "coolant": { "flood": false, "mist": false },
     "simulated": false,
     "axes": [
       "x",

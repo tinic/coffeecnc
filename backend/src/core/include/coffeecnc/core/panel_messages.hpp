@@ -26,6 +26,13 @@ using Vec3 = std::array<double, 3>; // x, y, z
 
 enum class FeedMode : std::uint8_t { per_minute, inverse_time, per_revolution }; // G94, G93, G95
 
+// Which coolant outputs the machine has: iocontrol's coolant pin drives something in HAL.
+struct CoolantOutputs {
+  bool flood{};
+  bool mist{};
+  friend auto operator==(const CoolantOutputs&, const CoolantOutputs&) -> bool = default;
+};
+
 // Sent once after the panel's `ready`: what does not change while the machine runs.
 struct Hello {
   std::string machine_name;
@@ -45,6 +52,8 @@ struct Hello {
   // The valid [COFFEECNC] MACHINE_ID; empty when none is configured or it is not valid. The
   // `tool_models` message says which. `tool_model_storage: 1` is always sent with it.
   std::optional<std::string> machine_id;
+  // Not known: the panel offers both.
+  std::optional<CoolantOutputs> coolant;
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

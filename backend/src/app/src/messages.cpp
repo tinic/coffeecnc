@@ -211,23 +211,26 @@ auto encode_hello(const Hello& hello) -> Encoded {
   std::ranges::transform(
       hello.jog_increments, std::back_inserter(increments),
       [&](double increment) -> Json { return fields.real(increment, "jog_increments"); });
-  return fields.finish(
-      {{"type", "hello"},
-       {"protocol", protocol_version},
-       {"machine_name", hello.machine_name},
-       {"simulated", hello.simulated},
-       {"axes", std::move(axes)},
-       {"machine_units", name(hello.machine_units)},
-       {"jog_increments", std::move(increments)},
-       {"max_jog_velocity", fields.real(hello.max_jog_velocity, "max_jog_velocity")},
-       {"axis_max_jog_velocity", std::move(axis_velocity)},
-       {"homing_required", hello.homing_required},
-       {"max_feed_override", fields.real(hello.max_feed_override, "max_feed_override")},
-       {"min_spindle_override", fields.real(hello.min_spindle_override, "min_spindle_override")},
-       {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")},
-       {"machine_id", nullable(hello.machine_id)},
-       {"tool_model_storage", tool_model_storage_version},
-       {"quit_supported", true}});
+  Json message{
+      {"type", "hello"},
+      {"protocol", protocol_version},
+      {"machine_name", hello.machine_name},
+      {"simulated", hello.simulated},
+      {"axes", std::move(axes)},
+      {"machine_units", name(hello.machine_units)},
+      {"jog_increments", std::move(increments)},
+      {"max_jog_velocity", fields.real(hello.max_jog_velocity, "max_jog_velocity")},
+      {"axis_max_jog_velocity", std::move(axis_velocity)},
+      {"homing_required", hello.homing_required},
+      {"max_feed_override", fields.real(hello.max_feed_override, "max_feed_override")},
+      {"min_spindle_override", fields.real(hello.min_spindle_override, "min_spindle_override")},
+      {"max_spindle_override", fields.real(hello.max_spindle_override, "max_spindle_override")},
+      {"machine_id", nullable(hello.machine_id)},
+      {"tool_model_storage", tool_model_storage_version},
+      {"quit_supported", true}};
+  if (hello.coolant)
+    message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
+  return fields.finish(std::move(message));
 }
 
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {

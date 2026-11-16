@@ -297,6 +297,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
       .machine_id = ini.text("COFFEECNC", "MACHINE_ID"),
+      .coolant = std::nullopt,
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
   };
 }

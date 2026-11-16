@@ -187,4 +187,5 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .dismiss:hover { color: var(--text); background: var(--bg); }
 @media (max-height: 820px) { .em-top { padding-block: 6px; }.jobbar { padding-block: 8px; }.message-area { height: 54px; margin-bottom: 8px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }
+@media (max-height: 760px) { .em-top { padding-block: 4px; }.jobbar { padding-block: 4px; }.message-area { height: 44px; }.message-copy p { line-height: 16px; } }
 </style>

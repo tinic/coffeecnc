@@ -73,9 +73,8 @@ watch([axes, touchBlock], () => {
   <section class="dro" :class="{ distrust: !live }" aria-label="Coordinate readout">
     <div class="basis">
       <div class="basis-options" role="group" aria-label="Coordinate display">
-        <button v-for="[value, label] in bases" :key="value" type="button" :aria-pressed="basis === value" @click="basis = value">{{ label }}</button>
+        <button v-for="[value, label] in bases" :key="value" type="button" :aria-pressed="basis === value" @click="basis = value">{{ label }}<template v-if="value === 'work'"> · {{ wcs }}<small v-if="shifted" class="g92">G92 active</small></template></button>
       </div>
-      <span>{{ basis === 'work' ? `${wcs} work position` : basis === 'machine' ? 'Machine position' : 'Distance to go' }}<template v-if="shifted && basis === 'work'"> · G92</template></span>
     </div>
     <div v-for="axis in axes" :key="axis.axis" class="axis-group">
       <button v-tooltip="touchBlock ?? `Touch off ${axis.axis.toUpperCase()} in ${wcs}`" class="axis" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="`Touch off ${axis.axis.toUpperCase()} in ${wcs}`" @click="openTouchOff(axis)">
@@ -94,14 +93,15 @@ watch([axes, touchBlock], () => {
     </div>
     <span v-if="axes.length === 0" class="unavailable">Position unavailable</span>
     <div class="display-units">
+      <span>Display</span>
       <div class="units" role="group" aria-label="Display units">
         <button type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
         <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
-      </div><span>Display</span>
+      </div>
     </div>
     <div v-if="panel.tab === 'manual'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
-      <span class="tool-heading">{{ live ? 'Active tool' : 'Last reported tool' }}</span>
-      <strong class="mono">{{ tool === undefined ? '—' : tool === 0 ? 'T0 · No tool' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
+      <span class="tool-heading">{{ !live ? 'Last reported tool' : tool === 0 ? 'No tool loaded' : 'Active tool' }}</span>
+      <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
       <span class="tool-length">Z length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
@@ -111,11 +111,12 @@ watch([axes, touchBlock], () => {
 
 <style scoped>
 .dro { display: flex; align-items: flex-start; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.basis { display: flex; flex-direction: column; gap: 7px; width: 222px; flex: none; padding: 0 12px; text-align: center; }
+.basis { display: flex; width: 212px; flex: none; padding: 0 10px; text-align: center; }
 .basis-options { display: flex; padding: 3px; gap: 2px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
 .basis-options button { flex: 1; min-height: 48px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; white-space: nowrap; }
 .basis-options button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
-.basis > span, .display-units > span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.g92 { display: block; font-size: 9px; line-height: 10px; color: var(--warn); }
+.display-units > span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .axis-group { display: flex; align-items: center; flex: 1 1 250px; min-width: 0; border-left: 1px solid var(--line); }
 .axis { display: flex; flex: 1; height: 56px; align-items: center; gap: 10px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
@@ -124,11 +125,11 @@ watch([axes, touchBlock], () => {
 .number, .letter { font-size: 27px; line-height: 1.3; letter-spacing: -1px; font-weight: 500; white-space: nowrap; }.marker { position: absolute; top: 100%; left: 0; height: 15px; line-height: 15px; white-space: nowrap; font-size: 10px; color: var(--warn); }
 .touch { display: flex; align-self: center; padding: 2px; color: var(--text-dim); }.axis:disabled .touch { opacity: .3; }
 .touch.hidden { visibility: hidden; }
-.units { display: flex; flex: none; gap: 3px; padding: 3px; margin: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
-.display-units { display: flex; flex: none; flex-direction: column; gap: 7px; text-align: center; }
-.units button { width: 52px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
+.units { display: flex; flex: none; gap: 3px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
+.display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; }
+.units button { width: 44px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
-.active-tool { display: flex; flex: 0 0 174px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 16px; border-left: 1px solid var(--line); white-space: nowrap; }
+.active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
 .tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }

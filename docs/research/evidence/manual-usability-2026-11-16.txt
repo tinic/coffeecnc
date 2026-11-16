@@ -29,9 +29,13 @@ Part 2:
 Local validation:
 - 444 UI tests in 30 files; typecheck, lint and production build pass.
 - Browser simulator: Half X -12.400 -> -6.200 only after confirmation.
-- 1280x720: DRO height84px, jog and side panels have no scroll overflow.
+- Further user feedback removed the grey caption row: Work G54 is inside the
+  button and Display is inline beside mm/in.
+- 1280x720: DRO height70px, jog and side panels have no scroll overflow.
 - 1600x900: no jog or side overflow; larger MDI history.
 - Browser console has no warnings or errors.
+- Native GTK/WebKit panel at source04ef268 passed in38.83s before the final
+  caption-only layout change; final layout visually checked at both sizes.
 - Simulator screenshots: ui/screenshots/manual-coordinate-controls-{1280,1600}.png.
 
 Physical machine deployment is Claude's responsibility. Codex performed no

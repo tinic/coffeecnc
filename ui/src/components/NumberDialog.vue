@@ -3,12 +3,12 @@ import { vTooltip } from '../tooltip'
 // Asks for one number, with an on-screen keypad for touch screens without a keyboard.
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
 
-import { parseNumber } from '../units'
+import { parseNumericExpression } from '../numeric-expression'
 import { touchInput, vNumeric } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   /** What confirming will change, in words. */
   effect: string
@@ -20,7 +20,7 @@ const props = defineProps<{
   integer?: boolean
   expanded?: boolean
   error?: string
-}>()
+}>(), { expanded: true, error: '' })
 const emit = defineEmits<{ confirm: [value: number, text: string]; close: [] }>()
 
 const text = ref<string>(props.initial)
@@ -28,26 +28,31 @@ const fresh = ref<boolean>(true)
 const input = useTemplateRef<HTMLInputElement>('input')
 
 const value = computed(() => {
-  const parsed = parseNumber(text.value)
+  const parsed = parseNumericExpression(text.value, props.unit)
   return parsed !== null && Number.isFinite(parsed) && (!props.integer || Number.isInteger(parsed)) ? parsed : null
 })
 
-const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '±', '0', '.'] as const
+const keys = ['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−', '±', '0', '.', '+'] as const
+const lengthEntry = computed(() => ['mm', 'in', 'inch'].includes(props.unit))
+const preview = computed(() => value.value === null ? 'Enter a valid formula' : `= ${String(Number(value.value.toPrecision(12)))} ${props.unit}`.trim())
 
-function press(key: (typeof keys)[number]): void {
+function press(key: string): void {
   if (key === '±') {
-    text.value = text.value.startsWith('-') ? text.value.slice(1) : `-${text.value}`
+    text.value = /^[+-]?[\d.,]+$/.test(text.value)
+      ? text.value.startsWith('-') ? text.value.slice(1) : `-${text.value}`
+      : `-(${text.value})`
     fresh.value = false
     return
   }
   // The first key replaces the value offered, as typing over a selection would.
-  const base = fresh.value ? '' : text.value
+  const operator = ['÷', '×', '−', '+', ')', 'mm', 'in'].includes(key)
+  const base = fresh.value && !operator ? '' : text.value
   fresh.value = false
-  if (key === '.' && base.includes('.')) {
+  if (key === '.' && /[\d.]*\.[\d.]*$/.test(base)) {
     text.value = base
     return
   }
-  text.value = base + key
+  text.value = base + (key === '−' ? '-' : key)
 }
 
 function backspace(): void {
@@ -88,6 +93,15 @@ onMounted(() => {
           <span v-if="unit" class="unit">{{ unit }}</span>
         </span>
       </label>
+      <div class="formula-tools">
+        <output class="hint mono" aria-live="polite">{{ preview }}</output>
+        <div class="row">
+          <button class="btn grow" type="button" @click="press('(')">(</button>
+          <button class="btn grow" type="button" @click="press(')')">)</button>
+          <button v-if="lengthEntry" class="btn grow" type="button" @click="press('mm')">mm</button>
+          <button v-if="lengthEntry" class="btn grow" type="button" @click="press('in')">in</button>
+        </div>
+      </div>
       <div class="keypad">
         <button v-for="key in keys" :key="key" class="btn mono" type="button" :disabled="integer && key === '.'" @click="press(key)">{{ key }}</button>
       </div>
@@ -108,8 +122,9 @@ onMounted(() => {
 
 <style scoped>
 .numeric-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; }
-.effect, .entry, .corrections { grid-column: 1; }
-.keypad { grid-column: 2; grid-row: 1 / 4; }
+.effect, .entry, .formula-tools, .corrections { grid-column: 1; }
+.formula-tools { display: grid; gap: 8px; }
+.keypad { grid-column: 2; grid-row: 1 / 5; }
 .effect {
   font-size: 13px;
   margin: 0;
@@ -143,7 +158,7 @@ onMounted(() => {
 
 .keypad {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 

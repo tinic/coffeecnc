@@ -45,6 +45,8 @@ export interface Hello {
   machine_id?: string | null
   /** Native tool-model persistence contract v1; absent means session-only visual settings. */
   tool_model_storage?: 1
+  /** Native application shutdown; absent/false means the peer cannot handle `quit`. */
+  quit_supported?: boolean
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -319,6 +321,10 @@ interface CommandBase {
 export interface Ready extends CommandBase {
   type: 'ready'
 }
+/** Request machine off and application exit. Rejected while the interpreter is non-idle. */
+export interface Quit extends CommandBase {
+  type: 'quit'
+}
 /** `estop` asserts LinuxCNC's software E-stop. It is not the machine's E-stop circuit. */
 export interface SetMachine extends CommandBase {
   type: 'set_machine'
@@ -455,6 +461,7 @@ export interface SetToolModelAssignment extends CommandBase {
 
 export type ToMachine =
   | Ready
+  | Quit
   | SetMachine
   | Home
   | Jog

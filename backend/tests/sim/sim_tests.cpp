@@ -391,6 +391,13 @@ void power(Rig& rig) {
   check("link_live", link == Link::live, std::string(name(link)));
   check("starts_in_estop", state.machine == MachineState::estop);
   check("watchdog_armed", rig.probe.watchdog_ok());
+  // Quit can reach the adapter after an E-stop superseded the session's ON snapshot.
+  // Its stop-only path must preserve that E-stop instead of sending ESTOP_RESET.
+  rig.direct([&]() -> void {
+    const auto off = rig.port.power_off();
+    check("quit_power_off_preserves_estop", off.status == ActionStatus::accepted &&
+          rig.port.snapshot().machine == MachineState::estop, off.reason);
+  });
 
   check("ready", rig.ready.accepted() && rig.ready.send_snapshots, rig.ready.text());
   const auto early = rig.send(R"("type":"set_machine","state":"on")");
@@ -427,7 +434,9 @@ void power(Rig& rig) {
     // Task runs again and takes the queued request: wait for a live link before going on.
     rig.direct_until(5s, [&]() -> bool { return rig.port.status().controller.link == Link::live; });
   });
-  check("link_live_again", rig.link() == Link::live);
+  check("link_live_again", rig.pump_until(2s, [&]() -> bool {
+    return rig.snapshot().link == Link::live;
+  }));
   const auto reset = rig.send(R"("type":"set_machine","state":"off")");
   rig.pump(50ms);
   check("estop_reset", reset.accepted() && rig.snapshot().machine == MachineState::off,

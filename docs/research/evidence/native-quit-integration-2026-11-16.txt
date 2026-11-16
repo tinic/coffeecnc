@@ -1,0 +1,58 @@
+CoffeeCNC native Quit integration verification — 2026-11-16
+
+Independent Codex execution on playhouse2, isolated checkout:
+  /home/turo/ai/codex-coffeecnc-quit
+Production fixes e5fe2cb; formula/UI changes a9820cf; final test corrections 4d3ce7b.
+GCC 14.2, LinuxCNC 2.9.4, WebKitGTK 2.54, GTK 3.24.49, Debug build.
+
+Four findings in Claude's initial native Quit implementation 9cfbf9b are resolved:
+1. Quit policy now requires live status before accepting idle/off placeholders.
+2. Quit intent belongs to the request's Stage, not mutable session state. Current
+   page/cancellation checks prevent a page ended during power-off from closing a
+   replacement page or leaking intent into a later accepted request.
+3. The page token travels through Runtime into the shell. Close waits for actual
+   successful WebKit evaluation, not async submission. Failed delivery or a
+   replaced page keeps the window open; callback lifetime uses outbox identity.
+4. Dedicated power_off always sends EMC_TASK_STATE_OFF, never ESTOP_RESET, then
+   waits for live off/E-stop status. This preserves an E-stop that arrives after
+   the session's ON snapshot. Upstream OFF handling does not call emcAuxEstopOff:
+   https://github.com/LinuxCNC/linuxcnc/blob/v2.9.4/src/emc/task/emctask.cc#L288
+
+Checks completed:
+- 425 UI tests / 30 files; typecheck, lint, build and stamp verification pass.
+- All 27 non-LinuxCNC CTests pass across the initial run and targeted CLI rerun.
+  The clean-checkout CLI test initially preceded panel_bundle; its fixture
+  dependency is now explicit. No application change was needed for that failure.
+- Session regressions cover unavailable status, ended/replaced pages, later
+  accepted requests, busy interpreter, power-off failure and initial E-stop/off.
+- WebKit quit_delivery: 3/3 cases pass. Successful receiver completes before
+  close; throwing receiver stays open; wrong-page close request is ignored.
+- LinuxCNC mm: 135 pass / 0 fail; inch: 132 / 0; G0759 profile: 70 / 0.
+  Each includes quit_power_off_preserves_estop on the native NML adapter.
+- linuxcnc_quit_application passes: supported=1, accepted_before_close=1,
+  failed=0, timeout=0, exit=0; LinuxCNC shuts down and leaves no process.
+  Uses the production panel and real in-process bridge with simulated controller.
+  Raw log: native-quit-application-2026-11-16.log.
+- Native GTK/WebKit panel suite: 240 pass / 0 fail, after updating stale .jobbar error
+  selectors to .message-area and allowing ungrouped triangle counts in C locale.
+  Original failure still verified that the error arrived and STEP had 1132 triangles.
+  No production UI change was made to satisfy those old assertions.
+
+The first inch run failed one observer link recovery assertion after a frozen
+task. It checked after 50ms although another reader had recovered. The check now
+waits up to 2s for its own reader to report live, and the rerun passes. Original
+failure logs and subsequent CTest logs are retained on playhouse2 under:
+  backend/build/sim-history/0ec8428/first
+  backend/build/sim-history/a9820cf/portable-first
+  backend/build/sim-history/144a683/final
+  backend/build/sim-history/4d3ce7b/final
+
+Mac and Linux independently built identical UI bundles:
+inputs b6ed1c7e40a7c6c2548b7610aa0e32b56d7c22dd9970657d089ca3a2c8c9de16
+assets 8577a28037c7b5bae461c1f9cfd62c58015c667a392e48b46d33ba31c766d7b1
+Native simulation screenshot: ui/screenshots/native-manual-2026-11-16.png.
+Formula/browser evidence: docs/numeric-entry.md and its screenshot.
+
+Scope: no physical motion, spindle, power, homing, install/restart or native Quit
+action performed on the G0759 by Codex. No fresh sanitizer qualification.
+This verifies the integration build; machine-side installation is a separate step.

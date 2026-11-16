@@ -1,0 +1,23 @@
+CoffeeCNC menu and spindle-speed feedback, 2026-11-16
+
+Quit and Message log now use full-width outlined buttons with icons and 48px targets.
+Spindle speed shows the commanded value, including when opening its touch keypad.
+Only physical Enter or the keypad's explicit Set RPM action confirms an edit.
+When running, confirmation uses the currently reported direction. When stopped,
+confirmation stores a speed for the next explicit Forward/Reverse action.
+Typing/change do not send a command. Escape/blur discard an unconfirmed edit and
+restore commanded RPM. Loss of manual availability or a new hello clears edits.
+
+Validation: npm run check (typecheck, lint, 377 tests / 29 files) and npm run build.
+Sixteen added cases cover direction, stopped presets, Enter repeat, keypad action,
+invalid values, blur/Escape, and invalidated controller context.
+
+Browser check: production bundle served locally, in-app browser. G0759 DISPLAY
+FIXTURE menu visually inspected and saved as ui/screenshots/quit-menu-button.png.
+Separate BROWSER SIMULATOR: explicit preset 1200, Reverse; Escape discarded 1800;
+Enter applied 1800 retaining reverse; blur discarded 2400 and restored 1800.
+No console errors or warnings. Screenshot: ui/screenshots/rpm-confirmation-simulator.png.
+No physical spindle, motion, power or native Quit action performed by Codex.
+
+Bundle inputs: f76e7dd245ccb9ddb1dbdc7507184a58f640fc1315492eff24129f2fc5dbd1e5
+Bundle assets: fc793042565b6c35e3c482b94de5b61000d74233dac4d4013e52030812cb2899

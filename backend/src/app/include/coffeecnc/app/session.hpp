@@ -84,6 +84,8 @@ enum class WorkStatus : std::uint8_t {
 struct Work {
   WorkStatus status{WorkStatus::idle};
   Outcome outcome;
+  // A `quit` was accepted: close the application once `outcome` has been sent.
+  bool quit{};
 };
 
 // The single owner of request handling: page generations, the ready gate, request identity,
@@ -287,6 +289,7 @@ private:
     StageKind kind{StageKind::reply};
     Reply reply;
     std::vector<std::string> produced; // messages sent before the result
+    bool quit{}; // belongs only to this request and its page
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;

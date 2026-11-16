@@ -108,6 +108,9 @@ public:
 
   [[nodiscard]] virtual auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult = 0;
+  // Stop-only power removal for Quit. Must never reset an E-stop, even if one arrives
+  // during the call. Accepted only after live status confirms that machine power is off.
+  [[nodiscard]] virtual auto power_off() -> ActionResult = 0;
   // Accepted only once the controller reports the mode; the next snapshot shows it.
   [[nodiscard]] virtual auto set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult = 0;
   // No axis homes all configured axes.

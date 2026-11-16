@@ -666,6 +666,23 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
       });
 }
 
+auto NmlPort::power_off() -> ActionResult {
+  const auto from = impl_->begin(nullptr);
+  const Impl::Scope scope{*impl_};
+  // Unlike protocol set_machine/off (also the explicit Reset E-stop action), this
+  // path always sends OFF. An E-stop arriving at any point must remain asserted.
+  EMC_TASK_SET_STATE message;
+  message.state = EMC_TASK_STATE_OFF;
+  if (auto done = impl_->run(message, from); !accepted(done))
+    return done;
+  return impl_->settled(from, "LinuxCNC did not confirm machine power off.",
+                        [&](const EMC_STAT& now) -> bool {
+    return impl_->status.link() == Link::live &&
+           (now.task.state == EMC_TASK_STATE_ESTOP ||
+            now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF);
+  });
+}
+
 auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};

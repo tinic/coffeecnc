@@ -117,6 +117,7 @@ const examples: Examples = {
       "stickout": 30
     }
   },
+  quit: { id: 27, type: 'quit' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

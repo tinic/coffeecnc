@@ -151,6 +151,7 @@ public:
                                        : machine == MachineState::off ? "off"
                                                                       : "estop");
   }
+  auto power_off() -> ActionResult override { return record("power_off", ""); }
   auto set_task_mode(TaskMode mode, const Wanted&) -> ActionResult override {
     auto result = record("set_task_mode", mode == TaskMode::manual ? "manual"
                                           : mode == TaskMode::mdi  ? "mdi"

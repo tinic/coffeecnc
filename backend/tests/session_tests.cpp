@@ -96,6 +96,7 @@ public:
                                        : machine == MachineState::off ? "off"
                                                                       : "estop");
   }
+  auto power_off() -> ActionResult override { return record("power_off", ""); }
   auto set_task_mode(TaskMode mode, const Wanted&) -> ActionResult override {
     auto result = record("set_task_mode", name(mode));
     if (result.status == ActionStatus::accepted && follows_mode)
@@ -226,6 +227,8 @@ struct Driver {
   // The jog-stop level: follows what the control step asks for.
   bool level{};
   Instant now{};
+  // A worker pass asked to close the application.
+  bool quit{};
   // Messages of work done outside a request or period (page changes): sent with the next.
   std::vector<std::string> backlog;
 
@@ -236,6 +239,7 @@ struct Driver {
       if (steps > 1000)
         throw std::runtime_error("The worker does not come to rest");
       auto work = session.work([this]() -> Instant { return now; });
+      quit = quit || work.quit;
       if (work.outcome.page != PageToken{})
         outcome.page = work.outcome.page;
       for (auto& message : work.outcome.messages)
@@ -1850,6 +1854,60 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.acted({}, "An accepted stop ends the retries");
 }
 
+// quit: refused while the interpreter is busy; else power off when on, no E-stop reset, and
+// the worker asks to close only after an accepted reply.
+void quit() {
+  {
+    Rig rig;
+    rig.port.state.interp = InterpState::reading;
+    rig.expect(R"("type":"quit")", "rejected", "Stop the program before quitting.");
+    rig.acted({}, "A busy interpreter sends nothing");
+    require(!rig.driver.quit, "and does not close");
+  }
+  {
+    Rig rig;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({"power_off"}, "A machine that is on is switched off");
+    require(rig.driver.quit, "then the application closes");
+  }
+  for (const auto machine : {MachineState::off, MachineState::estop}) {
+    Rig rig;
+    rig.port.state.machine = machine;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({}, "Off or in E-stop: no state change, an E-stop stays set");
+    require(rig.driver.quit, "and the application closes");
+  }
+  {
+    Rig rig;
+    rig.port.script["power_off"] = {{ActionStatus::failed, "LinuxCNC did not answer."}};
+    rig.expect(R"("type":"quit")", "failed", "LinuxCNC did not answer.");
+    require(!rig.driver.quit, "A failed switch-off keeps the application open");
+  }
+  for (const auto link : {Link::stale, Link::down}) {
+    Rig rig;
+    rig.port.state.link = link;
+    rig.expect(R"("type":"quit")", "rejected", "Controller status is unavailable or stale.");
+    rig.acted({}, "An unknown controller state must not authorize Quit");
+    require(!rig.driver.quit, "An unavailable controller never closes the application");
+  }
+  for (const bool replace_page : {false, true}) {
+    Rig rig;
+    rig.port.during["power_off"] = [&]() -> void {
+      rig.session.end_page(rig.page);
+      if (replace_page)
+        rig.page = rig.session.begin_page();
+    };
+    require(rig.send(R"("type":"quit")").messages.empty(), "Ended page gets no Quit result");
+    require(!rig.driver.quit, "Ended or replaced page cannot close the application");
+    if (!replace_page)
+      rig.page = rig.begin_page();
+    rig.accepted(R"("type":"ready")");
+    rig.accepted(R"("type":"set_override","which":"feed","value":1)");
+    require(!rig.driver.quit, "Later accepted requests cannot inherit Quit intent");
+  }
+
+}
+
 void new_page() {
   Rig rig;
   rig.accepted(hold_x);
@@ -2048,6 +2106,7 @@ auto main(int argc, char** argv) -> int {
     stop_all_and_cancellation();
     lease_expiry();
     lost_machine_cancels_jogs();
+    quit();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

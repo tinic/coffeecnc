@@ -30,10 +30,9 @@ void status_step(Session& session, StatusSource& source) {
 
 Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,
                  const Limits& limits, const ProgramStore& programs, Sink sink,
-                 ToolModelService* tool_models)
-    : status_(status), outputs_(outputs), sink_(std::move(sink)),
-      session_(port, limits, programs, tool_models),
-      control_([this]() -> void { control_loop(); }),
+                 ToolModelService* tool_models, Quit quit)
+    : status_(status), outputs_(outputs), sink_(std::move(sink)), quit_(std::move(quit)),
+      session_(port, limits, programs, tool_models), control_([this]() -> void { control_loop(); }),
       status_thread_([this]() -> void { status_loop(); }),
       worker_([this]() -> void { work_loop(); }) {}
 
@@ -98,6 +97,8 @@ void Runtime::work_loop() {
     const auto work = session_.work(now);
     if (sink_ && !work.outcome.messages.empty())
       sink_(work.outcome);
+    if (work.quit && quit_)
+      quit_(work.outcome.page);
     if (work.status == WorkStatus::done)
       continue;
     if (closing)

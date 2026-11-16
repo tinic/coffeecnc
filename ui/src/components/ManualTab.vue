@@ -9,11 +9,12 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, wat
 
 import { openDialogs } from '../dialogs'
 import { vNumeric } from '../numeric-input'
+import { parseNumericExpression } from '../numeric-expression'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
-import { formatIncrement, formatVelocity, parseNumber, velocityUnit, wcsNames } from '../units'
+import { formatIncrement, formatVelocity, velocityUnit, wcsNames } from '../units'
 import AppIcon from './AppIcon.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
@@ -298,25 +299,52 @@ watch(
 
 // ---- spindle and coolant ------------------------------------------------------------------------------
 
-const rpmText = ref<string>('')
-const rpm = computed(() => {
-  if (rpmText.value.trim() === '') {
-    return status.value?.spindle.commanded_rpm ?? 0
-  }
-  return parseNumber(rpmText.value)
+const rpmDraft = ref<string | null>(null)
+const presetRpm = ref<number | null>(null)
+const rpmText = computed({
+  get: () => rpmDraft.value ?? String(presetRpm.value ?? status.value?.spindle.commanded_rpm ?? 0),
+  set: (value: string) => { rpmDraft.value = value },
 })
+const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
 const spindleBlock = computed((): string | null => {
   if (manualBlock.value !== null) {
     return manualBlock.value
   }
-  return rpm.value === null || rpm.value <= 0 ? 'Enter a spindle speed above zero' : null
+  return rpm.value === null || !Number.isFinite(rpm.value) || rpm.value <= 0 ? 'Enter a spindle speed above zero' : null
 })
 
 function spindle(direction: 'forward' | 'reverse'): void {
-  if (rpm.value !== null) {
+  if (spindleBlock.value === null && rpm.value !== null) {
     send({ type: 'set_spindle', direction, rpm: rpm.value })
+    presetRpm.value = null
   }
 }
+
+function confirmSpindleSpeed(event: Event): void {
+  if (event instanceof KeyboardEvent && event.repeat) return
+  if (rpmDraft.value === null || spindleBlock.value !== null || rpm.value === null) return
+  const direction = status.value?.spindle.direction
+  if (direction === 'forward' || direction === 'reverse') {
+    send({ type: 'set_spindle', direction, rpm: rpm.value })
+    presetRpm.value = null
+  } else {
+    // Choosing a speed while stopped never starts the spindle.
+    presetRpm.value = rpm.value
+  }
+  rpmDraft.value = null
+}
+
+function discardSpindleEdit(): void {
+  if (rpmDraft.value === null) return
+  rpmDraft.value = null
+  presetRpm.value = null
+}
+
+watch(() => status.value?.spindle.commanded_rpm, () => { presetRpm.value = null })
+watch([(): unknown => panel.hello, manualBlock], () => {
+  rpmDraft.value = null
+  presetRpm.value = null
+}, { flush: 'sync' })
 
 const coolantBlock = computed((): string | null => {
   const s = status.value
@@ -503,9 +531,16 @@ function coolant(which: 'flood' | 'mist'): void {
             class="field mono rpm"
             type="text"
             inputmode="decimal"
-            :placeholder="String(Math.round(status?.spindle.commanded_rpm ?? 0))"
+            :disabled="manualBlock !== null"
             autocomplete="off"
             aria-label="Spindle speed, rpm"
+            data-numeric-effect="Applies this RPM immediately if the spindle is running. When stopped, sets the speed for the next start."
+            data-numeric-action="Set RPM"
+            data-numeric-unit="rpm"
+            @numeric-confirm="confirmSpindleSpeed"
+            @keydown.enter.prevent="confirmSpindleSpeed"
+            @keydown.esc.prevent="discardSpindleEdit"
+            @blur="discardSpindleEdit"
           />
           <span class="hint">rpm</span>
           <button v-tooltip="spindleBlock ?? 'Spindle reverse (M4)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :disabled="spindleBlock !== null" @click="spindle('reverse')">

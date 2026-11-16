@@ -14,11 +14,12 @@ const value = ref('12.5')
 const disabled = ref(false)
 const visible = ref(true)
 const integer = ref(false)
+const fieldUnit = ref('')
 const fixture = defineComponent({
   components: { NumericEntryDialog }, directives: { numeric: vNumeric },
-  setup: () => ({ value, disabled, visible, integer }),
+  setup: () => ({ value, disabled, visible, integer, fieldUnit }),
   template: `<div><label v-if="visible">Spindle speed, rpm
-    <input data-source v-model="value" v-numeric="integer ? 'integer' : undefined" :disabled="disabled" type="text" inputmode="decimal" />
+    <input data-source v-model="value" v-numeric="integer ? 'integer' : undefined" :data-numeric-unit="fieldUnit" :disabled="disabled" type="text" inputmode="decimal" />
     </label><div id="dialogs"></div><div id="workspace-dialogs"></div><NumericEntryDialog /></div>`,
 })
 let wrapper: VueWrapper
@@ -53,7 +54,7 @@ async function touch(type = 'pointerdown', release = true): Promise<Event> {
   return event
 }
 beforeEach(() => {
-  value.value = '12.5'; disabled.value = false; visible.value = true; integer.value = false
+  value.value = '12.5'; disabled.value = false; visible.value = true; integer.value = false; fieldUnit.value = ''
   touchInput.value = false; numericEntry.value = null
   panel.unit = 'mm'; panel.tab = 'manual'; panel.hello = null
   wrapper = mount(fixture, { attachTo: document.body })
@@ -61,6 +62,15 @@ beforeEach(() => {
 afterEach(() => { const element = wrapper.element as HTMLElement; wrapper.unmount(); element.remove(); vi.restoreAllMocks() })
 
 describe('numeric touch entry', () => {
+  it('enters a fraction and inch suffix by touch, previews it and confirms in displayed mm', async () => {
+    fieldUnit.value = 'mm'; await nextTick()
+    await touch()
+    for (const key of ['1', '÷', '4', 'in']) await press(key)
+    expect(wrapper.get('output').text()).toBe('= 6.35 mm')
+    expect(value.value).toBe('12.5')
+    await press('Use value')
+    expect(value.value).toBe('6.35')
+  })
   it.each(['pointerdown', 'touchstart'])('prevents %s focus and edits only the draft until Use value', async (type) => {
     const source = wrapper.get('[data-source]').element as HTMLInputElement
     const event = await touch(type, false)

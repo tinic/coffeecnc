@@ -476,6 +476,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     return result;
   result.outcome.page = PageToken{pages_};
   if (request.page == result.outcome.page) {
+    result.quit = step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(
@@ -666,6 +667,19 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.state != MachineState::on)
             cancel_jogs(nullptr);
           return result;
+        } else if constexpr (std::is_same_v<T, Quit>) {
+          // Power off when on; an E-stop or a machine already off stays as it is (no reset).
+          if (state.machine == MachineState::on) {
+            auto off = act(request, [&](const Wanted&) -> ActionResult {
+              return port_.power_off();
+            });
+            cancel_jogs(nullptr);
+            if (off.kind != StageKind::reply || off.reply.outcome != CommandOutcome::accepted)
+              return off;
+          }
+          Stage done;
+          done.quit = true;
+          return done;
         } else if constexpr (std::is_same_v<T, Home>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.home(c.axis, still);

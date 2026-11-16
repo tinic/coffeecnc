@@ -824,18 +824,18 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
   const bool shown = rig.wait_js(
       "__t.received.some((m) => m.type === 'message' && m.level === 'error' && "
       "/contact/i.test(m.text)) && "
-      "/contact/i.test(__t.text(document.querySelector('.jobbar .error')))",
+      "/contact/i.test(__t.text(document.querySelector('.message-area .error')))",
       15s);
   check("operator_error_shown_in_panel", shown,
         rig.js("return [__t.received.filter((m) => m.type === 'message'), "
-               "__t.text(document.querySelector('.jobbar .error'))];")
+               "__t.text(document.querySelector('.message-area .error'))];")
             .dump());
   rig.snapshot("operator-error");
   // The error stays in the bar until the operator dismisses it, and stays in the log after.
-  check("panel_dismisses_error", rig.click(".jobbar button.dismiss", "") == "ok");
-  const bool dismissed = rig.wait_js("!document.querySelector('.jobbar .error')");
+  check("panel_dismisses_error", rig.click(".message-area button.dismiss", "") == "ok");
+  const bool dismissed = rig.wait_js("!document.querySelector('.message-area .error')");
   check("dismissed_error_leaves_the_bar", dismissed,
-        rig.js("return __t.text(document.querySelector('.jobbar'));").dump());
+        rig.js("return __t.text(document.querySelector('.message-area'));").dump());
   rig.js("document.querySelector('details.state-menu').open = true;");
   check("panel_opens_message_log", rig.click("details.state-menu button", "Message log") == "ok");
   const bool logged = rig.wait_js("/contact/i.test(__t.text(document.querySelector('section.dialog')))");
@@ -1486,9 +1486,12 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("step_import_file_chooser_opens",
         result.at("clicked") == true && result.at("chooser") == true, result.dump());
   check("step_import_sm101_finished", result.value("finished", false), result.dump());
+  // WebKit's C locale can omit grouping separators; the geometric count is the assertion.
+  auto geometry_text = result.at("identity").get<std::string>();
+  std::erase(geometry_text, ',');
   check("step_import_sm101_geometry",
-        result.at("identity").get<std::string>().find("1 parts") != std::string::npos &&
-            result.at("identity").get<std::string>().find("1,132 triangles") != std::string::npos,
+        geometry_text.find("1 parts") != std::string::npos &&
+            geometry_text.find("1132 triangles") != std::string::npos,
         result.at("identity").dump());
   check("step_import_sm101_size", result.at("size").get<std::string>().find("120") != std::string::npos &&
                                result.at("size").get<std::string>().find("80") != std::string::npos &&

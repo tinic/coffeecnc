@@ -74,7 +74,7 @@ struct PanelEvents {
 //
 // SIGINT, SIGTERM and SIGHUP close the window while run() is in progress.
 //
-// Every member but post() is called on the thread that called initialise_display.
+// Every member but post() and close_after_posts() is called on the thread that called initialise_display.
 class PanelWindow {
 public:
   PanelWindow(PanelOptions options, PanelEvents events);
@@ -88,6 +88,9 @@ public:
   void close();
   // Any thread, never blocks: messages for the page with this token, in order.
   void post(PageToken page, std::vector<std::string> messages);
+  // Any thread, never blocks: closes only this page, after WebKit finishes delivering
+  // posted messages. A reload or failed delivery cancels this close request.
+  void close_after_posts(PageToken page);
 
   struct Impl;
   // For the test hooks (shell_test_hooks.hpp) only.

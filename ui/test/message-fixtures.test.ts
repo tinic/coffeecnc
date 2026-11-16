@@ -33,7 +33,8 @@ const examples = [
     "min_spindle_override": 0.5,
     "max_spindle_override": 1.5,
     "machine_id": "G0759",
-    "tool_model_storage": 1
+    "tool_model_storage": 1,
+    "quit_supported": true
   },
   {
     "type": "hello",
@@ -62,7 +63,8 @@ const examples = [
     "min_spindle_override": 0.5,
     "max_spindle_override": 1,
     "machine_id": null,
-    "tool_model_storage": 1
+    "tool_model_storage": 1,
+    "quit_supported": true
   },
   {
     "type": "status",

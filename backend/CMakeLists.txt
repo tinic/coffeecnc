@@ -11,6 +11,7 @@ include(cmake/ProjectOptions.cmake)
 set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
   GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 include(cmake/StaticAnalyzers.cmake)
+include(CTest)
 add_subdirectory(src/core)
 option(COFFEECNC_BUILD_APP "Build the app protocol layer (requires nlohmann_json)" ON)
 # ON: an executable that finds no panel or preview helper installed beside it uses the panel of
@@ -30,7 +31,6 @@ if(TARGET coffeecnc)
   include(cmake/Packaging.cmake)
 endif()
 
-include(CTest)
 if(BUILD_TESTING)
   add_executable(coffeecnc_core_tests tests/core_tests.cpp)
   target_link_libraries(coffeecnc_core_tests PRIVATE coffeecnc_core coffeecnc_project_options)
@@ -236,6 +236,8 @@ if(BUILD_TESTING)
         add_test(NAME panel_bundle COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/build_panel.sh
           ${PROJECT_SOURCE_DIR}/..)
         set_tests_properties(panel_bundle PROPERTIES FIXTURES_SETUP panel TIMEOUT 600)
+        # The CLI's development-path check also needs the checkout's built panel.
+        set_tests_properties(coffeecnc_cli PROPERTIES FIXTURES_REQUIRED panel)
         # The stamp checker refuses a changed source, a changed bundle and an unbuilt source.
         add_test(NAME panel_stamp COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/panel_stamp_tests.sh
           ${PROJECT_SOURCE_DIR}/.. ${PROJECT_BINARY_DIR})
@@ -283,6 +285,20 @@ if(BUILD_TESTING)
         endif()
         # The build tree's GUI tests need the fallbacks: the test program is not installed.
         if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS AND COFFEECNC_DEVELOPMENT_PATHS)
+          add_executable(coffeecnc_quit_application_tests tests/shell/quit_application_tests.cpp)
+          target_include_directories(coffeecnc_quit_application_tests PRIVATE src/coffeecnc src/shell/src)
+          target_include_directories(coffeecnc_quit_application_tests SYSTEM PRIVATE
+            $<TARGET_PROPERTY:coffeecnc_shell,INCLUDE_DIRECTORIES>)
+          target_compile_definitions(coffeecnc_quit_application_tests PRIVATE
+            COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist")
+          target_link_libraries(coffeecnc_quit_application_tests PRIVATE coffeecnc_application
+            coffeecnc_project_options)
+          add_test(NAME linuxcnc_quit_application COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -u mm -t 40 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_quit_application
+            ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+            $<TARGET_FILE:coffeecnc_quit_application_tests>)
+          set_tests_properties(linuxcnc_quit_application PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+            RESOURCE_LOCK linuxcnc TIMEOUT 400 FIXTURES_REQUIRED panel)
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
               -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}

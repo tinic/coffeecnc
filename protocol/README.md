@@ -65,3 +65,35 @@ Directory paths and parents are canonical paths within the configured program ro
 ## Preview identity
 
 `preview_context` is an opaque integer token, compared only for equality. It must change when any input used to compute the path changes: program identity/reload, work offsets and rotations, G92, relevant tool data, block delete, and the interpreter's start state. That start snapshot includes active WCS, units, distance mode, loaded tool/active tool offset and any other modal, parameter or initial-position input consumed by the preview interpreter. Freeze the start snapshot while the corresponding program runs; live progress through its modal changes is not a new starting condition. The earlier list in the TypeScript comment was illustrative, not an exhaustive restriction on invalidation inputs.
+
+## Application shutdown
+
+`hello.quit_supported: true` enables the additive v1 `quit` command. Absent or
+false means unsupported; the panel never sends it to such a peer. Its only
+fields are `type: "quit"` and the usual request `id` (fixture 27).
+
+The machine-state menu offers **Quit CoffeeCNC…**, followed by a confirmation:
+**LinuxCNC shuts down; the machine is switched off.** Cancel has initial focus.
+The panel rechecks capability, connection/session and interpreter state when
+confirming. A stale/down link or a changed hello prevents submission. Running,
+paused, waiting and executing MDI states say **Stop the program before
+quitting.** An idle machine can quit while on, already off, or in E-stop.
+
+The native backend independently rejects non-idle execution and unavailable or
+stale controller status. Accepted
+means the request was accepted, not proof of power-off or process exit. Native
+shutdown switches the machine off before closing the window; an active E-stop
+must remain asserted (no ESTOP_RESET). A failed switch-off leaves the window
+open and reports the failure. The panel shows request acceptance while waiting
+for the application to close, and never closes the browser/WebKit itself.
+Quit uses a dedicated power-off operation that never sends ESTOP_RESET. Close
+intent is bound to the request and page generation; it cannot carry across a
+reload. The shell waits for successful WebKit evaluation of posted messages
+before destroying that page's window. A replaced page or failed delivery
+cancels the close. The native application simulation test observes the accepted
+Quit result in the actual page before window closure and LinuxCNC shutdown.
+
+The browser simulator switches its simulated machine off (preserving E-stop)
+and explicitly reports that the browser stays open. It refuses busy execution
+without aborting it. No physical machine or native process is controlled by
+these tests.

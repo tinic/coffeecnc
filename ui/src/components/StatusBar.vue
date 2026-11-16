@@ -76,7 +76,11 @@ const subtitle = computed(() => {
 
 <template>
   <header class="em-top">
-    <div class="em-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>CoffeeCNC <small>/ MILL</small></div>
+    <div class="em-brand">
+      <img v-show="theme === 'light'" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
+      <img v-show="theme === 'dark'" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
+      <small>/ MILL</small>
+    </div>
     <nav class="em-nav" aria-label="Workspace">
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
@@ -126,11 +130,9 @@ const subtitle = computed(() => {
 
 <style scoped>
 .em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 10px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.em-brand { display: flex; align-items: center; gap: 10px; font-size: 17px; letter-spacing: 3px; font-weight: 700; white-space: nowrap; }
-.em-brand small { font-size: 11px; font-weight: 400; letter-spacing: 1px; color: var(--text-dim); margin-left: 4px; }
-.brand-mark { display: flex; align-items: end; gap: 3px; height: 21px; }
-.brand-mark i { width: 3px; height: 21px; border-radius: 2px; background: var(--accent); }
-.brand-mark i:nth-child(2) { height: 14px; }.brand-mark i:nth-child(3) { height: 7px; }
+.em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.brand-logo { display: block; flex: none; width: 161px; height: 36px; }
+.em-brand small { font-size: 11px; font-weight: 400; letter-spacing: 1px; color: var(--text-dim); }
 .em-nav { display: flex; padding: 4px; gap: 3px; border-radius: 10px; background: var(--bg); }
 .em-nav button { min-width: 94px; min-height: 36px; padding: 8px 19px; border: 0; border-radius: 7px; background: none; font-weight: 500; color: var(--text-dim); cursor: pointer; }
 .em-nav button[aria-current] { background: var(--panel); box-shadow: 0 1px 4px #00000010; color: var(--text); }

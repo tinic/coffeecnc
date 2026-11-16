@@ -1,4 +1,7 @@
-# CoffeeCNC
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="ui/public/branding/coffeecnc-logo-dark.svg">
+  <img src="ui/public/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="360">
+</picture>
 
 A new milling frontend for LinuxCNC, with a native C++ core and a modern web interface hosted locally in GTK/WebKit.
 
@@ -8,9 +11,18 @@ CoffeeCNC is an independent product. It shares architectural ideas with [Elle](h
 
 Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
 
+![CoffeeCNC Manual workspace with the end-mill identity](ui/screenshots/branding-manual-light.png)
+
+*Current browser build at 1600 × 900, captured on 16 November 2026 using a display-only G0759 fixture. The end-mill identity, tappable coordinate readouts and stable numeric fields are implemented. This image is not a controller deployment. [Logo and app-icon assets](docs/design/branding/README.md).*
+
+<details>
+<summary>Last verified G0759 controller deployment</summary>
+
 ![CoffeeCNC running on the G0759 controller with larger jog controls and aligned coordinates](ui/screenshots/g0759-operator-f0a4264.png)
 
-*Current operator layout on the G0759 controller at 1600 × 900, deployed on 15 November 2026 from UI revision `f0a4264` with Claude's jog-stop fix. The machine is off and axes are not homed. Larger jog controls, aligned coordinates and unit buttons, expanded MDI and the bottom-aligned work coordinate selector are visible. Physical touch retesting remains pending. See [deployment evidence](docs/research/evidence/operator-touch-followup-2026-11-15.txt) and [touch behavior](ui/README.md#touch-operation-and-stable-feedback).*
+*Operator layout on the G0759 controller at 1600 × 900, deployed on 15 November 2026 from UI revision `f0a4264` with Claude's jog-stop fix. The machine is off and axes are not homed. Larger jog controls, aligned coordinates and unit buttons, expanded MDI and the bottom-aligned work coordinate selector are visible. Physical touch retesting remains pending. See [deployment evidence](docs/research/evidence/operator-touch-followup-2026-11-15.txt) and [touch behavior](ui/README.md#touch-operation-and-stable-feedback).*
+
+</details>
 
 <details>
 <summary>First G0759 controller launch</summary>
@@ -65,7 +77,7 @@ The concept established the panel's visual direction: readable coordinates, a pa
 
 ## Research and design material
 
-- [Logo concepts](docs/design/branding/README.md): the initial bean mark and the revised end-mill direction, with transparent artwork and generation prompts.
+- [Logo and identity assets](docs/design/branding/README.md): scalable light/dark/monochrome logos, app icons, editable vector source, and the original generated concepts and prompts.
 - [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
 - [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
 - [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks, browser and native overlay qualification.

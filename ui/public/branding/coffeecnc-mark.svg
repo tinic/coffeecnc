@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64" role="img" aria-labelledby="title">
+  <title id="title">CoffeeCNC</title>
+  <g fill="#377ef2">
+    <path d="M18 4h12a2 2 0 0 1 2 2v18H16V6a2 2 0 0 1 2-2Z"/>
+    <path d="M12 28h26c0 9-7 13-14 16-7 3-12 6-14 12V42c0-6 6-9 2-14Z"/>
+    <path d="M38 36v12c0 5-4 8-12 12H10c2-9 11-12 19-16 5-2 8-5 9-8Z"/>
+    <path d="M38 53v5a2 2 0 0 1-2 2h-6c4-2 7-4 8-7Z"/>
+  </g>
+</svg>

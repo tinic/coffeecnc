@@ -71,3 +71,16 @@ Preview diagnostics show the supplied reason when a current preview is unavailab
 Native preview development evidence at `5a04f40` now includes [Task 17 A with its STEP stock overlay](screenshots/native-task17a-stock-5a04f40.png), [Task 17 B with unavailable G55 offsets](screenshots/native-task17b-unavailable-g55-5a04f40.png), and [Task 17 B previewed with G55 active](screenshots/native-task17b-g55-5a04f40.png). These 1280 × 800 GTK/WebKit captures use LinuxCNC simulation and the unedited sample programs. The gray STEP block is **initial stock shared by both setups**, not a finished-part model; the current generic model legend says “Part.” The A capture has placement applied, blue cutting paths, and visible Stop/E-stop controls. Automated import and hide/show pixel checks establish that the model is drawn, without validating a physical setup, collision clearance or machining. See the [retained results and backend review](../docs/research/evidence/native-preview-a114848-review.txt).
 
 Tool-model persistence checks cover identity isolation, native/browser separation, exact mm bindings, Z-only touch-off, corrupt/future documents, bounded payloads, stale revisions, rejected and synchronous results, timeout and late snapshots, and machine changes during a save. The full UI check passed 283 tests, type checking and lint; the production build passed. A display-only protocol fixture verified saving, confirmed values on reopening, retained failed drafts and unavailable storage at 1280 × 800 in light/dark themes. Save feedback stays outside the scrolling form, with Stop and E-stop visible and no browser-console warnings/errors in the checked failure flow. [Failed-save screenshot](screenshots/tool-model-save-error.png). That display-only fixture does not establish disk durability. Separate native simulation checks now verify defaults and assignments survive a full LinuxCNC/application restart; [the retained results](../docs/research/evidence/native-tool-models-06ae603-review.txt) state the remaining qualification limits.
+
+### Quitting the application
+
+Open the machine-state menu at the upper right and choose **Quit CoffeeCNC…**.
+The confirmation explains that LinuxCNC shuts down and the machine switches
+off. Cancel is focused first. A running or paused program must be stopped
+before quitting; machine off and E-stop do not prevent an idle quit.
+
+The action needs a live connection and a backend advertising `quit_supported`.
+Older backends show an unavailable explanation and receive no quit command.
+The browser simulator reports a simulated quit and stays open. Native request
+acceptance is not reported as completed shutdown. See the
+[shutdown contract](../protocol/README.md#application-shutdown).

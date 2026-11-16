@@ -109,9 +109,10 @@ const subtitle = computed(() => {
     <div class="machine-controls">
       <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
       <details ref="menu" class="state-menu">
-        <summary class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}<AppIcon name="down" /></summary>
+        <summary v-tooltip="'App menu'" class="app-menu-toggle" aria-label="App menu"><AppIcon name="menu" /></summary>
         <div class="popover">
           <h3>Machine</h3>
+          <div class="fact"><span>State</span><span class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}</span></div>
           <div class="fact"><span>Connection</span><span>{{ linkLabel }}</span></div>
           <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
           <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
@@ -166,8 +167,10 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .open { display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
 .open:disabled { opacity: .4; }
 .state-menu { position: relative; flex: none; }
-.state-pill { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 30px; background: var(--panel); font-size: 12px; }
-.state-pill :deep(svg) { width: 12px; height: 12px; color: var(--text-dim); }
+.app-menu-toggle { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); }
+.app-menu-toggle :deep(svg) { width: 22px; height: 22px; }
+.app-menu-toggle:hover, .state-menu[open] .app-menu-toggle { background: var(--bg); }
+.state-pill { display: inline-flex; align-items: center; gap: 8px; }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
 .application-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -182,8 +185,8 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-copy p:empty { height: 0; }.no-message { color: var(--text-dim); }
 .message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .log-count { display: inline-block; width: 3ch; min-width: 3ch; text-align: right; }
-.message-log { background: transparent; border-color: transparent; color: inherit; }
-.dismiss:hover { color: var(--text); background: var(--bg); }
+.message-log:hover, .dismiss:hover { color: var(--text); background: var(--bg); }
+.message-log:focus-visible, .dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (max-height: 820px) { .em-top { padding-block: 6px; }.jobbar { padding-block: 8px; }.message-area { height: 54px; margin-bottom: 8px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }
 @media (max-height: 760px) { .em-top { padding-block: 4px; }.jobbar { padding-block: 4px; }.message-area { height: 44px; }.message-copy p { line-height: 16px; } }

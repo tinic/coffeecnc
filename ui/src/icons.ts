@@ -29,6 +29,7 @@ const table = {
   reverse: { path: 'M5 12a7 7 0 1 0 2.5-5.4M5 4.5V9h4.5' },
   drop: { path: 'M12 3.5c3 4 5.5 6.8 5.5 10a5.5 5.5 0 0 1-11 0c0-3.2 2.5-6 5.5-10z' },
   list: { path: 'M5 7h14M5 12h14M5 17h9' },
+  menu: { path: 'M4 6h16M4 12h16M4 18h16' },
   fit: { path: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5' },
   target: { path: 'M12 3v5M12 16v5M3 12h5M16 12h5M12 7a5 5 0 1 0 0 10 5 5 0 1 0 0-10' },
   edit: { path: 'M4.5 19.5l1-4.5L16 4.5l3.5 3.5L9 18.5zM14 6.5l3.5 3.5' },

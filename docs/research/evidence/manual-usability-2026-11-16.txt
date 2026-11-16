@@ -66,6 +66,12 @@ assets 53f6bd9b4b728380378b6caa30bb6deb59ce5ec7ee30e117b4cd4c8eb2b7e02b
 Raw native CTest output: manual-coolant-native-2026-11-16.log.
 
 Deployment handoff sent to working Claude via #coffeecnc at 14:49 UTC.
-Read-only check at approximately 14:50 UTC still reports the earlier deployment:
-source67c89be, PID13659, UI inputsb6ed1c7e/assets8577a280. The new Manual pass
-is merged and ready, but its physical deployment is not yet verified.
+Claude reported deployment at 15:01 UTC; Codex independently verified it by
+read-only SSH at approximately 15:02 UTC:
+source 41c4512b71c344fb74080c7c1bd699810dcc2d46
+PID 18107, executable /usr/bin/coffeecnc
+Installed binary and /proc/18107/exe SHA256 both:
+959b9b7bcf57cb65f8284b7bbea38300dd38965f655fae119dbcd4fe11a4e20b
+Installed UI input and asset hashes match the final Mac/Linux builds above.
+Claude confirmed Coolant hidden, E-STOP and Machine on buttons, T0/G49 and WCS
+offsets visible. This supersedes the earlier source67c89be/PID13659 deployment.

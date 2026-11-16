@@ -36,6 +36,8 @@ struct Outbox {
   bool scheduled{};
   // The window is gone: nothing is taken any more.
   bool closed{};
+  // Close the window once the messages posted before have been delivered.
+  bool close_requested{};
 };
 
 struct PanelWindow::Impl {

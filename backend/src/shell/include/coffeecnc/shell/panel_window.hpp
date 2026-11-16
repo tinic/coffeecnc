@@ -88,6 +88,8 @@ public:
   void close();
   // Any thread, never blocks: messages for the page with this token, in order.
   void post(PageToken page, std::vector<std::string> messages);
+  // Any thread, never blocks: closes the window after delivering what was posted before.
+  void close_after_posts();
 
   struct Impl;
   // For the test hooks (shell_test_hooks.hpp) only.

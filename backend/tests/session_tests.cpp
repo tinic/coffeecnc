@@ -226,6 +226,8 @@ struct Driver {
   // The jog-stop level: follows what the control step asks for.
   bool level{};
   Instant now{};
+  // A worker pass asked to close the application.
+  bool quit{};
   // Messages of work done outside a request or period (page changes): sent with the next.
   std::vector<std::string> backlog;
 
@@ -236,6 +238,7 @@ struct Driver {
       if (steps > 1000)
         throw std::runtime_error("The worker does not come to rest");
       auto work = session.work([this]() -> Instant { return now; });
+      quit = quit || work.quit;
       if (work.outcome.page != PageToken{})
         outcome.page = work.outcome.page;
       for (auto& message : work.outcome.messages)
@@ -437,8 +440,8 @@ void tool_model_commands_go_to_their_service() {
   static_cast<void>(send(page, R"("type":"ready")"));
 
   outcome = send(page, assign_model);
-  require(outcome.messages.empty() && models.taken() == 1 &&
-              models.submitted.back().page == page && models.submitted.back().id == id,
+  require(outcome.messages.empty() && models.taken() == 1 && models.submitted.back().page == page &&
+              models.submitted.back().id == id,
           "After ready it is handed to the service, and answered from there");
   const auto* handed = std::get_if<SetToolModelAssignment>(&models.submitted.back().command);
   require(handed != nullptr && handed->machine_id == "mill-1" && handed->base_revision == 3 &&
@@ -446,8 +449,7 @@ void tool_model_commands_go_to_their_service() {
               handed->family == ToolFamily::drill && handed->overrides.tip_angle == 135,
           "as decoded");
   outcome = send(page, remove_model);
-  require(outcome.messages.empty() && models.taken() == 2,
-          "A removal goes the same way");
+  require(outcome.messages.empty() && models.taken() == 2, "A removal goes the same way");
   require(port.calls.empty() && port.snapshots == 0,
           "Neither reached the controller: no snapshot, no command, with the link down");
   const auto work = session.work([]() -> Instant { return at(0ms); });
@@ -475,7 +477,8 @@ void tool_model_commands_go_to_their_service() {
 
   // The ID rule and the decoder's refusals are the session's, as for every command.
   // Four commands were handed over so far.
-  const auto replay = driver.handle(page, std::format("{{\"id\":{},{}}}", id, assign_model), at(0ms));
+  const auto replay =
+      driver.handle(page, std::format("{{\"id\":{},{}}}", id, assign_model), at(0ms));
   require(replay.messages.empty() && models.taken() == 4,
           "A replayed ID is dropped before the service sees it");
   outcome = send(page, R"("type":"set_tool_model_assignment","machine_id":"mill-1")");
@@ -497,14 +500,12 @@ void tool_model_commands_go_to_their_service() {
   id = 0;
   static_cast<void>(send(next, R"("type":"ready")"));
   outcome = send(next, assign_model);
-  require(outcome.messages.empty() && models.taken() == 5 &&
-              models.submitted.back().page == next,
+  require(outcome.messages.empty() && models.taken() == 5 && models.submitted.back().page == next,
           "The new page's command carries the new page");
   driver.end_page(next);
   require(models.last_ended() == next.value, "A page that ends is ended for the service");
   outcome = send(next, assign_model);
-  require(outcome.messages.empty() && models.taken() == 5,
-          "After its end nothing is handed over");
+  require(outcome.messages.empty() && models.taken() == 5, "After its end nothing is handed over");
   session.close();
   require(models.last_ended() == next.value && models.ends() == 3,
           "Closing ends the last page for the service");
@@ -1743,6 +1744,37 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.acted({}, "An accepted stop ends the retries");
 }
 
+// quit: refused while the interpreter is busy; else power off when on, no E-stop reset, and
+// the worker asks to close only after an accepted reply.
+void quit() {
+  {
+    Rig rig;
+    rig.port.state.interp = InterpState::reading;
+    rig.expect(R"("type":"quit")", "rejected", "Stop the program before quitting.");
+    rig.acted({}, "A busy interpreter sends nothing");
+    require(!rig.driver.quit, "and does not close");
+  }
+  {
+    Rig rig;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({"set_machine_state off"}, "A machine that is on is switched off");
+    require(rig.driver.quit, "then the application closes");
+  }
+  for (const auto machine : {MachineState::off, MachineState::estop}) {
+    Rig rig;
+    rig.port.state.machine = machine;
+    rig.accepted(R"("type":"quit")");
+    rig.acted({}, "Off or in E-stop: no state change, an E-stop stays set");
+    require(rig.driver.quit, "and the application closes");
+  }
+  {
+    Rig rig;
+    rig.port.script["set_machine_state"] = {{ActionStatus::failed, "LinuxCNC did not answer."}};
+    rig.expect(R"("type":"quit")", "failed", "LinuxCNC did not answer.");
+    require(!rig.driver.quit, "A failed switch-off keeps the application open");
+  }
+}
+
 void new_page() {
   Rig rig;
   rig.accepted(hold_x);
@@ -1940,6 +1972,7 @@ auto main(int argc, char** argv) -> int {
     stop_all_and_cancellation();
     lease_expiry();
     lost_machine_cancels_jogs();
+    quit();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

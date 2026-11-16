@@ -126,12 +126,15 @@ auto command(const Json& object) -> Command {
   const auto type = string(object, "type");
   // Commands with no body still reject stray fields (for example an unsupported run-from-line).
   if (type == "ready" || type == "jog_stop_all" || type == "run" || type == "pause" ||
-      type == "resume" || type == "step" || type == "abort" || type == "tool_changed") {
+      type == "resume" || type == "step" || type == "abort" || type == "tool_changed" ||
+      type == "quit") {
     fields(object, {"id", "type"});
     if (type == "ready")
       return Ready{};
     if (type == "jog_stop_all")
       return JogStopAll{};
+    if (type == "quit")
+      return Quit{};
     if (type == "run")
       return Run{};
     if (type == "pause")
@@ -238,8 +241,7 @@ auto command(const Json& object) -> Command {
                                 valid(tool_model_json::defaults(field(object, "defaults")))};
   }
   if (type == "set_tool_model_assignment") {
-    fields(object,
-           {"id", "type", "machine_id", "base_revision", "tool", "family", "overrides"});
+    fields(object, {"id", "type", "machine_id", "base_revision", "tool", "family", "overrides"});
     SetToolModelAssignment assignment;
     assignment.machine_id = string(object, "machine_id");
     assignment.base_revision = valid(tool_model_json::revision(field(object, "base_revision")));

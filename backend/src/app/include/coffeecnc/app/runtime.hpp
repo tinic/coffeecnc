@@ -43,6 +43,8 @@ void status_step(Session& session, StatusSource& source);
 class Runtime {
 public:
   using Sink = std::function<void(const Outcome&)>;
+  // Called on the worker thread after the sink has the reply to an accepted `quit`.
+  using Quit = std::function<void()>;
   static constexpr auto control_period = std::chrono::milliseconds{10};
   static constexpr auto status_period = std::chrono::milliseconds{5};
 
@@ -55,7 +57,8 @@ public:
   // Everything passed in must outlive the runtime; the tool-model service may be null. Starts
   // the threads. Throws std::invalid_argument for invalid limits.
   Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs, const Limits& limits,
-          const ProgramStore& programs, Sink sink, ToolModelService* tool_models = nullptr);
+          const ProgramStore& programs, Sink sink, ToolModelService* tool_models = nullptr,
+          Quit quit = {});
   // Shutdown. From the first control period after it begins, at most control_period later, the
   // jog-stop level is high, with or without a jog, and nothing lowers it again. The worker
   // finishes the call it is in, executes waiting stop requests and stops each axis that may be
@@ -86,6 +89,7 @@ private:
   StatusSource& status_;
   SafetyOutputs& outputs_;
   Sink sink_;
+  Quit quit_;
   Session session_;
   std::atomic<bool> closing_{};
   std::atomic<bool> stop_control_{};

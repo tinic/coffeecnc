@@ -68,7 +68,8 @@ void hello_rules() {
   require(hello.at("axis_max_jog_velocity") == Json{{"x", 1500}, {"y", 1500}, {"z", 750}},
           "Per-axis jog ceilings are keyed by lowercase axis letter");
   require(hello.at("homing_required") == false, "homing_required is sent when false");
-  require(hello.size() == 15, "Hello has the fields of protocol v1 and no other");
+  require(hello.size() == 16, "Hello has the fields of protocol v1 and no other");
+  require(hello.at("quit_supported") == true, "quit is supported");
   require(hello.at("machine_id").is_null() && hello.at("tool_model_storage") == 1 &&
               hello.at("tool_model_storage").is_number_integer(),
           "Without a machine ID it is sent as null; the storage capability is always 1");

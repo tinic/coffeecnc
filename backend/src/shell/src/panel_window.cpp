@@ -163,9 +163,9 @@ auto on_load_failed(WebKitWebView* /*view*/, WebKitLoadEvent /*event*/, const gc
                     GError* error, gpointer data) -> gboolean {
   auto* self = static_cast<PanelWindow::Impl*>(data);
   // A navigation that was refused or cancelled replaces nothing.
-  if (error != nullptr && (error->domain == WEBKIT_POLICY_ERROR ||
-                           g_error_matches(error, WEBKIT_NETWORK_ERROR,
-                                           WEBKIT_NETWORK_ERROR_CANCELLED) != FALSE))
+  if (error != nullptr &&
+      (error->domain == WEBKIT_POLICY_ERROR ||
+       g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED) != FALSE))
     return TRUE;
   self->end_page();
   self->reload_later();
@@ -269,8 +269,8 @@ void wake() { g_idle_add_full(G_PRIORITY_DEFAULT, on_wake, nullptr, nullptr); }
 void PanelWindow::Impl::receive(std::string_view raw) {
   // `<identity>:<text>`, and the identity must be that of the document that shows: a message
   // of a document that has been replaced is not the present page's, whenever it arrives.
-  if (!page || identity.empty() || raw.size() <= identity_digits ||
-      raw[identity_digits] != ':' || raw.substr(0, identity_digits) != identity) {
+  if (!page || identity.empty() || raw.size() <= identity_digits || raw[identity_digits] != ':' ||
+      raw.substr(0, identity_digits) != identity) {
     ++rejected;
     return;
   }
@@ -281,11 +281,13 @@ void PanelWindow::Impl::receive(std::string_view raw) {
 void PanelWindow::Impl::drain() {
   std::vector<std::pair<PageToken, std::vector<std::string>>> waiting;
   std::vector<std::function<void()>> work;
+  bool close_now = false;
   {
     const std::scoped_lock lock{outbox->mutex};
     waiting.swap(outbox->waiting);
     work.swap(outbox->work);
     outbox->scheduled = false;
+    close_now = std::exchange(outbox->close_requested, false);
   }
   // Work that waits behind work that closed the window is dropped, not run.
   for (const auto& task : work) {
@@ -298,6 +300,8 @@ void PanelWindow::Impl::drain() {
   }
   for (const auto& [token, messages] : waiting)
     deliver(token, messages);
+  if (close_now && window != nullptr)
+    gtk_widget_destroy(window);
 }
 
 auto PanelWindow::Impl::on_gtk_thread(std::vector<std::function<void()>> work) -> bool {
@@ -367,8 +371,8 @@ PanelWindow::PanelWindow(PanelOptions options, PanelEvents events)
 
   // Nothing of the panel is kept on disk: no cache, no storage.
   impl.context = webkit_web_context_new_ephemeral();
-  webkit_web_context_register_uri_scheme(impl.context, std::string(panel_scheme).c_str(),
-                                         on_scheme, &impl, nullptr);
+  webkit_web_context_register_uri_scheme(impl.context, std::string(panel_scheme).c_str(), on_scheme,
+                                         &impl, nullptr);
   WebKitSecurityManager* security = webkit_web_context_get_security_manager(impl.context);
   webkit_security_manager_register_uri_scheme_as_secure(security,
                                                         std::string(panel_scheme).c_str());
@@ -382,9 +386,9 @@ PanelWindow::PanelWindow(PanelOptions options, PanelEvents events)
                    &impl);
   webkit_user_content_manager_register_script_message_handler(content, "coffeecnc");
   webkit_user_content_manager_register_script_message_handler(content, "coffeecncPage");
-  WebKitUserScript* script = webkit_user_script_new(
-      document_start_script, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-      WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, nullptr, nullptr);
+  WebKitUserScript* script =
+      webkit_user_script_new(document_start_script, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+                             WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, nullptr, nullptr);
   webkit_user_content_manager_add_script(content, script);
   webkit_user_script_unref(script);
 
@@ -398,8 +402,7 @@ PanelWindow::PanelWindow(PanelOptions options, PanelEvents events)
   webkit_settings_set_javascript_can_open_windows_automatically(settings, FALSE);
   g_signal_connect(impl.view, "load-changed", G_CALLBACK(on_load_changed), &impl);
   g_signal_connect(impl.view, "load-failed", G_CALLBACK(on_load_failed), &impl);
-  g_signal_connect(impl.view, "web-process-terminated", G_CALLBACK(on_process_terminated),
-                   &impl);
+  g_signal_connect(impl.view, "web-process-terminated", G_CALLBACK(on_process_terminated), &impl);
   g_signal_connect(impl.view, "decide-policy", G_CALLBACK(on_policy), &impl);
   g_signal_connect(impl.view, "context-menu", G_CALLBACK(on_context_menu), &impl);
   g_signal_connect(impl.view, "create", G_CALLBACK(on_create), &impl);
@@ -469,6 +472,19 @@ void PanelWindow::run() {
 void PanelWindow::close() {
   if (impl_->window != nullptr)
     gtk_widget_destroy(impl_->window);
+}
+
+void PanelWindow::close_after_posts() {
+  const auto& outbox = impl_->outbox;
+  {
+    const std::scoped_lock lock{outbox->mutex};
+    if (outbox->closed)
+      return;
+    outbox->close_requested = true;
+    if (std::exchange(outbox->scheduled, true))
+      return;
+  }
+  wake();
 }
 
 void PanelWindow::post(PageToken page, std::vector<std::string> messages) {

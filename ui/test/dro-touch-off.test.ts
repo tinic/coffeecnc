@@ -38,6 +38,25 @@ beforeEach(() => {
 afterEach(() => { const element = wrapper.element as HTMLElement; wrapper.unmount(); element.remove() })
 
 describe('touching the coordinate readout', () => {
+  it('shows the loaded tool and reported active length compensation in display units', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.tool.in_spindle = 7
+    panel.status.active_codes = ['G0', 'G43', 'G54']
+    panel.status.offsets.tool[2] = 25.4
+    await nextTick()
+    expect(wrapper.get('.active-tool').text()).toContain('T7 · G43')
+    expect(wrapper.get('.tool-length').text()).toContain('25.400 mm')
+    panel.unit = 'inch'; await nextTick()
+    expect(wrapper.get('.tool-length').text()).toContain('1.0000 in')
+    panel.status.active_codes = ['G49']; panel.status.offsets.tool[2] = 0
+    await nextTick()
+    expect(wrapper.get('.active-tool').text()).toContain('G49')
+    expect(wrapper.get('.tool-length').text()).toContain('0.0000 in')
+    panel.link = 'stale'; await nextTick()
+    expect(wrapper.get('.active-tool').text()).toContain('Last reported tool')
+    panel.tab = 'program'; await nextTick()
+    expect(wrapper.find('.active-tool').exists()).toBe(false)
+  })
   it.each(['mm', 'inch'] as const)('confirms mixed-unit formulas as millimeters from a %s readout', async (unit) => {
     panel.unit = unit; await nextTick()
     for (const [text, expected] of [['1/4in', 6.35], ['7mm/2', 3.5], ['7/2mm', 3.5]] as const) {

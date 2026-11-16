@@ -27,7 +27,7 @@ export function machineFeedback(status: Status | null, link: LinkView): {
   const probe = readable ? status.probe_input : null
   return {
     rpm: reading(typeof rpm === 'number' && Number.isFinite(rpm) && rpm >= 0 ? `${String(Math.round(rpm))} rpm` : null),
-    atSpeed: reading(typeof atSpeed === 'boolean' ? atSpeed ? 'Yes' : 'No' : null),
+    atSpeed: reading(readable && status.spindle.direction === 'stopped' ? '—' : typeof atSpeed === 'boolean' ? atSpeed ? 'Yes' : 'No' : null),
     probe: reading(typeof probe === 'boolean' ? probe ? 'Tripped' : 'Clear' : null),
     probeTripped: probe === true && !stale,
   }

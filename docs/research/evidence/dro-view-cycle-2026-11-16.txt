@@ -1,0 +1,22 @@
+CoffeeCNC coordinate-view cycle — 16 November 2026
+Requested through Claude on #coffeecnc: replace the Work / Machine / To go
+segmented control with one button showing only the current view, a small cycle
+icon and a full-height touch target. Keep per-axis ellipsis menus.
+
+Implementation: one button cycles Work -> Machine -> To go -> Work. Work shows
+the active system, including G59.3. Basis switching is presentation only and
+sends no controller command. Touch-off stays restricted to Work; changing basis
+invalidates a pending typed or quick coordinate confirmation.
+The view-control allocation shrinks from 212 px to 154 px, giving more room to
+axis readings. The button stretches to the row's content height; labels,
+readings and unit buttons share a vertical center.
+
+Validation: UI typecheck, ESLint and all 472 tests in 33 files passed. Production
+bundle built. Browser checks at 1280x720 and 1600x900 confirmed layout and the
+full cycle with corresponding coordinates, then checked Work G59.3 with an
+applied G92/G52 shift. All labels fit. No native controller code changed.
+Screenshots: ui/screenshots/manual-dro-cycle-1280.png and manual-dro-cycle-1600.png.
+Physical deployment pending Claude; the screenshots are from the browser simulator.
+
+UI inputs_digest: ffa4121c3f8b8c3e371f7a5393b94e7852618148525d044e55307071211052a4
+UI assets_digest: dadc2bff6c3cd54740bd793e0c74917e3ff9332a750665acd176bc8f40afdd78

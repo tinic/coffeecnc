@@ -39,6 +39,33 @@ beforeEach(() => {
 afterEach(() => { const element = wrapper.element as HTMLElement; wrapper.unmount(); element.remove() })
 
 describe('touching the coordinate readout', () => {
+  it('cycles a single view button through work, machine and distance without sending a command', async () => {
+    const axis = panel.status?.axes[0]
+    if (!axis) throw new Error('Missing axis')
+    axis.machine = 40; axis.dtg = 2
+    await nextTick()
+    const view = wrapper.get('.basis-toggle')
+    expect(wrapper.findAll('.basis button')).toHaveLength(1)
+    expect(view.text()).toBe('Work · G54')
+    expect(wrapper.get('.axis .number').text()).toBe('12.346')
+    await view.trigger('click')
+    expect(view.text()).toBe('Machine')
+    expect(wrapper.get('.axis .number').text()).toBe('40.000')
+    expect(wrapper.get('button[aria-label="Zero X"]').attributes('disabled')).toBeDefined()
+    await view.trigger('click')
+    expect(view.text()).toBe('To go')
+    expect(wrapper.get('.axis .number').text()).toBe('2.000')
+    await view.trigger('click')
+    expect(view.text()).toBe('Work · G54')
+    expect(wrapper.get('.axis').attributes('disabled')).toBeUndefined()
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.offsets.wcs = 2
+    await nextTick()
+    expect(view.text()).toBe('Work · G55')
+    expect(view.attributes('aria-label')).toContain('Switch to Machine')
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('shows the loaded tool and reported active length compensation in display units', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.status.tool.in_spindle = 7
@@ -135,7 +162,10 @@ describe('touching the coordinate readout', () => {
   it.each(['machine', 'distance', 'blocked', 'program'])('does not edit %s coordinates', async (mode) => {
     if (mode === 'blocked') Object.assign(mdiBlock, { value: 'Machine is off' })
     else if (mode === 'program') panel.tab = 'program'
-    else { await wrapper.findAll('.basis-options button')[mode === 'distance' ? 2 : 1]?.trigger('click') }
+    else {
+      await wrapper.get('.basis-toggle').trigger('click')
+      if (mode === 'distance') await wrapper.get('.basis-toggle').trigger('click')
+    }
     await nextTick()
     expect(wrapper.get('.axis').attributes('disabled')).toBeDefined()
     await wrapper.get('.axis .number').trigger('click')
@@ -151,7 +181,7 @@ describe('touching the coordinate readout', () => {
     else if (change === 'blocked') Object.assign(mdiBlock, { value: 'No current controller status' })
     else if (change === 'workspace') panel.tab = 'tools'
     else if (change === 'session') Object.assign(panel, { hello: {} })
-    else await wrapper.findAll('.basis-options button')[1]?.trigger('click')
+    else await wrapper.get('.basis-toggle').trigger('click')
     // Even a confirmation queued before Vue removes the dialog cannot apply the draft.
     dialog.vm.$emit('confirm', 10, '10')
     await nextTick()
@@ -217,7 +247,7 @@ describe('quick coordinate actions', () => {
     else if (change === 'blocked') Object.assign(mdiBlock, { value: 'Machine busy' })
     else if (change === 'missing axis' && panel.status) panel.status.axes = panel.status.axes.filter((axis) => axis.axis !== 'x')
     else if (change === 'invalid coordinate' && panel.status?.axes[0]) panel.status.axes[0].work = NaN
-    else await wrapper.findAll('.basis-options button')[1]?.trigger('click')
+    else await wrapper.get('.basis-toggle').trigger('click')
     dialog.vm.$emit('confirm'); await nextTick()
     expect(send).not.toHaveBeenCalled()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

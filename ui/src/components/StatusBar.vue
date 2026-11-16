@@ -8,9 +8,16 @@ import { baseName, wcsName } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
-const emit = defineEmits<{ log: []; open: [] }>()
+const emit = defineEmits<{ log: []; open: []; quit: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
+function openQuit(): void {
+  if (menu.value) {
+    menu.value.open = false
+    menu.value.querySelector('summary')?.focus({ preventScroll: true })
+  }
+  emit('quit')
+}
 type PowerCommand = Extract<CommandBody, { type: 'set_machine' }>
 const pendingPower = shallowRef<{ command: PowerCommand; hello: Hello | null; before: Status | null; accepted: boolean } | null>(null)
 function power(state: 'on' | 'off'): void {
@@ -111,6 +118,9 @@ const subtitle = computed(() => {
           <button class="btn quiet" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
         </div>
         <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
+        <div class="application-actions">
+          <button class="btn quiet quit" type="button" @click="openQuit">Quit CoffeeCNC…</button>
+        </div>
       </div>
     </details>
   </section>
@@ -153,6 +163,8 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill :deep(svg) { width: 12px; height: 12px; color: var(--text-dim); }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
+.application-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.quit { width: 100%; justify-content: flex-start; min-height: 44px; }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }

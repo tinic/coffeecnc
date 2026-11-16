@@ -59,6 +59,7 @@ export const hello: Hello = {
   protocol: protocolVersion,
   machine_name: 'Demo mill 400 × 250',
   simulated: true,
+  quit_supported: true,
   axes: ['x', 'y', 'z'],
   machine_units: 'mm',
   jog_increments: [0.01, 0.1, 1, 10],
@@ -777,6 +778,13 @@ export class SimMachine {
         }
         this.emit(this.preview)
         this.sendStatus()
+        return null
+      case 'quit':
+        if (this.exec !== null) return reject('Stop the program before quitting.')
+        // Exercise the shutdown request without closing the development browser or resetting E-stop.
+        this.setMachine(this.machine === 'estop' ? 'estop' : 'off')
+        this.sendStatus()
+        this.emit({ type: 'message', level: 'info', text: 'Simulated quit: machine off; this browser stays open.', time: this.clock() })
         return null
       case 'set_machine':
         return this.setMachine(command.state)

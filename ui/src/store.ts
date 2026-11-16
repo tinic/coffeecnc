@@ -128,6 +128,8 @@ export function describeCommand(command: CommandBody): string {
   switch (command.type) {
     case 'ready':
       return 'Connect'
+    case 'quit':
+      return 'Quit CoffeeCNC'
     case 'set_machine':
       return command.state === 'estop' ? 'E-stop' : command.state === 'on' ? 'Machine on' : 'Machine off'
     case 'home':

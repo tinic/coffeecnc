@@ -1,0 +1,36 @@
+CoffeeCNC quit UI — 16 November 2026
+
+Scope: browser UI and simulator; no physical machine commands or native shutdown.
+Contract agreed with Claude on AgentNet #coffeecnc. Claude owns backend/native tests.
+
+Changes:
+- Existing machine-state menu offers Quit CoffeeCNC… with a separate confirmation.
+- Cancel initially focused; fresh-gesture guard; no implicit confirmation.
+- hello.quit_supported=true required. Absent/false, incompatible or unavailable
+  connection and a changed hello block submission. Non-idle interpreter states
+  say: Stop the program before quitting.
+- Sends only {type:"quit",id}; no separate power command from the panel.
+- Pending/accepted state blocks duplicate activation in the dialog. Refusal,
+  failure and timeout remain visible; no automatic retry or browser/window close.
+- Native acceptance says request accepted, waiting to close, not shutdown completed.
+- Browser simulator powers off, preserving E-stop, and explicitly stays open.
+- Shared fixtures append command id 27 and advertise quit in the first two hellos.
+
+Validation:
+- npm run check: type checking, lint and 361 tests in 28 files PASS (22 new cases).
+- npm run build: PASS. Existing Vite config-loader and OCCT externalization notices.
+- node backend/tests/sim/check-panel-stamp.mjs .: MATCH.
+  inputs=12457011a569911e6678c78da89fceecfb087915171ff334aa522c643eda459a
+  assets=5278d857e25cd579982dfdbbe1fc370aed4cc6cf1cb3f1be6254b1a12d119395
+- Production browser at localhost:5186, actual 1280x720 viewport:
+  light Manual simulator: menu -> confirmation, Cancel focused, explicit confirm
+  -> simulated completion and Machine off. No actual machine connection.
+  dark paused simulator: confirmation says stop first, Quit disabled. Stop and
+  E-stop remain visible. No browser warnings/errors in the checked flow.
+- Screenshot ui/screenshots/quit-confirmation.png is the browser simulator.
+
+Integration boundary:
+Keep this PR open until the matching backend is included and its shared fixture
+checks pass. Native close/result ordering, failure after acceptance, E-stop
+preservation and LinuxCNC shutdown are backend-owned and NOT validated here.
+Do not test shutdown on the G0759 as part of these browser checks.

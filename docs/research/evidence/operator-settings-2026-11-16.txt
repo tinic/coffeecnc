@@ -1,0 +1,40 @@
+CoffeeCNC operator settings — 16 November 2026
+Implementation source: 2ba3dc028eb0a8f17af72f3deaf5aae31018850c, PR #39
+Physical G0759 deployment: pending Claude; no physical machine commands issued by Codex.
+
+UI: typecheck, ESLint, 471 tests in 33 files passed; production bundle built.
+Browser simulator at 1280 x 720: settings layout checked; all primary inputs visible.
+Saved startup inch, spindle 2400/2 and jog 7in/2; reload restored inch, 1200 rpm,
+and 3.5 in/min without starting the spindle. Settings saves do not change current
+units or speed. Disabled G59.3 then selected it through simulated MDI: active
+system remained visible. Simulated G92 X0 showed a separate inspectable G92/G52
+shift. Demo preferences restored after testing. Screenshots in ui/screenshots/:
+settings-1280.png and settings-g92-shift-1280.png (browser, not physical mill).
+
+Native validation: playhouse2, Codex-owned checkout /home/turo/ai/codex-coffeecnc-quit.
+GCC 14.2, LinuxCNC 2.9.4, GTK 3.24.49, WebKitGTK 2.54.0, debug/warnings-as-errors.
+Full native build passed. 28 base CTests passed cumulatively after updating the
+strict Hello field-count assertion for the additive capability. New tests cover
+schema/limits, wrong machine and stale revisions, external edits, file-system
+failure stages, uncertain post-rename writes, snapshot-before-result delivery,
+ended pages, missing identity, shared locking and independent corrupt documents.
+A real POSIX file test confirms private permissions and restored preferences
+through fresh file handles after write/fsync/rename/directory-fsync/close.
+Session test confirms saving operator settings performs no controller reads or commands.
+
+Additional LinuxCNC/WebKit CTests passed:
+- linuxcnc_shell_mm (39.03 s)
+- linuxcnc_shell_inch (39.03 s)
+- linuxcnc_shell_tool_models, including two process runs (6.57 s)
+- linuxcnc_machine_g0759_start (7.52 s on final UI source)
+32 distinct CTests passed in total. No failing result is treated as a pass.
+G0759 startup first skipped without MACHINES_DIRECTORY, then could not find the
+CoffeeCNC INI on the machine repository's master branch. Resolved by testing the
+published claude/coffeecnc-g0759 branch at 29941ba2b0daae89748cf2d73a124f8b4a54cfe9,
+in a separate Codex-owned clone. Hardware connections were replaced with the
+repository's simulation stubs; this was not a physical mill startup.
+
+Final UI inputs_digest:
+1a4e143571ab10caa84fcc7591a83998f7b5c17c853b62d2b776ab634c8e483a
+Final UI assets_digest:
+4cbb046e81e8c097a024c6b12d42eec3d6ce4e45a3a8a3ec2af64d98d21baa7d

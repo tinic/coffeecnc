@@ -179,6 +179,16 @@ describe('capability-aware controls', () => {
     },
   )
 
+  it('shows and sends a fractional startup jog speed without rounding it to a different value', () => {
+    panel.jogVelocity = 3.5
+    wrapper = mount(ManualTab)
+    expect(wrapper.get('.speed').text()).toBe('3.5')
+    expect(wrapper.get('input[aria-label="Jog speed"]').attributes('aria-valuetext')).toBe('3.5 mm/min')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'jog_step', axis: 'x', distance: 1, velocity: 3.5 })
+  })
+
   it('sends clamped keyboard step/hold requests and releases a hold on a new hello', async () => {
     wrapper = mount(ManualTab)
     expect(wrapper.text()).toContain('Axis limits: Z 750 mm/min')

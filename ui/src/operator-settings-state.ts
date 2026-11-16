@@ -136,4 +136,3 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (pending !== null) finish(fail('CoffeeCNC closed before save confirmation.'))
   } }
 }
-

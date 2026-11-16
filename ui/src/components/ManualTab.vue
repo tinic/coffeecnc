@@ -453,10 +453,11 @@ function coolant(which: 'flood' | 'mist'): void {
           step="10"
           :value="panel.jogVelocity"
           aria-label="Jog speed"
+          :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
           @input="setJogVelocity"
           @change="blur"
         />
-        <span class="speed mono">{{ formatVelocity(panel.jogVelocity, unit) }}</span>
+        <span class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</span>
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
 

@@ -413,6 +413,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
           window.post(page, std::move(messages));
         },
         config->limits);
+    models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },

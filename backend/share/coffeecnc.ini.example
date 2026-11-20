@@ -28,6 +28,9 @@ PROBE_SIGNAL = no
 # SETTER_CLEARANCE_MM lifts to tool-change height relative to the reference latch.
 # SETTER_LATCH_FEED_MM_MIN enables a second pass after backing off by SETTER_LATCH_BACKOFF_MM (1 mm by default).
 FIXED_SETTER = no
+# The tool number HAL routes to a spindle touch probe. It is treated as a touch probe (no
+# spindle start while loaded) whatever its tool model says.
+#TOUCH_PROBE_TOOL = 99
 # The identity of this machine for what coffeecnc saves (the tool models of the Tools tab):
 # a name that stays the same for this machine and that no other machine has. 1 to 64 of the
 # characters A-Z a-z 0-9 _ and -, the first a letter or a digit; upper and lower case differ.

@@ -16,6 +16,7 @@ import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
 import { setterStatus, touchedOff } from '../setter-state'
+import { defaultToolName } from '../tool-models'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -146,7 +147,7 @@ function editOffset(wcs: number): void {
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
               <td class="comment">
-                {{ tool.comment }}
+                {{ tool.comment || defaultToolName(tool.number) }}
               </td>
               <td class="actions">
                 <button v-tooltip="editBlock ?? `Edit T${tool.number}`" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="`Edit tool ${tool.number}`" @click.stop="edit(tool)">Edit</button>

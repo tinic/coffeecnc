@@ -54,6 +54,8 @@ export interface Hello {
   coolant?: { flood: boolean; mist: boolean }
   /** Commissioned fixed-setter limits in millimetres and mm/min. */
   fixed_setter?: FixedSetterLimits
+  /** The tool HAL routes to the spindle touch probe. */
+  touch_probe_tool?: number
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]

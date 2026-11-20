@@ -273,6 +273,14 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
         std::string("[DISPLAY] MAX_FEED_OVERRIDE and MAX_SPINDLE_OVERRIDE must be at least 1, "
                     "MIN_SPINDLE_OVERRIDE between 0 and 1."));
 
+  std::optional<int> probe_tool;
+  if (const auto text = ini.text("COFFEECNC", "TOUCH_PROBE_TOOL")) {
+    const auto value = number(*text);
+    if (!value || *value < 1 || *value > 99999 || std::floor(*value) != *value)
+      return std::unexpected(std::string("[COFFEECNC] TOUCH_PROBE_TOOL must be a tool number."));
+    probe_tool = static_cast<int>(*value);
+  }
+
   std::optional<FixedSetterLimits> setter;
   const auto setter_enabled = flag(ini, "FIXED_SETTER");
   if (!setter_enabled)
@@ -335,6 +343,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .coolant = std::nullopt,
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
+      .touch_probe_tool = probe_tool,
   };
 }
 

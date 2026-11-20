@@ -274,6 +274,8 @@ public:
       -> std::optional<std::string> override;
   void page_ended(PageToken page) override;
   [[nodiscard]] auto touch_probe_loaded(int tool_number) -> std::optional<bool> override;
+  // The machine's own touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL): always a probe.
+  void set_fixed_probe_tool(std::optional<int> tool_number);
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
   // writer gets to them are one snapshot, for the page of the last.
   void send_snapshot(PageToken page);
@@ -295,6 +297,7 @@ private:
   std::condition_variable wake_;
   std::deque<Pending> pending_;
   std::vector<int> probe_tools_;
+  std::optional<int> fixed_probe_tool_;
   bool probe_catalog_ready_{};
   std::optional<int> changing_probe_;
   std::optional<PageToken> snapshot_due_;

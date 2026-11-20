@@ -1,7 +1,7 @@
 import { BufferGeometry, CylinderGeometry, Group, LatheGeometry, LineBasicMaterial, LineLoop, Mesh,
   MeshStandardMaterial, PMREMGenerator, SphereGeometry, Vector2, Vector3, type WebGLCubeRenderTarget, type WebGLRenderer } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { endMillGeometry } from './end-mill-geometry'
+import { faceMillGeometry, flutedCutterGeometry } from './cutter-geometry'
 import { holderSurfaces } from './tool-holder'
 import { holderFaceZ, probeEnvelope, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
 
@@ -32,8 +32,11 @@ export class ToolMesh {
     if ('bodyDiameter' in d) this.buildProbe(d, model.holder === undefined)
     else {
       const profiles = toolProfiles(model)
-      const cutter = model.family === 'end-mill' ? endMillGeometry(d.diameter, d.cuttingLength) : this.lathe(profiles.cutting)
-      this.addMesh(cutter, this.cutting, 'cutter')
+      if (model.family === 'face-mill') this.buildFaceMill(d.diameter, d.cuttingLength)
+      else {
+        const cutter = flutedCutterGeometry(model.family, profiles.cutting, d.diameter, d.cuttingLength)
+        this.addMesh(cutter ?? this.lathe(profiles.cutting), this.cutting, 'cutter')
+      }
       if (profiles.shank.length) this.addMesh(this.lathe(profiles.shank), this.shank, 'shank')
     }
     this.buildHolder(model)
@@ -57,6 +60,16 @@ export class ToolMesh {
     const mesh = new Mesh(g, material)
     mesh.name = name
     parent.add(mesh)
+  }
+
+  private buildFaceMill(diameter: number, length: number): void {
+    const head = new Group()
+    head.name = 'cutter'
+    const { body, inserts, screws } = faceMillGeometry(diameter, length)
+    this.addMesh(body, this.darkSteel, 'head', head)
+    for (const insert of inserts) this.addMesh(insert, this.cutting, 'insert', head)
+    for (const screw of screws) this.addMesh(screw, this.housing, 'insert screw', head)
+    this.group.add(head)
   }
 
   private buildHolder(model: ToolModel): void {

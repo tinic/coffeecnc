@@ -1,9 +1,15 @@
 # Simulated home switches for the CoffeeCNC test mill: one per joint, closed while the joint is
 # beyond its switch position. Uses the position signals of LinuxCNC's core_sim.hal.
-loadrt comp names=coffeecnc-home-x,coffeecnc-home-y,coffeecnc-home-z
+loadrt comp names=coffeecnc-home-x,coffeecnc-home-y,coffeecnc-home-z,coffeecnc-z-direction
 addf coffeecnc-home-x servo-thread
 addf coffeecnc-home-y servo-thread
 addf coffeecnc-home-z servo-thread
+addf coffeecnc-z-direction servo-thread
+
+# Keep the last direction at standstill for tests that model backlash.
+setp coffeecnc-z-direction.hyst 0.002
+net Zvel => coffeecnc-z-direction.in1
+net Z-positive-direction <= coffeecnc-z-direction.out
 
 setp coffeecnc-home-x.in0 [COFFEECNC_SIM]HOME_SWITCH_X
 setp coffeecnc-home-y.in0 [COFFEECNC_SIM]HOME_SWITCH_Y

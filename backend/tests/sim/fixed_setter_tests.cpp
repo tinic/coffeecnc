@@ -65,6 +65,20 @@ void wire(double scale) {
   halcmd("net sim-enable sim-probe-estop.out iocontrol.0.emc-enable-in");
 }
 
+void wire_z_feedback() {
+  // Report the motor's commanded position plus the backlash in the last positive Z move.
+  // The offset starts at zero and the test enables it only for one probe cycle.
+  halcmd("loadrt mux2 names=sim-z-backlash");
+  halcmd("loadrt sum2 names=sim-z-feedback");
+  halcmd("addf sim-z-backlash servo-thread");
+  halcmd("addf sim-z-feedback servo-thread");
+  halcmd("unlinkp joint.2.motor-pos-fb");
+  halcmd("net Zpos sim-z-feedback.in0");
+  halcmd("net Z-positive-direction sim-z-backlash.sel");
+  halcmd("net sim-z-backlash-error sim-z-backlash.out sim-z-feedback.in1");
+  halcmd("net sim-z-encoder sim-z-feedback.out joint.2.motor-pos-fb");
+}
+
 template <typename Predicate> void wait_for(NmlPort& port, Predicate predicate) {
   const auto deadline = HalShared::Clock::now() + 6s;
   while (!predicate(port.status())) {
@@ -138,7 +152,7 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   mdi("G55");
   mdi("G92 X2 Y3 Z4");
   const auto check_cycle = [&](ProbeDirection direction, std::size_t axis, double expected,
-                               const Wanted& wanted = {}) {
+                               const Wanted& wanted = {}, double z_lag = 0) {
     mdi(scale == 1 ? "G20" : "G21");
     const auto before = port->status();
     const auto start = position();
@@ -147,18 +161,32 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
     const auto after = port->status();
     require(result->material && result->material->wcs == 2 &&
                 result->material->axis == "XYZ"[axis] && after.wcs == 2 &&
-                std::abs(after.work[axis] - expected) < 0.03,
+                std::abs(after.work[axis] - expected - (axis == 2 ? z_lag : 0)) < 0.03,
             "the active G55 axis is zeroed at the physical surface");
     const auto end = position();
     for (std::size_t i = 0; i < start.size(); ++i) {
-      require(std::abs(end[i] - start[i]) < 0.03, "the probe returned to its start");
+      require(std::abs(end[i] - start[i] - (i == 2 ? z_lag : 0)) < 0.03,
+              "the probe returned to its start within the expected encoder lag");
       if (i != axis)
         require(std::abs(after.work[i] - before.work[i]) < 0.03, "another axis is unchanged");
     }
   };
   start_at();
   window('z', -100, 13);
-  check_cycle(ProbeDirection::z_top, 2, 7);
+  wire_z_feedback();
+  constexpr double z_lag = -0.125;
+  bool backlash_enabled = false;
+  check_cycle(ProbeDirection::z_top, 2, 7, [&] {
+    const auto pins = shared.view(HalShared::Clock::now());
+    if (!backlash_enabled && pins && pins->probe_cycle_active && pins->probe_input &&
+        *pins->probe_input) {
+      halcmd(std::format("setp sim-z-backlash.in1 {}", z_lag / scale));
+      backlash_enabled = true;
+    }
+    return true;
+  }, z_lag);
+  require(backlash_enabled, "Z top set the origin with 0.125 mm of simulated reversal backlash");
+  halcmd("setp sim-z-backlash.in1 0");
   require(!setter_status().calibration, "T99 probes material Z after a restart without teaching");
 
   start_at();

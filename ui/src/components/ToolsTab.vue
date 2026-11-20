@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 import { startDialog } from '../dialogs'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
 import type { Tool } from '../protocol'
-import { formatLength, fromDisplay, toDisplay, wcsName } from '../units'
+import { formatLength, fromDisplay, toDisplay, toolLabel, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import FixedSetterControls from './FixedSetterControls.vue'
@@ -111,7 +111,7 @@ function editOffset(wcs: number): void {
         <h2>Tool table</h2>
         <span class="hint">{{ unit }}</span>
         <span class="spindle-line" :class="{ stale: panel.link !== 'live' }">
-          <template v-if="loaded !== 0"><strong class="mono">T{{ loaded }}</strong> in spindle · Length <span class="mono">{{ formatLength(applied, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }} · {{ compensation }}</template>
+          <template v-if="loaded !== 0"><strong class="mono">{{ toolLabel(loaded) }}</strong> in spindle · Length <span class="mono">{{ formatLength(applied, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }} · {{ compensation }}</template>
           <template v-else>No tool in spindle</template>
         </span>
         <button v-if="!panel.hello?.fixed_setter" v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
@@ -141,7 +141,7 @@ function editOffset(wcs: number): void {
           <tbody>
             <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
               <td class="num mono">
-                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">T{{ tool.number }}</button>
+                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">{{ toolLabel(tool.number) }}</button>
                 <span v-if="touchedOff(tool.number)" class="touched" title="Touched off against the current reference" aria-label="Touched off"><AppIcon name="check" /></span>
               </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
@@ -234,7 +234,7 @@ function editOffset(wcs: number): void {
 
 <style scoped>
 /* The setter's status line: the same band as the system messages, fixed height. */
-.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
+.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 12px 0 14px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
 .setter-band.blocked { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); border-left-width: 5px; }
 .setter-band.done { color: var(--ok, #15803d); }
 .setter-band.busy { color: var(--accent); }
@@ -281,7 +281,7 @@ function editOffset(wcs: number): void {
 .tool-row { cursor: pointer; }
 .tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
 .tool-row.selected td:first-child { box-shadow: inset 3px 0 var(--accent); }
-.tool-number { width: 100%; min-height: 44px; padding: 0; background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; text-align: right; }
+.tool-number { width: 100%; min-height: 44px; padding: 0; background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-weight: 700; text-align: right; }
 .tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .load-tool, .edit-tool { width: 64px; min-height: 44px; }

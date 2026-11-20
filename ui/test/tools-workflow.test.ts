@@ -90,8 +90,8 @@ describe('fixed setter workflow', () => {
     await press('Touch off')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
     await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 }, measured_tools: [98, 1] })
-    expect(getWrapper().get('.setter-band p').text()).toBe('T1 measured')
-    expect(getWrapper().findAll('.tool-row').filter((row) => row.find('.touched').exists()).map((row) => row.find('.tool-number').text())).toContain('T1')
+    expect(getWrapper().get('.setter-band p').text()).toBe('T01 measured')
+    expect(getWrapper().findAll('.tool-row').filter((row) => row.find('.touched').exists()).map((row) => row.find('.tool-number').text())).toContain('T01')
     expect(send).toHaveBeenCalledTimes(3)
     expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
   })
@@ -110,7 +110,7 @@ describe('tool table workflow', () => {
     await nextTick()
 
     const numberCells = getWrapper().findAll('.tool-row td:first-child')
-    expect(numberCells.map((cell) => cell.text())).toEqual(['T1', 'T2', 'T98', 'T99'])
+    expect(numberCells.map((cell) => cell.text())).toEqual(['T01', 'T02', 'T98', 'T99'])
     expect(panel.toolTable.tools.map((tool) => tool.number)).toEqual([1, 2, 99, 98])
   })
   it('requires a separate confirmation before loading and applying a tool length', async () => {

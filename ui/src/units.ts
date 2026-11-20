@@ -111,3 +111,8 @@ export function formatClock(time: number): string {
   const two = (n: number): string => String(n).padStart(2, '0')
   return `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`
 }
+
+// A tool number as the panel shows it: T and at least two digits (T01, T98, T100).
+export function toolLabel(number: number): string {
+  return `T${String(number).padStart(2, '0')}`
+}

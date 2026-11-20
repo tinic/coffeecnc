@@ -5,7 +5,7 @@ import { vTooltip } from '../tooltip'
 import { computed } from 'vue'
 
 import { findTool, linkBlock, panel, send } from '../machine'
-import { formatLength } from '../units'
+import { formatLength, toolLabel } from '../units'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{ tool: number }>()
@@ -27,10 +27,10 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
       </template>
       <template v-else>
         <h2>
-          Load <span class="mono">T{{ tool }}</span>
+          Load <strong class="mono">{{ toolLabel(tool) }}</strong>
         </h2>
         <p v-if="row" class="what">{{ row.comment || 'No description in the tool table' }}</p>
-        <p v-else class="what missing">T{{ tool }} is not in the tool table.</p>
+        <p v-else class="what missing">{{ toolLabel(tool) }} is not in the tool table.</p>
         <p v-if="row" class="table mono">
           Table: length {{ formatLength(row.length, unit) }} {{ unit }} · diameter {{ formatLength(row.diameter, unit) }}
           {{ unit }}
@@ -39,7 +39,7 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
       <p class="now">
         In the spindle now, as LinuxCNC reports:
         <strong v-if="loaded === 0">no tool</strong>
-        <strong v-else><span class="mono">T{{ loaded }}</span> {{ loadedRow?.comment }}</strong>
+        <strong v-else><span class="mono">{{ toolLabel(loaded) }}</span> {{ loadedRow?.comment }}</strong>
         · spindle {{ spindle === 'stopped' ? 'stopped' : `running ${spindle}` }}
       </p>
       <button

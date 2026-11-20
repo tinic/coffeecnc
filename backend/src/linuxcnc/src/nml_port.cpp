@@ -1138,12 +1138,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
            status.motion.traj.enabled && status.motion.traj.current_vel == 0 &&
            !status.motion.external_offsets_applied && !status.motion.on_soft_limit &&
            std::ranges::all_of(
-               c.axes,
-               [](const auto& axis) { return axis.homed && !axis.homing && !axis.on_hard_limit; });
+               c.axes, [](const auto& axis) { return !axis.homing && !axis.on_hard_limit; });
   };
+  // Homing is not required: machine coordinates are continuous within a session, and a homing
+  // or a restart forgets the taught setter (Session::observe).
   if (!ready(*raw, before))
-    return std::unexpected(
-        "The fixed setter requires stationary homed axes and a stopped spindle.");
+    return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");

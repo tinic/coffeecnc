@@ -171,8 +171,12 @@ void run(const std::string& ini) {
   ++epoch.tool;
   halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto read_table = [&]() {
+    // Line by line: GCC 14 -O3 flags istreambuf_iterator with -Wnull-dereference.
     std::ifstream input(config->tool_table);
-    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    std::string text;
+    for (std::string line; std::getline(input, line);)
+      text += line + '\n';
+    return text;
   };
   const auto old_table = read_table();
   const auto measured = setter({.action = SetterAction::measure, .tool = 2, .start = move.start});

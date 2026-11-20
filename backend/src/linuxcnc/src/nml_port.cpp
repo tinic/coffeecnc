@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <numbers>
 #include <numeric>
@@ -40,6 +41,44 @@
 
 namespace coffeecnc {
 namespace {
+
+// Tools touched off at the fixed setter, kept beside the tool table so their marks survive a
+// restart: a line `reference <length>` (the reference tool's table length then) and a line
+// `T<n> <length>` per tool, lengths in tool table units. A mark stands while the table still
+// holds both lengths.
+struct TouchedOff {
+  double reference{};
+  std::map<int, double> tools;
+};
+auto touched_path(const std::string& tool_table) -> std::filesystem::path {
+  return std::filesystem::path(tool_table).parent_path() / "coffeecnc-touched-off.txt";
+}
+auto load_touched(const std::string& tool_table) -> std::optional<TouchedOff> {
+  std::ifstream in(touched_path(tool_table));
+  TouchedOff touched;
+  std::string word;
+  if (!(in >> word >> touched.reference) || word != "reference")
+    return std::nullopt;
+  for (double length{}; in >> word >> length;)
+    if (word.size() > 1 && word[0] == 'T')
+      touched.tools[std::stoi(word.substr(1))] = length;
+  return touched;
+}
+void save_touched(const std::string& tool_table, const TouchedOff& touched) {
+  const auto path = touched_path(tool_table);
+  auto temporary = path;
+  temporary += ".new";
+  {
+    std::ofstream out(temporary);
+    out << std::format("reference {:.6f}\n", touched.reference);
+    for (const auto& [tool, length] : touched.tools)
+      out << std::format("T{} {:.6f}\n", tool, length);
+    if (!out)
+      return;
+  }
+  std::error_code error;
+  std::filesystem::rename(temporary, path, error);
+}
 
 using Clock = std::chrono::steady_clock;
 // Task writes its status once per cycle, 1 ms on a usual configuration.
@@ -131,7 +170,7 @@ struct NmlPort::Impl {
     std::uint64_t datum;
     std::array<double, 3> plane;
     double clearance_z;
-    std::vector<int> measured; // tools touched off against this plane, in order
+    std::map<int, double> measured; // tool -> table length its touch off wrote, table units
   };
 
   std::optional<Calibration> setter_calibration;
@@ -1155,9 +1194,26 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   auto& calibration = impl_->setter_calibration;
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
+  // Marked: touched off against this calibration and still holding the length it wrote.
+  constexpr double mark_tolerance = 0.001; // table units, allows the file's rounding
+  const auto marks = [&]() -> std::vector<int> {
+    std::vector<int> tools;
+    const auto table = impl_->read_tool_table();
+    if (!calibration || !table)
+      return tools;
+    for (const auto& [tool, length] : calibration->measured)
+      if (const auto now = tool_z(*table, tool); now && std::abs(*now - length) <= mark_tolerance)
+        tools.push_back(tool);
+    return tools;
+  };
+  const auto remember = [&]() {
+    const auto table = impl_->read_tool_table();
+    const auto reference = table ? tool_z(*table, limits->reference_tool) : std::nullopt;
+    if (calibration && reference)
+      save_touched(impl_->config.tool_table, {*reference, calibration->measured});
+  };
   const auto state = [&]() -> SetterState {
-    return {calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
-            calibration ? calibration->measured : std::vector<int>{}};
+    return {calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt, marks()};
   };
   if (request.action == SetterAction::status)
     return state();
@@ -1239,8 +1295,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        {tool}};
-    return SetterState{calibration->plane, measurement, calibration->measured};
+        {{tool, *previous}}};
+    // Lengths are relative to the reference tool: a new teach keeps every tool whose length,
+    // and the reference tool's, are unchanged since its touch off, also across restarts.
+    if (const auto touched = load_touched(impl_->config.tool_table);
+        touched && std::abs(touched->reference - *previous) <= mark_tolerance)
+      for (const auto& [other, length] : touched->tools)
+        if (const auto now = tool_z(*table, other);
+            other != tool && now && std::abs(*now - length) <= mark_tolerance)
+          calibration->measured[other] = length;
+    remember();
+    return SetterState{calibration->plane, measurement, marks()};
   }
   auto stopped_at = move.approach.value_or(request.start);
   if (move.retract_z)
@@ -1301,9 +1366,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       !std::isfinite(applied->task.toolOffset.tran.z) ||
       std::abs(applied->task.toolOffset.tran.z * machine_scale - value) > table_tolerance)
     return std::unexpected("Length saved. Could not verify the applied compensation.");
-  if (!std::ranges::contains(calibration->measured, tool))
-    calibration->measured.push_back(tool);
-  return SetterState{calibration->plane, measurement, calibration->measured};
+  calibration->measured[tool] = *saved;
+  remember();
+  return SetterState{calibration->plane, measurement, marks()};
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {

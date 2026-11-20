@@ -6,7 +6,7 @@ The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protoc
 
 The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `feed_mm_min`, `xy_tolerance_mm` and `clearance_mm`. A zero clearance uses the Z taught by the operator. The `fixed_setter` request uses an `action` field.
 
-`hello.fixed_setter.material_travel_mm` advertises material probing with `hello.touch_probe_tool`. `fixed_setter` with `action: "material"` takes `tool`, the confirmed machine `x`, `y`, `z` in millimetres, and `direction` (`z_top`, `x_minus`, `x_plus`, `y_minus`, `y_plus`). An accepted result includes `setter.material` with the active WCS index and the axis set to zero (`X`, `Y`, or `Z`).
+`hello.fixed_setter.material_travel_mm` advertises material probing with `hello.touch_probe_tool`. `fixed_setter` with `action: "material"` takes `tool`, the confirmed machine `x`, `y`, `z` in millimetres, and a travel `direction` (`z_top`, `x_minus`, `x_plus`, `y_minus`, `y_plus`). The panel maps a workpiece edge to the approach direction, for example the X− edge sends `x_plus`. An accepted result includes `setter.material` with the active WCS index and the axis set to zero (`X`, `Y`, or `Z`).
 
 | Action | Additional fields |
 | --- | --- |

@@ -118,11 +118,12 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   mdi("G10 L2 P2 X5 Y-7 Z2");
   mdi("G55");
   mdi("G92 X2 Y3 Z4");
-  const auto check_cycle = [&](ProbeDirection direction, std::size_t axis, double expected) {
+  const auto check_cycle = [&](ProbeDirection direction, std::size_t axis, double expected,
+                               const Wanted& wanted = {}) {
     mdi(scale == 1 ? "G20" : "G21");
     const auto before = port.status();
     const auto start = position();
-    const auto result = material(direction);
+    const auto result = material(direction, wanted);
     require(result.has_value(), result ? "material probe completed" : result.error());
     const auto after = port.status();
     require(result->material && result->material->wcs == 2 &&
@@ -139,17 +140,59 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   start_at();
   window('z', -100, 13);
   check_cycle(ProbeDirection::z_top, 2, 7);
+
+  halcmd("loadrt timedelay names=sim-ruby-release");
+  halcmd("addf sim-ruby-release servo-thread");
+  halcmd("setp sim-ruby-release.on-delay 0");
+  halcmd("setp sim-ruby-release.off-delay 0");
+  halcmd("unlinkp motion.probe-input");
+  halcmd("unlinkp coffeecnc.probe-input");
+  halcmd("net sim-setter-trip sim-ruby-release.in");
+  halcmd("net sim-ruby-released sim-ruby-release.out motion.probe-input coffeecnc.probe-input");
+
   struct Edge {
+    std::string_view face;
     ProbeDirection direction;
     std::size_t axis;
-    bool positive;
+    bool from_negative_side;
   };
   for (const auto& edge :
-       {Edge{ProbeDirection::x_minus, 0, false}, Edge{ProbeDirection::x_plus, 0, true},
-        Edge{ProbeDirection::y_minus, 1, false}, Edge{ProbeDirection::y_plus, 1, true}}) {
+       {Edge{"X- left", ProbeDirection::x_plus, 0, true},
+        Edge{"X+ right", ProbeDirection::x_minus, 0, false},
+        Edge{"Y- front", ProbeDirection::y_plus, 1, true},
+        Edge{"Y+ back", ProbeDirection::y_minus, 1, false}}) {
     start_at();
-    window("xy"[edge.axis], edge.positive ? 6 : -100, edge.positive ? 100 : -6);
-    check_cycle(edge.direction, edge.axis, edge.positive ? -7 : 7);
+    window("xy"[edge.axis], edge.from_negative_side ? 6 : -100,
+           edge.from_negative_side ? 100 : -6);
+    std::cout << "workpiece-edge=" << edge.face << std::endl;
+    if (edge.direction != ProbeDirection::y_plus) {
+      check_cycle(edge.direction, edge.axis, edge.from_negative_side ? -7 : 7);
+      continue;
+    }
+
+    // Keep the ruby tripped after the fourth contact, long enough to outlast
+    // the 6 mm retract at 8 mm/s. The three preceding back-offs release promptly.
+    bool tripped = false;
+    int contacts = 0;
+    std::optional<HalShared::Clock::time_point> final_contact;
+    bool still_tripped_at_retract = false;
+    check_cycle(edge.direction, edge.axis, -7, [&] {
+      const auto now = HalShared::Clock::now();
+      const auto pins = shared.view(now);
+      if (!pins || !pins->probe_cycle_active || !pins->probe_input)
+        return true;
+      if (*pins->probe_input && !tripped && ++contacts == 4) {
+        halcmd("setp sim-ruby-release.off-delay 1.6");
+        final_contact = HalShared::Clock::now();
+      }
+      tripped = *pins->probe_input;
+      if (final_contact && now - *final_contact > 1200ms && tripped)
+        still_tripped_at_retract = true;
+      return true;
+    });
+    require(contacts == 4 && still_tripped_at_retract,
+            "the front edge converged after delayed release past the retract");
+    halcmd("setp sim-ruby-release.off-delay 0");
   }
   mdi("G54");
   require(port.status().g5x == g54, "probing G55 left G54 unchanged");

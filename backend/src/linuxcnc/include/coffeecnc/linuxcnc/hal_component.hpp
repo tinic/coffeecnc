@@ -19,6 +19,9 @@ struct HalSignals {
 struct ProbeCycleOutputs {
   bool active{};
   bool lease{};
+  // Route the setter to the probe input. False for the machine's own touch probe tool, which
+  // triggers on its own input when it touches the setter.
+  bool setter{true};
 };
 
 // The executable's own HAL component: the path to LinuxCNC that needs no NML command channel.

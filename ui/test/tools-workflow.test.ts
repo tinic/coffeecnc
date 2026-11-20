@@ -273,3 +273,36 @@ describe('tool editor scenarios', () => {
     expect(send).toHaveBeenCalledWith({ type: 'set_tool', tool: { number: 99, pocket: 99, diameter: 2, length: 50, comment: 'Ruby probe' } })
   })
 })
+
+describe('tool preview scenarios', () => {
+  it('opens a read-only preview on a double tap of a tool row, not the editor', async () => {
+    mountTools()
+    const row = getWrapper().findAll('.tool-row')[1]; if (!row) throw new Error('Missing row')
+    await row.trigger('click'); await row.trigger('click')
+    const dialog = getWrapper().get('[role="dialog"]')
+    expect(dialog.attributes('aria-label')).toBe('T02 3 mm long reach drill for the deep mounting holes')
+    expect(dialog.find('input').exists()).toBe(false)
+    expect(dialog.text()).toContain('12.700 mm')
+    await press('Close')
+    expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+  it('selects on a single tap and does not open a preview for taps on different rows', async () => {
+    mountTools()
+    const rows = getWrapper().findAll('.tool-row')
+    await rows[0]?.trigger('click'); await rows[1]?.trigger('click')
+    expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
+    expect(rows[1]?.classes()).toContain('selected')
+  })
+  it('shows the machine touch probe with its ball diameter', async () => {
+    panel.hello = { ...hello, touch_probe_tool: 99 }
+    const table = panel.toolTable; if (!table) throw new Error('Missing tool table')
+    panel.toolTable = { ...table, tools: [...table.tools, { number: 99, pocket: 99, diameter: 2, length: 53.185, comment: '' }] }
+    mountTools()
+    const row = getWrapper().findAll('.tool-row').at(-1); if (!row) throw new Error('Missing row')
+    await row.trigger('click'); await row.trigger('click')
+    const dialog = getWrapper().get('[role="dialog"]')
+    expect(dialog.attributes('aria-label')).toBe('T99 Touch probe')
+    expect(dialog.text()).toContain('Ball diameter')
+  })
+})

@@ -14,6 +14,7 @@ import FixedSetterControls from './FixedSetterControls.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
+import ToolPreviewDialog from './ToolPreviewDialog.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
 import { setterStatus, touchedOff } from '../setter-state'
 import { defaultToolName } from '../tool-models'
@@ -24,6 +25,15 @@ const tools = computed(() => panel.toolTable?.tools
   .filter((tool) => tool.number > 0)
   .sort((a, b) => a.number - b.number) ?? [])
 const selectedTool = ref<number | null>(null)
+// A tap selects a row; a second tap on it within 400 ms opens the tool preview (not the editor).
+const previewTool = ref<Tool | null>(null)
+let lastTap: { number: number; at: number } | null = null
+function tap(tool: Tool): void {
+  const now = Date.now()
+  if (lastTap?.number === tool.number && now - lastTap.at < 400) { previewTool.value = tool; lastTap = null }
+  else lastTap = { number: tool.number, at: now }
+  selectedTool.value = tool.number
+}
 watch(tools, (rows) => {
   if (!rows.some((tool) => tool.number === selectedTool.value)) selectedTool.value = null
 })
@@ -140,9 +150,9 @@ function editOffset(wcs: number): void {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
+            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="tap(tool)">
               <td class="num mono">
-                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">{{ toolLabel(tool.number) }}</button>
+                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="tap(tool)">{{ toolLabel(tool.number) }}</button>
               </td>
               <td class="touched-cell">
                 <span v-if="touchedOff(tool.number)" class="touched" aria-label="Touched off"><AppIcon name="check" /></span>
@@ -212,6 +222,7 @@ function editOffset(wcs: number): void {
     </section>
 
     <ToolEditor v-if="editing !== null" :tool="editing.tool" @close="editing = null" />
+    <ToolPreviewDialog v-if="previewTool !== null" :tool="previewTool" @close="previewTool = null" />
     <WorkOffsetDialog v-if="offsetEditor !== null" :wcs="offsetEditor" @close="offsetEditor = null" />
 
     <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">

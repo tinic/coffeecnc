@@ -1021,7 +1021,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       return interrupt("The tool must be centered above a clear setter before probing.");
   }
 
-  const auto feed_word = std::format(" F{:.8f}", move.feed_mm_min / program_scale);
+  // Back-offs and the final retract move away from the setter: twice the search feed (turo).
+  const auto feed_word = std::format(" F{:.8f}", 2 * move.feed_mm_min / program_scale);
   const auto search = [&](double from_z, double travel, double feed) -> Contact {
     saw_probe = false;
     const auto timeout = std::chrono::milliseconds{

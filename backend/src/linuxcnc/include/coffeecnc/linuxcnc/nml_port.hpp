@@ -245,6 +245,10 @@ public:
   // XYZ-machine primitive, independent of calibration and with no tool-table writes.
   [[nodiscard]] auto probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
       -> std::expected<FixedSetterContact, std::string>;
+  [[nodiscard]] auto fixed_setter_available() const -> bool override;
+  [[nodiscard]] auto fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
+                                  const Wanted& wanted)
+      -> std::expected<SetterState, std::string> override;
 
 private:
   struct Impl;

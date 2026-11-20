@@ -19,12 +19,6 @@ struct Travel {
   double max; // mm
 };
 
-// Commissioned bounds for a Z-only search from the operator's confirmed start.
-struct FixedSetterLimits {
-  double travel_mm;
-  double feed_mm_min;
-};
-
 // What the adapter needs from the machine's INI file. Lengths are already millimetres, velocities
 // mm/min. Together with `limits` this is everything a protocol `hello` carries.
 struct MachineConfig {

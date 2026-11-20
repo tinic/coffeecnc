@@ -914,6 +914,8 @@ export class SimMachine {
           this.internal('G43')
         )
       }
+      case 'fixed_setter':
+        return reject('The fixed setter is unavailable in the browser simulator')
       case 'set_tool':
         return this.setTool(command.tool)
       case 'remove_tool': {

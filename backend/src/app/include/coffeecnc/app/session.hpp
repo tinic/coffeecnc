@@ -296,6 +296,7 @@ private:
     StageKind kind{StageKind::reply};
     Reply reply;
     std::vector<std::string> produced; // messages sent before the result
+    std::optional<SetterState> setter{};
     bool quit{};                       // belongs only to this request and its page
   };
 
@@ -352,6 +353,8 @@ private:
   std::uint64_t epoch_{};
   // Goes up with every abort, E-stop and power off.
   std::uint64_t cancels_{};
+  std::uint64_t setter_datum_{};
+  std::uint64_t setter_tool_{};
   // The epoch in which a control period last read the watchdog tripped; 0 before any.
   std::uint64_t watchdog_epoch_{};
   // The epoch in which a control period last asked for the jog-stop level high; 0 before any.
@@ -376,6 +379,7 @@ private:
   bool closing_{};
   bool page_open_{};
   bool ready_{};
+  bool setter_busy_{};
   bool have_status_{};
   bool hold_{};
   bool jog_stop_high_{};

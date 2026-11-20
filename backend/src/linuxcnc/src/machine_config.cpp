@@ -280,12 +280,17 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   if (*setter_enabled) {
     const auto distance = ini.real("COFFEECNC", "SETTER_MAX_TRAVEL_MM");
     const auto speed = ini.real("COFFEECNC", "SETTER_MAX_FEED_MM_MIN");
-    if (!signals.probe || !signals.spindle_rpm || !distance || *distance <= 0 ||
-        !speed || *speed <= 0 || *speed > axis_jog[2])
+    const auto xy = ini.real("COFFEECNC", "SETTER_XY_TOLERANCE_MM");
+    const auto reference = ini.text("COFFEECNC", "SETTER_REFERENCE_TOOL");
+    const auto tool = reference ? number(*reference) : std::optional<double>{98};
+    if (!signals.probe || !signals.spindle_rpm || !distance || *distance <= 0 || !speed ||
+        *speed <= 0 || *speed > axis_jog[2] || !xy || *xy <= 0 || !tool || *tool < 1 ||
+        *tool > 99999 || std::floor(*tool) != *tool)
       return std::unexpected(std::string(
           "[COFFEECNC] FIXED_SETTER requires probe and spindle RPM signals, a positive "
-          "SETTER_MAX_TRAVEL_MM and a positive SETTER_MAX_FEED_MM_MIN within the Z speed limit."));
-    setter = FixedSetterLimits{*distance, *speed};
+          "SETTER_MAX_TRAVEL_MM, SETTER_XY_TOLERANCE_MM, SETTER_MAX_FEED_MM_MIN within the Z "
+          "speed limit, and a valid SETTER_REFERENCE_TOOL."));
+    setter = FixedSetterLimits{*distance, *speed, static_cast<int>(*tool), *xy};
   }
 
   const auto path = [&](const char* section, const char* key) -> std::string {

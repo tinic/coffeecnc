@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <mutex>
 #include <numbers>
 #include <span>
@@ -116,6 +117,35 @@ auto index_of(Axis axis) -> int { return static_cast<int>(axis_index(axis).value
 } // namespace
 
 struct NmlPort::Impl {
+  struct WorkFrame {
+    int wcs;
+    std::array<double, 3> g5x;
+    std::array<double, 3> g92;
+    double rotation;
+    friend auto operator==(const WorkFrame&, const WorkFrame&) -> bool = default;
+  };
+  struct Reference {
+    SetterEpoch epoch;
+    WorkFrame frame;
+    double length;
+  };
+  struct Calibration {
+    std::uint64_t datum;
+    std::array<double, 3> plane;
+  };
+  struct PendingMeasurement {
+    SetterEpoch epoch;
+    SetterReview review;
+    WorkFrame frame;
+    std::array<double, 3> start;
+    std::string table;
+  };
+
+  std::optional<Reference> setter_reference;
+  std::optional<Calibration> setter_calibration;
+  std::optional<PendingMeasurement> setter_review;
+  int setter_review_id{};
+
   MachineConfig config;
   HalShared* hal{};
   NmlLoads* loads{};
@@ -840,6 +870,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   for (std::size_t axis = 0; axis < move.start.size(); ++axis)
     if (!near(c.axes[axis].machine, move.start[axis]))
       return std::unexpected("The machine moved after the probe was confirmed.");
+  const auto& z_travel = impl_->config.travel[2];
+  if (bottom_z < z_travel.min || move.start[2] > z_travel.max)
+    return std::unexpected("The confirmed probe move would cross a Z soft limit.");
 
   const bool restore_feed_override = raw->motion.traj.feed_override_enabled;
   const bool restore_adaptive = raw->motion.traj.adaptive_feed_enabled;
@@ -980,6 +1013,214 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
   hal->finish_probe_cycle();
   return contact;
+}
+
+auto NmlPort::fixed_setter_available() const -> bool {
+  return impl_->config.fixed_setter.has_value() && impl_->hal != nullptr;
+}
+
+auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
+                           const Wanted& wanted) -> std::expected<SetterState, std::string> {
+  const auto limits = impl_->config.fixed_setter;
+  if (!limits || impl_->hal == nullptr)
+    return std::unexpected("The fixed setter is unavailable.");
+
+  auto& reference = impl_->setter_reference;
+  auto& calibration = impl_->setter_calibration;
+  auto& pending = impl_->setter_review;
+  if (reference && reference->epoch != epoch)
+    reference.reset();
+  if (calibration && calibration->datum != epoch.datum)
+    calibration.reset();
+  if (pending && pending->epoch != epoch)
+    pending.reset();
+
+  const auto state = [&]() -> SetterState {
+    return {reference.has_value(), calibration ? std::optional{calibration->plane} : std::nullopt,
+            pending ? std::optional{pending->review} : std::nullopt};
+  };
+  if (request.action == SetterAction::dismiss) {
+    if (pending && pending->review.id == request.review)
+      pending.reset();
+    return state();
+  }
+
+  const auto* raw = impl_->stat();
+  if (raw == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
+    return std::unexpected("The fixed setter requires a live controller and an active request.");
+  const auto before = to_status(*raw, impl_->config, impl_->hal, Link::live);
+  const auto frame_of = [](const NmlStatus& s) {
+    return Impl::WorkFrame{s.wcs, s.g5x, s.g92, s.rotation_xy};
+  };
+  const auto frame = frame_of(before);
+  if (reference && reference->frame != frame)
+    reference.reset();
+  if (pending && pending->frame != frame)
+    pending.reset();
+  if (request.action == SetterAction::status)
+    return state();
+
+  const auto ready = [](const EMC_STAT& status, const NmlStatus& s) {
+    const auto& c = s.controller;
+    return c.machine == MachineState::on && c.in_position && c.interp == InterpState::idle &&
+           !s.paused && s.queued_mdi == 0 && !s.task_executing && !c.requested_tool &&
+           !c.spindle_active && s.spindle_actual_rpm && std::abs(*s.spindle_actual_rpm) < 1.0 &&
+           status.motion.traj.enabled && status.motion.traj.current_vel == 0 &&
+           !status.motion.external_offsets_applied && !status.motion.on_soft_limit &&
+           std::ranges::all_of(
+               c.axes,
+               [](const auto& axis) { return axis.homed && !axis.homing && !axis.on_hard_limit; });
+  };
+  if (!ready(*raw, before))
+    return std::unexpected(
+        "The fixed setter requires stationary homed axes and a stopped spindle.");
+  const int tool = before.controller.tool_in_spindle;
+  if (tool <= 0 || (request.tool != 0 && request.tool != tool))
+    return std::unexpected("The confirmed tool must be in the spindle.");
+
+  constexpr double position_tolerance = 0.02; // mm
+  const auto near = [](double actual, double expected) {
+    return std::abs(actual - expected) <= position_tolerance;
+  };
+  const auto at_start = [&](const NmlStatus& s, const std::array<double, 3>& start) {
+    return near(s.controller.axes[0].machine, start[0]) &&
+           near(s.controller.axes[1].machine, start[1]) &&
+           near(s.controller.axes[2].machine, start[2]);
+  };
+  if (request.action == SetterAction::capture) {
+    if (tool != limits->reference_tool || request.wcs != before.wcs ||
+        !near(before.controller.axes[2].machine, request.capture_z))
+      return std::unexpected("Load the reference tool and confirm the current work contact.");
+    const double length =
+        before.controller.axes[2].machine - before.g5x[2] - before.g92[2] - request.height;
+    if (!std::isfinite(length))
+      return std::unexpected("The reference length is invalid.");
+    pending.reset();
+    reference = Impl::Reference{epoch, frame, length};
+    return state();
+  }
+  if (before.controller.mode != TaskMode::mdi)
+    return std::unexpected("The fixed setter requires idle MDI.");
+
+  const double machine_scale = impl_->config.millimetres_per_unit;
+  if (request.action == SetterAction::accept) {
+    if (!pending || pending->review.id != request.review)
+      return std::unexpected("The fixed setter result has expired.");
+    auto measurement = std::move(*pending);
+    pending.reset();
+    const auto& review = measurement.review;
+    if (tool != review.tool || !at_start(before, measurement.start) || (wanted && !wanted()))
+      return std::unexpected("The position or tool changed after the probe.");
+    if (review.calibration) {
+      calibration =
+          Impl::Calibration{epoch.datum, {review.contact[0], review.contact[1], review.value}};
+      reference.reset();
+      return state();
+    }
+
+    const auto table = impl_->read_tool_table();
+    if (!table || *table != measurement.table)
+      return std::unexpected("The tool table changed before the measurement was saved.");
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto same_context = [&](const EMC_STAT& current) {
+      const auto s = to_status(current, impl_->config, impl_->hal, Link::live);
+      return ready(current, s) && s.controller.mode == TaskMode::mdi &&
+             s.controller.program_units == before.controller.program_units &&
+             s.controller.tool_in_spindle == tool && frame_of(s) == frame &&
+             at_start(s, measurement.start);
+    };
+    const auto block = [&](std::string_view code) {
+      const auto* current = impl_->stat();
+      if (current == nullptr || impl_->status.link() != Link::live || !same_context(*current))
+        return false;
+      EMC_TASK_PLAN_EXECUTE command;
+      if (!put(command.command, code) || !accepted(impl_->write(command)))
+        return false;
+      if (impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      bool done = false;
+      static_cast<void>(until(completion_timeout, [&]() {
+        impl_->collect();
+        const auto* s = impl_->stat();
+        if (s == nullptr || impl_->status.link() != Link::live || impl_->error_since(from) ||
+            s->echo_serial_number > impl_->serial)
+          return true;
+        if (s->echo_serial_number != impl_->serial || s->status == RCS_EXEC)
+          return false;
+        done = s->status == RCS_DONE && same_context(*s);
+        return done || s->status == RCS_ERROR;
+      }));
+      return done;
+    };
+    const double scale = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    if (!block(std::format("G10 L1 P{} Z{:.8f}", tool, review.value / scale))) {
+      auto error = impl_->take_errors(from);
+      return std::unexpected(error.empty() ? "LinuxCNC did not confirm the tool table write. Check "
+                                             "the tool table before retrying."
+                                           : std::move(error));
+    }
+    const auto changed = impl_->read_tool_table();
+    const auto saved = changed ? tool_z(*changed, tool) : std::nullopt;
+    constexpr double table_tolerance = 0.001; // mm, allows LinuxCNC's file rounding
+    if (!saved || std::abs(*saved * machine_scale - review.value) > table_tolerance)
+      return std::unexpected(
+          "Could not verify the new tool table length. Check the tool table before retrying.");
+    if (!block(std::format("G43 H{}", tool))) {
+      const auto error = impl_->take_errors(from);
+      return std::unexpected(error.empty()
+                                 ? "Length saved. LinuxCNC did not confirm applying compensation."
+                                 : "Length saved. Compensation failed. " + error);
+    }
+    const auto* applied = impl_->stat();
+    if (applied == nullptr || impl_->status.link() != Link::live ||
+        applied->echo_serial_number != impl_->serial ||
+        !std::isfinite(applied->task.toolOffset.tran.z) ||
+        std::abs(applied->task.toolOffset.tran.z * machine_scale - review.value) > table_tolerance)
+      return std::unexpected("Length saved. Could not verify the applied compensation.");
+    return state();
+  }
+
+  pending.reset();
+  const bool calibrating = request.action == SetterAction::calibrate;
+  if (!at_start(before, request.start))
+    return std::unexpected("The machine moved after the probe was confirmed.");
+  if (calibrating && (!reference || tool != limits->reference_tool))
+    return std::unexpected(
+        "Capture the work reference with the reference tool before calibrating.");
+  if (!calibrating && (!calibration || std::hypot(request.start[0] - calibration->plane[0],
+                                                  request.start[1] - calibration->plane[1]) >
+                                           limits->xy_tolerance_mm))
+    return std::unexpected("Jog above the calibrated setter XY before measuring.");
+  std::string table;
+  double previous_length{};
+  if (!calibrating) {
+    auto current_table = impl_->read_tool_table();
+    const auto previous = current_table ? tool_z(*current_table, tool) : std::nullopt;
+    if (!previous || !std::isfinite(*previous * machine_scale))
+      return std::unexpected("Could not read the loaded tool's length from the tool table.");
+    previous_length = *previous * machine_scale;
+    table = std::move(*current_table);
+  }
+  if (impl_->setter_review_id == std::numeric_limits<int>::max())
+    return std::unexpected("Restart CoffeeCNC before creating another fixed setter result.");
+  const auto contact =
+      probe_fixed_setter({tool, request.start, limits->travel_mm, limits->feed_mm_min}, wanted);
+  if (!contact)
+    return std::unexpected(contact.error());
+  if (wanted && !wanted())
+    return std::unexpected("The fixed setter result was cancelled.");
+  const double value =
+      contact->machine[2] - (calibrating ? reference->length : calibration->plane[2]);
+  if (!std::isfinite(value))
+    return std::unexpected("The fixed setter result is invalid.");
+  pending = Impl::PendingMeasurement{
+      epoch,
+      {++impl_->setter_review_id, calibrating, tool, contact->machine, value, previous_length},
+      frame,
+      request.start,
+      std::move(table)};
+  return state();
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {

@@ -236,6 +236,12 @@ auto encode_hello(const Hello& hello) -> Encoded {
   }
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
+  if (const auto& setter = hello.fixed_setter)
+    message["fixed_setter"] = {
+        {"reference_tool", setter->reference_tool},
+        {"travel_mm", fields.real(setter->travel_mm, "fixed_setter.travel_mm")},
+        {"feed_mm_min", fields.real(setter->feed_mm_min, "fixed_setter.feed_mm_min")},
+        {"xy_tolerance_mm", fields.real(setter->xy_tolerance_mm, "fixed_setter.xy_tolerance_mm")}};
   return fields.finish(std::move(message));
 }
 

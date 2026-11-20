@@ -55,6 +55,7 @@ struct Hello {
   // Not known: the panel offers both.
   std::optional<CoolantOutputs> coolant;
   std::optional<double> max_spindle_rpm;
+  std::optional<FixedSetterLimits> fixed_setter{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

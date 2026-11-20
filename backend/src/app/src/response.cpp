@@ -26,8 +26,21 @@ auto text(const Json& message) -> std::string {
 }
 } // namespace
 
-auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason) -> std::string {
-  return text(Json{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}});
+auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
+                   const std::optional<SetterState>& setter) -> std::string {
+  Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
+  if (setter) {
+    auto review = Json(nullptr);
+    if (const auto& r = setter->review)
+      review = {{"id", r->id},       {"calibration", r->calibration},
+                {"tool", r->tool},   {"contact", r->contact},
+                {"value", r->value}, {"previous_length", r->previous_length}};
+    message["setter"] = {
+        {"reference_captured", setter->reference_captured},
+        {"calibration", setter->calibration ? Json(*setter->calibration) : Json(nullptr)},
+        {"review", std::move(review)}};
+  }
+  return text(message);
 }
 
 auto encode_message(MessageLevel level, std::string_view text_for_operator,

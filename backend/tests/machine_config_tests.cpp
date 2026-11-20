@@ -451,7 +451,8 @@ void fixed_setter_is_explicit_and_bounded() {
   const auto enabled = with(std::string(g0759), "[COFFEECNC]\n",
                             "[COFFEECNC]\nFIXED_SETTER = yes\n"
                             "PROBE_SIGNAL = yes\nSPINDLE_RPM_SIGNAL = yes\n"
-                            "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n");
+                            "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n"
+                            "SETTER_XY_TOLERANCE_MM = 0.5\n");
   const auto setter = load(enabled);
   require(setter && setter->fixed_setter && near(setter->fixed_setter->travel_mm, 4) &&
               near(setter->fixed_setter->feed_mm_min, 30),

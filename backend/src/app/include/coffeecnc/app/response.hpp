@@ -22,8 +22,8 @@ enum class MessageLevel : std::uint8_t { error, info };
 
 // Wire text of the one CommandResult a request gets. Bytes that are not UTF-8 in the reason are
 // replaced, never rejected: a result must always be sent.
-[[nodiscard]] auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason)
-    -> std::string;
+[[nodiscard]] auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
+                                 const std::optional<SetterState>& setter = {}) -> std::string;
 
 // Wire text of an OperatorMessage. The time is since the Unix epoch.
 [[nodiscard]] auto encode_message(MessageLevel level, std::string_view text,

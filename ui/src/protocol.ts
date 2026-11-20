@@ -52,6 +52,8 @@ export interface Hello {
   quit_supported?: boolean
   /** Configured coolant outputs. Absent means unknown: offer both for older peers. */
   coolant?: { flood: boolean; mist: boolean }
+  /** Commissioned fixed-setter limits in millimetres and mm/min. */
+  fixed_setter?: FixedSetterLimits
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -285,6 +287,30 @@ export interface CommandResult {
     | 'timed_out' // LinuxCNC did not answer
   /** Reason for anything but `accepted`, in words for the operator. */
   reason: string
+  setter?: SetterState
+}
+
+export interface FixedSetterLimits {
+  reference_tool: number
+  travel_mm: number
+  feed_mm_min: number
+  xy_tolerance_mm: number
+}
+
+export interface SetterReview {
+  id: number
+  calibration: boolean
+  tool: number
+  contact: Vec3
+  /** Trigger-plane machine Z for calibration, or LinuxCNC tool Z length. */
+  value: number
+  previous_length: number
+}
+
+export interface SetterState {
+  reference_captured: boolean
+  calibration: Vec3 | null
+  review: SetterReview | null
 }
 
 export interface DirectoryEntry {
@@ -442,6 +468,12 @@ export interface ToolTouchOff extends CommandBase {
   type: 'tool_touch_off'
   value: number
 }
+export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
+  | { action: 'status' }
+  | { action: 'capture'; tool: number; wcs: number; height: number; z: number }
+  | { action: 'calibrate' | 'measure'; tool: number; x: number; y: number; z: number }
+  | { action: 'accept' | 'dismiss'; review: number }
+)
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {
   type: 'set_tool'
@@ -503,6 +535,7 @@ export type ToMachine =
   | SelectWcs
   | TouchOff
   | ToolTouchOff
+  | FixedSetter
   | SetTool
   | RemoveTool
   | ToolChanged

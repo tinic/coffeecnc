@@ -2,6 +2,7 @@
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/linuxcnc/tool_table.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -76,7 +78,7 @@ void run(const std::string& ini) {
   const double scale = config->millimetres_per_unit;
   config->signals.probe = true;
   config->signals.spindle_rpm = true;
-  config->fixed_setter = FixedSetterLimits{15, 240};
+  config->fixed_setter = FixedSetterLimits{15, 240, 1, 0.5};
   auto component = HalComponent::create("coffeecnc", config->signals);
   if (!component)
     throw std::runtime_error(component.error());
@@ -138,6 +140,61 @@ void run(const std::string& ini) {
               std::abs(returned.programmed_feed - 50.8) < 0.001,
           "native probe restores the distance mode and feed");
 
+  auto epoch = SetterEpoch{1, 1, 1, 0};
+  const auto setter = [&](const FixedSetterRequest& request) -> SetterState {
+    const auto result = port.fixed_setter(request, epoch, {});
+    if (!result)
+      throw std::runtime_error(result.error());
+    return *result;
+  };
+  const double height = 20 - starting.g5x[2] - starting.g92[2] - 50;
+  const FixedSetterRequest capture{.action = SetterAction::capture,
+                                   .tool = 1,
+                                   .wcs = starting.wcs,
+                                   .height = height,
+                                   .capture_z = 20};
+  require(setter(capture).reference_captured,
+          "capture derives the reference from the active work frame");
+  const auto calibrated =
+      setter({.action = SetterAction::calibrate, .tool = 1, .start = move.start});
+  require(calibrated.review && !calibrated.calibration &&
+              std::abs(calibrated.review->value - (-40)) < 0.03,
+          "calibration reviews the derived trigger plane before saving it");
+  const auto calibrated_id = calibrated.review->id;
+  require(setter({.action = SetterAction::accept, .review = calibrated_id}).calibration.has_value(),
+          "accepting the calibration stores the learned setter plane");
+  require(!port.fixed_setter({.action = SetterAction::accept, .review = calibrated_id}, epoch, {}),
+          "an accepted result cannot be reused");
+
+  mdi("M61 Q2");
+  mdi("G43 H2");
+  ++epoch.tool;
+  halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
+  const auto read_table = [&]() {
+    std::ifstream input(config->tool_table);
+    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+  };
+  const auto old_table = read_table();
+  const auto measured = setter({.action = SetterAction::measure, .tool = 2, .start = move.start});
+  require(measured.review && std::abs(measured.review->value - 52) < 0.03 &&
+              old_table == read_table(),
+          "measurement reviews machine-frame tool length without writing it");
+  require(setter({.action = SetterAction::accept, .review = measured.review->id}).review ==
+              std::nullopt,
+          "accepting the measurement uses G10 L1 and verifies G43");
+  const auto saved_table = read_table();
+  require(std::abs(port.status().tool_offset[2] - 52) < 0.03 &&
+              std::abs(tool_z(saved_table, 2).value_or(0) * scale - 52) < 0.03 &&
+              tool_z(saved_table, 1) == tool_z(old_table, 1) &&
+              saved_table.contains(scale == 1 ? "D+3.000000" : "D+0.125000"),
+          "only this tool's length changes and it is applied");
+  ++epoch.datum;
+  require(!setter({.action = SetterAction::status}).calibration,
+          "rehoming clears the in-memory setter calibration");
+
+  mdi("M61 Q1");
+  mdi("G43 H1");
+  halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
   const auto stop_at = HalShared::Clock::now() + 600ms;
   require(!port.probe_fixed_setter(move, [&]() { return HalShared::Clock::now() < stop_at; }),
           "withdrawing a running probe invalidates its result");

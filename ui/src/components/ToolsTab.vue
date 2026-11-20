@@ -15,7 +15,7 @@ import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
-import { touchedOff } from '../setter-state'
+import { setterStatus, touchedOff } from '../setter-state'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -118,6 +118,10 @@ function editOffset(wcs: number): void {
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
           <AppIcon name="plus" /><span>Add tool</span>
         </button>
+      </div>
+      <div v-if="panel.hello?.fixed_setter" class="setter-band" :class="setterStatus.level" role="status" aria-live="polite">
+        <span class="setter-label">{{ setterStatus.level === 'blocked' ? '!' : setterStatus.level === 'done' ? '✓' : 'i' }}</span>
+        <p>{{ setterStatus.text }}</p>
       </div>
 
       <p v-if="lengthMismatch" class="blocked">Applied length differs from the table. Load the tool again to apply its current length.</p>
@@ -228,6 +232,13 @@ function editOffset(wcs: number): void {
 </template>
 
 <style scoped>
+/* The setter's status line: the same band as the system messages, fixed height. */
+.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
+.setter-band.blocked { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); border-left-width: 5px; }
+.setter-band.done { color: var(--ok, #15803d); }
+.setter-band.busy { color: var(--accent); }
+.setter-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
+.setter-band p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .touched { margin-left: 6px; color: var(--ok, #15803d); font-size: 20px; font-weight: 700; line-height: 1; vertical-align: middle; }
 .tools {
   display: grid;

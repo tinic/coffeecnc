@@ -29,6 +29,10 @@ The fixed setter has two normally closed contacts. Contact opens Mesa input 19. 
 
 The physical profile has placeholder soft limits. The cycle bounds the descent by its configured search travel from the operator's start position. Commission that travel, the probe feed ceiling, permitted contact area and usable overtravel between the two contacts before enabling it. Check the stop and valid contact independently, including disconnected inputs and stopped spindle feedback. Teach XY and trigger-plane Z in CoffeeCNC after homing. Installation and physical tests belong to the mill operator and Claude.
 
+On November 20, 2026, the G0759 operator measured **1.915 mm** from first contact to the overtravel E-stop trip. Use this as the measured separation of the two contacts. Before enabling probing, verify the stopping distance from first contact at the chosen search feed, including detection delay and deceleration, and establish a margin inside that separation.
+
+The external E-stop remains active while the setter is held in overtravel. Set up and verify a machine-side release procedure with spindle and drive power isolated. Keep automatic probing disabled until the operator can clear a held setter safely with the E-stop circuit intact. After recovery, rehome and recalibrate before running another setter cycle. [LinuxCNC external E-stop input](https://linuxcnc.org/docs/2.9/html/man/man1/io.1.html).
+
 Set `FIXED_SETTER = yes` under `[COFFEECNC]` after commissioning. Supply `SETTER_MAX_TRAVEL_MM`, `SETTER_MAX_FEED_MM_MIN` and `SETTER_XY_TOLERANCE_MM`, the allowable XY distance from the taught center. These settings use millimetres and millimetres per minute across both unit systems. `SETTER_REFERENCE_TOOL` defaults to 98. An enabled profile requires both probe and spindle-RPM feedback. One search establishes the contact and the same feed is used to return to the starting Z.
 
 [G0759 setter wiring](https://github.com/tinic/linuxcnc/commit/c0a779c), [Ruby routing](https://github.com/tinic/linuxcnc/commit/bc47f10), [G0759 configuration](https://github.com/tinic/linuxcnc/tree/claude/coffeecnc-g0759/configs/G0759).

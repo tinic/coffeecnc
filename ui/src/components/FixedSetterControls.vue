@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, FixedSetterLimits, SetterState, Vec3 } from '../protocol'
-import { vTooltip } from '../tooltip'
 import { formatLength } from '../units'
 
 const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean }>()
@@ -33,13 +32,10 @@ const block = computed(() => {
   if (!teaching.value && !state.value?.calibration) return `Teach the setter with T${String(props.limits.reference_tool)} first`
   return null
 })
+// One line the operator reads before pressing: what Touch off does with this tool, or why it can't.
 const hint = computed(() => {
-  if (!teaching.value) return 'Raises Z to clearance, moves XY to the setter, and saves the measured length.'
-  const center = `Center T${String(props.limits.reference_tool)} over the setter, within ${length(props.limits.travel_mm)} of contact.`
-  const clearance = props.limits.clearance_mm ?? 0
-  return clearance > 0
-    ? `${center} Verify the lift of ${length(clearance)} from contact and the XY travel clearance.`
-    : `${center} Teach a Z height that clears the work, clamps and longest tool along the travel path.`
+  if (!teaching.value) return 'Goes to the setter and measures this tool.'
+  return `Jog T${String(props.limits.reference_tool)} over the setter, then Touch off.`
 })
 const summary = computed(() => {
   const result = state.value?.measurement
@@ -90,11 +86,10 @@ onBeforeUnmount(() => {
     <div class="setter-action">
       <span v-if="showTool && tool !== 0" class="mono">T{{ tool }}</span>
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
-      <button v-else v-tooltip="block ?? hint" class="btn" type="button" :disabled="!!pending || block !== null" @click="touchOff">
-        {{ teaching ? 'Teach setter' : 'Touch off at setter' }}
-      </button>
+      <button v-else class="btn primary" type="button" :disabled="!!pending || block !== null" @click="touchOff">Touch off</button>
     </div>
     <output v-if="summary && !running" class="hint setter-result" aria-live="polite">{{ summary }}</output>
+    <p v-else class="hint setter-result" :class="{ blocked: block !== null }">{{ running ? 'Touching off…' : block ?? hint }}</p>
   </div>
 </template>
 
@@ -102,5 +97,6 @@ onBeforeUnmount(() => {
 .setter-controls { min-width: 0; }
 .setter-action { display: flex; align-items: center; gap: 8px; }
 .setter-action button { min-height: 44px; white-space: nowrap; }
-.setter-result { display: block; max-width: 185px; line-height: 1.35; }
+.setter-result { display: block; max-width: 220px; margin: 4px 0 0; line-height: 1.35; }
+.setter-result.blocked { color: var(--warn, #b45309); }
 </style>

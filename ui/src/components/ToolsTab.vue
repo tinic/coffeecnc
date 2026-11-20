@@ -228,7 +228,7 @@ function editOffset(wcs: number): void {
 </template>
 
 <style scoped>
-.touched { margin-left: 6px; color: var(--ok, #15803d); font-weight: 700; }
+.touched { margin-left: 6px; color: var(--ok, #15803d); font-size: 20px; font-weight: 700; line-height: 1; vertical-align: middle; }
 .tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 480px;

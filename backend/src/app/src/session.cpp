@@ -331,7 +331,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
 
   // Carried out whatever becomes of its page; in order with the other requests unless it is
   // one of those that go first.
+  if (setter_busy_ && std::holds_alternative<Pause>(request.command))
+    request.command = Abort{};
   const bool stops = only_stops(request.command);
+  if (setter_busy_ && !stops) {
+    result(CommandOutcome::rejected, "A fixed setter operation is in progress.");
+    return outcome;
+  }
   bool stop_request = cancels_requests(request.command);
   if (const auto* asked = std::get_if<Jog>(&request.command)) {
     if (const auto index = axis_index(asked->axis); index && asked->held) {
@@ -408,6 +414,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
 
 void Session::observe(const ControllerState& state, JogLease::Time now) {
   const std::scoped_lock lock{mutex_};
+  if (state.link != Link::live || state.machine != MachineState::on ||
+      (have_status_ && now - status_at_ > status_max_age) ||
+      std::ranges::any_of(state.axes, [](const auto& axis) { return axis.homing || !axis.homed; }))
+    ++setter_datum_;
+  if (state.tool_in_spindle != status_.tool_in_spindle ||
+      state.tool_request != status_.tool_request)
+    ++setter_tool_;
   status_ = state;
   status_at_ = now;
   have_status_ = true;
@@ -539,7 +552,19 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   } else if (fate == Fate::stale) {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
+    const auto* setter = std::get_if<FixedSetterRequest>(&request.command);
+    const bool exclusive = setter && (setter->action == SetterAction::calibrate ||
+                                      setter->action == SetterAction::measure ||
+                                      setter->action == SetterAction::accept);
+    if (exclusive) {
+      const std::scoped_lock lock{mutex_};
+      setter_busy_ = true;
+    }
     step = execute(request, clock);
+    if (exclusive) {
+      const std::scoped_lock lock{mutex_};
+      setter_busy_ = false;
+    }
   }
   if (step.kind == StageKind::blocked) {
     const std::scoped_lock lock{mutex_};
@@ -576,7 +601,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(
-        encode_result(request.id, step.reply.outcome, step.reply.reason));
+        encode_result(request.id, step.reply.outcome, step.reply.reason, step.setter));
   }
   report(result.outcome, now.unix_time);
   return result;
@@ -704,6 +729,8 @@ void Session::drop_requests() {
 
 auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   const auto& command = request.command;
+  if (std::holds_alternative<FixedSetterRequest>(command) && !port_.fixed_setter_available())
+    return answer({CommandOutcome::rejected, "The fixed setter is unavailable."});
   auto state = port_.snapshot();
   if (!wanted(request))
     return cancelled();
@@ -823,6 +850,24 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
 
 auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,
                       const Clock& clock) -> Stage {
+  // Arbitrary interpreter commands can reload the same tool number or change the work frame.
+  // A capture binds to the physical insertion, so require a new capture after such commands.
+  const auto* power = std::get_if<SetMachine>(&request.command);
+  const bool changes_datum =
+      std::holds_alternative<Home>(request.command) || (power && power->state != MachineState::on);
+  if (changes_datum || std::holds_alternative<Mdi>(request.command) ||
+      std::holds_alternative<Run>(request.command) ||
+      std::holds_alternative<Step>(request.command) ||
+      std::holds_alternative<Resume>(request.command) ||
+      std::holds_alternative<ToolChanged>(request.command) ||
+      std::holds_alternative<SelectWcs>(request.command) ||
+      std::holds_alternative<SetWorkOffset>(request.command) ||
+      std::holds_alternative<TouchOff>(request.command)) {
+    const std::scoped_lock lock{mutex_};
+    if (changes_datum)
+      ++setter_datum_;
+    ++setter_tool_;
+  }
   return std::visit(
       [&](const auto& c) -> Stage {
         using T = std::decay_t<decltype(c)>;
@@ -930,6 +975,24 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (applied.kind == StageKind::cancelled)
             return cancelled(touch_off_reason);
           return applied;
+        } else if constexpr (std::is_same_v<T, FixedSetterRequest>) {
+          const auto context = [&]() -> SetterEpoch {
+            const std::scoped_lock lock{mutex_};
+            return {request.page.value, setter_datum_, setter_tool_, cancels_};
+          };
+          const auto begun = context();
+          const auto still = [&]() {
+            if (!wanted(request))
+              return false;
+            const auto now = context();
+            return now.datum == begun.datum && now.tool == begun.tool && now.stop == begun.stop;
+          };
+          auto result = port_.fixed_setter(c, begun, still);
+          if (!result)
+            return answer({CommandOutcome::failed, std::move(result.error())});
+          Stage step;
+          step.setter = std::move(*result);
+          return step;
         } else if constexpr (std::is_same_v<T, SetTool>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.set_tool(c.tool, still);

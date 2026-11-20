@@ -61,6 +61,7 @@ struct MachineConfig {
   // Found in HAL once the post-GUI file is loaded; not read from the INI.
   std::optional<CoolantOutputs> coolant;
   std::optional<std::string> data_directory;
+  std::optional<FixedSetterLimits> fixed_setter{};
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

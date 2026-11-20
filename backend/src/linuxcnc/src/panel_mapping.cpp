@@ -27,6 +27,7 @@ auto to_hello(const MachineConfig& config) -> Hello {
     hello.machine_id = config.machine_id;
   hello.coolant = config.coolant;
   hello.max_spindle_rpm = config.limits.max_spindle_rpm;
+  hello.fixed_setter = config.fixed_setter;
   return hello;
 }
 

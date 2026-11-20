@@ -2,6 +2,19 @@
 
 The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 32 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
+## Fixed tool setter
+
+The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `feed_mm_min` and `xy_tolerance_mm`. It enables the Tools workflow. The `fixed_setter` request uses an `action` field.
+
+| Action | Additional fields |
+| --- | --- |
+| `status` | |
+| `capture` | `tool`, `wcs`, known work contact `height` and machine contact `z` |
+| `calibrate`, `measure` | `tool` and confirmed machine start `x`, `y`, `z` |
+| `accept`, `dismiss` | `review` ID from the last valid cycle |
+
+All wire lengths are in millimetres. A successful result includes `setter` with `reference_captured`, `calibration` (machine setter X, Y and effective trigger-plane Z, or null), and `review` (null or an object with `id`, `calibration` as a boolean, `tool`, `contact` XYZ, `value` and `previous_length`). Start and review are separate operations. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
+
 ## Tool-model preferences
 
 `hello.machine_id` is an explicit configured identity or null. The optional `hello.tool_model_storage: 1` capability enables the `tool_models` snapshot and the `set_tool_model_defaults` / `set_tool_model_assignment` commands. An older peer without that capability receives no new commands; native visual preferences then remain session-only. No machine name, pathname or display unit supplies a fallback identity.

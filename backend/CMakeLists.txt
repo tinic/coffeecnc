@@ -174,6 +174,9 @@ if(BUILD_TESTING)
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
         coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
+      add_executable(coffeecnc_fixed_setter_tests tests/sim/fixed_setter_tests.cpp)
+      target_link_libraries(coffeecnc_fixed_setter_tests PRIVATE
+        coffeecnc_linuxcnc coffeecnc_project_options)
       # The TIMEOUT of every simulation test includes 300 s it may wait for the host's
       # simulation lock (run.sh -w): another checkout may be running one.
       foreach(units mm inch)
@@ -185,6 +188,16 @@ if(BUILD_TESTING)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 700)
+        add_test(NAME linuxcnc_tool_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 45 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_tool_probe_${units}
+          ${PROJECT_SOURCE_DIR}/tests/sim/tool_probe_facts.py)
+        set_tests_properties(linuxcnc_tool_probe_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+          RESOURCE_LOCK linuxcnc TIMEOUT 375)
+        add_test(NAME linuxcnc_fixed_setter_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 45 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_fixed_setter_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests>)
+        set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+          RESOURCE_LOCK linuxcnc TIMEOUT 375)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.

@@ -124,6 +124,47 @@ void old_copy_is_not_handed_out() {
   require(shared.view(at(500ms)).has_value(), "It is current again with the next reading");
 }
 
+void probe_cycle_needs_a_live_lease() {
+  HalShared shared;
+  require(!shared.begin_probe_cycle(at(0ms)), "Probe cannot arm before the first HAL sample");
+  auto inputs = asking({});
+  static_cast<void>(shared.exchange(inputs, at(0ms)));
+  require(!shared.begin_probe_cycle(at(101ms)), "Probe cannot arm on stale HAL status");
+  require(shared.begin_probe_cycle(at(10ms)), "Probe can arm on live HAL and watchdog status");
+  require(!shared.begin_probe_cycle(at(11ms)), "A second probe cannot replace an active one");
+  auto outputs = shared.probe_cycle_outputs(at(10ms));
+  require(outputs.active && outputs.lease, "Armed probe selects the setter and permits motion");
+
+  inputs.probe_setter_selected = true;
+  inputs.probe_motion_permitted = true;
+  static_cast<void>(shared.exchange(inputs, at(90ms)));
+  const auto armed = view(shared, 90ms);
+  require(armed.probe_setter_selected && armed.probe_motion_permitted, "Worker can read the physical acknowledgement pins");
+  require(shared.renew_probe_cycle(at(90ms)), "A live worker can renew before expiry");
+  require(shared.probe_cycle_outputs(at(189ms)).lease, "Renewal extends the lease");
+  outputs = shared.probe_cycle_outputs(at(190ms));
+  require(outputs.active && !outputs.lease, "Expired motion stays guarded until explicitly released");
+  static_cast<void>(shared.exchange(inputs, at(191ms)));
+  require(!shared.renew_probe_cycle(at(191ms)), "A late worker cannot reinstate the expired lease");
+
+  shared.finish_probe_cycle();
+  require(!shared.probe_cycle_outputs(at(192ms)).active, "A finished probe releases the hardware guard");
+  require(shared.begin_probe_cycle(at(193ms)), "A fresh operation can arm");
+  shared.stop_probe_cycle();
+  outputs = shared.probe_cycle_outputs(at(194ms));
+  require(outputs.active && !outputs.lease, "Stop revokes the lease immediately and keeps the guard active");
+  require(!shared.renew_probe_cycle(at(195ms)), "Stop cannot be reversed by a renewal");
+  shared.finish_probe_cycle();
+
+  require(shared.begin_probe_cycle(at(196ms)), "Arm another operation before a watchdog trip");
+  inputs.watchdog_ok = false;
+  static_cast<void>(shared.exchange(inputs, at(197ms)));
+  inputs.watchdog_ok = true;
+  static_cast<void>(shared.exchange(inputs, at(198ms)));
+  require(!shared.renew_probe_cycle(at(198ms)) && shared.probe_cycle_outputs(at(198ms)).active,
+          "Even after watchdog recovery, the interrupted cycle stays guarded and stopped");
+}
+
 // For the thread sanitizer: readers and a confirming thread beside the control thread.
 void threads_share_it() {
   HalShared shared;
@@ -189,6 +230,7 @@ auto main() -> int {
     withdrawn_request_is_not_confirmed();
     replaced_request_is_not_confirmed();
     old_copy_is_not_handed_out();
+    probe_cycle_needs_a_live_lease();
     threads_share_it();
     jog_stop_history_is_noted();
     std::cout << checks << " HAL exchange checks passed\n";

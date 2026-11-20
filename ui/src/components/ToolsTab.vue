@@ -10,6 +10,7 @@ import type { Tool } from '../protocol'
 import { formatLength, fromDisplay, toDisplay, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
+import FixedSetterControls from './FixedSetterControls.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
@@ -108,6 +109,7 @@ function editOffset(wcs: number): void {
           <template v-else>No tool in spindle</template>
         </span>
         <button v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
+        <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" />
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
           <AppIcon name="plus" /><span>Add tool</span>
         </button>

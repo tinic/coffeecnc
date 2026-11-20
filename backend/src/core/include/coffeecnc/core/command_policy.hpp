@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_CORE_COMMAND_POLICY_HPP
 #define COFFEECNC_CORE_COMMAND_POLICY_HPP
 
+#include <coffeecnc/core/fixed_setter.hpp>
 #include <coffeecnc/core/operator_settings.hpp>
 #include <coffeecnc/core/tool_models.hpp>
 
@@ -169,11 +170,12 @@ struct ToolChanged {};
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
 
-using Command = std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory,
-                             OpenProgram, Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle,
-                             SetCoolant, SetProgramOption, SelectWcs, TouchOff, ToolTouchOff,
-                             SetTool, RemoveTool, ToolChanged, SetToolModelDefaults,
-                             SetToolModelAssignment, Quit, SetOperatorSettings, SetWorkOffset>;
+using Command =
+    std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
+                 Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle, SetCoolant,
+                 SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
+                 ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
+                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest>;
 
 struct Decision {
   bool allowed{};

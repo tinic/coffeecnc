@@ -86,6 +86,17 @@ struct NmlLoads {
   std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
 };
 
+struct FixedSetterMove {
+  int tool;
+  std::array<double, 3> start; // machine XYZ confirmed by the operator, millimetres
+  double travel_mm;
+  double feed_mm_min;
+};
+
+struct FixedSetterContact {
+  std::array<double, 3> machine; // latched machine XYZ, millimetres
+};
+
 // LinuxCNC's task controller over its NML channels: the one writer of commands, the reader of
 // status, and the ONLY reader of the error channel (reading consumes; no second GUI may share the
 // machine).
@@ -229,6 +240,15 @@ public:
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto remove_tool(int number, const Wanted& wanted) -> ActionResult override;
+
+  // A fresh fixed-setter contact followed by a verified return to the starting Z. This is an
+  // XYZ-machine primitive, independent of calibration and with no tool-table writes.
+  [[nodiscard]] auto probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
+      -> std::expected<FixedSetterContact, std::string>;
+  [[nodiscard]] auto fixed_setter_available() const -> bool override;
+  [[nodiscard]] auto fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
+                                  const Wanted& wanted)
+      -> std::expected<SetterState, std::string> override;
 
 private:
   struct Impl;

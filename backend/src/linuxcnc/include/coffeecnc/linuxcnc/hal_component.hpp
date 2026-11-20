@@ -16,6 +16,11 @@ struct HalSignals {
   bool probe{};            // [COFFEECNC] PROBE_SIGNAL
 };
 
+struct ProbeCycleOutputs {
+  bool active{};
+  bool lease{};
+};
+
 // The executable's own HAL component: the path to LinuxCNC that needs no NML command channel.
 //
 //   <name>.jog-stop         bit out  a level; drives motion.jog-stop and motion.jog-inhibit
@@ -29,6 +34,11 @@ struct HalSignals {
 //   <name>.spindle-rpm      float in measured spindle speed, rpm, either sign (optional)
 //   <name>.spindle-at-speed bit in   the signal that drives spindle.0.at-speed (optional)
 //   <name>.probe-input      bit in   the signal that drives motion.probe-input (optional)
+//   <name>.probe-setter-select   bit out  request the fixed setter input during a probe cycle
+//   <name>.probe-setter-selected bit in   actual selector state, true only for the fixed setter
+//   <name>.probe-cycle-active    bit out  keep the probe interlock engaged until motion stops
+//   <name>.probe-cycle-lease     bit out  worker still owns the active probe cycle
+//   <name>.probe-motion-permitted bit in readback of the realtime permit driving motion.enable
 //
 // motion.jog-stop is level-sensitive (measured on LinuxCNC 2.9.4, and emc/motion/control.c:542):
 // in every servo period in which it is high, every jog in motion is aborted, so a jog that
@@ -84,6 +94,10 @@ public:
   [[nodiscard]] auto spindle_rpm() const -> std::optional<double>;
   [[nodiscard]] auto spindle_at_speed() const -> std::optional<bool>;
   [[nodiscard]] auto probe_input() const -> std::optional<bool>;
+  [[nodiscard]] auto probe_setter_selected() const -> bool;
+  [[nodiscard]] auto probe_motion_permitted() const -> bool;
+  [[nodiscard]] auto probe_cycle_active() const -> bool;
+  void set_probe_cycle(ProbeCycleOutputs outputs);
 
 private:
   struct Pins;

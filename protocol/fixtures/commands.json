@@ -236,5 +236,6 @@
       "tool_reference_height": 6.35
     }
   },
-  { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] }
+  { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },
+  { "id": 30, "type": "fixed_setter", "action": "capture", "tool": 98, "wcs": 1, "height": 6.35, "z": -85.3 }
 ]

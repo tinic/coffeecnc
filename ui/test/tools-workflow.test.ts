@@ -8,17 +8,24 @@ import { panel, send } from '../src/machine'
 import { defaultOperatorPreferences } from '../src/operator-settings'
 import { createOperatorSettingsState } from '../src/operator-settings-state'
 import { hello, SimMachine } from '../src/sim/machine'
-import type { Tool } from '../src/protocol'
+import type { SetterState, Tool } from '../src/protocol'
+import type { ResultListener } from '../src/store'
+
+const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultListener>() }))
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel
   const linkBlock = computed(() => panel.link !== 'live' || panel.status?.link !== 'live' ? 'Connection unavailable' : null)
   return { panel, linkBlock,
+    allHomed: computed(() => panel.status?.axes.every((axis) => axis.homed) ?? false),
     mdiBlock: computed(() => linkBlock.value ?? (panel.status?.machine !== 'on' ? 'Machine is off'
       : panel.status.interp !== 'idle' ? 'Machine is busy' : null)),
     findTool: (number: number): Tool | null => panel.toolTable?.tools.find((tool) => tool.number === number) ?? null,
-    send: vi.fn(), onResult: (): (() => void) => () => undefined }
+    send: vi.fn(), onResult: (listener: ResultListener): (() => void) => {
+      resultListeners.add(listener)
+      return () => { resultListeners.delete(listener) }
+    } }
 })
 const fixture = defineComponent({ components: { ToolsTab },
   template: '<div><ToolsTab/><div id="dialogs"></div><div id="workspace-dialogs"></div></div>' })
@@ -39,13 +46,51 @@ beforeEach(() => {
     { number: 1, pocket: 1, diameter: 6, length: 25.4, comment: '6 mm end mill' },
     { number: 2, pocket: 2, diameter: 3, length: 12.7, comment: '3 mm long reach drill for the deep mounting holes' },
   ] }
-  panel.workOffsets = null; vi.mocked(send).mockClear()
+  panel.workOffsets = null; vi.mocked(send).mockReset()
 })
 afterEach(() => {
   const element = wrapper?.element as HTMLElement | undefined; wrapper?.unmount(); element?.remove(); wrapper = null
   dispose?.(); dispose = null
 })
 function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body }) }
+
+describe('fixed setter workflow', () => {
+  it('confirms motion separately and applies a reviewed measurement by its result ID', async () => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
+    status.spindle.actual_rpm = 0
+    status.probe_input = false
+    status.axes.forEach((axis) => { axis.homed = true; axis.machine = 0 })
+    status.motion.in_position = true
+    let nextId = 0
+    vi.mocked(send).mockImplementation(() => ++nextId)
+    const answer = async (setter: SetterState): Promise<void> => {
+      const command = vi.mocked(send).mock.lastCall?.[0]
+      if (!command) throw new Error('Missing command')
+      for (const listener of resultListeners) {
+        listener(command, { type: 'result', id: nextId, outcome: 'accepted', reason: '', setter })
+      }
+      await nextTick()
+    }
+    const state: SetterState = { reference_captured: false, calibration: [0, 0, -40], review: null }
+    mountTools()
+    await press('Fixed setter')
+    await answer(state)
+    await press('Measure length')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('15.000 mm')
+    await press('Start measurement')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'measure', tool: 1, x: 0, y: 0, z: 0 })
+    await answer({ ...state, review: { id: 23, calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4 } })
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('27.000 mm')
+    expect(send).toHaveBeenCalledTimes(2)
+    await press('Apply length')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'accept', review: 23 })
+    await answer(state)
+    expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
+  })
+})
 
 describe('tool table workflow', () => {
   it('sorts a new tool snapshot by tool number without rearranging the source', async () => {

@@ -352,18 +352,18 @@ void shipped_example() {
       keys.push_back(line.substr(0, line.find_first_of(" =")));
   }
   const std::vector<std::string> known{"MAX_SPINDLE_RPM", "SPINDLE_RPM_SIGNAL",
-                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"};
+                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL", "FIXED_SETTER"};
   require(keys == known, std::format("example keys: {} of {}", keys.size(), known.size()));
   const auto config =
       load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", section));
   require(config.has_value(), config ? "" : config.error());
   require(near(config->limits.max_spindle_rpm, 1500) && !config->signals.spindle_rpm &&
-              !config->signals.spindle_at_speed && !config->signals.probe,
+              !config->signals.spindle_at_speed && !config->signals.probe && !config->fixed_setter,
           "the example's values");
   // Every signal the example names can be switched on by the word it documents.
   auto yes = section;
-  for (std::size_t at = 0; (at = yes.find("= no", at)) != std::string::npos;)
-    yes.replace(at, 4, "= yes");
+  for (const std::string_view key : {"SPINDLE_RPM_SIGNAL", "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"})
+    yes = with(std::move(yes), std::format("{} = no", key), std::format("{} = yes", key));
   const auto wired = load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", yes));
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,
@@ -446,6 +446,27 @@ void simulation_profiles() {
   require(std::system(refused.c_str()) != 0, "the G0759 profile is millimetres only");
 }
 
+void fixed_setter_is_explicit_and_bounded() {
+  require(!load(g0759)->fixed_setter, "ordinary machine profiles have no automatic fixed setter");
+  const auto enabled = with(std::string(g0759), "[COFFEECNC]\n",
+                            "[COFFEECNC]\nFIXED_SETTER = yes\n"
+                            "PROBE_SIGNAL = yes\nSPINDLE_RPM_SIGNAL = yes\n"
+                            "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n"
+                            "SETTER_XY_TOLERANCE_MM = 0.5\n");
+  const auto setter = load(enabled);
+  require(setter && setter->fixed_setter && near(setter->fixed_setter->travel_mm, 4) &&
+              near(setter->fixed_setter->feed_mm_min, 30),
+          "the configured fixed setter carries canonical travel and feed ceilings");
+  require(has(error(with(enabled, "PROBE_SIGNAL = yes", "PROBE_SIGNAL = no")), "FIXED_SETTER"),
+          "the fixed setter requires probe feedback");
+  require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4", "SETTER_MAX_TRAVEL_MM = 0")),
+              "SETTER_MAX_TRAVEL_MM"),
+          "zero search travel is refused");
+  require(has(error(with(enabled, "SETTER_MAX_FEED_MM_MIN = 30", "SETTER_MAX_FEED_MM_MIN = 751")),
+              "SETTER_MAX_FEED_MM_MIN"),
+          "a setter feed above the Z ceiling is refused");
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -466,6 +487,7 @@ auto main(int argc, char** argv) -> int {
     tool_model_settings();
     shipped_example();
     simulation_profiles();
+    fixed_setter_is_explicit_and_bounded();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

@@ -176,6 +176,8 @@ export function describeCommand(command: CommandBody): string {
       return `Touch off ${command.axis.toUpperCase()}`
     case 'tool_touch_off':
       return 'Tool length touch-off'
+    case 'fixed_setter':
+      return 'Fixed tool setter'
     case 'set_tool':
       return `Edit tool ${String(command.tool.number)}`
     case 'remove_tool':
@@ -408,7 +410,12 @@ export function createPanel(options: PanelOptions): Panel {
   function checkPending(): void {
     const time = now()
     for (const [id, entry] of pending) {
-      if (time - entry.sent > answerTimeoutMs) {
+      const command = entry.command
+      const setterMove = command.type === 'fixed_setter' &&
+        (command.action === 'calibrate' || command.action === 'measure')
+      const timeout = setterMove ? 390_000 :
+        command.type === 'fixed_setter' && command.action === 'accept' ? 15_000 : answerTimeoutMs
+      if (time - entry.sent > timeout) {
         // A local deadline must also end held controls through their result listeners. It
         // does not prove the controller cancelled the command; a release is still necessary.
         result({ type: 'result', id, outcome: 'timed_out', reason: 'No answer from the machine' })

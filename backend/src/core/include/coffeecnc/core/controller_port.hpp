@@ -4,6 +4,7 @@
 #include <coffeecnc/core/command_policy.hpp>
 
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <string>
@@ -156,6 +157,12 @@ public:
   // Replaces the row with this tool number, or adds it.
   [[nodiscard]] virtual auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto remove_tool(int number, const Wanted& wanted) -> ActionResult = 0;
+
+  [[nodiscard]] virtual auto fixed_setter_available() const -> bool { return false; }
+  [[nodiscard]] virtual auto fixed_setter(const FixedSetterRequest&, SetterEpoch, const Wanted&)
+      -> std::expected<SetterState, std::string> {
+    return std::unexpected("The fixed setter is not configured.");
+  }
 
 protected:
   ControllerPort(const ControllerPort&) = default;

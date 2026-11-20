@@ -3,6 +3,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <system_error>
 #include <vector>
@@ -124,6 +125,28 @@ auto comments_of(std::string_view table) -> std::map<int, std::string> {
       comments.try_emplace(*number, text);
   }
   return comments;
+}
+
+auto tool_z(std::string_view table, int tool) -> std::optional<double> {
+  std::optional<double> length;
+  for (const auto line : lines_of(table)) {
+    if (tool_number(line) != tool)
+      continue;
+    if (length)
+      return {}; // Do not guess which duplicate row LinuxCNC loaded.
+    length = 0;
+    for (auto word : words_of(line)) {
+      if (letter(word) != 'Z')
+        continue;
+      word.remove_prefix(1);
+      if (word.starts_with('+'))
+        word.remove_prefix(1);
+      const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), *length);
+      if (error != std::errc{} || end != word.data() + word.size() || !std::isfinite(*length))
+        return {};
+    }
+  }
+  return length;
 }
 
 auto without_tool(std::string_view table, int number) -> std::optional<std::string> {

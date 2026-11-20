@@ -35,6 +35,11 @@ struct HalComponent::Pins {
   hal_float_t* spindle_rpm;
   hal_bit_t* spindle_at_speed;
   hal_bit_t* probe_input;
+  hal_bit_t* probe_setter_select;
+  hal_bit_t* probe_setter_selected;
+  hal_bit_t* probe_cycle_active;
+  hal_bit_t* probe_cycle_lease;
+  hal_bit_t* probe_motion_permitted;
 };
 
 auto HalComponent::create(const std::string& name, const HalSignals& wired)
@@ -57,7 +62,12 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
       !bit("tool-changed", HAL_OUT, &pins->tool_changed) ||
       hal_pin_float_new((name + ".spindle-rpm").c_str(), HAL_IN, &pins->spindle_rpm, id) != 0 ||
       !bit("spindle-at-speed", HAL_IN, &pins->spindle_at_speed) ||
-      !bit("probe-input", HAL_IN, &pins->probe_input))
+      !bit("probe-input", HAL_IN, &pins->probe_input) ||
+      !bit("probe-setter-select", HAL_OUT, &pins->probe_setter_select) ||
+      !bit("probe-setter-selected", HAL_IN, &pins->probe_setter_selected) ||
+      !bit("probe-cycle-active", HAL_OUT, &pins->probe_cycle_active) ||
+      !bit("probe-cycle-lease", HAL_OUT, &pins->probe_cycle_lease) ||
+      !bit("probe-motion-permitted", HAL_IN, &pins->probe_motion_permitted))
     return std::unexpected(std::format("Creating the HAL pins of {} failed", name));
   if (const int result = hal_ready(id); result != 0)
     return std::unexpected(std::format("hal_ready failed: {}", result));
@@ -150,6 +160,29 @@ auto HalComponent::probe_input() const -> std::optional<bool> {
   if (!wired_.probe)
     return {};
   return get(pins_->probe_input);
+}
+
+auto HalComponent::probe_setter_selected() const -> bool {
+  return get(pins_->probe_setter_selected);
+}
+
+auto HalComponent::probe_motion_permitted() const -> bool {
+  return get(pins_->probe_motion_permitted);
+}
+
+auto HalComponent::probe_cycle_active() const -> bool {
+  return get(pins_->probe_cycle_active);
+}
+
+void HalComponent::set_probe_cycle(ProbeCycleOutputs outputs) {
+  // Arm after the lease is high. Disarm before dropping it on normal completion, when the
+  // worker has already confirmed the controller is stationary.
+  if (!outputs.active)
+    set(pins_->probe_cycle_active, false);
+  set(pins_->probe_setter_select, outputs.active);
+  set(pins_->probe_cycle_lease, outputs.lease);
+  if (outputs.active)
+    set(pins_->probe_cycle_active, true);
 }
 
 } // namespace coffeecnc

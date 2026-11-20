@@ -196,6 +196,30 @@ void run(const std::string& ini) {
               tool_z(saved_table, 1) == tool_z(old_table, 1) &&
               saved_table.contains(scale == 1 ? "D+3.000000" : "D+0.125000"),
           "only this tool's length changes and it is applied");
+
+  int trips = 0;
+  bool tripped = false;
+  bool shifted = false;
+  auto repeat = touch_off;
+  repeat.start = {after.controller.axes[0].machine, after.controller.axes[1].machine,
+                  after.controller.axes[2].machine};
+  const auto unstable = port.fixed_setter(repeat, epoch, [&]() {
+    const auto pins = shared.view(HalShared::Clock::now());
+    if (pins && pins->probe_cycle_active && pins->probe_input) {
+      if (*pins->probe_input && !tripped)
+        ++trips;
+      if (!*pins->probe_input && tripped && trips == 2 && !shifted) {
+        halcmd(std::format("setp sim-tool-setter.max {}", 11.95 / scale));
+        shifted = true;
+      }
+      tripped = *pins->probe_input;
+    }
+    return true;
+  });
+  require(shifted && trips == 4 && !unstable && unstable.error().contains("exceeds 0.01 mm") &&
+              saved_table == read_table() && port.snapshot().machine == MachineState::on,
+          "three slow contacts with excessive spread retract and leave the table untouched");
+
   ++epoch.datum;
   require(!setter({.action = SetterAction::status}).calibration,
           "rehoming clears the in-memory setter calibration");

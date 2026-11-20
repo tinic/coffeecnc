@@ -19,6 +19,7 @@
 #include <iterator>
 #include <mutex>
 #include <numbers>
+#include <numeric>
 #include <span>
 #include <system_error>
 #include <thread>
@@ -1033,26 +1034,39 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   auto contact = search(search_start[2], move.travel_mm, move.feed_mm_min);
   if (!contact)
     return contact;
+  std::optional<double> unstable_spread;
   if (limits->latch_feed_mm_min > 0) {
     const auto search_stop = contact->stopping_distance;
-    const double backoff_z = contact->machine[2] + limits->latch_backoff_mm;
-    if (backoff_z > impl_->config.travel[2].max ||
-        !block(std::format("G90 G53 G1 Z{:.8f}{}", backoff_z / program_scale, feed_word),
-               move_timeout, false, true))
-      return interrupt("The fixed setter latch backoff did not complete.");
-    raw = live_cycle();
-    const auto released = interlock();
-    if (raw == nullptr || !released || *released->probe_input || raw->motion.traj.probeval != 0 ||
-        !near(raw->motion.traj.position.tran.z * machine_scale, backoff_z) ||
-        !near(raw->motion.traj.actualPosition.tran.z * machine_scale, backoff_z))
-      return interrupt("The setter did not release before the latch pass.");
-    const double latch_travel = std::min(2 * limits->latch_backoff_mm, backoff_z - bottom_z);
-    contact = search(backoff_z, latch_travel, limits->latch_feed_mm_min);
-    if (!contact)
-      return contact;
+    std::array<double, 3> latches{};
+    for (double& latch : latches) {
+      const double backoff_z = contact->machine[2] + limits->latch_backoff_mm;
+      if (backoff_z > impl_->config.travel[2].max ||
+          !block(std::format("G90 G53 G1 Z{:.8f}{}", backoff_z / program_scale, feed_word),
+                 move_timeout, false, true))
+        return interrupt("The fixed setter latch backoff did not complete.");
+      raw = live_cycle();
+      const auto released = interlock();
+      if (raw == nullptr || !released || *released->probe_input || raw->motion.traj.probeval != 0 ||
+          !near(raw->motion.traj.position.tran.z * machine_scale, backoff_z) ||
+          !near(raw->motion.traj.actualPosition.tran.z * machine_scale, backoff_z))
+        return interrupt("The setter did not release before the latch pass.");
+      const double latch_travel = std::min(2 * limits->latch_backoff_mm, backoff_z - bottom_z);
+      contact = search(backoff_z, latch_travel, limits->latch_feed_mm_min);
+      if (!contact)
+        return contact;
+      latch = contact->machine[2];
+    }
+    const auto [low, high] = std::ranges::minmax(latches);
+    constexpr double max_spread_mm = 0.01;
+    if (high - low > max_spread_mm)
+      unstable_spread = high - low;
+    else
+      contact->machine[2] = std::accumulate(latches.begin(), latches.end(), 0.0) /
+                            static_cast<double>(latches.size());
     contact->stopping_distance = search_stop;
   }
-  const double retract_z = move.retract_above_contact_mm > 0
+  // On a failed teach the pre-probe setup height is known; no new clearance was established.
+  const double retract_z = move.retract_above_contact_mm > 0 && !unstable_spread
                                ? contact->machine[2] + move.retract_above_contact_mm
                                : move.retract_z.value_or(search_start[2]);
   raw = live_cycle();
@@ -1082,6 +1096,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
   hal->finish_probe_cycle();
+  if (unstable_spread)
+    return std::unexpected(
+        std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread));
   return contact;
 }
 

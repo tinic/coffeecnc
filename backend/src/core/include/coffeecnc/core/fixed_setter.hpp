@@ -12,19 +12,18 @@ struct FixedSetterLimits {
   double feed_mm_min;
   int reference_tool{98};
   double xy_tolerance_mm{};
+  double clearance_mm{}; // lift above the reference latch, or zero to use the taught Z
+  double latch_feed_mm_min{};
+  double latch_backoff_mm{};
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
-enum class SetterAction : std::uint8_t { status, capture, calibrate, measure, accept, dismiss };
+enum class SetterAction : std::uint8_t { status, touch_off };
 
 struct FixedSetterRequest {
   SetterAction action;
   int tool{};
-  int wcs{};
-  double height{};
-  double capture_z{};
   std::array<double, 3> start{};
-  std::int64_t review{};
 };
 
 struct SetterEpoch {
@@ -35,8 +34,7 @@ struct SetterEpoch {
   friend auto operator==(const SetterEpoch&, const SetterEpoch&) -> bool = default;
 };
 
-struct SetterReview {
-  std::int64_t id;
+struct SetterMeasurement {
   bool calibration;
   int tool;
   std::array<double, 3> contact;
@@ -46,9 +44,8 @@ struct SetterReview {
 };
 
 struct SetterState {
-  bool reference_captured{};
   std::optional<std::array<double, 3>> calibration; // XY and effective trigger plane Z in mm
-  std::optional<SetterReview> review;
+  std::optional<SetterMeasurement> measurement;
 };
 
 } // namespace coffeecnc

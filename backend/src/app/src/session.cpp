@@ -553,9 +553,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
     const auto* setter = std::get_if<FixedSetterRequest>(&request.command);
-    const bool exclusive = setter && (setter->action == SetterAction::calibrate ||
-                                      setter->action == SetterAction::measure ||
-                                      setter->action == SetterAction::accept);
+    const bool exclusive = setter && setter->action == SetterAction::touch_off;
     if (exclusive) {
       const std::scoped_lock lock{mutex_};
       setter_busy_ = true;
@@ -850,8 +848,7 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
 
 auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,
                       const Clock& clock) -> Stage {
-  // Arbitrary interpreter commands can reload the same tool number or change the work frame.
-  // A capture binds to the physical insertion, so require a new capture after such commands.
+  // Interpreter commands can reload the same tool number or change the work frame.
   const auto* power = std::get_if<SetMachine>(&request.command);
   const bool changes_datum =
       std::holds_alternative<Home>(request.command) || (power && power->state != MachineState::on);

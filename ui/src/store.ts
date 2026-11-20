@@ -411,10 +411,8 @@ export function createPanel(options: PanelOptions): Panel {
     const time = now()
     for (const [id, entry] of pending) {
       const command = entry.command
-      const setterMove = command.type === 'fixed_setter' &&
-        (command.action === 'calibrate' || command.action === 'measure')
-      const timeout = setterMove ? 390_000 :
-        command.type === 'fixed_setter' && command.action === 'accept' ? 15_000 : answerTimeoutMs
+      const timeout = command.type === 'fixed_setter' && command.action === 'touch_off'
+        ? 850_000 : answerTimeoutMs
       if (time - entry.sent > timeout) {
         // A local deadline must also end held controls through their result listeners. It
         // does not prove the controller cancelled the command; a release is still necessary.

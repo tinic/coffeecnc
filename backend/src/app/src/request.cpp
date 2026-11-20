@@ -240,27 +240,14 @@ auto command(const Json& object) -> Command {
     return ToolTouchOff{number(object, "value")};
   }
   if (type == "fixed_setter") {
-    const auto action = choice<SetterAction>(object, "action",
-                                             {{"status", SetterAction::status},
-                                              {"capture", SetterAction::capture},
-                                              {"calibrate", SetterAction::calibrate},
-                                              {"measure", SetterAction::measure},
-                                              {"accept", SetterAction::accept},
-                                              {"dismiss", SetterAction::dismiss}});
+    const auto action = choice<SetterAction>(
+        object, "action",
+        {{"status", SetterAction::status}, {"touch_off", SetterAction::touch_off}});
     FixedSetterRequest request{action};
-    if (action == SetterAction::capture) {
-      fields(object, {"id", "type", "action", "tool", "wcs", "height", "z"});
-      request.tool = integer(object, "tool");
-      request.wcs = integer(object, "wcs");
-      request.height = number(object, "height");
-      request.capture_z = number(object, "z");
-    } else if (action == SetterAction::calibrate || action == SetterAction::measure) {
+    if (action == SetterAction::touch_off) {
       fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
       request.tool = integer(object, "tool");
       request.start = {number(object, "x"), number(object, "y"), number(object, "z")};
-    } else if (action == SetterAction::accept || action == SetterAction::dismiss) {
-      fields(object, {"id", "type", "action", "review"});
-      request.review = integer(object, "review");
     } else {
       fields(object, {"id", "type", "action"});
     }

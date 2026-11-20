@@ -264,15 +264,12 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("Load a tool and provide a finite touch-off value.");
           return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, FixedSetterRequest>) {
-          if (c.action == SetterAction::status || c.action == SetterAction::dismiss)
+          if (c.action == SetterAction::status)
             return allow();
           if (s.spindle_active || s.requested_tool || s.tool_in_spindle <= 0 ||
-              (c.tool != 0 && c.tool != s.tool_in_spindle))
+              c.tool != s.tool_in_spindle)
             return reject("Fixed setter requires the confirmed tool and a stopped spindle.");
-          auto allowed = idle(s, TaskMode::mdi, true);
-          if (allowed.allowed && c.action == SetterAction::capture)
-            return allow();
-          return allowed;
+          return idle(s, TaskMode::mdi, true);
         } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
           if (s.interp != InterpState::idle || !s.in_position || s.requested_tool || homing(s))
             return reject("Stop execution and finish tool changes before editing tools.");

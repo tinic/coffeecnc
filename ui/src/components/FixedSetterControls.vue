@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
-import { setterState } from '../setter-state'
+import { setterState, setterStatus, type SetterStatusLine } from '../setter-state'
 
-const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean }>()
+const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean; inlineStatus?: boolean }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
 
 const state = setterState
@@ -42,6 +42,13 @@ const summary = computed(() => {
   // The length itself is in the tool table: only confirm what happened.
   return result.calibration ? 'Setter taught' : `T${String(result.tool)} measured`
 })
+
+const line = computed((): SetterStatusLine => {
+  if (running.value) return { text: 'Touching off…', level: 'busy' }
+  if (summary.value) return { text: summary.value, level: 'done' }
+  return block.value === null ? { text: hint.value, level: 'info' } : { text: block.value, level: 'blocked' }
+})
+watchEffect(() => { setterStatus.value = line.value })
 
 function request(command: Request): void {
   pending.value = command
@@ -87,8 +94,7 @@ onBeforeUnmount(() => {
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
       <button v-else class="btn primary" type="button" :disabled="!!pending || block !== null" @click="touchOff">Touch off</button>
     </div>
-    <output v-if="summary && !running" class="hint setter-result" aria-live="polite">{{ summary }}</output>
-    <p v-else class="hint setter-result" :class="{ blocked: block !== null }">{{ running ? 'Touching off…' : block ?? hint }}</p>
+    <p v-if="inlineStatus" class="hint setter-result" :class="line.level" aria-live="polite">{{ line.text }}</p>
   </div>
 </template>
 
@@ -102,5 +108,5 @@ onBeforeUnmount(() => {
   width: 260px; margin: 0; text-align: right; font-size: 12px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.setter-result.blocked { color: var(--warn, #b45309); }
+.setter-result.blocked { color: var(--stop); }
 </style>

@@ -496,7 +496,7 @@ function coolant(which: 'flood' | 'mist'): void {
       <p v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
-      <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" show-tool />
+      <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" show-tool inline-status />
     </section>
 
     <div class="side">

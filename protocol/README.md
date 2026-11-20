@@ -4,16 +4,14 @@ The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protoc
 
 ## Fixed tool setter
 
-The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `feed_mm_min` and `xy_tolerance_mm`. It enables the Tools workflow. The `fixed_setter` request uses an `action` field.
+The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `feed_mm_min`, `xy_tolerance_mm` and `clearance_mm`. A zero clearance uses the Z taught by the operator. The `fixed_setter` request uses an `action` field.
 
 | Action | Additional fields |
 | --- | --- |
 | `status` | |
-| `capture` | `tool`, `wcs`, known work contact `height` and machine contact `z` |
-| `calibrate`, `measure` | `tool` and confirmed machine start `x`, `y`, `z` |
-| `accept`, `dismiss` | `review` ID from the last valid cycle |
+| `touch_off` | `tool` and machine start `x`, `y`, `z` |
 
-All wire lengths are in millimetres. A successful result includes `setter` with `reference_captured`, `calibration` (machine setter X, Y and effective trigger-plane Z, or null), and `review` (null or an object with `id`, `calibration` as a boolean, `tool`, `contact` XYZ, `value` and `previous_length`). A review can include `stopping_distance`, the downward distance from the contact latch to settled machine Z before retract. Start and review are separate operations. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
+All wire lengths are in millimetres. The reference tool teaches the setter. Another tool positions at the taught XY, probes and saves the offset in one command. A successful result includes `setter.calibration` (machine setter X, Y and effective trigger-plane Z, or null) and `setter.measurement` (null or the result of the completed cycle with `calibration` as a boolean, `tool`, `contact` XYZ, `value`, `previous_length` and `stopping_distance`). Stopping distance is the downward travel from first contact to settled machine Z. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 
 ## Tool-model preferences
 

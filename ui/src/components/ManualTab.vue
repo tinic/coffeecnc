@@ -19,6 +19,7 @@ import { touchProbeLoaded } from '../tool-models'
 import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
+import FixedSetterControls from './FixedSetterControls.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
@@ -495,6 +496,7 @@ function coolant(which: 'flood' | 'mist'): void {
       <p v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
+      <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" show-tool />
     </section>
 
     <div class="side">

@@ -465,6 +465,16 @@ void fixed_setter_is_explicit_and_bounded() {
   require(has(error(with(enabled, "SETTER_MAX_FEED_MM_MIN = 30", "SETTER_MAX_FEED_MM_MIN = 751")),
               "SETTER_MAX_FEED_MM_MIN"),
           "a setter feed above the Z ceiling is refused");
+  const auto two_pass = with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
+                             "SETTER_MAX_TRAVEL_MM = 90\nSETTER_CLEARANCE_MM = 80\n"
+                             "SETTER_SEARCH_FEED_MM_MIN = 300\nSETTER_LATCH_FEED_MM_MIN = 25");
+  const auto current = load(two_pass);
+  require(current && current->fixed_setter &&
+              *current->fixed_setter == FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1},
+          "two-pass setter reads the clearance and both feeds");
+  require(has(error(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90", "SETTER_MAX_TRAVEL_MM = 30")),
+              "search must reach below"),
+          "the setter rejects a search too short to reach below the reference latch");
 }
 
 } // namespace

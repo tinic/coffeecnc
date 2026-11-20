@@ -237,5 +237,5 @@
     }
   },
   { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },
-  { "id": 30, "type": "fixed_setter", "action": "capture", "tool": 98, "wcs": 1, "height": 6.35, "z": -85.3 }
+  { "id": 30, "type": "fixed_setter", "action": "touch_off", "tool": 98, "x": 4, "y": 6.35, "z": -85.3 }
 ]

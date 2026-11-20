@@ -78,7 +78,7 @@ void run(const std::string& ini) {
   const double scale = config->millimetres_per_unit;
   config->signals.probe = true;
   config->signals.spindle_rpm = true;
-  config->fixed_setter = FixedSetterLimits{15, 240, 1, 0.5};
+  config->fixed_setter = FixedSetterLimits{15, 240, 1, 0.5, 12, 60, 1};
   auto component = HalComponent::create("coffeecnc", config->signals);
   if (!component)
     throw std::runtime_error(component.error());
@@ -150,30 +150,6 @@ void run(const std::string& ini) {
       throw std::runtime_error(result.error());
     return *result;
   };
-  const double height = 20 - starting.g5x[2] - starting.g92[2] - 50;
-  const FixedSetterRequest capture{.action = SetterAction::capture,
-                                   .tool = 1,
-                                   .wcs = starting.wcs,
-                                   .height = height,
-                                   .capture_z = 20};
-  require(setter(capture).reference_captured,
-          "capture derives the reference from the active work frame");
-  const auto calibrated =
-      setter({.action = SetterAction::calibrate, .tool = 1, .start = move.start});
-  require(calibrated.review && !calibrated.calibration &&
-              std::abs(calibrated.review->value - (-40)) < 0.03 &&
-              std::abs(calibrated.review->stopping_distance - contact->stopping_distance) < 0.01,
-          "calibration reviews the derived trigger plane before saving it");
-  const auto calibrated_id = calibrated.review->id;
-  require(setter({.action = SetterAction::accept, .review = calibrated_id}).calibration.has_value(),
-          "accepting the calibration stores the learned setter plane");
-  require(!port.fixed_setter({.action = SetterAction::accept, .review = calibrated_id}, epoch, {}),
-          "an accepted result cannot be reused");
-
-  mdi("M61 Q2");
-  mdi("G43 H2");
-  ++epoch.tool;
-  halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto read_table = [&]() {
     // Line by line: GCC 14 -O3 flags istreambuf_iterator with -Wnull-dereference.
     std::ifstream input(config->tool_table);
@@ -183,26 +159,74 @@ void run(const std::string& ini) {
     return text;
   };
   const auto old_table = read_table();
-  const auto measured = setter({.action = SetterAction::measure, .tool = 2, .start = move.start});
-  require(measured.review && std::abs(measured.review->value - 52) < 0.03 &&
-              measured.review->stopping_distance > 0.001 &&
-              measured.review->stopping_distance < 0.1 && old_table == read_table(),
-          "measurement reviews machine-frame tool length without writing it");
-  require(setter({.action = SetterAction::accept, .review = measured.review->id}).review ==
-              std::nullopt,
-          "accepting the measurement uses G10 L1 and verifies G43");
+  const double reference_length = scale == 1 ? 50 : 50.8;
+  const auto taught = setter({.action = SetterAction::touch_off, .tool = 1, .start = move.start});
+  require(taught.measurement && taught.measurement->calibration && taught.calibration &&
+              std::abs(taught.calibration->at(2) - (10 - reference_length)) < 0.03 &&
+              std::abs(taught.measurement->stopping_distance - contact->stopping_distance) < 0.01 &&
+              old_table == read_table(),
+          "teaching uses the reference tool's existing length and leaves the table unchanged");
+
+  mdi("M61 Q2");
+  mdi("G43 H2");
+  ++epoch.tool;
+  mdi("G21 G90 G53 G0 X4 Y6 Z17");
+  mdi(scale == 1 ? "G20 G91" : "G21 G91");
+  halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
+  const auto at_work = port.status().controller.axes;
+  const FixedSetterRequest touch_off{
+      .action = SetterAction::touch_off,
+      .tool = 2,
+      .start = {at_work[0].machine, at_work[1].machine, at_work[2].machine}};
+  const auto measured = setter(touch_off);
+  const double tool_length = reference_length + 2;
+  require(measured.measurement && !measured.measurement->calibration &&
+              std::abs(measured.measurement->value - tool_length) < 0.03 &&
+              measured.measurement->stopping_distance > 0.001,
+          "one touch-off moves to the setter and reports the applied length");
+  const auto after = port.status();
   const auto saved_table = read_table();
-  require(std::abs(port.status().tool_offset[2] - 52) < 0.03 &&
-              std::abs(tool_z(saved_table, 2).value_or(0) * scale - 52) < 0.03 &&
+  require(std::abs(after.controller.axes[0].machine - move.start[0]) < 0.03 &&
+              std::abs(after.controller.axes[1].machine - move.start[1]) < 0.03 &&
+              std::abs(after.controller.axes[2].machine - (taught.measurement->contact[2] + 12)) <
+                  0.03,
+          "the cycle returns to the configured clearance above the reference latch");
+  require(std::abs(after.tool_offset[2] - tool_length) < 0.03 &&
+              std::abs(tool_z(saved_table, 2).value_or(0) * scale - tool_length) < 0.03 &&
               tool_z(saved_table, 1) == tool_z(old_table, 1) &&
               saved_table.contains(scale == 1 ? "D+3.000000" : "D+0.125000"),
           "only this tool's length changes and it is applied");
+
+  int trips = 0;
+  bool tripped = false;
+  bool shifted = false;
+  auto repeat = touch_off;
+  repeat.start = {after.controller.axes[0].machine, after.controller.axes[1].machine,
+                  after.controller.axes[2].machine};
+  const auto unstable = port.fixed_setter(repeat, epoch, [&]() {
+    const auto pins = shared.view(HalShared::Clock::now());
+    if (pins && pins->probe_cycle_active && pins->probe_input) {
+      if (*pins->probe_input && !tripped)
+        ++trips;
+      if (!*pins->probe_input && tripped && trips == 2 && !shifted) {
+        halcmd(std::format("setp sim-tool-setter.max {}", 11.95 / scale));
+        shifted = true;
+      }
+      tripped = *pins->probe_input;
+    }
+    return true;
+  });
+  require(shifted && trips == 4 && !unstable && unstable.error().contains("exceeds 0.01 mm") &&
+              saved_table == read_table() && port.snapshot().machine == MachineState::on,
+          "three slow contacts with excessive spread retract and leave the table untouched");
+
   ++epoch.datum;
   require(!setter({.action = SetterAction::status}).calibration,
           "rehoming clears the in-memory setter calibration");
 
   mdi("M61 Q1");
   mdi("G43 H1");
+  mdi("G21 G90 G53 G0 Z20");
   halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
   const auto stop_at = HalShared::Clock::now() + 600ms;
   require(!port.probe_fixed_setter(move, [&]() { return HalShared::Clock::now() < stop_at; }),

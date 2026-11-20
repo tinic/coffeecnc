@@ -295,10 +295,10 @@ export interface FixedSetterLimits {
   travel_mm: number
   feed_mm_min: number
   xy_tolerance_mm: number
+  clearance_mm?: number
 }
 
-export interface SetterReview {
-  id: number
+export interface SetterMeasurement {
   calibration: boolean
   tool: number
   contact: Vec3
@@ -310,9 +310,8 @@ export interface SetterReview {
 }
 
 export interface SetterState {
-  reference_captured: boolean
   calibration: Vec3 | null
-  review: SetterReview | null
+  measurement: SetterMeasurement | null
 }
 
 export interface DirectoryEntry {
@@ -472,9 +471,7 @@ export interface ToolTouchOff extends CommandBase {
 }
 export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
-  | { action: 'capture'; tool: number; wcs: number; height: number; z: number }
-  | { action: 'calibrate' | 'measure'; tool: number; x: number; y: number; z: number }
-  | { action: 'accept' | 'dismiss'; review: number }
+  | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

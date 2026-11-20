@@ -18,6 +18,7 @@ vi.mock('../src/machine', async () => {
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel
   const linkBlock = computed(() => panel.link !== 'live' || panel.status?.link !== 'live' ? 'Connection unavailable' : null)
   return { panel, linkBlock,
+    homingActive: computed(() => panel.status?.axes.some((axis) => axis.homing) ?? false),
     allHomed: computed(() => panel.status?.axes.every((axis) => axis.homed) ?? false),
     mdiBlock: computed(() => linkBlock.value ?? (panel.status?.machine !== 'on' ? 'Machine is off'
       : panel.status.interp !== 'idle' ? 'Machine is busy' : null)),
@@ -55,7 +56,7 @@ afterEach(() => {
 function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body }) }
 
 describe('fixed setter workflow', () => {
-  it('confirms motion separately and applies a reviewed measurement by its result ID', async () => {
+  it('teaches and measures directly and shows the result without a dialog', async () => {
     const status = panel.status
     if (!status) throw new Error('Missing status')
     panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
@@ -73,23 +74,22 @@ describe('fixed setter workflow', () => {
       }
       await nextTick()
     }
-    const state: SetterState = { reference_captured: false, calibration: [0, 0, -40], review: null }
+    status.tool.in_spindle = 98
+    const state: SetterState = { calibration: [0, 0, -40], measurement: null }
     mountTools()
-    await press('Fixed setter')
-    await answer(state)
-    await press('Measure length')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
-    expect(getWrapper().get('[role="dialog"]').text()).toContain('15.000 mm')
-    await press('Start measurement')
-    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'measure', tool: 1, x: 0, y: 0, z: 0 })
-    await answer({ ...state, review: { id: 23, calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 } })
-    expect(getWrapper().get('[role="dialog"]').text()).toContain('27.000 mm')
-    expect(getWrapper().get('[role="dialog"] dt:last-of-type').text()).toBe('Z travel after contact')
-    expect(getWrapper().get('[role="dialog"] dd:last-of-type').text()).toBe('0.030 mm')
-    expect(send).toHaveBeenCalledTimes(2)
-    await press('Apply length')
-    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'accept', review: 23 })
-    await answer(state)
+    await answer({ calibration: null, measurement: null })
+    await press('Teach setter')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 98, x: 0, y: 0, z: 0 })
+    await answer({ ...state, measurement: { calibration: true, tool: 98, contact: [0, 0, -13], value: -40, previous_length: 27, stopping_distance: 0.03 } })
+    expect(getWrapper().get('.setter-result').text()).toBe('Setter taught · Z after contact 0.030 mm')
+    status.tool.in_spindle = 1
+    await nextTick()
+    await press('Touch off at setter')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
+    await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 } })
+    expect(getWrapper().get('.setter-result').text()).toBe('T1 length 27.000 mm · Z after contact 0.030 mm')
+    expect(send).toHaveBeenCalledTimes(3)
     expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
   })
 })

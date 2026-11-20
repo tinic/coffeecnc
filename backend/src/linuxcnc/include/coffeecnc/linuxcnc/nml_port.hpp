@@ -91,6 +91,9 @@ struct FixedSetterMove {
   std::array<double, 3> start; // machine XYZ confirmed by the operator, millimetres
   double travel_mm;
   double feed_mm_min;
+  std::optional<std::array<double, 3>> approach{}; // traverse at or above the taught clearance
+  std::optional<double> retract_z{};
+  double retract_above_contact_mm{};
 };
 
 struct FixedSetterContact {

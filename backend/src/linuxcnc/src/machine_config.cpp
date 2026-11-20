@@ -279,7 +279,8 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     return std::unexpected(setter_enabled.error());
   if (*setter_enabled) {
     const auto distance = ini.real("COFFEECNC", "SETTER_MAX_TRAVEL_MM");
-    const auto speed = ini.real("COFFEECNC", "SETTER_MAX_FEED_MM_MIN");
+    const auto search = ini.text("COFFEECNC", "SETTER_SEARCH_FEED_MM_MIN");
+    const auto speed = search ? number(*search) : ini.real("COFFEECNC", "SETTER_MAX_FEED_MM_MIN");
     const auto xy = ini.real("COFFEECNC", "SETTER_XY_TOLERANCE_MM");
     const auto reference = ini.text("COFFEECNC", "SETTER_REFERENCE_TOOL");
     const auto tool = reference ? number(*reference) : std::optional<double>{98};
@@ -288,9 +289,23 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
         *tool > 99999 || std::floor(*tool) != *tool)
       return std::unexpected(std::string(
           "[COFFEECNC] FIXED_SETTER requires probe and spindle RPM signals, a positive "
-          "SETTER_MAX_TRAVEL_MM, SETTER_XY_TOLERANCE_MM, SETTER_MAX_FEED_MM_MIN within the Z "
-          "speed limit, and a valid SETTER_REFERENCE_TOOL."));
-    setter = FixedSetterLimits{*distance, *speed, static_cast<int>(*tool), *xy};
+          "SETTER_MAX_TRAVEL_MM and SETTER_XY_TOLERANCE_MM, SETTER_SEARCH_FEED_MM_MIN "
+          "(or SETTER_MAX_FEED_MM_MIN) within the Z speed limit, and a valid SETTER_REFERENCE_TOOL."));
+    const auto clearance = ini.text("COFFEECNC", "SETTER_CLEARANCE_MM");
+    const auto latch = ini.text("COFFEECNC", "SETTER_LATCH_FEED_MM_MIN");
+    const auto backoff = ini.text("COFFEECNC", "SETTER_LATCH_BACKOFF_MM");
+    const auto clearance_mm = clearance ? number(*clearance) : std::optional{0.0};
+    const auto latch_feed = latch ? number(*latch) : std::optional{0.0};
+    const auto latch_backoff = backoff ? number(*backoff) : std::optional{latch ? 1.0 : 0.0};
+    if (!clearance_mm || (clearance && (*clearance_mm <= 0 || *clearance_mm >= *distance)) ||
+        !latch_feed || (latch && (*latch_feed <= 0 || *latch_feed > *speed)) || !latch_backoff ||
+        (backoff && !latch) ||
+        (latch && (*latch_backoff <= 0 || *latch_backoff >= *distance ||
+                   2 * *latch_backoff / *latch_feed * 60 > 180)))
+      return std::unexpected("Invalid setter clearance or latch settings. The search must "
+                             "reach below the reference latch from clearance.");
+    setter = FixedSetterLimits{*distance,     *speed,      static_cast<int>(*tool), *xy,
+                               *clearance_mm, *latch_feed, *latch_backoff};
   }
 
   const auto path = [&](const char* section, const char* key) -> std::string {

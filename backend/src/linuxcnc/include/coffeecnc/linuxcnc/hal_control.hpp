@@ -29,6 +29,8 @@ struct HalInputs {
   std::optional<bool> probe_input;
   bool watchdog_ok{};
   bool jog_stop_high{};
+  bool probe_setter_selected{};
+  bool probe_motion_permitted{};
 };
 
 // The same for the other threads.
@@ -39,6 +41,8 @@ struct HalView {
   std::optional<bool> probe_input;
   bool watchdog_ok{};
   bool jog_stop_high{};
+  bool probe_setter_selected{};
+  bool probe_motion_permitted{};
 };
 
 // What crosses between the control thread, which alone touches the HAL component, and every
@@ -81,6 +85,14 @@ public:
   };
   [[nodiscard]] auto jog_stop_history() const -> JogStopHistory;
 
+  // The worker must renew from a live status loop. Expiry holds the permit low while active,
+  // and a late renewal cannot restart it. Finish only after confirming motion has stopped.
+  [[nodiscard]] auto begin_probe_cycle(Clock::time_point now) -> bool;
+  [[nodiscard]] auto renew_probe_cycle(Clock::time_point now) -> bool;
+  void stop_probe_cycle();
+  void finish_probe_cycle();
+  [[nodiscard]] auto probe_cycle_outputs(Clock::time_point now) const -> ProbeCycleOutputs;
+
 private:
   mutable std::mutex mutex_;
   HalInputs inputs_;
@@ -92,6 +104,7 @@ private:
   bool answered_{};
   std::optional<ToolChangeRequest> confirmed_;
   JogStopHistory history_;
+  std::optional<Clock::time_point> probe_deadline_;
 };
 
 // The control thread's use of the HAL component, as the runtime sees it. Every member is called

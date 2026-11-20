@@ -112,7 +112,7 @@ function editOffset(wcs: number): void {
           <template v-if="loaded !== 0"><strong class="mono">T{{ loaded }}</strong> in spindle · Length <span class="mono">{{ formatLength(applied, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }} · {{ compensation }}</template>
           <template v-else>No tool in spindle</template>
         </span>
-        <button v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
+        <button v-if="!panel.hello?.fixed_setter" v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
         <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" />
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
           <AppIcon name="plus" /><span>Add tool</span>

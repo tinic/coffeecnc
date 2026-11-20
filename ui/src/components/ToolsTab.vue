@@ -141,7 +141,7 @@ function editOffset(wcs: number): void {
             <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
               <td class="num mono">
                 <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">T{{ tool.number }}</button>
-                <span v-if="touchedOff(tool.number)" class="touched" title="Touched off against the current reference" aria-label="Touched off">✓</span>
+                <span v-if="touchedOff(tool.number)" class="touched" title="Touched off against the current reference" aria-label="Touched off"><AppIcon name="check" /></span>
               </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
@@ -239,7 +239,8 @@ function editOffset(wcs: number): void {
 .setter-band.busy { color: var(--accent); }
 .setter-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
 .setter-band p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.touched { margin-left: 6px; color: var(--ok, #15803d); font-size: 20px; font-weight: 700; line-height: 1; vertical-align: middle; }
+.touched { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-left: 8px; border-radius: 50%; background: var(--ok, #15803d); color: #fff; vertical-align: middle; }
+.touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
 .tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 480px;

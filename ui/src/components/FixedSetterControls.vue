@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
     <p v-if="pending?.action === 'status'" role="status">Reading setter state…</p>
     <p v-else-if="state?.calibration">
       Setter at machine X {{ length(state.calibration[0]) }} · Y {{ length(state.calibration[1]) }}.
-      Jog above the setter before measuring.
+      Jog above the setter within {{ length(limits.xy_tolerance_mm) }} of that center before measuring.
     </p>
     <p v-else>Calibrate with T{{ limits.reference_tool }}. Touch it to a known work Z surface or gauge block and capture the reference. Keep it clamped while jogging above the setter.</p>
     <p v-if="state?.reference_captured">Work reference captured. Jog above the setter before starting calibration.</p>

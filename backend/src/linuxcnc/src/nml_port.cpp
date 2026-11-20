@@ -1224,12 +1224,22 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt("The retract position is outside safe travel for this contact.");
   if (!block(machine_move(retract, feed_word), move_timeout, false, true))
     return interrupt("The fixed setter retract did not complete.");
+  // The stylus or plunger can spring back after the retract move ends (the ruby probe did on
+  // the mill after an edge probe): give it the same 2 s as the latch back-off.
+  const auto released_at_retract = [&](const EMC_STAT& sample, const HalView& pins) {
+    return !*pins.probe_input && sample.motion.traj.probeval == 0 &&
+           near(coordinate(machine_position(sample.motion.traj.actualPosition)), retract);
+  };
+  static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
+    const auto* s = live_cycle();
+    const auto pins = interlock();
+    return s == nullptr || !pins || released_at_retract(*s, *pins);
+  }));
   raw = live_cycle();
   const auto after_retract = interlock();
-  if (raw == nullptr || !after_retract || *after_retract->probe_input ||
-      raw->motion.traj.probeval != 0 ||
-      !near(coordinate(machine_position(raw->motion.traj.actualPosition)), retract))
-    return interrupt("The fixed setter did not release at the retract position.");
+  if (raw == nullptr || !after_retract || !released_at_retract(*raw, *after_retract))
+    return interrupt(material ? "The probe did not release at the retract position."
+                              : "The fixed setter did not release at the retract position.");
 
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
                          before.programmed_feed / program_scale),

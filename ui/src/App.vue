@@ -30,6 +30,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
       <main class="middle">
         <ManualTab v-if="panel.tab === 'manual'" />
         <ProgramTab v-else-if="panel.tab === 'program'" />
+        <ManualTab v-else-if="panel.tab === 'probe'" touch-off />
         <ToolsTab v-else />
         <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" :class="{ 'with-status-row': panel.tab === 'program' }" />
         <div id="dialogs"></div>

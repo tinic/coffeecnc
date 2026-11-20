@@ -113,7 +113,7 @@ watch([axes, touchBlock], () => {
         <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
       </div>
     </div>
-    <div v-if="panel.tab === 'manual'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
+    <div v-if="panel.tab === 'manual' || panel.tab === 'probe'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
       <span class="tool-heading">{{ !live ? 'Last reported tool' : tool === 0 ? 'No tool loaded' : 'Active tool' }}</span>
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
       <span class="tool-length">Length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>

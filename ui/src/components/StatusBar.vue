@@ -50,7 +50,12 @@ watch([pendingPower, (): Status | null => panel.status, (): Hello | null => pane
     }
   }
 }, { flush: 'sync' })
-const tabs: readonly [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
+const tabs = computed(() => {
+  const entries: [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
+  if (panel.hello?.fixed_setter?.material_travel_mm && panel.hello.touch_probe_tool)
+    entries.push(['probe', 'Touch off'])
+  return entries
+})
 const linkLabel = computed(() => {
   switch (panel.link) {
     case 'live': return panel.simulated ? '3-axis mill · Simulator' : panel.hello?.machine_name ?? 'Connected'
@@ -74,6 +79,7 @@ const state = computed(() => {
 const title = computed(() => {
   if (panel.tab === 'manual') return 'Manual setup'
   if (panel.tab === 'tools') return 'Tools & offsets'
+  if (panel.tab === 'probe') return 'Material touch-off'
   const file = status.value?.program.file
   if (!file) return 'No program loaded'
   const name = baseName(file).replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
@@ -82,6 +88,7 @@ const title = computed(() => {
 const subtitle = computed(() => {
   if (panel.tab === 'manual') return 'Jog · Home · Touch off · MDI'
   if (panel.tab === 'tools') return 'Tool table and work coordinate systems'
+  if (panel.tab === 'probe') return 'Set the active work origin with the touch probe'
   const s = status.value
   return s?.program.file ? `${baseName(s.program.file)}   /   ${wcsName(s.offsets.wcs)}   /   Program in ${s.program_units}` : 'Open an NC program to inspect its toolpath'
 })

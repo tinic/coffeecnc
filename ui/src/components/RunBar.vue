@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
-// Always visible, always in the same place: the controls of a running program, the overrides and
-// what the machine reports about feed, spindle and coolant.
+// Keep Stop available in every workspace. Touch-off needs no program setup controls.
 import { computed } from 'vue'
 
 import { allHomed, homingActive, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
@@ -12,6 +11,7 @@ import AppIcon from './AppIcon.vue'
 import OverrideControl from './OverrideControl.vue'
 
 const status = reported
+const touchOff = computed(() => panel.tab === 'probe')
 const paused = computed(() => status.value?.wait.kind === 'paused')
 const toolChange = computed(() => status.value?.wait.kind === 'tool_change')
 const programRunning = computed(() => status.value?.interp !== 'idle' && status.value?.mode === 'auto')
@@ -87,11 +87,11 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 </script>
 
 <template>
-  <footer class="runbar">
-    <OverrideControl label="Feed override" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
-    <OverrideControl label="Spindle override" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
+  <footer class="runbar" :class="{ 'touch-off': touchOff }">
+    <OverrideControl v-if="!touchOff" label="Feed override" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
+    <OverrideControl v-if="!touchOff" label="Spindle override" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
-      <details v-popover class="more">
+      <details v-if="!touchOff" v-popover class="more">
         <summary class="more-button" aria-label="More execution controls">···</summary>
         <div class="popover">
           <h3>Execution controls</h3>
@@ -104,13 +104,14 @@ function option(which: 'optional_stop' | 'block_delete'): void {
         </div>
       </details>
       <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
-      <button v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null" @click="send({ type: primary.type })"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
+      <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null" @click="send({ type: primary.type })"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
   </footer>
 </template>
 
 <style scoped>
 .runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 18px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
+.runbar.touch-off { grid-template-columns: 1fr; justify-items: end; }
 .command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
 .stop-button { color: var(--stop); min-width: 88px; }.main-action { min-width: 156px; }
 .more { position: relative; }.more-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; color: var(--text-dim); }

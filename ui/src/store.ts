@@ -25,8 +25,8 @@ import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { wcsName } from './units'
 
-export type Tab = 'manual' | 'program' | 'tools'
-export const tabs: readonly Tab[] = ['manual', 'program', 'tools']
+export type Tab = 'manual' | 'program' | 'tools' | 'probe'
+export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
 export type ProgramLayout = 'split' | 'text' | 'path'
 
 /** Status older than this is not live, whatever its `link` says. */

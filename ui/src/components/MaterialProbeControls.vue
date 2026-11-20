@@ -59,7 +59,6 @@ onBeforeUnmount(() => {
 <template>
   <section class="material-probe" aria-label="Material probe">
     <div class="probe-actions">
-      <span class="label">Probe</span>
       <button
         v-for="[id, title] in directions" :key="id" type="button" class="btn"
         :title="id === 'z_top' ? 'Probe down to find the top surface' : `Move in ${title} to find an edge`"
@@ -73,11 +72,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.material-probe { border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
-.probe-actions { display: grid; grid-template-columns: max-content repeat(5, minmax(0, 1fr)); align-items: center; gap: 6px; }
-.probe-actions .label { margin-inline-end: 4px; }
-.probe-actions button { min-height: 44px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
-.probe-result { height: 32px; line-height: 16px; margin: 5px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.material-probe { min-width: 0; }
+.probe-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
+.probe-result { height: 32px; line-height: 16px; margin: 8px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .probe-result.blocked { color: var(--stop); }
 .probe-result.done { color: var(--go); }
 </style>

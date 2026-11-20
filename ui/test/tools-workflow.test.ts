@@ -48,6 +48,21 @@ afterEach(() => {
 function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body }) }
 
 describe('tool table workflow', () => {
+  it('sorts a new tool snapshot by tool number without rearranging the source', async () => {
+    const table = panel.toolTable
+    if (table === null) throw new Error('Missing tool table')
+    const highTool = { number: 99, pocket: 1, diameter: 3, length: 20, comment: 'Touch probe' }
+    const reference = { number: 98, pocket: 99, diameter: 6.35, length: 30, comment: 'Reference tool' }
+    panel.toolTable = { ...table, tools: [...table.tools, highTool] }
+    mountTools()
+
+    panel.toolTable = { ...table, revision: 2, tools: [...table.tools, highTool, reference] }
+    await nextTick()
+
+    const numberCells = getWrapper().findAll('.tool-row td:first-child')
+    expect(numberCells.map((cell) => cell.text())).toEqual(['T1', 'T2', 'T98', 'T99'])
+    expect(panel.toolTable.tools.map((tool) => tool.number)).toEqual([1, 2, 99, 98])
+  })
   it('requires a separate confirmation before loading and applying a tool length', async () => {
     mountTools()
     await getWrapper().get('[aria-label="Load tool 2"]').trigger('click')

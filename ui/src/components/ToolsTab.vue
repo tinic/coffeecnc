@@ -17,7 +17,9 @@ import WorkOffsetDialog from './WorkOffsetDialog.vue'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
-const tools = computed(() => panel.toolTable?.tools.filter((tool) => tool.number > 0) ?? [])
+const tools = computed(() => panel.toolTable?.tools
+  .filter((tool) => tool.number > 0)
+  .sort((a, b) => a.number - b.number) ?? [])
 const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))

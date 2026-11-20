@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, FixedSetterLimits, SetterState, Vec3 } from '../protocol'
-import { formatLength } from '../units'
 
 const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
@@ -14,8 +13,6 @@ const status = computed(() => panel.status)
 const tool = computed(() => status.value?.tool.in_spindle ?? 0)
 const teaching = computed(() => tool.value === props.limits.reference_tool)
 const running = computed(() => pending.value?.action === 'touch_off')
-const unit = computed(() => panel.unit === 'inch' ? 'in' : 'mm')
-const length = (mm: number): string => `${formatLength(mm, panel.unit)} ${unit.value}`
 const position = computed((): Vec3 | null => {
   const [x, y, z] = ['x', 'y', 'z'].map((letter) => status.value?.axes.find((axis) => axis.axis === letter)?.machine)
   return x !== undefined && y !== undefined && z !== undefined && [x, y, z].every(Number.isFinite)
@@ -41,8 +38,8 @@ const hint = computed(() => {
 const summary = computed(() => {
   const result = state.value?.measurement
   if (result?.tool !== tool.value) return ''
-  const headline = result.calibration ? 'Setter taught' : `T${String(result.tool)} length ${length(result.value)}`
-  return result.stopping_distance === undefined ? headline : `${headline} · Z after contact ${length(result.stopping_distance)}`
+  // The length itself is in the tool table: only confirm what happened.
+  return result.calibration ? 'Setter taught' : `T${String(result.tool)} measured`
 })
 
 function request(command: Request): void {

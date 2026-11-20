@@ -1181,23 +1181,27 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   auto& calibration = impl_->setter_calibration;
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
-  // Marked: touched off against this calibration and still holding the length it wrote.
-  const auto marks = [&]() -> std::vector<int> {
-    const auto table = impl_->read_tool_table();
-    return calibration && table ? still_touched_off(*table, calibration->measured)
-                                : std::vector<int>{};
+  const auto marks = [&](std::string_view table) -> std::vector<int> {
+    return calibration ? still_touched_off(table, calibration->measured) : std::vector<int>{};
   };
-  const auto remember = [&]() {
-    const auto table = impl_->read_tool_table();
-    const auto reference = table ? tool_z(*table, limits->reference_tool) : std::nullopt;
-    if (calibration && reference)
-      save_touched(impl_->config.tool_table, {*reference, calibration->measured});
-  };
-  const auto state = [&]() -> SetterState {
-    return {calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt, marks()};
-  };
+  const auto table = impl_->read_tool_table();
+  auto current_marks = table ? marks(*table) : std::vector<int>{};
+  // The reference's table length is part of the taught plane. Losing its mark
+  // invalidates every tool measured against that plane, including saved marks.
+  if (calibration && table && !std::ranges::contains(current_marks, limits->reference_tool)) {
+    calibration.reset();
+    current_marks.clear();
+    std::error_code error;
+    std::filesystem::remove(touched_path(impl_->config.tool_table), error);
+  }
   if (request.action == SetterAction::status)
-    return state();
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks)};
+
+  const auto remember = [&]() {
+    save_touched(impl_->config.tool_table,
+                 {calibration->measured.at(limits->reference_tool), calibration->measured});
+  };
 
   const auto* raw = impl_->stat();
   if (raw == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
@@ -1242,7 +1246,6 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected(std::format("Teach the setter with T{} first.", limits->reference_tool));
 
   const double machine_scale = impl_->config.millimetres_per_unit;
-  const auto table = impl_->read_tool_table();
   const auto previous = table ? tool_z(*table, tool) : std::nullopt;
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
@@ -1278,7 +1281,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
         restored_touched_off(*table, tool, load_touched(impl_->config.tool_table))};
     remember();
-    return SetterState{calibration->plane, measurement, marks()};
+    return SetterState{calibration->plane, measurement, marks(*table)};
   }
   auto stopped_at = move.approach.value_or(request.start);
   if (move.retract_z)
@@ -1341,7 +1344,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("Length saved. Could not verify the applied compensation.");
   calibration->measured[tool] = *saved;
   remember();
-  return SetterState{calibration->plane, measurement, marks()};
+  return SetterState{calibration->plane, measurement, marks(*changed)};
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {

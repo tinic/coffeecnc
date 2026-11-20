@@ -237,7 +237,7 @@ function editOffset(wcs: number): void {
 
 <style scoped>
 /* The setter's status line: the same band as the system messages, fixed height. */
-.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 12px 0 14px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
+.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
 .setter-band.blocked { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); border-left-width: 5px; }
 .setter-band.done { color: var(--ok, #15803d); }
 .setter-band.busy { color: var(--accent); }
@@ -280,7 +280,7 @@ function editOffset(wcs: number): void {
 .table .heading { gap: 8px; }
 .table .heading h2 { display: none; }
 .table table { table-layout: fixed; }
-.tool-column { width: 52px; }.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
+.tool-column { width: 52px; }th.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }
 .tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
 .tool-row.selected td:first-child { box-shadow: inset 3px 0 var(--accent); }

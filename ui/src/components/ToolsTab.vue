@@ -132,6 +132,7 @@ function editOffset(wcs: number): void {
           <thead>
             <tr>
               <th class="num tool-column">Tool</th>
+              <th v-tooltip="'Touched off against the current reference'" class="touched-column">Set</th>
               <th v-tooltip="'LinuxCNC tool-length offset, not physical tool length'" class="num dimension-column">Length</th>
               <th class="num dimension-column">Diameter</th>
               <th>Description</th>
@@ -142,7 +143,9 @@ function editOffset(wcs: number): void {
             <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
               <td class="num mono">
                 <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">{{ toolLabel(tool.number) }}</button>
-                <span v-if="touchedOff(tool.number)" class="touched" title="Touched off against the current reference" aria-label="Touched off"><AppIcon name="check" /></span>
+              </td>
+              <td class="touched-cell">
+                <span v-if="touchedOff(tool.number)" class="touched" aria-label="Touched off"><AppIcon name="check" /></span>
               </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
@@ -240,7 +243,7 @@ function editOffset(wcs: number): void {
 .setter-band.busy { color: var(--accent); }
 .setter-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
 .setter-band p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.touched { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-left: 8px; border-radius: 50%; background: var(--ok, #15803d); color: #fff; vertical-align: middle; }
+.touched { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ok, #15803d); color: #fff; vertical-align: middle; }
 .touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
 .tools {
   display: grid;
@@ -277,7 +280,7 @@ function editOffset(wcs: number): void {
 .table .heading { gap: 8px; }
 .table .heading h2 { display: none; }
 .table table { table-layout: fixed; }
-.tool-column { width: 52px; }.dimension-column { width: 92px; }.load-column { width: 144px; }
+.tool-column { width: 52px; }.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }
 .tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
 .tool-row.selected td:first-child { box-shadow: inset 3px 0 var(--accent); }

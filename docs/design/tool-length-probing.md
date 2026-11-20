@@ -32,7 +32,7 @@ Set `FIXED_SETTER = yes` under `[COFFEECNC]` after commissioning. Supply `SETTER
 
 ## Material touch-off
 
-With `TOUCH_PROBE_TOOL` and a slow latch configured, open the **Touch off** tab. Select the work coordinate system, jog the ruby ball near the surface, and choose **Z top**, **X−**, **X+**, **Y−**, or **Y+**. The labels show travel direction in the active work coordinate system. Z top requires a touched-off probe with its length compensation applied. Edge probing uses half the tool table diameter to locate the edge. The cycle returns to its start and sets zero on the measured axis of the active work coordinate system. A missed contact or excessive latch spread returns to the start and reports the failure.
+With `TOUCH_PROBE_TOOL` and a slow latch configured, open the **Touch off** tab. Select the work coordinate system, jog the ruby ball near the surface, and choose **Z top**, **X−**, **X+**, **Y−**, or **Y+**. The diagram identifies the workpiece edges and the probe's approach to each. For example, X− is the left edge and the probe moves toward it in +X in the active work coordinate system. Z top requires a touched-off probe with its length compensation applied. Edge probing uses half the tool table diameter to locate the edge. The cycle returns to its start and sets zero on the measured axis of the active work coordinate system. A missed contact or excessive latch spread returns to the start and reports the failure.
 
 `TOUCH_PROBE_MAX_TRAVEL_MM` defaults to 20 mm. The material cycle uses the same probe interlock and search and latch feeds as the tool setter, with the ruby input selected.
 

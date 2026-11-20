@@ -47,19 +47,26 @@ async function answer(result: Omit<CommandResult, 'id' | 'type'>): Promise<void>
   for (const listener of listeners) listener(command, { type: 'result', id: 1, ...result })
   await nextTick()
 }
-const directions: [string, ProbeDirection, 'X' | 'Y' | 'Z'][] = [
-  ['Z top', 'z_top', 'Z'], ['X−', 'x_minus', 'X'], ['X+', 'x_plus', 'X'],
-  ['Y−', 'y_minus', 'Y'], ['Y+', 'y_plus', 'Y'],
+const faces: [string, ProbeDirection, 'X' | 'Y' | 'Z', string, string][] = [
+  ['Z top', 'z_top', 'Z', 'top surface', '−Z'],
+  ['X−', 'x_plus', 'X', 'left edge', '+X'],
+  ['X+', 'x_minus', 'X', 'right edge', '−X'],
+  ['Y−', 'y_plus', 'Y', 'front edge', '+Y'],
+  ['Y+', 'y_minus', 'Y', 'back edge', '−Y'],
 ]
 
 describe('material probe workflow', () => {
-  it.each(directions)('sends one request for %s and confirms the active WCS', async (label, direction, axis) => {
+  it.each(faces)('approaches the %s face and confirms the active WCS', async (label, direction, axis, face, approach) => {
     const fixture = await probe(label)
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'material', direction,
       tool: 99, x: 0, y: 0, z: 0 })
-    expect(fixture.get('.setter-band.busy p').text()).toContain('Probing')
+    const button = fixture.findAll('button').find((entry) => entry.text() === label)
+    expect(button?.attributes('aria-description')).toContain(`Travel ${approach}`)
+    expect(fixture.get('.setter-band.busy p').text()).toBe(`Probing ${face}…`)
+    expect(fixture.get('.workpiece .part').classes()).toContain(direction)
+    expect(fixture.findAll('.workpiece button')).toHaveLength(0)
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, material: { wcs: 2, axis } } })
-    expect(fixture.get('.setter-band.done p').text()).toBe(`G55 ${axis}0 set at ${axis === 'Z' ? 'top' : 'edge'}.`)
+    expect(fixture.get('.setter-band.done p').text()).toBe(`G55 ${axis}0 set at the ${axis === 'Z' ? face : `${label} ${face}`}.`)
     expect(fixture.find('[role="dialog"]').exists()).toBe(false)
   })
 

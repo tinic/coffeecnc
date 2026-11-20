@@ -5,14 +5,21 @@ import type { CommandBody, ProbeDirection } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { wcsName } from '../units'
 import SetterStatusBand from './SetterStatusBand.vue'
+import WorkpieceProbeDiagram from './WorkpieceProbeDiagram.vue'
+import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' }>
-const directions = [
-  ['z_top', 'Z top'], ['x_minus', 'X−'], ['x_plus', 'X+'], ['y_minus', 'Y−'], ['y_plus', 'Y+'],
+// The button names the part face. The protocol still specifies the tool's travel.
+const surfaces = [
+  { label: 'Z top', travel: 'z_top', surface: 'top surface', approach: '−Z' },
+  { label: 'X−', travel: 'x_plus', surface: 'left edge', approach: '+X' },
+  { label: 'X+', travel: 'x_minus', surface: 'right edge', approach: '−X' },
+  { label: 'Y−', travel: 'y_plus', surface: 'front edge', approach: '+Y' },
+  { label: 'Y+', travel: 'y_minus', surface: 'back edge', approach: '−Y' },
 ] as const
 const pending = shallowRef<Request | null>(null)
-const line = shallowRef<SetterStatusLine>({ text: 'Jog near the surface, then choose a probe direction.', level: 'info' })
+const line = shallowRef<SetterStatusLine>({ text: 'Jog outside the part, then choose the face to probe.', level: 'info' })
 let statusRequest: CommandBody | null = null
 
 function probe(direction: ProbeDirection): void {
@@ -35,7 +42,8 @@ function probe(direction: ProbeDirection): void {
   }
   const request: Request = { type: 'fixed_setter', action: 'material', direction, tool: props.tool, x, y, z }
   pending.value = request
-  line.value = { text: `Probing ${directions.find(([id]) => id === direction)?.[1] ?? ''}…`, level: 'busy' }
+  const surface = surfaces.find((entry) => entry.travel === direction)
+  line.value = { text: `Probing ${surface?.surface ?? 'surface'}…`, level: 'busy' }
   send(request)
 }
 
@@ -55,7 +63,9 @@ const removeListener = onResult((command, result) => {
     return
   }
   if (result.setter) setterState.value = result.setter
-  line.value = { text: `${wcsName(material.wcs)} ${material.axis}0 set at ${direction === 'z_top' ? 'top' : 'edge'}.`, level: 'done' }
+  const surface = surfaces.find((entry) => entry.travel === direction)
+  const face = direction === 'z_top' ? 'the top surface' : `the ${surface?.label ?? ''} ${surface?.surface ?? 'edge'}`
+  line.value = { text: `${wcsName(material.wcs)} ${material.axis}0 set at ${face}.`, level: 'done' }
 })
 watch([
   (): unknown => panel.hello, (): string => panel.link, (): string | undefined => panel.status?.machine,
@@ -76,21 +86,32 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="material-probe" aria-label="Material probe">
-    <div class="probe-actions">
-      <button
-        v-for="[id, title] in directions" :key="id" type="button" class="btn"
-        :title="id === 'z_top' ? 'Probe down to find the top surface' : `Move in ${title} to find an edge`"
-        @click="probe(id)"
-      >
-        {{ title }}
-      </button>
+    <div class="probe-layout">
+      <div class="probe-actions">
+        <button
+          v-for="face in surfaces" :key="face.travel"
+          v-tooltip="`Probe the ${face.surface}. Travel ${face.approach}.`"
+          type="button" class="btn" :class="{ on: pending?.direction === face.travel }"
+          @click="probe(face.travel)"
+        >
+          {{ face.label }}
+        </button>
+      </div>
+      <WorkpieceProbeDiagram :travel="pending?.direction ?? null" />
     </div>
     <SetterStatusBand :line="line" />
   </section>
 </template>
 
 <style scoped>
-.material-probe { min-width: 0; }
-.probe-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.material-probe { min-width: 0; container-type: inline-size; }
+.probe-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(186px, 0.82fr); align-items: center; gap: 12px; }
+.probe-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.probe-actions button:first-child { grid-column: 1 / -1; }
 .probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
+@container (max-width: 390px) {
+  .probe-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .probe-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .probe-actions button:first-child { grid-column: auto; }
+}
 </style>

@@ -1435,7 +1435,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         return false;
       const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
       for (std::size_t i = 0; i < expected.size(); ++i)
-        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.002)
+        // 0.01 mm like the latch spread: Z comes from an encoder whose reading moves by more
+        // than 0.002 mm at rest, which failed a correct Z top on the mill.
+        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.01)
           return false;
       return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
              s.tool_offset == before.tool_offset;

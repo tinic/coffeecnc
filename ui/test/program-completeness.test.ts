@@ -3,6 +3,7 @@ import { shallowMount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import FileBrowser from '../src/components/FileBrowser.vue'
 import ProgramTab from '../src/components/ProgramTab.vue'
+import SetterStatusBand from '../src/components/SetterStatusBand.vue'
 import NcText from '../src/components/NcText.vue'
 import { panel } from '../src/machine'
 import { SimMachine } from '../src/sim/machine'
@@ -63,7 +64,7 @@ describe('partial machine snapshots', () => {
 })
 
 describe('program execution context', () => {
-  it.each(['estop', 'off'] as const)('shows %s before an old pause or line counter', (machine) => {
+  it.each(['estop', 'off'] as const)('leaves %s to the top band and withholds stale pause and line data', (machine) => {
     if (panel.status === null || panel.program === null) throw new Error('Missing fixture')
     panel.status.machine = machine
     panel.status.interp = 'idle'; panel.status.wait = { kind: 'paused' }
@@ -71,9 +72,7 @@ describe('program execution context', () => {
     panel.program.lines = ['G21', 'G90', 'G0 X0', 'M2']; panel.program.truncated = false
     wrapper = shallowMount(ProgramTab)
     const footer = wrapper.get('.status-row').text()
-    expect(footer).toContain(machine === 'estop' ? 'E-stop active' : 'Machine off')
-    expect(footer).toContain('4 lines')
-    expect(footer).not.toMatch(/idle|paused|Line 7/)
+    expect(footer).toBe('4 lines')
     expect(wrapper.getComponent(NcText).props()).toMatchObject({ currentLine: 0, motionLine: 0 })
   })
 
@@ -95,12 +94,12 @@ describe('program execution context', () => {
     panel.status.program.current_line = 2; panel.status.program.motion_line = 1
     panel.program.truncated = false
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.status-row').text()).toContain('Program paused')
+    expect(wrapper.get('.status-row').text()).not.toContain('Program paused')
     expect(wrapper.get('.status-row').text()).toContain('Line 2 / 2')
     expect(wrapper.getComponent(NcText).props()).toMatchObject({ currentLine: 2, motionLine: 1 })
     panel.status.mode = 'mdi'; panel.status.interp = 'reading'; panel.status.wait = { kind: 'none' }
     await nextTick()
-    expect(wrapper.get('.status-row').text()).toContain('MDI command running')
+    expect(wrapper.get('.status-row').text()).not.toContain('MDI command running')
     expect(wrapper.get('.status-row').text()).not.toContain('Line ')
     expect(wrapper.getComponent(NcText).props()).toMatchObject({ currentLine: 0, motionLine: 0 })
   })
@@ -111,7 +110,7 @@ describe('program execution context', () => {
     wrapper = shallowMount(ProgramTab)
     panel.link = link
     await nextTick()
-    expect(wrapper.get('.status-row').text()).toContain('Status unavailable')
+    expect(wrapper.get('.status-row').text()).not.toContain('Status unavailable')
     expect(wrapper.get('.status-row').text()).not.toContain('Line ')
     const text = wrapper.findComponent(NcText)
     if (text.exists()) expect(text.props()).toMatchObject({ currentLine: 0, motionLine: 0 })
@@ -144,7 +143,7 @@ describe('program execution context', () => {
     if (axis === undefined) throw new Error('Missing axis')
     axis.homing = true
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.status-row').text()).toContain('Homing in progress')
+    expect(wrapper.get('.status-row').text()).not.toMatch(/Homing in progress|idle/)
     expect(wrapper.getComponent(NcText).props()).toMatchObject({ currentLine: 0, motionLine: 0 })
     axis.homing = false; panel.status.motion.in_position = false
     await nextTick()
@@ -159,7 +158,7 @@ describe('preview diagnostics', () => {
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'unavailable',
       error: { line: 0, text: 'The preview helper is not installed.' }, segments: [], bounds: null }
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.failure').text()).toBe('Preview unavailable: The preview helper is not installed.')
+    expect(wrapper.getComponent(SetterStatusBand).props('line')).toEqual({ text: 'The preview helper is not installed.', level: 'blocked' })
     expect(wrapper.find('.failure button').exists()).toBe(false)
     expect(wrapper.getComponent(NcText).props('errorLine')).toBe(0)
   })

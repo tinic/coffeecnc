@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
+import { homingMessage } from '../machine-block'
 import type { CommandBody, ProbeDirection } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { wcsName } from '../units'
@@ -19,18 +20,35 @@ const surfaces = [
   { label: 'Y+', travel: 'y_minus', surface: 'back edge', approach: '−Y' },
 ] as const
 const pending = shallowRef<Request | null>(null)
-const line = shallowRef<SetterStatusLine>({ text: 'Jog outside the part, then choose the face to probe.', level: 'info' })
+const hint: SetterStatusLine = { text: 'Jog outside the part, then choose the face to probe.', level: 'info' }
+const line = shallowRef(hint)
+const toolBlock = computed(() => panel.link === 'live' && panel.status !== null &&
+  (panel.status.tool.in_spindle !== props.tool || panel.status.wait.kind === 'tool_change')
+  ? `Load T${String(props.tool)} to probe material.` : null)
+const displayLine = computed((): SetterStatusLine => line.value === hint && toolBlock.value !== null
+  ? { text: toolBlock.value, level: 'blocked' } : line.value)
+const machineReason = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
+let lastMachineReason: string | null = null
+watch(machineReason, () => {
+  if (lastMachineReason !== null && line.value.text === lastMachineReason) line.value = hint
+  lastMachineReason = null
+})
 let statusRequest: CommandBody | null = null
+
+watch(toolBlock, () => {
+  if (line.value.level === 'blocked' && line.value.text.startsWith('Load T')) line.value = hint
+})
 
 function probe(direction: ProbeDirection): void {
   if (pending.value) return
   const status = panel.status
-  const blocked = manualBlock.value ?? (homingActive.value ? 'Wait for homing to finish.' : null)
+  const blocked = machineReason.value
+  lastMachineReason = blocked
   const [x, y, z] = ['x', 'y', 'z'].map((axis) => status?.axes.find((entry) => entry.axis === axis)?.machine)
   const rpm = status?.spindle.actual_rpm
   let reason = blocked
   if (reason === null && (status?.tool.in_spindle !== props.tool || status.wait.kind === 'tool_change'))
-    reason = `Load T${String(props.tool)} to probe material.`
+    reason = toolBlock.value ?? `Load T${String(props.tool)} to probe material.`
   if (reason === null && (rpm === null || rpm === undefined || Math.abs(rpm) >= 1 || status?.spindle.direction !== 'stopped'))
     reason = 'Wait for the spindle to stop.'
   if (reason === null && !status?.motion.in_position) reason = 'Wait for the axes to stop.'
@@ -99,7 +117,7 @@ onBeforeUnmount(() => {
       </div>
       <WorkpieceProbeDiagram :travel="pending?.direction ?? null" />
     </div>
-    <SetterStatusBand :line="line" />
+    <SetterStatusBand :line="displayLine" />
   </section>
 </template>
 

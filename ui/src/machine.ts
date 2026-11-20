@@ -5,6 +5,7 @@ import { computed, watch, type ComputedRef } from 'vue'
 
 import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
+import { connectionBlock, machineBlock } from './machine-block'
 import { requiresHoming } from './machine-capabilities'
 import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
@@ -71,48 +72,12 @@ export function findTool(number: number): Tool | null {
 }
 
 /** Why nothing can be commanded at all, or null. */
-export const linkBlock: ComputedRef<string | null> = computed(() => {
-  switch (panel.link) {
-    case 'live':
-      return null
-    case 'connecting':
-      return 'No status from the machine yet'
-    case 'silent':
-      return 'No updates from the machine'
-    case 'stale':
-      return 'LinuxCNC has stopped updating its status'
-    case 'down':
-      return 'No connection to LinuxCNC'
-    case 'incompatible':
-      return 'Panel and backend protocol versions do not match'
-  }
-})
+export const linkBlock: ComputedRef<string | null> = computed(() => connectionBlock(panel.link))
 
 /** Why the machine cannot move under manual control, or null. Mirrors what the machine rejects. */
-export const manualBlock: ComputedRef<string | null> = computed(() => {
-  const status = panel.status
-  if (linkBlock.value !== null || status === null) {
-    return linkBlock.value ?? 'No status from the machine yet'
-  }
-  if (status.machine === 'estop') {
-    return 'Machine is in E-stop'
-  }
-  if (status.machine === 'off') {
-    return 'Machine is off'
-  }
-  if (status.interp !== 'idle') {
-    return status.mode === 'mdi' ? 'An MDI command is running' : 'A program is running'
-  }
-  return null
-})
+export const manualBlock: ComputedRef<string | null> = computed(() => machineBlock(panel))
 
 /** Why MDI, touch-off and coordinate system selection are unavailable, or null. */
-export const mdiBlock: ComputedRef<string | null> = computed(() => {
-  if (manualBlock.value !== null) {
-    return manualBlock.value
-  }
-  if (homingActive.value) {
-    return 'Homing is in progress'
-  }
-  return !homingRequired.value || allHomed.value ? null : 'Axes are not homed'
-})
+export const mdiBlock: ComputedRef<string | null> = computed(() =>
+  manualBlock.value ?? (!homingRequired.value || allHomed.value ? null : 'Axes are not homed'),
+)

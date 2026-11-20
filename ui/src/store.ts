@@ -305,8 +305,10 @@ export function createPanel(options: PanelOptions): Panel {
     }
     if (message.outcome !== 'accepted') {
       const reason = message.reason === '' ? outcomeWords(message.outcome) : message.reason
-      const localMaterialResult = command.type === 'fixed_setter' && command.action === 'material' && state.tab === 'probe'
-      log('error', reason, describeCommand(command), now(), !localMaterialResult)
+      const localSetterResult = command.type === 'fixed_setter' &&
+        (command.action === 'material' && state.tab === 'probe' ||
+         command.action === 'touch_off' && state.tab === 'tools')
+      log('error', reason, describeCommand(command), now(), !localSetterResult)
     }
     for (const listener of resultListeners) {
       listener(command, message)

@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
+import { useCardFeedback } from '../card-feedback'
+import { machineBlock } from '../machine-block'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
 import { toolLabel } from '../units'
 import { setterState, setterStatus, touchedOff, type SetterStatusLine } from '../setter-state'
@@ -23,9 +25,10 @@ const position = computed((): Vec3 | null => {
   return x !== undefined && y !== undefined && z !== undefined && [x, y, z].every(Number.isFinite)
     ? [x, y, z] : null
 })
-const block = computed(() => {
+const machineReason = computed(() => machineBlock(panel))
+const localBlock = computed(() => {
+  if (machineReason.value !== null) return null
   if (mdiBlock.value !== null) return mdiBlock.value
-  if (homingActive.value) return 'Wait for homing to finish'
   if (position.value === null) return 'Waiting for the machine position'
   const s = status.value
   if (s?.wait.kind === 'tool_change' || tool.value <= 0) return 'Finish loading a tool'
@@ -40,6 +43,13 @@ const hint = computed(() => {
   if (!teaching.value) return 'Measures this tool at the setter.'
   return `Jog ${toolLabel(tool.value)} over the setter, then Touch off.`
 })
+const { line: feedback, allow } = useCardFeedback(
+  () => hint.value,
+  () => localBlock.value,
+  [machineReason, localBlock, tool, pending],
+)
+const error = shallowRef<string | null>(null)
+watch([machineReason, tool], () => { error.value = null })
 const summary = computed(() => {
   const result = state.value?.measurement
   if (result?.tool !== tool.value) return ''
@@ -49,8 +59,10 @@ const summary = computed(() => {
 
 const line = computed((): SetterStatusLine => {
   if (running.value) return { text: 'Touching off…', level: 'busy' }
+  if (feedback.value.level === 'blocked') return feedback.value
+  if (error.value !== null) return { text: error.value, level: 'blocked' }
   if (summary.value) return { text: summary.value, level: 'done' }
-  return block.value === null ? { text: hint.value, level: 'info' } : { text: block.value, level: 'blocked' }
+  return feedback.value
 })
 watchEffect(() => { setterStatus.value = line.value })
 
@@ -68,7 +80,9 @@ function refresh(): void {
 
 function touchOff(): void {
   const xyz = position.value
-  if (pending.value || block.value || xyz === null) return
+  error.value = null
+  const reason = machineReason.value ?? (pending.value ? 'Waiting for setter status' : localBlock.value)
+  if (!allow(reason) || xyz === null) return
   request({ type: 'fixed_setter', action: 'touch_off', tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
 }
 
@@ -78,7 +92,10 @@ const removeListener = onResult((command, result) => {
   pending.value = null
   if (result.outcome !== 'accepted') {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
-    if (motion) refresh()
+    if (motion) {
+      error.value = result.reason || 'The machine did not confirm the tool measurement.'
+      refresh()
+    }
     return
   }
   state.value = result.setter ?? null
@@ -95,7 +112,7 @@ onBeforeUnmount(() => {
   <div class="setter-controls">
     <div class="setter-action">
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
-      <button v-else class="btn primary" type="button" :disabled="!!pending || block !== null" @click="touchOff">Touch off</button>
+      <button v-else class="btn primary" type="button" :aria-disabled="!!pending || machineReason !== null || localBlock !== null" @click="touchOff">Touch off</button>
     </div>
   </div>
 </template>

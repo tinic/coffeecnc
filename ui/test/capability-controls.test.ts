@@ -11,14 +11,16 @@ import { hello, SimMachine } from '../src/sim/machine'
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const { defaultOperatorPreferences } = await import('../src/operator-settings')
+  const { machineBlock, connectionBlock } = await import('../src/machine-block')
   const { requiresHoming } = await import('../src/machine-capabilities')
   const panel = reactive({ preferences: defaultOperatorPreferences(), startupSpindleRpm: 0, hello: null, status: null, link: 'live', unit: 'mm', mdi: [], jogVelocity: 1500, jogIncrement: 1, tab: 'manual', notice: null, log: [] }) as unknown as typeof import('../src/machine').panel
   return { panel, send: vi.fn(), dismissNotice: vi.fn(), onResult: (): (() => void) => (): void => undefined,
     axes: computed(() => panel.status?.axes ?? []), reported: computed(() => panel.status),
     live: computed(() => panel.link === 'live'),
-    manualBlock: computed(() => panel.link !== 'live' ? 'Link unavailable' :
-      panel.status?.machine !== 'on' ? 'Machine unavailable' : panel.status.interp !== 'idle' ? 'Machine busy' : null),
-    mdiBlock: computed(() => null), linkBlock: computed(() => null),
+    manualBlock: computed(() => machineBlock(panel)),
+    mdiBlock: computed(() => machineBlock(panel) ?? (requiresHoming(panel.hello) &&
+      panel.status?.axes.some((axis) => !axis.homed) ? 'Axes are not homed' : null)),
+    linkBlock: computed(() => connectionBlock(panel.link)),
     allHomed: computed(() => panel.status?.axes.every((axis) => axis.homed) ?? false),
     homingActive: computed(() => panel.status?.axes.some((axis) => axis.homing) ?? false),
     homingRequired: computed(() => requiresHoming(panel.hello)),
@@ -63,6 +65,49 @@ describe('capability-aware controls', () => {
     wrapper = mount(ManualTab)
     expect(wrapper.findAll('.coolant button').map((b) => b.text())).toEqual(labels)
     expect(wrapper.find('.coolant').exists()).toBe(labels.length > 0)
+  })
+  it('shows power state once until a card action needs to explain it', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.machine = 'off'
+    panel.startupSpindleRpm = 1400
+    wrapper = mount(WorkspaceControls, { attachTo: document.body })
+    expect(wrapper.get('.message-band .machine-state').text()).toBe('Machine is off')
+    expect(wrapper.findAll('.setter-band p').map((band) => band.text())).toEqual([
+      'Axis limits: Z 750 mm/min', 'Enter a G-code command.', 'Set the speed before starting the spindle.',
+    ])
+    await wrapper.get('.jogbtn').trigger('click')
+    expect(wrapper.get('.jog .setter-band p').text()).toBe('Machine is off')
+    expect(wrapper.get('.mdi .setter-band p').text()).toBe('Enter a G-code command.')
+    await wrapper.get('input[aria-label="MDI command"]').setValue('G0 X1')
+    wrapper.get<HTMLButtonElement>('.mdi button[type="submit"]').element.click()
+    await nextTick()
+    expect(wrapper.get('.mdi .setter-band p').text()).toBe('Machine is off')
+    await wrapper.get('.utilities button:last-of-type').trigger('click')
+    expect(wrapper.get('.utilities .setter-band p').text()).toBe('Machine is off')
+    expect(send).not.toHaveBeenCalled()
+    panel.status.machine = 'on'
+    await nextTick()
+    expect(wrapper.find('.message-band .machine-state').exists()).toBe(false)
+    expect(wrapper.get('.mdi .setter-band p').text()).toBe('Axes are not homed')
+    expect(wrapper.get('.jog .setter-band p').text()).toBe('Axis limits: Z 750 mm/min')
+  })
+  it('keeps probe-specific guidance in the Touch off card', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.machine = 'off'
+    panel.status.tool.in_spindle = 1
+    panel.tab = 'probe'
+    panel.hello = { ...hello, touch_probe_tool: 99, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_travel_mm: 20,
+    } }
+    wrapper = mount(WorkspaceControls)
+    expect(wrapper.get('.machine-state').text()).toBe('Machine is off')
+    expect(wrapper.get('.probe-card .setter-band p').text()).toBe('Load T99 to probe material.')
+    expect(wrapper.get('.jog .setter-band p').text()).not.toContain('Load T99')
+    vi.mocked(send).mockClear()
+    await wrapper.get('.probe-actions button').trigger('click')
+    expect(wrapper.get('.probe-card .setter-band p').text()).toBe('Machine is off')
+    expect(wrapper.get('.jog .setter-band p').text()).not.toContain('Machine is off')
+    expect(send).not.toHaveBeenCalled()
   })
   it('shows reported active WCS offsets, converts units and preserves unknown values', async () => {
     if (!panel.status) throw new Error('Missing status')
@@ -244,6 +289,6 @@ describe('capability-aware controls', () => {
     panel.status?.axes.forEach((axis) => { axis.homing = true })
     await nextTick()
     expect(start().attributes('disabled')).toBeDefined()
-    expect(start().attributes('title')).toBe('Homing is in progress')
+    expect(start().attributes('title')).toBe('Homing in progress')
   })
 })

@@ -3,6 +3,7 @@ import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { theme, toggleTheme } from '../appearance'
+import { machineBlock } from '../machine-block'
 import { dismissNotice, live, onResult, panel, reported, send } from '../machine'
 import type { CommandBody, Hello, Status } from '../protocol'
 import { baseName, wcsName } from '../units'
@@ -66,16 +67,12 @@ const linkLabel = computed(() => {
     case 'incompatible': return 'Protocol mismatch'
   }
 })
-const state = computed(() => {
-  const s = status.value
-  if (!live.value) return { label: linkLabel.value, tone: 'stop' }
-  if (s?.machine === 'estop') return { label: 'E-stop active', tone: 'stop' }
-  if (s?.machine === 'off') return { label: 'Machine off', tone: 'warn' }
-  if (s?.wait.kind === 'tool_change') return { label: 'Tool change required', tone: 'warn' }
-  if (s?.interp === 'paused') return { label: 'Paused', tone: 'warn' }
-  if (s?.interp !== 'idle') return { label: s?.mode === 'mdi' ? 'Executing MDI' : 'Program running', tone: 'go' }
-  return { label: 'Machine idle', tone: 'go' }
-})
+const machineMessage = computed(() => machineBlock(panel))
+const notice = computed(() => panel.notice?.text === machineMessage.value ? null : panel.notice)
+const state = computed(() => ({
+  label: machineMessage.value ?? 'Machine idle',
+  tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineMessage.value ? 'warn' : 'go',
+}))
 const title = computed(() => {
   if (panel.tab === 'manual') return 'Manual setup'
   if (panel.tab === 'tools') return 'Tools & offsets'
@@ -86,7 +83,7 @@ const title = computed(() => {
   return name.charAt(0).toUpperCase() + name.slice(1)
 })
 const subtitle = computed(() => {
-  if (panel.tab === 'manual') return 'Jog · Home · Touch off · MDI'
+  if (panel.tab === 'manual') return 'Jog · Home · MDI'
   if (panel.tab === 'tools') return 'Tool table and work coordinate systems'
   if (panel.tab === 'probe') return 'Set the active work origin with the touch probe'
   const s = status.value
@@ -140,15 +137,16 @@ const subtitle = computed(() => {
     </div>
   </section>
   <section class="message-area" aria-label="Machine messages">
-    <div class="message-band" :class="panel.notice?.level ?? 'empty'">
-      <span class="message-label">{{ panel.notice?.level === 'error' ? '!' : 'i' }}</span>
-      <div class="message-copy">
-        <p role="alert" aria-atomic="true"><template v-if="panel.notice?.level === 'error'"><strong v-if="panel.notice.context">{{ panel.notice.context }} · </strong>{{ panel.notice.text }}<span v-if="panel.notice.count > 1"> (×{{ panel.notice.count }})</span></template></p>
-        <p role="status" aria-atomic="true"><template v-if="panel.notice?.level === 'info'">{{ panel.notice.text }}</template></p>
-        <p v-if="!panel.notice" class="no-message">No new messages</p>
+    <div class="message-band" :class="notice?.level ?? (machineMessage ? 'machine-message' : 'empty')">
+      <span class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
+      <div class="message-copy" :class="{ paired: machineMessage && notice }">
+        <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
+        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ notice.context }} · </strong>{{ notice.text }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
+        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ notice.text }}</template></p>
+        <p v-if="!machineMessage && !notice" class="no-message">No new messages</p>
       </div>
       <button class="message-log" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
-      <button v-if="panel.notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
+      <button v-if="notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
     </div>
   </section>
 </template>
@@ -192,6 +190,8 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-band.empty { color: var(--text-dim); border-color: transparent; background: transparent; }
 .message-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
 .message-copy { flex: 1; min-width: 0; }.message-copy p { margin: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.message-copy.paired p { -webkit-line-clamp: 1; }
+.machine-state { font-weight: 600; }
 .message-copy p:empty { height: 0; }.no-message { color: var(--text-dim); }
 .message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .log-count { display: inline-block; width: 3ch; min-width: 3ch; text-align: right; }

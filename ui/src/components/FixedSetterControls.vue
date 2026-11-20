@@ -33,7 +33,7 @@ const block = computed(() => {
 })
 // One line the operator reads before pressing: what Touch off does with this tool, or why it can't.
 const hint = computed(() => {
-  if (!teaching.value) return 'Goes to the setter and measures this tool.'
+  if (!teaching.value) return 'Measures this tool at the setter.'
   return `Jog T${String(props.limits.reference_tool)} over the setter, then Touch off.`
 })
 const summary = computed(() => {
@@ -93,13 +93,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Fixed size: the changing status text must not move the buttons around it. */
-.setter-controls { flex: none; width: 240px; }
+/* One row, fixed size: status text left of the button, so the changing text never moves the
+   buttons around it and the row lines up with the other header buttons. */
+.setter-controls { flex: none; display: flex; flex-direction: row-reverse; align-items: center; gap: 10px; }
 .setter-action { display: flex; align-items: center; gap: 8px; }
-.setter-action button { flex: 1; min-height: 44px; white-space: nowrap; }
+.setter-action button { width: 130px; min-height: 44px; white-space: nowrap; }
 .setter-result {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-  height: 2.7em; margin: 4px 0 0; line-height: 1.35;
+  width: 260px; margin: 0; text-align: right; font-size: 12px; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .setter-result.blocked { color: var(--warn, #b45309); }
 </style>

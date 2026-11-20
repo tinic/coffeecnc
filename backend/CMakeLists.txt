@@ -208,6 +208,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)
         set_tests_properties(linuxcnc_jog_contact_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 355)
+        add_test(NAME linuxcnc_restore_spindle_tool_${units}
+          COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 70 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> restore-spindle-tool)
+        set_tests_properties(linuxcnc_restore_spindle_tool_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
@@ -216,6 +222,11 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759
+        $<TARGET_FILE:coffeecnc_sim_tests> g0759 restore-spindle-tool)
+      set_tests_properties(linuxcnc_restore_spindle_tool_g0759 PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 360)
       # The runner's own test calls run.sh many times. Ten of its runs may each wait for a
       # simulation of another checkout; two wait on the test's own run for fixed times. The
       # time limit is made of those parts, and the script is handed the same lock wait.

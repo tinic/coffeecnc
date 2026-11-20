@@ -188,6 +188,7 @@ public:
   // Also the regular status reading that keeps `link` meaningful between actions: call it at
   // least a few times per second.
   [[nodiscard]] auto take_messages() -> std::vector<ControllerMessage> override;
+  void idle_maintenance(const Wanted& wanted) override;
 
   // Cancellation, as ControllerPort asks. Every action asks its `Wanted` after each wait of
   // its own (the collecting of earlier errors, the switch between world and joint mode, a

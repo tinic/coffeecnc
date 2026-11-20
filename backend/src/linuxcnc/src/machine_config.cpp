@@ -351,6 +351,8 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
       .touch_probe_tool = probe_tool,
+      .remember_spindle_tool = ini.real("EMCIO", "RANDOM_TOOLCHANGER").value_or(0) == 0 &&
+                               ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
   };
 }
 

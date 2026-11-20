@@ -106,6 +106,8 @@ public:
   // Operator messages published since the last call, oldest first; those that became the reason
   // of a failed action are not among them. Called whenever the worker has nothing else to do.
   [[nodiscard]] virtual auto take_messages() -> std::vector<ControllerMessage> = 0;
+  // The worker may perform deferred startup work between operator requests.
+  virtual void idle_maintenance(const Wanted&) {}
 
   [[nodiscard]] virtual auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult = 0;

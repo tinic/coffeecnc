@@ -26,6 +26,13 @@ All are NML messages on `emcCommand`, declared in `emc/nml_intf/emc_nml.hh`. Tas
 | `set_program_option` | `EMC_TASK_PLAN_SET_OPTIONAL_STOP`, `_SET_BLOCK_DELETE` | 1435, 1447 | |
 | `set_tool`, `remove_tool` | `EMC_TOOL_LOAD_TOOL_TABLE` | 1597 | Rewrite the tool table file, then reload; idle interpreter only |
 
+For nonrandom changers with a local tool table, CoffeeCNC saves the reported
+spindle tool beside the table in `coffeecnc-spindle-tool.txt`. When the machine
+is on and ready for idle MDI, a fresh session can restore a saved tool to an
+empty spindle record with `M61` and apply its current table length with `G43`.
+The restore reports the tool in the message band. Tool changes while the
+controller is off must be reflected in LinuxCNC before running a program.
+
 ## Status
 
 `EMC_STAT` (`emc_nml.hh:2203`) is read with `peek()` from `emcStatus`. Values are in machine units ([TRAJ] `LINEAR_UNITS`); the executable converts to millimetres.

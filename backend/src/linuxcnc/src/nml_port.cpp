@@ -9,6 +9,7 @@
 #include "nml_status.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -53,18 +54,37 @@ auto load_touched(const std::string& tool_table) -> std::optional<TouchedOff> {
     text += line + '\n';
   return parse_touched_off(text);
 }
-void save_touched(const std::string& tool_table, const TouchedOff& touched) {
-  const auto path = touched_path(tool_table);
+auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> bool {
   auto temporary = path;
   temporary += ".new";
   {
     std::ofstream out(temporary);
-    out << format_touched_off(touched);
+    out << text;
+    out.close();
     if (!out)
-      return;
+      return false;
   }
   std::error_code error;
   std::filesystem::rename(temporary, path, error);
+  return !error;
+}
+void save_touched(const std::string& tool_table, const TouchedOff& touched) {
+  static_cast<void>(write_sidecar(touched_path(tool_table), format_touched_off(touched)));
+}
+
+auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> {
+  const auto contents = read_text_file(path.string(), 32);
+  if (!contents)
+    return std::nullopt;
+  std::string_view text = *contents;
+  if (text.ends_with('\n'))
+    text.remove_suffix(1);
+  if (text.empty())
+    return std::nullopt;
+  int tool{};
+  const auto* end = text.data() + text.size();
+  const auto [parsed, error] = std::from_chars(text.data(), end, tool);
+  return error == std::errc{} && parsed == end && tool >= 0 ? std::optional{tool} : std::nullopt;
 }
 
 using Clock = std::chrono::steady_clock;
@@ -231,13 +251,39 @@ struct NmlPort::Impl {
   // The watchdog trip the operator was last told about.
   std::optional<Clock::time_point> told_watchdog;
   std::optional<Clock::time_point> told_contact;
+  std::filesystem::path spindle_tool_file;
+  std::optional<int> startup_tool;
+  std::optional<int> observed_tool;
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
         command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()), status(config.nml_file),
-        errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {}
+        errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {
+    if (config.remember_spindle_tool && !config.tool_table.empty()) {
+      spindle_tool_file =
+          std::filesystem::path(config.tool_table).parent_path() / "coffeecnc-spindle-tool.txt";
+      startup_tool = load_spindle_tool(spindle_tool_file);
+    }
+  }
 
-  [[nodiscard]] auto stat() -> const EMC_STAT* { return status.stat(); }
+  [[nodiscard]] auto stat() -> const EMC_STAT* {
+    const auto* sample = status.stat();
+    if (sample != nullptr && status.link() == Link::live && !spindle_tool_file.empty())
+      remember_spindle_tool(sample->io.tool.toolInSpindle);
+    return sample;
+  }
+
+  void remember_spindle_tool(int tool) {
+    if (tool < 0 || observed_tool == tool)
+      return;
+    const bool initial_empty = !observed_tool && tool == 0 && startup_tool.value_or(0) > 0;
+    observed_tool = tool;
+    if (initial_empty)
+      return;
+    startup_tool.reset();
+    if (!write_sidecar(spindle_tool_file, std::format("{}\n", tool)))
+      messages.push_back({true, "Could not save the spindle tool for the next startup."});
+  }
 
   void add(bool error, std::span<const char> field) {
     if (auto text = text_of(field); !text.empty())
@@ -682,6 +728,62 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
   static_cast<void>(impl_->stat());
   impl_->collect();
   return std::exchange(impl_->messages, {});
+}
+
+void NmlPort::idle_maintenance(const Wanted& wanted) {
+  if (impl_->startup_tool.value_or(0) <= 0)
+    return;
+  const auto ready = [&](const NmlStatus& status) {
+    const auto& state = status.controller;
+    return state.link == Link::live && state.machine == MachineState::on &&
+           state.mode != TaskMode::automatic && state.interp == InterpState::idle &&
+           state.in_position && state.tool_in_spindle == 0 && !state.requested_tool &&
+           !state.spindle_active && !status.paused && !status.task_executing && status.queued_mdi == 0 &&
+           std::ranges::all_of(state.axes, [&](const auto& axis) {
+             return !axis.homing && !axis.on_hard_limit &&
+                    (!axis.enabled || !impl_->config.limits.homing_required || axis.homed);
+           });
+  };
+  const auto before = status();
+  if (!impl_->startup_tool || !ready(before) || !wanted())
+    return;
+  const int tool = *impl_->startup_tool;
+  const auto table = impl_->read_tool_table();
+  const auto length = table ? tool_z(*table, tool) : std::nullopt;
+  if (!length) {
+    impl_->startup_tool.reset();
+    impl_->messages.push_back({true, std::format("Could not restore T{} from the tool table.", tool)});
+    return;
+  }
+  const auto mode = before.controller.mode;
+  if (mode != TaskMode::mdi) {
+    const auto changed = set_task_mode(TaskMode::mdi, wanted);
+    if (!accepted(changed)) {
+      if (wanted()) {
+        impl_->startup_tool.reset();
+        impl_->messages.push_back({true, std::format("Could not enter MDI to restore T{}.", tool)});
+      }
+      return;
+    }
+  }
+  if (!ready(status()) || !wanted())
+    return;
+
+  impl_->startup_tool.reset();
+  const auto restore = mdi(std::format("M61 Q{} G43 H{}", tool, tool), wanted);
+  const bool verified = accepted(restore) && until(settle_timeout, [&] {
+    impl_->collect();
+    const auto current = status();
+    return current.controller.link == Link::live && current.controller.tool_in_spindle == tool &&
+           current.controller.interp == InterpState::idle &&
+           std::ranges::contains(current.active_codes, "G43") &&
+           std::abs(current.tool_offset[2] - *length * impl_->config.millimetres_per_unit) < 0.001;
+  });
+  if (mode != TaskMode::mdi && wanted() && status().controller.machine == MachineState::on)
+    static_cast<void>(set_task_mode(mode, wanted));
+  impl_->messages.push_back({!verified, verified
+      ? std::format("T{} restored in the spindle.", tool)
+      : std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool)});
 }
 
 auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {

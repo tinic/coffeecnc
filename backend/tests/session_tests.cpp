@@ -77,6 +77,7 @@ public:
   std::vector<std::pair<std::string, bool>> answers;
   // Handed out by the next take_messages.
   std::vector<ControllerMessage> published;
+  std::function<void(const Wanted&)> maintenance;
 
   auto snapshot() -> ControllerState override {
     ++snapshots;
@@ -90,6 +91,10 @@ public:
   }
   auto take_messages() -> std::vector<ControllerMessage> override {
     return std::exchange(published, {});
+  }
+  void idle_maintenance(const Wanted& wanted) override {
+    if (maintenance)
+      maintenance(wanted);
   }
   auto set_machine_state(MachineState machine, const Wanted&) -> ActionResult override {
     return record("set_machine_state", machine == MachineState::on    ? "on"
@@ -619,6 +624,25 @@ void ready_gate() {
   const auto replayed = rig.handle(rig.page, R"({"id":1,"type":"run"})", at(0ms));
   require(replayed.messages.empty(), "A repeated ready does not reset the ID state");
   rig.accepted(R"("type":"abort")");
+}
+
+void idle_maintenance_yields_to_an_operator_request() {
+  Rig rig{false};
+  int calls = 0;
+  rig.port.maintenance = [&](const Wanted& wanted) {
+    if (++calls != 1)
+      return;
+    require(wanted(), "Startup work is admitted on a ready idle page");
+    static_cast<void>(rig.session.submit(rig.page, R"({"id":2,"type":"abort"})", at(0ms)));
+    require(!wanted(), "An operator stop overtakes startup work before its next write");
+  };
+  static_cast<void>(rig.tick(at(0ms)));
+  require(calls == 0, "Startup work waits for the page's ready message");
+  static_cast<void>(rig.send(R"("type":"ready")"));
+  require(calls == 1, "Startup maintenance ran on the ready page");
+  rig.port.maintenance = {};
+  static_cast<void>(rig.tick(at(0ms)));
+  require(rig.port.calls == Calls{"abort"}, "The queued stop was delivered first");
 }
 
 void ids_strictly_increase() {
@@ -2179,6 +2203,7 @@ auto main(int argc, char** argv) -> int {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
     ready_gate();
+    idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
     operator_settings_go_to_storage();

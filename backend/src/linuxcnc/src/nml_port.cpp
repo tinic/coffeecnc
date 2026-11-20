@@ -1121,9 +1121,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     saw_probe = false;
     const auto timeout = std::chrono::milliseconds{
         static_cast<int>((travel / feed * seconds_per_minute + 3) * 1000)};
-    if (!block(std::format("G91 {} {}{:.8f} F{:.8f}", material ? "G38.3" : "G38.2", line.word(),
-                           line.sign * travel / program_scale, feed / program_scale),
-               timeout, true, true))
+    std::string code;
+    if (material && line.axis != 2 && before.rotation_xy != 0) {
+      // Supply both coordinates in a rotated frame. LinuxCNC can carry an unintended
+      // coordinate on the omitted axis of an incremental probe after a rotation change.
+      auto target = before.work;
+      target[line.axis] += line.sign * (begin_at + travel);
+      code = std::format("G90 G38.3 X{:.8f} Y{:.8f} F{:.8f}", target[0] / program_scale,
+                         target[1] / program_scale, feed / program_scale);
+    } else {
+      code = std::format("G91 {} {}{:.8f} F{:.8f}", material ? "G38.3" : "G38.2", line.word(),
+                         line.sign * travel / program_scale, feed / program_scale);
+    }
+    if (!block(code, timeout, true, true))
       return interrupt("The probe search did not complete.");
     const auto* sample = live_cycle();
     const auto at_contact = interlock();

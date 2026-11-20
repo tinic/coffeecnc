@@ -1054,9 +1054,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   auto line_origin = move.start;
   const auto on_line = [&](const std::array<double, 3>& point,
                            const std::array<double, 3>& origin) {
+    // 0.5 mm: the measured Z comes from a linear encoder that lags the command by the backlash
+    // (0.125 mm on the G0759) and drifts at rest; only real off-line motion must stop the probe.
+    constexpr double off_line_allowance = 0.5; // mm
     const auto projected = line.advance(origin, line.distance(origin, point));
     for (std::size_t i = 0; i < point.size(); ++i)
-      if (!near(point[i], projected[i]))
+      if (!(std::abs(point[i] - projected[i]) <= off_line_allowance))
         return false;
     return true;
   };
@@ -1111,12 +1114,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     std::cerr << "coffeecnc: fixed setter interrupted: " << message << std::endl;
     return std::unexpected(std::move(message));
   };
+  std::string cycle_failure; // why live_cycle() last refused, for the operator
   const auto live_cycle = [&]() -> const EMC_STAT* {
     const auto* s = impl_->stat();
-    if (!impl_->still() || s == nullptr || impl_->status.link() != Link::live ||
-        !steady_context(*s) || !hal->renew_probe_cycle(Clock::now()))
-      return nullptr;
-    return s;
+    cycle_failure = !impl_->still()                          ? "the request was withdrawn"
+                    : s == nullptr || impl_->status.link() != Link::live ? "controller status lost"
+                    : !steady_context(*s) ? "machine state or position left the probe line"
+                    : !hal->renew_probe_cycle(Clock::now()) ? "probe lease could not be renewed"
+                                                            : "";
+    return cycle_failure.empty() ? s : nullptr;
   };
   const auto interlock = [&]() -> std::optional<HalView> {
     const auto view = hal->view(Clock::now());
@@ -1135,6 +1141,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt("The fixed setter is tripped or its interlock is unavailable.");
 
   bool saw_probe = false;
+  std::string block_failure; // why the last block() did not complete, for the operator
   const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
                          bool watch_probe = false, bool moves = false) -> bool {
     if (live_cycle() == nullptr || !interlock())
@@ -1145,19 +1152,28 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
+    block_failure = "timed out";
     std::optional<Clock::time_point> done_since;
     static_cast<void>(until(timeout, [&]() {
       impl_->collect();
       const auto* s = live_cycle();
       const auto pins = interlock();
       if (s == nullptr || !pins || (positioning && *pins->probe_input) ||
-          impl_->error_since(from) || s->echo_serial_number > impl_->serial)
+          impl_->error_since(from) || s->echo_serial_number > impl_->serial) {
+        block_failure = s == nullptr                           ? cycle_failure
+                        : !pins                                ? "probe interlock lost"
+                        : positioning && *pins->probe_input    ? "probe touched while positioning"
+                        : s->echo_serial_number > impl_->serial ? "another command took over"
+                                                                : "LinuxCNC reported an error";
         return true;
+      }
       if (s->echo_serial_number != impl_->serial)
         return false;
       const auto& traj = s->motion.traj;
-      if (moves && (traj.feed_override_enabled || traj.adaptive_feed_enabled))
+      if (moves && (traj.feed_override_enabled || traj.adaptive_feed_enabled)) {
+        block_failure = "feed override was enabled";
         return true;
+      }
       if (watch_probe && traj.probing && !traj.probe_tripped)
         saw_probe = true;
       // RCS_DONE with the axes still can come before motion has taken the move: a move is done
@@ -1172,6 +1188,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       else if (!done_since)
         done_since = Clock::now();
       done = still && (!moves || Clock::now() - *done_since >= std::chrono::milliseconds{150});
+      if (s->status == RCS_ERROR)
+        block_failure = "LinuxCNC rejected the move";
       return done || s->status == RCS_ERROR;
     }));
     return done;
@@ -1238,7 +1256,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                          line.sign * travel / program_scale, feed / program_scale);
     }
     if (!block(code, timeout, true, true))
-      return interrupt("The probe search did not complete.");
+      return interrupt(std::format("The probe search did not complete ({}, {}).", block_failure,
+                                   code));
     const auto* sample = live_cycle();
     const auto at_contact = interlock();
     if (sample == nullptr || !at_contact || !saw_probe || sample->motion.traj.probing ||

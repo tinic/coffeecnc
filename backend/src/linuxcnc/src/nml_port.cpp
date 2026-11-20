@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -811,7 +812,8 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
 auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
     -> std::expected<FixedSetterContact, std::string> {
   using Contact = std::expected<FixedSetterContact, std::string>;
-  constexpr double tolerance_mm = 0.02;
+  // Position checks: the G0759's encoder feedback and step resolution need more than 0.02 mm.
+  constexpr double tolerance_mm = 0.05;
   const auto limits = impl_->config.fixed_setter;
   auto* hal = impl_->hal;
   if (!limits || hal == nullptr)
@@ -945,6 +947,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
+    std::optional<Clock::time_point> done_since;
     static_cast<void>(until(timeout, [&]() {
       impl_->collect();
       const auto* s = live_cycle();
@@ -961,9 +964,16 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         saw_probe = true;
       // RCS_DONE with the axes still can come before motion has taken the move: a move is done
       // only once motion's queue is empty as well.
-      done = s->status == RCS_DONE && s->task.interpState == EMC_TASK_INTERP_IDLE &&
-             s->task.queuedMDIcommands == 0 && traj.inpos && traj.current_vel == 0 &&
-             (!moves || (traj.queue == 0 && traj.activeQueue == 0));
+      const bool still = s->status == RCS_DONE && s->task.interpState == EMC_TASK_INTERP_IDLE &&
+                         s->task.queuedMDIcommands == 0 && traj.inpos && traj.current_vel == 0 &&
+                         (!moves || (traj.queue == 0 && traj.activeQueue == 0));
+      // Task can report a move done before motion has started it: a move is done once that
+      // state has held for 150 ms.
+      if (!still)
+        done_since.reset();
+      else if (!done_since)
+        done_since = Clock::now();
+      done = still && (!moves || Clock::now() - *done_since >= std::chrono::milliseconds{150});
       return done || s->status == RCS_ERROR;
     }));
     return done;
@@ -1053,18 +1063,26 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
           !block(std::format("G90 G53 G1 Z{:.8f}{}", backoff_z / program_scale, feed_word),
                  move_timeout, false, true))
         return interrupt("The fixed setter latch backoff did not complete.");
-      // The setter plunger springs back after the move ends: allow it time to release.
-      static_cast<void>(until(std::chrono::milliseconds{500}, [&]() {
+      // Wait until Z stands at the back-off height and the plunger has sprung back.
+      static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
         const auto* s = live_cycle();
         const auto pins = interlock();
-        return s == nullptr || !pins || (!*pins->probe_input && s->motion.traj.probeval == 0);
+        return s == nullptr || !pins ||
+               (!*pins->probe_input && s->motion.traj.probeval == 0 && s->motion.traj.inpos &&
+                s->motion.traj.current_vel == 0 &&
+                near(s->motion.traj.position.tran.z * machine_scale, backoff_z) &&
+                near(s->motion.traj.actualPosition.tran.z * machine_scale, backoff_z));
       }));
       raw = live_cycle();
       const auto released = interlock();
       if (raw == nullptr || !released || *released->probe_input || raw->motion.traj.probeval != 0 ||
           !near(raw->motion.traj.position.tran.z * machine_scale, backoff_z) ||
           !near(raw->motion.traj.actualPosition.tran.z * machine_scale, backoff_z))
-        return interrupt("The setter did not release before the latch pass.");
+        return interrupt(std::format(
+            "The setter did not release before the latch pass (back-off Z {:.3f}, at Z {:.3f}, "
+            "probe {}).",
+            backoff_z, raw == nullptr ? NAN : raw->motion.traj.actualPosition.tran.z * machine_scale,
+            released && *released->probe_input ? "tripped" : "clear"));
       const double latch_travel = std::min(2 * limits->latch_backoff_mm, backoff_z - bottom_z);
       contact = search(backoff_z, latch_travel, limits->latch_feed_mm_min);
       if (!contact)

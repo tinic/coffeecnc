@@ -1273,8 +1273,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   auto& calibration = impl_->setter_calibration;
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
+  // Saved marks hold without a taught setter while the table still matches the file: tool
+  // lengths are relative to the reference, not to the setter (turo: no T98 after a restart).
+  const auto saved_marks = [&](std::string_view table) -> std::map<int, double> {
+    const auto saved = load_touched(impl_->config.tool_table);
+    const auto reference = tool_z(table, limits->reference_tool);
+    if (!saved || !reference || std::abs(saved->reference - *reference) > 0.001)
+      return {};
+    return restored_touched_off(table, limits->reference_tool, saved);
+  };
   const auto marks = [&](std::string_view table) -> std::vector<int> {
-    return calibration ? still_touched_off(table, calibration->measured) : std::vector<int>{};
+    return still_touched_off(table, calibration ? calibration->measured : saved_marks(table));
   };
   const auto table = impl_->read_tool_table();
   auto current_marks = table ? marks(*table) : std::vector<int>{};
@@ -1340,9 +1349,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   };
   if (before.controller.mode != TaskMode::mdi || !at_start(before, request.start))
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
-  const bool teaching = tool == limits->reference_tool;
+  // Before the setter is taught, any tool with a valid saved length teaches it like the
+  // reference (turo: T99 can act like T98).
+  const bool teaching = tool == limits->reference_tool ||
+                        (!calibration && std::ranges::contains(current_marks, tool));
   if (!material && !teaching && !calibration)
-    return std::unexpected(std::format("Teach the setter with T{} first.", limits->reference_tool));
+    return std::unexpected(std::format("Teach the setter with T{} or a touched-off tool first.",
+                                       limits->reference_tool));
 
   const double machine_scale = impl_->config.millimetres_per_unit;
   const auto previous = table ? tool_z(*table, tool) : std::nullopt;
@@ -1457,7 +1470,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        restored_touched_off(*table, tool, load_touched(impl_->config.tool_table))};
+        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.tool_table))};
     remember();
     return SetterState{calibration->plane, measurement, marks(*table)};
   }

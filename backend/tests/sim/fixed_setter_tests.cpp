@@ -427,8 +427,25 @@ void run(const std::string& ini, bool material) {
   port = connect();
   ++epoch.page;
   const auto restarted = setter_status();
-  require(!restarted.calibration && restarted.measured_tools.empty(),
-          "restarting the port hides all marks until T98 is taught");
+  require(!restarted.calibration &&
+              restarted.measured_tools == std::vector<int>{1, reference_tool},
+          "restarting the port keeps the valid saved marks without a taught setter");
+  // turo: a tool with a valid saved length teaches the setter like the reference.
+  mdi("M61 Q1");
+  mdi("G43 H1");
+  ++epoch.tool;
+  mdi("G21 G90 G53 G0 X0 Y0 Z20");
+  halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
+  const auto table_before_t1_teach = read_table();
+  const auto taught_by_t1 = setter(touch_request(1));
+  require(taught_by_t1.calibration && taught_by_t1.measurement &&
+              taught_by_t1.measurement->calibration && taught_by_t1.measurement->tool == 1 &&
+              taught_by_t1.measured_tools == std::vector<int>{1, reference_tool} &&
+              read_table() == table_before_t1_teach,
+          "after a restart a touched-off T1 teaches the setter and keeps its length");
+  port.reset();
+  port = connect();
+  ++epoch.page;
   require(teach_reference().measured_tools == std::vector<int>{1, reference_tool},
           "re-teaching T98 after restart restores the persisted T1 mark");
 
@@ -453,7 +470,7 @@ void run(const std::string& ini, bool material) {
   mdi(std::format("G10 L1 P98 Z{}", reference_length + 1));
   const auto writes_before_reteach = port->writes().size();
   const auto stale = port->fixed_setter(touch_request(2), epoch, {});
-  require(!stale && stale.error().contains("Teach the setter with T98 first") &&
+  require(!stale && stale.error().contains("Teach the setter with T98 or a touched-off tool first") &&
               port->writes().size() == writes_before_reteach,
           "a changed reference blocks the next touch-off before any command");
   const auto edited_reference = setter_status();

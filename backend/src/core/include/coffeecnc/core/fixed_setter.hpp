@@ -50,7 +50,8 @@ struct SetterMeasurement {
 struct SetterState {
   std::optional<std::array<double, 3>> calibration; // XY and effective trigger plane Z in mm
   std::optional<SetterMeasurement> measurement;
-  // Tools touched off against this calibration, the reference tool included. Empty without one.
+  // Tools with a valid touch-off, the reference tool included: against this calibration, or
+  // without one the saved marks the tool table still matches.
   std::vector<int> measured_tools;
   struct Material {
     int wcs;

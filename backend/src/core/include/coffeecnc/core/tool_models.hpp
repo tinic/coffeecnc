@@ -81,6 +81,7 @@ struct ToolModelAssignment {
   ToolBinding tool;
   ToolFamily family{ToolFamily::generic};
   ToolOverrides overrides;
+  std::string holder{};
   friend auto operator==(const ToolModelAssignment&, const ToolModelAssignment&) -> bool = default;
 };
 
@@ -122,8 +123,16 @@ struct SetToolModelAssignment {
   ToolBinding tool;
   std::optional<ToolFamily> family;
   ToolOverrides overrides;
+  std::string holder{};
 };
 using ToolModelCommand = std::variant<SetToolModelDefaults, SetToolModelAssignment>;
+
+[[nodiscard]] constexpr auto valid_tool_holder(std::string_view holder) -> bool {
+  constexpr std::array<std::string_view, 13> holders{
+      "r8",     "tts-4",  "tts-5",  "tts-6",    "tts-7",    "tts-8",   "tts-9",
+      "tts-10", "tts-11", "tts-12", "tts-er16", "tts-er20", "tts-er32"};
+  return holder.empty() || std::ranges::find(holders, holder) != holders.end();
+}
 
 // [COFFEECNC] MACHINE_ID: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, compared byte for byte.
 [[nodiscard]] constexpr auto valid_machine_id(std::string_view id) -> bool {

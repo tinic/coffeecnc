@@ -59,7 +59,7 @@ auto changed(ToolModelDocument document, const ToolModelCommand& command)
       assignments.erase(place);
     return document;
   }
-  ToolModelAssignment assignment{asked.tool, *asked.family, asked.overrides};
+  ToolModelAssignment assignment{asked.tool, *asked.family, asked.overrides, asked.holder};
   if (found) {
     *place = std::move(assignment);
   } else {

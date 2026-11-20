@@ -14,7 +14,9 @@ The current envelope constraints require finite positive dimensions, cutting len
 
 The cutting tip is `(0, 0, 0)`; the body extends along **+Z**, in millimetres. `toolProfiles()` supplies radius/height sections independently of the renderer. The Three.js [LatheGeometry](https://threejs.org/docs/pages/LatheGeometry.html) renderer rotates its native +Y axis to +Z. Cutting and shank surfaces use distinct materials. The blue ring is a holder-face datum at `Z = stickout`, not a holder mesh.
 
-The full physical tool is displayed, including the section above that datum. Flutes, individual inserts and holders are not represented. Drill/spot/chamfer tips are ideal sharp cones; ball ends are hemispherical. These are visual envelopes, not collision or material-removal simulation. The Machine workspace now places the configured loaded-tool envelope at the reported tip in the shared STEP scene. The toolpath and tip marker remain on top, so this is not an occlusion test.
+With **Holder** set to None, the preview shows the full tool. Selecting a holder shows the cutter up to its stick-out, or the touch probe up to the top of its housing. An R8 collet shows the exposed tool. TTS set-screw holders offer individual 4–12 mm bores. The ER16, ER20 and ER32 previews use standard nut diameters and a 19.05 mm TTS shank. Body lengths and shoulders are simplified. [Tormach tooling reference](https://knowledgebase.tormach.com/pcnc-770/basic-operation-pcnc-770) · [REGO-FIX ER catalog](https://us.rego-fix.com/system/files/docs/2017-08/RFTC_ER_Catalog121616_Linked.pdf)
+
+The Holder choice is saved with the preview shape and appears in the read-only tool preview and the Machine workspace. Both use the same assembly mesh. The Machine workspace positions the assembly at the reported tip in the shared STEP scene. The toolpath and tip marker remain above the scene. These envelopes are for visual reference, and tool length offsets and setter calculations use controller data.
 
 ## Placement in the Machine workspace
 
@@ -22,7 +24,7 @@ The body uses `Status.tool.in_spindle`, never a prepared T word or the selected 
 
 The body is hidden when the link is stale/down, an axis is unhomed/homing, a manual tool change is in progress, the loaded row is missing/unassigned, or its dimensions are invalid. The existing tip marker remains available where position is known. **Tool** toggles the envelope independently of **Part**. **Fit**, named views and initial view sizing include the visible body; live motion does not refit the camera. Tool and part share one WebGL renderer and camera. Geometry rebuilds only when its model changes; arriving positions translate the existing mesh.
 
-The banner identifies the loaded T number and absent holder, and flags a nominal diameter if the table has none. The current protocol describes controller coordinates, not an independently measured cutter position. This display does not establish the physical length, offset correctness or collision clearance of the mounted assembly.
+The banner identifies the loaded T number and its selected holder, and flags a nominal diameter if the table has none. The current protocol describes controller coordinates, not an independently measured cutter position. This display does not establish the physical length, offset correctness or collision clearance of the mounted assembly.
 
 ## Touch probe
 
@@ -53,4 +55,4 @@ The expanded corpus supplies useful next cases without justifying automatic tool
 - Trebuchet's `tools.json` includes cutting and shank diameters, flute/overall length and a holder with its own inch units beside metric tools. An importer needs explicit unit conversion and tool/holder assembly handling.
 - SM-101's tool JSON conflicts with its NC revision for T4, as documented in the sample catalog. Metadata import needs conflict review, not silent assignment.
 
-Later increments can add setup-specific stick-out, manufacturer/CAM imports with provenance, and toolholders separately. The loaded-tool renderer follows that reported-tool/tip convention; future holders and other machine kinematics must retain explicit coordinate and unit contracts.
+Later increments can add setup-specific stick-out and manufacturer or CAM imports with provenance. The loaded-tool renderer follows the reported-tool and tip convention.

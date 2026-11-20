@@ -53,14 +53,19 @@ public:
 };
 
 // The members of an object that has exactly these.
-void exact(const Json& value, std::string_view what, std::initializer_list<std::string_view> names) {
+void exact(const Json& value, std::string_view what, std::initializer_list<std::string_view> names,
+           std::initializer_list<std::string_view> optional = {}) {
   if (!value.is_object())
     throw Invalid(std::format("{} must be an object.", what));
   const auto* const missing = std::ranges::find_if(
       names, [&](std::string_view name) -> bool { return !value.contains(name); });
   if (missing != names.end())
     throw Invalid(std::format("{} lacks the field {}.", what, *missing));
-  if (value.size() != names.size())
+  auto expected = names.size();
+  for (const auto name : optional)
+    if (value.contains(name))
+      ++expected;
+  if (value.size() != expected)
     throw Invalid(std::format("{} has an unknown field.", what));
 }
 
@@ -234,6 +239,8 @@ auto document_json(Numbers& numbers, const ToolModelDocument& document) -> Json 
            {"comment", assignment.tool.comment}}},
          {"family", family_names.at(index(assignment.family))},
          {"overrides", std::move(overrides)}});
+    if (!assignment.holder.empty())
+      assignments.back()["holder"] = assignment.holder;
   }
   return {{"version", tool_model_version},
           {"defaults", std::move(defaults)},
@@ -373,6 +380,8 @@ auto tool_document_error(const ToolModelDocument& document) -> std::string {
     auto error = tool_binding_error(assignment.tool);
     if (error.empty())
       error = tool_overrides_error(assignment.overrides, assignment.family);
+    if (error.empty() && !valid_tool_holder(assignment.holder))
+      error = "Unknown tool holder.";
     if (error.empty() && !numbers.insert(assignment.tool.number).second)
       error = "It is assigned more than once.";
     if (!error.empty())
@@ -391,6 +400,8 @@ auto tool_model_command_error(const ToolModelCommand& command) -> std::string {
             return error;
           if (!c.family && !c.overrides.empty())
             return "Overrides must be empty when the assignment is removed.";
+          if (!valid_tool_holder(c.holder) || (!c.family && !c.holder.empty()))
+            return "Choose a supported holder for a tool model assignment.";
           return tool_overrides_error(c.overrides, c.family.value_or(ToolFamily::generic));
         }
       },
@@ -471,10 +482,16 @@ auto decode_tool_model_file(std::string_view text) -> std::expected<ToolModelFil
     if (assignments.size() > max_tool_model_assignments)
       throw Invalid("There are more than 1001 tool model assignments.");
     for (const auto& entry : assignments) {
-      exact(entry, "An assignment", {"tool", "family", "overrides"});
-      result.document.assignments.push_back({read_binding(entry.at("tool")),
-                                             read_family(entry.at("family")),
-                                             read_overrides(entry.at("overrides"))});
+      exact(entry, "An assignment", {"tool", "family", "overrides"}, {"holder"});
+      std::string holder;
+      if (entry.contains("holder")) {
+        if (!entry.at("holder").is_string())
+          throw Invalid("A tool holder must be a string.");
+        holder = entry.at("holder").get<std::string>();
+      }
+      result.document.assignments.push_back(
+          {read_binding(entry.at("tool")), read_family(entry.at("family")),
+           read_overrides(entry.at("overrides")), std::move(holder)});
     }
     if (const auto error = tool_document_error(result.document); !error.empty())
       throw Invalid(error);

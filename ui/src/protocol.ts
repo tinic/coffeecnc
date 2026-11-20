@@ -10,6 +10,7 @@
 // executable switches mode when the interpreter is idle, or rejects the command.
 
 import type { ToolDefaults, ToolFamily, ToolOverrides } from './tool-model'
+import type { ToolHolder } from './tool-holder'
 import type { ToolModelBinding, ToolModelDocument } from './tool-model-settings'
 import type { OperatorPreferences, OperatorSettings } from './operator-settings'
 
@@ -513,6 +514,7 @@ export interface SetToolModelAssignment extends CommandBase {
   tool: ToolModelBinding
   family: ToolFamily | null
   overrides: ToolOverrides
+  holder?: ToolHolder
 }
 
 export type ToMachine =

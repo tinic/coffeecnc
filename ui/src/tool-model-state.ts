@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import type { CommandBody, Hello, Tool } from './protocol'
 import type { Panel, PanelState } from './store'
+import type { ToolHolder } from './tool-holder'
 import { decodeToolDefaults, factoryToolDefaults, toolIdentity,
   type ToolDefaults, type ToolFamily, type ToolModelAssignment, type ToolOverrides } from './tool-model'
 import { decodeToolModelDocument, matchingToolModelAssignments, toolModelBinding, validMachineId } from './tool-model-settings'
@@ -27,7 +28,7 @@ export interface ToolModelSettings {
   context: () => ModelEditContext
   block: (edit: ModelEditContext) => string | null
   saveDefaults: (value: ToolDefaults, edit: ModelEditContext) => Promise<ModelSaveResult>
-  saveAssignment: (tool: Tool, family: ToolFamily | null, overrides: ToolOverrides, edit: ModelEditContext) => Promise<ModelSaveResult>
+  saveAssignment: (tool: Tool, family: ToolFamily | null, overrides: ToolOverrides, edit: ModelEditContext, holder?: ToolHolder | null) => Promise<ModelSaveResult>
   dispose: () => void
 }
 
@@ -158,7 +159,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     return Promise.resolve({ saved: true, reason: '' })
   }
   function saveAssignment(tool: Tool, family: ToolFamily | null, overrides: ToolOverrides,
-    edit: ModelEditContext): Promise<ModelSaveResult> {
+    edit: ModelEditContext, holder?: ToolHolder | null): Promise<ModelSaveResult> {
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
     if (family === 'touch-probe' && !panel.simulated && state.storage !== 'available')
@@ -171,17 +172,19 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       !panel.simulated && panel.link !== 'live') {
       return Promise.resolve(fail('A current matching tool table is required. Reopen this editor when the machine connection is live.'))
     }
+    const chosen = family === null ? undefined : holder === undefined ? state.assignments.get(tool.number)?.holder : holder ?? undefined
+    const holderField = chosen === undefined ? {} : { holder: chosen }
     const document = decodeToolModelDocument({ version: 1, defaults: state.defaults,
-      assignments: family === null ? [] : [{ tool: binding, family, overrides }] })
+      assignments: family === null ? [] : [{ tool: binding, family, overrides, ...holderField }] })
     if (document === null || family === null && Object.keys(overrides).length !== 0) {
       return Promise.resolve(fail('The tool model assignment contains invalid dimensions.'))
     }
     if (state.storage === 'available' && panel.toolModels?.availability === 'available') {
       return write({ type: 'set_tool_model_assignment', machine_id: panel.toolModels.machine_id,
-        base_revision: panel.toolModels.revision, tool: binding, family, overrides: { ...overrides } }, edit)
+        base_revision: panel.toolModels.revision, tool: binding, family, overrides: { ...overrides }, ...holderField }, edit)
     }
     if (family === null) state.assignments.delete(tool.number)
-    else state.assignments.set(tool.number, { identity: toolIdentity(tool), family, overrides: { ...overrides } })
+    else state.assignments.set(tool.number, { identity: toolIdentity(tool), family, overrides: { ...overrides }, ...holderField })
     state.storageError = ''
     state.saved = 'Tool model applied for this page session.'
     return Promise.resolve({ saved: true, reason: '' })

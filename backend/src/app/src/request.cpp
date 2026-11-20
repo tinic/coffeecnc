@@ -50,12 +50,17 @@ auto field(const Json& object, std::string_view name) -> const Json& {
   return *it;
 }
 
-void fields(const Json& object, std::initializer_list<std::string_view> names) {
+void fields(const Json& object, std::initializer_list<std::string_view> names,
+            std::initializer_list<std::string_view> optional = {}) {
   if (!object.is_object())
     throw InvalidRequest("Expected a JSON object.");
   for (const auto name : names)
     static_cast<void>(field(object, name));
-  if (object.size() != names.size())
+  auto expected = names.size();
+  for (const auto name : optional)
+    if (object.contains(name))
+      ++expected;
+  if (object.size() != expected)
     throw InvalidRequest("Unexpected field in request.");
 }
 
@@ -278,7 +283,8 @@ auto command(const Json& object) -> Command {
                                 valid(tool_model_json::defaults(field(object, "defaults")))};
   }
   if (type == "set_tool_model_assignment") {
-    fields(object, {"id", "type", "machine_id", "base_revision", "tool", "family", "overrides"});
+    fields(object, {"id", "type", "machine_id", "base_revision", "tool", "family", "overrides"},
+           {"holder"});
     SetToolModelAssignment assignment;
     assignment.machine_id = string(object, "machine_id");
     assignment.base_revision = valid(tool_model_json::revision(field(object, "base_revision")));
@@ -287,6 +293,11 @@ auto command(const Json& object) -> Command {
     if (const auto& family = field(object, "family"); !family.is_null())
       assignment.family = valid(tool_model_json::family(family));
     assignment.overrides = valid(tool_model_json::overrides(field(object, "overrides")));
+    if (object.contains("holder")) {
+      assignment.holder = string(object, "holder");
+      if (!valid_tool_holder(assignment.holder) || !assignment.family)
+        throw InvalidRequest("Choose a supported holder for a tool model assignment.");
+    }
     return assignment;
   }
   throw InvalidRequest("Unknown protocol v1 command.");

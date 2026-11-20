@@ -6,6 +6,7 @@ import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
 import { toolEnvelope, type ToolModel } from '../tool-model'
 import { ToolMesh } from '../tool-mesh'
+import { holderLabel } from '../tool-holder'
 
 const props = defineProps<{ model: ToolModel }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
@@ -24,7 +25,7 @@ function draw(): void {
   if (renderer === null || canvas.value === null || contextLost) return
   const width = canvas.value.clientWidth; const height = canvas.value.clientHeight
   if (width <= 0 || height <= 0) return
-  const { diameter, overallLength } = toolEnvelope(props.model.dimensions)
+  const { diameter, overallLength } = toolEnvelope(props.model.dimensions, props.model.holder)
   const extent = Math.hypot(overallLength, diameter * 1.4)
   view = { ...view, centre: [0, 0, overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
   syncModelCamera(camera, view, width, height, extent)
@@ -80,7 +81,7 @@ onBeforeUnmount(() => {
     <p v-if="error" class="error blocked">{{ error }}</p>
     <div v-if="model.family === 'touch-probe'" class="legend"><span class="ruby">Ruby ball</span></div>
     <div v-else class="legend"><span class="cutting">Cutting section</span><span class="datum">Holder-face datum</span></div>
-    <p class="hint foot">{{ model.family === 'touch-probe' ? 'Ball bottom at Z = 0' : 'Tip at Z = 0 · body along +Z · holder not modeled' }}</p>
+    <p class="hint foot">{{ model.family === 'touch-probe' ? 'Ball bottom at Z = 0' : 'Tip at Z = 0' }}{{ model.holder ? ` · ${holderLabel(model.holder)}` : '' }}</p>
   </div>
 </template>
 

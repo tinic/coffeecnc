@@ -1,4 +1,5 @@
 import type { Tool } from './protocol'
+import { holderProfile, type ToolHolder } from './tool-holder'
 
 export const toolFamilies = [
   { id: 'end-mill', name: 'Flat end mill' },
@@ -19,7 +20,7 @@ export interface CutterDimensions {
   cuttingLength: number
   shankDiameter: number
   overallLength: number
-  /** Distance from the tool tip to the holder face. The holder itself is not modeled. */
+  /** Distance from the tool tip to the holder face. */
   stickout: number
   /** Included angle, degrees; used only by pointed tool families. */
   tipAngle: number
@@ -40,12 +41,14 @@ export interface ToolModelAssignment {
   identity: string
   family: ToolFamily
   overrides: ToolOverrides
+  holder?: ToolHolder
 }
 export interface ToolModel {
   family: ToolFamily
   dimensions: ToolDimensions
   nominalDiameter: boolean
   customized: boolean
+  holder?: ToolHolder
 }
 
 /** Starting proportions, not manufacturer geometry or measured tool assemblies. */
@@ -136,11 +139,12 @@ export function resolveToolModel(tool: Tool, assignment: ToolModelAssignment | u
     const nominal = Reflect.get(preset, key) as number
     return assignment.overrides[key] ?? nominal * (assignment.family === 'touch-probe' || key === 'tipAngle' ? 1 : scale)
   })
-  return { family: assignment.family, dimensions, nominalDiameter, customized: Object.keys(assignment.overrides).length > 0 }
+  return { family: assignment.family, dimensions, nominalDiameter, customized: Object.keys(assignment.overrides).length > 0,
+    ...(assignment.holder === undefined ? {} : { holder: assignment.holder }) }
 }
 
 /** Radius/height profiles. Origin is the cutting tip, body extends along +Z in mm.
- * These describe rotational envelopes: no flutes, inserts, holder or collision guarantees. */
+ * These describe the cutting section and exposed shank as rotational envelopes. */
 export function toolProfiles(model: ToolModel): { cutting: [number, number][]; shank: [number, number][] } {
   const d = model.dimensions
   const error = toolDimensionError(model.family, d)
@@ -157,8 +161,9 @@ export function toolProfiles(model: ToolModel): { cutting: [number, number][]; s
     cutting.push([radius, radius / Math.tan(d.tipAngle * Math.PI / 360)])
   } else cutting.push([radius, 0])
   cutting.push([radius, d.cuttingLength], [0, d.cuttingLength])
-  return { cutting, shank: [[0, d.cuttingLength], [d.shankDiameter / 2, d.cuttingLength],
-    [d.shankDiameter / 2, d.overallLength], [0, d.overallLength]] }
+  const shankEnd = model.holder === undefined ? d.overallLength : d.stickout
+  return { cutting, shank: shankEnd > d.cuttingLength
+    ? [[0, d.cuttingLength], [d.shankDiameter / 2, d.cuttingLength], [d.shankDiameter / 2, shankEnd], [0, shankEnd]] : [] }
 }
 
 /** Dimensions from the ball bottom, which is also the model's Z datum. */
@@ -168,11 +173,19 @@ export function probeEnvelope(d: ProbeDimensions): { bodyStart: number; bodyEnd:
   return { bodyStart, bodyEnd, overallLength: bodyEnd + d.shankDiameter, stylusDiameter: Math.min(d.diameter * 0.45, d.bodyDiameter * 0.25) }
 }
 
-export function toolEnvelope(d: ToolDimensions): { diameter: number; overallLength: number } {
-  if ('bodyDiameter' in d) return {
-    diameter: Math.max(d.diameter, d.bodyDiameter, d.shankDiameter), overallLength: probeEnvelope(d).overallLength,
+export function holderFaceZ(d: ToolDimensions): number {
+  return 'bodyDiameter' in d ? probeEnvelope(d).bodyEnd : d.stickout
+}
+
+export function toolEnvelope(d: ToolDimensions, holder?: ToolHolder): { diameter: number; overallLength: number } {
+  const probe = 'bodyDiameter' in d
+  const face = holderFaceZ(d)
+  const profile = holderProfile(holder, face, d.shankDiameter)
+  const exposedLength = holder === undefined ? (probe ? probeEnvelope(d).overallLength : d.overallLength) : face
+  return {
+    diameter: Math.max(d.diameter, d.shankDiameter, probe ? d.bodyDiameter : 0, ...profile.map(([r]) => r * 2)),
+    overallLength: Math.max(exposedLength, ...profile.map(([, z]) => z)),
   }
-  return { diameter: Math.max(d.diameter, d.shankDiameter), overallLength: d.overallLength }
 }
 
 /** Persisted preferences are untrusted, versioned, and validated before use. */

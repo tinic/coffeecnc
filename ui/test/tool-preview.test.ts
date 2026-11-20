@@ -60,6 +60,28 @@ describe('loaded tool preview', () => {
     expect(loadedToolPreview(status(), true, [tool], assignments, invalid)).toBeNull()
   })
 
+  it('fits the chosen holder at the stick-out above the same tool tip', () => {
+    const equipped = new Map<number, ToolModelAssignment>([[4, {
+      identity: toolIdentity(tool), family: 'end-mill', overrides: { stickout: 25 }, holder: 'tts-er32',
+    }]])
+    const preview = loadedToolPreview(status(), true, [tool], equipped, factoryToolDefaults())
+    if (preview === null) throw new Error('Missing loaded tool')
+    expect(preview.tip).toEqual([100, 200, 273])
+    const mesh = new ToolMesh()
+    try {
+      mesh.build(preview.model)
+      const holder = mesh.group.getObjectByName('holder')
+      if (!holder) throw new Error('Missing holder mesh')
+      const body = new Box3().setFromObject(holder)
+      expect(body.min.z).toBeCloseTo(25)
+      expect(body.max.x).toBeCloseTo(25)
+      expect(toolPreviewBounds(preview).max[2]).toBeCloseTo(preview.tip[2] + body.max.z)
+      mesh.build({ ...preview.model, holder: 'r8' })
+      expect(mesh.group.getObjectByName('holder')).toBeUndefined()
+      expect(new Box3().setFromObject(mesh.group).max.z).toBeCloseTo(25)
+    } finally { mesh.dispose() }
+  })
+
   it('matches axes by name and rejects missing, homing or nonfinite coordinates', () => {
     const s = status(); s.axes.reverse()
     expect(reportedToolTip(s)).toEqual([100, 200, 273])

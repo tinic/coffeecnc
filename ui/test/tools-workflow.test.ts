@@ -139,10 +139,24 @@ describe('tool table workflow', () => {
     await press('Load T2'); expect(send).not.toHaveBeenCalled()
     expect(getWrapper().text()).toContain('The tool table changed')
   })
-  it('opens editing from a row, keeps model controls inside, and confirms deletion there', async () => {
+  it('selects a tapped row and changes selection without opening a dialog or sending a command', async () => {
+    mountTools()
+    const [first, second] = getWrapper().findAll('.tool-row')
+    if (!first || !second) throw new Error('Missing tool rows')
+    await second.get('.comment').trigger('click')
+    expect(second.classes()).toContain('selected')
+    expect(second.get('[aria-label="Select tool 2"]').attributes('aria-pressed')).toBe('true')
+    expect(first.classes()).toContain('loaded')
+    await first.get('[aria-label="Select tool 1"]').trigger('click')
+    expect(first.classes()).toContain('selected')
+    expect(second.classes()).not.toContain('selected')
+    expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+  it('opens editing from the Edit button, keeps model controls inside, and confirms deletion there', async () => {
     mountTools()
     expect(getWrapper().text()).not.toContain('Model defaults')
-    expect(getWrapper().findAll('.tool-row button').map((button) => button.text())).toEqual(['Edit', 'Load', 'Edit', 'Load'])
+    expect(getWrapper().findAll('.tool-row .actions button').map((button) => button.text())).toEqual(['Edit', 'Load', 'Edit', 'Load'])
     await getWrapper().get('[aria-label="Edit tool 2"]').trigger('click')
     expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Edit tool 2')
     expect(getWrapper().get('[role="dialog"]').text()).toContain('Preview shape')
@@ -152,7 +166,7 @@ describe('tool table workflow', () => {
     await press('Remove tool'); expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'remove_tool', number: 2 })
   })
   it('cannot delete the spindle tool or overwrite a changed table row', async () => {
-    mountTools(); await getWrapper().get('.tool-row').trigger('click')
+    mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
     const deletion = getWrapper().findAll('button').find((button) => button.text() === 'Delete')
     expect(deletion?.attributes('disabled')).toBeDefined()
     const tool = panel.toolTable?.tools[0]; if (!tool) throw new Error('Missing tool')
@@ -163,7 +177,7 @@ describe('tool table workflow', () => {
     panel.unit = 'inch'
     const tool = panel.toolTable?.tools[0]; if (!tool) throw new Error('Missing tool')
     tool.length = 1.234567891; tool.diameter = 6.123456789
-    mountTools(); await getWrapper().get('.tool-row').trigger('click')
+    mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
     await getWrapper().get('.description-entry input').setValue('Updated description')
     await press('Save tool')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_tool', tool: { ...tool, comment: 'Updated description' } })

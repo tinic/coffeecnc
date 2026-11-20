@@ -47,6 +47,9 @@ public:
   // This page and every one before it has ended: what waits for them is dropped, and what
   // they are still owed is not sent.
   virtual void page_ended(PageToken page) = 0;
+  // A saved probe keeps its protection until explicitly reclassified, even if the table row
+  // is absent or has changed. Null means a configured catalog cannot be checked yet.
+  [[nodiscard]] virtual auto touch_probe_loaded(int) -> std::optional<bool> { return false; }
 
 protected:
   ToolModelService(const ToolModelService&) = default;
@@ -319,6 +322,7 @@ private:
   [[nodiscard]] static auto staged(ActionResult result) -> Stage;
   void drop_requests();
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
+  [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
@@ -340,6 +344,8 @@ private:
   ControllerPort& port_;
   const ProgramStore& programs_;
   ToolModelService* tool_models_;
+  // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.
+  std::string verified_probe_program_;
   std::uint64_t pages_{};
   JogLease::Time status_at_{};
   // Goes up with every stop decision.

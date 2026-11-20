@@ -2,39 +2,27 @@
 import { vTooltip } from '../tooltip'
 // Tools and offsets: the tool table, the tool in the spindle with its length touch-off, and the
 // nine work coordinate systems.
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { startDialog } from '../dialogs'
-import { vNumeric } from '../numeric-input'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
 import type { Tool } from '../protocol'
-import { resolveToolModel, toolDimensionError, toolFamilies } from '../tool-model'
-import { toolModels } from '../tool-models'
-import { formatLength, fromDisplay, parseLength, parseNumber, toDisplay, wcsName } from '../units'
+import { formatLength, fromDisplay, toDisplay, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
-import ToolModelDialog from './ToolModelDialog.vue'
+import ToolEditor from './ToolEditor.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
-const tools = computed(() => panel.toolTable?.tools ?? [])
+const tools = computed(() => panel.toolTable?.tools.filter((tool) => tool.number > 0) ?? [])
 const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
 const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
 const compensation = computed(() => status.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
-const modelEditor = ref<{ tool: Tool | null } | null>(null)
-const modelSettingsPending = computed(() => toolModels.storage === 'loading' || toolModels.saving)
-function modelLabel(tool: Tool): string {
-  const model = resolveToolModel(tool, toolModels.assignments.get(tool.number), toolModels.defaults)
-  if (model === null) return 'Set model'
-  if (toolDimensionError(model.family, model.dimensions) !== null) return 'Review model'
-  return toolFamilies.find((f) => f.id === model.family)?.name ?? 'Set model'
-}
-
 /** Why the tool table cannot be edited, or null. */
 const editBlock = computed((): string | null => {
   if (linkBlock.value !== null || status.value === null) {
@@ -57,84 +45,15 @@ const lengthMismatch = computed(
 
 // ---- tool row editor ------------------------------------------------------------------------------
 
-const editing = ref<'add' | 'edit' | null>(null)
-const editingTool = ref<Tool | null>(null)
-const editUnit = ref(panel.unit)
-const editHello = shallowRef(panel.hello)
-const form = reactive({ number: '', length: '', diameter: '', comment: '' })
-const initialDimensions = reactive({ length: '', diameter: '' })
+const editing = ref<{ tool: Tool | null } | null>(null)
 function sameTool(tool: Tool): boolean {
   const current = findTool(tool.number)
   return current !== null && current.pocket === tool.pocket && current.length === tool.length &&
     current.diameter === tool.diameter && current.comment === tool.comment
 }
-const editorBlock = computed(() => editBlock.value ?? (panel.hello !== editHello.value ? 'The machine connection changed. Reopen this editor.' :
-  editingTool.value !== null && !sameTool(editingTool.value) ? 'The tool table changed. Reopen this editor.' : null))
-
-function edit(tool: Tool): void {
-  if (editBlock.value !== null) return
-  editingTool.value = { ...tool }
-  editUnit.value = unit.value
-  editHello.value = panel.hello
-  form.number = String(tool.number)
-  form.length = String(Number(toDisplay(tool.length, unit.value).toFixed(5)))
-  form.diameter = String(Number(toDisplay(tool.diameter, unit.value).toFixed(5)))
-  initialDimensions.length = form.length
-  initialDimensions.diameter = form.diameter
-  form.comment = tool.comment
-  editing.value = 'edit'
-}
-
-function add(): void {
-  if (editBlock.value !== null) return
-  editingTool.value = null
-  editUnit.value = unit.value
-  editHello.value = panel.hello
-  const free = tools.value.reduce((highest, tool) => Math.max(highest, tool.number), 0) + 1
-  form.number = String(free)
-  form.length = '0'
-  form.diameter = '0'
-  form.comment = ''
-  editing.value = 'add'
-}
-
-if (startDialog === 'tool') {
-  add()
-}
-
-const parsed = computed((): Tool | null => {
-  const number = parseNumber(form.number)
-  const length = editingTool.value !== null && form.length === initialDimensions.length
-    ? editingTool.value.length : parseLength(form.length, editUnit.value)
-  const diameter = editingTool.value !== null && form.diameter === initialDimensions.diameter
-    ? editingTool.value.diameter : parseLength(form.diameter, editUnit.value)
-  if (number === null || !Number.isInteger(number) || number < 1 || number > 2147483647 || length === null || diameter === null || diameter < 0) {
-    return null
-  }
-  const existing = findTool(number)
-  return { number, pocket: existing?.pocket ?? number, length, diameter, comment: form.comment.trim() }
-})
-
-const replaces = computed(
-  () => editing.value === 'add' && parsed.value !== null && findTool(parsed.value.number) !== null,
-)
-
-function save(): void {
-  if (parsed.value !== null && editorBlock.value === null) {
-    send({ type: 'set_tool', tool: parsed.value })
-    editing.value = null
-  }
-}
-
-const removing = ref<Tool | null>(null)
-
-function remove(): void {
-  if (removing.value !== null && editorBlock.value === null && sameTool(removing.value) && removing.value.number !== loaded.value) {
-    send({ type: 'remove_tool', number: removing.value.number })
-    editing.value = null
-  }
-  removing.value = null
-}
+function edit(tool: Tool): void { if (editBlock.value === null) editing.value = { tool: { ...tool } } }
+function add(): void { if (editBlock.value === null) editing.value = { tool: null } }
+if (startDialog === 'tool') add()
 
 // ---- touch-off ---------------------------------------------------------------------------------------
 
@@ -272,55 +191,7 @@ function editOffset(wcs: number): void {
       </p>
     </section>
 
-    <ModalDialog v-if="editing !== null && modelEditor === null && removing === null" :title="editing === 'add' ? 'Add tool' : `Edit tool ${form.number}`" size="medium" expanded @close="editing = null">
-      <div class="tool-fields">
-        <label class="entry">
-          <span class="label">Tool number</span>
-          <input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="editing === 'edit'" autocomplete="off" />
-        </label>
-        <label class="entry">
-          <span class="label">Length, {{ editUnit }}</span>
-          <input v-model="form.length" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
-        </label>
-        <label class="entry">
-          <span class="label">Diameter, {{ editUnit }}</span>
-          <input v-model="form.diameter" v-numeric :data-numeric-unit="editUnit" class="field mono" type="text" inputmode="decimal" autocomplete="off" />
-        </label>
-        <label class="entry description-entry">
-          <span class="label">Description</span>
-          <input v-model="form.comment" class="field" type="text" autocomplete="off" />
-        </label>
-      </div>
-      <p v-if="replaces" class="blocked">Tool {{ parsed?.number }} exists. Saving replaces it.</p>
-      <div class="model-controls">
-        <span class="label">Preview only</span>
-        <button v-if="editingTool !== null" class="btn model-link" type="button" :disabled="modelSettingsPending || editorBlock !== null" :aria-label="`Preview model for T${editingTool.number}`" @click="modelEditor = { tool: editingTool }">{{ modelLabel(editingTool) }}</button>
-        <button class="btn" type="button" :disabled="modelSettingsPending" @click="modelEditor = { tool: null }">Model defaults</button>
-      </div>
-      <p v-if="toolModels.storageError" class="blocked">{{ toolModels.storageError }}</p>
-      <p v-else-if="toolModels.saved" class="hint" role="status">{{ toolModels.saved }}</p>
-      <p v-else-if="toolModels.storageReason" class="hint">{{ toolModels.storageReason }}</p>
-      <p v-if="editorBlock" class="blocked" role="status">{{ editorBlock }}</p>
-      <template #footer>
-        <button v-if="editingTool !== null" v-tooltip="editingTool.number === loaded ? 'The tool is in the spindle' : undefined" class="btn danger" type="button" :disabled="editorBlock !== null || editingTool.number === loaded" @click="removing = editingTool">Delete</button>
-        <span class="spacer"></span>
-        <button class="btn" type="button" @click="editing = null">Cancel</button>
-        <button class="btn primary" type="button" :disabled="parsed === null || editorBlock !== null" @click="save">Save to tool table</button>
-      </template>
-    </ModalDialog>
-
-    <ModalDialog v-if="removing !== null" :title="`Remove tool ${removing.number}?`" size="small" expanded fresh-gesture @close="removing = null">
-      <p class="confirm">
-        <span class="mono">T{{ removing.number }}</span> {{ removing.comment }} will be removed from the machine's tool
-        table. Programs that call it will stop with an error.
-      </p>
-      <template #footer>
-        <button class="btn" type="button" @click="removing = null">Cancel</button>
-        <button class="btn danger" type="button" :disabled="editorBlock !== null || removing.number === loaded" @click="remove">Remove tool</button>
-      </template>
-    </ModalDialog>
-
-    <ToolModelDialog v-if="modelEditor !== null" :tool="modelEditor.tool" @close="modelEditor = null" />
+    <ToolEditor v-if="editing !== null" :tool="editing.tool" @close="editing = null" />
     <WorkOffsetDialog v-if="offsetEditor !== null" :wcs="offsetEditor" @close="offsetEditor = null" />
 
     <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">

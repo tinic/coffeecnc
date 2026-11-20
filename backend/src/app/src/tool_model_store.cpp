@@ -528,8 +528,41 @@ void ToolModelStore::send_snapshot(PageToken page) {
   wake_.notify_all();
 }
 
+auto ToolModelStore::touch_probe_loaded(int tool_number) -> std::optional<bool> {
+  if (tool_number <= 0)
+    return false;
+  const std::scoped_lock lock{mutex_};
+  if (std::ranges::find(probe_tools_, tool_number) != probe_tools_.end() ||
+      changing_probe_ == tool_number)
+    return true;
+  if (!probe_catalog_ready_)
+    return std::nullopt;
+  for (const auto& request : pending_) {
+    const auto* command = std::get_if<ToolModelCommand>(&request.command);
+    const auto* assignment = command ? std::get_if<SetToolModelAssignment>(command) : nullptr;
+    if (assignment && assignment->family == ToolFamily::touch_probe &&
+        assignment->tool.number == tool_number)
+      return true;
+  }
+  return false;
+}
+
+void ToolModelStore::refresh_probe_tools() {
+  const auto& models = archive_.models();
+  const std::scoped_lock lock{mutex_};
+  probe_catalog_ready_ = models.availability != ToolModelAvailability::unavailable;
+  changing_probe_.reset();
+  if (!models.document)
+    return;
+  probe_tools_.clear();
+  for (const auto& assignment : models.document->assignments)
+    if (assignment.family == ToolFamily::touch_probe)
+      probe_tools_.push_back(assignment.tool.number);
+}
+
 void ToolModelStore::loop() {
   archive_.open();
+  refresh_probe_tools();
   if (operator_settings_)
     operator_settings_->open(archive_.shared_location());
   const auto send = [this](PageToken page, std::vector<std::string> messages) -> void {
@@ -554,6 +587,11 @@ void ToolModelStore::loop() {
       } else {
         next = std::move(pending_.front());
         pending_.pop_front();
+        if (const auto* command = std::get_if<ToolModelCommand>(&next->command)) {
+          const auto* assignment = std::get_if<SetToolModelAssignment>(command);
+          if (assignment && assignment->family == ToolFamily::touch_probe)
+            changing_probe_ = assignment->tool.number;
+        }
       }
     }
     if (snapshot) {
@@ -573,6 +611,7 @@ void ToolModelStore::loop() {
         changed_snapshot = operator_settings_->snapshot();
     } else {
       reply = archive_.apply(std::get<ToolModelCommand>(next->command));
+      refresh_probe_tools();
       if (reply.snapshot)
         changed_snapshot = archive_.snapshot();
     }

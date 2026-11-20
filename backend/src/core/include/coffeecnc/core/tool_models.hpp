@@ -13,12 +13,11 @@
 
 namespace coffeecnc {
 
-// The visual tool models the panel draws: seven family defaults and the models the operator
+// The tool models the panel draws: family defaults and the models the operator
 // assigned to rows of the tool table. Lengths are millimetres, the angle is degrees, whatever
 // unit is displayed. None of it reaches LinuxCNC. Field names on the wire are those of
 // `docs/design/native-tool-model-storage.md`.
 
-// In wire order: end-mill, ball-mill, drill, spot-drill, chamfer, face-mill, generic.
 enum class ToolFamily : std::uint8_t {
   end_mill,
   ball_mill,
@@ -26,12 +25,13 @@ enum class ToolFamily : std::uint8_t {
   spot_drill,
   chamfer,
   face_mill,
-  generic
+  generic,
+  touch_probe
 };
-inline constexpr std::size_t tool_family_count = 7;
+inline constexpr std::size_t tool_family_count = 8;
 inline constexpr std::array<ToolFamily, tool_family_count> tool_families{
     ToolFamily::end_mill,  ToolFamily::ball_mill, ToolFamily::drill,  ToolFamily::spot_drill,
-    ToolFamily::chamfer,   ToolFamily::face_mill, ToolFamily::generic};
+    ToolFamily::chamfer,   ToolFamily::face_mill, ToolFamily::generic, ToolFamily::touch_probe};
 
 struct ToolDimensions {
   double diameter{};
@@ -40,6 +40,9 @@ struct ToolDimensions {
   double overall_length{}; // overallLength
   double stickout{};       // tool tip to holder face
   double tip_angle{};      // tipAngle, included angle
+  double body_diameter{};  // touch probe only
+  double body_length{};
+  double stylus_length{};
   friend auto operator==(const ToolDimensions&, const ToolDimensions&) -> bool = default;
 };
 
@@ -54,8 +57,12 @@ struct ToolOverrides {
   std::optional<double> overall_length;
   std::optional<double> stickout;
   std::optional<double> tip_angle;
+  std::optional<double> body_diameter{};
+  std::optional<double> body_length{};
+  std::optional<double> stylus_length{};
   [[nodiscard]] auto empty() const -> bool {
-    return !cutting_length && !shank_diameter && !overall_length && !stickout && !tip_angle;
+    return !cutting_length && !shank_diameter && !overall_length && !stickout && !tip_angle &&
+           !body_diameter && !body_length && !stylus_length;
   }
   friend auto operator==(const ToolOverrides&, const ToolOverrides&) -> bool = default;
 };
@@ -102,7 +109,7 @@ struct ToolModels {
   friend auto operator==(const ToolModels&, const ToolModels&) -> bool = default;
 };
 
-// Replaces all seven family defaults; assignments stay.
+// Replaces the family defaults; assignments stay.
 struct SetToolModelDefaults {
   std::string machine_id;
   std::uint64_t base_revision{};

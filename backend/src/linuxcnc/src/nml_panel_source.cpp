@@ -93,6 +93,10 @@ struct NmlPanelSource::Impl {
     std::vector<Tool> rows;
     rows.reserve(accepted.size());
     for (const auto& entry : accepted) {
+      // T0 is a no-tool placeholder, never an editable tool/model row. Keep the
+      // loaded table intact for prepared-tool and unload-handshake resolution.
+      if (entry.tool.number <= 0)
+        continue;
       rows.push_back(entry.tool);
       if (const auto comment = comments.find(entry.tool.number); comment != comments.end())
         rows.back().comment = comment->second;

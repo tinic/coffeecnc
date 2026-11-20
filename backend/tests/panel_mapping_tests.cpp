@@ -627,9 +627,9 @@ void source_tool_table() {
   rig.loaded = table;
   static_cast<void>(rig.step(s));
   r = rig.step(s);
-  require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 4 &&
-              r.tool_table.tools[1].number == 0,
-          "The prepared index names the loaded entry; a T0 row is shown as a row");
+  require(r.status.tool.prepared == 9 && r.tool_table.tools.size() == 3 &&
+              r.tool_table.tools[1].number == 9,
+          "The prepared index names the loaded entry; T0 is excluded only from editable rows");
 }
 
 // The table with every field, for the preview: accepted like the table shown, on every field.
@@ -692,6 +692,21 @@ void source_preview_tools() {
   r = rig.step();
   require(r.preview_tools == raw && r.tools_settled && r.tool_table == shown,
           "Identical passes with task idle between: accepted, in one step");
+}
+
+// Editable rows omit the no-tool placeholder without renumbering internal loaded entries.
+void source_hides_no_tool_placeholders() {
+  Rig rig;
+  write(rig.config.tool_table, "T0 P0 Z0 D0\nT1 P1 Z10 D6.35\n");
+  rig.loaded = std::vector<LoadedTool>{{1, {0, 0, 0, 0, ""}}, {2, {1, 1, 10, 6.35, ""}}};
+  static_cast<void>(rig.step());
+  const auto r = rig.step();
+  require(r.tool_table.tools == std::vector<Tool>{{1, 1, 10, 6.35, ""}},
+          "T0 placeholder is hidden; an uncommented T1 keeps exact binding fields");
+  auto status = rig.status();
+  status.prepared_pocket = 1;
+  require(rig.step(status).status.tool.prepared == 0,
+          "The placeholder still resolves to T0 for a prepared unload");
 }
 
 // A table is shown only with the comments read for it: a saved tool model is bound to them.
@@ -885,6 +900,7 @@ auto main(int argc, char** argv) -> int {
     source_program_loads();
     source_lines_belong_to_the_revision();
     source_tool_table();
+    source_hides_no_tool_placeholders();
     source_table_is_withheld_without_its_comments();
     source_survives_an_unreadable_tool_table();
     source_preview_tools();

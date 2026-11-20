@@ -23,7 +23,7 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr std::array<std::string_view, tool_family_count> family_names{
-    "end-mill", "ball-mill", "drill", "spot-drill", "chamfer", "face-mill", "generic"};
+    "end-mill", "ball-mill", "drill", "spot-drill", "chamfer", "face-mill", "generic", "touch-probe"};
 // As ui/src/tool-model.ts words them.
 constexpr auto length_range_reason = "Dimensions must be between 0.001 and 10,000 mm.";
 constexpr auto angle_range_reason = "Included tip angle must be between 1° and 179°.";
@@ -83,7 +83,15 @@ auto whole(const Json& value, std::string_view what, double low, double high) ->
   return number;
 }
 
-auto read_dimensions(const Json& value, std::string_view what) -> ToolDimensions {
+auto read_dimensions(const Json& value, std::string_view what, ToolFamily family) -> ToolDimensions {
+  if (family == ToolFamily::touch_probe) {
+    exact(value, what, {"diameter", "shankDiameter", "bodyDiameter", "bodyLength", "stylusLength"});
+    return {.diameter = real(value, what, "diameter"),
+            .shank_diameter = real(value, what, "shankDiameter"),
+            .body_diameter = real(value, what, "bodyDiameter"),
+            .body_length = real(value, what, "bodyLength"),
+            .stylus_length = real(value, what, "stylusLength")};
+  }
   exact(value, what,
         {"diameter", "cuttingLength", "shankDiameter", "overallLength", "stickout", "tipAngle"});
   return {real(value, what, "diameter"),      real(value, what, "cuttingLength"),
@@ -94,14 +102,19 @@ auto read_dimensions(const Json& value, std::string_view what) -> ToolDimensions
 auto read_defaults(const Json& value) -> ToolDefaults {
   if (!value.is_object())
     throw Invalid("defaults must be an object.");
-  ToolDefaults defaults{};
+  auto defaults = factory_tool_defaults();
+  std::size_t seen = 0;
   for (const auto family : tool_families) {
     const auto name = family_names.at(index(family));
+    // Version 1 catalogs written before probe templates have all seven cutter families.
+    if (family == ToolFamily::touch_probe && !value.contains(name))
+      continue;
     if (!value.contains(name))
       throw Invalid(std::format("defaults lacks the family {}.", name));
-    defaults.at(index(family)) = read_dimensions(value.at(name), name);
+    defaults.at(index(family)) = read_dimensions(value.at(name), name, family);
+    ++seen;
   }
-  if (value.size() != tool_family_count)
+  if (value.size() != seen)
     throw Invalid("defaults has an unknown family.");
   return defaults;
 }
@@ -115,7 +128,9 @@ auto read_overrides(const Json& value) -> ToolOverrides {
        {std::pair{"cuttingLength", &overrides.cutting_length},
         std::pair{"shankDiameter", &overrides.shank_diameter},
         std::pair{"overallLength", &overrides.overall_length},
-        std::pair{"stickout", &overrides.stickout}, std::pair{"tipAngle", &overrides.tip_angle}}) {
+        std::pair{"stickout", &overrides.stickout}, std::pair{"tipAngle", &overrides.tip_angle},
+        std::pair{"bodyDiameter", &overrides.body_diameter}, std::pair{"bodyLength", &overrides.body_length},
+        std::pair{"stylusLength", &overrides.stylus_length}}) {
     if (!value.contains(name))
       continue;
     *member = real(value, "overrides", name);
@@ -142,7 +157,7 @@ auto read_family(const Json& value) -> ToolFamily {
   if (value.is_string())
     if (const auto found = tool_family(value.get<std::string>()))
       return *found;
-  throw Invalid("family must be one of the seven tool families.");
+  throw Invalid("family must be a supported tool family.");
 }
 
 auto read_revision(const Json& value, std::string_view what) -> std::uint64_t {
@@ -178,7 +193,14 @@ private:
   std::string error_;
 };
 
-auto dimensions_json(Numbers& numbers, const ToolDimensions& d) -> Json {
+auto dimensions_json(Numbers& numbers, const ToolDimensions& d, ToolFamily family) -> Json {
+  if (family == ToolFamily::touch_probe) {
+    return {{"diameter", numbers.real(d.diameter, "diameter")},
+            {"shankDiameter", numbers.real(d.shank_diameter, "shankDiameter")},
+            {"bodyDiameter", numbers.real(d.body_diameter, "bodyDiameter")},
+            {"bodyLength", numbers.real(d.body_length, "bodyLength")},
+            {"stylusLength", numbers.real(d.stylus_length, "stylusLength")}};
+  }
   return {{"diameter", numbers.real(d.diameter, "diameter")},
           {"cuttingLength", numbers.real(d.cutting_length, "cuttingLength")},
           {"shankDiameter", numbers.real(d.shank_diameter, "shankDiameter")},
@@ -191,7 +213,7 @@ auto document_json(Numbers& numbers, const ToolModelDocument& document) -> Json 
   auto defaults = Json::object();
   for (const auto family : tool_families)
     defaults[std::string(family_names.at(index(family)))] =
-        dimensions_json(numbers, document.defaults.at(index(family)));
+        dimensions_json(numbers, document.defaults.at(index(family)), family);
   auto assignments = Json::array();
   for (const auto& assignment : document.assignments) {
     auto overrides = Json::object();
@@ -200,7 +222,8 @@ auto document_json(Numbers& numbers, const ToolModelDocument& document) -> Json 
          {std::pair{"cuttingLength", &given.cutting_length},
           std::pair{"shankDiameter", &given.shank_diameter},
           std::pair{"overallLength", &given.overall_length}, std::pair{"stickout", &given.stickout},
-          std::pair{"tipAngle", &given.tip_angle}})
+          std::pair{"tipAngle", &given.tip_angle}, std::pair{"bodyDiameter", &given.body_diameter},
+          std::pair{"bodyLength", &given.body_length}, std::pair{"stylusLength", &given.stylus_length}})
       if (*member)
         overrides[name] = numbers.real(**member, name);
     assignments.push_back(
@@ -273,10 +296,17 @@ auto factory_tool_defaults() -> ToolDefaults {
            {10, 15, 10, 60, 30, 90},    // spot-drill
            {10, 12, 10, 60, 30, 90},    // chamfer
            {50, 12, 20, 70, 40, 90},    // face-mill
-           {10, 20, 10, 70, 35, 90}}};  // generic
+           {10, 20, 10, 70, 35, 90},    // generic
+           {.diameter = 4, .shank_diameter = 12, .body_diameter = 28, .body_length = 32,
+            .stylus_length = 20}}};  // touch probe
 }
 
 auto tool_dimension_error(ToolFamily family, const ToolDimensions& d) -> std::string {
+  if (family == ToolFamily::touch_probe) {
+    return std::ranges::all_of(std::array{d.diameter, d.shank_diameter, d.body_diameter,
+                                        d.body_length, d.stylus_length}, length_ok)
+               ? "" : length_range_reason;
+  }
   if (!std::ranges::all_of(std::array{d.diameter, d.cutting_length, d.shank_diameter,
                                       d.overall_length, d.stickout},
                            length_ok))
@@ -305,8 +335,13 @@ auto tool_defaults_error(const ToolDefaults& defaults) -> std::string {
   return {};
 }
 
-auto tool_overrides_error(const ToolOverrides& o) -> std::string {
-  for (const auto& length : {o.cutting_length, o.shank_diameter, o.overall_length, o.stickout})
+auto tool_overrides_error(const ToolOverrides& o, ToolFamily family) -> std::string {
+  if (family == ToolFamily::touch_probe && (o.cutting_length || o.overall_length || o.stickout || o.tip_angle))
+    return "Cutter dimensions cannot be assigned to a touch probe.";
+  if (family != ToolFamily::touch_probe && (o.body_diameter || o.body_length || o.stylus_length))
+    return "Probe dimensions require the Touch probe family.";
+  for (const auto& length : {o.cutting_length, o.shank_diameter, o.overall_length, o.stickout,
+                             o.body_diameter, o.body_length, o.stylus_length})
     if (length && !length_ok(*length))
       return length_range_reason;
   if (o.tip_angle && !angle_ok(*o.tip_angle))
@@ -337,7 +372,7 @@ auto tool_document_error(const ToolModelDocument& document) -> std::string {
   for (const auto& assignment : document.assignments) {
     auto error = tool_binding_error(assignment.tool);
     if (error.empty())
-      error = tool_overrides_error(assignment.overrides);
+      error = tool_overrides_error(assignment.overrides, assignment.family);
     if (error.empty() && !numbers.insert(assignment.tool.number).second)
       error = "It is assigned more than once.";
     if (!error.empty())
@@ -356,7 +391,7 @@ auto tool_model_command_error(const ToolModelCommand& command) -> std::string {
             return error;
           if (!c.family && !c.overrides.empty())
             return "Overrides must be empty when the assignment is removed.";
-          return tool_overrides_error(c.overrides);
+          return tool_overrides_error(c.overrides, c.family.value_or(ToolFamily::generic));
         }
       },
       command);

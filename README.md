@@ -83,11 +83,13 @@ Use **Edit** or tap a work-system row to edit its XYZ machine-coordinate origins
 
 </details>
 
-Inside the tool editor, **Model defaults** configures common cutter families and **Set model** selects a family and physical dimensions for that tool. The editor includes a live 3D envelope preview. In the browser demo, defaults persist and per-tool assignments last for the page session. Native CoffeeCNC saves both per machine when `[COFFEECNC] MACHINE_ID` is configured; see [saved tool models](docs/tool-model-store.md). The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
+The tool editor combines Length, Diameter and Description with **Preview shape**, directly editable dimensions and a live 3D preview on the left. **Save tool** saves the row and its shape together; cutting diameter comes from Diameter above. **Settings → Tool shape templates** configures starting proportions for common cutter families. In the browser demo, templates persist and per-tool assignments last for the page session. Native CoffeeCNC saves both per machine when `[COFFEECNC] MACHINE_ID` is configured; see [saved tool models](docs/tool-model-store.md). The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
 
-![Configurable ball-nose tool envelope in the CoffeeCNC editor](ui/screenshots/tool-model-defaults.jpg)
+![Combined tool details and ball-nose preview shape editor](ui/screenshots/tool-editor-preview-1280.png)
 
-*Live parametric tool editor at 1280 × 800. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes.*
+*Browser simulator, 16 November 2026, at 1280 × 720. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes. [Validation and deployment status](docs/research/evidence/tool-editor-preview-2026-11-16.txt).*
+
+The **Touch probe** shape uses the tool table diameter as its effective ruby ball diameter and places the ball bottom at the Length touch-off datum. A saved probe assignment blocks spindle starts and checks programs before Cycle Start when the probe is loaded. [Touch probe setup and preview](docs/design/tool-models.md#touch-probe).
 
 ![Configured loaded tool in the CoffeeCNC Machine preview](ui/screenshots/loaded-tool-preview.jpg)
 

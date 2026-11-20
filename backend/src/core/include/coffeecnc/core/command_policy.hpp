@@ -54,6 +54,8 @@ struct ControllerState {
   std::uint64_t tool_request{};
   // Protocol values are millimetres; composed G-code must be written in this unit.
   LengthUnit program_units{LengthUnit::mm};
+  std::string program_file;
+  bool spindle_active{};
 };
 
 struct Limits {

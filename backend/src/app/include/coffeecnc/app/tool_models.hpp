@@ -39,7 +39,7 @@ inline constexpr std::uint64_t max_tool_model_revision = 9007199254740991; // 2^
 [[nodiscard]] auto tool_defaults_error(const ToolDefaults& defaults) -> std::string;
 // Each field by itself, in the range of its kind. Whether the resolved model is valid depends
 // on the family defaults and the tool table of the moment and is not decided here.
-[[nodiscard]] auto tool_overrides_error(const ToolOverrides& overrides) -> std::string;
+[[nodiscard]] auto tool_overrides_error(const ToolOverrides& overrides, ToolFamily family) -> std::string;
 // A tool number above zero, a pocket not below zero, a finite diameter not below zero, a
 // comment of at most max_tool_comment_bytes bytes without NUL, line feed or carriage return.
 [[nodiscard]] auto tool_binding_error(const ToolBinding& tool) -> std::string;

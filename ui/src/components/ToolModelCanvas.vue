@@ -4,7 +4,7 @@ import { AmbientLight, DirectionalLight, OrthographicCamera, Scene, WebGLRendere
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
-import type { ToolModel } from '../tool-model'
+import { toolEnvelope, type ToolModel } from '../tool-model'
 import { ToolMesh } from '../tool-mesh'
 
 const props = defineProps<{ model: ToolModel }>()
@@ -24,10 +24,9 @@ function draw(): void {
   if (renderer === null || canvas.value === null || contextLost) return
   const width = canvas.value.clientWidth; const height = canvas.value.clientHeight
   if (width <= 0 || height <= 0) return
-  const d = props.model.dimensions
-  const diameter = Math.max(d.diameter, d.shankDiameter) * 1.4
-  const extent = Math.hypot(d.overallLength, diameter)
-  view = { ...view, centre: [0, 0, d.overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
+  const { diameter, overallLength } = toolEnvelope(props.model.dimensions)
+  const extent = Math.hypot(overallLength, diameter * 1.4)
+  view = { ...view, centre: [0, 0, overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
   syncModelCamera(camera, view, width, height, extent)
   toolMesh.setTheme(theme.value === 'dark')
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -79,8 +78,9 @@ onBeforeUnmount(() => {
     <span class="caption label">Envelope preview <span class="hint">· drag to orbit</span></span>
     <canvas ref="canvas" aria-label="Simplified 3D tool envelope" @pointerdown="down" @pointermove="move" @pointerup="drag = null" @lostpointercapture="drag = null" @pointercancel="drag = null"></canvas>
     <p v-if="error" class="error blocked">{{ error }}</p>
-    <div class="legend"><span class="cutting">Cutting section</span><span class="datum">Holder-face datum</span></div>
-    <p class="hint foot">Tip at Z = 0 · body along +Z · holder not modeled</p>
+    <div v-if="model.family === 'touch-probe'" class="legend"><span class="ruby">Ruby ball</span></div>
+    <div v-else class="legend"><span class="cutting">Cutting section</span><span class="datum">Holder-face datum</span></div>
+    <p class="hint foot">{{ model.family === 'touch-probe' ? 'Ball bottom at Z = 0' : 'Tip at Z = 0 · body along +Z · holder not modeled' }}</p>
   </div>
 </template>
 
@@ -91,7 +91,7 @@ canvas { width: 100%; flex: 1; min-height: 0; touch-action: none; cursor: grab; 
 canvas:active { cursor: grabbing; }
 .legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; font-size: 11px; }
 .legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 2px; }
-.cutting::before { background: #bc9954; }.datum::before { background: #377ef2; }
+.cutting::before { background: #bc9954; }.datum::before { background: #377ef2; }.ruby::before { background: #d32643; }
 .foot { text-align: center; margin: 9px 8px 12px; font-size: 10px; }
 .error { position: absolute; inset: 45% 16px auto; text-align: center; }
 </style>

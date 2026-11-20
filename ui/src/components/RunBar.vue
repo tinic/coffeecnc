@@ -6,6 +6,7 @@ import { vPopover } from '../popover'
 import { computed } from 'vue'
 
 import { allHomed, homingActive, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
+import { touchProbeLoaded } from '../tool-models'
 
 import AppIcon from './AppIcon.vue'
 import OverrideControl from './OverrideControl.vue'
@@ -14,6 +15,12 @@ const status = reported
 const paused = computed(() => status.value?.wait.kind === 'paused')
 const toolChange = computed(() => status.value?.wait.kind === 'tool_change')
 const programRunning = computed(() => status.value?.interp !== 'idle' && status.value?.mode === 'auto')
+const probeWithSpindle = computed(() => {
+  const spindle = status.value?.spindle
+  return touchProbeLoaded.value && spindle !== undefined &&
+    (spindle.direction !== 'stopped' || Math.abs(spindle.actual_rpm ?? 0) >= 1)
+    ? 'A touch probe is loaded' : null
+})
 
 /** Why a program cannot be started, or null. The machine checks again; this only explains. */
 const startBlock = computed((): string | null => {
@@ -33,6 +40,7 @@ const startBlock = computed((): string | null => {
   if (s.program.file === null) {
     return 'No program loaded'
   }
+  if (probeWithSpindle.value !== null) return probeWithSpindle.value
   if (s.interp !== 'idle') {
     return s.mode === 'mdi' ? 'An MDI command is running' : null
   }
@@ -68,7 +76,7 @@ const stepBlock = computed((): string | null => {
 })
 
 const primary = computed(() => {
-  if (paused.value) return { label: 'Resume', icon: 'play' as const, type: 'resume' as const, blocked: linkBlock.value }
+  if (paused.value) return { label: 'Resume', icon: 'play' as const, type: 'resume' as const, blocked: linkBlock.value ?? probeWithSpindle.value }
   if (programRunning.value || status.value?.mode === 'mdi' && status.value.interp !== 'idle')
     return { label: 'Feed hold', icon: 'pause' as const, type: 'pause' as const, blocked: pauseBlock.value }
   return { label: 'Cycle start', icon: 'play' as const, type: 'run' as const, blocked: runBlock.value }

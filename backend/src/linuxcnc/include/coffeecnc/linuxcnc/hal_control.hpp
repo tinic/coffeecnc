@@ -89,7 +89,7 @@ public:
 
   // The worker must renew from a live status loop. Expiry holds the permit low while active,
   // and a late renewal cannot restart it. Finish only after confirming motion has stopped.
-  [[nodiscard]] auto begin_probe_cycle(Clock::time_point now) -> bool;
+  [[nodiscard]] auto begin_probe_cycle(Clock::time_point now, bool setter = true) -> bool;
   [[nodiscard]] auto renew_probe_cycle(Clock::time_point now) -> bool;
   void stop_probe_cycle();
   void finish_probe_cycle();
@@ -107,6 +107,7 @@ private:
   std::optional<ToolChangeRequest> confirmed_;
   JogStopHistory history_;
   std::optional<Clock::time_point> probe_deadline_;
+  bool probe_setter_{true};
 };
 
 // The control thread's use of the HAL component, as the runtime sees it. Every member is called

@@ -67,11 +67,12 @@ auto HalShared::jog_stop_history() const -> JogStopHistory {
   return history_;
 }
 
-auto HalShared::begin_probe_cycle(Clock::time_point now) -> bool {
+auto HalShared::begin_probe_cycle(Clock::time_point now, bool setter) -> bool {
   const std::scoped_lock lock{mutex_};
   if (probe_deadline_ || !have_inputs_ || now - read_at_ > max_age || !inputs_.watchdog_ok)
     return false;
   probe_deadline_ = now + max_age;
+  probe_setter_ = setter;
   return true;
 }
 
@@ -96,7 +97,7 @@ void HalShared::finish_probe_cycle() {
 
 auto HalShared::probe_cycle_outputs(Clock::time_point now) const -> ProbeCycleOutputs {
   const std::scoped_lock lock{mutex_};
-  return {probe_deadline_.has_value(), probe_deadline_ && now < *probe_deadline_};
+  return {probe_deadline_.has_value(), probe_deadline_ && now < *probe_deadline_, probe_setter_};
 }
 
 HalControl::HalControl(HalComponent& hal, HalShared& shared) : hal_(hal), shared_(shared) {}

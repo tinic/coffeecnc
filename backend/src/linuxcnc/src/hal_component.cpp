@@ -179,7 +179,7 @@ void HalComponent::set_probe_cycle(ProbeCycleOutputs outputs) {
   // worker has already confirmed the controller is stationary.
   if (!outputs.active)
     set(pins_->probe_cycle_active, false);
-  set(pins_->probe_setter_select, outputs.active);
+  set(pins_->probe_setter_select, outputs.active && outputs.setter);
   set(pins_->probe_cycle_lease, outputs.lease);
   if (outputs.active)
     set(pins_->probe_cycle_active, true);

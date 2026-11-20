@@ -895,7 +895,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                                 near(s.controller.axes[1].machine, expected_xy[1]));
   };
 
-  if (!hal->begin_probe_cycle(Clock::now()))
+  // The machine's touch probe trips on its own input before the setter's plunger moves (G0759:
+  // 2 mm of stylus deflection before the setter switched), so it touches off on its own input.
+  const bool own_probe = impl_->config.touch_probe_tool == move.tool;
+  if (!hal->begin_probe_cycle(Clock::now(), !own_probe))
     return std::unexpected("The probe interlock could not be armed.");
   const auto interrupt = [&](std::string_view reason) -> Contact {
     hal->stop_probe_cycle();
@@ -925,7 +928,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   const auto interlock = [&]() -> std::optional<HalView> {
     const auto view = hal->view(Clock::now());
-    return view && view->probe_cycle_active && view->probe_setter_selected &&
+    return view && view->probe_cycle_active && view->probe_setter_selected == !own_probe &&
                    view->probe_motion_permitted && view->probe_input
                ? view
                : std::nullopt;

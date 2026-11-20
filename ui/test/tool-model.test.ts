@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Box3, LatheGeometry, Mesh, Vector2 } from 'three'
+import { Box3, BufferGeometry, LatheGeometry, Mesh, Vector2 } from 'three'
 import type { Tool } from '../src/protocol'
 import { decodeToolDefaults, factoryToolDefaults, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity, toolProfiles,
   type ToolFamily, type ToolModelAssignment } from '../src/tool-model'
@@ -42,7 +42,9 @@ describe('parametric tool geometry', () => {
       const bounds = new Box3().setFromObject(cutter)
       expect(bounds.min.z).toBeCloseTo(0)
       expect(bounds.max.z).toBeCloseTo(model.dimensions.cuttingLength)
-      const positions = cutter.geometry.getAttribute('position')
+      const geometry: unknown = cutter.geometry
+      if (!(geometry instanceof BufferGeometry)) throw new Error('Missing cutter geometry')
+      const positions = geometry.getAttribute('position')
       const midZ = model.dimensions.cuttingLength / 2
       const radii = Array.from({ length: positions.count }, (_, i) =>
         Math.hypot(positions.getX(i), positions.getY(i)))

@@ -14,7 +14,11 @@ The current envelope constraints require finite positive dimensions, cutting len
 
 The cutting tip is `(0, 0, 0)`; the body extends along **+Z**, in millimetres. `toolProfiles()` supplies radius/height sections independently of the renderer. The Three.js [LatheGeometry](https://threejs.org/docs/pages/LatheGeometry.html) renderer rotates its native +Y axis to +Z. Cutting and shank surfaces use distinct materials. The blue ring is a holder-face datum at `Z = stickout`, not a holder mesh.
 
+The flat end mill uses a nominal three-flute helix and the appearance of uncoated, ground carbide. The tool table does not identify coating or flute count. Gold finishes such as TiN are specific to the coating. [Haas 6 mm end mill](https://www.haastooling.com/p/03-0533) · [Oerlikon tooling coating finishes](https://www.oerlikon.com/ecoma/files/HQ189EN_CUTTING-TOOLS_Overview.pdf?download=1)
+
 With **Holder** set to None, the preview shows the full tool. Selecting a holder shows the cutter up to its stick-out, or the touch probe up to the top of its housing. An R8 collet shows the exposed tool. TTS set-screw holders offer individual 4–12 mm bores. The ER16, ER20 and ER32 previews use standard nut diameters and a 19.05 mm TTS shank. Body lengths and shoulders are simplified. [Tormach tooling reference](https://knowledgebase.tormach.com/pcnc-770/basic-operation-pcnc-770) · [REGO-FIX ER catalog](https://us.rego-fix.com/system/files/docs/2017-08/RFTC_ER_Catalog121616_Linked.pdf)
+
+The TTS previews use bright ground-steel bands on the collar and shank, a dark body, and a dark ER nut with wrench flats. The ER20 product photos show the ground and dark surfaces used as the finish reference. [Tormach TTS catalog, pp. 6 and 8](https://littlemachineshop.com/images/gallery/Instructions/DS10052_TTS_Catalog.pdf) · [Tormach ER20 holder photos](https://littlemachineshop.com/products/collet-holder-tormach-tts-er-20)
 
 The Holder choice is saved with the preview shape and appears in the read-only tool preview and the Machine workspace. Both use the same assembly mesh. The Machine workspace positions the assembly at the reported tip in the shared STEP scene. The toolpath and tip marker remain above the scene. These envelopes are for visual reference, and tool length offsets and setter calculations use controller data.
 

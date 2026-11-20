@@ -31,6 +31,27 @@ describe('parametric tool geometry', () => {
     expect(bounds[1]?.max.z).toBeCloseTo(model.dimensions.overallLength)
     expect(bounds[0]?.max.x).toBeCloseTo(tool.diameter / 2)
   })
+  it('renders a fluted cutter inside its nominal diameter and cutting length', () => {
+    const model = resolveToolModel(tool, assignment(), factoryToolDefaults())
+    if (model === null || !('cuttingLength' in model.dimensions)) throw new Error('Missing cutter')
+    const mesh = new ToolMesh()
+    try {
+      mesh.build(model)
+      const cutter = mesh.group.getObjectByName('cutter')
+      if (!(cutter instanceof Mesh)) throw new Error('Missing cutter mesh')
+      const bounds = new Box3().setFromObject(cutter)
+      expect(bounds.min.z).toBeCloseTo(0)
+      expect(bounds.max.z).toBeCloseTo(model.dimensions.cuttingLength)
+      const positions = cutter.geometry.getAttribute('position')
+      const midZ = model.dimensions.cuttingLength / 2
+      const radii = Array.from({ length: positions.count }, (_, i) =>
+        Math.hypot(positions.getX(i), positions.getY(i)))
+      expect(Math.max(...radii)).toBeCloseTo(tool.diameter / 2)
+      const midRadii = radii.filter((_, i) => Math.abs(positions.getZ(i) - midZ) < 0.0001)
+      expect(Math.min(...midRadii)).toBeLessThan(tool.diameter * 0.35)
+      expect(Math.max(...midRadii)).toBeCloseTo(tool.diameter / 2)
+    } finally { mesh.dispose() }
+  })
   it('builds a spherical probe ball from the table diameter, with its bottom at Z=0', () => {
     const model = resolveToolModel(tool, assignment('touch-probe'), factoryToolDefaults())
     if (model === null) throw new Error('Missing probe')

@@ -82,6 +82,7 @@ function draw(): void {
   }
   toolMesh.group.visible = props.tool !== null
   if (props.tool !== null) {
+    toolMesh.light(renderer)
     toolMesh.group.position.set(...props.tool.tip)
     toolMesh.setTheme(theme.value === 'dark')
     const bounds = toolPreviewBounds(props.tool)
@@ -97,7 +98,7 @@ function draw(): void {
 }
 
 function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
-function restored(): void { contextLost = false; emit('error', ''); draw() }
+function restored(): void { contextLost = false; toolMesh.resetLighting(); emit('error', ''); draw() }
 watch(() => part.attachment?.geometry, build)
 // Status changes move the existing mesh; only changed dimensions rebuild it.
 watch(() => JSON.stringify(props.tool?.model ?? null), buildTool)

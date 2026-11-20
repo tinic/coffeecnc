@@ -79,6 +79,7 @@ public:
   void hold_jog_stop(bool on);
   // The pin is driven high at this moment.
   [[nodiscard]] auto jog_stop_high() const -> bool;
+  [[nodiscard]] auto jog_contact() const -> bool;
 
   // Call once per control loop cycle, well inside the watchdog's timeout. Toggles heartbeat,
   // lowers a released jog-stop level once it has lasted level_time, arms the watchdog and takes

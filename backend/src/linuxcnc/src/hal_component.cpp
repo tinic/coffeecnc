@@ -26,6 +26,7 @@ template <typename Value> void set(volatile Value* pin, Value value) {
 // Where HAL keeps each pin's value. Lives in HAL shared memory.
 struct HalComponent::Pins {
   hal_bit_t* jog_stop;
+  hal_bit_t* jog_contact;
   hal_bit_t* heartbeat;
   hal_bit_t* watchdog_enable;
   hal_bit_t* watchdog_ok;
@@ -55,6 +56,7 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
     return hal_pin_bit_new((name + '.' + pin).c_str(), direction, slot, id) == 0;
   };
   if (!bit("jog-stop", HAL_OUT, &pins->jog_stop) || !bit("heartbeat", HAL_OUT, &pins->heartbeat) ||
+      !bit("jog-contact", HAL_IN, &pins->jog_contact) ||
       !bit("watchdog-enable", HAL_OUT, &pins->watchdog_enable) ||
       !bit("watchdog-ok", HAL_IN, &pins->watchdog_ok) ||
       !bit("tool-change", HAL_IN, &pins->tool_change) ||
@@ -114,6 +116,7 @@ void HalComponent::hold_jog_stop(bool on) {
 }
 
 auto HalComponent::jog_stop_high() const -> bool { return get(pins_->jog_stop); }
+auto HalComponent::jog_contact() const -> bool { return get(pins_->jog_contact); }
 
 void HalComponent::beat() {
   const auto now = Clock::now();

@@ -229,6 +229,7 @@ struct NmlPort::Impl {
   std::vector<JogStopText> jog_stop_texts;
   // The watchdog trip the operator was last told about.
   std::optional<Clock::time_point> told_watchdog;
+  std::optional<Clock::time_point> told_contact;
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -253,29 +254,21 @@ struct NmlPort::Impl {
   }
 
   // LinuxCNC's "Jog aborted by jog-stop" texts of one collect(): CoffeeCNC's own stops go to the
-  // log, a watchdog stop is told in CoffeeCNC's words, anything else is passed on unchanged.
+  // log. Watchdog and probe-contact stops get an operator message. Other texts pass through.
   // None of them is ever an action's reason unless it is passed on.
   void attribute_jog_stops() {
     if (jog_stop_texts.empty())
       return;
     const auto last_read = jog_stop_texts.back().read_at;
-    // CoffeeCNC's level is noted before every write of it, so a level that caused one of these
-    // texts was noted before the text was read: this copy has it.
-    const auto own = hal != nullptr ? hal->jog_stop_history().own_level_high : std::nullopt;
-    std::optional<Clock::time_point> tripped;
+    auto history = HalShared::JogStopHistory{};
     if (hal != nullptr) {
-      // The watchdog is seen only by the control thread. A watchdog trips only after that thread
-      // has not run for its timeout (300 ms), and it sees the trip before it re-arms it: when it
-      // read the pins within jog_stop_window before the text, any trip behind the text is in
-      // the history already. Otherwise it may have stalled itself: let it read the pins once
-      // more, for a short time only.
-      const auto read = hal->jog_stop_history().read_at;
-      if (!read || last_read - *read >= jog_stop_window)
+      // Motion can publish the stop before the control loop samples the contact input.
+      history = hal->jog_stop_history();
+      if (!history.read_at || *history.read_at < last_read)
         static_cast<void>(until(fresh_pins_time, [&]() -> bool {
-          const auto again = hal->jog_stop_history().read_at;
-          return again && *again >= last_read;
+          history = hal->jog_stop_history();
+          return history.read_at && *history.read_at >= last_read;
         }));
-      tripped = hal->jog_stop_history().watchdog_tripped;
     }
     // One log line per cause and text in this pass, with the count.
     struct Logged {
@@ -285,15 +278,20 @@ struct NmlPort::Impl {
     };
     std::vector<Logged> logged;
     for (auto& seen : jog_stop_texts) {
-      const auto cause = classify_jog_stop(seen.text, seen.read_at, own, tripped);
+      const auto cause = classify_jog_stop(seen.text, seen.read_at, history.own_level_high,
+                                           history.watchdog_tripped, history.contact_edge);
       if (cause == JogStopCause::unattributed) {
         messages.push_back({true, std::move(seen.text)});
         continue;
       }
       if (cause == JogStopCause::watchdog &&
-          (!told_watchdog || *tripped - *told_watchdog > jog_stop_window)) {
-        told_watchdog = tripped;
+          (!told_watchdog || *history.watchdog_tripped - *told_watchdog > jog_stop_window)) {
+        told_watchdog = history.watchdog_tripped;
         messages.push_back({true, std::string(watchdog_stop_text)});
+      }
+      if (cause == JogStopCause::probe_contact && told_contact != history.contact_edge) {
+        told_contact = history.contact_edge;
+        messages.push_back({false, std::string(probe_contact_stop_text)});
       }
       if (!logged.empty() && logged.back().cause == cause && logged.back().text == seen.text)
         ++logged.back().count;
@@ -309,10 +307,13 @@ struct NmlPort::Impl {
                         std::chrono::duration_cast<std::chrono::milliseconds>(read - *at).count())
                   : std::string("none");
       };
-      std::cerr << std::format("coffeecnc: jog_stop_text cause={} count={} "
-                               "own_level_ms_before={} watchdog_tripped_ms_before={} text=\"{}\"\n",
-                               line.cause == JogStopCause::own ? "own" : "watchdog", line.count,
-                               since(own, last_read), since(tripped, last_read), line.text)
+      const auto cause = line.cause == JogStopCause::own ? "own"
+                        : line.cause == JogStopCause::watchdog ? "watchdog" : "probe_contact";
+      std::cerr << std::format("coffeecnc: jog_stop_text cause={} count={} own_level_ms_before={} "
+                               "watchdog_tripped_ms_before={} contact_ms_before={} text=\"{}\"\n",
+                               cause, line.count, since(history.own_level_high, last_read),
+                               since(history.watchdog_tripped, last_read),
+                               since(history.contact_edge, last_read), line.text)
                 << std::flush;
     }
   }

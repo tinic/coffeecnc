@@ -47,10 +47,13 @@ void command_results() {
           "Controller text that is not UTF-8 still produces a result");
   const SetterState setter{.calibration = std::array{0.0, 0.0, -40.0},
                            .measurement =
-                               SetterMeasurement{false, 2, {0.0, 0.0, 12.0}, 52.0, 40.0, 0.03}};
+                               SetterMeasurement{false, 2, {0.0, 0.0, 12.0}, 52.0, 40.0, 0.03},
+                           .measured_tools = {98, 2}};
   const auto measurement = Json::parse(encode_result(42, CommandOutcome::accepted, "", setter));
   require(measurement.at("setter").at("measurement").at("stopping_distance") == 0.03,
           "Fixed setter measurement reports the stopping distance in mm");
+  require(measurement.at("setter").at("measured_tools") == Json{98, 2},
+          "Fixed setter state lists the tools touched off against its calibration");
 }
 
 void operator_messages() {

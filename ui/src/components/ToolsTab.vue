@@ -15,6 +15,7 @@ import ModalDialog from './ModalDialog.vue'
 import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
+import { touchedOff } from '../setter-state'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -136,6 +137,7 @@ function editOffset(wcs: number): void {
             <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
               <td class="num mono">
                 <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">T{{ tool.number }}</button>
+                <span v-if="touchedOff(tool.number)" class="touched" title="Touched off against the current reference" aria-label="Touched off">✓</span>
               </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
@@ -226,6 +228,7 @@ function editOffset(wcs: number): void {
 </template>
 
 <style scoped>
+.touched { margin-left: 6px; color: var(--ok, #15803d); font-weight: 700; }
 .tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 480px;

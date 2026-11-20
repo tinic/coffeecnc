@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -130,6 +131,7 @@ struct NmlPort::Impl {
     std::uint64_t datum;
     std::array<double, 3> plane;
     double clearance_z;
+    std::vector<int> measured; // tools touched off against this plane, in order
   };
 
   std::optional<Calibration> setter_calibration;
@@ -1151,7 +1153,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
   const auto state = [&]() -> SetterState {
-    return {calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt};
+    return {calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+            calibration ? calibration->measured : std::vector<int>{}};
   };
   if (request.action == SetterAction::status)
     return state();
@@ -1183,7 +1186,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
 
-  constexpr double position_tolerance = 0.02; // mm
+  constexpr double position_tolerance = 0.1; // mm: a hobby mill with encoder feedback
   const auto near = [](double actual, double expected) {
     return std::abs(actual - expected) <= position_tolerance;
   };
@@ -1232,8 +1235,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     calibration = Impl::Calibration{
         epoch.datum,
         {request.start[0], request.start[1], value},
-        limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2]};
-    return SetterState{calibration->plane, measurement};
+        limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
+        {tool}};
+    return SetterState{calibration->plane, measurement, calibration->measured};
   }
   auto stopped_at = move.approach.value_or(request.start);
   if (move.retract_z)
@@ -1294,7 +1298,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       !std::isfinite(applied->task.toolOffset.tran.z) ||
       std::abs(applied->task.toolOffset.tran.z * machine_scale - value) > table_tolerance)
     return std::unexpected("Length saved. Could not verify the applied compensation.");
-  return SetterState{calibration->plane, measurement};
+  if (!std::ranges::contains(calibration->measured, tool))
+    calibration->measured.push_back(tool);
+  return SetterState{calibration->plane, measurement, calibration->measured};
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {

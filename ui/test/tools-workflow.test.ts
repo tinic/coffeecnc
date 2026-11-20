@@ -9,6 +9,7 @@ import { defaultOperatorPreferences } from '../src/operator-settings'
 import { createOperatorSettingsState } from '../src/operator-settings-state'
 import { hello, SimMachine } from '../src/sim/machine'
 import type { SetterState, Tool } from '../src/protocol'
+import { setterState } from '../src/setter-state'
 import type { ResultListener } from '../src/store'
 
 const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultListener>() }))
@@ -39,6 +40,7 @@ async function press(text: string): Promise<void> {
   await button.trigger('click')
 }
 beforeEach(() => {
+  setterState.value = null
   panel.hello = { ...hello }; panel.simulated = true; panel.link = 'live'; panel.unit = 'mm'
   panel.preferences = { ...defaultOperatorPreferences(), tool_reference_height: 6.35 }
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
@@ -87,8 +89,9 @@ describe('fixed setter workflow', () => {
     await nextTick()
     await press('Touch off')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
-    await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 } })
+    await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 }, measured_tools: [98, 1] })
     expect(getWrapper().get('.setter-result').text()).toBe('T1 measured')
+    expect(getWrapper().findAll('.tool-row').filter((row) => row.find('.touched').exists()).map((row) => row.find('.tool-number').text())).toContain('T1')
     expect(send).toHaveBeenCalledTimes(3)
     expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
   })

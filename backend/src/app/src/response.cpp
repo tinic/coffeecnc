@@ -40,7 +40,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                      {"stopping_distance", r->stopping_distance}};
     message["setter"] = {
         {"calibration", setter->calibration ? Json(*setter->calibration) : Json(nullptr)},
-        {"measurement", std::move(measurement)}};
+        {"measurement", std::move(measurement)},
+        {"measured_tools", setter->measured_tools}};
   }
   return text(message);
 }

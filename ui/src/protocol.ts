@@ -312,6 +312,8 @@ export interface SetterMeasurement {
 export interface SetterState {
   calibration: Vec3 | null
   measurement: SetterMeasurement | null
+  /** Tools touched off against this calibration, the reference tool included. */
+  measured_tools?: number[]
 }
 
 export interface DirectoryEntry {

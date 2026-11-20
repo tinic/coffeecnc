@@ -21,6 +21,10 @@ const unit = computed(() => panel.unit)
 const tools = computed(() => panel.toolTable?.tools
   .filter((tool) => tool.number > 0)
   .sort((a, b) => a.number - b.number) ?? [])
+const selectedTool = ref<number | null>(null)
+watch(tools, (rows) => {
+  if (!rows.some((tool) => tool.number === selectedTool.value)) selectedTool.value = null
+})
 const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
@@ -129,8 +133,10 @@ function editOffset(wcs: number): void {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, editable: editBlock === null }" :tabindex="editBlock === null ? 0 : -1" :aria-label="`Edit tool ${tool.number}: ${tool.comment}`" @click="edit(tool)" @keydown.enter.self.prevent="edit(tool)" @keydown.space.self.prevent="edit(tool)">
-              <td class="num mono">T{{ tool.number }}</td>
+            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="selectedTool = tool.number">
+              <td class="num mono">
+                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="selectedTool = tool.number">T{{ tool.number }}</button>
+              </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
               <td class="comment">
@@ -256,9 +262,11 @@ function editOffset(wcs: number): void {
 .table .heading h2 { display: none; }
 .table table { table-layout: fixed; }
 .tool-column { width: 52px; }.dimension-column { width: 92px; }.load-column { width: 144px; }
-.tool-row.editable { cursor: pointer; }
-.tool-row.editable:hover td { background: var(--accent-soft); }
-.tool-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tool-row { cursor: pointer; }
+.tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
+.tool-row.selected td:first-child { box-shadow: inset 3px 0 var(--accent); }
+.tool-number { width: 100%; min-height: 44px; padding: 0; background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; text-align: right; }
+.tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .load-tool, .edit-tool { width: 64px; min-height: 44px; }
 

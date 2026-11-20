@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <cstddef>
 #include <cstdint>
@@ -812,8 +813,8 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
 auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
     -> std::expected<FixedSetterContact, std::string> {
   using Contact = std::expected<FixedSetterContact, std::string>;
-  // Position checks: the G0759's encoder feedback and step resolution need more than 0.02 mm.
-  constexpr double tolerance_mm = 0.05;
+  // Position checks: a hobby mill with encoder feedback, backlash and step resolution.
+  constexpr double tolerance_mm = 0.1;
   const auto limits = impl_->config.fixed_setter;
   auto* hal = impl_->hal;
   if (!limits || hal == nullptr)
@@ -1081,7 +1082,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         return interrupt(std::format(
             "The setter did not release before the latch pass (back-off Z {:.3f}, at Z {:.3f}, "
             "probe {}).",
-            backoff_z, raw == nullptr ? NAN : raw->motion.traj.actualPosition.tran.z * machine_scale,
+            backoff_z, raw == nullptr ? std::numeric_limits<double>::quiet_NaN() : raw->motion.traj.actualPosition.tran.z * machine_scale,
             released && *released->probe_input ? "tripped" : "clear"));
       const double latch_travel = std::min(2 * limits->latch_backoff_mm, backoff_z - bottom_z);
       contact = search(backoff_z, latch_travel, limits->latch_feed_mm_min);

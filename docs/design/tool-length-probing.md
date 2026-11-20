@@ -19,7 +19,7 @@ Load the tool to measure, jog above the setter at the taught XY and select **Mea
 
 The controller reports the contact in machine coordinates and machine units. Convert the latch to millimetres and subtract the calibrated trigger-plane Z. For example, a contact at machine Z = 15 mm and a calibrated plane at Z = −35 mm give a length of 50 mm. Work origin, G92/G52 and the applied tool length do not enter the fixed-setter calculation.
 
-After a valid contact and completed retract, show the current table length, measured length and difference. **Apply length** writes just the tool's Z offset with G10 L1 and applies G43 H for that tool. Verify the table row and compensation by reading both back. Dismiss leaves the table unchanged. If the table write completes but applying compensation fails, report that distinction and leave retry to the operator.
+After a valid contact and completed retract, show the current table length, measured length and difference. **Z travel after contact** appears in both calibration and measurement reviews. It reports how far below the contact latch Z settled before retract. Peak excursion during deceleration requires separate observation. **Apply length** writes just the tool's Z offset with G10 L1 and applies G43 H for that tool. Verify the table row and compensation by reading both back. Dismiss leaves the table unchanged. If the table write completes but applying compensation fails, report that distinction and leave retry to the operator.
 
 [LinuxCNC probing](https://linuxcnc.org/docs/2.9/html/gcode/g-code.html#gcode:g38), [G10 L1](https://linuxcnc.org/docs/2.9/html/gcode/g-code.html#gcode:g10-l1), [NML status](https://linuxcnc.org/docs/2.9/html/config/python-interface.html#_reading_linuxcnc_status).
 

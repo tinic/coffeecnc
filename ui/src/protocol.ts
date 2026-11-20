@@ -305,6 +305,8 @@ export interface SetterReview {
   /** Trigger-plane machine Z for calibration, or LinuxCNC tool Z length. */
   value: number
   previous_length: number
+  /** Downward travel in mm from the latched contact to the settled position before retract. */
+  stopping_distance?: number
 }
 
 export interface SetterState {

@@ -211,10 +211,15 @@ onBeforeUnmount(() => {
       Setter at machine X {{ length(review.contact[0]) }} · Y {{ length(review.contact[1]) }}.
       Trigger-plane Z {{ length(review.value) }}.
     </p>
-    <dl v-else class="setter-values">
-      <dt>Current length</dt><dd class="mono">{{ length(review.previous_length) }}</dd>
-      <dt>Measured length</dt><dd class="mono">{{ length(review.value) }}</dd>
-      <dt>Difference</dt><dd class="mono">{{ length(review.value - review.previous_length) }}</dd>
+    <dl v-if="!review.calibration || review.stopping_distance !== undefined" class="setter-values">
+      <template v-if="!review.calibration">
+        <dt>Current length</dt><dd class="mono">{{ length(review.previous_length) }}</dd>
+        <dt>Measured length</dt><dd class="mono">{{ length(review.value) }}</dd>
+        <dt>Difference</dt><dd class="mono">{{ length(review.value - review.previous_length) }}</dd>
+      </template>
+      <template v-if="review.stopping_distance !== undefined">
+        <dt>Z travel after contact</dt><dd class="mono">{{ length(review.stopping_distance) }}</dd>
+      </template>
     </dl>
     <p v-if="!review.calibration">Apply length saves the measured Z in T{{ review.tool }} and applies its compensation.</p>
     <p v-if="block" role="status">{{ block }}</p>

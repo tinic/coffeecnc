@@ -32,9 +32,13 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
   if (setter) {
     auto review = Json(nullptr);
     if (const auto& r = setter->review)
-      review = {{"id", r->id},       {"calibration", r->calibration},
-                {"tool", r->tool},   {"contact", r->contact},
-                {"value", r->value}, {"previous_length", r->previous_length}};
+      review = {{"id", r->id},
+                {"calibration", r->calibration},
+                {"tool", r->tool},
+                {"contact", r->contact},
+                {"value", r->value},
+                {"previous_length", r->previous_length},
+                {"stopping_distance", r->stopping_distance}};
     message["setter"] = {
         {"reference_captured", setter->reference_captured},
         {"calibration", setter->calibration ? Json(*setter->calibration) : Json(nullptr)},

@@ -45,6 +45,12 @@ void command_results() {
   const auto replaced = Json::parse(encode_result(1, CommandOutcome::failed, latin1));
   require(replaced.at("reason") == "Fr\xEF\xBF\xBDser",
           "Controller text that is not UTF-8 still produces a result");
+  const SetterState setter{.reference_captured = false,
+                           .calibration = std::array{0.0, 0.0, -40.0},
+                           .review = SetterReview{9, false, 2, {0.0, 0.0, 12.0}, 52.0, 40.0, 0.03}};
+  const auto measurement = Json::parse(encode_result(42, CommandOutcome::accepted, "", setter));
+  require(measurement.at("setter").at("review").at("stopping_distance") == 0.03,
+          "Fixed setter review reports the stopping distance in mm");
 }
 
 void operator_messages() {

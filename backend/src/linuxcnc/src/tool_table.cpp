@@ -5,6 +5,8 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <format>
+#include <sstream>
 #include <system_error>
 #include <vector>
 
@@ -161,6 +163,68 @@ auto without_tool(std::string_view table, int number) -> std::optional<std::stri
   if (!found)
     return {};
   return joined(lines);
+}
+
+namespace {
+constexpr double touched_tolerance = 0.001;
+auto unchanged(std::string_view table, int tool, double length) -> bool {
+  const auto now = tool_z(table, tool);
+  return now && std::abs(*now - length) <= touched_tolerance;
+}
+} // namespace
+
+auto parse_touched_off(std::string_view text) -> std::optional<TouchedOff> {
+  std::istringstream in{std::string(text)};
+  TouchedOff touched;
+  std::string word;
+  if (!(in >> word >> touched.reference) || word != "reference" ||
+      !std::isfinite(touched.reference))
+    return std::nullopt;
+  for (double length{}; in >> word >> length;) {
+    int tool{};
+    const auto* first = word.data() + 1;
+    const auto* last = word.data() + word.size();
+    if (word.size() < 2 || word[0] != 'T' || !std::isfinite(length))
+      return std::nullopt;
+    if (const auto [end, error] = std::from_chars(first, last, tool);
+        error != std::errc{} || end != last || tool <= 0)
+      return std::nullopt;
+    touched.tools[tool] = length;
+  }
+  if (!in.eof())
+    return std::nullopt;
+  return touched;
+}
+
+auto format_touched_off(const TouchedOff& touched) -> std::string {
+  std::string text = std::format("reference {:.6f}\n", touched.reference);
+  for (const auto& [tool, length] : touched.tools)
+    text += std::format("T{} {:.6f}\n", tool, length);
+  return text;
+}
+
+auto restored_touched_off(std::string_view table, int reference_tool,
+                          const std::optional<TouchedOff>& saved) -> std::map<int, double> {
+  std::map<int, double> marks;
+  const auto reference = tool_z(table, reference_tool);
+  if (!reference)
+    return marks;
+  marks[reference_tool] = *reference;
+  if (!saved || std::abs(saved->reference - *reference) > touched_tolerance)
+    return marks;
+  for (const auto& [tool, length] : saved->tools)
+    if (tool != reference_tool && unchanged(table, tool, length))
+      marks[tool] = length;
+  return marks;
+}
+
+auto still_touched_off(std::string_view table, const std::map<int, double>& measured)
+    -> std::vector<int> {
+  std::vector<int> tools;
+  for (const auto& [tool, length] : measured)
+    if (unchanged(table, tool, length))
+      tools.push_back(tool);
+  return tools;
 }
 
 } // namespace coffeecnc

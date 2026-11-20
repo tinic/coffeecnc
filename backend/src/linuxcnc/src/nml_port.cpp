@@ -1050,6 +1050,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
           !block(std::format("G90 G53 G1 Z{:.8f}{}", backoff_z / program_scale, feed_word),
                  move_timeout, false, true))
         return interrupt("The fixed setter latch backoff did not complete.");
+      // The setter plunger springs back after the move ends: allow it time to release.
+      static_cast<void>(until(std::chrono::milliseconds{500}, [&]() {
+        const auto* s = live_cycle();
+        const auto pins = interlock();
+        return s == nullptr || !pins || (!*pins->probe_input && s->motion.traj.probeval == 0);
+      }));
       raw = live_cycle();
       const auto released = interlock();
       if (raw == nullptr || !released || *released->probe_input || raw->motion.traj.probeval != 0 ||

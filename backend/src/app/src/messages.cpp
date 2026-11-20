@@ -234,6 +234,8 @@ auto encode_hello(const Hello& hello) -> Encoded {
       fields.fail("max_spindle_rpm", "is not positive");
     message["max_spindle_rpm"] = fields.real(*hello.max_spindle_rpm, "max_spindle_rpm");
   }
+  if (hello.touch_probe_tool)
+    message["touch_probe_tool"] = *hello.touch_probe_tool;
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
   if (const auto& setter = hello.fixed_setter)

@@ -86,6 +86,11 @@ void hello_rules() {
   require(!hello.contains("coolant"), "Unknown coolant outputs are not sent");
   auto cooled = valid_hello();
   cooled.coolant = CoolantOutputs{.flood = true, .mist = false};
+  require(!hello.contains("touch_probe_tool"), "No touch probe tool is sent unless configured");
+  auto probed = valid_hello();
+  probed.touch_probe_tool = 99;
+  require(parsed(encode_hello(probed)).at("touch_probe_tool") == 99,
+          "The configured touch probe tool is sent as touch_probe_tool");
   require(parsed(encode_hello(cooled)).at("coolant") == Json{{"flood", true}, {"mist", false}},
           "Known coolant outputs are sent as coolant.flood and coolant.mist");
   auto named = valid_hello();

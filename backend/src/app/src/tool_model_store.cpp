@@ -528,11 +528,17 @@ void ToolModelStore::send_snapshot(PageToken page) {
   wake_.notify_all();
 }
 
+void ToolModelStore::set_fixed_probe_tool(std::optional<int> tool_number) {
+  const std::scoped_lock lock{mutex_};
+  fixed_probe_tool_ = tool_number;
+}
+
 auto ToolModelStore::touch_probe_loaded(int tool_number) -> std::optional<bool> {
   if (tool_number <= 0)
     return false;
   const std::scoped_lock lock{mutex_};
-  if (std::ranges::find(probe_tools_, tool_number) != probe_tools_.end() ||
+  if (fixed_probe_tool_ == tool_number ||
+      std::ranges::find(probe_tools_, tool_number) != probe_tools_.end() ||
       changing_probe_ == tool_number)
     return true;
   if (!probe_catalog_ready_)

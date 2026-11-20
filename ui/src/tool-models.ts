@@ -13,5 +13,13 @@ export function savedProbe(number: number): SavedToolModelAssignment | undefined
 
 export const touchProbeLoaded = computed(() => {
   const number = panel.status?.tool.in_spindle ?? 0
+  if (number > 0 && number === panel.hello?.touch_probe_tool) return true
   return savedProbe(number) !== undefined || toolModels.assignments.get(number)?.family === 'touch-probe'
 })
+
+// The name shown for a tool without a description: the machine's special tools have one.
+export function defaultToolName(number: number): string {
+  if (number === panel.hello?.fixed_setter?.reference_tool) return 'Setter reference tool'
+  if (number === panel.hello?.touch_probe_tool || savedProbe(number) !== undefined) return 'Touch probe'
+  return ''
+}

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
+import { toolLabel } from '../units'
 import { setterState, setterStatus, type SetterStatusLine } from '../setter-state'
 
 const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean; inlineStatus?: boolean }>()
@@ -40,7 +41,7 @@ const summary = computed(() => {
   const result = state.value?.measurement
   if (result?.tool !== tool.value) return ''
   // The length itself is in the tool table: only confirm what happened.
-  return result.calibration ? 'Setter taught' : `T${String(result.tool)} measured`
+  return result.calibration ? 'Setter taught' : `${toolLabel(result.tool)} measured`
 })
 
 const line = computed((): SetterStatusLine => {
@@ -90,7 +91,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="setter-controls">
     <div class="setter-action">
-      <span v-if="showTool && tool !== 0" class="mono">T{{ tool }}</span>
+      <strong v-if="showTool && tool !== 0" class="mono">{{ toolLabel(tool) }}</strong>
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
       <button v-else class="btn primary" type="button" :disabled="!!pending || block !== null" @click="touchOff">Touch off</button>
     </div>

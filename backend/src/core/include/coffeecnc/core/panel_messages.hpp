@@ -56,6 +56,8 @@ struct Hello {
   std::optional<CoolantOutputs> coolant;
   std::optional<double> max_spindle_rpm;
   std::optional<FixedSetterLimits> fixed_setter{};
+  // The tool HAL routes to the spindle touch probe, when the machine declares one.
+  std::optional<int> touch_probe_tool{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

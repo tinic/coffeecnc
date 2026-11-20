@@ -1369,6 +1369,14 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
            near(s.controller.axes[1].machine, start[1]) &&
            near(s.controller.axes[2].machine, start[2]);
   };
+  // After a probe the Z encoder can lag the command by the backlash (0.125 mm on the mill).
+  const auto back_at = [&](const NmlStatus& s, const std::array<double, 3>& start) {
+    constexpr double backlash_allowance = 0.5; // mm
+    for (std::size_t i = 0; i < start.size(); ++i)
+      if (!(std::abs(s.controller.axes[i].machine - start[i]) <= backlash_allowance))
+        return false;
+    return true;
+  };
   if (before.controller.mode != TaskMode::mdi || !at_start(before, request.start))
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   // Before the setter is taught, any tool with a valid saved length teaches it like the
@@ -1419,14 +1427,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("Material touch-off was cancelled before setting the work origin.");
     const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
     if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
-        after.controller.tool_in_spindle != tool || !at_start(after, request.start) ||
+        after.controller.tool_in_spindle != tool || !back_at(after, request.start) ||
         frame_of(after) != frame || after.tool_offset != before.tool_offset ||
         after.controller.program_units != before.controller.program_units ||
         impl_->read_tool_table() != table)
       return std::unexpected("Machine or tool table changed before setting the work origin.");
 
-    const std::array at{after.controller.axes[0].machine, after.controller.axes[1].machine,
-                        after.controller.axes[2].machine};
+    // G10 L20 applies at the commanded position, so measure from it, not from the Z encoder
+    // reading, which lags the command by the backlash after the retract.
+    const auto& commanded = current->motion.traj.position;
+    const std::array at{commanded.tran.x * machine_scale, commanded.tran.y * machine_scale,
+                        commanded.tran.z * machine_scale};
     // G10 L20 sets the coordinate at the current position. Use the distance back
     // from the measured face, including ball radius only for side contact.
     auto expected = after.work;
@@ -1451,10 +1462,14 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
           applied->status != RCS_DONE || impl_->status.link() != Link::live)
         return false;
       const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+      const auto& traj = applied->motion.traj;
+      const std::array lag{(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
+                           (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
+                           (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale};
       for (std::size_t i = 0; i < expected.size(); ++i)
-        // 0.01 mm like the latch spread: Z comes from an encoder whose reading moves by more
-        // than 0.002 mm at rest, which failed a correct Z top on the mill.
-        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.01)
+        // s.work follows the encoder: compare its commanded value. 0.01 mm like the latch
+        // spread, since the encoder reading moves by more than 0.002 mm at rest.
+        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
           return false;
       return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
              s.tool_offset == before.tool_offset;

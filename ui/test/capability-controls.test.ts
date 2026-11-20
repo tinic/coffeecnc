@@ -102,6 +102,7 @@ describe('capability-aware controls', () => {
     } }
     await nextTick()
     expect(wrapper.find('.material-probe').exists()).toBe(false)
+    expect(wrapper.find('.setter-controls').exists()).toBe(false)
     const nav = wrapper.get('.em-nav').findAll('button')
     expect(nav.map((button) => button.text())).toEqual(['Manual', 'Machine', 'Tools', 'Touch off'])
     await nav[3]?.trigger('click')

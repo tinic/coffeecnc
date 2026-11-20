@@ -6,7 +6,7 @@ import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
 import { toolLabel } from '../units'
 import { setterState, setterStatus, type SetterStatusLine } from '../setter-state'
 
-const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean; inlineStatus?: boolean }>()
+const props = defineProps<{ limits: FixedSetterLimits }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
 
 const state = setterState
@@ -91,23 +91,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="setter-controls">
     <div class="setter-action">
-      <strong v-if="showTool && tool !== 0" class="mono">{{ toolLabel(tool) }}</strong>
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
       <button v-else class="btn primary" type="button" :disabled="!!pending || block !== null" @click="touchOff">Touch off</button>
     </div>
-    <p v-if="inlineStatus" class="hint setter-result" :class="line.level" aria-live="polite">{{ line.text }}</p>
   </div>
 </template>
 
 <style scoped>
-/* One row, fixed size: status text left of the button, so the changing text never moves the
-   buttons around it and the row lines up with the other header buttons. */
 .setter-controls { flex: none; display: flex; flex-direction: row-reverse; align-items: center; gap: 10px; }
 .setter-action { display: flex; align-items: center; gap: 8px; }
 .setter-action button { width: 130px; min-height: 44px; white-space: nowrap; }
-.setter-result {
-  width: 260px; margin: 0; text-align: right; font-size: 12px; line-height: 1.3;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.setter-result.blocked { color: var(--stop); }
 </style>

@@ -62,6 +62,20 @@ function rig(): Rig {
 }
 
 describe('commands', () => {
+  it('keeps probe command failures in the log and shows other machine messages globally', () => {
+    const { panel, receive, status } = rig()
+    receive(hello)
+    receive(status({ link: 'live', machine: 'on' }))
+    panel.state.tab = 'probe'
+    const id = panel.send({ type: 'fixed_setter', action: 'material', direction: 'x_plus',
+      tool: 99, x: 0, y: 0, z: 0 })
+    receive({ type: 'result', id, outcome: 'failed', reason: 'No probe contact' })
+    expect(panel.state.log.at(-1)?.text).toBe('No probe contact')
+    expect(panel.state.notice).toBeNull()
+    receive({ type: 'message', level: 'info', text: 'Jog stopped: probe contact', time: 1 })
+    expect(panel.state.notice?.text).toBe('Jog stopped: probe contact')
+  })
+
   it('binds tool settings to the current capable hello, withholds invalid data and never regresses revisions', () => {
     const { panel, receive } = rig()
     const snapshot = { type: 'tool_models', machine_id: 'G0759', revision: 2,

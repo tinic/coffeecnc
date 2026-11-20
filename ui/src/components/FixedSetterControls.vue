@@ -23,7 +23,8 @@ const position = computed((): Vec3 | null => {
 })
 const block = computed(() => {
   if (mdiBlock.value !== null) return mdiBlock.value
-  if (!allHomed.value || position.value === null) return 'Home XYZ first'
+  if (homingActive.value) return 'Wait for homing to finish'
+  if (position.value === null) return 'Waiting for the machine position'
   const s = status.value
   if (s?.wait.kind === 'tool_change' || tool.value <= 0) return 'Finish loading a tool'
   const rpm = s?.spindle.actual_rpm

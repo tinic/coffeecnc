@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
 import { toolLabel } from '../units'
-import { setterState, setterStatus, type SetterStatusLine } from '../setter-state'
+import { setterState, setterStatus, touchedOff, type SetterStatusLine } from '../setter-state'
 
 const props = defineProps<{ limits: FixedSetterLimits }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
@@ -13,7 +13,10 @@ const state = setterState
 const pending = shallowRef<Request | null>(null)
 const status = computed(() => panel.status)
 const tool = computed(() => status.value?.tool.in_spindle ?? 0)
-const teaching = computed(() => tool.value === props.limits.reference_tool)
+// The reference tool always teaches. Before the setter is taught (e.g. after a restart), any
+// tool whose saved length is still valid teaches it too (turo: T99 can act like T98).
+const teaching = computed(() => tool.value === props.limits.reference_tool ||
+  (!state.value?.calibration && tool.value > 0 && touchedOff(tool.value)))
 const running = computed(() => pending.value?.action === 'touch_off')
 const position = computed((): Vec3 | null => {
   const [x, y, z] = ['x', 'y', 'z'].map((letter) => status.value?.axes.find((axis) => axis.axis === letter)?.machine)
@@ -29,13 +32,13 @@ const block = computed(() => {
   const rpm = s?.spindle.actual_rpm
   if (rpm === null || rpm === undefined || rpm >= 1 || s?.spindle.direction !== 'stopped') return 'Wait for the spindle to stop'
   if (!s.motion.in_position) return 'Wait for the axes to stop'
-  if (!teaching.value && !state.value?.calibration) return `Teach the setter with T${String(props.limits.reference_tool)} first`
+  if (!teaching.value && !state.value?.calibration) return `Teach the setter with T${String(props.limits.reference_tool)} or a touched-off tool first`
   return null
 })
 // One line the operator reads before pressing: what Touch off does with this tool, or why it can't.
 const hint = computed(() => {
   if (!teaching.value) return 'Measures this tool at the setter.'
-  return `Jog T${String(props.limits.reference_tool)} over the setter, then Touch off.`
+  return `Jog ${toolLabel(tool.value)} over the setter, then Touch off.`
 })
 const summary = computed(() => {
   const result = state.value?.measurement

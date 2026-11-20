@@ -12,6 +12,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -73,12 +74,13 @@ template <typename Predicate> void wait_for(NmlPort& port, Predicate predicate) 
   }
 }
 
-void material_scenarios(NmlPort& port, HalShared& shared, double scale, const auto& mdi) {
-  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
-  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double scale,
+                        const auto& mdi, const auto& restart) {
+  checked(port->set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port->set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   auto epoch = SetterEpoch{1, 1, 1, 0};
   const auto position = [&] {
-    const auto axes = port.status().controller.axes;
+    const auto axes = port->status().controller.axes;
     return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
   };
   const auto start_at = [&] { mdi("G21 G90 G53 G0 X0 Y0 Z20"); };
@@ -96,13 +98,20 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
     ++epoch.tool;
     start_at();
   };
-  const auto setter = [&](int tool) {
-    const auto result = port.fixed_setter({SetterAction::touch_off, tool, position()}, epoch, {});
+  const auto setter = [&](int tool, const Wanted& wanted = {}) -> SetterState {
+    const auto result = port->fixed_setter({SetterAction::touch_off, tool, position()}, epoch, wanted);
     if (!result)
       throw std::runtime_error(result.error());
+    return *result;
+  };
+  const auto setter_status = [&]() -> SetterState {
+    const auto result = port->fixed_setter({.action = SetterAction::status}, epoch, {});
+    if (!result)
+      throw std::runtime_error(result.error());
+    return *result;
   };
   const auto material = [&](ProbeDirection direction, const Wanted& wanted = {}) {
-    return port.fixed_setter({SetterAction::material, 99, position(), direction}, epoch, wanted);
+    return port->fixed_setter({SetterAction::material, 99, position(), direction}, epoch, wanted);
   };
   load(98);
   require(!material(ProbeDirection::z_top), "material touch-off requires the ruby probe");
@@ -112,20 +121,30 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   require(!material(ProbeDirection::z_top), "material Z requires a measured probe");
   window('z', -100, 12);
   setter(99);
+  load(1);
+  window('z', -100, 11.5);
+  setter(1);
+  const double original_t1 = port->status().tool_offset[2];
+  load(99);
+  restart();
+  ++epoch.page;
+  const auto restarted = setter_status();
+  require(!restarted.calibration && restarted.measured_tools == std::vector<int>{1, 98, 99},
+          "restarting restores the saved ruby and tool marks without a setter plane");
 
   mdi("G54");
-  const auto g54 = port.status().g5x;
+  const auto g54 = port->status().g5x;
   mdi("G10 L2 P2 X5 Y-7 Z2");
   mdi("G55");
   mdi("G92 X2 Y3 Z4");
   const auto check_cycle = [&](ProbeDirection direction, std::size_t axis, double expected,
                                const Wanted& wanted = {}) {
     mdi(scale == 1 ? "G20" : "G21");
-    const auto before = port.status();
+    const auto before = port->status();
     const auto start = position();
     const auto result = material(direction, wanted);
     require(result.has_value(), result ? "material probe completed" : result.error());
-    const auto after = port.status();
+    const auto after = port->status();
     require(result->material && result->material->wcs == 2 &&
                 result->material->axis == "XYZ"[axis] && after.wcs == 2 &&
                 std::abs(after.work[axis] - expected) < 0.03,
@@ -140,6 +159,27 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   start_at();
   window('z', -100, 13);
   check_cycle(ProbeDirection::z_top, 2, 7);
+  require(!setter_status().calibration, "T99 probes material Z after a restart without teaching");
+
+  start_at();
+  window('z', -100, 12);
+  bool saw_ruby_input = false;
+  const auto taught_by_ruby = setter(99, [&] {
+    const auto pins = shared.view(HalShared::Clock::now());
+    if (pins && pins->probe_cycle_active && !pins->probe_setter_selected && pins->probe_input)
+      saw_ruby_input = true;
+    return true;
+  });
+  require(taught_by_ruby.calibration && taught_by_ruby.measurement &&
+              taught_by_ruby.measurement->calibration && saw_ruby_input,
+          "a marked T99 teaches the setter through its own input");
+  load(1);
+  window('z', -100, 11.5);
+  const auto remeasured = setter(1);
+  require(remeasured.measurement && !remeasured.measurement->calibration &&
+              std::abs(port->status().tool_offset[2] - original_t1) < 0.01,
+          "T1 remeasures to the same length when T99 teaches the setter");
+  load(99);
 
   halcmd("loadrt timedelay names=sim-ruby-release");
   halcmd("addf sim-ruby-release servo-thread");
@@ -195,7 +235,7 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
     halcmd("setp sim-ruby-release.off-delay 0");
   }
   mdi("G54");
-  require(port.status().g5x == g54, "probing G55 left G54 unchanged");
+  require(port->status().g5x == g54, "probing G55 left G54 unchanged");
   mdi("G55");
   start_at();
   mdi("G10 L2 P2 R90");
@@ -205,11 +245,11 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   start_at();
   window('z', -100, -50);
   const auto start = position();
-  const auto before = port.status().g5x;
+  const auto before = port->status().g5x;
   const auto failed_cleanly = [&](const auto& result, std::string_view reason) {
     require(!result && result.error().contains(reason),
             result ? "expected a probe failure" : result.error());
-    require(port.status().g5x == before && port.snapshot().machine == MachineState::on &&
+    require(port->status().g5x == before && port->snapshot().machine == MachineState::on &&
                 std::abs(position()[2] - start[2]) < 0.03,
             "a probe failure returned to its start and left the work origin intact");
   };
@@ -234,6 +274,15 @@ void material_scenarios(NmlPort& port, HalShared& shared, double scale, const au
   });
   require(shifted && hits == 4, "all three slow contacts were observed");
   failed_cleanly(unstable, "exceeds 0.01 mm");
+
+  mdi(std::format("G10 L1 P99 Z{}", port->status().tool_offset[2] + 1));
+  mdi("G43 H99");
+  const auto writes_before = port->writes().size();
+  failed_cleanly(material(ProbeDirection::z_top), "Touch off T99");
+  require(port->writes().size() == writes_before, "the changed ruby length prevents probe motion");
+  const auto edited = setter_status();
+  require(!edited.calibration && edited.measured_tools == std::vector<int>{1, 98},
+          "editing the teaching tool drops the plane and preserves other saved marks");
 }
 
 void run(const std::string& ini, bool material) {
@@ -287,7 +336,10 @@ void run(const std::string& ini, bool material) {
   };
   mdi("G21 G90 G94 G40");
   if (material) {
-    material_scenarios(*port, shared, scale, mdi);
+    material_scenarios(port, shared, scale, mdi, [&] {
+      port.reset();
+      port = connect();
+    });
     return;
   }
   checked(port->set_tool({.number = reference_tool,
@@ -427,8 +479,25 @@ void run(const std::string& ini, bool material) {
   port = connect();
   ++epoch.page;
   const auto restarted = setter_status();
-  require(!restarted.calibration && restarted.measured_tools.empty(),
-          "restarting the port hides all marks until T98 is taught");
+  require(!restarted.calibration &&
+              restarted.measured_tools == std::vector<int>{1, reference_tool},
+          "restarting the port keeps the valid saved marks without a taught setter");
+  // turo: a tool with a valid saved length teaches the setter like the reference.
+  mdi("M61 Q1");
+  mdi("G43 H1");
+  ++epoch.tool;
+  mdi("G21 G90 G53 G0 X0 Y0 Z20");
+  halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
+  const auto table_before_t1_teach = read_table();
+  const auto taught_by_t1 = setter(touch_request(1));
+  require(taught_by_t1.calibration && taught_by_t1.measurement &&
+              taught_by_t1.measurement->calibration && taught_by_t1.measurement->tool == 1 &&
+              taught_by_t1.measured_tools == std::vector<int>{1, reference_tool} &&
+              read_table() == table_before_t1_teach,
+          "after a restart a touched-off T1 teaches the setter and keeps its length");
+  port.reset();
+  port = connect();
+  ++epoch.page;
   require(teach_reference().measured_tools == std::vector<int>{1, reference_tool},
           "re-teaching T98 after restart restores the persisted T1 mark");
 
@@ -453,7 +522,7 @@ void run(const std::string& ini, bool material) {
   mdi(std::format("G10 L1 P98 Z{}", reference_length + 1));
   const auto writes_before_reteach = port->writes().size();
   const auto stale = port->fixed_setter(touch_request(2), epoch, {});
-  require(!stale && stale.error().contains("Teach the setter with T98 first") &&
+  require(!stale && stale.error().contains("Teach the setter with T98 or a touched-off tool first") &&
               port->writes().size() == writes_before_reteach,
           "a changed reference blocks the next touch-off before any command");
   const auto edited_reference = setter_status();

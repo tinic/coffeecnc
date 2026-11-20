@@ -95,6 +95,52 @@ describe('fixed setter workflow', () => {
     expect(send).toHaveBeenCalledTimes(3)
     expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
   })
+
+  it('after a restart shows saved marks and lets a touched-off tool teach the setter', async () => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
+    status.spindle.actual_rpm = 0
+    status.axes.forEach((axis) => { axis.machine = 0 })
+    status.motion.in_position = true
+    status.tool.in_spindle = 1
+    let nextId = 0
+    vi.mocked(send).mockImplementation(() => ++nextId)
+    const answer = async (setter: SetterState): Promise<void> => {
+      const command = vi.mocked(send).mock.lastCall?.[0]
+      if (!command) throw new Error('Missing command')
+      for (const listener of resultListeners)
+        listener(command, { type: 'result', id: nextId, outcome: 'accepted', reason: '', setter })
+      await nextTick()
+    }
+    mountTools()
+    // Restarted: no taught setter, but the saved marks still match the tool table.
+    await answer({ calibration: null, measurement: null, measured_tools: [1, 98] })
+    expect(getWrapper().findAll('.tool-row').filter((row) => row.find('.touched').exists()).map((row) => row.find('.tool-number').text())).toContain('T01')
+    expect(getWrapper().get('.setter-band p').text()).toBe('Jog T01 over the setter, then Touch off.')
+    await press('Touch off')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
+    await answer({ calibration: [0, 0, -40], measurement: { calibration: true, tool: 1, contact: [0, 0, -13], value: -40, previous_length: 25.4, stopping_distance: 0.03 }, measured_tools: [1, 98] })
+    expect(getWrapper().get('.setter-band p').text()).toBe('Setter taught')
+  })
+
+  it('asks for the reference or a touched-off tool when an unmarked tool has no taught setter', async () => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
+    status.spindle.actual_rpm = 0
+    status.axes.forEach((axis) => { axis.machine = 0 })
+    status.motion.in_position = true
+    status.tool.in_spindle = 2
+    vi.mocked(send).mockImplementation(() => 1)
+    mountTools()
+    const command = vi.mocked(send).mock.lastCall?.[0]
+    if (!command) throw new Error('Missing command')
+    for (const listener of resultListeners)
+      listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, measured_tools: [1, 98] } })
+    await nextTick()
+    expect(getWrapper().get('.setter-band p').text()).toBe('Teach the setter with T98 or a touched-off tool first')
+  })
 })
 
 describe('tool table workflow', () => {

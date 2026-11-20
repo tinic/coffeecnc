@@ -40,8 +40,7 @@ const parsed = computed((): Tool | null => {
 const current = computed(() => panel.toolTable?.tools.find((tool) => tool.number === original.value?.number))
 const block = computed(() => linkBlock.value ?? (panel.hello !== hello ? 'The machine connection changed. Reopen this editor.'
   : panel.status?.interp !== 'idle' ? 'Stop execution before editing the tool.'
-    : !saving.value && original.value !== null && !sameTool(current.value, original.value) ? 'The tool table changed. Reopen this editor.'
-      : null))
+    : null))
 const probe = props.tool === null ? undefined : savedProbe(props.tool.number)
 // The machine's touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL) opens as a touch probe.
 const machineProbe = props.tool !== null && props.tool.number === panel.hello?.touch_probe_tool
@@ -101,8 +100,13 @@ const replaces = computed(() => original.value === null && panel.toolTable?.tool
 async function save(): Promise<void> {
   const tool = parsed.value
   const preview = model.value
-  if (tool === null || shapeError.value !== null || block.value !== null || modelBlock.value !== null || saving.value) return
+  if (saving.value) return
+  // Save is always offered: a press either saves or says what stops it.
+  const reason = tool === null ? 'Check the tool number, length and diameter.' : block.value ?? modelBlock.value ?? shapeError.value
+  if (tool === null || reason !== null) { feedback.value = reason ?? ''; return }
   saving.value = true; feedback.value = ''
+  // A row changed elsewhere since this editor opened is written over with this one.
+  if (current.value !== undefined) original.value = { ...current.value }
   let tableWritten = false
   if (!sameTool(original.value, tool)) {
     const reason = await saveTool(tool, pendingSave.signal)
@@ -151,7 +155,7 @@ function remove(): void {
       </div>
     </div>
     <p v-if="feedback || block || modelBlock || shapeError || replaces || saving" class="feedback" role="status">{{ feedback || block || modelBlock || shapeError || (replaces ? `Tool ${form.number} exists. Saving replaces it.` : '') || 'Saving… Closing does not cancel a submitted save.' }}</p>
-    <template #footer><button v-if="original !== null" class="btn danger" type="button" :disabled="saving || block !== null || panel.status?.tool.in_spindle === original.number" @click="deleting = true">Delete</button><span class="spacer"></span><button class="btn" type="button" @click="emit('close')">{{ saving ? 'Close' : 'Cancel' }}</button><button class="btn primary" type="button" :disabled="saving || parsed === null || block !== null || modelBlock !== null || shapeError !== null" @click="save">{{ saving ? 'Saving…' : 'Save tool' }}</button></template>
+    <template #footer><button v-if="original !== null" class="btn danger" type="button" :disabled="saving || block !== null || panel.status?.tool.in_spindle === original.number" @click="deleting = true">Delete</button><span class="spacer"></span><button class="btn" type="button" @click="emit('close')">{{ saving ? 'Close' : 'Cancel' }}</button><button class="btn primary" type="button" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save tool' }}</button></template>
   </ModalDialog>
 </template>
 

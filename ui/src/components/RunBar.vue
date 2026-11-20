@@ -4,7 +4,8 @@ import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
 import { computed } from 'vue'
 
-import { allHomed, homingActive, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
+import { allHomed, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
+import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
 import { touchProbeLoaded } from '../tool-models'
 
 import AppIcon from './AppIcon.vue'
@@ -24,43 +25,19 @@ const probeWithSpindle = computed(() => {
 
 /** Why a program cannot be started, or null. The machine checks again; this only explains. */
 const startBlock = computed((): string | null => {
-  const s = status.value
-  if (linkBlock.value !== null || s === null) {
-    return linkBlock.value ?? 'No status from the machine yet'
-  }
-  if (s.machine !== 'on') {
-    return s.machine === 'estop' ? 'Machine is in E-stop' : 'Machine is off'
-  }
-  if (homingActive.value) {
-    return 'Homing is in progress'
-  }
-  if (homingRequired.value && !allHomed.value) {
-    return 'Axes are not homed'
-  }
-  if (s.program.file === null) {
-    return 'No program loaded'
-  }
-  if (probeWithSpindle.value !== null) return probeWithSpindle.value
-  if (s.interp !== 'idle') {
-    return s.mode === 'mdi' ? 'An MDI command is running' : null
-  }
-  return null
+  const shared = machineBlock(panel, true)
+  if (shared !== null) return shared
+  if (homingRequired.value && !allHomed.value) return 'Axes are not homed'
+  if (!status.value?.program.file) return 'No program loaded'
+  return probeWithSpindle.value
 })
 
-const runBlock = computed((): string | null => {
-  if (startBlock.value !== null) {
-    return startBlock.value
-  }
-  if (paused.value) {
-    return 'Program is paused: resume it, or stop it first'
-  }
-  return programRunning.value ? 'Program is running' : null
-})
+const runBlock = computed(() => startBlock.value ?? interpreterBlock(status.value))
 
 const pauseBlock = computed((): string | null => {
   const s = status.value
   if (linkBlock.value !== null || s === null) {
-    return linkBlock.value ?? 'No status from the machine yet'
+    return linkBlock.value ?? connectionBlock('connecting')
   }
   if (s.interp === 'idle') {
     return 'Nothing is running'

@@ -8,6 +8,8 @@ import { vTooltip } from '../tooltip'
 // has the focus.
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
 
+import { useCardFeedback } from '../card-feedback'
+import { homingMessage, powerBlock } from '../machine-block'
 import { openDialogs } from '../dialogs'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
@@ -20,6 +22,7 @@ import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } 
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import MaterialProbeControls from './MaterialProbeControls.vue'
+import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
@@ -51,7 +54,8 @@ const activeOffset = computed(() => workOffsetRows(panel.workOffsets ?? null, st
 const held = reactive(new Set<JogKey>())
 const increments = computed(() => displayJogIncrements(panel.hello, unit.value))
 const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? `Choose a step in ${unit.value === 'inch' ? 'inches' : 'millimeters'}` : null)
-const jogUnavailable = computed(() => manualBlock.value ?? (homingActive.value ? 'Homing is in progress' : stepUnavailable.value))
+const jogMachineBlock = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
+const jogUnavailable = computed(() => jogMachineBlock.value ?? stepUnavailable.value)
 const materialProbeTool = computed(() => panel.hello?.fixed_setter?.material_travel_mm
   ? panel.hello.touch_probe_tool : undefined)
 
@@ -78,9 +82,7 @@ const keys = new Keys()
 
 /** A press on a jog control: a held jog, or one step when an increment is selected. */
 function begin(key: JogKey, stillHeld: () => boolean): void {
-  if (jogUnavailable.value !== null || axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) === 0) {
-    return
-  }
+  if (!allowJog(jogBlock(key))) return
   const increment = panel.jogIncrement
   if (increment === null) {
     jogHold.press(key, () => jogUnavailable.value === null && stillHeld())
@@ -259,25 +261,42 @@ const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])
   .filter(({ speed }) => speed > 0 && speed < panel.jogVelocity)
   .map(({ axis, speed }) => `${axis.toUpperCase()} ${formatVelocity(speed, unit.value)} ${velocityUnit(unit.value)}`).join(' · '))
 
+const { line: jogLine, allow: allowJog } = useCardFeedback(
+  () => limitedSpeeds.value ? `Axis limits: ${limitedSpeeds.value}` : 'Hold a direction to jog, or select a step.',
+  () => stepUnavailable.value,
+  [jogMachineBlock, stepUnavailable, (): number => panel.jogVelocity, (): unknown => panel.hello],
+)
+
+function showJogBlock(key: JogKey): void {
+  const reason = jogBlock(key)
+  if (reason !== null) allowJog(reason)
+}
+
 function jogLabel(key: JogKey): string {
   return `${key.charAt(0).toUpperCase()}${key.charAt(1) === '+' ? '+' : '−'}`
 }
 
 // ---- homing ---------------------------------------------------------------------------------------
 
-const homeBlock = manualBlock
+function home(axis: AxisLetter | 'all'): void {
+  if (allowJog(jogMachineBlock.value)) send({ type: 'home', axis })
+}
 
 // ---- MDI ------------------------------------------------------------------------------------------
 
 const mdiText = ref<string>('')
 const mdiList = useTemplateRef<HTMLElement>('mdiList')
 let recall = -1
+const mdiLocalBlock = computed(() => mdiBlock.value !== jogMachineBlock.value ? mdiBlock.value : null)
+const { line: mdiLine, allow: allowMdi } = useCardFeedback(
+  () => 'Enter a G-code command.',
+  () => mdiLocalBlock.value,
+  [mdiBlock, (): boolean => mdiText.value.trim() === ''],
+)
 
 function sendMdi(): void {
   const text = mdiText.value.trim()
-  if (text === '' || mdiBlock.value !== null) {
-    return
-  }
+  if (!allowMdi(mdiBlock.value ?? (text === '' ? 'Enter an MDI command' : null))) return
   send({ type: 'mdi', text })
   mdiText.value = ''
   recall = -1
@@ -321,19 +340,27 @@ const rpmText = computed({
   set: (value: string) => { rpmDraft.value = value },
 })
 const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
-const spindleBlock = computed((): string | null => {
+const spindleLocalBlock = computed((): string | null => {
   if (touchProbeLoaded.value) return 'A touch probe is loaded'
-  if (manualBlock.value !== null) {
-    return manualBlock.value
-  }
   return rpm.value === null || !Number.isFinite(rpm.value) || rpm.value <= 0 ? 'Enter a spindle speed above zero' : null
 })
+const spindleBlock = computed(() => manualBlock.value ?? spindleLocalBlock.value)
+const coolantBlock = computed(() => powerBlock(panel))
+const { line: spindleLine, allow: allowSpindle } = useCardFeedback(
+  () => 'Set the speed before starting the spindle.',
+  () => spindleLocalBlock.value,
+  [manualBlock, coolantBlock, spindleLocalBlock],
+)
 
 function spindle(direction: 'forward' | 'reverse'): void {
-  if (spindleBlock.value === null && rpm.value !== null) {
+  if (allowSpindle(spindleBlock.value) && rpm.value !== null) {
     send({ type: 'set_spindle', direction, rpm: rpm.value })
     presetRpm.value = null
   }
+}
+
+function spindleStop(): void {
+  if (allowSpindle(manualBlock.value)) send({ type: 'set_spindle', direction: 'stopped', rpm: 0 })
 }
 
 function confirmSpindleSpeed(event: Event): void {
@@ -363,16 +390,8 @@ watch([(): unknown => panel.hello, manualBlock], () => {
   presetRpm.value = null
 }, { flush: 'sync' })
 
-const coolantBlock = computed((): string | null => {
-  const s = status.value
-  if (s === null || panel.link !== 'live') {
-    return 'No live status'
-  }
-  return s.machine === 'on' ? null : 'Machine is not on'
-})
-
 function coolant(which: 'flood' | 'mist'): void {
-  if (coolantBlock.value !== null || !coolantOutputs.value[which]) return
+  if (!coolantOutputs.value[which] || !allowSpindle(coolantBlock.value)) return
   const now = status.value?.coolant ?? { flood: false, mist: false }
   send({
     type: 'set_coolant',
@@ -387,7 +406,6 @@ function coolant(which: 'flood' | 'mist'): void {
     <section class="card jog">
       <div class="jog-heading">
         <h2>Jog</h2>
-        <p v-tooltip="jogUnavailable ?? undefined" class="blocked reserved"><template v-if="jogUnavailable">Jog unavailable: {{ jogUnavailable }}</template></p>
       </div>
       <div class="jog-controls">
         <div class="pads">
@@ -400,7 +418,8 @@ function coolant(which: 'flood' | 'mist'): void {
               type="button"
               :class="{ held: held.has(key) }"
               :style="{ gridArea: area }"
-              :disabled="jogBlock(key) !== null"
+              :aria-disabled="jogBlock(key) !== null"
+              @click="showJogBlock(key)"
               @touchstart.prevent="jogTouchStart(key, $event)"
               @touchend.prevent="jogTouchEnd(key, $event)"
               @touchcancel="jogTouchEnd(key, $event)"
@@ -468,27 +487,25 @@ function coolant(which: 'flood' | 'mist'): void {
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </div>
 
-      <p v-tooltip="limitedSpeeds || undefined" class="hint reserved"><template v-if="limitedSpeeds">Axis limits: {{ limitedSpeeds }}</template></p>
-
       <div v-if="!touchOff" class="line homes">
         <span class="label">Home</span>
         <button
-          v-tooltip="homeBlock ?? 'Home all axes using the configured sequence'"
+          v-tooltip="jogMachineBlock ?? 'Home all axes using the configured sequence'"
           class="btn"
           type="button"
-          :disabled="homeBlock !== null"
-          @click="send({ type: 'home', axis: 'all' })"
+          :aria-disabled="jogMachineBlock !== null"
+          @click="home('all')"
         >
           <AppIcon name="home" />All
         </button>
         <button
           v-for="axis in axes"
           :key="axis.axis"
-          v-tooltip="homeBlock ?? `Home ${axis.axis.toUpperCase()}`"
+          v-tooltip="jogMachineBlock ?? `Home ${axis.axis.toUpperCase()}`"
           class="btn homeaxis"
           type="button"
-          :disabled="homeBlock !== null"
-          @click="send({ type: 'home', axis: axis.axis })"
+          :aria-disabled="jogMachineBlock !== null"
+          @click="home(axis.axis)"
         >
           {{ axis.axis.toUpperCase() }}
           <span class="homestate" :class="{ homed: axis.homed }">{{
@@ -499,6 +516,7 @@ function coolant(which: 'flood' | 'mist'): void {
       <p v-if="!touchOff" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
+      <SetterStatusBand class="jog-status" :line="jogLine" />
     </section>
 
     <div class="side" :class="{ 'probe-side': touchOff }">
@@ -546,11 +564,11 @@ function coolant(which: 'flood' | 'mist'): void {
             @keydown.up.prevent="recallMdi(-1)"
             @keydown.down.prevent="recallMdi(1)"
           />
-          <button v-tooltip="mdiBlock ?? 'Run this command'" class="btn primary" type="submit" :disabled="mdiBlock !== null || mdiText.trim() === ''">
+          <button v-tooltip="mdiBlock ?? 'Run this command'" class="btn primary" type="submit" :aria-disabled="mdiBlock !== null || mdiText.trim() === ''">
             Run
           </button>
         </form>
-        <p v-tooltip="mdiBlock ?? undefined" class="blocked reserved"><template v-if="mdiBlock">MDI unavailable: {{ mdiBlock }}</template></p>
+        <SetterStatusBand :line="mdiLine" />
       </section>
 
       <section v-if="!touchOff" class="card utilities">
@@ -574,26 +592,27 @@ function coolant(which: 'flood' | 'mist'): void {
             @blur="discardSpindleEdit"
           />
           <span class="hint">rpm</span>
-          <button v-tooltip="spindleBlock ?? 'Spindle reverse (M4)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :disabled="spindleBlock !== null" @click="spindle('reverse')">
+          <button v-tooltip="spindleBlock ?? 'Spindle reverse (M4)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :aria-disabled="spindleBlock !== null" @click="spindle('reverse')">
             <AppIcon name="reverse" />Reverse
           </button>
-          <button v-tooltip="manualBlock ?? 'Spindle stop (M5)'" class="btn" type="button" :disabled="manualBlock !== null" @click="send({ type: 'set_spindle', direction: 'stopped', rpm: 0 })">
+          <button v-tooltip="manualBlock ?? 'Spindle stop (M5)'" class="btn" type="button" :aria-disabled="manualBlock !== null" @click="spindleStop">
             <AppIcon name="stop" />Stop
           </button>
-          <button v-tooltip="spindleBlock ?? 'Spindle forward (M3)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :disabled="spindleBlock !== null" @click="spindle('forward')">
+          <button v-tooltip="spindleBlock ?? 'Spindle forward (M3)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :aria-disabled="spindleBlock !== null" @click="spindle('forward')">
             <AppIcon name="forward" />Forward
           </button>
         </div>
         <div v-if="coolantOutputs.flood || coolantOutputs.mist" class="line coolant">
           <span class="label">Coolant</span>
-          <button v-if="coolantOutputs.flood" v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :disabled="coolantBlock !== null" @click="coolant('flood')">
+          <button v-if="coolantOutputs.flood" v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :aria-disabled="coolantBlock !== null" @click="coolant('flood')">
             <AppIcon name="drop" />Flood
           </button>
-          <button v-if="coolantOutputs.mist" v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :disabled="coolantBlock !== null" @click="coolant('mist')">
+          <button v-if="coolantOutputs.mist" v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :aria-disabled="coolantBlock !== null" @click="coolant('mist')">
             Mist
           </button>
         </div>
         <MachineFeedback show-probe class="sensor-feedback" />
+        <SetterStatusBand class="spindle-status" :line="spindleLine" />
       </section>
 
       <section class="card work-system">
@@ -624,7 +643,7 @@ function coolant(which: 'flood' | 'mist'): void {
 .side {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
@@ -632,8 +651,8 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .side > .card {
   flex-shrink: 0;
-  padding: 10px 12px;
-  gap: 8px;
+  padding: 9px 12px;
+  gap: 6px;
 }
 
 .jog {
@@ -726,12 +745,15 @@ function coolant(which: 'flood' | 'mist'): void {
   font-size: 10px;
 }
 
-.blocked {
-  margin: 0;
-}
-.reserved { height: 30px; flex: none; margin: 0; font-size: 11px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.btn[aria-disabled="true"] { opacity: .68; }
 
-.side > .mdi { flex: 1; min-height: 150px; }
+.side > .mdi {
+  display: grid;
+  grid-template-rows: auto minmax(34px, 1fr) auto auto;
+  flex: 1 1 0;
+  min-height: min-content;
+}
+.mdi > .setter-band, .utilities > .setter-band { margin-block: 0; }
 .work-system { margin-top: auto; }
 .probe-side .work-system { margin-top: 0; }
 .side > .probe-card { gap: 12px; padding: 14px; }
@@ -741,11 +763,9 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .history {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: 2px;
-  min-height: 64px;
-  height: 64px;
+  min-height: 0;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -831,17 +851,18 @@ function coolant(which: 'flood' | 'mist'): void {
 .wcs-values { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; font-size: 11px; color: var(--text-dim); }.wcs-values > span { white-space: nowrap; }.wcs-values strong { color: var(--text); font-weight: 400; }
 .utilities { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
 .utilities h2 { grid-column: 1 / -1; }
-.utilities .sensor-feedback { grid-column: 1 / -1; }
+.utilities .sensor-feedback, .utilities .spindle-status { grid-column: 1 / -1; }
+.utilities .sensor-feedback { margin-top: 0; }
 .utilities .line { gap: 6px; }
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
-@media (max-height: 820px) { .jog { gap: 4px; }.reserved { height: 15px; -webkit-line-clamp: 1; } }
+@media (max-height: 820px) { .jog { gap: 4px; } }
 @media (max-height: 760px) {
-  .jog { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: 'heading heading' 'pads steps' 'pads homes' 'speed speed' 'limits limits'; align-content: start; column-gap: 12px; }
-  .jog-heading { grid-area: heading; display: flex; align-items: center; gap: 12px; }.jog-heading .blocked { flex: 1; }
+  .jog { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: 'heading heading' 'pads steps' 'pads homes' 'speed speed' 'status status'; align-content: start; column-gap: 12px; }
+  .jog-heading { grid-area: heading; display: flex; align-items: center; gap: 12px; }
   .jog-controls { display: contents; }.pads { grid-area: pads; align-self: center; }.steps { grid-area: steps; }.homes { grid-area: homes; gap: 4px; }.homes > .label { display: none; }.homes > .btn { padding: 0 5px; }
-  .jog > .line:not(.homes) { grid-area: speed; }.jog > .hint { grid-area: limits; }.keys { display: none; }
-  .side { gap: 6px; }.side > .card { gap: 6px; padding-block: 8px; }.side > .mdi { min-height: 142px; }.history { min-height: 34px; height: 34px; }.history .hint { margin: 2px 8px; }.wcs-values { min-height: 18px; }
+  .jog > .line:not(.homes) { grid-area: speed; }.jog-status { grid-area: status; }.keys { display: none; }
+  .side { gap: 6px; }.side > .card { gap: 4px; padding-block: 8px; }.history .hint { margin: 2px 8px; }.wcs-values { min-height: 18px; }
 }
 </style>

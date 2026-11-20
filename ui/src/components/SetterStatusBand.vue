@@ -13,7 +13,7 @@ defineProps<{ line: SetterStatusLine }>()
 </template>
 
 <style scoped>
-.setter-band { display: flex; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
+.setter-band { display: flex; flex: none; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
 .setter-band.blocked { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); box-shadow: inset 4px 0 var(--stop); }
 .setter-band.done { color: var(--go); }
 .setter-band.busy { color: var(--accent); }

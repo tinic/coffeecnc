@@ -58,6 +58,23 @@ afterEach(() => {
 function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body }) }
 
 describe('fixed setter workflow', () => {
+  it('explains a blocked setter press in place while the machine is off', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.machine = 'off'
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
+    mountTools()
+    const command = vi.mocked(send).mock.lastCall?.[0]
+    if (!command) throw new Error('Missing request')
+    for (const listener of resultListeners)
+      listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '' })
+    await nextTick()
+    expect(getWrapper().get('.setter-band p').text()).toBe('Measures this tool at the setter.')
+    expect(getWrapper().get('.setter-action button').attributes('disabled')).toBeUndefined()
+    vi.mocked(send).mockClear()
+    await press('Touch off')
+    expect(getWrapper().get('.setter-band p').text()).toBe('Machine is off')
+    expect(send).not.toHaveBeenCalled()
+  })
   it('teaches and measures directly and shows the result without a dialog', async () => {
     const status = panel.status
     if (!status) throw new Error('Missing status')

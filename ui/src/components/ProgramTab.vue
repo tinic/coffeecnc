@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { findTool, live, panel, reported } from '../machine'
+import { machineBlock } from '../machine-block'
 import type { ProgramLayout } from '../store'
 import { formatLength, formatVelocity, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
+import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 const status = reported
@@ -57,14 +59,9 @@ const lineLabel = computed(() => {
 })
 const runState = computed(() => {
   const s = status.value
-  if (!live.value || s === null) return 'Status unavailable · displayed values may be out of date'
-  if (s.machine === 'estop') return 'E-stop active'
-  if (s.machine === 'off') return 'Machine off'
-  if (s.axes.some((axis) => axis.homing)) return 'Homing in progress'
+  if (s === null || machineBlock(panel) !== null) return ''
   if (s.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
-  if (s.wait.kind === 'paused' || s.interp === 'paused') return s.mode === 'mdi' ? 'MDI command paused' : 'Program paused'
   if (s.wait.kind === 'dwell') return 'Dwelling'
-  if (s.interp !== 'idle') return s.mode === 'mdi' ? 'MDI command running' : 'Program running'
   if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
 })
@@ -85,7 +82,7 @@ async function showFailure(): Promise<void> {
           <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="panel.programLayout = layout">{{ label }}</button></div>
         </header>
         <div v-if="failure" class="failure" role="status"><AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span><button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button></div>
-        <div v-else-if="unavailableReason" class="failure unavailable" role="status"><AppIcon name="warning" /><span>Preview unavailable: {{ unavailableReason }}</span></div>
+        <SetterStatusBand v-else-if="unavailableReason" class="preview-status" :line="{ text: unavailableReason, level: 'blocked' }" />
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
@@ -116,7 +113,7 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
-    <div class="status-row"><span :class="{ warning: !live || status?.machine === 'estop' }">{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="line-count mono">{{ lineLabel }}</span></div>
+    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 
@@ -141,7 +138,7 @@ async function showFailure(): Promise<void> {
 .status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.warning { color: var(--stop); }
 .status-row .program-feedback { margin: 0; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.failure.unavailable { color: var(--text-dim); }
+.preview-status { margin-inline: 18px; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }

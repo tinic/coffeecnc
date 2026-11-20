@@ -94,6 +94,7 @@ struct FixedSetterMove {
   std::optional<std::array<double, 3>> approach{}; // traverse at or above the taught clearance
   std::optional<double> retract_z{};
   double retract_above_contact_mm{};
+  std::optional<ProbeDirection> material{};
 };
 
 struct FixedSetterContact {

@@ -20,9 +20,11 @@ import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } 
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import FixedSetterControls from './FixedSetterControls.vue'
+import MaterialProbeControls from './MaterialProbeControls.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
+defineProps<{ touchOff?: boolean }>()
 
 const jogs: Readonly<Record<JogKey, { axis: AxisLetter; direction: -1 | 1 }>> = {
   'x+': { axis: 'x', direction: 1 },
@@ -51,6 +53,8 @@ const held = reactive(new Set<JogKey>())
 const increments = computed(() => displayJogIncrements(panel.hello, unit.value))
 const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? `Choose a step in ${unit.value === 'inch' ? 'inches' : 'millimeters'}` : null)
 const jogUnavailable = computed(() => manualBlock.value ?? (homingActive.value ? 'Homing is in progress' : stepUnavailable.value))
+const materialProbeTool = computed(() => panel.hello?.fixed_setter?.material_travel_mm
+  ? panel.hello.touch_probe_tool : undefined)
 
 const jogHold = new JogHold<JogKey>(
   {
@@ -467,7 +471,7 @@ function coolant(which: 'flood' | 'mist'): void {
 
       <p v-tooltip="limitedSpeeds || undefined" class="hint reserved"><template v-if="limitedSpeeds">Axis limits: {{ limitedSpeeds }}</template></p>
 
-      <div class="line homes">
+      <div v-if="!touchOff" class="line homes">
         <span class="label">Home</span>
         <button
           v-tooltip="homeBlock ?? 'Home all axes using the configured sequence'"
@@ -493,14 +497,24 @@ function coolant(which: 'flood' | 'mist'): void {
           }}</span>
         </button>
       </div>
-      <p v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
+      <p v-if="!touchOff" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
-      <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" show-tool inline-status />
+      <FixedSetterControls v-if="panel.hello?.fixed_setter" v-show="!touchOff" :limits="panel.hello.fixed_setter" show-tool inline-status />
     </section>
 
-    <div class="side">
-      <section class="card mdi">
+    <div class="side" :class="{ 'probe-side': touchOff }">
+      <section v-if="touchOff" class="card probe-card">
+        <div class="wcs-heading">
+          <h2>{{ materialProbeTool ? `Probe T${materialProbeTool}` : 'Probe' }}</h2>
+          <span v-if="materialProbeTool" class="hint" :class="{ 'probe-contact': status?.probe_input }">
+            {{ status?.probe_input === true ? 'Contact' : status?.probe_input === false ? 'Probe clear' : 'Probe input unavailable' }}
+          </span>
+        </div>
+        <MaterialProbeControls v-if="materialProbeTool" :tool="materialProbeTool" />
+        <p v-else class="hint">Material probing is unavailable on this machine.</p>
+      </section>
+      <section v-else class="card mdi">
         <h2>MDI</h2>
         <div ref="mdiList" class="history">
           <p v-if="panel.mdi.length === 0" class="hint">No commands sent in this session.</p>
@@ -541,7 +555,7 @@ function coolant(which: 'flood' | 'mist'): void {
         <p v-tooltip="mdiBlock ?? undefined" class="blocked reserved"><template v-if="mdiBlock">MDI unavailable: {{ mdiBlock }}</template></p>
       </section>
 
-      <section class="card utilities">
+      <section v-if="!touchOff" class="card utilities">
         <h2>{{ coolantOutputs.flood || coolantOutputs.mist ? 'Spindle and coolant' : 'Spindle' }}</h2>
         <div class="line">
           <input
@@ -721,6 +735,9 @@ function coolant(which: 'flood' | 'mist'): void {
 
 .side > .mdi { flex: 1; min-height: 150px; }
 .work-system { margin-top: auto; }
+.probe-side .work-system { margin-top: 0; }
+.side > .probe-card { gap: 12px; padding: 14px; }
+.probe-contact { color: var(--warn); }
 .jog-heading h2, .wcs-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
 .wcs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.wcs-heading h2 { flex: none; }
 

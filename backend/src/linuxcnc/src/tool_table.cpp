@@ -129,7 +129,7 @@ auto comments_of(std::string_view table) -> std::map<int, std::string> {
   return comments;
 }
 
-auto tool_z(std::string_view table, int tool) -> std::optional<double> {
+static auto tool_dimension(std::string_view table, int tool, char axis) -> std::optional<double> {
   std::optional<double> length;
   for (const auto line : lines_of(table)) {
     if (tool_number(line) != tool)
@@ -138,7 +138,7 @@ auto tool_z(std::string_view table, int tool) -> std::optional<double> {
       return {}; // Do not guess which duplicate row LinuxCNC loaded.
     length = 0;
     for (auto word : words_of(line)) {
-      if (letter(word) != 'Z')
+      if (letter(word) != axis)
         continue;
       word.remove_prefix(1);
       if (word.starts_with('+'))
@@ -149,6 +149,14 @@ auto tool_z(std::string_view table, int tool) -> std::optional<double> {
     }
   }
   return length;
+}
+
+auto tool_z(std::string_view table, int tool) -> std::optional<double> {
+  return tool_dimension(table, tool, 'Z');
+}
+
+auto tool_diameter(std::string_view table, int tool) -> std::optional<double> {
+  return tool_dimension(table, tool, 'D');
 }
 
 auto without_tool(std::string_view table, int number) -> std::optional<std::string> {

@@ -73,7 +73,127 @@ template <typename Predicate> void wait_for(NmlPort& port, Predicate predicate) 
   }
 }
 
-void run(const std::string& ini) {
+void material_scenarios(NmlPort& port, HalShared& shared, double scale, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  auto epoch = SetterEpoch{1, 1, 1, 0};
+  const auto position = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto start_at = [&] { mdi("G21 G90 G53 G0 X0 Y0 Z20"); };
+  const auto window = [&](char axis, double low, double high) {
+    halcmd("unlinkp sim-tool-setter.in");
+    const auto net =
+        axis == 'z' ? std::string("sim-setter-z") : std::format("sim-contact-{}", axis);
+    halcmd(std::format("net {} axis.{}.pos-cmd sim-tool-setter.in", net, axis));
+    halcmd(std::format("setp sim-tool-setter.min {}", low / scale));
+    halcmd(std::format("setp sim-tool-setter.max {}", high / scale));
+  };
+  const auto load = [&](int tool) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    ++epoch.tool;
+    start_at();
+  };
+  const auto setter = [&](int tool) {
+    const auto result = port.fixed_setter({SetterAction::touch_off, tool, position()}, epoch, {});
+    if (!result)
+      throw std::runtime_error(result.error());
+  };
+  const auto material = [&](ProbeDirection direction, const Wanted& wanted = {}) {
+    return port.fixed_setter({SetterAction::material, 99, position(), direction}, epoch, wanted);
+  };
+  load(98);
+  require(!material(ProbeDirection::z_top), "material touch-off requires the ruby probe");
+  window('z', -100, 10);
+  setter(98);
+  load(99);
+  require(!material(ProbeDirection::z_top), "material Z requires a measured probe");
+  window('z', -100, 12);
+  setter(99);
+
+  mdi("G54");
+  const auto g54 = port.status().g5x;
+  mdi("G10 L2 P2 X5 Y-7 Z2");
+  mdi("G55");
+  mdi("G92 X2 Y3 Z4");
+  const auto check_cycle = [&](ProbeDirection direction, std::size_t axis, double expected) {
+    mdi(scale == 1 ? "G20" : "G21");
+    const auto before = port.status();
+    const auto start = position();
+    const auto result = material(direction);
+    require(result.has_value(), result ? "material probe completed" : result.error());
+    const auto after = port.status();
+    require(result->material && result->material->wcs == 2 &&
+                result->material->axis == "XYZ"[axis] && after.wcs == 2 &&
+                std::abs(after.work[axis] - expected) < 0.03,
+            "the active G55 axis is zeroed at the physical surface");
+    const auto end = position();
+    for (std::size_t i = 0; i < start.size(); ++i) {
+      require(std::abs(end[i] - start[i]) < 0.03, "the probe returned to its start");
+      if (i != axis)
+        require(std::abs(after.work[i] - before.work[i]) < 0.03, "another axis is unchanged");
+    }
+  };
+  start_at();
+  window('z', -100, 13);
+  check_cycle(ProbeDirection::z_top, 2, 7);
+  struct Edge {
+    ProbeDirection direction;
+    std::size_t axis;
+    bool positive;
+  };
+  for (const auto& edge :
+       {Edge{ProbeDirection::x_minus, 0, false}, Edge{ProbeDirection::x_plus, 0, true},
+        Edge{ProbeDirection::y_minus, 1, false}, Edge{ProbeDirection::y_plus, 1, true}}) {
+    start_at();
+    window("xy"[edge.axis], edge.positive ? 6 : -100, edge.positive ? 100 : -6);
+    check_cycle(edge.direction, edge.axis, edge.positive ? -7 : 7);
+  }
+  mdi("G54");
+  require(port.status().g5x == g54, "probing G55 left G54 unchanged");
+  mdi("G55");
+  start_at();
+  mdi("G10 L2 P2 R90");
+  window('y', 6, 100);
+  check_cycle(ProbeDirection::x_plus, 0, -7);
+
+  start_at();
+  window('z', -100, -50);
+  const auto start = position();
+  const auto before = port.status().g5x;
+  const auto failed_cleanly = [&](const auto& result, std::string_view reason) {
+    require(!result && result.error().contains(reason),
+            result ? "expected a probe failure" : result.error());
+    require(port.status().g5x == before && port.snapshot().machine == MachineState::on &&
+                std::abs(position()[2] - start[2]) < 0.03,
+            "a probe failure returned to its start and left the work origin intact");
+  };
+  failed_cleanly(material(ProbeDirection::z_top), "No probe contact");
+
+  window('z', -100, 13);
+  int hits = 0;
+  bool tripped = false;
+  bool shifted = false;
+  const auto unstable = material(ProbeDirection::z_top, [&] {
+    const auto pins = shared.view(HalShared::Clock::now());
+    if (pins && pins->probe_cycle_active && pins->probe_input) {
+      if (*pins->probe_input && !tripped)
+        ++hits;
+      if (!*pins->probe_input && tripped && hits == 2 && !shifted) {
+        halcmd(std::format("setp sim-tool-setter.max {}", 12.95 / scale));
+        shifted = true;
+      }
+      tripped = *pins->probe_input;
+    }
+    return true;
+  });
+  require(shifted && hits == 4, "all three slow contacts were observed");
+  failed_cleanly(unstable, "exceeds 0.01 mm");
+}
+
+void run(const std::string& ini, bool material) {
   auto config = load_machine_config(ini);
   if (!config)
     throw std::runtime_error(config.error());
@@ -83,6 +203,8 @@ void run(const std::string& ini) {
   constexpr int reference_tool = 98;
   const double reference_length = scale == 1 ? 50 : 50.8;
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
+  if (material)
+    config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
                           "coffeecnc-touched-off.txt");
@@ -121,6 +243,10 @@ void run(const std::string& ini) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (material) {
+    material_scenarios(*port, shared, scale, mdi);
+    return;
+  }
   checked(port->set_tool({.number = reference_tool,
                           .pocket = reference_tool,
                           .length = reference_length,
@@ -328,11 +454,12 @@ void run(const std::string& ini) {
 
 auto main(int argc, char** argv) -> int {
   const auto* run_dir = std::getenv("COFFEECNC_SIM_RUN");
-  if (argc != 3 || std::string_view(argv[1]) != "-ini" || run_dir == nullptr ||
+  if ((argc != 3 && argc != 4) || std::string_view(argv[1]) != "-ini" || run_dir == nullptr ||
+      (argc == 4 && std::string_view(argv[3]) != "material") ||
       std::filesystem::path(argv[2]) != std::filesystem::path(run_dir) / "coffeecnc_sim.ini")
     return 1;
   try {
-    run(argv[2]);
+    run(argv[2], argc == 4);
     return 0;
   } catch (const std::exception& failure) {
     std::cout << "check=native fixed setter failed: " << failure.what() << '\n';

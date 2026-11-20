@@ -299,6 +299,7 @@ export interface FixedSetterLimits {
   feed_mm_min: number
   xy_tolerance_mm: number
   clearance_mm?: number
+  material_travel_mm?: number
 }
 
 export interface SetterMeasurement {
@@ -317,6 +318,7 @@ export interface SetterState {
   measurement: SetterMeasurement | null
   /** Tools touched off against this calibration, the reference tool included. */
   measured_tools?: number[]
+  material?: { wcs: number; axis: 'X' | 'Y' | 'Z' }
 }
 
 export interface DirectoryEntry {
@@ -474,9 +476,11 @@ export interface ToolTouchOff extends CommandBase {
   type: 'tool_touch_off'
   value: number
 }
+export type ProbeDirection = 'z_top' | 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'
 export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
   | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
+  | { action: 'material'; direction: ProbeDirection; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

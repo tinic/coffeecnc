@@ -26,6 +26,11 @@ vi.mock('../src/machine', async () => {
 })
 
 let wrapper: VueWrapper | null = null
+const WorkspaceControls = defineComponent({
+  components: { StatusBar, ManualTab, RunBar },
+  setup: () => ({ panel }),
+  template: '<div><StatusBar/><ManualTab :touch-off="panel.tab === \'probe\'"/><RunBar/></div>',
+})
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
 beforeEach(() => {
   vi.useFakeTimers(); vi.mocked(send).mockClear()
@@ -34,7 +39,7 @@ beforeEach(() => {
   panel.hello = { ...hello, max_jog_velocity: 1500, axis_max_jog_velocity: { x: 1500, y: 1500, z: 750 } }
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
-  panel.link = 'live'; panel.unit = 'mm'; touchInput.value = false
+  panel.link = 'live'; panel.unit = 'mm'; panel.tab = 'manual'; touchInput.value = false
   panel.workOffsets = null
   panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
@@ -89,8 +94,27 @@ describe('capability-aware controls', () => {
     await wrapper.get('button[aria-label="Reset feed override to 100%"] ').trigger('click')
     expect(send).not.toHaveBeenCalled()
   })
+  it('puts probing in its own workspace with jogging, WCS and Stop', async () => {
+    wrapper = mount(WorkspaceControls)
+    expect(wrapper.find('.em-nav').text()).not.toContain('Touch off')
+    panel.hello = { ...hello, touch_probe_tool: 99, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_travel_mm: 20,
+    } }
+    await nextTick()
+    expect(wrapper.find('.material-probe').exists()).toBe(false)
+    const nav = wrapper.get('.em-nav').findAll('button')
+    expect(nav.map((button) => button.text())).toEqual(['Manual', 'Machine', 'Tools', 'Touch off'])
+    await nav[3]?.trigger('click')
+    expect(wrapper.get('.em-nav [aria-current]').text()).toBe('Touch off')
+    expect(wrapper.findAll('.material-probe button').map((button) => button.text())).toEqual(['Z top', 'X−', 'X+', 'Y−', 'Y+'])
+    expect(wrapper.find('.wcs-values').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Stop jog')
+    expect(wrapper.get('.stop-button').text()).toBe('Stop')
+    expect(wrapper.find('.mdi').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Spindle override|Cycle start/)
+  })
   it('has no native hover titles on touch controls, including changing blocked reasons', async () => {
-    wrapper = mount(defineComponent({ components: { StatusBar, ManualTab, RunBar }, template: '<div><StatusBar/><ManualTab/><RunBar/></div>' }))
+    wrapper = mount(WorkspaceControls)
     expect(wrapper.find('[title]').exists()).toBe(true)
     touchInput.value = true; await nextTick()
     expect(wrapper.find('[title]').exists()).toBe(false)

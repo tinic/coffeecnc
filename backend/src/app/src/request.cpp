@@ -245,12 +245,23 @@ auto command(const Json& object) -> Command {
     return ToolTouchOff{number(object, "value")};
   }
   if (type == "fixed_setter") {
-    const auto action = choice<SetterAction>(
-        object, "action",
-        {{"status", SetterAction::status}, {"touch_off", SetterAction::touch_off}});
+    const auto action = choice<SetterAction>(object, "action",
+                                             {{"status", SetterAction::status},
+                                              {"touch_off", SetterAction::touch_off},
+                                              {"material", SetterAction::material}});
     FixedSetterRequest request{action};
-    if (action == SetterAction::touch_off) {
-      fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
+    if (action != SetterAction::status) {
+      if (action == SetterAction::material) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"});
+        request.direction = choice<ProbeDirection>(object, "direction",
+                                                   {{"z_top", ProbeDirection::z_top},
+                                                    {"x_minus", ProbeDirection::x_minus},
+                                                    {"x_plus", ProbeDirection::x_plus},
+                                                    {"y_minus", ProbeDirection::y_minus},
+                                                    {"y_plus", ProbeDirection::y_plus}});
+      } else {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
+      }
       request.tool = integer(object, "tool");
       request.start = {number(object, "x"), number(object, "y"), number(object, "z")};
     } else {

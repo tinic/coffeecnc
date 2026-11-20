@@ -198,6 +198,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests>)
         set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 420)
+        add_test(NAME linuxcnc_material_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 165 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_material_probe_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> material)
+        set_tests_properties(linuxcnc_material_probe_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 495)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.

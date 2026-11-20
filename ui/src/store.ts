@@ -25,8 +25,8 @@ import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { wcsName } from './units'
 
-export type Tab = 'manual' | 'program' | 'tools'
-export const tabs: readonly Tab[] = ['manual', 'program', 'tools']
+export type Tab = 'manual' | 'program' | 'tools' | 'probe'
+export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
 export type ProgramLayout = 'split' | 'text' | 'path'
 
 /** Status older than this is not live, whatever its `link` says. */
@@ -177,7 +177,7 @@ export function describeCommand(command: CommandBody): string {
     case 'tool_touch_off':
       return 'Tool length touch-off'
     case 'fixed_setter':
-      return 'Fixed tool setter'
+      return command.action === 'material' ? 'Material touch-off' : 'Fixed tool setter'
     case 'set_tool':
       return `Edit tool ${String(command.tool.number)}`
     case 'remove_tool':
@@ -411,7 +411,7 @@ export function createPanel(options: PanelOptions): Panel {
     const time = now()
     for (const [id, entry] of pending) {
       const command = entry.command
-      const timeout = command.type === 'fixed_setter' && command.action === 'touch_off'
+      const timeout = command.type === 'fixed_setter' && command.action !== 'status'
         ? 1_600_000 : answerTimeoutMs
       if (time - entry.sent > timeout) {
         // A local deadline must also end held controls through their result listeners. It

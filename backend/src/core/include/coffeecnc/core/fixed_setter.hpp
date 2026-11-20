@@ -16,15 +16,18 @@ struct FixedSetterLimits {
   double clearance_mm{}; // lift above the reference latch, or zero to use the taught Z
   double latch_feed_mm_min{};
   double latch_backoff_mm{};
+  double material_travel_mm{20};
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
-enum class SetterAction : std::uint8_t { status, touch_off };
+enum class SetterAction : std::uint8_t { status, touch_off, material };
+enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
 struct FixedSetterRequest {
   SetterAction action;
   int tool{};
   std::array<double, 3> start{};
+  ProbeDirection direction{ProbeDirection::z_top};
 };
 
 struct SetterEpoch {
@@ -49,6 +52,11 @@ struct SetterState {
   std::optional<SetterMeasurement> measurement;
   // Tools touched off against this calibration, the reference tool included. Empty without one.
   std::vector<int> measured_tools;
+  struct Material {
+    int wcs;
+    char axis;
+  };
+  std::optional<Material> material{};
 };
 
 } // namespace coffeecnc

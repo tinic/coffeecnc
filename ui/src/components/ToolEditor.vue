@@ -43,8 +43,11 @@ const block = computed(() => linkBlock.value ?? (panel.hello !== hello ? 'The ma
     : !saving.value && original.value !== null && !sameTool(current.value, original.value) ? 'The tool table changed. Reopen this editor.'
       : null))
 const probe = props.tool === null ? undefined : savedProbe(props.tool.number)
+// The machine's touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL) opens as a touch probe.
+const machineProbe = props.tool !== null && props.tool.number === panel.hello?.touch_probe_tool
 const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number) ??
-  (probe === undefined ? undefined : { identity: toolIdentity(props.tool), family: probe.family, overrides: probe.overrides })
+  (probe !== undefined ? { identity: toolIdentity(props.tool), family: probe.family, overrides: probe.overrides }
+    : machineProbe ? { identity: toolIdentity(props.tool), family: 'touch-probe' as const, overrides: {} } : undefined)
 const savedModel = props.tool === null ? null : resolveToolModel(props.tool, saved, toolModels.defaults)
 const family = ref<ToolFamily | 'none'>(savedModel?.family ?? ((props.tool?.diameter ?? 0) > 0 ? 'end-mill' : 'none'))
 const fields: { key: Exclude<DimensionKey, 'diameter'>; label: string }[] = [
@@ -133,7 +136,7 @@ function remove(): void {
         <div class="tool-fields" :class="{ adding: original === null }">
           <label v-if="original === null" class="entry"><span class="label">Tool number</span><input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="original !== null || saving" /></label>
           <label class="entry"><span class="label">Length, {{ unit }}</span><input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
-          <label class="entry"><span class="label">Diameter, {{ unit }}</span><input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
+          <label class="entry"><span class="label">{{ family === 'touch-probe' ? 'Ball diameter' : 'Diameter' }}, {{ unit }}</span><input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
           <label class="entry description-entry"><span class="label">Description</span><input v-model="form.comment" class="field" type="text" :disabled="saving" /></label>
         </div>
         <div class="shape-heading">
@@ -141,7 +144,7 @@ function remove(): void {
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
-          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from Diameter above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
+          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
           <p v-else class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
           <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
         </template>

@@ -266,7 +266,13 @@ void run(const std::string& ini) {
   // Keep a second measured tool marked so an invalid reference must clear more than itself.
   mdi("M61 Q2");
   mdi("G43 H2");
+  const double original_t2_length = scale == 1 ? 40 : 38.1;
+  wait_for(*port, [&](const NmlStatus& s) {
+    return s.controller.tool_in_spindle == 2 &&
+           std::abs(s.tool_offset[2] - original_t2_length) < 0.001;
+  });
   ++epoch.tool;
+  mdi("G53 G0 X4 Y6 Z24");
   halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   require(setter(touch_request(2)).measured_tools == std::vector<int>{1, 2, reference_tool},
           "T2 joins the restored T1 mark and the reference");

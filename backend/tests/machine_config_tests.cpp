@@ -352,18 +352,18 @@ void shipped_example() {
       keys.push_back(line.substr(0, line.find_first_of(" =")));
   }
   const std::vector<std::string> known{"MAX_SPINDLE_RPM", "SPINDLE_RPM_SIGNAL",
-                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"};
+                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL", "FIXED_SETTER"};
   require(keys == known, std::format("example keys: {} of {}", keys.size(), known.size()));
   const auto config =
       load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", section));
   require(config.has_value(), config ? "" : config.error());
   require(near(config->limits.max_spindle_rpm, 1500) && !config->signals.spindle_rpm &&
-              !config->signals.spindle_at_speed && !config->signals.probe,
+              !config->signals.spindle_at_speed && !config->signals.probe && !config->fixed_setter,
           "the example's values");
   // Every signal the example names can be switched on by the word it documents.
   auto yes = section;
-  for (std::size_t at = 0; (at = yes.find("= no", at)) != std::string::npos;)
-    yes.replace(at, 4, "= yes");
+  for (const std::string_view key : {"SPINDLE_RPM_SIGNAL", "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"})
+    yes = with(std::move(yes), std::format("{} = no", key), std::format("{} = yes", key));
   const auto wired = load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", yes));
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,

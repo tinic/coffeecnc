@@ -185,6 +185,11 @@ if(BUILD_TESTING)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 700)
+        add_test(NAME linuxcnc_tool_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 45 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_tool_probe_${units}
+          ${PROJECT_SOURCE_DIR}/tests/sim/tool_probe_facts.py)
+        set_tests_properties(linuxcnc_tool_probe_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+          RESOURCE_LOCK linuxcnc TIMEOUT 375)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.

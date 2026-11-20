@@ -42,6 +42,7 @@ struct SetterReview {
   std::array<double, 3> contact;
   double value; // calibration plane or measured tool length in mm
   double previous_length;
+  double stopping_distance; // downward travel from the latch to settled machine Z in mm
 };
 
 struct SetterState {

@@ -13,7 +13,7 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `calibrate`, `measure` | `tool` and confirmed machine start `x`, `y`, `z` |
 | `accept`, `dismiss` | `review` ID from the last valid cycle |
 
-All wire lengths are in millimetres. A successful result includes `setter` with `reference_captured`, `calibration` (machine setter X, Y and effective trigger-plane Z, or null), and `review` (null or an object with `id`, `calibration` as a boolean, `tool`, `contact` XYZ, `value` and `previous_length`). Start and review are separate operations. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
+All wire lengths are in millimetres. A successful result includes `setter` with `reference_captured`, `calibration` (machine setter X, Y and effective trigger-plane Z, or null), and `review` (null or an object with `id`, `calibration` as a boolean, `tool`, `contact` XYZ, `value` and `previous_length`). A review can include `stopping_distance`, the downward distance from the contact latch to settled machine Z before retract. Start and review are separate operations. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 
 ## Tool-model preferences
 

@@ -981,11 +981,17 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto at_contact = interlock();
   if (raw == nullptr || !at_contact || !*at_contact->probe_input || !saw_probe ||
       !raw->motion.traj.probe_tripped || raw->motion.traj.probing ||
-      raw->motion.traj.probeval == 0 || raw->echo_serial_number != impl_->serial)
+      raw->motion.traj.probeval == 0 || raw->echo_serial_number != impl_->serial ||
+      !raw->motion.traj.inpos || raw->motion.traj.current_vel != 0)
     return interrupt("The fixed setter did not report a fresh contact.");
   const auto position = raw->motion.traj.probedPosition.tran;
+  const double travel_after_contact =
+      (position.z - raw->motion.traj.actualPosition.tran.z) * machine_scale;
   const FixedSetterContact contact{
-      {position.x * machine_scale, position.y * machine_scale, position.z * machine_scale}};
+      {position.x * machine_scale, position.y * machine_scale, position.z * machine_scale},
+      std::max(0.0, travel_after_contact)};
+  if (!std::isfinite(travel_after_contact))
+    return interrupt("The fixed setter did not report a settled Z position.");
   if (!near(contact.machine[0], move.start[0]) || !near(contact.machine[1], move.start[1]) ||
       !std::isfinite(contact.machine[2]) || contact.machine[2] >= move.start[2] ||
       contact.machine[2] < bottom_z - tolerance_mm)
@@ -1214,12 +1220,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       contact->machine[2] - (calibrating ? reference->length : calibration->plane[2]);
   if (!std::isfinite(value))
     return std::unexpected("The fixed setter result is invalid.");
-  pending = Impl::PendingMeasurement{
-      epoch,
-      {++impl_->setter_review_id, calibrating, tool, contact->machine, value, previous_length},
-      frame,
-      request.start,
-      std::move(table)};
+  pending =
+      Impl::PendingMeasurement{epoch,
+                               {++impl_->setter_review_id, calibrating, tool, contact->machine,
+                                value, previous_length, contact->stopping_distance},
+                               frame,
+                               request.start,
+                               std::move(table)};
   return state();
 }
 

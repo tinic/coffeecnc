@@ -130,6 +130,9 @@ void run(const std::string& ini) {
   const auto contact = port.probe_fixed_setter(move, {});
   require(contact.has_value(), contact ? "native fixed setter completed" : contact.error());
   require(std::abs(contact->machine[2] - 10) < 0.03, "native latch is in machine millimetres");
+  std::cout << std::format("fact=stopping_distance_mm={:.6f}\n", contact->stopping_distance);
+  require(contact->stopping_distance > 0.001 && contact->stopping_distance < 0.1,
+          "native stopping distance comes from the settled Z before retract");
   const auto returned = port.status();
   std::cout << std::format("fact=start_feed={} end_feed={} end_incremental={}\n",
                            starting.programmed_feed, returned.programmed_feed,
@@ -158,7 +161,8 @@ void run(const std::string& ini) {
   const auto calibrated =
       setter({.action = SetterAction::calibrate, .tool = 1, .start = move.start});
   require(calibrated.review && !calibrated.calibration &&
-              std::abs(calibrated.review->value - (-40)) < 0.03,
+              std::abs(calibrated.review->value - (-40)) < 0.03 &&
+              std::abs(calibrated.review->stopping_distance - contact->stopping_distance) < 0.01,
           "calibration reviews the derived trigger plane before saving it");
   const auto calibrated_id = calibrated.review->id;
   require(setter({.action = SetterAction::accept, .review = calibrated_id}).calibration.has_value(),
@@ -181,7 +185,8 @@ void run(const std::string& ini) {
   const auto old_table = read_table();
   const auto measured = setter({.action = SetterAction::measure, .tool = 2, .start = move.start});
   require(measured.review && std::abs(measured.review->value - 52) < 0.03 &&
-              old_table == read_table(),
+              measured.review->stopping_distance > 0.001 &&
+              measured.review->stopping_distance < 0.1 && old_table == read_table(),
           "measurement reviews machine-frame tool length without writing it");
   require(setter({.action = SetterAction::accept, .review = measured.review->id}).review ==
               std::nullopt,

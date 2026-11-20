@@ -195,6 +195,7 @@ struct NmlPort::Impl {
     std::array<double, 3> plane;
     double clearance_z;
     std::map<int, double> measured; // tool -> table length its touch off wrote, table units
+    int teacher; // the tool whose length defines the plane
   };
 
   std::optional<Calibration> setter_calibration;
@@ -1294,6 +1295,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     current_marks.clear();
     std::error_code error;
     std::filesystem::remove(touched_path(impl_->config.tool_table), error);
+  } else if (calibration && table && !std::ranges::contains(current_marks, calibration->teacher)) {
+    // The plane came from the teacher's length: it is gone, the saved marks still hold.
+    calibration.reset();
+    current_marks = marks(*table);
   }
   if (request.action == SetterAction::status)
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
@@ -1470,7 +1475,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.tool_table))};
+        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.tool_table)),
+        tool};
     remember();
     return SetterState{calibration->plane, measurement, marks(*table)};
   }

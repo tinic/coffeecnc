@@ -24,26 +24,58 @@ const er = {
   'tts-er32': { nut: 50, nutLength: 22, bodyLength: 48 },
 } as const
 
-/** The radius/height section starts at the face where the cutter emerges. */
-export function holderProfile(holder: ToolHolder | undefined, face: number, shankDiameter: number): [number, number][] {
+interface HolderSurface {
+  finish: 'ground' | 'dark'
+  profile: [number, number][]
+  wrenchFlats?: { face: number; radius: number; apothem: number; length: number }
+}
+
+/** Nominal TTS outline split at the ground and dark steel surfaces. */
+export function holderSurfaces(holder: ToolHolder | undefined, face: number, shankDiameter: number): HolderSurface[] {
   if (holder === undefined || holder === 'r8') return []
   const shank = 19.05 / 2
   const collar = 31.75 / 2
-  const shankLength = 31.75
+  const ttsShoulder = (top: number): HolderSurface[] => [
+    { finish: 'dark', profile: [[collar - 0.3, top - 6.4], [collar - 1.8, top - 6.4],
+      [collar - 1.8, top - 4.6], [collar, top - 4.2]] },
+    { finish: 'ground', profile: [[collar, top - 4.2], [collar, top - 0.4], [collar - 0.4, top]] },
+    { finish: 'dark', profile: [[collar - 0.4, top], [collar - 1, top], [collar - 1.3, top - 1],
+      [shank, top - 1], [shank, top + 2]] },
+    { finish: 'ground', profile: [[shank, top + 2], [shank, top + 27], [shank - 2.3, top + 31.75],
+      [5.5, top + 31.75]] },
+    { finish: 'dark', profile: [[5.5, top + 31.75], [5.1, top + 31.35], [5.1, top + 29], [0, top + 29]] },
+  ]
   if (holder === 'tts-er16' || holder === 'tts-er20' || holder === 'tts-er32') {
     const { nut, nutLength, bodyLength } = er[holder]
     const radius = nut / 2
-    const bore = Math.min(shankDiameter / 2, radius - 1)
-    return [[bore, face], [radius - 1.5, face], [radius, face + 1.5],
-      [radius, face + nutLength], [radius - 2, face + nutLength],
-      [collar, face + bodyLength - 5], [collar, face + bodyLength],
-      [shank, face + bodyLength], [shank, face + bodyLength + shankLength],
-      [0, face + bodyLength + shankLength], [0, face + 2], [bore, face + 2], [bore, face]]
+    const bore = Math.min(shankDiameter / 2, radius - 1.5)
+    const nutBack = face + nutLength
+    const top = face + bodyLength
+    const neck = Math.min(radius - 2, collar - 2.8)
+    const collet = Math.max(bore, radius * 0.55)
+    return [
+      { finish: 'ground', profile: [[bore, face + 1], [bore, face + 0.2], [collet, face + 0.2]] },
+      { finish: 'dark', profile: [[collet, face + 0.2], [collet, face], [radius - 1.2, face],
+        [radius, face + 1.3], [radius, face + nutLength * 0.57], [radius, face + nutLength * 0.78],
+        [radius, nutBack - 0.9], [radius - 0.8, nutBack], [neck, nutBack]],
+      wrenchFlats: { face, radius, apothem: Math.max(collet, radius * Math.sqrt(3) / 2), length: nutLength } },
+      { finish: 'dark', profile: [[neck, nutBack], [neck, top - 13], [collar - 0.6, top - 11.2]] },
+      { finish: 'ground', profile: [[collar - 0.6, top - 11.2], [collar, top - 10.6],
+        [collar, top - 6.7], [collar - 0.3, top - 6.4]] },
+      ...ttsShoulder(top),
+    ]
   }
   const bore = Number(holder.slice('tts-'.length)) / 2
-  const bodyLength = 30
-  return [[bore, face], [12, face], [13.5, face + 2], [13.5, face + bodyLength - 7],
-    [collar, face + bodyLength - 7], [collar, face + bodyLength],
-    [shank, face + bodyLength], [shank, face + bodyLength + shankLength],
-    [0, face + bodyLength + shankLength], [0, face + 2], [bore, face + 2], [bore, face]]
+  const top = face + 30
+  return [
+    { finish: 'dark', profile: [[0, face + 2], [bore, face + 2], [bore, face], [12, face], [13.5, face + 2],
+      [13.5, top - 9], [collar - 0.5, top - 9]] },
+    { finish: 'ground', profile: [[collar - 0.5, top - 9], [collar, top - 8.5], [collar, top - 6.7],
+      [collar - 0.3, top - 6.4]] },
+    ...ttsShoulder(top),
+  ]
+}
+
+export function holderProfile(holder: ToolHolder | undefined, face: number, shankDiameter: number): [number, number][] {
+  return holderSurfaces(holder, face, shankDiameter).flatMap(({ profile }) => profile)
 }

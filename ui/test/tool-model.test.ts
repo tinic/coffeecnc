@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { Box3, LatheGeometry, Mesh, Vector2 } from 'three'
+import { Box3, BufferAttribute, BufferGeometry, LatheGeometry, Mesh, Vector2 } from 'three'
 import type { Tool } from '../src/protocol'
-import { decodeToolDefaults, factoryToolDefaults, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity, toolProfiles,
+import { decodeToolDefaults, factoryToolDefaults, pointedTool, resolveToolModel, toolDimensionError, toolFamilies, toolIdentity, toolProfiles,
   type ToolFamily, type ToolModelAssignment } from '../src/tool-model'
 import { ToolMesh } from '../src/tool-mesh'
 
@@ -30,6 +30,65 @@ describe('parametric tool geometry', () => {
     expect(bounds[1]?.min.z).toBeCloseTo(model.dimensions.cuttingLength)
     expect(bounds[1]?.max.z).toBeCloseTo(model.dimensions.overallLength)
     expect(bounds[0]?.max.x).toBeCloseTo(tool.diameter / 2)
+  })
+  it.each([
+    ['end-mill', 3], ['ball-mill', 2], ['drill', 2], ['spot-drill', 2], ['chamfer', 4],
+  ] as const)('renders %s with %s helical cutting edges inside its envelope', (family, flutes) => {
+    const model = resolveToolModel(tool, assignment(family), factoryToolDefaults())
+    if (model === null || !('cuttingLength' in model.dimensions)) throw new Error('Missing cutter')
+    const mesh = new ToolMesh()
+    try {
+      mesh.build(model)
+      const cutter = mesh.group.getObjectByName('cutter')
+      if (!(cutter instanceof Mesh)) throw new Error('Missing cutter mesh')
+      const bounds = new Box3().setFromObject(cutter)
+      expect(bounds.min.z).toBeCloseTo(0)
+      expect(bounds.max.z).toBeCloseTo(model.dimensions.cuttingLength)
+      const geometry: unknown = cutter.geometry
+      if (!(geometry instanceof BufferGeometry)) throw new Error('Missing cutter geometry')
+      const positions: unknown = geometry.getAttribute('position')
+      if (!(positions instanceof BufferAttribute)) throw new Error('Missing cutter positions')
+      const radii = Array.from({ length: positions.count }, (_, i) =>
+        Math.hypot(positions.getX(i), positions.getY(i)))
+      expect(Math.max(...radii)).toBeCloseTo(tool.diameter / 2)
+      const radius = tool.diameter / 2
+      const length = model.dimensions.cuttingLength
+      const lipZ = positions.getZ(0)
+      const lipRadius = Math.hypot(positions.getX(0), positions.getY(0))
+      if (family === 'ball-mill') expect(lipRadius ** 2 + (lipZ - radius) ** 2).toBeCloseTo(radius ** 2)
+      if (pointedTool(family)) expect(Math.atan2(lipRadius, lipZ) * 360 / Math.PI).toBeCloseTo(model.dimensions.tipAngle)
+      const angleAt = (fraction: number): number => {
+        const start = radii.findIndex((_, i) => positions.getZ(i) >= fraction * length)
+        const z = positions.getZ(start)
+        const ring = radii.map((r, i) => ({ r, i })).filter(({ i }) => positions.getZ(i) === z)
+        expect(Math.min(...ring.map(({ r }) => r))).toBeLessThan(radius * 0.75)
+        const edges = ring.filter(({ r }) => Math.abs(r - radius) < radius * 0.0001)
+        expect(edges).toHaveLength(flutes)
+        const [edge] = edges
+        if (!edge) throw new Error('Missing cutting edge')
+        return Math.atan2(positions.getY(edge.i), positions.getX(edge.i))
+      }
+      expect(Math.abs(angleAt(0.74) - angleAt(0.52))).toBeGreaterThan(0.035)
+    } finally { mesh.dispose() }
+  })
+  it('places the face mill inserts at the tip of the nominal cutter envelope', () => {
+    const dimensions = factoryToolDefaults()['face-mill']
+    const mesh = new ToolMesh()
+    try {
+      mesh.build({ family: 'face-mill', dimensions, nominalDiameter: false, customized: false })
+      const head = mesh.group.getObjectByName('cutter')
+      if (!head) throw new Error('Missing face mill')
+      const inserts = head.children.filter(({ name }) => name === 'insert')
+      const screws = head.children.filter(({ name }) => name === 'insert screw')
+      expect(inserts).toHaveLength(4)
+      expect(screws).toHaveLength(4)
+      for (const insert of inserts) {
+        expect(new Box3().setFromObject(insert).min.z).toBeCloseTo(0)
+      }
+      const bounds = new Box3().setFromObject(head)
+      expect(bounds.max.z).toBeCloseTo(dimensions.cuttingLength)
+      expect(bounds.max.x).toBeLessThanOrEqual(dimensions.diameter / 2)
+    } finally { mesh.dispose() }
   })
   it('builds a spherical probe ball from the table diameter, with its bottom at Z=0', () => {
     const model = resolveToolModel(tool, assignment('touch-probe'), factoryToolDefaults())

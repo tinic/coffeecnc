@@ -25,6 +25,7 @@ function draw(): void {
   if (renderer === null || canvas.value === null || contextLost) return
   const width = canvas.value.clientWidth; const height = canvas.value.clientHeight
   if (width <= 0 || height <= 0) return
+  toolMesh.light(renderer)
   const { diameter, overallLength } = toolEnvelope(props.model.dimensions, props.model.holder)
   const extent = Math.hypot(overallLength, diameter * 1.4)
   view = { ...view, centre: [0, 0, overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
@@ -46,7 +47,7 @@ function move(event: PointerEvent): void {
   draw()
 }
 function lost(event: Event): void { event.preventDefault(); contextLost = true; error.value = 'Graphics context lost. Dimensions remain editable.' }
-function restored(): void { contextLost = false; error.value = ''; draw() }
+function restored(): void { contextLost = false; toolMesh.resetLighting(); error.value = ''; draw() }
 watch(() => props.model, build, { deep: true })
 watch(theme, draw)
 onMounted(() => {
@@ -54,8 +55,8 @@ onMounted(() => {
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
     renderer.setClearColor(0, 0)
-    scene.add(toolMesh.group, new AmbientLight(0xffffff, 1.8))
-    const key = new DirectionalLight(0xffffff, 3)
+    scene.add(toolMesh.group, new AmbientLight(0xffffff, 1.1))
+    const key = new DirectionalLight(0xffffff, 2.1)
     key.position.set(-80, -120, 180)
     scene.add(key)
     canvas.value.addEventListener('webglcontextlost', lost)
@@ -86,13 +87,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-sunken); overflow: hidden; }
+.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: radial-gradient(ellipse at 50% 47%, var(--panel-raised), var(--bg-sunken) 72%); overflow: hidden; }
 .caption { padding: 12px 12px 0; pointer-events: none; }
 canvas { width: 100%; flex: 1; min-height: 0; touch-action: none; cursor: grab; }
 canvas:active { cursor: grabbing; }
 .legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; font-size: 11px; }
 .legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 2px; }
-.cutting::before { background: #bc9954; }.datum::before { background: #377ef2; }.ruby::before { background: #d32643; }
+.cutting::before { background: #969692; }.datum::before { background: #377ef2; }.ruby::before { background: #d32643; }
 .foot { text-align: center; margin: 9px 8px 12px; font-size: 10px; }
 .error { position: absolute; inset: 45% 16px auto; text-align: center; }
 </style>

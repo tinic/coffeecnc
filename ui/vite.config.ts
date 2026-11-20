@@ -10,6 +10,8 @@ export default defineConfig({
   plugins: [vue(), buildStamp()],
   // The simulator imports the upstream samples from ../samples.
   server: { host: '127.0.0.1', port: 5174, strictPort: true, fs: { allow: ['..'] } },
+  // Prebundle the lazy preview's studio lighting before the first dialog opens.
+  optimizeDeps: { include: ['three', 'three/addons/environments/RoomEnvironment.js'] },
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 600 },
   test: { environment: 'jsdom', include: ['test/**/*.test.ts'] },
 })

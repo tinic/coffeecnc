@@ -30,6 +30,12 @@ The external E-stop remains active while the setter is held in overtravel. Set u
 
 Set `FIXED_SETTER = yes` under `[COFFEECNC]` after commissioning. Supply `SETTER_MAX_TRAVEL_MM`, `SETTER_SEARCH_FEED_MM_MIN` and `SETTER_XY_TOLERANCE_MM`, the allowable XY distance from the taught center. The previous `SETTER_MAX_FEED_MM_MIN` key remains a fallback for search feed. These settings use millimetres and millimetres per minute across both unit systems. `SETTER_REFERENCE_TOOL` defaults to 98. An enabled profile requires both probe and spindle-RPM feedback. Set `SETTER_CLEARANCE_MM` to the lift from the reference latch to tool-change height. Total search travel must extend below the reference latch from clearance. With `SETTER_LATCH_FEED_MM_MIN`, the cycle takes three slow latches inside the original search envelope. Before each one it backs off by `SETTER_LATCH_BACKOFF_MM` (1 mm by default) and confirms the input cleared. The cycle averages the three latches and rejects a spread above 0.01 mm before saving.
 
+## Material touch-off
+
+With `TOUCH_PROBE_TOOL` and a slow latch configured, the Manual tab shows **Probe**. Jog the ruby ball near the surface and choose **Z top**, **X−**, **X+**, **Y−**, or **Y+**. The labels show travel direction in the active work coordinate system. Z top requires a touched-off probe with its length compensation applied. Edge probing uses half the tool table diameter to locate the edge. The cycle returns to its start and sets zero on the measured axis of the active work coordinate system. A missed contact or excessive latch spread returns to the start and reports the failure.
+
+`TOUCH_PROBE_MAX_TRAVEL_MM` defaults to 20 mm. The material cycle uses the same probe interlock and search and latch feeds as the tool setter, with the ruby input selected.
+
 [G0759 setter wiring](https://github.com/tinic/linuxcnc/commit/c0a779c), [Ruby routing](https://github.com/tinic/linuxcnc/commit/bc47f10), [G0759 configuration](https://github.com/tinic/linuxcnc/tree/claude/coffeecnc-g0759/configs/G0759).
 
 ## Native operation

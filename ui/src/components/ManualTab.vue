@@ -20,6 +20,7 @@ import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } 
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import FixedSetterControls from './FixedSetterControls.vue'
+import MaterialProbeControls from './MaterialProbeControls.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
@@ -497,6 +498,10 @@ function coolant(which: 'flood' | 'mist'): void {
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
       <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" show-tool inline-status />
+      <MaterialProbeControls
+        v-if="panel.hello?.fixed_setter?.material_travel_mm && panel.hello.touch_probe_tool"
+        :tool="panel.hello.touch_probe_tool"
+      />
     </section>
 
     <div class="side">

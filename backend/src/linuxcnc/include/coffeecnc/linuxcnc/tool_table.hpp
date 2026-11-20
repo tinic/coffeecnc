@@ -34,6 +34,7 @@ inline constexpr std::size_t max_tool_table_bytes = std::size_t{4} << 20;
 // rows for one tool the first counts.
 [[nodiscard]] auto comments_of(std::string_view table) -> std::map<int, std::string>;
 [[nodiscard]] auto tool_z(std::string_view table, int tool) -> std::optional<double>;
+[[nodiscard]] auto tool_diameter(std::string_view table, int tool) -> std::optional<double>;
 
 // Tools touched off at the fixed setter, kept beside the tool table so their marks survive a
 // restart. Text: a line `reference <length>`, the reference tool's table length then, and a line

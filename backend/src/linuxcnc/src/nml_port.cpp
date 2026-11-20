@@ -143,6 +143,43 @@ auto put(std::span<char> field, std::string_view text) -> bool {
 
 auto index_of(Axis axis) -> int { return static_cast<int>(axis_index(axis).value_or(0)); }
 
+struct ProbeLine {
+  std::size_t axis;
+  double sign;
+  std::array<double, 3> forward; // Signed direction in machine axes.
+
+  auto distance(const std::array<double, 3>& from, const std::array<double, 3>& to) const
+      -> double {
+    return (to[0] - from[0]) * forward[0] + (to[1] - from[1]) * forward[1] +
+           (to[2] - from[2]) * forward[2];
+  }
+
+  auto advance(std::array<double, 3> point, double travel) const -> std::array<double, 3> {
+    for (std::size_t i = 0; i < point.size(); ++i)
+      point[i] += travel * forward[i];
+    return point;
+  }
+
+  auto word() const -> char { return "XYZ"[axis]; }
+};
+
+auto probe_line(ProbeDirection direction, double rotation_xy) -> ProbeLine {
+  const double angle = rotation_xy * std::numbers::pi / 180;
+  const double sign =
+      direction == ProbeDirection::x_plus || direction == ProbeDirection::y_plus ? 1.0 : -1.0;
+  switch (direction) {
+  case ProbeDirection::x_minus:
+  case ProbeDirection::x_plus:
+    return {0, sign, {sign * std::cos(angle), sign * std::sin(angle), 0}};
+  case ProbeDirection::y_minus:
+  case ProbeDirection::y_plus:
+    return {1, sign, {-sign * std::sin(angle), sign * std::cos(angle), 0}};
+  case ProbeDirection::z_top:
+    return {2, -1, {0, 0, -1}};
+  }
+  std::unreachable();
+}
+
 } // namespace
 
 struct NmlPort::Impl {
@@ -847,9 +884,11 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   auto* hal = impl_->hal;
   if (!limits || hal == nullptr)
     return std::unexpected("The fixed setter is not configured.");
+  const bool material = move.material.has_value();
+  const double max_travel = material ? limits->material_travel_mm : limits->travel_mm;
   if (move.tool <= 0 || !std::isfinite(move.travel_mm) || move.travel_mm <= 0 ||
-      move.travel_mm > limits->travel_mm || !std::isfinite(move.feed_mm_min) ||
-      move.feed_mm_min <= 0 || move.feed_mm_min > limits->feed_mm_min ||
+      move.travel_mm > max_travel || !std::isfinite(move.feed_mm_min) || move.feed_mm_min <= 0 ||
+      move.feed_mm_min > limits->feed_mm_min ||
       !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }))
     return std::unexpected("The confirmed probe move exceeds the fixed setter limits.");
   const double move_seconds = move.travel_mm / move.feed_mm_min * seconds_per_minute;
@@ -876,7 +915,17 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   const auto& c = before.controller;
   const auto search_start = move.approach.value_or(move.start);
-  const double bottom_z = search_start[2] - move.travel_mm;
+  const auto line = probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
+  const auto endpoint = line.advance(search_start, move.travel_mm);
+  const auto coordinate = [&](const auto& point) { return line.distance(search_start, point); };
+  const auto in_travel = [&](const std::array<double, 3>& point) {
+    for (std::size_t i = 0; i < point.size(); ++i) {
+      const auto& travel = impl_->config.travel[i];
+      if (!std::isfinite(point[i]) || point[i] < travel.min || point[i] > travel.max)
+        return false;
+    }
+    return true;
+  };
   // Homing is not required: the probe runs in the session's machine frame.
   if (!normal_mode(before) || !raw->motion.traj.enabled || raw->motion.external_offsets_applied ||
       c.interp != InterpState::idle || !c.in_position || before.queued_mdi != 0 ||
@@ -885,26 +934,38 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (!std::ranges::contains(before.active_codes, "G40"))
     return std::unexpected("The probe requires cutter compensation off (G40).");
   if (before.feed_mode != FeedMode::per_minute || !std::isfinite(before.programmed_feed) ||
-      !std::isfinite(bottom_z))
+      !std::isfinite(before.rotation_xy))
     return std::unexpected("The probe requires feed per minute (G94).");
   for (std::size_t axis = 0; axis < move.start.size(); ++axis)
     if (!near(c.axes[axis].machine, move.start[axis]))
       return std::unexpected("The machine moved after the probe was confirmed.");
-  for (std::size_t axis = 0; axis < search_start.size(); ++axis) {
-    const auto& travel = impl_->config.travel[axis];
-    if (!std::isfinite(search_start[axis]) || search_start[axis] < travel.min ||
-        search_start[axis] > travel.max)
-      return std::unexpected("The setter position is outside the machine's configured travel.");
-  }
-  if (bottom_z < impl_->config.travel[2].min || search_start[2] < move.start[2])
-    return std::unexpected("The setter move is outside the confirmed Z travel.");
+  if (!in_travel(search_start) || !in_travel(endpoint) || search_start[2] < move.start[2])
+    return std::unexpected("The probe move is outside the configured travel.");
 
   const bool restore_feed_override = raw->motion.traj.feed_override_enabled;
   const bool restore_adaptive = raw->motion.traj.adaptive_feed_enabled;
   const bool restore_incremental = std::ranges::contains(before.active_codes, "G91");
   const double program_scale = c.program_units == LengthUnit::inch ? 25.4 : 1.0;
   const double machine_scale = impl_->config.millimetres_per_unit;
-  auto expected_xy = move.start;
+  auto line_origin = move.start;
+  const auto on_line = [&](const std::array<double, 3>& point,
+                           const std::array<double, 3>& origin) {
+    const auto projected = line.advance(origin, line.distance(origin, point));
+    for (std::size_t i = 0; i < point.size(); ++i)
+      if (!near(point[i], projected[i]))
+        return false;
+    return true;
+  };
+  const auto machine_position = [&](const auto& pose) -> std::array<double, 3> {
+    return {pose.tran.x * machine_scale, pose.tran.y * machine_scale, pose.tran.z * machine_scale};
+  };
+  const auto machine_move = [&](double position, const std::string& feed) {
+    const auto target = line.advance(search_start, position);
+    if (line.axis == 2)
+      return std::format("G90 G53 G1 Z{:.8f}{}", target[2] / program_scale, feed);
+    return std::format("G90 G53 G1 X{:.8f} Y{:.8f}{}", target[0] / program_scale,
+                       target[1] / program_scale, feed);
+  };
   bool positioning = false;
   bool traversing_xy = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
@@ -917,14 +978,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
            s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
            (traversing_xy ? near(s.controller.axes[2].machine, search_start[2])
-                          : near(s.controller.axes[0].machine, expected_xy[0]) &&
-                                near(s.controller.axes[1].machine, expected_xy[1]));
+                          : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
+                                     s.controller.axes[2].machine},
+                                    line_origin));
   };
 
   // The machine's touch probe trips on its own input before the setter's plunger moves (G0759:
   // 2 mm of stylus deflection before the setter switched), so it touches off on its own input.
   const bool own_probe = impl_->config.touch_probe_tool == move.tool;
-  if (!hal->begin_probe_cycle(Clock::now(), !own_probe))
+  if ((material && !own_probe) || !hal->begin_probe_cycle(Clock::now(), !own_probe))
     return std::unexpected("The probe interlock could not be armed.");
   const auto interrupt = [&](std::string_view reason) -> Contact {
     hal->stop_probe_cycle();
@@ -965,7 +1027,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto selected = interlock();
   raw = live_cycle();
   if (raw == nullptr || !selected || *selected->probe_input || raw->motion.traj.probeval != 0 ||
-      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, move.start[2]))
+      !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0))
     return interrupt("The fixed setter is tripped or its interlock is unavailable.");
 
   bool saw_probe = false;
@@ -1017,8 +1079,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto probe_pin = interlock();
   if (raw == nullptr || !probe_pin || *probe_pin->probe_input || raw->motion.traj.probeval != 0 ||
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
-      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, move.start[2]) ||
-      !near(raw->motion.traj.position.tran.z * machine_scale, move.start[2]))
+      !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0) ||
+      !near(line.distance(move.start, machine_position(raw->motion.traj.position)), 0))
     return interrupt("Probe input, position or feed controls changed before descent.");
 
   if (move.approach) {
@@ -1037,7 +1099,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                            search_start[1] / program_scale),
                positioning_timeout, false, true))
       return interrupt("Could not position XY above the setter.");
-    expected_xy = search_start;
+    line_origin = search_start;
     traversing_xy = false;
     positioning = false;
     raw = live_cycle();
@@ -1054,102 +1116,109 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
 
   // Back-offs and the final retract move away from the setter: twice the search feed (turo).
   const auto feed_word = std::format(" F{:.8f}", 2 * move.feed_mm_min / program_scale);
-  const auto search = [&](double from_z, double travel, double feed) -> Contact {
+  bool missed = false;
+  const auto search = [&](double begin_at, double travel, double feed) -> Contact {
     saw_probe = false;
     const auto timeout = std::chrono::milliseconds{
         static_cast<int>((travel / feed * seconds_per_minute + 3) * 1000)};
-    if (!block(
-            std::format("G91 G38.2 Z{:.8f} F{:.8f}", -travel / program_scale, feed / program_scale),
-            timeout, true, true))
-      return interrupt("The fixed setter descent did not complete.");
+    if (!block(std::format("G91 {} {}{:.8f} F{:.8f}", material ? "G38.3" : "G38.2", line.word(),
+                           line.sign * travel / program_scale, feed / program_scale),
+               timeout, true, true))
+      return interrupt("The probe search did not complete.");
     const auto* sample = live_cycle();
     const auto at_contact = interlock();
-    if (sample == nullptr || !at_contact || !*at_contact->probe_input || !saw_probe ||
-        !sample->motion.traj.probe_tripped || sample->motion.traj.probing ||
-        sample->motion.traj.probeval == 0 || sample->echo_serial_number != impl_->serial ||
-        !sample->motion.traj.inpos || sample->motion.traj.current_vel != 0)
+    if (sample == nullptr || !at_contact || !saw_probe || sample->motion.traj.probing ||
+        sample->echo_serial_number != impl_->serial || !sample->motion.traj.inpos ||
+        sample->motion.traj.current_vel != 0)
       return interrupt("The fixed setter did not report a fresh contact.");
-    const auto position = sample->motion.traj.probedPosition.tran;
-    const double travel_after_contact =
-        (position.z - sample->motion.traj.actualPosition.tran.z) * machine_scale;
+    const auto actual = machine_position(sample->motion.traj.actualPosition);
+    const auto& trajectory = sample->motion.traj;
+    if (material && !trajectory.probe_tripped && !*at_contact->probe_input &&
+        trajectory.probeval == 0 && near(coordinate(actual), begin_at + travel)) {
+      missed = true;
+      return FixedSetterContact{actual, 0};
+    }
+    if (!*at_contact->probe_input || !trajectory.probe_tripped || trajectory.probeval == 0)
+      return interrupt("The fixed setter did not report a fresh contact.");
+    const auto position = machine_position(trajectory.probedPosition);
+    const double travel_after_contact = line.distance(position, actual);
     if (!std::isfinite(travel_after_contact))
-      return interrupt("The fixed setter did not report a settled Z position.");
-    const FixedSetterContact contact{
-        {position.x * machine_scale, position.y * machine_scale, position.z * machine_scale},
-        std::max(0.0, travel_after_contact)};
-    if (!near(contact.machine[0], search_start[0]) || !near(contact.machine[1], search_start[1]) ||
-        !std::isfinite(contact.machine[2]) || contact.machine[2] >= from_z ||
-        contact.machine[2] < from_z - travel - tolerance_mm)
+      return interrupt("The fixed setter did not report a settled probe position.");
+    const double latched = coordinate(position);
+    if (!on_line(position, search_start) || !std::isfinite(latched) || latched <= begin_at ||
+        latched > begin_at + travel + tolerance_mm)
       return interrupt("The setter contact lies outside the confirmed search move.");
-    return contact;
+    return FixedSetterContact{position, std::max(0.0, travel_after_contact)};
   };
-  auto contact = search(search_start[2], move.travel_mm, move.feed_mm_min);
+  auto contact = search(0, move.travel_mm, move.feed_mm_min);
   if (!contact)
     return contact;
   std::optional<double> unstable_spread;
-  if (limits->latch_feed_mm_min > 0) {
+  if (!missed && limits->latch_feed_mm_min > 0) {
     const auto search_stop = contact->stopping_distance;
     std::array<double, 3> latches{};
     for (double& latch : latches) {
-      const double backoff_z = contact->machine[2] + limits->latch_backoff_mm;
-      if (backoff_z > impl_->config.travel[2].max ||
-          !block(std::format("G90 G53 G1 Z{:.8f}{}", backoff_z / program_scale, feed_word),
-                 move_timeout, false, true))
+      const double backoff = coordinate(contact->machine) - limits->latch_backoff_mm;
+      const double retreat = material ? std::max(0.0, backoff) : backoff;
+      if (!in_travel(line.advance(search_start, retreat)) ||
+          !block(machine_move(retreat, feed_word), move_timeout, false, true))
         return interrupt("The fixed setter latch backoff did not complete.");
-      // Wait until Z stands at the back-off height and the plunger has sprung back.
+      const auto released_at_backoff = [&](const EMC_STAT& sample, const HalView& pins) {
+        const auto& trajectory = sample.motion.traj;
+        return !*pins.probe_input && trajectory.probeval == 0 && trajectory.inpos &&
+               trajectory.current_vel == 0 &&
+               near(coordinate(machine_position(trajectory.position)), retreat) &&
+               near(coordinate(machine_position(trajectory.actualPosition)), retreat);
+      };
       static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
         const auto* s = live_cycle();
         const auto pins = interlock();
-        return s == nullptr || !pins ||
-               (!*pins->probe_input && s->motion.traj.probeval == 0 && s->motion.traj.inpos &&
-                s->motion.traj.current_vel == 0 &&
-                near(s->motion.traj.position.tran.z * machine_scale, backoff_z) &&
-                near(s->motion.traj.actualPosition.tran.z * machine_scale, backoff_z));
+        return s == nullptr || !pins || released_at_backoff(*s, *pins);
       }));
       raw = live_cycle();
       const auto released = interlock();
-      if (raw == nullptr || !released || *released->probe_input || raw->motion.traj.probeval != 0 ||
-          !near(raw->motion.traj.position.tran.z * machine_scale, backoff_z) ||
-          !near(raw->motion.traj.actualPosition.tran.z * machine_scale, backoff_z))
-        return interrupt(std::format(
-            "The setter did not release before the latch pass (back-off Z {:.3f}, at Z {:.3f}, "
-            "probe {}).",
-            backoff_z, raw == nullptr ? std::numeric_limits<double>::quiet_NaN() : raw->motion.traj.actualPosition.tran.z * machine_scale,
-            released && *released->probe_input ? "tripped" : "clear"));
-      const double latch_travel = std::min(2 * limits->latch_backoff_mm, backoff_z - bottom_z);
-      contact = search(backoff_z, latch_travel, limits->latch_feed_mm_min);
+      if (raw == nullptr || !released || !released_at_backoff(*raw, *released))
+        return interrupt("The setter did not release before the latch pass.");
+
+      const double latch_travel = std::min(2 * limits->latch_backoff_mm, move.travel_mm - retreat);
+      contact = search(retreat, latch_travel, limits->latch_feed_mm_min);
       if (!contact)
         return contact;
-      latch = contact->machine[2];
+      if (missed)
+        break;
+      latch = coordinate(contact->machine);
     }
-    const auto [low, high] = std::ranges::minmax(latches);
-    constexpr double max_spread_mm = 0.01;
-    if (high - low > max_spread_mm)
-      unstable_spread = high - low;
-    else
-      contact->machine[2] = std::accumulate(latches.begin(), latches.end(), 0.0) /
-                            static_cast<double>(latches.size());
-    contact->stopping_distance = search_stop;
+    if (!missed) {
+      const auto [low, high] = std::ranges::minmax(latches);
+      constexpr double max_spread_mm = 0.01;
+      if (high - low > max_spread_mm)
+        unstable_spread = high - low;
+      else {
+        const double average = std::accumulate(latches.begin(), latches.end(), 0.0) /
+                               static_cast<double>(latches.size());
+        contact->machine = line.advance(contact->machine, average - coordinate(contact->machine));
+      }
+      contact->stopping_distance = search_stop;
+    }
   }
-  // On a failed teach the pre-probe setup height is known; no new clearance was established.
-  const double retract_z = move.retract_above_contact_mm > 0 && !unstable_spread
-                               ? contact->machine[2] + move.retract_above_contact_mm
-                               : move.retract_z.value_or(search_start[2]);
+  // A material probe always retracts along the search line to its confirmed start.
+  const double retract = material ? 0.0
+                         : move.retract_above_contact_mm > 0 && !unstable_spread
+                             ? coordinate(contact->machine) - move.retract_above_contact_mm
+                             : search_start[2] - move.retract_z.value_or(search_start[2]);
   raw = live_cycle();
-  if (raw == nullptr || !std::isfinite(retract_z) || retract_z > impl_->config.travel[2].max ||
-      !std::isfinite(raw->motion.traj.actualPosition.tran.z) ||
-      retract_z <= raw->motion.traj.actualPosition.tran.z * machine_scale ||
-      retract_z <= contact->machine[2])
-    return interrupt("The tool-change height is outside safe Z travel for this contact.");
-  if (!block(std::format("G90 G53 G1 Z{:.8f}{}", retract_z / program_scale, feed_word),
-             move_timeout, false, true))
+  if (raw == nullptr || !in_travel(line.advance(search_start, retract)) ||
+      !(retract < coordinate(machine_position(raw->motion.traj.actualPosition))) ||
+      !(retract < coordinate(contact->machine)))
+    return interrupt("The retract position is outside safe travel for this contact.");
+  if (!block(machine_move(retract, feed_word), move_timeout, false, true))
     return interrupt("The fixed setter retract did not complete.");
   raw = live_cycle();
   const auto after_retract = interlock();
   if (raw == nullptr || !after_retract || *after_retract->probe_input ||
       raw->motion.traj.probeval != 0 ||
-      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, retract_z))
-    return interrupt("The fixed setter did not release at the retract height.");
+      !near(coordinate(machine_position(raw->motion.traj.actualPosition)), retract))
+    return interrupt("The fixed setter did not release at the retract position.");
 
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
                          before.programmed_feed / program_scale),
@@ -1162,6 +1231,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
   hal->finish_probe_cycle();
+  if (missed)
+    return std::unexpected("No probe contact within the search travel. Returned to the start.");
   if (unstable_spread)
     return std::unexpected(
         std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread));
@@ -1227,6 +1298,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!ready(*raw, before))
     return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
+  const bool material = request.action == SetterAction::material;
+  if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
+                   limits->latch_backoff_mm <= 0))
+    return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
+  if (material && tool != impl_->config.touch_probe_tool)
+    return std::unexpected(
+        std::format("Load T{} to probe material.", *impl_->config.touch_probe_tool));
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
 
@@ -1242,7 +1320,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (before.controller.mode != TaskMode::mdi || !at_start(before, request.start))
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   const bool teaching = tool == limits->reference_tool;
-  if (!teaching && !calibration)
+  if (!material && !teaching && !calibration)
     return std::unexpected(std::format("Teach the setter with T{} first.", limits->reference_tool));
 
   const double machine_scale = impl_->config.millimetres_per_unit;
@@ -1250,6 +1328,85 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
+  if (material) {
+    const auto line = probe_line(request.direction, before.rotation_xy);
+    if (before.wcs < 1 || before.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    double radius = 0;
+    if (line.axis == 2) {
+      if (!std::ranges::contains(current_marks, tool))
+        return std::unexpected(
+            std::format("Touch off T{} at the tool setter before probing Z.", tool));
+      if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+          !std::ranges::contains(before.active_codes, "G43"))
+        return std::unexpected(
+            std::format("Apply the measured T{} length before probing Z.", tool));
+    } else {
+      radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+      if (!std::isfinite(radius) || radius <= 0)
+        return std::unexpected(
+            "Set the probe ball diameter in the tool table before probing an edge.");
+    }
+    const auto contact = probe_fixed_setter({.tool = tool,
+                                             .start = request.start,
+                                             .travel_mm = limits->material_travel_mm,
+                                             .feed_mm_min = limits->feed_mm_min,
+                                             .material = request.direction},
+                                            wanted);
+    if (!contact)
+      return std::unexpected(contact.error());
+
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto* current = impl_->stat();
+    if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+      return std::unexpected("Material touch-off was cancelled before setting the work origin.");
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+        after.controller.tool_in_spindle != tool || !at_start(after, request.start) ||
+        frame_of(after) != frame || after.tool_offset != before.tool_offset ||
+        after.controller.program_units != before.controller.program_units ||
+        impl_->read_tool_table() != table)
+      return std::unexpected("Machine or tool table changed before setting the work origin.");
+
+    const std::array at{after.controller.axes[0].machine, after.controller.axes[1].machine,
+                        after.controller.axes[2].machine};
+    // G10 L20 sets the coordinate at the current position. Use the distance back
+    // from the measured face, including ball radius only for side contact.
+    auto expected = after.work;
+    expected[line.axis] = line.sign * (line.distance(contact->machine, at) - radius);
+    const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    const auto code =
+        line.axis != 2 && after.rotation_xy != 0
+            ? std::format("G10 L20 P0 X{:.8f} Y{:.8f}", expected[0] / scale, expected[1] / scale)
+            : std::format("G10 L20 P0 {}{:.8f}", line.word(), expected[line.axis] / scale);
+    EMC_TASK_PLAN_EXECUTE command;
+    if (!put(command.command, code))
+      return std::unexpected("Could not format the material work origin.");
+    const auto result = impl_->run(command, from);
+    if (!accepted(result))
+      return std::unexpected(result.reason.empty() ? "LinuxCNC did not set the work origin."
+                                                   : result.reason);
+    if (impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    const bool verified = until(settle_timeout, [&] {
+      const auto* applied = impl_->stat();
+      if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
+          applied->status != RCS_DONE || impl_->status.link() != Link::live)
+        return false;
+      const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+      for (std::size_t i = 0; i < expected.size(); ++i)
+        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.002)
+          return false;
+      return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
+             s.tool_offset == before.tool_offset;
+    });
+    if (!verified)
+      return std::unexpected(
+          "Could not verify the work origin after probing. Check the active WCS.");
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks), SetterState::Material{before.wcs, line.word()}};
+  }
   auto move = FixedSetterMove{tool, request.start, limits->travel_mm, limits->feed_mm_min};
   if (teaching) {
     move.retract_above_contact_mm = limits->clearance_mm;

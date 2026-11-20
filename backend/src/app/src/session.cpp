@@ -556,7 +556,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
     const auto* setter = std::get_if<FixedSetterRequest>(&request.command);
-    const bool exclusive = setter && setter->action == SetterAction::touch_off;
+    const bool exclusive = setter && setter->action != SetterAction::status;
     if (exclusive) {
       const std::scoped_lock lock{mutex_};
       setter_busy_ = true;

@@ -305,6 +305,12 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     const auto clearance_mm = clearance ? number(*clearance) : std::optional{0.0};
     const auto latch_feed = latch ? number(*latch) : std::optional{0.0};
     const auto latch_backoff = backoff ? number(*backoff) : std::optional{latch ? 1.0 : 0.0};
+    const auto material = ini.text("COFFEECNC", "TOUCH_PROBE_MAX_TRAVEL_MM");
+    const auto material_travel = material ? number(*material) : std::optional{20.0};
+    if (!material_travel || *material_travel <= 0 ||
+        (material && *material_travel / *speed * 60 > 180))
+      return std::unexpected("[COFFEECNC] TOUCH_PROBE_MAX_TRAVEL_MM must specify a positive "
+                             "distance within three minutes at the setter search feed.");
     if (!clearance_mm || (clearance && (*clearance_mm <= 0 || *clearance_mm >= *distance)) ||
         !latch_feed || (latch && (*latch_feed <= 0 || *latch_feed > *speed)) || !latch_backoff ||
         (backoff && !latch) ||
@@ -312,8 +318,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
                    2 * *latch_backoff / *latch_feed * 60 > 180)))
       return std::unexpected("Invalid setter clearance or latch settings. The search must "
                              "reach below the reference latch from clearance.");
-    setter = FixedSetterLimits{*distance,     *speed,      static_cast<int>(*tool), *xy,
-                               *clearance_mm, *latch_feed, *latch_backoff};
+    setter =
+        FixedSetterLimits{*distance,     *speed,      static_cast<int>(*tool), *xy,
+                          *clearance_mm, *latch_feed, *latch_backoff,          *material_travel};
   }
 
   const auto path = [&](const char* section, const char* key) -> std::string {

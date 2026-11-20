@@ -1,6 +1,6 @@
 # Fixed-setter tool-length measurement
 
-The approved first workflow uses the G0759's fixed tool setter. CoffeeCNC will measure from the operator's current XY and move only Z. The application has no automatic probing control yet. The metric and inch LinuxCNC simulations in this PR exercise the underlying motion, contact latch, offset writeback and watchdog.
+The approved first workflow uses the G0759's fixed tool setter. CoffeeCNC will measure from the operator's current XY and move only Z. The native adapter implements the bounded search and retract, with metric and inch simulation tests. Calibration, the result review and Apply still need to be connected to the Tools tab.
 
 ## Calibration after homing
 
@@ -29,6 +29,8 @@ The fixed setter has two normally closed contacts. Contact opens Mesa input 19. 
 
 The physical profile has placeholder soft limits. The cycle bounds the descent by its configured search travel from the operator's start position. Commission that travel, the probe feed ceiling, permitted contact area and usable overtravel between the two contacts before enabling it. Check the stop and valid contact independently, including disconnected inputs and stopped spindle feedback. Teach XY and trigger-plane Z in CoffeeCNC after homing. Installation and physical tests belong to the mill operator and Claude.
 
+The adapter reads `[COFFEECNC] FIXED_SETTER`, `SETTER_MAX_TRAVEL_MM` and `SETTER_MAX_FEED_MM_MIN`. The two ceilings use millimetres and millimetres per minute on every machine. An enabled profile requires both probe and spindle-RPM feedback. The probing primitive remains unavailable on profiles that omit `FIXED_SETTER`.
+
 [G0759 setter wiring](https://github.com/tinic/linuxcnc/commit/c0a779c), [Ruby routing](https://github.com/tinic/linuxcnc/commit/bc47f10), [G0759 configuration](https://github.com/tinic/linuxcnc/tree/claude/coffeecnc-g0759/configs/G0759).
 
 ## Native operation
@@ -41,4 +43,4 @@ After valid contact, return only Z at a controlled feed to the captured start po
 
 LinuxCNC 2.9.4 simulation stopped coordinated motion when the realtime watchdog lowered `motion.enable`. To bring task out of its machine-on state too, gate the same permit into `iocontrol.0.emc-enable-in` alongside the physical E-stop and overtravel inputs. In simulation, releasing this gate after a trip left the machine disabled and the interrupted move did not resume. Machine installation must preserve both physical inputs. The permit is high when `coffeecnc.probe-cycle-active` is low or when both `coffeecnc.probe-cycle-lease` and the existing watchdog output are high. Read the actual permit back on `coffeecnc.probe-motion-permitted`. The worker cannot renew an expired lease, and holds the interlock active until the controller confirms that motion has stopped.
 
-The simulation checks live under [tool_probe_facts.py](../../backend/tests/sim/tool_probe_facts.py) and are registered as `linuxcnc_tool_probe_mm` and `linuxcnc_tool_probe_inch`. Physical commissioning and tests through CoffeeCNC's eventual command path are separate from these controller-level checks.
+The controller checks live under [tool_probe_facts.py](../../backend/tests/sim/tool_probe_facts.py). [fixed_setter_tests.cpp](../../backend/tests/sim/fixed_setter_tests.cpp) runs the C++ adapter on the same simulated metric and inch machines. Operator controls and physical commissioning still need their own tests.

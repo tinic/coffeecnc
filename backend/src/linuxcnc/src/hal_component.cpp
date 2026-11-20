@@ -170,6 +170,10 @@ auto HalComponent::probe_motion_permitted() const -> bool {
   return get(pins_->probe_motion_permitted);
 }
 
+auto HalComponent::probe_cycle_active() const -> bool {
+  return get(pins_->probe_cycle_active);
+}
+
 void HalComponent::set_probe_cycle(ProbeCycleOutputs outputs) {
   // Arm after the lease is high. Disarm before dropping it on normal completion, when the
   // worker has already confirmed the controller is stationary.

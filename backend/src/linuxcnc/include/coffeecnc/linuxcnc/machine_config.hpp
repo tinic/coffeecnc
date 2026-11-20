@@ -19,6 +19,12 @@ struct Travel {
   double max; // mm
 };
 
+// Commissioned bounds for a Z-only search from the operator's confirmed start.
+struct FixedSetterLimits {
+  double travel_mm;
+  double feed_mm_min;
+};
+
 // What the adapter needs from the machine's INI file. Lengths are already millimetres, velocities
 // mm/min. Together with `limits` this is everything a protocol `hello` carries.
 struct MachineConfig {
@@ -61,6 +67,7 @@ struct MachineConfig {
   // Found in HAL once the post-GUI file is loaded; not read from the INI.
   std::optional<CoolantOutputs> coolant;
   std::optional<std::string> data_directory;
+  std::optional<FixedSetterLimits> fixed_setter{};
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

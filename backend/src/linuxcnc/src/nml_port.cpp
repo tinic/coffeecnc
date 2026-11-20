@@ -792,6 +792,196 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
   return started;
 }
 
+auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
+    -> std::expected<FixedSetterContact, std::string> {
+  using Contact = std::expected<FixedSetterContact, std::string>;
+  constexpr double tolerance_mm = 0.02;
+  const auto limits = impl_->config.fixed_setter;
+  auto* hal = impl_->hal;
+  if (!limits || hal == nullptr)
+    return std::unexpected("The fixed setter is not configured.");
+  if (move.tool <= 0 || !std::isfinite(move.travel_mm) || move.travel_mm <= 0 ||
+      move.travel_mm > limits->travel_mm || !std::isfinite(move.feed_mm_min) ||
+      move.feed_mm_min <= 0 || move.feed_mm_min > limits->feed_mm_min ||
+      !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }))
+    return std::unexpected("The confirmed probe move exceeds the fixed setter limits.");
+  const double move_seconds = move.travel_mm / move.feed_mm_min * seconds_per_minute;
+  if (move_seconds > 180)
+    return std::unexpected("The probe move would take more than three minutes.");
+  const auto move_timeout = std::chrono::milliseconds{static_cast<int>((move_seconds + 3) * 1000)};
+
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  const auto* raw = impl_->stat();
+  if (raw == nullptr || impl_->status.link() != Link::live || !impl_->still())
+    return std::unexpected("The probe requires a live controller and an active request.");
+  const auto before = to_status(*raw, impl_->config, hal, Link::live);
+  const auto normal_mode = [](const NmlStatus& status) {
+    const auto& c = status.controller;
+    return c.machine == MachineState::on && c.mode == TaskMode::mdi && !status.paused &&
+           !c.requested_tool && !c.spindle_active && status.spindle_actual_rpm &&
+           *status.spindle_actual_rpm < 1.0 &&
+           std::ranges::all_of(
+               c.axes,
+               [](const auto& axis) { return axis.homed && !axis.homing && !axis.on_hard_limit; });
+  };
+  const auto near = [](double a, double b) {
+    return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
+  };
+  const auto& c = before.controller;
+  const double bottom_z = move.start[2] - move.travel_mm;
+  if (!normal_mode(before) || !raw->motion.traj.enabled || raw->motion.external_offsets_applied ||
+      c.interp != InterpState::idle || !c.in_position || before.queued_mdi != 0 ||
+      c.tool_in_spindle != move.tool || !std::ranges::contains(before.active_codes, "G40") ||
+      before.feed_mode != FeedMode::per_minute || !std::isfinite(before.programmed_feed) ||
+      !std::isfinite(bottom_z))
+    return std::unexpected(
+        "The probe requires a stopped spindle, homed axes and idle G40/G94 MDI.");
+  for (std::size_t axis = 0; axis < move.start.size(); ++axis)
+    if (!near(c.axes[axis].machine, move.start[axis]))
+      return std::unexpected("The machine moved after the probe was confirmed.");
+
+  const bool restore_feed_override = raw->motion.traj.feed_override_enabled;
+  const bool restore_adaptive = raw->motion.traj.adaptive_feed_enabled;
+  const bool restore_incremental = std::ranges::contains(before.active_codes, "G91");
+  const double program_scale = c.program_units == LengthUnit::inch ? 25.4 : 1.0;
+  const double machine_scale = impl_->config.millimetres_per_unit;
+  const auto steady_context = [&](const EMC_STAT& current) -> bool {
+    const auto s = to_status(current, impl_->config, hal, Link::live);
+    return normal_mode(s) && std::ranges::contains(s.active_codes, "G40") &&
+           current.motion.traj.enabled && !current.motion.traj.paused &&
+           !current.motion.external_offsets_applied && !current.motion.on_soft_limit &&
+           s.controller.tool_in_spindle == move.tool &&
+           s.controller.program_units == c.program_units && s.feed_mode == before.feed_mode &&
+           s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
+           s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
+           near(s.controller.axes[0].machine, move.start[0]) &&
+           near(s.controller.axes[1].machine, move.start[1]);
+  };
+
+  if (!hal->begin_probe_cycle(Clock::now()))
+    return std::unexpected("The probe interlock could not be armed.");
+  const auto interrupt = [&](std::string_view reason) -> Contact {
+    hal->stop_probe_cycle();
+    // Keep the guard active if status is lost. An acknowledgement from a previous status is
+    // not evidence that the controller has stopped the probe.
+    const bool stopped = until(std::chrono::milliseconds{1500}, [&]() {
+      const auto* s = impl_->stat();
+      return s != nullptr && impl_->status.link() == Link::live &&
+             s->task.state != EMC_TASK_STATE_ON && !s->motion.traj.enabled &&
+             s->motion.traj.inpos && s->motion.traj.current_vel == 0;
+    });
+    if (stopped)
+      hal->finish_probe_cycle();
+    auto errors = impl_->take_errors(from);
+    return std::unexpected(errors.empty() ? std::string(reason) : std::move(errors));
+  };
+  const auto live_cycle = [&]() -> const EMC_STAT* {
+    const auto* s = impl_->stat();
+    if (!impl_->still() || s == nullptr || impl_->status.link() != Link::live ||
+        !steady_context(*s) || !hal->renew_probe_cycle(Clock::now()))
+      return nullptr;
+    return s;
+  };
+  const auto interlock = [&]() -> std::optional<HalView> {
+    const auto view = hal->view(Clock::now());
+    return view && view->probe_cycle_active && view->probe_setter_selected &&
+                   view->probe_motion_permitted && view->probe_input
+               ? view
+               : std::nullopt;
+  };
+  const auto armed_at = Clock::now() + settle_timeout;
+  while (live_cycle() != nullptr && !interlock() && Clock::now() < armed_at)
+    std::this_thread::sleep_for(poll_interval);
+  const auto selected = interlock();
+  raw = live_cycle();
+  if (raw == nullptr || !selected || *selected->probe_input || raw->motion.traj.probeval != 0 ||
+      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, move.start[2]))
+    return interrupt("The fixed setter is tripped or its interlock is unavailable.");
+
+  bool saw_probe = false;
+  const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
+                         bool watch_probe = false, bool moves = false) -> bool {
+    if (live_cycle() == nullptr || !interlock())
+      return false;
+    EMC_TASK_PLAN_EXECUTE command;
+    if (!put(command.command, code) || !accepted(impl_->write(command)))
+      return false;
+    if (impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    bool done = false;
+    static_cast<void>(until(timeout, [&]() {
+      impl_->collect();
+      const auto* s = live_cycle();
+      if (s == nullptr || !interlock() || impl_->error_since(from) ||
+          s->echo_serial_number > impl_->serial)
+        return true;
+      if (s->echo_serial_number != impl_->serial)
+        return false;
+      const auto& traj = s->motion.traj;
+      if (moves && (traj.feed_override_enabled || traj.adaptive_feed_enabled))
+        return true;
+      if (watch_probe && traj.probing && !traj.probe_tripped)
+        saw_probe = true;
+      done = s->status == RCS_DONE && s->task.interpState == EMC_TASK_INTERP_IDLE &&
+             s->task.queuedMDIcommands == 0 && traj.inpos && traj.current_vel == 0;
+      return done || s->status == RCS_ERROR;
+    }));
+    return done;
+  };
+
+  if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
+    return interrupt("Could not prepare the probing feed.");
+  raw = live_cycle();
+  const auto probe_pin = interlock();
+  if (raw == nullptr || !probe_pin || *probe_pin->probe_input || raw->motion.traj.probeval != 0 ||
+      raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
+      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, move.start[2]) ||
+      !near(raw->motion.traj.position.tran.z * machine_scale, move.start[2]))
+    return interrupt("Probe input, position or feed controls changed before descent.");
+
+  const auto feed_word = std::format(" F{:.8f}", move.feed_mm_min / program_scale);
+  if (!block(std::format("G91 G38.2 Z{:.8f}{}", -move.travel_mm / program_scale, feed_word),
+             move_timeout, true, true))
+    return interrupt("The fixed setter descent did not complete.");
+  raw = live_cycle();
+  const auto at_contact = interlock();
+  if (raw == nullptr || !at_contact || !*at_contact->probe_input || !saw_probe ||
+      !raw->motion.traj.probe_tripped || raw->motion.traj.probing ||
+      raw->motion.traj.probeval == 0 || raw->echo_serial_number != impl_->serial)
+    return interrupt("The fixed setter did not report a fresh contact.");
+  const auto position = raw->motion.traj.probedPosition.tran;
+  const FixedSetterContact contact{
+      {position.x * machine_scale, position.y * machine_scale, position.z * machine_scale}};
+  if (!near(contact.machine[0], move.start[0]) || !near(contact.machine[1], move.start[1]) ||
+      !std::isfinite(contact.machine[2]) || contact.machine[2] >= move.start[2] ||
+      contact.machine[2] < bottom_z - tolerance_mm)
+    return interrupt("The setter contact lies outside the confirmed search move.");
+
+  if (!block(std::format("G90 G53 G1 Z{:.8f}{}", move.start[2] / program_scale, feed_word),
+             move_timeout, false, true))
+    return interrupt("The fixed setter retract did not complete.");
+  raw = live_cycle();
+  const auto after_retract = interlock();
+  if (raw == nullptr || !after_retract || *after_retract->probe_input ||
+      raw->motion.traj.probeval != 0 ||
+      !near(raw->motion.traj.actualPosition.tran.z * machine_scale, move.start[2]))
+    return interrupt("The fixed setter did not release at the starting Z.");
+
+  if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
+                         before.programmed_feed / program_scale),
+             completion_timeout) ||
+      (restore_feed_override && !block("M50 P1", completion_timeout)) ||
+      (restore_adaptive && !block("M52 P1", completion_timeout)))
+    return interrupt("The probe completed, but LinuxCNC did not restore its feed settings.");
+  raw = live_cycle();
+  if (raw == nullptr || raw->motion.traj.feed_override_enabled != restore_feed_override ||
+      raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
+    return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
+  hal->finish_probe_cycle();
+  return contact;
+}
+
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};

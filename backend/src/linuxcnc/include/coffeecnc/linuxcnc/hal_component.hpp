@@ -96,6 +96,7 @@ public:
   [[nodiscard]] auto probe_input() const -> std::optional<bool>;
   [[nodiscard]] auto probe_setter_selected() const -> bool;
   [[nodiscard]] auto probe_motion_permitted() const -> bool;
+  [[nodiscard]] auto probe_cycle_active() const -> bool;
   void set_probe_cycle(ProbeCycleOutputs outputs);
 
 private:

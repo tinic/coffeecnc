@@ -31,6 +31,7 @@ struct HalInputs {
   bool jog_stop_high{};
   bool probe_setter_selected{};
   bool probe_motion_permitted{};
+  bool probe_cycle_active{};
 };
 
 // The same for the other threads.
@@ -43,6 +44,7 @@ struct HalView {
   bool jog_stop_high{};
   bool probe_setter_selected{};
   bool probe_motion_permitted{};
+  bool probe_cycle_active{};
 };
 
 // What crosses between the control thread, which alone touches the HAL component, and every

@@ -446,6 +446,26 @@ void simulation_profiles() {
   require(std::system(refused.c_str()) != 0, "the G0759 profile is millimetres only");
 }
 
+void fixed_setter_is_explicit_and_bounded() {
+  require(!load(g0759)->fixed_setter, "ordinary machine profiles have no automatic fixed setter");
+  const auto enabled = with(std::string(g0759), "[COFFEECNC]\n",
+                            "[COFFEECNC]\nFIXED_SETTER = yes\n"
+                            "PROBE_SIGNAL = yes\nSPINDLE_RPM_SIGNAL = yes\n"
+                            "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n");
+  const auto setter = load(enabled);
+  require(setter && setter->fixed_setter && near(setter->fixed_setter->travel_mm, 4) &&
+              near(setter->fixed_setter->feed_mm_min, 30),
+          "the configured fixed setter carries canonical travel and feed ceilings");
+  require(has(error(with(enabled, "PROBE_SIGNAL = yes", "PROBE_SIGNAL = no")), "FIXED_SETTER"),
+          "the fixed setter requires probe feedback");
+  require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4", "SETTER_MAX_TRAVEL_MM = 0")),
+              "SETTER_MAX_TRAVEL_MM"),
+          "zero search travel is refused");
+  require(has(error(with(enabled, "SETTER_MAX_FEED_MM_MIN = 30", "SETTER_MAX_FEED_MM_MIN = 751")),
+              "SETTER_MAX_FEED_MM_MIN"),
+          "a setter feed above the Z ceiling is refused");
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -466,6 +486,7 @@ auto main(int argc, char** argv) -> int {
     tool_model_settings();
     shipped_example();
     simulation_profiles();
+    fixed_setter_is_explicit_and_bounded();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

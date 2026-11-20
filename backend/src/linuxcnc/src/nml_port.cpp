@@ -904,8 +904,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     });
     if (stopped)
       hal->finish_probe_cycle();
+    // The cycle's own reason comes first: dropping the permit makes LinuxCNC report "motion
+    // stopped by enable input", which says nothing about why the cycle stopped.
     auto errors = impl_->take_errors(from);
-    return std::unexpected(errors.empty() ? std::string(reason) : std::move(errors));
+    auto message = errors.empty() ? std::string(reason) : std::format("{} ({})", reason, errors);
+    std::cerr << "coffeecnc: fixed setter interrupted: " << message << std::endl;
+    return std::unexpected(std::move(message));
   };
   const auto live_cycle = [&]() -> const EMC_STAT* {
     const auto* s = impl_->stat();

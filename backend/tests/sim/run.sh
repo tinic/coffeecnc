@@ -242,7 +242,8 @@ fi
 for fragment in $fragments; do
   cp "$here/$fragment" "$directory/" || exit 125
 done
-rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log"
+rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log" \
+  "$directory/coffeecnc-spindle-tool.txt"
 # Tool table in machine units: T number, P pocket, Z length, D diameter.
 if [ "$profile" = g0759 ]; then
   # As the machine's table: no length, no diameter, no description.

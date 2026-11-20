@@ -496,6 +496,7 @@ void Session::wait_for_work(std::chrono::milliseconds timeout) {
 
 auto Session::work(const Clock& clock) -> Work {
   std::optional<Queued> request;
+  std::optional<PageToken> idle_page;
   bool stopping = false;
   {
     const std::scoped_lock lock{mutex_};
@@ -511,6 +512,8 @@ auto Session::work(const Clock& clock) -> Work {
       request = std::move(requests_.front());
       requests_.pop_front();
       retried_ = false;
+    } else if (page_open_ && ready_) {
+      idle_page = PageToken{pages_};
     }
   }
   if (request)
@@ -521,6 +524,13 @@ auto Session::work(const Clock& clock) -> Work {
     flush_stops();
     result.status = WorkStatus::done;
   } else {
+    const auto available = [&] {
+      const std::scoped_lock lock{mutex_};
+      return idle_page == PageToken{pages_} && page_open_ && ready_ && !closing_ && !hold_ &&
+             stops_.empty() && requests_.empty() && !stops_due(true);
+    };
+    if (available())
+      port_.idle_maintenance(available);
     published = port_.take_messages();
   }
   const auto now = clock();

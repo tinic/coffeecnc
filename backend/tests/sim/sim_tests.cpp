@@ -597,6 +597,46 @@ void homing(Rig& rig) {
                     status.controller.axes[2].max_limit));
 }
 
+void restore_spindle_tool(Rig& rig) {
+  const auto file = std::filesystem::path(rig.config.tool_table).parent_path() /
+                    "coffeecnc-spindle-tool.txt";
+  const auto saved = [&] {
+    std::ifstream input(file);
+    int tool = -1;
+    return input >> tool ? tool : -1;
+  };
+  if (rig.config.limits.homing_required) {
+    check("startup_waits_for_homing",
+          rig.snapshot().tool_in_spindle == 0 && saved() == 1 &&
+              !rig.has_message("restored in the spindle"));
+    homing(rig);
+  }
+  const bool restored = rig.pump_until(4s, [&] {
+    return rig.has_message("T1 restored in the spindle");
+  });
+  const auto status = rig.status();
+  const double target_length = rig.config.machine_units == LengthUnit::mm ? 50.0 : 50.8;
+  check("startup_restores_spindle_tool_and_compensation",
+        restored && status.controller.tool_in_spindle == 1 &&
+            near(status.tool_offset[2], target_length, 0.001) &&
+            std::ranges::contains(status.active_codes, "G43") &&
+            status.controller.mode == TaskMode::manual && !rig.probe.tool_change(),
+        std::format("restored={} tool={} length={}", restored, status.controller.tool_in_spindle,
+                    status.tool_offset[2]));
+  if (!rig.config.limits.homing_required)
+    check("startup_restores_without_homing_when_allowed",
+          restored && std::ranges::none_of(status.controller.axes,
+                                           [](const auto& axis) { return axis.homed; }));
+
+  const auto next = rig.send(R"("type":"mdi","text":"M61 Q2 G43 H2")");
+  const bool saved_next = rig.pump_until(2s, [&] { return saved() == 2; });
+  check("startup_record_tracks_tool_changes", next.accepted() && saved_next);
+  const auto empty = rig.send(R"("type":"mdi","text":"M61 Q0 G49")");
+  const bool saved_empty = rig.pump_until(2s, [&] { return saved() == 0; });
+  check("startup_record_tracks_empty_spindle", empty.accepted() && saved_empty &&
+            rig.snapshot().tool_in_spindle == 0);
+}
+
 void axis_jogs(Rig& rig) {
   const double start = rig.machine(0);
   const auto pressed = rig.send(hold_x);
@@ -3589,7 +3629,7 @@ void g0759_config(const MachineConfig& config) {
             config.signals.spindle_at_speed && config.signals.probe);
 }
 
-auto run(const std::string& ini_file, bool g0759, bool contact_only) -> int {
+auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -3625,6 +3665,15 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only) -> int {
   check("test_pins", watching);
   HalShared shared;
   NmlLoads loads;
+  if (restore_only) {
+    const auto file = std::filesystem::path(config->tool_table).parent_path() /
+                      "coffeecnc-spindle-tool.txt";
+    std::ofstream seed(file);
+    seed << "1\n";
+    seed.close();
+    if (!seed)
+      throw std::runtime_error("Could not seed the saved spindle tool.");
+  }
   auto port = NmlPort::connect(*config, &shared, &loads);
   check("nml_connect", port.has_value(), port ? config->nml_file : port.error());
   // One status channel for the runtime's status thread, one for this thread.
@@ -3635,12 +3684,23 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only) -> int {
         reader ? (view ? std::string("two") : view.error()) : reader.error());
   if (wired != 0 || !watching || !port || !reader || !view)
     return 1;
+  if (restore_only && g0759) {
+    const auto populated = (*port)->set_tool({1, 1, 50, 6, "Saved end mill"}, always());
+    check("startup_test_tool_has_length", populated.status == ActionStatus::accepted,
+          populated.reason);
+    if (populated.status != ActionStatus::accepted)
+      return 1;
+  }
 
   Rig rig{*config, *hal, shared, **port, **reader, **view, *probe};
   rig.mailbox = &mailbox;
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (restore_only) {
+    restore_spindle_tool(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (contact_only) {
     jog_contact(rig);
     return failures == 0 ? 0 : 1;
@@ -3722,6 +3782,7 @@ auto main(int argc, char** argv) -> int {
   bool g0759 = false;
   bool models_only = false;
   bool contact_only = false;
+  bool restore_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -3730,6 +3791,7 @@ auto main(int argc, char** argv) -> int {
     g0759 = g0759 || machine_hal || std::string_view(argv[i]) == "g0759";
     models_only = models_only || std::string_view(argv[i]) == "--tool-models";
     contact_only = contact_only || std::string_view(argv[i]) == "jog-contact";
+    restore_only = restore_only || std::string_view(argv[i]) == "restore-spindle-tool";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -3737,8 +3799,8 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact] (see tests/sim/run.sh)");
-    code = run(ini_file, g0759, contact_only);
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
+    code = run(ini_file, g0759, contact_only, restore_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

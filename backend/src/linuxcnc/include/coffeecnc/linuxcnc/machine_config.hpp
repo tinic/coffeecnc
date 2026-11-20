@@ -65,6 +65,7 @@ struct MachineConfig {
   // [COFFEECNC] TOUCH_PROBE_TOOL: the tool number HAL routes to the spindle touch probe. It is a
   // touch probe whatever its saved tool model says (spindle lockout, default name).
   std::optional<int> touch_probe_tool{};
+  bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

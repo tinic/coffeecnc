@@ -1329,9 +1329,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt("The fixed setter retract did not complete.");
   // The stylus or plunger can spring back after the retract move ends (the ruby probe did on
   // the mill after an edge probe): give it the same 2 s as the latch back-off.
+  // The commanded position must be at the retract. The Z reading comes from a linear encoder
+  // and lags the command by the backlash after the direction change (0.125 mm on the mill
+  // failed a good Z top), so it only has to be within 0.5 mm.
+  constexpr double backlash_allowance = 0.5; // mm
   const auto released_at_retract = [&](const EMC_STAT& sample, const HalView& pins) {
-    return !*pins.probe_input && sample.motion.traj.probeval == 0 &&
-           near(coordinate(machine_position(sample.motion.traj.actualPosition)), retract);
+    const auto& t = sample.motion.traj;
+    return !*pins.probe_input && t.probeval == 0 &&
+           near(coordinate(machine_position(t.position)), retract) &&
+           std::abs(coordinate(machine_position(t.actualPosition)) - retract) <= backlash_allowance;
   };
   static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
     const auto* s = live_cycle();
@@ -1340,9 +1346,20 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   }));
   raw = live_cycle();
   const auto after_retract = interlock();
-  if (raw == nullptr || !after_retract || !released_at_retract(*raw, *after_retract))
-    return interrupt(material ? "The probe did not release at the retract position."
-                              : "The fixed setter did not release at the retract position.");
+  if (raw == nullptr || !after_retract || !released_at_retract(*raw, *after_retract)) {
+    const auto why =
+        raw == nullptr || !after_retract
+            ? std::string{" (no controller status)"}
+            : std::format(" (probe {}, latched {}, commanded {:+.3f} mm, measured {:+.3f} mm "
+                          "from the retract)",
+                          *after_retract->probe_input ? "touching" : "clear",
+                          raw->motion.traj.probeval,
+                          coordinate(machine_position(raw->motion.traj.position)) - retract,
+                          coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
+    return interrupt((material ? "The probe did not release at the retract position"
+                               : "The fixed setter did not release at the retract position") +
+                     why + ".");
+  }
 
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
                          before.programmed_feed / program_scale),
@@ -1537,7 +1554,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         return false;
       const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
       for (std::size_t i = 0; i < expected.size(); ++i)
-        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.002)
+        // 0.01 mm like the latch spread: Z comes from an encoder whose reading moves by more
+        // than 0.002 mm at rest, which failed a correct Z top on the mill.
+        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - expected[i]) > 0.01)
           return false;
       return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
              s.tool_offset == before.tool_offset;

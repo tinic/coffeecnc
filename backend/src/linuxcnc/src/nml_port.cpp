@@ -959,8 +959,11 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         return true;
       if (watch_probe && traj.probing && !traj.probe_tripped)
         saw_probe = true;
+      // RCS_DONE with the axes still can come before motion has taken the move: a move is done
+      // only once motion's queue is empty as well.
       done = s->status == RCS_DONE && s->task.interpState == EMC_TASK_INTERP_IDLE &&
-             s->task.queuedMDIcommands == 0 && traj.inpos && traj.current_vel == 0;
+             s->task.queuedMDIcommands == 0 && traj.inpos && traj.current_vel == 0 &&
+             (!moves || (traj.queue == 0 && traj.activeQueue == 0));
       return done || s->status == RCS_ERROR;
     }));
     return done;

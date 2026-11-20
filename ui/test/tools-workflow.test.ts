@@ -168,13 +168,10 @@ describe('tool table workflow', () => {
     expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Remove tool 2?')
     await press('Remove tool'); expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'remove_tool', number: 2 })
   })
-  it('cannot delete the spindle tool or overwrite a changed table row', async () => {
+  it('cannot delete the spindle tool', async () => {
     mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
     const deletion = getWrapper().findAll('button').find((button) => button.text() === 'Delete')
     expect(deletion?.attributes('disabled')).toBeDefined()
-    const tool = panel.toolTable?.tools[0]; if (!tool) throw new Error('Missing tool')
-    tool.length = 100; await nextTick(); await press('Save tool')
-    expect(send).not.toHaveBeenCalled()
   })
   it('keeps unchanged length and diameter exact when editing a description in inches', async () => {
     panel.unit = 'inch'
@@ -222,5 +219,57 @@ describe('tool table workflow', () => {
     expect(panel.preferences.tool_reference_height).toBe(6.35)
     expect(JSON.parse(storage.setItem.mock.calls[0]?.[1] as string)).toMatchObject({ tool_reference_height: 6.35 })
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+// Operator scenarios of the tool editor: Save is always offered, and a press saves or says why not.
+describe('tool editor scenarios', () => {
+  const saveButton = (): ReturnType<VueWrapper['get']> => {
+    const button = getWrapper().findAll('button').find((candidate) => candidate.text() === 'Save tool')
+    if (!button) throw new Error('Missing Save tool')
+    return button
+  }
+  it('writes the edited row over one changed elsewhere since the editor opened', async () => {
+    mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
+    const tool = panel.toolTable?.tools[0]; if (!tool) throw new Error('Missing tool')
+    const before = { ...tool }
+    tool.length = 100; await nextTick()
+    await getWrapper().get('.description-entry input').setValue('Re-ground')
+    expect(saveButton().attributes('disabled')).toBeUndefined()
+    await press('Save tool')
+    expect(send).toHaveBeenCalledWith({ type: 'set_tool', tool: { ...before, comment: 'Re-ground' } })
+  })
+  it('keeps Save enabled with an invalid entry and says what to fix on press', async () => {
+    mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
+    const length = getWrapper().findAll('[role="dialog"] input').find((input) => input.element.closest('label')?.textContent.startsWith('Length'))
+    if (!length) throw new Error('Missing length field')
+    await length.setValue('abc')
+    expect(saveButton().attributes('disabled')).toBeUndefined()
+    await press('Save tool')
+    expect(send).not.toHaveBeenCalled()
+    expect(getWrapper().get('[role="dialog"] .feedback').text()).toBe('Check the tool number, length and diameter.')
+  })
+  it('keeps Save enabled while a program runs and says why on press', async () => {
+    mountTools(); await getWrapper().get('[aria-label="Edit tool 1"]').trigger('click')
+    if (!panel.status) throw new Error('Missing status')
+    panel.status = { ...panel.status, interp: 'reading' }; await nextTick()
+    expect(saveButton().attributes('disabled')).toBeUndefined()
+    await press('Save tool')
+    expect(send).not.toHaveBeenCalled()
+    expect(getWrapper().get('[role="dialog"] .feedback').text()).toBe('Stop execution before editing the tool.')
+  })
+  it('opens the machine touch probe tool as a touch probe and saves it', async () => {
+    panel.hello = { ...hello, touch_probe_tool: 99 }
+    const table = panel.toolTable; if (!table) throw new Error('Missing tool table')
+    panel.toolTable = { ...table, tools: [...table.tools, { number: 99, pocket: 99, diameter: 2, length: 50, comment: '' }] }
+    mountTools()
+    expect(getWrapper().findAll('.tool-row').at(-1)?.text()).toContain('Touch probe')
+    await getWrapper().get('[aria-label="Edit tool 99"]').trigger('click')
+    expect((getWrapper().get('[aria-label="Tool type"]').element as HTMLSelectElement).value).toBe('touch-probe')
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('Ball diameter')
+    await getWrapper().get('.description-entry input').setValue('Ruby probe')
+    expect(saveButton().attributes('disabled')).toBeUndefined()
+    await press('Save tool')
+    expect(send).toHaveBeenCalledWith({ type: 'set_tool', tool: { number: 99, pocket: 99, diameter: 2, length: 50, comment: 'Ruby probe' } })
   })
 })

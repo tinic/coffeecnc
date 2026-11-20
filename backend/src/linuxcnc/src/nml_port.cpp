@@ -97,6 +97,7 @@ constexpr auto error_companion_time = std::chrono::milliseconds{20};
 // pins once more: three of its 10 ms periods.
 constexpr auto fresh_pins_time = std::chrono::milliseconds{30};
 constexpr double seconds_per_minute = 60;
+constexpr double probe_backlash_allowance_mm = 0.5;
 
 auto failed(std::string_view reason) -> ActionResult {
   return {ActionStatus::failed, std::string(reason)};
@@ -1066,6 +1067,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto machine_position = [&](const auto& pose) -> std::array<double, 3> {
     return {pose.tran.x * machine_scale, pose.tran.y * machine_scale, pose.tran.z * machine_scale};
   };
+  // After reversal the Z encoder can lag the command (0.125 mm on the G0759).
+  // Require the commanded endpoint and bound the encoder difference along the probe line.
+  const auto reached_backoff = [&](const auto& trajectory, double target) {
+    return near(coordinate(machine_position(trajectory.position)), target) &&
+           std::abs(coordinate(machine_position(trajectory.actualPosition)) - target) <=
+               probe_backlash_allowance_mm;
+  };
   const auto machine_move = [&](double position, const std::string& feed) {
     const auto target = line.advance(search_start, position);
     if (line.axis == 2)
@@ -1299,9 +1307,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       const auto released_at_backoff = [&](const EMC_STAT& sample, const HalView& pins) {
         const auto& trajectory = sample.motion.traj;
         return !*pins.probe_input && trajectory.probeval == 0 && trajectory.inpos &&
-               trajectory.current_vel == 0 &&
-               near(coordinate(machine_position(trajectory.position)), retreat) &&
-               near(coordinate(machine_position(trajectory.actualPosition)), retreat);
+               trajectory.current_vel == 0 && reached_backoff(trajectory, retreat);
       };
       static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
         const auto* s = live_cycle();
@@ -1348,15 +1354,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt("The fixed setter retract did not complete.");
   // The stylus or plunger can spring back after the retract move ends (the ruby probe did on
   // the mill after an edge probe): give it the same 2 s as the latch back-off.
-  // The commanded position must be at the retract. The Z reading comes from a linear encoder
-  // and lags the command by the backlash after the direction change (0.125 mm on the mill
-  // failed a good Z top), so it only has to be within 0.5 mm.
-  constexpr double backlash_allowance = 0.5; // mm
   const auto released_at_retract = [&](const EMC_STAT& sample, const HalView& pins) {
     const auto& t = sample.motion.traj;
-    return !*pins.probe_input && t.probeval == 0 &&
-           near(coordinate(machine_position(t.position)), retract) &&
-           std::abs(coordinate(machine_position(t.actualPosition)) - retract) <= backlash_allowance;
+    return !*pins.probe_input && t.probeval == 0 && reached_backoff(t, retract);
   };
   static_cast<void>(until(std::chrono::milliseconds{2000}, [&]() {
     const auto* s = live_cycle();
@@ -1492,9 +1492,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   };
   // After a probe the Z encoder can lag the command by the backlash (0.125 mm on the mill).
   const auto back_at = [&](const NmlStatus& s, const std::array<double, 3>& start) {
-    constexpr double backlash_allowance = 0.5; // mm
     for (std::size_t i = 0; i < start.size(); ++i)
-      if (!(std::abs(s.controller.axes[i].machine - start[i]) <= backlash_allowance))
+      if (!(std::abs(s.controller.axes[i].machine - start[i]) <= probe_backlash_allowance_mm))
         return false;
     return true;
   };

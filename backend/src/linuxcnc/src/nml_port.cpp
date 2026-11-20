@@ -838,8 +838,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            !c.requested_tool && !c.spindle_active && status.spindle_actual_rpm &&
            *status.spindle_actual_rpm < 1.0 &&
            std::ranges::all_of(
-               c.axes,
-               [](const auto& axis) { return axis.homed && !axis.homing && !axis.on_hard_limit; });
+               c.axes, [](const auto& axis) { return !axis.homing && !axis.on_hard_limit; });
   };
   const auto near = [](double a, double b) {
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
@@ -847,13 +846,16 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto& c = before.controller;
   const auto search_start = move.approach.value_or(move.start);
   const double bottom_z = search_start[2] - move.travel_mm;
+  // Homing is not required: the probe runs in the session's machine frame.
   if (!normal_mode(before) || !raw->motion.traj.enabled || raw->motion.external_offsets_applied ||
       c.interp != InterpState::idle || !c.in_position || before.queued_mdi != 0 ||
-      c.tool_in_spindle != move.tool || !std::ranges::contains(before.active_codes, "G40") ||
-      before.feed_mode != FeedMode::per_minute || !std::isfinite(before.programmed_feed) ||
+      c.tool_in_spindle != move.tool)
+    return std::unexpected("The probe requires a stopped spindle, stopped axes and idle MDI.");
+  if (!std::ranges::contains(before.active_codes, "G40"))
+    return std::unexpected("The probe requires cutter compensation off (G40).");
+  if (before.feed_mode != FeedMode::per_minute || !std::isfinite(before.programmed_feed) ||
       !std::isfinite(bottom_z))
-    return std::unexpected(
-        "The probe requires a stopped spindle, homed axes and idle G40/G94 MDI.");
+    return std::unexpected("The probe requires feed per minute (G94).");
   for (std::size_t axis = 0; axis < move.start.size(); ++axis)
     if (!near(c.axes[axis].machine, move.start[axis]))
       return std::unexpected("The machine moved after the probe was confirmed.");

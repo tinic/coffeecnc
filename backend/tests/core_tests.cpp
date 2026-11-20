@@ -400,6 +400,15 @@ void jog_stop_attribution() {
           "no own level in the window, watchdog fine: unattributed, the text unchanged");
   require(classify_jog_stop(stop, read, never, never) == JogStopCause::unattributed,
           "no history at all: unattributed");
+  require(classify_jog_stop(stop, read, read - 10ms, never, read + 5ms) ==
+              JogStopCause::probe_contact,
+          "the contact can be sampled after the stop text and during the app's stop response");
+  require(classify_jog_stop(stop, read, never, read - 2ms, read - 10ms) ==
+              JogStopCause::watchdog,
+          "an actual watchdog trip takes precedence over a recent contact");
+  require(classify_jog_stop(stop, read, never, never, read - jog_stop_window - 1ns) ==
+              JogStopCause::unattributed,
+          "an earlier contact does not explain a subsequent stop");
   for (const std::string other :
        {"Cannot jog while jog-inhibit is active", "Jog aborted by jog-stop.",
         "jog aborted by jog-stop", "Joint 0 following error", ""})

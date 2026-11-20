@@ -446,6 +446,39 @@ void power(Rig& rig) {
   check("machine_on", on.accepted() && rig.snapshot().machine == MachineState::on, on.text());
 }
 
+void jog_contact(Rig& rig) {
+  rig.clear_messages();
+  const double start = rig.feedback();
+  const auto jog = rig.send(hold_x);
+  rig.hold(hold_x, 200ms);
+  const double at_contact = rig.feedback();
+
+  // Model the machine's contact level and the separate pulse on the jog-stop input.
+  const bool raised = halcmd("setp coffeecnc.jog-contact 1") &&
+                      halcmd("setp coffeecnc-jog-stop.in-2 1");
+  const bool reported = rig.pump_until(60ms, [&] {
+    return rig.has_message("Jog stopped: probe contact");
+  });
+  const bool lowered = halcmd("setp coffeecnc-jog-stop.in-2 0");
+  const bool stopped = rig.pump_until(300ms, [&] { return rig.idle(); });
+  const double at_rest = rig.feedback();
+  rig.hold(hold_x, 250ms);
+  const double after_refresh = rig.feedback();
+  static_cast<void>(rig.send(release_x));
+  const bool cleared = halcmd("setp coffeecnc.jog-contact 0");
+  const auto messages = rig.all_messages();
+  check("probe_contact_stops_jog_without_estop",
+        jog.accepted() && raised && lowered && cleared && stopped && at_contact - start > 0.5 &&
+            at_rest - at_contact < 1.5 && near(after_refresh, at_rest, 0.001) &&
+            rig.snapshot().machine == MachineState::on,
+        std::format("start={} moved={:.3f} after_contact={:.3f} while_held={:.4f}", jog.text(),
+                    at_contact - start, at_rest - at_contact, after_refresh - at_rest));
+  check("probe_contact_reported_once",
+        reported && std::ranges::count(messages, "Jog stopped: probe contact") == 1 &&
+            !rig.has_message("Jog aborted by jog-stop"),
+        std::format("messages={}", messages.size()));
+}
+
 void unhomed(Rig& rig) {
   const auto mdi = rig.send(R"("type":"mdi","text":"G0 X1")");
   check("mdi_rejected_unhomed", mdi.outcome == "rejected", mdi.text());
@@ -3556,7 +3589,7 @@ void g0759_config(const MachineConfig& config) {
             config.signals.spindle_at_speed && config.signals.probe);
 }
 
-auto run(const std::string& ini_file, bool g0759) -> int {
+auto run(const std::string& ini_file, bool g0759, bool contact_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -3608,6 +3641,10 @@ auto run(const std::string& ini_file, bool g0759) -> int {
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (contact_only) {
+    jog_contact(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (g0759) {
     g0759_signals(rig);
     g0759_unhomed(rig);
@@ -3684,6 +3721,7 @@ auto main(int argc, char** argv) -> int {
   std::string ini_file;
   bool g0759 = false;
   bool models_only = false;
+  bool contact_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -3691,6 +3729,7 @@ auto main(int argc, char** argv) -> int {
     machine_hal = machine_hal || std::string_view(argv[i]) == "g0759-machine";
     g0759 = g0759 || machine_hal || std::string_view(argv[i]) == "g0759";
     models_only = models_only || std::string_view(argv[i]) == "--tool-models";
+    contact_only = contact_only || std::string_view(argv[i]) == "jog-contact";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -3698,8 +3737,8 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine] (see tests/sim/run.sh)");
-    code = run(ini_file, g0759);
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact] (see tests/sim/run.sh)");
+    code = run(ini_file, g0759, contact_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

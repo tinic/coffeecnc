@@ -40,6 +40,8 @@ auto HalShared::exchange(const HalInputs& inputs, Clock::time_point now) -> bool
   } else if (!inputs.tool_change_request) {
     answered_ = false;
   }
+  if (have_inputs_ && inputs.jog_contact && !inputs_.jog_contact)
+    history_.contact_edge = now;
   inputs_ = inputs;
   read_at_ = now;
   have_inputs_ = true;
@@ -107,7 +109,7 @@ void HalControl::beat() {
   const HalInputs inputs{hal_.tool_change_request(), hal_.spindle_rpm(), hal_.spindle_at_speed(),
                          hal_.probe_input(),         hal_.watchdog_ok(), hal_.jog_stop_high(),
                          hal_.probe_setter_selected(), hal_.probe_motion_permitted(),
-                         hal_.probe_cycle_active()};
+                         hal_.probe_cycle_active(),   hal_.jog_contact()};
   // The exchange notes a high level before beat() may lower it.
   if (shared_.exchange(inputs, now))
     hal_.confirm_tool_changed();

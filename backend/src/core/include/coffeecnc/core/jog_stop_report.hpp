@@ -11,7 +11,8 @@ namespace coffeecnc {
 // Who stopped a jog that LinuxCNC reports as "Jog aborted by jog-stop". Motion reports it in
 // every servo period in which that pin is high while a jog is active (emc/motion/control.c:542),
 // so every such text was produced while the pin was high. In the shipped post-GUI file
-// motion.jog-stop is driven by CoffeeCNC's own level OR the HAL watchdog, nothing else.
+// motion.jog-stop is driven by CoffeeCNC's own level and the HAL watchdog. A machine can
+// additionally wire its probe contact pulse to the same stop path.
 // "Jog aborted by jog-stop-immediate" comes from motion.jog-stop-immediate, which neither
 // drives: it is never attributed and always reaches the operator unchanged.
 //
@@ -21,6 +22,7 @@ namespace coffeecnc {
 enum class JogStopCause : std::uint8_t {
   not_jog_stop, // another text: passed on unchanged
   watchdog,     // watchdog-ok read false within the window or after: watchdog_stop_text
+  probe_contact, // a probe contact edge within the window: probe_contact_stop_text
   own,          // else CoffeeCNC's level was high within the window: debug log only
   unattributed, // neither: passed on unchanged
 };
@@ -37,6 +39,7 @@ inline constexpr auto jog_stop_window = std::chrono::milliseconds{200};
 inline constexpr std::string_view watchdog_stop_text =
     "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
     "watchdog timeout.";
+inline constexpr std::string_view probe_contact_stop_text = "Jog stopped: probe contact";
 
 [[nodiscard]] auto is_jog_stop_text(std::string_view text) -> bool;
 
@@ -55,7 +58,8 @@ inline constexpr std::string_view watchdog_stop_text =
 [[nodiscard]] auto
 classify_jog_stop(std::string_view text, std::chrono::steady_clock::time_point read_at,
                   std::optional<std::chrono::steady_clock::time_point> own_level_high,
-                  std::optional<std::chrono::steady_clock::time_point> watchdog_tripped)
+                  std::optional<std::chrono::steady_clock::time_point> watchdog_tripped,
+                  std::optional<std::chrono::steady_clock::time_point> contact_edge = {})
     -> JogStopCause;
 
 } // namespace coffeecnc

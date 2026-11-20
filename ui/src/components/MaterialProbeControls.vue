@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, shallowRef } from 'vue'
-import { homingActive, manualBlock, onResult, panel, send } from '../machine'
+import { onBeforeUnmount, shallowRef, watch } from 'vue'
+import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import type { CommandBody, ProbeDirection } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { wcsName } from '../units'
+import SetterStatusBand from './SetterStatusBand.vue'
 
 const props = defineProps<{ tool: number }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' }>
@@ -12,6 +13,7 @@ const directions = [
 ] as const
 const pending = shallowRef<Request | null>(null)
 const line = shallowRef<SetterStatusLine>({ text: 'Jog near the surface, then choose a probe direction.', level: 'info' })
+let statusRequest: CommandBody | null = null
 
 function probe(direction: ProbeDirection): void {
   if (pending.value) return
@@ -38,6 +40,11 @@ function probe(direction: ProbeDirection): void {
 }
 
 const removeListener = onResult((command, result) => {
+  if (command === statusRequest) {
+    statusRequest = null
+    if (result.outcome === 'accepted') setterState.value = result.setter ?? null
+    return
+  }
   if (command !== pending.value) return
   const direction = pending.value.direction
   pending.value = null
@@ -50,6 +57,17 @@ const removeListener = onResult((command, result) => {
   if (result.setter) setterState.value = result.setter
   line.value = { text: `${wcsName(material.wcs)} ${material.axis}0 set at ${direction === 'z_top' ? 'top' : 'edge'}.`, level: 'done' }
 })
+watch([
+  (): unknown => panel.hello, (): string => panel.link, (): string | undefined => panel.status?.machine,
+  allHomed, homingActive,
+], () => {
+  if (!panel.hello?.fixed_setter) return
+  setterState.value = null
+  statusRequest = null
+  if (panel.link !== 'live') return
+  statusRequest = { type: 'fixed_setter', action: 'status' }
+  send(statusRequest)
+}, { immediate: true })
 onBeforeUnmount(() => {
   if (pending.value) send({ type: 'abort' })
   removeListener()
@@ -67,7 +85,7 @@ onBeforeUnmount(() => {
         {{ title }}
       </button>
     </div>
-    <p class="hint probe-result" :class="line.level" role="status" :title="line.text">{{ line.text }}</p>
+    <SetterStatusBand :line="line" />
   </section>
 </template>
 
@@ -75,7 +93,4 @@ onBeforeUnmount(() => {
 .material-probe { min-width: 0; }
 .probe-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
-.probe-result { height: 32px; line-height: 16px; margin: 8px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.probe-result.blocked { color: var(--stop); }
-.probe-result.done { color: var(--go); }
 </style>

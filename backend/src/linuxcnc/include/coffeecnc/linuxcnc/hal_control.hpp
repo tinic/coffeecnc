@@ -32,6 +32,7 @@ struct HalInputs {
   bool probe_setter_selected{};
   bool probe_motion_permitted{};
   bool probe_cycle_active{};
+  bool jog_contact{};
 };
 
 // The same for the other threads.
@@ -84,6 +85,7 @@ public:
     std::optional<Clock::time_point> own_level_high;
     std::optional<Clock::time_point> watchdog_tripped;
     std::optional<Clock::time_point> read_at;
+    std::optional<Clock::time_point> contact_edge;
   };
   [[nodiscard]] auto jog_stop_history() const -> JogStopHistory;
 

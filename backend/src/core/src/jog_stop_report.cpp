@@ -26,7 +26,8 @@ auto is_jog_inhibit_refusal(std::string_view reason) -> bool {
 
 auto classify_jog_stop(std::string_view text, std::chrono::steady_clock::time_point read_at,
                        std::optional<std::chrono::steady_clock::time_point> own_level_high,
-                       std::optional<std::chrono::steady_clock::time_point> watchdog_tripped)
+                       std::optional<std::chrono::steady_clock::time_point> watchdog_tripped,
+                       std::optional<std::chrono::steady_clock::time_point> contact_edge)
     -> JogStopCause {
   if (!is_jog_stop_text(text))
     return JogStopCause::not_jog_stop;
@@ -35,6 +36,8 @@ auto classify_jog_stop(std::string_view text, std::chrono::steady_clock::time_po
   };
   if (within(watchdog_tripped))
     return JogStopCause::watchdog;
+  if (within(contact_edge))
+    return JogStopCause::probe_contact;
   if (within(own_level_high))
     return JogStopCause::own;
   return JogStopCause::unattributed;

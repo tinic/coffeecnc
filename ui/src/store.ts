@@ -251,12 +251,12 @@ export function createPanel(options: PanelOptions): Panel {
   let protocolError: string | null = null
   let watchdog: number | null = null
 
-  function log(level: 'error' | 'info', text: string, context: string, time: number): void {
+  function log(level: 'error' | 'info', text: string, context: string, time: number, announce = true): void {
     const last = state.log.at(-1)
     if (last?.level === level && last.text === text && last.context === context && time - last.time < collapseWindowMs) {
       last.count += 1
       last.time = time
-      if (level === 'error' || state.notice?.level !== 'error') state.notice = last
+      if (announce && (level === 'error' || state.notice?.level !== 'error')) state.notice = last
       return
     }
     state.log.push({ id: nextLogId, level, text, context, time, count: 1 })
@@ -265,7 +265,7 @@ export function createPanel(options: PanelOptions): Panel {
       state.log.splice(0, state.log.length - maxLogEntries)
     }
     // An informational message must not hide an error before the operator dismisses it.
-    if (level === 'error' || state.notice?.level !== 'error') state.notice = state.log.at(-1) ?? null
+    if (announce && (level === 'error' || state.notice?.level !== 'error')) state.notice = state.log.at(-1) ?? null
   }
 
   function updateLink(): void {
@@ -305,7 +305,8 @@ export function createPanel(options: PanelOptions): Panel {
     }
     if (message.outcome !== 'accepted') {
       const reason = message.reason === '' ? outcomeWords(message.outcome) : message.reason
-      log('error', reason, describeCommand(command), now())
+      const localMaterialResult = command.type === 'fixed_setter' && command.action === 'material' && state.tab === 'probe'
+      log('error', reason, describeCommand(command), now(), !localMaterialResult)
     }
     for (const listener of resultListeners) {
       listener(command, message)

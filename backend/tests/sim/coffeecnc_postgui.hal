@@ -23,8 +23,8 @@ addf coffeecnc-jog-inhibit servo-thread
 
 # Twice the executable's 150 ms jog lease.
 setp watchdog.timeout-0 0.3
-# in-0 is watchdog ok, in-1 the executable's request: stop = not ok, or request.
-setp coffeecnc-jog-stop.function 0xD
+# in-0 is watchdog ok, in-1 the executable's request, in-2 the simulated contact pulse.
+setp coffeecnc-jog-stop.function 0xFD
 # The same for inhibit: a jog start that LinuxCNC's task delivers late is refused, not started
 # and aborted.
 setp coffeecnc-jog-inhibit.function 0xD

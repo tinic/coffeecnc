@@ -1,6 +1,6 @@
 # Fixed-setter tool-length measurement
 
-The **Teach setter** and **Touch off at setter** buttons are beside the loaded tool in Manual and Tools. Both run on the current homed machine datum.
+Teach the setter and measure tools with **Touch off** in the Tools tab. Both run on the current homed machine datum.
 
 ## Teach once after homing
 

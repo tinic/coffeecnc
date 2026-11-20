@@ -19,7 +19,6 @@ import { touchProbeLoaded } from '../tool-models'
 import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
-import FixedSetterControls from './FixedSetterControls.vue'
 import MaterialProbeControls from './MaterialProbeControls.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
@@ -500,7 +499,6 @@ function coolant(which: 'flood' | 'mist'): void {
       <p v-if="!touchOff" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
-      <FixedSetterControls v-if="panel.hello?.fixed_setter" v-show="!touchOff" :limits="panel.hello.fixed_setter" show-tool inline-status />
     </section>
 
     <div class="side" :class="{ 'probe-side': touchOff }">

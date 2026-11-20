@@ -2,12 +2,13 @@
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 
 import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
-import type { CommandBody, FixedSetterLimits, SetterState, Vec3 } from '../protocol'
+import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
+import { setterState } from '../setter-state'
 
 const props = defineProps<{ limits: FixedSetterLimits; showTool?: boolean }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
 
-const state = shallowRef<SetterState | null>(null)
+const state = setterState
 const pending = shallowRef<Request | null>(null)
 const status = computed(() => panel.status)
 const tool = computed(() => status.value?.tool.in_spindle ?? 0)

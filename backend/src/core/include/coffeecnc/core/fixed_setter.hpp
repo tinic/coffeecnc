@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -46,6 +47,8 @@ struct SetterMeasurement {
 struct SetterState {
   std::optional<std::array<double, 3>> calibration; // XY and effective trigger plane Z in mm
   std::optional<SetterMeasurement> measurement;
+  // Tools touched off against this calibration, the reference tool included. Empty without one.
+  std::vector<int> measured_tools;
 };
 
 } // namespace coffeecnc

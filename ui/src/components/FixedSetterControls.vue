@@ -95,9 +95,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.setter-controls { min-width: 0; }
+/* Fixed size: the changing status text must not move the buttons around it. */
+.setter-controls { flex: none; width: 240px; }
 .setter-action { display: flex; align-items: center; gap: 8px; }
-.setter-action button { min-height: 44px; white-space: nowrap; }
-.setter-result { display: block; max-width: 220px; margin: 4px 0 0; line-height: 1.35; }
+.setter-action button { flex: 1; min-height: 44px; white-space: nowrap; }
+.setter-result {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  height: 2.7em; margin: 4px 0 0; line-height: 1.35;
+}
 .setter-result.blocked { color: var(--warn, #b45309); }
 </style>

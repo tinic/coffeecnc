@@ -42,27 +42,16 @@
 namespace coffeecnc {
 namespace {
 
-// Tools touched off at the fixed setter, kept beside the tool table so their marks survive a
-// restart: a line `reference <length>` (the reference tool's table length then) and a line
-// `T<n> <length>` per tool, lengths in tool table units. A mark stands while the table still
-// holds both lengths.
-struct TouchedOff {
-  double reference{};
-  std::map<int, double> tools;
-};
+// Touched-off lengths beside the tool table (tool_table.hpp: TouchedOff).
 auto touched_path(const std::string& tool_table) -> std::filesystem::path {
   return std::filesystem::path(tool_table).parent_path() / "coffeecnc-touched-off.txt";
 }
 auto load_touched(const std::string& tool_table) -> std::optional<TouchedOff> {
   std::ifstream in(touched_path(tool_table));
-  TouchedOff touched;
-  std::string word;
-  if (!(in >> word >> touched.reference) || word != "reference")
-    return std::nullopt;
-  for (double length{}; in >> word >> length;)
-    if (word.size() > 1 && word[0] == 'T')
-      touched.tools[std::stoi(word.substr(1))] = length;
-  return touched;
+  std::string text;
+  for (std::string line; std::getline(in, line);)
+    text += line + '\n';
+  return parse_touched_off(text);
 }
 void save_touched(const std::string& tool_table, const TouchedOff& touched) {
   const auto path = touched_path(tool_table);
@@ -70,9 +59,7 @@ void save_touched(const std::string& tool_table, const TouchedOff& touched) {
   temporary += ".new";
   {
     std::ofstream out(temporary);
-    out << std::format("reference {:.6f}\n", touched.reference);
-    for (const auto& [tool, length] : touched.tools)
-      out << std::format("T{} {:.6f}\n", tool, length);
+    out << format_touched_off(touched);
     if (!out)
       return;
   }
@@ -1195,16 +1182,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
   // Marked: touched off against this calibration and still holding the length it wrote.
-  constexpr double mark_tolerance = 0.001; // table units, allows the file's rounding
   const auto marks = [&]() -> std::vector<int> {
-    std::vector<int> tools;
     const auto table = impl_->read_tool_table();
-    if (!calibration || !table)
-      return tools;
-    for (const auto& [tool, length] : calibration->measured)
-      if (const auto now = tool_z(*table, tool); now && std::abs(*now - length) <= mark_tolerance)
-        tools.push_back(tool);
-    return tools;
+    return calibration && table ? still_touched_off(*table, calibration->measured)
+                                : std::vector<int>{};
   };
   const auto remember = [&]() {
     const auto table = impl_->read_tool_table();
@@ -1295,15 +1276,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        {{tool, *previous}}};
-    // Lengths are relative to the reference tool: a new teach keeps every tool whose length,
-    // and the reference tool's, are unchanged since its touch off, also across restarts.
-    if (const auto touched = load_touched(impl_->config.tool_table);
-        touched && std::abs(touched->reference - *previous) <= mark_tolerance)
-      for (const auto& [other, length] : touched->tools)
-        if (const auto now = tool_z(*table, other);
-            other != tool && now && std::abs(*now - length) <= mark_tolerance)
-          calibration->measured[other] = length;
+        restored_touched_off(*table, tool, load_touched(impl_->config.tool_table))};
     remember();
     return SetterState{calibration->plane, measurement, marks()};
   }

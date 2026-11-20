@@ -881,6 +881,36 @@ void coolant_wiring() {
           "bidirectional pins also consume a signal");
 }
 
+// Touched-off marks beside the tool table: the file round trips, and a teach of the reference
+// tool restores exactly the tools whose length and the reference length are unchanged.
+void touched_off_marks() {
+  const TouchedOff saved{.reference = 19.05, .tools = {{1, 19.051667}, {98, 19.05}, {99, 53.185}}};
+  require(parse_touched_off(format_touched_off(saved)) == saved, "the file round trips");
+  require(!parse_touched_off(""), "an empty file is no record");
+  require(!parse_touched_off("reference 19.05\nX1 2\n"), "a line without a T word is refused");
+  require(!parse_touched_off("reference 19.05\nT0 2\n"), "tool 0 is refused");
+  const std::string table = "T1 P1 Z19.051667 D6.35 ;\nT98 P98 Z19.05 D6.35\nT99 P99 Z53.185 D2 ;\n";
+  const auto marks = restored_touched_off(table, 98, saved);
+  require(marks == std::map<int, double>{{1, 19.051667}, {98, 19.05}, {99, 53.185}},
+          "after a restart, the teach restores every unchanged tool");
+  require(still_touched_off(table, marks) == std::vector<int>{1, 98, 99}, "all stay marked");
+  const std::string edited = "T1 P1 Z20 D6.35 ;\nT98 P98 Z19.05 D6.35\nT99 P99 Z53.185 D2 ;\n";
+  require(still_touched_off(edited, marks) == std::vector<int>{98, 99},
+          "a tool whose length changed by another path loses its mark");
+  require(restored_touched_off(edited, 98, saved) == std::map<int, double>{{98, 19.05}, {99, 53.185}},
+          "and is not restored by the next teach");
+  const std::string rounded = "T1 P1 Z19.0517 D6.35 ;\nT98 P98 Z19.05 D6.35\n";
+  require(restored_touched_off(rounded, 98, saved).contains(1), "the file's rounding is no change");
+  const std::string new_reference = "T1 P1 Z19.051667 D6.35 ;\nT98 P98 Z19.2 D6.35\n";
+  require(restored_touched_off(new_reference, 98, saved) == std::map<int, double>{{98, 19.2}},
+          "a changed reference length voids every saved mark");
+  require(restored_touched_off(table, 98, std::nullopt) == std::map<int, double>{{98, 19.05}},
+          "without a file only the reference tool is marked");
+  const std::string removed = "T98 P98 Z19.05 D6.35\n";
+  require(restored_touched_off(removed, 98, saved) == std::map<int, double>{{98, 19.05}},
+          "a deleted tool is not restored");
+}
+
 auto main(int argc, char** argv) -> int {
   try {
     if (argc != 2)
@@ -895,6 +925,7 @@ auto main(int argc, char** argv) -> int {
     no_program_and_no_status();
     work_systems();
     tool_comments();
+    touched_off_marks();
     source_status_and_age();
     source_ages_the_status_after_its_reads();
     source_program_loads();

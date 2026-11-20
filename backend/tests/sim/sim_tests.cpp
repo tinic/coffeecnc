@@ -3044,14 +3044,24 @@ void tool_models(Rig& rig, const std::string& ini_file) {
     const auto hello = session.first("hello");
     const auto snapshot = session.first("tool_models");
     const auto table_at = session.wait([](const Json& message) -> bool {
-      return message.at("type") == "tool_table" && message.at("tools").size() == 4;
+      if (message.at("type") != "tool_table")
+        return false;
+      // For a nonrandom tool changer, T0 represents the empty spindle.
+      std::vector<int> numbers;
+      for (const auto& row : message.at("tools"))
+        if (const int number = row.at("number").get<int>(); number > 0)
+          numbers.push_back(number);
+      std::ranges::sort(numbers);
+      return numbers == std::vector{1, 2, 3};
     });
     check("tool_models_hello",
           hello && session.at(*hello).value("machine_id", Json()) == "G0759-sim" &&
               session.at(*hello).value("tool_model_storage", Json()) == 1,
           hello ? session.at(*hello).dump() : "no hello");
     if (!hello || !snapshot || !table_at) {
-      check("tool_models_snapshot_after_ready", false, "no snapshot or no tool table");
+      check("tool_models_snapshot_after_ready", false,
+            std::format("snapshot={} table={}", snapshot.has_value(),
+                        session.last("tool_table").dump()));
       rig.start();
       return;
     }
@@ -3062,7 +3072,7 @@ void tool_models(Rig& rig, const std::string& ini_file) {
               first.at("reason") == "" && first.at("document").at("version") == 1 &&
               first.at("document").at("assignments").empty() &&
               first.at("document").at("defaults").at("drill").at("tipAngle") == 118 &&
-              first.at("document").at("defaults").size() == 7,
+              first.at("document").at("defaults").size() == tool_family_count,
           std::format("hello_at={} snapshot_at={} {}", *hello, *snapshot,
                       first.dump().substr(0, 160)));
     check("tool_models_no_file_by_reading",

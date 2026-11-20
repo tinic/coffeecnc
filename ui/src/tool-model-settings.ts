@@ -1,4 +1,5 @@
 import type { Tool, ToolModels } from './protocol'
+import { isToolHolder, type ToolHolder } from './tool-holder'
 import { cutterKeys, dimensionKeys, factoryToolDefaults, probeKeys, readToolDimensions, setToolDefault, toolDimensionError, toolFamilies, toolIdentity,
   type ToolDefaults, type ToolDimensions, type ToolFamily, type ToolModelAssignment, type ToolOverrides } from './tool-model'
 
@@ -14,6 +15,7 @@ export interface SavedToolModelAssignment {
   tool: ToolModelBinding
   family: ToolFamily
   overrides: ToolOverrides
+  holder?: ToolHolder
 }
 export interface ToolModelDocument {
   version: 1
@@ -120,12 +122,14 @@ export function decodeToolModelDocument(value: unknown): ToolModelDocument | nul
   const assignments: SavedToolModelAssignment[] = []
   const used = new Set<number>()
   for (const entry of value['assignments']) {
-    if (!fields(entry, ['tool', 'family', 'overrides']) || !family(entry['family'])) return null
+    if (!fields(entry, ['tool', 'family', 'overrides'], ['holder']) || !family(entry['family'])) return null
     const tool = binding(entry['tool'])
     const custom = overrides(entry['overrides'], entry['family'])
-    if (tool === null || custom === null || used.has(tool.number)) return null
+    const holder = entry['holder']
+    if (tool === null || custom === null || used.has(tool.number) ||
+      (holder !== undefined && !isToolHolder(holder))) return null
     used.add(tool.number)
-    assignments.push({ tool, family: entry['family'], overrides: custom })
+    assignments.push({ tool, family: entry['family'], overrides: custom, ...(holder === undefined ? {} : { holder }) })
   }
   const document: ToolModelDocument = { version: 1, defaults, assignments }
   // Structural bounds above make this serialization bounded, even before the byte check.
@@ -144,7 +148,8 @@ export function matchingToolModelAssignments(document: ToolModelDocument, tools:
   for (const saved of document.assignments) {
     const tool = table.get(saved.tool.number)
     if (tool !== undefined && toolModelBindingMatches(saved.tool, tool)) {
-      matches.set(tool.number, { identity: toolIdentity(tool), family: saved.family, overrides: { ...saved.overrides } })
+      matches.set(tool.number, { identity: toolIdentity(tool), family: saved.family, overrides: { ...saved.overrides },
+        ...(saved.holder === undefined ? {} : { holder: saved.holder }) })
     }
   }
   return matches

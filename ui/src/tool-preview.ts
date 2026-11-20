@@ -26,8 +26,8 @@ export function loadedToolPreview(status: Status | null, live: boolean, tools: T
 
 export function toolPreviewBounds(preview: ToolPreview): { min: Vec3; max: Vec3 } {
   const { dimensions: d } = preview.model
-  const { diameter, overallLength } = toolEnvelope(d)
-  const radius = 'bodyDiameter' in d ? diameter / 2 : Math.max(d.diameter * 0.6, d.shankDiameter * 0.7)
+  const { diameter, overallLength } = toolEnvelope(d, preview.model.holder)
+  const radius = 'bodyDiameter' in d ? diameter / 2 : Math.max(diameter / 2, d.diameter * 0.6, d.shankDiameter * 0.7)
   const [x, y, z] = preview.tip
   return { min: [x - radius, y - radius, z], max: [x + radius, y + radius, z + overallLength] }
 }

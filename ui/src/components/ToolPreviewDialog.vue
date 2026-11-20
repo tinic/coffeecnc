@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent } from 'vue'
 import { panel } from '../machine'
 import type { Tool } from '../protocol'
+import { holderLabel } from '../tool-holder'
 import { resolveToolModel, toolDimensionError, toolFamilies, toolIdentity } from '../tool-model'
 import { defaultToolName, savedProbe, toolModels } from '../tool-models'
 import { formatLength, toolLabel } from '../units'
@@ -16,7 +17,8 @@ const model = computed(() => {
   const tool = props.tool
   const probe = savedProbe(tool.number)
   const assignment = toolModels.assignments.get(tool.number) ??
-    (probe !== undefined ? { identity: toolIdentity(tool), family: probe.family, overrides: probe.overrides }
+    (probe !== undefined ? { identity: toolIdentity(tool), family: probe.family, overrides: probe.overrides,
+      ...(probe.holder === undefined ? {} : { holder: probe.holder }) }
       : tool.number === panel.hello?.touch_probe_tool ? { identity: toolIdentity(tool), family: 'touch-probe' as const, overrides: {} } : undefined)
   const resolved = resolveToolModel(tool, assignment, toolModels.defaults)
   return resolved !== null && toolDimensionError(resolved.family, resolved.dimensions) === null ? resolved : null
@@ -31,6 +33,7 @@ const probe = computed(() => model.value?.family === 'touch-probe')
       <div class="preview"><ToolModelCanvas v-if="model !== null" :model="model" /><p v-else class="hint">No preview shape for this tool.</p></div>
       <dl class="values">
         <dt>Type</dt><dd>{{ kind }}</dd>
+        <template v-if="model?.holder"><dt>Holder</dt><dd>{{ holderLabel(model.holder) }}</dd></template>
         <dt>Length</dt><dd class="mono">{{ formatLength(tool.length, panel.unit) }} {{ unit }}</dd>
         <dt>{{ probe ? 'Ball diameter' : 'Diameter' }}</dt><dd class="mono">{{ formatLength(tool.diameter, panel.unit) }} {{ unit }}</dd>
         <dt>Pocket</dt><dd class="mono">{{ tool.pocket }}</dd>

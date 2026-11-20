@@ -5,6 +5,7 @@ import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import type { Tool } from '../protocol'
 import { sameTool, saveTool } from '../save-tool'
+import { holderChoices, type ToolHolder } from '../tool-holder'
 import { dimensionKeys, pointedTool, readToolDimensions, resolveToolModel, shapeOverrides, toolDimensionError, toolFamilies, toolIdentity,
   type DimensionKey, type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
 import { savedProbe, toolModelSettings, toolModels } from '../tool-models'
@@ -45,10 +46,12 @@ const probe = props.tool === null ? undefined : savedProbe(props.tool.number)
 // The machine's touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL) opens as a touch probe.
 const machineProbe = props.tool !== null && props.tool.number === panel.hello?.touch_probe_tool
 const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number) ??
-  (probe !== undefined ? { identity: toolIdentity(props.tool), family: probe.family, overrides: probe.overrides }
+  (probe !== undefined ? { identity: toolIdentity(props.tool), family: probe.family, overrides: probe.overrides,
+    ...(probe.holder === undefined ? {} : { holder: probe.holder }) }
     : machineProbe ? { identity: toolIdentity(props.tool), family: 'touch-probe' as const, overrides: {} } : undefined)
 const savedModel = props.tool === null ? null : resolveToolModel(props.tool, saved, toolModels.defaults)
 const family = ref<ToolFamily | 'none'>(savedModel?.family ?? ((props.tool?.diameter ?? 0) > 0 ? 'end-mill' : 'none'))
+const holder = ref<ToolHolder | ''>(savedModel?.holder ?? '')
 const fields: { key: Exclude<DimensionKey, 'diameter'>; label: string }[] = [
   { key: 'shankDiameter', label: 'Shank diameter' }, { key: 'cuttingLength', label: 'Cutting length' },
   { key: 'overallLength', label: 'Overall length' }, { key: 'stickout', label: 'Stick-out' },
@@ -87,7 +90,8 @@ const model = computed((): ToolModel | null => {
     if (shape[key] === initialShape[key] && typeof originalValue === 'number') return originalValue
     return (key === 'tipAngle' ? parseNumericExpression(shape[key], '°') : parseLength(shape[key], unit)) ?? NaN
   })
-  return { family: family.value, dimensions, nominalDiameter: false, customized: true }
+  return { family: family.value, dimensions, nominalDiameter: false, customized: true,
+    ...(holder.value === '' ? {} : { holder: holder.value }) }
 })
 const shapeError = computed(() => model.value === null ? null : toolDimensionError(model.value.family, model.value.dimensions))
 const modelBlock = computed(() => {
@@ -117,10 +121,10 @@ async function save(): Promise<void> {
   if (!open) return
   // Binding uses the freshly acknowledged row, including a newly edited diameter/description.
   const result = await toolModelSettings.saveAssignment(tool, preview?.family ?? null,
-    preview === null ? {} : shapeOverrides(preview.dimensions), modelContext)
+    preview === null ? {} : shapeOverrides(preview.dimensions), modelContext, preview?.holder ?? null)
   saving.value = false
   if (result.saved) { if (isOpen()) emit('close') }
-  else feedback.value = `${tableWritten ? 'Tool details saved; preview shape was not saved. ' : ''}${result.reason}`
+  else feedback.value = `${tableWritten ? 'Tool details saved. Preview settings could not be saved. ' : ''}${result.reason}`
 }
 function remove(): void {
   if (original.value === null || block.value !== null || panel.status?.tool.in_spindle === original.value.number) return
@@ -145,6 +149,7 @@ function remove(): void {
         </div>
         <div class="shape-heading">
           <label class="entry type-entry"><span class="label">Preview shape</span><select v-model="family" class="field" aria-label="Tool type" :disabled="saving" @change="resetShape"><option value="none">No preview shape</option><option v-for="kind in toolFamilies" :key="kind.id" :value="kind.id">{{ kind.name }}</option></select></label>
+          <label class="entry"><span class="label">Holder</span><select v-model="holder" class="field" aria-label="Holder" :disabled="saving || family === 'none'"><option value="">None</option><option v-for="choice in holderChoices" :key="choice.id" :value="choice.id">{{ choice.label }}</option></select></label>
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
@@ -166,8 +171,8 @@ function remove(): void {
 .tool-fields, .dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
 .tool-fields { grid-template-columns: 1fr 1fr 1.8fr; }.tool-fields.adding { grid-template-columns: .7fr 1fr 1fr 1.6fr; }
 .entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }.entry .field { width: 100%; min-width: 0; min-height: 44px; }
-.shape-heading { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 4px; }.shape-heading h3 { font-size: 16px; margin: 0; }.shape-heading .btn { min-height: 36px; }
-.type-entry { flex: 1; flex-direction: row; align-items: center; margin-right: 6px; }.type-entry .label { flex: none; width: 100px; }
+.shape-heading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; gap: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
+.shape-heading .btn { min-height: 44px; }
 .hint, .feedback { margin: 0; font-size: 12px; line-height: 1.4; }.feedback { color: var(--warn); }.spacer { flex: 1; }
 @media (max-width: 850px) { .tool-editor { grid-template-columns: minmax(160px, .65fr) minmax(0, 1.6fr); gap: 12px; }.dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

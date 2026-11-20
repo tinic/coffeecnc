@@ -1,5 +1,6 @@
 import { BufferGeometry, CylinderGeometry, Group, LatheGeometry, LineBasicMaterial, LineLoop, Mesh, MeshStandardMaterial, SphereGeometry, Vector2, Vector3 } from 'three'
-import { probeEnvelope, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
+import { holderProfile } from './tool-holder'
+import { holderFaceZ, probeEnvelope, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
 
 /** Shared visual envelope for the editor and the machine scene. */
 export class ToolMesh {
@@ -19,14 +20,14 @@ export class ToolMesh {
   build(model: ToolModel): void {
     this.clear()
     const d = model.dimensions
-    if ('bodyDiameter' in d) { this.buildProbe(d); return }
-    const profiles = toolProfiles(model)
-    for (const [profile, material] of [[profiles.cutting, this.cutting], [profiles.shank, this.shank]] as const) {
-      const g = new LatheGeometry(profile.map(([radius, z]) => new Vector2(radius, z)), 64)
-      g.rotateX(Math.PI / 2) // Lathe's +Y axis becomes the tool's +Z axis.
-      this.geometry.push(g)
-      this.group.add(new Mesh(g, material))
+    if ('bodyDiameter' in d) this.buildProbe(d, model.holder === undefined)
+    else {
+      const profiles = toolProfiles(model)
+      this.addProfile(profiles.cutting, this.cutting, 'cutter')
+      this.addProfile(profiles.shank, this.shank, 'shank')
     }
+    this.addProfile(holderProfile(model.holder, holderFaceZ(d), d.shankDiameter), this.housing, 'holder')
+    if ('bodyDiameter' in d) return
     const ring = new BufferGeometry().setFromPoints(Array.from({ length: 96 }, (_, i) => {
       const angle = i * Math.PI / 48
       const radius = Math.max(d.shankDiameter * 0.7, d.diameter * 0.6)
@@ -36,7 +37,17 @@ export class ToolMesh {
     this.group.add(new LineLoop(ring, this.datum))
   }
 
-  private buildProbe(d: ProbeDimensions): void {
+  private addProfile(profile: readonly [number, number][], material: MeshStandardMaterial, name: string): void {
+    if (profile.length === 0) return
+    const g = new LatheGeometry(profile.map(([radius, z]) => new Vector2(radius, z)), 64)
+    g.rotateX(Math.PI / 2) // Lathe's +Y axis becomes the tool's +Z axis.
+    this.geometry.push(g)
+    const mesh = new Mesh(g, material)
+    mesh.name = name
+    this.group.add(mesh)
+  }
+
+  private buildProbe(d: ProbeDimensions, showShank: boolean): void {
     const { bodyStart, bodyEnd, stylusDiameter } = probeEnvelope(d)
     const ball = new SphereGeometry(d.diameter / 2, 40, 24)
     ball.translate(0, 0, d.diameter / 2)
@@ -52,7 +63,7 @@ export class ToolMesh {
     // Extend the stem into the ball so their surfaces intersect.
     cylinder(stylusDiameter, d.stylusLength + d.diameter / 4, d.diameter * 0.75, this.shank)
     cylinder(d.bodyDiameter, d.bodyLength, bodyStart, this.housing)
-    cylinder(d.shankDiameter, d.shankDiameter, bodyEnd, this.shank)
+    if (showShank) cylinder(d.shankDiameter, d.shankDiameter, bodyEnd, this.shank)
   }
 
   setTheme(dark: boolean): void { this.datum.color.set(dark ? '#84b1f8' : '#377ef2') }

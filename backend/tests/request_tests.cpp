@@ -214,6 +214,13 @@ void tool_model_commands() {
               assignment.overrides.tip_angle == 120 && !assignment.overrides.cutting_length &&
               !assignment.overrides.shank_diameter && !assignment.overrides.overall_length,
           "Assignment: the tool row, the family and the overrides given");
+  const auto with_holder = body<SetToolModelAssignment>(with(
+      assignment_wire, R"("family":"spot-drill")", R"("family":"spot-drill","holder":"tts-er20")"));
+  require(with_holder.holder == "tts-er20" && tool_model_command_error(with_holder).empty(),
+          "Assignment accepts a supported holder");
+  const auto bad_holder = decode_request(with(assignment_wire, R"("family":"spot-drill")",
+                                              R"("family":"spot-drill","holder":"unknown")"));
+  require(std::holds_alternative<DecodeError>(bad_holder), "Assignment refuses an unknown holder");
   const auto all = body<SetToolModelAssignment>(
       with(assignment_wire, R"({"stickout":30,"tipAngle":120})",
            R"({"cuttingLength":1,"shankDiameter":2,"overallLength":3,"stickout":4,"tipAngle":5})"));

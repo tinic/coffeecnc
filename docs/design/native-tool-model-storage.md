@@ -21,6 +21,7 @@ The seven cutter defaults are `end-mill`, `ball-mill`, `drill`, `spot-drill`, `c
 - `tool: { number, pocket, diameter, comment }`, recording the reported row used when the operator assigned the model;
 - `family`, one of the default IDs;
 - `overrides`, a subset of the chosen family's fields with diameter supplied by the tool binding. An empty object means inheritance.
+- Optional `holder`, one of `r8`, `tts-4` through `tts-12`, `tts-er16`, `tts-er20` or `tts-er32`. An absent holder means None. Existing assignments load with that default.
 
 The structured `tool` binding replaces the UI's current serialized identity string at the storage boundary. Compare its field values, not C++ versus JavaScript JSON formatting. Z offset is deliberately excluded: touching off does not change physical geometry. Tool-table diameter still supplies cutting diameter; the visual editor cannot override it. Persist the exact reported tool_table diameter in millimetres: loaded_tools already converts raw machine units to mm. Do not convert through display units or compare serialized floating-point text.
 
@@ -34,7 +35,7 @@ Wait for both settings and a current matching tool table before exposing restore
 
 An unreadable description is not a confirmed empty description. If the native publisher cannot read the comments for an accepted table, withhold its published rows and report the failure; never retain earlier text or substitute blank strings as binding evidence. Retry and republish when the file becomes readable, even if the numeric table is unchanged. Saved assignments and the preview's raw numeric tool inputs remain intact.
 
-A changed or deleted row withholds its old model; the editor offers assigning the current row explicitly. A matching row is not proof of physical tool identity if the cutter changed without a table edit. The model remains a declared visual envelope, with the existing nominal-diameter and no-holder qualifications. No restored value changes controller state or claims collision clearance.
+A changed or deleted row withholds its old model; the editor offers assigning the current row explicitly. A matching row is not proof of physical tool identity if the cutter changed without a table edit. The model remains a declared visual envelope. Selected holders use nominal geometry for the preview. No restored value changes controller state or claims collision clearance.
 
 Changing machine identity clears loaded settings, pending saves and active assignments. Old-page or old-machine responses cannot populate the new view. A new page loads the backend document afresh. Existing dimensions remain in mm when the operator switches display units.
 
@@ -64,7 +65,7 @@ Two commands use the existing command ID and page identity:
 ```ts
 { type: 'set_tool_model_defaults', id, machine_id, base_revision, defaults }
 { type: 'set_tool_model_assignment', id, machine_id, base_revision,
-  tool: { number, pocket, diameter, comment }, family, overrides }
+  tool: { number, pocket, diameter, comment }, family, overrides, holder? }
 ```
 
 `set_tool_model_defaults` replaces the family defaults together, preserving assignments. This fits within 16 KiB and preserves the editor's multi-family Save action. The assignment command replaces one T entry; `family: null` with `overrides: {}` removes that T entry. It preserves every other assignment and the defaults. Both require the expected configured machine ID and compare-and-swap revision. The full catalog travels only from backend to panel.

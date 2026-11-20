@@ -1288,8 +1288,10 @@ void archive_machines() {
               other_files.count("read") == 0 && disk.files.at(file) == before,
           "A second process is unavailable, in use; it reads and writes nothing: " +
               other.models().reason);
-  require(first.apply(assign(2, 6)).outcome == CommandOutcome::accepted,
-          "The first carries on");
+  require(
+      first.apply(SetToolModelAssignment{machine, 2, row(6), ToolFamily::end_mill, {}, "tts-er32"})
+              .outcome == CommandOutcome::accepted,
+      "The first carries on and saves a holder");
 
   // Restart: what the old process saved is what the new one shows.
   const auto shown = first.models();
@@ -1298,6 +1300,7 @@ void archive_machines() {
   ToolModelArchive next{next_files, location("mill-1")};
   next.open();
   require(next.models() == shown && next.models().revision == 3 &&
+              doc(next.models()).assignments.back().holder == "tts-er32" &&
               next.snapshot() == first.snapshot(),
           "After a restart the snapshot is the one last saved, byte for byte");
 }

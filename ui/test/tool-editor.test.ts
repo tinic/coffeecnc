@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ToolEditor from '../src/components/ToolEditor.vue'
+import ToolPreviewDialog from '../src/components/ToolPreviewDialog.vue'
 import { panel } from '../src/machine'
 import type { FromMachine, ToMachine, Tool } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
@@ -64,6 +65,29 @@ describe('combined tool and preview editor', () => {
     native.receive({ type: 'tool_models', machine_id: 'G0759', revision: 1, availability: 'available', reason: '', document })
     reply(); await flushPromises(); expect(view().emitted('close')).toHaveLength(1)
   })
+  it('saves the holder with the assignment and restores it in the editor and read-only preview', async () => {
+    open()
+    expect((view().get('[aria-label="Holder"]').element as HTMLSelectElement).value).toBe('')
+    await view().get('[aria-label="Holder"]').setValue('tts-er20')
+    await save()
+    const command = last()
+    if (command.type !== 'set_tool_model_assignment' || command.family === null || command.holder === undefined)
+      throw new Error('Missing holder assignment')
+    expect(native.sent).toHaveLength(1)
+    expect(command.holder).toBe('tts-er20')
+    const document = emptyToolModelDocument()
+    document.assignments.push({ tool: command.tool, family: command.family, overrides: command.overrides, holder: command.holder })
+    native.receive({ type: 'tool_models', machine_id: 'G0759', revision: 1, availability: 'available', reason: '', document })
+    reply(); await flushPromises()
+    expect(view().emitted('close')).toHaveLength(1)
+    view().unmount(); open()
+    expect((view().get('[aria-label="Holder"]').element as HTMLSelectElement).value).toBe('tts-er20')
+    view().unmount()
+    wrapper = mount(ToolPreviewDialog, { props: { tool }, global: { stubs: {
+      ToolModelCanvas: true, ModalDialog: { template: '<div><slot/></div>' },
+    } } })
+    expect(view().get('dl').text()).toContain('HolderTTS / ER20')
+  })
   it('waits for both tool acknowledgement and readback before saving the new shape identity', async () => {
     open(); await fill('Description', 'Quarter-inch end mill'); await save()
     const command = last(); if (command.type !== 'set_tool') throw new Error('Missing tool write')
@@ -77,7 +101,7 @@ describe('combined tool and preview editor', () => {
     const command = last(); if (command.type !== 'set_tool') throw new Error('Missing tool write')
     native.receive({ type: 'tool_table', revision: 2, tools: [command.tool] }); reply(); await flushPromises()
     reply('failed', 'Disk full'); await flushPromises()
-    expect(view().text()).toContain('Tool details saved; preview shape was not saved. Disk full')
+    expect(view().text()).toContain('Tool details saved. Preview settings could not be saved. Disk full')
     expect(view().emitted('close')).toBeUndefined()
     await save(); expect(native.sent.filter((item) => item.type === 'set_tool')).toHaveLength(1)
     expect(last().type).toBe('set_tool_model_assignment'); reply('failed', 'Disk full'); await flushPromises()

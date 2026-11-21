@@ -4386,7 +4386,12 @@ void paused_z_jog(Rig& rig) {
 
   if (!at_pause("M5"))
     return;
+  rig.pump(120ms);
   raised = rig.send(lift);
+  const bool lifted_before_stop = raised.accepted() && offset_at(3);
+  check("paused_z_lift_before_cancel", lifted_before_stop, raised.text());
+  if (!lifted_before_stop)
+    return;
   const auto returned = rig.post(resume);
   const bool lowering = rig.pump_until(3s, [&] {
     return rig.status().paused && rig.machine(2) < base + 2.7 && rig.machine(2) > base + 1;
@@ -4397,7 +4402,8 @@ void paused_z_jog(Rig& rig) {
         raised.accepted() && lowering && stopped.accepted() && !cancelled.accepted() &&
             rig.pump_until(2s, [&] { return rig.idle() && rig.status().controller.in_position; }) &&
             rig.machine(2) > base + 0.5 && near(rig.machine(0), 0),
-        stopped.text() + " " + cancelled.text());
+        std::format("{} {} lowering={} z={:.3f} base={:.3f}", stopped.text(), cancelled.text(),
+                    lowering, rig.machine(2), base));
   const double held = rig.machine(2);
   const auto blocked = rig.send(R"("type":"run")");
   rig.pump(250ms);
@@ -4413,7 +4419,7 @@ void paused_z_jog(Rig& rig) {
         std::format("{} {} held={:.4f} z={:.4f}", off.text(), on.text(), held, rig.machine(2)));
 
   // Feed hold leaves the interrupted move in the queue even after the axes have stopped.
-  std::ofstream{file} << "G21 G90 G54 G49 G94 G97 M5\nG53 G0 X0 Y0 Z-10\n"
+  std::ofstream{file} << "G21 G90 G54 G49 G94 G97\nM5\nG53 G0 X0 Y0 Z-10\n"
                          "G53 G1 X30 F600\nM30\n";
   const auto opened = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
   const auto started = rig.send(R"("type":"run")");
@@ -4424,11 +4430,15 @@ void paused_z_jog(Rig& rig) {
     return status.paused && status.paused_z_still;
   });
   const double x = rig.machine(0);
+  const auto held_status = rig.status();
   const auto fed_lift = rig.send(lift);
   check("paused_z_after_feed_hold",
         opened.accepted() && started.accepted() && traversing && hold.accepted() && at_rest &&
             fed_lift.accepted() && offset_at(3) && near(rig.machine(0), x) && x < 25,
-        hold.text() + " " + fed_lift.text());
+        std::format("{} {} codes={} rpm={} spinning={} x={:.3f}", hold.text(), fed_lift.text(),
+                    Json(held_status.active_codes).dump(),
+                    held_status.spindle_actual_rpm.value_or(-1),
+                    held_status.controller.spindle_active, x));
   if (!fed_lift.accepted())
     return;
   const auto returning = rig.post(resume);

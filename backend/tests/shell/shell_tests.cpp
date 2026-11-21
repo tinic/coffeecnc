@@ -802,6 +802,14 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
       rig.wait_js("__t.last.status.program.file && !__t.find('button.main-action').disabled");
   check("panel_run_probe_program", ready && rig.click("button.main-action", "") == "ok",
         rig.js("const b = __t.find('button.main-action'); return [__t.text(b), b.title];").dump());
+  // The preview cannot follow a probe move, so Program check asks to confirm the start, as it
+  // does for the operator.
+  const bool asked =
+      rig.wait_js("!!__t.find('[role=\"dialog\"] footer .btn.primary', 'Run program')");
+  check("panel_confirms_unchecked_program",
+        asked && rig.click("[role=\"dialog\"] footer .btn.primary", "Run program") == "ok",
+        rig.js("return __t.all('[role=\"dialog\"] p, [role=\"dialog\"] li').map(__t.text);")
+            .dump());
   const bool shown = rig.wait_js(
       "__t.received.some((m) => m.type === 'message' && m.level === 'error' && "
       "/contact/i.test(m.text)) && "
@@ -1560,7 +1568,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   // of the window where the canvas is, read from a snapshot, that are not background.
   check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
   check("panel_opens_tool_row", rig.wait_js("!!document.querySelector('.tool-row')") &&
-                                   rig.click(".tool-row", "") == "ok");
+                                   rig.click("button.edit-tool", "") == "ok");
   check("panel_opens_tool_model", rig.wait_js("!!document.querySelector('.tool-editor .preview')"));
   const bool canvas_shown = rig.wait_js(
       "!!document.querySelector('.model-canvas canvas') && "
@@ -1803,7 +1811,7 @@ void tool_models_saved(const Rig& rig) {
   // A model for T1, as the tool table shows that row.
   check("tool_models_close_settings", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_assignment_editor",
-        click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok" &&
+        click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok" &&
             rig.wait_js("__t.find('section.dialog select')", 10s));
   const auto chosen = rig.js(R"(
     const select = __t.find('section.dialog select');
@@ -1837,7 +1845,7 @@ void tool_models_saved(const Rig& rig) {
                 Json::array({{{"tool", binding}, {"family", "touch-probe"}, {"overrides", order.at(3).at("overrides")}}}) &&
             on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5,
         word(on_disk.is_object() ? on_disk.at("document").at("assignments").dump() : "unreadable"));
-  check("tool_models_reopen_assignment", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
+  check("tool_models_reopen_assignment", click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok");
   check("tool_models_assignment_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 5s),
         rig.js("return __t.find('.type-entry select').value;").dump());
@@ -1874,12 +1882,12 @@ void tool_models_restored(const Rig& rig) {
                 0,
         word(snapshot.dump().substr(0, 300)));
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
-  check("tool_models_restored_tool_row", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
+  check("tool_models_restored_tool_row", click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok");
   check("tool_models_restored_assignment_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 10s),
         rig.js("return __t.find('.type-entry select').value;").dump());
   check("tool_models_close_first_row", rig.click("section.dialog button", "Cancel") == "ok");
-  check("tool_models_restored_second_row", click_when_ready(rig, ".tool-row", "Edit tool 2:") == "ok");
+  check("tool_models_restored_second_row", click_when_ready(rig, "button.edit-tool", "Edit tool 2") == "ok");
   check("tool_models_unassigned_row_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'end-mill'", 5s));
   check("tool_models_close_second_row", rig.click("section.dialog button", "Cancel") == "ok");
@@ -1909,9 +1917,16 @@ void restored_probe_spindle_guard(const Rig& rig) {
   check("touch_probe_manual_spindle_disabled", rig.wait_js(R"((() => {
     const forward = __t.find('button', 'Forward');
     const reverse = __t.find('button', 'Reverse');
-    return forward?.disabled && reverse?.disabled;
-  })())"));
+    // A blocked control stays tappable to explain why: aria-disabled, not disabled.
+    return forward?.getAttribute('aria-disabled') === 'true' &&
+           reverse?.getAttribute('aria-disabled') === 'true';
+  })())"),
+        rig.js("return [document.querySelector('nav.em-nav [aria-current]')?.textContent, "
+               "__t.all('button').filter((b) => /Forward|Reverse/.test(__t.text(b))).map((b) => "
+               "[__t.text(b), b.disabled, b.getAttribute('aria-disabled')])];")
+            .dump());
   auto id = rig.js("return Math.max(...__t.sent.map((m) => m?.id || 0));").get<int>();
+  std::string last_result;
   const auto dispatch = [&](Json body, std::string_view expected) {
     body["id"] = ++id;
     rig.js(std::format("window.webkit.messageHandlers.coffeecnc.postMessage({}); return true;",
@@ -1920,6 +1935,7 @@ void restored_probe_spindle_guard(const Rig& rig) {
     if (!rig.wait_js(find, 10s))
       return false;
     const auto result = rig.js("return " + find + ";");
+    last_result = result.dump();
     return result.at("outcome") == expected &&
            (expected != "rejected" || result.at("reason") == "A touch probe is loaded");
   };
@@ -1929,12 +1945,23 @@ void restored_probe_spindle_guard(const Rig& rig) {
   write(program, "G21 G90\nS200 M04\nM2\n");
   check("touch_probe_open_spindle_program",
         dispatch({{"type", "open_program"}, {"path", program.string()}}, "accepted"));
-  check("touch_probe_native_cycle_start_refusal", dispatch({{"type", "run"}}, "rejected"));
+  // Cycle start waits for the program check of the current program, as the panel does.
+  const auto checked = [&] {
+    return rig.wait_js("__t.last.status.program.file && __t.received.some((m) => m.type === "
+                       "'preview' && m.context === __t.last.status.preview_context && "
+                       "m.state !== 'pending')",
+                       15s);
+  };
+  check("touch_probe_spindle_program_checked", checked());
+  check("touch_probe_native_cycle_start_refusal", dispatch({{"type", "run"}}, "rejected"), last_result);
   check("touch_probe_spindle_remains_off", !rig.status().controller.spindle_active);
   const auto replacement = program.parent_path() / "probe-spindle-check-new.ngc";
   write(replacement, "G21 G90 G94 S200\nG4 P0.2\nM2\n");
+  const auto context = rig.js("return __t.last.status.preview_context;").dump();
   std::filesystem::rename(replacement, program);
-  check("touch_probe_spindle_off_program_runs", dispatch({{"type", "run"}}, "accepted"));
+  check("touch_probe_replacement_checked",
+        rig.wait_js("__t.last.status.preview_context !== " + context, 15s) && checked());
+  check("touch_probe_spindle_off_program_runs", dispatch({{"type", "run"}}, "accepted"), last_result);
   check("touch_probe_spindle_off_program_completes", rig.wait_js("__t.last.status.interp === 'idle'"));
 }
 

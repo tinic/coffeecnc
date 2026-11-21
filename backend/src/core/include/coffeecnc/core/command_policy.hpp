@@ -129,6 +129,13 @@ struct PlanRestart {
 struct StartRestart {
   std::uint64_t plan_id{};
 };
+// Changes the number of one F or S word on `line` of the loaded program, then reloads it.
+struct EditProgram {
+  std::string path;
+  int line{};
+  std::string before;
+  std::string after;
+};
 struct Pause {};
 struct Resume {};
 struct Step {};
@@ -186,7 +193,8 @@ using Command =
                  Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle, SetCoolant,
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
-                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart>;
+                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
+                 EditProgram>;
 
 struct Decision {
   bool allowed{};

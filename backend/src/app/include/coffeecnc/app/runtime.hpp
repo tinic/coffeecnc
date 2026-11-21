@@ -58,7 +58,8 @@ public:
   // the threads. Throws std::invalid_argument for invalid limits.
   Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs, const Limits& limits,
           const ProgramStore& programs, Sink sink, ToolModelService* tool_models = nullptr,
-          Quit quit = {}, PreviewWorker* preview = nullptr, PreviewEngine* restart_engine = nullptr);
+          Quit quit = {}, PreviewWorker* preview = nullptr, PreviewEngine* restart_engine = nullptr,
+          ProgramWriter* program_writer = nullptr);
   // Shutdown. From the first control period after it begins, at most control_period later, the
   // jog-stop level is high, with or without a jog, and nothing lowers it again. The worker
   // finishes the call it is in, executes waiting stop requests and stops each axis that may be

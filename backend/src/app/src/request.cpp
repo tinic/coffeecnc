@@ -215,6 +215,14 @@ auto command(const Json& object) -> Command {
       throw InvalidRequest("Restart requires a positive program line.");
     return PlanRestart{line, positive_id(object, "preview_context")};
   }
+  if (type == "edit_program") {
+    fields(object, {"id", "type", "path", "line", "old_text", "new_text"});
+    const int line = integer(object, "line");
+    if (line < 1)
+      throw InvalidRequest("A program edit requires a positive line.");
+    return EditProgram{string(object, "path"), line, string(object, "old_text"),
+                       string(object, "new_text")};
+  }
   if (type == "start_restart") {
     fields(object, {"id", "type", "plan_id"});
     return StartRestart{positive_id(object, "plan_id")};

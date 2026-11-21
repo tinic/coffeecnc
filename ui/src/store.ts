@@ -176,6 +176,8 @@ export function describeCommand(command: CommandBody): string {
       return `Plan restart at line ${String(command.line)}`
     case 'start_restart':
       return 'Restart program'
+    case 'edit_program':
+      return `Edit line ${String(command.line)}`
     case 'touch_off':
       return `Touch off ${command.axis.toUpperCase()}`
     case 'tool_touch_off':

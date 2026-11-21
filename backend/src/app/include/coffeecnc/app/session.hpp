@@ -2,6 +2,7 @@
 #define COFFEECNC_APP_SESSION_HPP
 
 #include <coffeecnc/app/preview.hpp>
+#include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
@@ -212,7 +213,7 @@ public:
   // Throws std::invalid_argument for invalid limits.
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
-          PreviewEngine* restart_engine = nullptr);
+          PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -369,6 +370,7 @@ private:
   ToolModelService* tool_models_;
   PreviewWorker* preview_;
   PreviewEngine* restart_engine_;
+  ProgramWriter* program_writer_;
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.

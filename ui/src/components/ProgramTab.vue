@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { chooseProgramLayout, findTool, live, panel, reported } from '../machine'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { chooseProgramLayout, findTool, live, onResult, panel, reported, send } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
@@ -13,6 +13,9 @@ import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
 import RestartDialog from './RestartDialog.vue'
+import NumberDialog from './NumberDialog.vue'
+import { rateWords, withRate, type RateWord } from '../program-edit'
+import type { CommandBody } from '../protocol'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
@@ -133,6 +136,38 @@ function restartSection(index: number): void {
   const section = sections.value[index]
   if (section !== undefined) restartAt.value = { line: section.first, section: sectionName(index) }
 }
+// Changing one feed or speed number of the loaded program; the machine saves and reopens it.
+const editing = ref<{ line: number; text: string; word: RateWord; error: string } | null>(null)
+let editRequest: CommandBody | null = null
+function editRate(line: number, offset: number): void {
+  const text = program.value?.lines[line - 1]
+  const word = text === undefined ? undefined : rateWords(text).find((candidate) => candidate.end > offset)
+  if (text !== undefined && word !== undefined) editing.value = { line, text, word, error: '' }
+}
+const rateUnit = computed(() => {
+  if (editing.value?.word.letter === 'S') return 'rpm'
+  return status.value?.program_units === 'inch' ? 'in/min' : 'mm/min'
+})
+function saveRate(value: number): void {
+  const edit = editing.value
+  const file = status.value?.program.file
+  if (edit === null || !file || editRequest !== null) return
+  const after = withRate(edit.text, edit.word, value)
+  if (after === null) {
+    edit.error = 'Enter a number of zero or more.'
+    return
+  }
+  editRequest = { type: 'edit_program', path: file, line: edit.line, old_text: edit.text, new_text: after }
+  send(editRequest)
+}
+const removeEditListener = onResult((command, result) => {
+  if (command !== editRequest) return
+  editRequest = null
+  if (result.outcome === 'accepted') editing.value = null
+  else if (editing.value !== null) editing.value.error = result.reason || 'The program was not saved.'
+})
+onBeforeUnmount(removeEditListener)
+
 async function showFailure(): Promise<void> {
   if (failureLine.value === 0) return
   panel.programLayout = 'text'
@@ -163,7 +198,7 @@ async function showFailure(): Promise<void> {
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
-            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart" @restart="restartLine" />
+            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart" @restart="restartLine" @edit-rate="editRate" />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
@@ -202,6 +237,13 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
+    <NumberDialog
+      v-if="editing" :key="`${String(editing.line)}-${String(editing.word.begin)}`"
+      :title="`Change ${editing.word.letter} on line ${String(editing.line)}`"
+      effect="Saves the program file with the new number and opens it again. Nothing else in the line changes."
+      :label="editing.word.letter === 'F' ? 'Feed' : 'Spindle speed'" :unit="rateUnit" :initial="String(editing.word.value)"
+      action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
+    />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
     <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
     <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>

@@ -131,6 +131,7 @@ const examples: Examples = {
   fixed_setter: { id: 30, type: 'fixed_setter', action: 'touch_off', tool: 98, x: 4, y: 6.35, z: -85.3 },
   plan_restart: { id: 31, type: 'plan_restart', line: 25, preview_context: 7 },
   start_restart: { id: 32, type: 'start_restart', plan_id: 3 },
+  edit_program: { id: 33, type: 'edit_program', path: '/home/cnc/nc_files/part.ngc', line: 12, old_text: 'G1 X10 F600', new_text: 'G1 X10 F450' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -3,6 +3,7 @@
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
+#include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/program_progress.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
@@ -389,7 +390,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   // commands and the publisher that asks it for snapshots.
   LocalToolModelFiles model_files;
   LocalToolModelFiles progress_files;
+  LocalToolModelFiles edit_files;
   std::unique_ptr<ProgramProgress> progress;
+  std::optional<ProgramWriter> program_writer;
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
@@ -420,12 +423,13 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         },
         config->limits);
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
+    program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine);
+        &preview, &restart_engine, &*program_writer);
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source,

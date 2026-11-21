@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -47,13 +48,13 @@ auto reading(Vec3 g54 = {10, 20, -30}) -> PanelReading {
 struct Fixture {
   FakeDisk disk;
   FakeToolModelFiles files{disk};
-  std::optional<OffsetHistoryStore> store;
+  std::unique_ptr<OffsetHistoryStore> store;
 
   Fixture() { open(); }
   void open() {
     store.reset();
     disk.directories.insert(directory);
-    store.emplace(files, directory);
+    store = std::make_unique<OffsetHistoryStore>(files, directory);
   }
   // One reading at `elapsed`; what the store set on it.
   auto observe(PanelReading sample, std::chrono::milliseconds elapsed = 0ms) -> PanelReading {

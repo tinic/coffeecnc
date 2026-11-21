@@ -129,12 +129,14 @@ void OffsetHistoryStore::load() {
     load_notice_ = reason_;
     return;
   }
-  if (!*content)
+  const auto& found = *content;
+  if (!found)
     return;
+  const auto& file = *found;
   try {
-    if ((*content)->more)
+    if (file.more)
       throw Damaged("the file is too large");
-    const auto root = Json::parse((*content)->bytes, nullptr, false);
+    const auto root = Json::parse(file.bytes, nullptr, false);
     if (!root.is_object() || !root.contains("version") || root["version"] != file_version)
       throw Damaged("not version 1");
     std::vector<HistoryEntry> entries;

@@ -2128,7 +2128,7 @@ void offset_history() {
   };
   observe(machine({10, 20, -30}, end_mill(48.2, 12.7)));
   // The controller applies each block while the worker waits for it.
-  const auto applies = [&](const std::string& action, PanelReading reading) -> void {
+  const auto applies = [&](const std::string& action, const PanelReading& reading) -> void {
     rig.port.during[action] = [&observe, reading]() -> void { observe(reading); };
   };
 

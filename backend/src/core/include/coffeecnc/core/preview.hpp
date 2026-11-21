@@ -112,6 +112,7 @@ struct PreviewOutcome {
   std::optional<Bounds> bounds;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  std::optional<ProgramCheck> check{};
   friend auto operator==(const PreviewOutcome&, const PreviewOutcome&) -> bool = default;
 };
 
@@ -139,7 +140,7 @@ struct PreviewComputation {
   // The computation was given up because `cancelled` said so: the outcome is nothing.
   bool cancelled{};
   // Whether a file the outcome was computed from is no longer what it was. Empty when there is
-  // nothing to watch. May read files: called only on the thread that called compute.
+  // nothing to watch. May read files. Copies can be used independently by the command worker.
   // `cancelled` is asked as in compute; given up, the answer is false.
   using Watch = std::function<bool(const std::function<bool()>& cancelled)>;
   Watch files_changed;

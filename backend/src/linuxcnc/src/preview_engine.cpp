@@ -1,4 +1,5 @@
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
+#include <coffeecnc/linuxcnc/tool_table.hpp>
 
 #include "preview_wire.hpp"
 #include "program_watch.hpp"
@@ -584,7 +585,91 @@ auto unavailable(std::string text) -> PreviewOutcome {
 // only whole, valid records count, within the limits the helper was given. `ready` needs
 // both a whole result that ends `ok` and the helper's own exit with status 0: a result that
 // says it is finished is not the process having ended well.
-auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lines)
+auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
+                   const HelperOutput& output, const PreviewOutcome& outcome) -> ProgramCheck {
+  ProgramCheck check;
+  const auto& facts = output.check;
+  const bool complete = outcome.state == PreviewState::ready && facts.has_value();
+  if (!complete) {
+    if (output.end == HelperEnd::error && output.problem && output.problem->line > 0 &&
+        outcome.error) {
+      check.errors.push_back(std::format("Line {}: {}", outcome.error->line, outcome.error->text));
+    } else {
+      check.warnings.emplace_back("CoffeeCNC could only check part of this program.");
+    }
+  }
+  if (!facts)
+    return check;
+
+  std::map<int, double> touched;
+  if (settings.reference_tool && !settings.tool_table.empty()) {
+    const auto sidecar = fs::path(settings.tool_table).parent_path() / "coffeecnc-touched-off.txt";
+    const auto saved = read_file(sidecar.string(), max_tool_table_bytes);
+    const auto table = read_file(settings.tool_table, max_tool_table_bytes);
+    if (saved && table)
+      touched = restored_touched_off(*table, *settings.reference_tool, parse_touched_off(*saved));
+  }
+  for (const int tool : facts->tools) {
+    const auto raw = std::ranges::find_if(inputs.raw_tools, [=](const PreviewTool& row) {
+      return row.index != 0 && row.number == tool;
+    });
+    ToolLengthCheck length = ToolLengthCheck::missing;
+    if (raw != inputs.raw_tools.end() && std::isfinite(raw->offset[2])) {
+      const auto mark = touched.find(tool);
+      if (mark != touched.end() && std::abs(mark->second - raw->offset[2]) <= 0.001)
+        length = ToolLengthCheck::touched_off;
+      else if (raw->offset[2] != 0)
+        length = ToolLengthCheck::table;
+    }
+    check.tools.push_back({tool, length});
+    if (length == ToolLengthCheck::missing)
+      check.errors.push_back(std::format("T{} has no verified length in the tool table.", tool));
+  }
+  check.frames = facts->frames;
+  for (const auto& frame : check.frames)
+    if (!frame.available) {
+      static constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59",
+                                         "G59.1", "G59.2", "G59.3"};
+      check.errors.push_back(std::format("The {} work origin could not be verified.",
+                                          names.at(static_cast<std::size_t>(frame.wcs - 1))));
+    }
+  check.feed = facts->feed;
+  check.spindle = facts->spindle;
+  if (facts->mm)
+    check.units.push_back(LengthUnit::mm);
+  if (facts->inch)
+    check.units.push_back(LengthUnit::inch);
+  if (facts->feed_per_revolution)
+    check.warnings.emplace_back("Feed per revolution is excluded from the feed range.");
+  if (facts->variable_spindle)
+    check.warnings.emplace_back("Constant surface speed prevents checking a fixed spindle range.");
+  if (facts->spindle && settings.max_spindle_rpm > 0 &&
+      facts->spindle->max > settings.max_spindle_rpm)
+    check.errors.push_back(std::format("The program requests {} rpm. The spindle limit is {} rpm.",
+                                      facts->spindle->max, settings.max_spindle_rpm));
+
+  const auto fits = [&](const std::optional<Bounds>& travel) {
+    if (!facts->machine || !travel)
+      return true;
+    for (std::size_t axis = 0; axis < 3; ++axis)
+      if (facts->machine->min[axis] < travel->min[axis] - 1e-6 ||
+          facts->machine->max[axis] > travel->max[axis] + 1e-6)
+        return false;
+    return true;
+  };
+  if (!fits(settings.soft_travel) || !fits(settings.physical_travel)) {
+    check.travel = TravelCheck::outside;
+    check.errors.emplace_back("The program exceeds configured machine travel.");
+  } else if (complete && facts->machine && settings.physical_travel) {
+    check.travel = TravelCheck::fits;
+  } else if (facts->machine || !complete) {
+    check.warnings.emplace_back("The physical travel needed by the program could not be verified.");
+  }
+  return check;
+}
+
+auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, HelperRun& run,
+                int program_lines)
     -> PreviewOutcome {
   if (run.how == HelperExit::not_started)
     return unavailable("The preview program could not be started.");
@@ -647,6 +732,8 @@ auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lin
                           output.problem->text)};
   else
     outcome.error = PreviewError{0, ending()};
+  if (!inputs.restart_line)
+    outcome.check = program_check(settings, inputs, output, outcome);
   return outcome;
 }
 
@@ -669,6 +756,17 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
   settings.work_directory = std::move(work_directory);
   settings.parameter_file = config.parameter_file;
   settings.units_per_mm = 1.0 / config.millimetres_per_unit;
+  settings.max_spindle_rpm = config.limits.max_spindle_rpm;
+  settings.tool_table = config.tool_table;
+  if (config.fixed_setter)
+    settings.reference_tool = config.fixed_setter->reference_tool;
+  auto& soft = settings.soft_travel.emplace();
+  for (std::size_t i = 0; i < config.travel.size(); ++i) {
+    soft.min[i] = config.travel[i].min;
+    soft.max[i] = config.travel[i].max;
+  }
+  if (config.limits.homing_required)
+    settings.physical_travel = soft;
   settings.search_path.push_back(config.directory);
   if (!config.program_prefix.empty())
     settings.search_path.push_back(config.program_prefix);
@@ -686,6 +784,21 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     const auto value = text(section, key);
     return value && std::atoi(value->c_str()) > 0;
   };
+  const auto physical_min = text("COFFEECNC", "TRAVEL_MIN_MM");
+  const auto physical_max = text("COFFEECNC", "TRAVEL_MAX_MM");
+  if (physical_min || physical_max) {
+    Bounds limits;
+    std::istringstream minima{physical_min.value_or("")};
+    std::istringstream maxima{physical_max.value_or("")};
+    std::string extra;
+    const bool valid = (minima >> limits.min[0] >> limits.min[1] >> limits.min[2]) &&
+                       (maxima >> limits.max[0] >> limits.max[1] >> limits.max[2]) &&
+                       !(minima >> extra) && !(maxima >> extra) &&
+                       std::ranges::equal(limits.min, limits.max, [](double lo, double hi) {
+                         return std::isfinite(lo) && std::isfinite(hi) && lo < hi;
+                       });
+    settings.physical_travel = valid ? std::optional{limits} : std::nullopt;
+  }
   const fs::path base{config.directory};
   if (const auto path = text("RS274NGC", "SUBROUTINE_PATH")) {
     std::string_view rest = *path;
@@ -836,7 +949,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {{}, true, {}};
     const auto& text = manifest->program.bytes;
     auto outcome = outcome_of(
-        settings_, run, static_cast<int>(std::min<std::ptrdiff_t>(
+        settings_, inputs, run, static_cast<int>(std::min<std::ptrdiff_t>(
                             std::ranges::count(text, '\n') + 1, 2000000000)));
     if (outcome.restart && outcome.restart->tool != inputs.start.tool_in_spindle &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||

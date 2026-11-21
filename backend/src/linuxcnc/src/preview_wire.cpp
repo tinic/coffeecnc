@@ -1,5 +1,6 @@
 #include "preview_wire.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -58,6 +59,57 @@ auto rest(std::string_view text) -> std::string {
 }
 
 auto vec(const Vec3& v) -> std::string { return std::format("{} {} {}", v[0], v[1], v[2]); }
+
+auto bounds(std::string_view& line, Bounds& result) -> bool {
+  if (!finite_vector(line, result.min) || !finite_vector(line, result.max))
+    return false;
+  return std::ranges::equal(result.min, result.max, std::less_equal<>{});
+}
+
+auto read_check(std::string_view line, std::optional<HelperOutput::ProgramFacts>& check) -> bool {
+  const auto type = word(line);
+  if (type == "units") {
+    HelperOutput::ProgramFacts facts;
+    if (check || !flag(line, facts.mm) || !flag(line, facts.inch) ||
+        !flag(line, facts.variable_spindle) || !flag(line, facts.feed_per_revolution) ||
+        !word(line).empty())
+      return false;
+    check = std::move(facts);
+    return true;
+  }
+  if (!check)
+    return false;
+  if (type == "tool") {
+    int tool = 0;
+    if (!number(line, tool) || tool < 1 || tool > OutputLimits::max_tool ||
+        check->tools.size() >= 1000 || std::ranges::find(check->tools, tool) != check->tools.end())
+      return false;
+    check->tools.push_back(tool);
+  } else if (type == "wcs") {
+    ProgramFrameCheck frame;
+    if (!number(line, frame.wcs) || frame.wcs < 1 || frame.wcs > 9 ||
+        !flag(line, frame.available) ||
+        std::ranges::find(check->frames, frame.wcs, &ProgramFrameCheck::wcs) != check->frames.end())
+      return false;
+    if (frame.available && !bounds(line, frame.bounds.emplace()))
+      return false;
+    check->frames.push_back(std::move(frame));
+  } else if (type == "machine") {
+    if (check->machine || !bounds(line, check->machine.emplace()))
+      return false;
+  } else if (type == "feed" || type == "spindle") {
+    auto& range = type == "feed" ? check->feed : check->spindle;
+    if (range)
+      return false;
+    auto& value = range.emplace();
+    if (!finite_number(line, value.min) || !finite_number(line, value.max) ||
+        value.min < 0 || value.min > value.max)
+      return false;
+  } else {
+    return false;
+  }
+  return word(line).empty();
+}
 
 auto parse_restart(std::string_view line, const OutputLimits& limits, RestartPoint& p) -> bool {
   int spindle = 0;
@@ -213,6 +265,24 @@ auto write_restart(const RestartPoint& p) -> std::string {
       vec(p.g5x), vec(p.g92), vec(p.tool_offset), p.rotation);
 }
 
+auto write_check(const HelperOutput::ProgramFacts& facts) -> std::string {
+  auto out = std::format("check units {} {} {} {}\n", int{facts.mm}, int{facts.inch},
+                         int{facts.variable_spindle}, int{facts.feed_per_revolution});
+  for (const int tool : facts.tools)
+    out += std::format("check tool {}\n", tool);
+  for (const auto& frame : facts.frames)
+    out += frame.bounds ? std::format("check wcs {} 1 {} {}\n", frame.wcs,
+                                     vec(frame.bounds->min), vec(frame.bounds->max))
+                        : std::format("check wcs {} 0\n", frame.wcs);
+  if (const auto& machine = facts.machine)
+    out += std::format("check machine {} {}\n", vec(machine->min), vec(machine->max));
+  if (const auto& feed = facts.feed)
+    out += std::format("check feed {} {}\n", feed->min, feed->max);
+  if (const auto& spindle = facts.spindle)
+    out += std::format("check spindle {} {}\n", spindle->min, spindle->max);
+  return out;
+}
+
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
   std::size_t points = 0;
@@ -270,6 +340,9 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       problem.text = rest(line);
       output.problem = std::move(problem);
       problem_kind = key;
+    } else if (key == "check") {
+      if (!read_check(line, output.check))
+        return defect("a malformed program check record");
     } else if (key == "restart" || key == "restart_blocked") {
       if (output.problem || output.restart || !output.restart_blocked.empty())
         return defect("a duplicate or misplaced restart record");

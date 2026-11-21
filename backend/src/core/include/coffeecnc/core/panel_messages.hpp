@@ -237,6 +237,39 @@ struct Bounds {
   friend auto operator==(const Bounds&, const Bounds&) -> bool = default;
 };
 
+struct ProgramRange {
+  double min{};
+  double max{};
+  friend auto operator==(const ProgramRange&, const ProgramRange&) -> bool = default;
+};
+
+enum class ToolLengthCheck : std::uint8_t { missing, table, touched_off };
+struct ProgramToolCheck {
+  int tool{};
+  ToolLengthCheck length{ToolLengthCheck::missing};
+  friend auto operator==(const ProgramToolCheck&, const ProgramToolCheck&) -> bool = default;
+};
+
+struct ProgramFrameCheck {
+  int wcs{};
+  bool available{};
+  std::optional<Bounds> bounds{};
+  friend auto operator==(const ProgramFrameCheck&, const ProgramFrameCheck&) -> bool = default;
+};
+
+enum class TravelCheck : std::uint8_t { unknown, fits, outside };
+struct ProgramCheck {
+  std::vector<ProgramToolCheck> tools;
+  std::vector<ProgramFrameCheck> frames;
+  std::optional<ProgramRange> feed; // mm/min
+  std::optional<ProgramRange> spindle; // rpm
+  std::vector<LengthUnit> units;
+  TravelCheck travel{TravelCheck::unknown};
+  std::vector<std::string> errors;
+  std::vector<std::string> warnings;
+  friend auto operator==(const ProgramCheck&, const ProgramCheck&) -> bool = default;
+};
+
 struct Preview {
   // The Status::preview_context this preview was computed for.
   std::uint64_t context{};
@@ -244,6 +277,7 @@ struct Preview {
   std::optional<PreviewError> error;
   std::vector<PreviewSegment> segments;
   std::optional<Bounds> bounds; // extent of the feed moves; empty without any
+  std::optional<ProgramCheck> check{};
   friend auto operator==(const Preview&, const Preview&) -> bool = default;
 };
 

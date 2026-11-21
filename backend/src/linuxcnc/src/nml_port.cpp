@@ -1796,6 +1796,28 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
 
 } // namespace
 
+auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
+  const auto s = status();
+  const auto& start = inputs.start;
+  if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
+      !restart_idle(s, impl_->config) ||
+      s.controller.program_file != inputs.program_file ||
+      s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
+      s.controller.tool_in_spindle != start.tool_in_spindle ||
+      s.controller.program_units != start.program_units ||
+      s.spindle_direction != start.spindle_direction ||
+      std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
+      std::abs(s.programmed_feed - start.feed) > 1e-6 ||
+      !restart_at(s, start.position) || !restart_near(s.tool_offset, start.tool_offset) ||
+      !restart_near(s.g92, inputs.g92))
+    return "The machine state changed. Review a fresh program check.";
+  const auto& system = inputs.systems.at(static_cast<std::size_t>(start.wcs - 1));
+  if (!system.available || !restart_near(s.g5x, system.offset) ||
+      std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
+    return "The work origin changed. Review a fresh program check.";
+  return {};
+}
+
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& config = impl_->config;

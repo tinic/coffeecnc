@@ -139,6 +139,9 @@ public:
       -> ActionResult = 0;
   // From the first line of the loaded program.
   [[nodiscard]] virtual auto run(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto validate_program_inputs(const PreviewInputs&) -> std::string {
+    return {};
+  }
   // Validates the approach without sending controller commands and updates its clearance.
   [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
     return "Restart from line is unavailable on this controller.";

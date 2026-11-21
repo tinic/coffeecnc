@@ -376,12 +376,42 @@ auto encode_preview(const Preview& preview) -> Encoded {
   if (preview.bounds)
     bounds = {{"min", fields.vec(preview.bounds->min, "bounds.min")},
               {"max", fields.vec(preview.bounds->max, "bounds.max")}};
-  return fields.finish({{"type", "preview"},
+  Json message{{"type", "preview"},
                         {"context", fields.count(preview.context, "context")},
                         {"state", name(preview.state)},
                         {"error", std::move(error)},
                         {"segments", std::move(segments)},
-                        {"bounds", std::move(bounds)}});
+                        {"bounds", std::move(bounds)}};
+  if (const auto& check = preview.check) {
+    auto tools = Json::array();
+    for (const auto& row : check->tools)
+      tools.push_back({{"tool", row.tool},
+                       {"length", row.length == ToolLengthCheck::touched_off ? "touched_off"
+                                  : row.length == ToolLengthCheck::table      ? "table" : "missing"}});
+    auto frames = Json::array();
+    for (const auto& frame : check->frames) {
+      Json extent = nullptr;
+      if (frame.bounds)
+        extent = {{"min", fields.vec(frame.bounds->min, "check.frames.min")},
+                  {"max", fields.vec(frame.bounds->max, "check.frames.max")}};
+      frames.push_back({{"wcs", frame.wcs}, {"available", frame.available},
+                        {"bounds", std::move(extent)}});
+    }
+    const auto range = [&](const std::optional<ProgramRange>& value) -> Json {
+      return value ? Json{{"min", fields.real(value->min, "check.range.min")},
+                         {"max", fields.real(value->max, "check.range.max")}} : Json(nullptr);
+    };
+    auto units = Json::array();
+    for (const auto unit : check->units)
+      units.push_back(name(unit));
+    message["check"] = {{"tools", std::move(tools)}, {"frames", std::move(frames)},
+                         {"feed", range(check->feed)}, {"spindle", range(check->spindle)},
+                         {"units", std::move(units)}, {"errors", check->errors},
+                         {"warnings", check->warnings},
+                         {"travel", check->travel == TravelCheck::fits ? "fits"
+                                     : check->travel == TravelCheck::outside ? "outside" : "unknown"}};
+  }
+  return fields.finish(std::move(message));
 }
 
 auto encode_directory(const Directory& directory) -> Encoded {

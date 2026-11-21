@@ -52,6 +52,13 @@ auto PreviewWorker::restart_source(std::uint64_t context) const -> RestartSource
   return latest_source_;
 }
 
+auto PreviewWorker::checked_preview() const -> CheckedPreview {
+  const std::scoped_lock lock{mutex_};
+  if (!latest_ || latest_->context != newest_)
+    return {};
+  return {latest_, latest_source_, latest_files_};
+}
+
 void PreviewWorker::loop() {
   // Of the preview that is current; this thread's alone.
   PreviewComputation::Watch files_changed;
@@ -81,9 +88,10 @@ void PreviewWorker::loop() {
       unchecked_.reset();
       latest_ = std::make_shared<const Preview>(
           Preview{request.context, outcome.state, std::move(outcome.error),
-                  std::move(outcome.segments), outcome.bounds});
+                  std::move(outcome.segments), outcome.bounds, std::move(outcome.check)});
       latest_source_ = {std::move(request.inputs), std::move(computed.program_snapshot)};
       files_changed = std::move(computed.files_changed);
+      latest_files_ = files_changed;
       continue;
     }
     if (!files_changed) {
@@ -107,6 +115,7 @@ void PreviewWorker::loop() {
       unchecked_.reset();
       latest_.reset();
       latest_source_ = {};
+      latest_files_ = {};
     } else if (unchecked_ && !wanted_ && !stop_) {
       // Compared again and the same: finished for its context again.
       latest_ = std::move(unchecked_);

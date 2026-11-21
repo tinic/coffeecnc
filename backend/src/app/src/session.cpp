@@ -775,6 +775,13 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command))
     restart_.reset();
   auto decision = policy_.evaluate(command, state);
+  if (preview_ != nullptr && decision.allowed)
+    if (const auto* run = std::get_if<Run>(&command))
+      if (auto reason = check_program_start(request, *run, state); !reason.empty()) {
+        if (!wanted(request))
+          return cancelled();
+        decision = {false, {}, std::move(reason), {}};
+      }
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
       decision = {false, {}, std::move(reason), {}};
@@ -851,6 +858,28 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
     verified_probe_program_ = state.program_file;
   return result;
+}
+
+auto Session::check_program_start(const Queued& request, const Run& command,
+                                  const ControllerState& state) const -> std::string {
+  const auto check = preview_->checked_preview();
+  if (!check.preview || !check.source.inputs ||
+      check.source.inputs->program_file != state.program_file)
+    return "Wait for the program check to finish.";
+  if (command.preview_context && *command.preview_context != check.preview->context)
+    return "The program check changed. Review the current results.";
+  const auto& report = check.preview->check;
+  if (report && !report->errors.empty())
+    return report->errors.front();
+  const bool units_mismatch = report && command.display_units &&
+      std::ranges::any_of(report->units, [&](LengthUnit unit) { return unit != *command.display_units; });
+  if ((!report || !report->warnings.empty() || units_mismatch) && !command.confirmed)
+    return "Review the program check warnings before starting.";
+  if (check.files_changed && check.files_changed([&] { return !wanted(request); }))
+    return "The program or tool data changed. Review the new program check.";
+  if (preview_->checked_preview().preview != check.preview)
+    return "The program check changed. Review the current results.";
+  return port_.validate_program_inputs(*check.source.inputs);
 }
 
 auto Session::plan_restart(Queued& request, PlanRestart command, const ControllerState& state)

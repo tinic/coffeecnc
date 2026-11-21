@@ -138,7 +138,7 @@ auto axis(const Json& object) -> Axis {
 auto command(const Json& object) -> Command {
   const auto type = string(object, "type");
   // Commands with no body still reject stray fields (for example an unsupported run-from-line).
-  if (type == "ready" || type == "jog_stop_all" || type == "run" || type == "pause" ||
+  if (type == "ready" || type == "jog_stop_all" || type == "pause" ||
       type == "resume" || type == "step" || type == "abort" || type == "tool_changed" ||
       type == "quit") {
     fields(object, {"id", "type"});
@@ -148,8 +148,6 @@ auto command(const Json& object) -> Command {
       return JogStopAll{};
     if (type == "quit")
       return Quit{};
-    if (type == "run")
-      return Run{};
     if (type == "pause")
       return Pause{};
     if (type == "resume")
@@ -196,6 +194,20 @@ auto command(const Json& object) -> Command {
   if (type == "open_program") {
     fields(object, {"id", "type", "path"});
     return OpenProgram{string(object, "path")};
+  }
+  if (type == "run") {
+    fields(object, {"id", "type"}, {"preview_context", "display_units", "confirmed"});
+    Run run;
+    if (object.contains("preview_context"))
+      run.preview_context = positive_id(object, "preview_context");
+    if (object.contains("display_units"))
+      run.display_units = choice<LengthUnit>(
+          object, "display_units", {{"mm", LengthUnit::mm}, {"inch", LengthUnit::inch}});
+    if (object.contains("confirmed"))
+      run.confirmed = boolean(object, "confirmed");
+    if (run.confirmed && (!run.preview_context || !run.display_units))
+      throw InvalidRequest("Confirmation needs the reviewed preview and display units.");
+    return run;
   }
   if (type == "plan_restart") {
     fields(object, {"id", "type", "line", "preview_context"});

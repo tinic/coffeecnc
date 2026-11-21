@@ -21,6 +21,12 @@ struct RestartSource {
   std::shared_ptr<const std::string> program_snapshot;
 };
 
+struct CheckedPreview {
+  std::shared_ptr<const Preview> preview;
+  RestartSource source;
+  PreviewComputation::Watch files_changed;
+};
+
 // Where the composer gets previews from. It hands over the inputs of every new context and
 // takes whatever is finished; it never waits. Thread-safe.
 class PreviewService {
@@ -90,6 +96,7 @@ public:
   [[nodiscard]] auto files_generation() const -> std::uint64_t override;
   // The exact input and source of a ready preview, copied without blocking on file I/O.
   [[nodiscard]] auto restart_source(std::uint64_t context) const -> RestartSource;
+  [[nodiscard]] auto checked_preview() const -> CheckedPreview;
 
 private:
   struct Request {
@@ -105,6 +112,7 @@ private:
   std::optional<Request> wanted_;
   std::shared_ptr<const Preview> latest_;
   RestartSource latest_source_;
+  PreviewComputation::Watch latest_files_;
   // The latest preview while its files are compared again: not finished for anyone meanwhile.
   std::shared_ptr<const Preview> unchecked_;
   // The context submitted last: a computation for another one is of no use.

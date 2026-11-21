@@ -34,6 +34,11 @@ struct PreviewSettings {
   std::vector<std::string> interpreter_options;
   // Why no preview is computed on this machine at all; empty when one is.
   std::string refusal;
+  std::optional<Bounds> soft_travel{};
+  std::optional<Bounds> physical_travel{};
+  double max_spindle_rpm{};
+  std::string tool_table;
+  std::optional<int> reference_tool{};
 
   std::chrono::milliseconds timeout{20000};
   // How long the helper may take to exit after it has closed its result.

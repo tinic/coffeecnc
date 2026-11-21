@@ -2850,18 +2850,22 @@ auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) 
   // marker on disk, written before changing the spindle.
   if (!write_sidecar(impl_->spindle_hold_marker, "CoffeeCNC interrupted spindle hold\n"))
     return failed("Could not save spindle hold recovery state.");
-  impl_->spindle_recovery();
+  impl_->hal->paused_spindle.store(PausedSpindle::stopping);
   auto stopped = spindle_command(SpindleDirection::stopped, 0, wanted, true);
-  if (!accepted(stopped))
+  if (!accepted(stopped)) {
+    impl_->spindle_recovery();
     return stopped;
+  }
   bool interrupted = false;
   const bool verified = until(std::chrono::seconds{15}, [&] {
     const auto now = status();
     interrupted = !wanted() || !hold.matches(now);
     return interrupted || (now.spindle_actual_rpm && !now.controller.spindle_active);
   });
-  if (interrupted || !verified)
+  if (interrupted || !verified) {
+    impl_->spindle_recovery();
     return failed("Spindle stop was not verified. Press Stop before continuing.");
+  }
   impl_->spindle_hold = std::move(hold);
   impl_->hal->paused_spindle.store(PausedSpindle::restore);
   return {};

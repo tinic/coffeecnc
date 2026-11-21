@@ -335,6 +335,9 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     case PausedSpindle::can_stop:
       message["paused_z"]["spindle"] = "can_stop";
       break;
+    case PausedSpindle::stopping:
+      message["paused_z"]["spindle"] = "stopping";
+      break;
     case PausedSpindle::restore:
       message["paused_z"]["spindle"] = "restore";
       break;

@@ -4533,8 +4533,10 @@ void paused_spindle(Rig& rig, NmlLoads& loads) {
     halcmd("sets spindle-at-speed FALSE");
     const auto retry = rig.post(resume);
     const bool spinning = rig.pump_until(6s, [] { return hal_signal("spindle-enable") == "TRUE"; });
+    halcmd("sets spindle-vel-fb-rpm-abs 200");
     const auto stopped = rig.send(stop);
     const auto cancelled = rig.await(retry);
+    halcmd("sets spindle-vel-fb-rpm-abs 0");
     const bool idle = rig.pump_until(3s, [&] {
       return rig.idle() && hal_signal("spindle-enable") == "FALSE" &&
              !std::filesystem::exists(marker);

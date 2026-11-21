@@ -127,8 +127,10 @@ const stepBlock = computed((): string | null => {
 
 const primary = computed(() => {
   if (paused.value) return {
-    label: pausedZ.value?.displaced ? 'Return Z & resume' :
-      pausedZ.value?.spindle === 'restore' ? 'Restore spindle & resume' : 'Resume',
+    label: pendingZ.value?.type === 'resume'
+      ? pausedZ.value?.spindle === 'restore' && !pausedZ.value.displaced ? 'Restoring spindle…' : 'Returning Z…'
+      : pausedZ.value?.displaced ? 'Return Z & resume'
+      : pausedZ.value?.spindle === 'restore' ? 'Restore spindle & resume' : 'Resume',
     icon: 'play' as const, type: 'resume' as const,
     blocked: linkBlock.value ?? probeWithSpindle.value ??
       (pendingZ.value || pausedZ.value?.displaced || pausedZ.value?.spindle === 'recover' ||

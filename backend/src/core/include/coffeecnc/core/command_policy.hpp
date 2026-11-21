@@ -40,7 +40,7 @@ struct AxisState {
 // The unit the interpreter reads length words in (G21 / G20).
 enum class LengthUnit : std::uint8_t { mm, inch };
 
-enum class PausedSpindle : std::uint8_t { none, can_stop, restore, recover };
+enum class PausedSpindle : std::uint8_t { none, can_stop, stopping, restore, recover };
 
 struct PausedZStatus {
   double offset{}; // applied Z offset, mm

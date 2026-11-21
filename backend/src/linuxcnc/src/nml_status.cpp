@@ -219,10 +219,16 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     if (can_stop)
       spindle_state = PausedSpindle::can_stop;
     // The last motion's M code can describe an earlier block. HAL also gates on spindle.0.on.
-    if (out.paused_z_interlock.empty() && (!out.spindle_actual_rpm || c.spindle_active))
-      out.paused_z_interlock =
-          can_stop ? "Stop the spindle before jogging Z."
-                   : "Pause after stopping the spindle in the program (M5) before jogging Z.";
+    if (out.paused_z_interlock.empty() && (!out.spindle_actual_rpm || c.spindle_active)) {
+      if (spindle_state == PausedSpindle::stopping)
+        out.paused_z_interlock = "Waiting for the spindle to stop.";
+      else if (spindle_state == PausedSpindle::restore)
+        out.paused_z_interlock = "Waiting for the spindle to reach speed.";
+      else
+        out.paused_z_interlock =
+            can_stop ? "Stop the spindle before jogging Z."
+                     : "Pause after stopping the spindle in the program (M5) before jogging Z.";
+    }
     c.paused_z = PausedZStatus{
         z_mm,         limits->lift_mm, displaced, feedback.has_value(), out.paused_z_interlock,
         spindle_state};

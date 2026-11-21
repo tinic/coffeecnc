@@ -183,7 +183,7 @@ export interface Status {
     max_lift: number
     displaced: boolean
     reason: string
-    spindle?: 'can_stop' | 'restore' | 'recover'
+    spindle?: 'can_stop' | 'stopping' | 'restore' | 'recover'
   }
   tool: {
     /** Tool LinuxCNC considers loaded (0 for none). */

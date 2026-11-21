@@ -67,6 +67,7 @@ struct NmlStatus {
   // task by any client keeps this set until io has finished it, whatever command task took up
   // after it: the table in LinuxCNC's tool data memory may be half replaced meanwhile.
   bool task_executing{};
+  bool task_failed{};
   // Motion is in teleop (world) mode: axis jogs are possible, joint jogs and homing are not.
   bool teleop{};
   bool flood{};
@@ -85,6 +86,7 @@ struct NmlLoads {
   // shows it.
   std::atomic<std::uint64_t> mdi_blocks{};
   std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
+  std::atomic<std::uint64_t> aborts{};
 };
 
 struct FixedSetterMove {

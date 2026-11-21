@@ -117,6 +117,12 @@ struct ToolStatus {
   friend auto operator==(const ToolStatus&, const ToolStatus&) -> bool = default;
 };
 
+struct RestartHint {
+  int line{};
+  int tool{};
+  friend auto operator==(const RestartHint&, const RestartHint&) -> bool = default;
+};
+
 struct ProgramStatus {
   std::optional<std::string> file; // path of the loaded program
   // Changes whenever a program is loaded or reloaded; matches ProgramText::revision.
@@ -125,6 +131,7 @@ struct ProgramStatus {
   int motion_line{};  // 1-based, 0 when none
   bool optional_stop{};
   bool block_delete{};
+  std::optional<RestartHint> restart_hint{};
   friend auto operator==(const ProgramStatus&, const ProgramStatus&) -> bool = default;
 };
 

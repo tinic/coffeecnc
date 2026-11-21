@@ -24,6 +24,8 @@
 
 namespace coffeecnc {
 
+class ProgramProgress;
+
 // The inputs of a preview as one reading gives them. The machine position is the one the
 // machine last rested at with an idle interpreter: a position in motion is not a start state.
 [[nodiscard]] auto preview_inputs(const PanelReading& reading, const Vec3& rest_position)
@@ -151,7 +153,7 @@ public:
   // The source, and the preview service when there is one, must outlive the feed. Starts the
   // thread.
   PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr,
-            SnapshotsSent snapshots_sent = {});
+            SnapshotsSent snapshots_sent = {}, ProgramProgress* progress = nullptr);
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -171,6 +173,7 @@ private:
   Deliver deliver_;
   SnapshotsSent snapshots_sent_;
   PreviewService* preview_;
+  ProgramProgress* progress_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;

@@ -1,4 +1,5 @@
 #include <coffeecnc/app/panel_feed.hpp>
+#include <coffeecnc/app/program_progress.hpp>
 
 #include <coffeecnc/app/response.hpp>
 
@@ -148,6 +149,12 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
     }
   }
   const Preview& preview = finished ? *finished : made;
+  if (const auto hint = status.program.restart_hint;
+      hint && (preview.state != PreviewState::ready ||
+               std::ranges::none_of(preview.segments, [&](const PreviewSegment& segment) {
+                 return segment.line == hint->line && segment.tool == hint->tool;
+               })))
+    status.program.restart_hint.reset();
   if (work_offsets_.revision == 0 || reading.work_systems != work_offsets_.systems)
     work_offsets_ = {work_offsets_.revision + 1, reading.work_systems};
   auto messages = publisher_.publish(
@@ -167,10 +174,9 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
 }
 
 PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview,
-                     SnapshotsSent snapshots_sent)
+                     SnapshotsSent snapshots_sent, ProgramProgress* progress)
     : source_(source), deliver_(std::move(deliver)), snapshots_sent_(std::move(snapshots_sent)),
-      preview_(preview),
-      thread_([this]() -> void { loop(); }) {}
+      preview_(preview), progress_(progress), thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
   {
@@ -205,7 +211,9 @@ void PanelFeed::loop() {
   bool snapshots_owed = false;
   auto next = std::chrono::steady_clock::now();
   for (;;) {
-    const auto reading = source_.read();
+    auto reading = source_.read();
+    if (progress_)
+      progress_->observe(reading, ProgramProgress::Clock::now());
     std::optional<PageToken> page;
     bool ready = false;
     {

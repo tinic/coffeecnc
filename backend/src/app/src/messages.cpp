@@ -276,6 +276,14 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
   }
   const auto& motion = status.motion;
   const auto& program = status.program;
+  Json program_fields{{"file", nullable(program.file)},
+                      {"revision", fields.count(program.revision, "program.revision")},
+                      {"current_line", program.current_line},
+                      {"motion_line", program.motion_line},
+                      {"optional_stop", program.optional_stop},
+                      {"block_delete", program.block_delete}};
+  if (const auto hint = program.restart_hint)
+    program_fields["restart_hint"] = {{"line", hint->line}, {"tool", hint->tool}};
   return fields.finish(
       {{"type", "status"},
        {"seq", fields.count(seq, "seq")},
@@ -306,13 +314,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
        {"coolant", {{"flood", status.coolant.flood}, {"mist", status.coolant.mist}}},
        {"tool",
         {{"in_spindle", status.tool.in_spindle}, {"prepared", nullable(status.tool.prepared)}}},
-       {"program",
-        {{"file", nullable(program.file)},
-         {"revision", fields.count(program.revision, "program.revision")},
-         {"current_line", program.current_line},
-         {"motion_line", program.motion_line},
-         {"optional_stop", program.optional_stop},
-         {"block_delete", program.block_delete}}},
+       {"program", std::move(program_fields)},
        {"preview_context", fields.count(status.preview_context, "preview_context")},
        {"wait", wait(fields, status.wait)},
        {"active_codes", status.active_codes},

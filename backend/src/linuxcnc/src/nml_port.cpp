@@ -2073,6 +2073,8 @@ auto NmlPort::step(const Wanted& wanted) -> ActionResult {
 auto NmlPort::abort() -> ActionResult {
   const auto from = impl_->begin(nullptr);
   const Impl::Scope scope{*impl_};
+  if (impl_->loads)
+    ++impl_->loads->aborts;
   EMC_TASK_ABORT message;
   return impl_->run(message, from);
 }

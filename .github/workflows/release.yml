@@ -48,7 +48,15 @@ jobs:
           gpg --batch --export 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927 > /usr/share/keyrings/linuxcnc.gpg
           echo "deb [signed-by=/usr/share/keyrings/linuxcnc.gpg] https://www.linuxcnc.org/ trixie base 2.9-uspace" \
             > /etc/apt/sources.list.d/linuxcnc.list
-          apt-get update
+          # linuxcnc.org refuses a connection now and then; apt-get update then succeeds without
+          # its index and Debian's own, older linuxcnc-uspace is taken (a package built against it,
+          # or an install that cannot be satisfied). Retry until its index is really there.
+          for attempt in 1 2 3 4 5 6; do
+            apt-get update
+            apt-cache policy linuxcnc-uspace | grep -q 'linuxcnc.org trixie' && break
+            [ "$attempt" = 6 ] && { echo "linuxcnc.org trixie index not loaded"; exit 1; }
+            sleep $((attempt * 10))
+          done
 
       - name: Build tools and LinuxCNC
         run: |

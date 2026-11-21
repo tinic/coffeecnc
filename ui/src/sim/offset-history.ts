@@ -87,7 +87,7 @@ export class SimOffsetHistory {
       type: 'offset_history',
       revision: this.revision,
       storage: 'session_only',
-      reason: 'The browser simulator keeps the history for this page only.',
+      reason: 'browser simulator',
       entries: this.entries.map((entry) => ({ ...entry, changes: entry.changes.map((change) => ({ ...change })) })),
     }
   }

@@ -2,7 +2,7 @@
 // whether Restore can write its earlier values back.
 
 import type { HistoryEntry, HistoryField, HistorySource, LengthUnit } from './protocol'
-import { formatLength, toolLabel, wcsName } from './units'
+import { formatClock, formatLength, toolLabel, wcsName } from './units'
 
 export type HistoryFilter = 'all' | 'offsets' | 'tools'
 
@@ -69,9 +69,7 @@ export function restoreBlock(entry: HistoryEntry): string | null {
 /** Time of day, with the date when it is not today. */
 export function entryTime(time: number, now: number): string {
   const at = new Date(time)
-  const clock = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  const today = new Date(now)
-  return at.toDateString() === today.toDateString()
-    ? clock
-    : `${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${clock}`
+  return at.toDateString() === new Date(now).toDateString()
+    ? formatClock(time)
+    : `${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(time)}`
 }

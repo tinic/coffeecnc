@@ -89,14 +89,14 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
       </tbody>
     </table>
     <p>{{ reviewEffect }} The machine does not move.</p>
-    <p class="hint">From {{ sourceName(reviewing.source) }} at {{ entryTime(reviewing.time, now) }}.</p>
+    <p class="hint">Changed by {{ sourceName(reviewing.source) }} at {{ entryTime(reviewing.time, now) }}.</p>
     <p v-if="reviewBlock" class="blocked" role="status">{{ reviewBlock }}</p>
     <template #footer>
       <button class="btn" type="button" @click="reviewing = null">Back</button>
       <button class="btn primary" type="button" :disabled="reviewBlock !== null" @click="confirm">Restore {{ targetName(reviewing) }}</button>
     </template>
   </ModalDialog>
-  <ModalDialog v-else key="list" title="Offset history" size="large" expanded @close="emit('close')">
+  <ModalDialog v-else key="list" title="Offset history" size="large" expanded contained @close="emit('close')">
     <div class="bar">
       <div class="segmented" role="group" aria-label="Show">
         <button v-for="[value, label] in filters" :key="value" class="btn" type="button" :class="{ on: filter === value }" :aria-pressed="filter === value" @click="filter = value">{{ label }}</button>
@@ -114,7 +114,7 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
         </span>
         <span class="values">
           <span v-for="change in entry.changes" :key="change.field" class="change mono">
-            <span class="field">{{ fieldName(change.field) }}</span>
+            <span class="axis-name">{{ fieldName(change.field) }}</span>
             {{ fieldValue(change.field, change.before, unit) }} → {{ fieldValue(change.field, change.after, unit) }}
           </span>
         </span>
@@ -122,7 +122,7 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
       </li>
     </ul>
     <template #footer>
-      <span class="hint">{{ unitName }} · degrees for rotation · at most 200 entries</span>
+      <span class="hint footer-note">{{ unitName }} · degrees for rotation · at most 200 entries</span>
       <button class="btn" type="button" @click="emit('close')">Close</button>
     </template>
   </ModalDialog>
@@ -130,10 +130,10 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
 
 <style scoped>
 p { margin: 0; line-height: 1.45; }
-.bar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.bar { display: flex; flex: none; align-items: center; gap: 12px; }
 .bar .btn { min-height: 44px; padding: 0 14px; font-size: 13px; }
 .storage { margin-left: auto; color: var(--warn); font-size: 12px; text-align: right; }
-.entries { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.entries { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .entry { display: grid; grid-template-columns: 9ch minmax(140px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .when { font-size: 13px; color: var(--text-dim); }
 .what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -142,9 +142,9 @@ p { margin: 0; line-height: 1.45; }
 .source.outside { color: var(--warn); }
 .values { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; }
 .change { white-space: nowrap; }
-.field { display: inline-block; min-width: 2ch; margin-right: 4px; color: var(--text-dim); font-family: inherit; }
+.axis-name { margin-right: 6px; color: var(--text-dim); font-family: inherit; font-size: 12px; }
 .restore { min-height: 44px; padding: 0 12px; font-size: 13px; }
-footer .hint, :deep(footer) .hint { margin-right: auto; font-size: 12px; }
+.footer-note { margin-right: auto; align-self: center; font-size: 12px; }
 .changes { width: 100%; border-collapse: collapse; }
 .changes th, .changes td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: right; }
 .changes th:first-child { text-align: left; }

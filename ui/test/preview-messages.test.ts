@@ -33,20 +33,34 @@ beforeEach(() => {
   vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
   vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
 })
-afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { wrapper?.unmount(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('preview messages', () => {
-  it('only calls a pending preview current when its context matches', async () => {
+  it('hides a brief recomputation and delays a current pending notice for one second', async () => {
+    vi.useFakeTimers()
+    if (panel.status === null || panel.preview === null) throw new Error('Missing fixture')
     wrapper = shallowMount(PathView)
-    expect(wrapper.get('.preview-banner').text()).toContain('Computing preview')
-    if (panel.status === null) throw new Error('Missing fixture')
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(500)
+    panel.preview = { ...panel.preview, state: 'ready' }
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+
+    panel.preview = { ...panel.preview, state: 'pending' }
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(wrapper.get('.preview-banner').text()).toBe('Computing preview')
+
     panel.status.preview_context += 1
     await nextTick()
-    expect(wrapper.get('.preview-banner').text()).toContain('Preview out of date')
-    expect(wrapper.get('.preview-banner').text()).not.toContain('Computing preview')
+    expect(wrapper.get('.preview-banner').text()).toBe('Preview out of date')
   })
 
   it('keeps the drawn path until the next preview for the same file', async () => {
+    vi.useFakeTimers()
     if (panel.status === null) throw new Error('Missing status')
     const context = panel.status.preview_context
     panel.preview = { type: 'preview', context, state: 'ready',
@@ -64,6 +78,8 @@ describe('preview messages', () => {
     panel.preview = { ...panel.preview, state: 'pending', error: null }
     await nextTick()
     expect(wrapper.classes()).toContain('outdated')
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1000)
     expect(wrapper.get('.preview-banner').text()).toContain('Computing preview')
     expect(wrapper.find('.banners .preview-banner').exists()).toBe(false)
 

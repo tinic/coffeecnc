@@ -4311,9 +4311,12 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
   if (const auto orphaned = NmlPort::connect(orphan_config, &rig.shared, &loads)) {
     Rig orphan{orphan_config, rig.hal, rig.shared, **orphaned, rig.reader, rig.view, rig.probe};
     check("breakpoint_orphan_allows_spindle_restore", orphan.pump_until(5s, [&] {
-      const auto state = orphan.status().controller;
-      return state.breakpoint_program && state.tool_in_spindle == 1;
+      const auto state = orphan.status();
+      return state.program_file == orphan_file.string() && state.controller.tool_in_spindle == 1;
     }));
+    const auto refused = orphan.send(R"("type":"run")");
+    check("breakpoint_orphan_still_blocks_run",
+          !refused.accepted() && refused.reason.find("breakpoint") != std::string::npos, refused.text());
     orphan.stop();
   } else {
     check("breakpoint_orphan_allows_spindle_restore", false, orphaned.error());

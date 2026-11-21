@@ -673,7 +673,9 @@ void source_preview_tools() {
           "table stays the preview's");
   const auto shown_tools = rig.loaded;
   rig.loaded.reset();
-  require(rig.step().preview_tools == accepted, "A failed read keeps the accepted raw table");
+  r = rig.step();
+  require(r.preview_tools == accepted && !r.tools_settled,
+          "A failed read retains the accepted data without confirming it");
   rig.loaded = shown_tools;
   r = rig.step();
   require(r.preview_tools == accepted && !r.tools_settled,

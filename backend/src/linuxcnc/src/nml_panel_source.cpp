@@ -318,7 +318,7 @@ auto NmlPanelSource::read() -> PanelReading {
   reading.tool_table = impl_->tool_table;
   reading.accepted_tools = impl_->withheld;
   reading.preview_tools = impl_->preview_tools;
-  reading.tools_settled = !impl_->pending_raw.has_value();
+  reading.tools_settled = !impl_->tools_failed && !impl_->pending_raw;
   reading.task_executing = status.task_executing;
   reading.commanded_position = status.commanded_position;
   if (status.controller.link == Link::live && status.task_abort &&

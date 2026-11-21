@@ -38,7 +38,7 @@ auto recent_path(std::string_view path) -> bool {
   return !path.empty() && path.size() <= 4096 && path.front() == '/' &&
          path.find('\0') == std::string_view::npos;
 }
-auto recent_path(const Json& path) -> bool {
+auto recent_json_path(const Json& path) -> bool {
   return path.is_string() && recent_path(std::string_view{path.get_ref<const std::string&>()});
 }
 auto theme_name(PanelTheme value) -> std::string_view {
@@ -126,7 +126,7 @@ auto read_document(const Json& value) -> OperatorPreferences {
   // Like the presentation, a damaged list is dropped without losing the other settings.
   if (const auto recent = value.find("recent_programs"); recent != value.end() && recent->is_array() &&
       recent->size() <= max_recent_programs &&
-      std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_path(path); }))
+      std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_json_path(path); }))
     for (const auto& path : *recent)
       document.recent_programs.push_back(path.get<std::string>());
   if (const auto error = operator_preferences_error(document); !error.empty())

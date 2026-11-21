@@ -18,6 +18,7 @@ import {
   pan,
   project,
   toolColour,
+  travelBounds,
   views,
   zoom,
   type Camera,
@@ -123,18 +124,7 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
 const toolOffset = computed((): Vec3 => panel.status?.offsets.tool ?? [0, 0, 0])
 
 /** Machine travel as the tool tip can reach it with the tool offset in effect. */
-const travelBox = unchanged((): { min: Vec3; max: Vec3 } | null => {
-  const axes = panel.status?.axes
-  const [x, y, z] = axes ?? []
-  if (x === undefined || y === undefined || z === undefined || x.max_limit <= x.min_limit) {
-    return null
-  }
-  const t = toolOffset.value
-  return {
-    min: [x.min_limit - t[0], y.min_limit - t[1], z.min_limit - t[2]],
-    max: [x.max_limit - t[0], y.max_limit - t[1], z.max_limit - t[2]],
-  }
-})
+const travelBox = unchanged(() => travelBounds(panel.status?.axes, toolOffset.value))
 
 const homingRequired = computed(() => requiresHoming(panel.hello))
 const toolTip = unchanged((): Vec3 | null => reportedToolTip(panel.status, homingRequired.value))
@@ -160,12 +150,15 @@ const workFrame = unchanged(() => {
   return { origin, angle, cos, sin }
 })
 
-/** How far the running program has come: the drawing's only use of the program's progress. */
+/**
+ * How far the running program has come: the drawing's only use of the program's progress. Only
+ * the motion line counts; the interpreter's current line reads ahead of what has been cut.
+ */
 const executed = unchanged(() => {
   const status = panel.status
   const running = current.value && live.value && status !== null && status.interp !== 'idle' && status.mode === 'auto'
   const motionLine = running ? status.program.motion_line : 0
-  return { running, motionLine, reached: running ? motionLine || status.program.current_line : 0 }
+  return { running, motionLine, reached: motionLine }
 })
 
 const tools = computed((): number[] => {
@@ -527,7 +520,7 @@ onBeforeUnmount(() => {
         :camera="camera" :width="size.width" :height="size.height"
         :tool="visibleTool" :probe-fixture="probeFixture" @error="modelError = $event"
       />
-      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
+      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @lostpointercapture="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
       <div v-if="toolPositionHint || modelError || (live && part.attachment && partBlock)" class="banners">
         <span v-if="toolPositionHint" class="warn">{{ toolPositionHint }}</span>
         <span v-if="modelError || (live && part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>

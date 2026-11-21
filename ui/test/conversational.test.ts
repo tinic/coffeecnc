@@ -163,10 +163,10 @@ G0 Z5
 
 G0 X2.8 Y0
 G1 Z0 F200
-G3 X2.8 Y0 Z-1 I-2.8 J0 F600
+G3 X2.8 Y0 Z-1 I-2.8 J0
 G3 X2.8 Y0 Z-2 I-2.8 J0
 (Flat bottom)
-G3 X2.8 Y0 I-2.8 J0
+G3 X2.8 Y0 I-2.8 J0 F600
 (Finish pass)
 G1 X3
 G3 X3 Y0 I-3 J0
@@ -192,10 +192,10 @@ G0 Z0.2
 
 G0 X1.0625 Y0.5
 G1 Z0 F8
-G3 X1.0625 Y0.5 Z-0.05 I-0.0625 J0 F24
+G3 X1.0625 Y0.5 Z-0.05 I-0.0625 J0
 G3 X1.0625 Y0.5 Z-0.1 I-0.0625 J0
 (Flat bottom)
-G3 X1.0625 Y0.5 I-0.0625 J0
+G3 X1.0625 Y0.5 I-0.0625 J0 F24
 G1 X1 Y0.5
 G0 Z0.2
 M5
@@ -369,6 +369,47 @@ describe('conversational programs', () => {
     const circle = holes({ ...mm, pattern: 'circle', x: 0, y: 0, columns: NaN, rows: NaN, spacingX: NaN, spacingY: NaN, count: 4, radius: 10,
       startAngle: 0, cycle: 'G81', peck: NaN, depth: 1, retract: 1 }).map(([x, y]) => [Math.round(x) + 0, Math.round(y) + 0])
     expect(circle).toEqual([[10, 0], [0, 10], [-10, 0], [0, -10]])
+  })
+})
+
+describe('material removal', () => {
+  /** Feed polylines of the deepest layer, as XY segments. */
+  function bottomPaths(generated: Generated): [number, number, number, number][] {
+    const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
+    const preview = previewProgram(newModal(tools), splitLines(text(generated)), false, 1)
+    const bottom = Math.min(...preview.segments.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 2)))
+    const lines: [number, number, number, number][] = []
+    for (const segment of preview.segments.filter((s) => s.kind === 'feed')) {
+      const p = segment.points
+      for (let i = 3; i < p.length; i += 3) {
+        if (Math.abs((p[i + 2] ?? NaN) - bottom) < 1e-6 && Math.abs((p[i - 1] ?? NaN) - bottom) < 1e-6)
+          lines.push([p[i - 3] ?? NaN, p[i - 2] ?? NaN, p[i] ?? NaN, p[i + 1] ?? NaN])
+      }
+    }
+    return lines
+  }
+  function distance(x: number, y: number, [ax, ay, bx, by]: [number, number, number, number]): number {
+    const dx = bx - ax
+    const dy = by - ay
+    const t = dx === 0 && dy === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+    return Math.hypot(x - ax - t * dx, y - ay - t * dy)
+  }
+
+  it.each([100, 90])('leaves nothing standing in a sharp-cornered pocket at a stepover of %i percent', (stepover) => {
+    // A 10 mm tool; the tool centre's path at the wall is 30 by 18 or 20, so one loop of stepover
+    // spacing separates the centre line from the wall.
+    const height = stepover === 100 ? 30 : 28
+    const paths = bottomPaths(rectangularPocket({ ...mm, x: 0, y: 0, width: 40, height, cornerRadius: 0, stepover,
+      depth: 1, depthPerPass: 1, plungeFeed: 200 }))
+    const a = 15
+    const b = height / 2 - 5
+    const uncut: string[] = []
+    for (let x = -a; x <= a; x += 0.1) {
+      for (let y = -b; y <= b; y += 0.1) {
+        if (!paths.some((path) => distance(x, y, path) <= 5 + 1e-6)) uncut.push(`${x.toFixed(1)},${y.toFixed(1)}`)
+      }
+    }
+    expect(uncut).toEqual([])
   })
 })
 

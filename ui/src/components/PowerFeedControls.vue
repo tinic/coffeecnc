@@ -12,6 +12,7 @@ import { computed, ref, shallowRef, watch } from 'vue'
 
 import { useCardFeedback } from '../card-feedback'
 import { mdiBlock, panel, send } from '../machine'
+import { axisJogVelocity } from '../machine-capabilities'
 import { limitMarginMm, powerFeedPlan, type PowerFeedPlan } from '../manual-moves'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
@@ -71,7 +72,8 @@ const block = computed(() => mdiBlock.value ?? probeBlock.value)
 function plan(axis: AxisLetter, direction: -1 | 1): ReturnType<typeof powerFeedPlan> {
   return powerFeedPlan(
     { status: panel.status, machineBlock: mdiBlock.value, probeLoaded: touchProbeLoaded.value },
-    { axis, direction, feed: powerFeed.feed, maxFeed: maxFeed.value,
+    // [AXIS_*] MAX_VELOCITY limits a feed move as much as a jog.
+    { axis, direction, feed: powerFeed.feed, maxFeed: axisJogVelocity(panel.hello, axis, maxFeed.value),
       extent: powerFeed.extent === 'limit' ? { kind: 'limit' } : { kind: 'distance', distance: powerFeed.distance } },
   )
 }

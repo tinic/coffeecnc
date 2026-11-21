@@ -238,6 +238,7 @@ export class SimProbe {
         } else {
           tool.length = value
           modal.toolOffset = [0, 0, value]
+          modal.lengthTool = tool.number
         }
         this.measured.set(tool.number, tool.length)
         return { calibration: this.calibration, measurement }

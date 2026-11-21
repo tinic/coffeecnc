@@ -57,6 +57,9 @@ struct ControllerState {
   LengthUnit program_units{LengthUnit::mm};
   std::string program_file;
   bool spindle_active{};
+  double air_z{}; // selected lift, millimetres
+  bool air_offset_owned{};
+  bool air_offset_recovery{};
 };
 
 struct Limits {
@@ -121,6 +124,10 @@ struct Run {
   std::optional<std::uint64_t> preview_context{};
   std::optional<LengthUnit> display_units{};
   bool confirmed{};
+  double air_z{};
+};
+struct SetAirCut {
+  double air_z{}; // zero selects a normal run
 };
 struct PlanRestart {
   int line{};
@@ -181,12 +188,12 @@ struct ToolChanged {};
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
 
-using Command =
-    std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
-                 Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle, SetCoolant,
-                 SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
-                 ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
-                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart>;
+using Command = std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory,
+                             OpenProgram, Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle,
+                             SetCoolant, SetProgramOption, SelectWcs, TouchOff, ToolTouchOff,
+                             SetTool, RemoveTool, ToolChanged, SetToolModelDefaults,
+                             SetToolModelAssignment, Quit, SetOperatorSettings, SetWorkOffset,
+                             FixedSetterRequest, PlanRestart, StartRestart, SetAirCut>;
 
 struct Decision {
   bool allowed{};

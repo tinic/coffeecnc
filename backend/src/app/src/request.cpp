@@ -195,7 +195,7 @@ auto command(const Json& object) -> Command {
     return OpenProgram{string(object, "path")};
   }
   if (type == "run") {
-    fields(object, {"id", "type"}, {"preview_context", "display_units", "confirmed"});
+    fields(object, {"id", "type"}, {"preview_context", "display_units", "confirmed", "air_z"});
     Run run;
     if (object.contains("preview_context"))
       run.preview_context = positive_id(object, "preview_context");
@@ -204,9 +204,15 @@ auto command(const Json& object) -> Command {
                                              {{"mm", LengthUnit::mm}, {"inch", LengthUnit::inch}});
     if (object.contains("confirmed"))
       run.confirmed = boolean(object, "confirmed");
-    if (run.confirmed && (!run.preview_context || !run.display_units))
+    if (object.contains("air_z"))
+      run.air_z = number(object, "air_z");
+    if ((run.confirmed || run.air_z != 0) && (!run.preview_context || !run.display_units))
       throw InvalidRequest("Confirmation needs the reviewed preview and display units.");
     return run;
+  }
+  if (type == "set_air_cut") {
+    fields(object, {"id", "type", "air_z"});
+    return SetAirCut{number(object, "air_z")};
   }
   if (type == "plan_restart") {
     fields(object, {"id", "type", "line", "preview_context"});

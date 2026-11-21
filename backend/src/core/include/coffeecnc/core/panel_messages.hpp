@@ -132,6 +132,8 @@ struct ProgramStatus {
   bool optional_stop{};
   bool block_delete{};
   std::optional<RestartHint> restart_hint{};
+  double air_z{};
+  bool air_offset_owned{};
   friend auto operator==(const ProgramStatus&, const ProgramStatus&) -> bool = default;
 };
 

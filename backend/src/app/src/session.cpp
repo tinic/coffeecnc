@@ -870,9 +870,15 @@ auto Session::check_program_start(const Queued& request, const Run& command,
   if (!check.preview || !check.source.inputs ||
       check.source.inputs->program_file != state.program_file)
     return "Wait for the program check to finish.";
+  if (command.air_z != check.source.inputs->air_z)
+    return "Wait for the preview of the selected air-cut lift.";
   if (command.preview_context && *command.preview_context != check.preview->context)
     return "The program check changed. Review the current results.";
   const auto& report = check.preview->check;
+  if (command.air_z != 0 &&
+      (!check.files_changed || !report || check.preview->state != PreviewState::ready))
+    return report && !report->errors.empty() ? report->errors.front()
+                                             : "Air cut needs a complete raised preview.";
   if (report && !report->errors.empty())
     return report->errors.front();
   const bool units_mismatch =
@@ -1116,6 +1122,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             };
             return port_.run_checked(*verified->source.inputs, current, still);
           });
+        } else if constexpr (std::is_same_v<T, SetAirCut>) {
+          return act(request, [&](const Wanted&) { return port_.set_air_cut(c.air_z); });
         } else if constexpr (std::is_same_v<T, PlanRestart>) {
           return plan_restart(request, c, state);
         } else if constexpr (std::is_same_v<T, StartRestart>) {

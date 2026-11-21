@@ -29,11 +29,11 @@ struct InterpreterStart {
   // Settings the codes do not carry: the F and S words in effect.
   double feed{};
   double spindle_speed{};
+  // Identity of the interpreter's parameter file contents (numbered and named parameters).
+  std::uint64_t parameters_revision{};
   SpindleDirection spindle_direction{SpindleDirection::stopped};
   bool flood{};
   bool mist{};
-  // Identity of the interpreter's parameter file contents (numbered and named parameters).
-  std::uint64_t parameters_revision{};
   friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
 };
 

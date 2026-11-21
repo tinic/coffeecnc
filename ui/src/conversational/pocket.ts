@@ -127,7 +127,10 @@ export function rectangularPocket(c: RectangularPocket): Generated {
   const b = c.height / 2 - d / 2
   const r = Math.max(c.cornerRadius - d / 2, 0)
   const inner = Math.min(a, b)
-  const rings = steps(inner, (d * c.stepover) / 100)
+  // Beyond a sharp corner of one loop the next loop out reaches the corner's diagonal only when
+  // it is at most (1 + 1/√2)/2 of the tool diameter away; further apart, a pillar stays there.
+  const spacing = (d * c.stepover) / 100
+  const rings = steps(inner, r < inner ? Math.min(spacing, (d * (1 + Math.SQRT1_2)) / 2) : spacing)
   const p = new Program(c)
   p.start('Rectangular pocket', [
     `Size X ${p.n(c.width)} by Y ${p.n(c.height)}, corner radius ${p.n(Math.max(c.cornerRadius, d / 2))}, centre X${p.n(c.x)} Y${p.n(c.y)}`,

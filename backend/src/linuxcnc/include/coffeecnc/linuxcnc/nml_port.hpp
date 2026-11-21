@@ -18,6 +18,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -81,9 +82,15 @@ struct NmlStatus {
 // What LinuxCNC has loaded at this port's request, counted at the moment LinuxCNC accepted it.
 // The publisher reads the counts: a load of the same file again is a load. Thread-safe.
 struct BreakpointSource {
+  BreakpointSource(std::string original_file, std::string temporary_file, int source_line,
+                   std::string receipt_id, bool received = false)
+      : original(std::move(original_file)), temporary(std::move(temporary_file)), line(source_line),
+        receipt(std::move(receipt_id)), marker_seen(received) {}
   std::string original;
   std::string temporary;
   int line{};
+  std::string receipt;
+  mutable std::atomic<bool> marker_seen{};
 };
 
 struct NmlLoads {

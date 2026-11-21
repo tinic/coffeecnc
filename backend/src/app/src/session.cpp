@@ -890,9 +890,21 @@ auto Session::check_program_start(const Queued& request, const Run& command,
         check.preview->state != PreviewState::ready)
       return "A breakpoint needs a complete program check.";
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
-          return segment.line == *command.breakpoint;
+          return segment.line == command.breakpoint->line;
         }))
       return "Choose a motion line in the current program preview.";
+    // Bind the operator's picked text to the checked bytes, including when a program on disk
+    // was replaced after the panel loaded its text.
+    std::string_view remaining = *check.source.program_snapshot;
+    for (int line = 1; line < command.breakpoint->line && !remaining.empty(); ++line) {
+      const auto end = remaining.find('\n');
+      remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+    }
+    auto selected = remaining.substr(0, remaining.find('\n'));
+    if (selected.ends_with('\r'))
+      selected.remove_suffix(1);
+    if (selected.empty() || selected != command.breakpoint->text)
+      return "The selected program line changed. Reopen the program and choose the line again.";
   }
   if (command.air_z != 0 && !command.confirmed)
     return "Review the raised preview before starting the air cut.";
@@ -1152,7 +1164,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             };
             if (c.breakpoint)
               return port_.run_to_breakpoint(*verified->source.inputs,
-                                             *verified->source.program_snapshot, *c.breakpoint,
+                                             *verified->source.program_snapshot, c.breakpoint->line,
                                              current, still);
             return port_.run_checked(*verified->source.inputs, current, still);
           });

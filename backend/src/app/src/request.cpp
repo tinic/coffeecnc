@@ -208,10 +208,12 @@ auto command(const Json& object) -> Command {
     if (object.contains("air_z"))
       run.air_z = number(object, "air_z");
     if (object.contains("breakpoint")) {
-      const auto line = integer(object, "breakpoint");
+      const auto& breakpoint = field(object, "breakpoint");
+      fields(breakpoint, {"line", "text"});
+      const auto line = integer(breakpoint, "line");
       if (line < 1)
         throw InvalidRequest("A breakpoint requires a positive program line.");
-      run.breakpoint = line;
+      run.breakpoint = BreakpointRequest{line, string(breakpoint, "text")};
     }
     if ((run.confirmed || run.air_z != 0 || run.breakpoint) &&
         (!run.preview_context || !run.display_units))

@@ -90,7 +90,9 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
   return error == std::errc{} && parsed == end && tool >= 0 ? std::optional{tool} : std::nullopt;
 }
 
-auto with_breakpoint(std::string_view program, int target)
+constexpr std::string_view breakpoint_message = "CoffeeCNC breakpoint ";
+
+auto with_breakpoint(std::string_view program, int target, std::string_view receipt)
     -> std::expected<std::string, std::string> {
   std::size_t insertion = std::string_view::npos;
   auto remaining = program;
@@ -107,7 +109,9 @@ auto with_breakpoint(std::string_view program, int target)
     return std::unexpected("Choose a motion block in the loaded program.");
   // The copy preserves the original words, comments and line endings on every source line.
   std::string copied{program};
-  copied.insert(insertion, "M0 (CoffeeCNC breakpoint)\n");
+  // LinuxCNC tags M0 with the previous motion line. This queued message is delivered after
+  // prior motion and I/O settle and immediately before that block's unconditional pause.
+  copied.insert(insertion, std::format("M0 (MSG,{}{})\n", breakpoint_message, receipt));
   return copied;
 }
 
@@ -116,20 +120,19 @@ auto load_breakpoint(const std::filesystem::path& record, const std::filesystem:
   const auto text = read_text_file(record.string(), 512);
   if (!text)
     return {};
-  const auto split = text->find('\n');
-  if (split == std::string::npos)
-    return {};
+  std::istringstream fields{*text};
   int line{};
-  const auto* end = text->data() + split;
-  const auto [rest, error] = std::from_chars(text->data(), end, line);
-  auto original = std::string_view(*text).substr(split + 1);
-  if (original.ends_with('\n'))
-    original.remove_suffix(1);
-  if (error != std::errc{} || rest != end || line <= 0 || !original.starts_with('/') ||
-      original.size() > 254 || original == copy.string() ||
+  std::string receipt;
+  bool received{};
+  std::string original;
+  if (!(fields >> line >> receipt >> received) || !std::getline(fields >> std::ws, original) ||
+      line <= 0 || !original.starts_with('/') || original.size() > 254 ||
+      original == copy.string() ||
+      !std::ranges::all_of(receipt, [](char c) { return c >= '0' && c <= '9'; }) ||
       std::ranges::any_of(original, [](unsigned char c) { return c < 32 || c == 127; }))
     return {};
-  return std::make_shared<const BreakpointSource>(std::string(original), copy.string(), line);
+  return std::make_shared<const BreakpointSource>(std::move(original), copy.string(), line,
+                                                  std::move(receipt), received);
 }
 
 using Clock = std::chrono::steady_clock;
@@ -312,6 +315,7 @@ struct NmlPort::Impl {
   std::shared_ptr<const BreakpointSource> breakpoint;
   Clock::time_point breakpoint_retry{};
   bool breakpoint_reported{};
+  bool breakpoint_recovered{};
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -326,6 +330,7 @@ struct NmlPort::Impl {
     breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
     breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
+    breakpoint_recovered = bool(breakpoint);
     std::error_code error;
     if (std::filesystem::exists(air_marker, error)) {
       if (const auto text = read_text_file(air_marker.string(), 64)) {
@@ -356,10 +361,18 @@ struct NmlPort::Impl {
   void discard_breakpoint() {
     // Keep the last mapping published while the publisher's mailbox catches up to the reopen.
     breakpoint.reset();
+    breakpoint_recovered = false;
     breakpoint_reported = false;
     std::error_code unused;
     std::filesystem::remove(breakpoint_record, unused);
     std::filesystem::remove(breakpoint_copy, unused);
+  }
+
+  [[nodiscard]] auto save_breakpoint() const -> bool {
+    return write_sidecar(breakpoint_record,
+                         std::format("{} {} {}\n{}\n", breakpoint->line, breakpoint->receipt,
+                                     static_cast<int>(breakpoint->marker_seen.load()),
+                                     breakpoint->original));
   }
 
   [[nodiscard]] auto stat() -> const EMC_STAT* {
@@ -382,7 +395,14 @@ struct NmlPort::Impl {
   }
 
   void add(bool error, std::span<const char> field) {
-    if (auto text = text_of(field); !text.empty())
+    auto text = text_of(field);
+    if (!error && breakpoint && text.starts_with(breakpoint_message) &&
+        std::string_view(text).substr(breakpoint_message.size()) == breakpoint->receipt) {
+      if (!breakpoint->marker_seen.exchange(true) && !save_breakpoint())
+        messages.push_back({true, "Could not save the breakpoint pause for app recovery."});
+      return;
+    }
+    if (!text.empty())
       messages.push_back({error, std::move(text)});
   }
 
@@ -1932,21 +1952,20 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program ||
       impl_->air_z != 0 || impl_->owns_air_offset())
     return failed("The breakpoint needs the original program and no air-cut offset.");
-  const auto copy = with_breakpoint(program, line);
+  const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
+  const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
     return failed(copy.error());
   if (!current())
     return failed("The program or tool data changed. Review the new program check.");
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
     return failed(reason);
-  const auto record = std::format("{}\n{}\n", line, *inputs.program_file);
-  if (!write_sidecar(impl_->breakpoint_record, record) ||
-      !write_sidecar(impl_->breakpoint_copy, *copy)) {
+  impl_->breakpoint = std::make_shared<const BreakpointSource>(
+      *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
+  if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
     impl_->discard_breakpoint();
     return failed("Could not save the temporary breakpoint program.");
   }
-  impl_->breakpoint = std::make_shared<const BreakpointSource>(
-      *inputs.program_file, impl_->breakpoint_copy.string(), line);
   if (impl_->loads)
     impl_->loads->breakpoint.store(impl_->breakpoint);
   return start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
@@ -2441,6 +2460,25 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
 }
 
 auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
+  if (!impl_->breakpoint && status().controller.breakpoint_program)
+    return failed("The breakpoint source is unavailable. Stop and reopen the original program.");
+  if (impl_->breakpoint_recovered && impl_->breakpoint && status().controller.breakpoint_program) {
+    // After an app restart the panel loaded the source again. It must still agree with the
+    // execution copy before the operator can resume a recovered pause.
+    constexpr std::size_t limit = (std::size_t{16} << 20) + 256;
+    const auto original = read_text_file(impl_->breakpoint->original, limit);
+    const auto saved = read_text_file(impl_->breakpoint->temporary, limit);
+    const auto matches = [&] {
+      if (!original || !saved)
+        return false;
+      const auto expected =
+          with_breakpoint(*original, impl_->breakpoint->line, impl_->breakpoint->receipt);
+      return expected && *expected == *saved;
+    };
+    if (!matches())
+      return failed("The original program changed. Stop and reopen it before running again.");
+    impl_->breakpoint_recovered = false;
+  }
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -2448,8 +2486,13 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_RESUME message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
-  return impl_->settled(from, "LinuxCNC did not resume.",
-                        [](const EMC_STAT& now) -> bool { return now.task.task_paused == 0; });
+  auto resumed = impl_->settled(from, "LinuxCNC did not resume.", [](const EMC_STAT& now) -> bool {
+    return now.task.task_paused == 0;
+  });
+  if (accepted(resumed) && impl_->breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
+      !impl_->save_breakpoint())
+    impl_->messages.push_back({true, "Could not save that the breakpoint has resumed."});
+  return resumed;
 }
 
 auto NmlPort::step(const Wanted& wanted) -> ActionResult {

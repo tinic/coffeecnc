@@ -4237,10 +4237,10 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
           outcome.error ? outcome.error->text : "");
     return text;
   };
-  const auto start = [&](int line, std::uint64_t reviewed) {
-    return rig.send(
-        std::format(R"("type":"run","preview_context":{},"display_units":"mm","breakpoint":{})",
-                    reviewed, line));
+  const auto start = [&](int line, std::uint64_t reviewed, std::string_view expected) {
+    return rig.send(std::format(
+        R"("type":"run","preview_context":{},"display_units":"mm","breakpoint":{{"line":{},"text":{}}})",
+        reviewed, line, Json(expected).dump()));
   };
   const auto at_breakpoint = [&](int line) {
     const auto status = oracle.source.read().status;
@@ -4250,13 +4250,14 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
 
   const auto contents = load("S650 M3\nG0 Z20\nG0 X8 Y4\nG1 Z2 F900\nG1 X11 F1200\n");
   const auto revision = oracle.source.read().status.program.revision;
-  const auto stale = start(5, context + 1);
-  const auto nonmotion = start(2, context);
+  const auto stale = start(5, context + 1, "G1 Z2 F900");
+  const auto nonmotion = start(2, context, "S650 M3");
+  const auto wrong_text = start(5, context, "G1 Z3 F900");
   check("breakpoint_rejects_stale_and_nonmotion_lines",
         stale.outcome == "rejected" && nonmotion.outcome == "rejected" &&
-            !std::filesystem::exists(copy),
-        stale.text() + " " + nonmotion.text());
-  const auto started = start(5, context);
+            wrong_text.outcome == "rejected" && !std::filesystem::exists(copy),
+        stale.text() + " " + nonmotion.text() + " " + wrong_text.text());
+  const auto started = start(5, context, "G1 Z2 F900");
   const bool reached = rig.pump_until(5s, [&] { return at_breakpoint(5); });
   const auto raw = rig.status();
   const auto panel = oracle.source.read().status;
@@ -4277,7 +4278,7 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
   }) && read_text_file(oracle.program, 4096).value_or("") == contents);
 
   static_cast<void>(load("M0\nG0 Z15\nG1 Z4 F900\n"));
-  const auto second = start(4, context);
+  const auto second = start(4, context, "G1 Z4 F900");
   const bool earlier = rig.pump_until(4s, [&] {
     const auto s = oracle.source.read().status;
     return s.interp == InterpState::paused && s.program.breakpoint &&

@@ -82,8 +82,11 @@ describe('touching the coordinate readout', () => {
     expect(wrapper.get('.tool-length').text()).toContain('0.0000 in')
     panel.link = 'stale'; await nextTick()
     expect(wrapper.get('.active-tool').text()).toContain('Last reported tool')
-    panel.tab = 'program'; await nextTick()
-    expect(wrapper.find('.active-tool').exists()).toBe(false)
+    // turo: the tool stays on the right of the coordinates on every tab.
+    for (const tab of ['program', 'tools'] as const) {
+      panel.tab = tab; await nextTick()
+      expect(wrapper.find('.active-tool').exists()).toBe(true)
+    }
   })
   it.each(['mm', 'inch'] as const)('confirms mixed-unit formulas as millimeters from a %s readout', async (unit) => {
     panel.unit = unit; await nextTick()

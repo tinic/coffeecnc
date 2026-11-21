@@ -148,6 +148,30 @@ describe('capability-aware controls', () => {
     expect(lift.attributes('disabled')).toBeDefined()
     expect(wrapper.get('.main-action').attributes('disabled')).toBeDefined()
   })
+  it('requires a fresh confirmation before stopping a running spindle to lift Z', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.tab = 'program'
+    panel.status.mode = 'auto'
+    panel.status.interp = 'paused'
+    panel.status.wait = { kind: 'paused' }
+    panel.status.spindle.direction = 'forward'
+    panel.status.spindle.commanded_rpm = 650
+    panel.status.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Stop spindle', spindle: 'can_stop' }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    const lift = wrapper.get('button[aria-label="Lift paused Z"]')
+    await lift.trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Stop the spindle to lift Z?')
+    expect(send).not.toHaveBeenCalled()
+    panel.status.program.current_line += 1
+    await nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await lift.trigger('click')
+    const buttons = wrapper.get('[role="dialog"]').findAll('button')
+    const confirm = buttons.find((button) => button.text() === 'Stop spindle & lift')
+    if (!confirm) throw new Error('Missing spindle confirmation')
+    await confirm.trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'jog_paused_z', distance: 1, stop_spindle: true })
+  })
   it('labels the verified return and explains an offset left after Stop', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.tab = 'program'

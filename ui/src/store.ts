@@ -440,9 +440,10 @@ export function createPanel(options: PanelOptions): Panel {
       const id = nextId
       nextId += 1
       const pausedZMove = command.type === 'jog_paused_z' ||
-        command.type === 'resume' && state.status?.paused_z?.displaced === true
+        command.type === 'resume' && (state.status?.paused_z?.displaced === true ||
+          state.status?.paused_z?.spindle === 'restore')
       const timeout = command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 125_000 : answerTimeoutMs
+        ? 1_600_000 : pausedZMove ? 160_000 : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })

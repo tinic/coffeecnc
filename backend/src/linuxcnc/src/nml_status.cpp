@@ -169,18 +169,19 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       out.paused_z_still = out.paused_z_still &&
                            std::abs(motion.joint[i].velocity * mm) < rest_mm_s &&
                            std::abs(motion.axis[i].velocity * mm) < rest_mm_s;
-    const auto& offset = motion.eoffset_pose;
-    const double z_mm = offset.tran.z * mm;
+    // LinuxCNC 2.9's NML motion status does not serialize the external-offset pose.
+    // Read applied offset from HAL; the NML axis position independently checks the move.
     if (view && view->paused_z) {
-      out.paused_z_feedback = view->paused_z;
-      out.paused_z_feedback->offset *= mm;
+      const double offset = view->paused_z->offset * mm;
+      if (std::isfinite(offset))
+        out.paused_z_feedback =
+            PausedZInputs{offset, view->paused_z->active, view->paused_z->limited};
     }
     const auto& feedback = out.paused_z_feedback;
-    // LinuxCNC's offset planner stops within its servo-cycle tolerance of its command.
+    const double z_mm = feedback ? feedback->offset : 0;
     const double tolerance = limits->count_mm / 2;
-    const bool displaced =
-        motion.external_offsets_applied || !std::isfinite(z_mm) || std::abs(z_mm) > tolerance ||
-        (feedback && (feedback->active || std::abs(feedback->offset) > tolerance));
+    // The planner can finish within its servo-cycle tolerance of zero.
+    const bool displaced = feedback && (feedback->active || std::abs(z_mm) > tolerance);
     const auto blocked = [&]() -> std::string {
       if (link != Link::live || c.machine != MachineState::on || !motion.traj.enabled ||
           c.mode != TaskMode::automatic || c.interp != InterpState::paused || !out.paused)
@@ -198,14 +199,12 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       if (feedback->limited || motion.on_soft_limit ||
           std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
         return "A travel limit blocks paused Z motion.";
-      if (!std::isfinite(z_mm) || !std::isfinite(feedback->offset) ||
-          z_mm < -limits->count_mm / 2 || z_mm > limits->lift_mm + limits->count_mm / 2 ||
-          offset.tran.x != 0 || offset.tran.y != 0)
+      if (z_mm < -tolerance || z_mm > limits->lift_mm + tolerance)
         return "The active external offset is outside the paused Z range.";
       return {};
     };
     out.paused_z_interlock = blocked();
-    c.paused_z = PausedZStatus{std::isfinite(z_mm) ? z_mm : 0, limits->lift_mm, displaced,
+    c.paused_z = PausedZStatus{z_mm, limits->lift_mm, displaced, feedback.has_value(),
                                out.paused_z_interlock};
     if (c.paused_z->reason.empty() && !out.paused_z_still)
       c.paused_z->reason = "Wait for the axes to stop.";

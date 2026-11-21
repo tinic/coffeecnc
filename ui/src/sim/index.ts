@@ -44,7 +44,7 @@ export function createSimulator(parameters: URLSearchParams): Transport {
         started = true
         const scene = parameters.get('scene')
         if (scene !== null) {
-          applyScene(machine, scene)
+          applyScene(machine, scene, parameters.get('setup') ?? 'top')
         }
         machine.handle(message)
         const wanted = parseFault(parameters.get('fault'))

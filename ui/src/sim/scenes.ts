@@ -16,10 +16,12 @@
 //   error          upstream sample started; the interpreter error stopped it
 //   limit          program stopped by a soft limit
 //   stale          as running, then the link goes silent
+//   probe          T99 above simulated stock, or pre-positioned by the setup parameter
 
 import type { Status, ToMachine } from '../protocol'
 import { programDirectory, samplesDirectory } from './files'
 import type { SimMachine } from './machine'
+import { demoProbe, probeSceneStart } from './probe'
 
 export const sceneNames = [
   'estop',
@@ -37,6 +39,7 @@ export const sceneNames = [
   'error',
   'limit',
   'stale',
+  'probe',
 ] as const
 
 export type SceneName = (typeof sceneNames)[number]
@@ -97,7 +100,7 @@ class Director {
   }
 }
 
-export function applyScene(sim: SimMachine, name: string): void {
+export function applyScene(sim: SimMachine, name: string, setup = 'top'): void {
   const scene = sceneNames.find((known) => known === name)
   if (scene === undefined) {
     console.warn(`unknown scene "${name}"; known: ${sceneNames.join(', ')}`)
@@ -180,6 +183,28 @@ export function applyScene(sim: SimMachine, name: string): void {
       sim.advance(40)
       d.idle()
       break
+    case 'probe': {
+      sim.enableProbing()
+      d.homed()
+      const start = probeSceneStart(setup)
+      sim.modal.offsets[0] = [110, 70, start.origin]
+      const load = (tool: number, [x, y, z]: typeof start.position): void => {
+        d.send({ type: 'mdi', text: `T${String(tool)} M6` })
+        d.idle()
+        d.send({ type: 'mdi', text: 'G43' })
+        d.idle()
+        d.send({ type: 'mdi', text: `G53 G0 X${String(x)} Y${String(y)} Z${String(z)}` })
+        d.idle()
+      }
+      if (start.tool !== demoProbe) {
+        const [x, y, z] = probeSceneStart('setter').position
+        load(demoProbe, [x, y, z])
+        d.send({ type: 'fixed_setter', action: 'touch_off', tool: demoProbe, x, y, z })
+        d.idle()
+      }
+      load(start.tool, start.position)
+      break
+    }
   }
   sim.quiet = false
 }

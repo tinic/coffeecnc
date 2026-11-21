@@ -45,6 +45,9 @@ export function start(): void {
   const tab = tabs.find((candidate) => candidate === parameters.get('tab'))
   if (tab !== undefined) {
     panel.tab = tab
+  } else if (panel.simulated && parameters.get('scene') === 'probe') {
+    const setup = parameters.get('setup')
+    panel.tab = setup === 'setter' || setup === 'measure' ? 'tools' : 'probe'
   } else {
     // Choose once from the first controller snapshot; never move the operator's workspace
     // when later status updates arrive. An explicit URL workspace always wins.

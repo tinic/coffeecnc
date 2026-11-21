@@ -311,8 +311,15 @@ auto command(const Json& object) -> Command {
                                               {"ball", SetterAction::ball},
                                               {"bore", SetterAction::bore},
                                               {"boss", SetterAction::boss},
-                                              {"angle", SetterAction::angle}});
+                                              {"angle", SetterAction::angle},
+                                              {"apply_angle", SetterAction::apply_angle}});
     FixedSetterRequest request{action};
+    if (action == SetterAction::apply_angle) {
+      fields(object, {"id", "type", "action", "tool", "measurement_id"});
+      request.tool = integer(object, "tool");
+      request.edge_measurement = positive_id(object, "measurement_id");
+      return request;
+    }
     if (action != SetterAction::status) {
       if (action == SetterAction::material) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"});

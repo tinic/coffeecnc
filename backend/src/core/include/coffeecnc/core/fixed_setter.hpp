@@ -20,7 +20,17 @@ struct FixedSetterLimits {
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
-enum class SetterAction : std::uint8_t { status, touch_off, material, corner, ball, bore, boss, angle };
+enum class SetterAction : std::uint8_t {
+  status,
+  touch_off,
+  material,
+  corner,
+  ball,
+  bore,
+  boss,
+  angle,
+  apply_angle
+};
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
 struct FixedSetterRequest {
@@ -34,6 +44,7 @@ struct FixedSetterRequest {
   // For a ball calibration, the width in X of the gauge the probe starts over; for a boss, its
   // approximate diameter; for an edge angle, how far apart along the edge it probes. Millimetres.
   double gauge_width_mm{};
+  std::uint64_t edge_measurement{}; // controller-issued ID for apply_angle
 };
 
 struct SetterEpoch {
@@ -72,6 +83,12 @@ struct SetterState {
   // After an edge angle: how far the edge turns from the machine axis, degrees, counterclockwise
   // seen from above.
   std::optional<double> edge_angle_deg{};
+  struct EdgeRotation {
+    std::uint64_t id;
+    int wcs;
+  };
+  // Present on a measurement that can be confirmed as a G5x rotation.
+  std::optional<EdgeRotation> edge_rotation{};
 };
 
 } // namespace coffeecnc

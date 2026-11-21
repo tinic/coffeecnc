@@ -268,6 +268,15 @@ struct NmlPort::Impl {
   };
 
   std::optional<Calibration> setter_calibration;
+  struct EdgeMeasurement {
+    std::uint64_t id;
+    WorkFrame frame;
+    SetterEpoch epoch;
+    std::array<double, 3> tool_offset;
+    double degrees;
+  };
+  std::optional<EdgeMeasurement> edge_measurement;
+  std::uint64_t next_edge_measurement{};
 
   MachineConfig config;
   HalShared* hal{};
@@ -1634,6 +1643,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!limits || impl_->hal == nullptr)
     return std::unexpected("The fixed setter is unavailable.");
 
+  const bool apply_angle = request.action == SetterAction::apply_angle;
+  if (!apply_angle && request.action != SetterAction::status)
+    impl_->edge_measurement.reset();
   auto& calibration = impl_->setter_calibration;
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
@@ -1701,8 +1713,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool bore = request.action == SetterAction::bore;
   const bool boss = request.action == SetterAction::boss;
   const bool angle = request.action == SetterAction::angle;
-  const bool material =
-      request.action == SetterAction::material || corner || ball || bore || boss || angle;
+  const bool material = request.action == SetterAction::material || corner || ball || bore ||
+                        boss || angle || apply_angle;
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1728,6 +1740,53 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         return false;
     return true;
   };
+  if (apply_angle) {
+    const auto& saved = impl_->edge_measurement;
+    if (!saved || saved->id != request.edge_measurement)
+      return std::unexpected("Measure the edge again before applying rotation.");
+    const auto measurement = *std::exchange(impl_->edge_measurement, std::nullopt);
+    if (before.controller.mode != TaskMode::mdi || measurement.epoch != epoch ||
+        measurement.frame != frame || measurement.tool_offset != before.tool_offset)
+      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto* current = impl_->stat();
+    if (!current || impl_->status.link() != Link::live || !impl_->still())
+      return std::unexpected("Rotation was cancelled before writing the work system.");
+    const auto applying = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, applying) || applying.controller.mode != TaskMode::mdi ||
+        applying.controller.tool_in_spindle != tool || frame_of(applying) != frame ||
+        applying.tool_offset != measurement.tool_offset)
+      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+    EMC_TASK_PLAN_EXECUTE rotate;
+    if (!put(rotate.command, std::format("G10 L2 P{} R{:.8f}", frame.wcs, measurement.degrees)))
+      return std::unexpected("Could not build the work rotation command.");
+    if (auto done = impl_->run(rotate, from); !accepted(done))
+      return std::unexpected(done.reason);
+    if (impl_->loads)
+      ++impl_->loads->mdi_blocks;
+    const auto verified = until(settle_timeout, [&] {
+      const auto* current = impl_->stat();
+      if (!current || impl_->status.link() != Link::live)
+        return false;
+      const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+      return ready(*current, after) && after.wcs == frame.wcs && after.g5x == frame.g5x &&
+             after.g92 == frame.g92 && after.tool_offset == measurement.tool_offset &&
+             std::abs(after.rotation_xy - measurement.degrees) < 1e-6 &&
+             std::ranges::equal(
+                 after.controller.axes, before.controller.axes,
+                 [](const AxisState& axis, const AxisState& original) {
+                   return std::abs(axis.machine - original.machine) < 0.01;
+                 });
+    });
+    if (!verified)
+      return std::unexpected(
+          "Could not verify the applied rotation. Check the active work system.");
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks)};
+    state.edge_angle_deg = measurement.degrees;
+    return state;
+  }
   if (before.controller.mode != TaskMode::mdi || !at_start(before, request.start))
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   // Before the setter is taught, any tool with a valid saved length teaches it like the
@@ -1810,6 +1869,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("An edge angle needs an X or Y edge.");
     if (before.rotation_xy != 0)
       return std::unexpected("Edge angles are measured in a work system without rotation.");
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
     const double spacing = request.gauge_width_mm;
     if (!(std::abs(spacing) >= 5 && std::abs(spacing) <= 300))
       return std::unexpected("Enter how far apart to probe along the edge, 5 to 300 mm.");
@@ -1846,7 +1907,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     // The face moves across by `across` while the probe moves `spacing` along it.
     const double across = (*second)[line.axis] - (*first)[line.axis];
     const double run = (*second)[along] - (*first)[along];
-    const double degrees = (line.axis == 0 ? -1.0 : 1.0) * std::atan2(across, run) * 180 / std::numbers::pi;
+    if (!std::isfinite(run) || std::abs(run - spacing) > position_tolerance)
+      return std::unexpected("The two contact points did not reach the requested spacing.");
+    // An edge is a line, so measuring it in reverse gives the same orientation.
+    const double degrees =
+        (line.axis == 0 ? -1.0 : 1.0) * std::atan(across / run) * 180 / std::numbers::pi;
     if (!std::isfinite(degrees) || std::abs(degrees) > 10)
       return std::unexpected(std::format(
           "The edge turns {:.2f}° over {:.1f} mm, more than 10°. Check that both points touched "
@@ -1854,7 +1919,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
           degrees, run));
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks)};
+    const auto* current = impl_->stat();
+    if (!current || impl_->status.link() != Link::live || (wanted && !wanted()))
+      return std::unexpected("The machine changed before the measurement could be saved.");
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || frame_of(after) != frame ||
+        after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset)
+      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+    const auto id = ++impl_->next_edge_measurement;
+    impl_->edge_measurement = Impl::EdgeMeasurement{id, frame, epoch, before.tool_offset, degrees};
     state.edge_angle_deg = degrees;
+    state.edge_rotation = SetterState::EdgeRotation{id, frame.wcs};
     return state;
   }
   if (bore) {

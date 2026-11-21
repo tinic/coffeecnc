@@ -504,6 +504,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
                  : "net sim-edge-x sim-edge-coordinate.in0");
     halcmd(front ? "net sim-edge-x sim-edge-coordinate.in1"
                  : "net sim-edge-y sim-edge-coordinate.in1");
+    mdi(scale == 1 ? "G21" : "G20");
     const auto before = port.status();
     FixedSetterRequest request{SetterAction::angle, 99, position(), direction};
     request.gauge_width_mm = spacing;
@@ -534,11 +535,26 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
     const auto request = measure(direction, direction == ProbeDirection::y_plus ? -20 : 20, angle);
     const auto original = port.status();
     const auto before_apply = position();
-    mdi("G20");
     const auto applied = port.fixed_setter(request, epoch, {});
     const auto after = port.status();
+    if (!applied)
+      std::cout << std::format(
+          "verify rotation expected={:.10f} actual={:.10f} wcs={} "
+          "g5x_delta={:.12g},{:.12g},{:.12g} g92_delta={:.12g},{:.12g},{:.12g} still={} "
+          "executing={} paused={} spindle={} xyz_delta={:.10g},{:.10g},{:.10g}\n",
+          angle, after.rotation_xy, after.wcs, after.g5x[0] - original.g5x[0],
+          after.g5x[1] - original.g5x[1], after.g5x[2] - original.g5x[2],
+          after.g92[0] - original.g92[0], after.g92[1] - original.g92[1],
+          after.g92[2] - original.g92[2], after.controller.in_position, after.task_executing,
+          after.paused, after.controller.spindle_active, position()[0] - before_apply[0],
+          position()[1] - before_apply[1], position()[2] - before_apply[2]);
+
     require(applied && applied->edge_angle_deg && std::abs(after.rotation_xy - angle) < 0.05 &&
-                original.g5x == after.g5x && original.g92 == after.g92 && after.wcs == 2 &&
+                after.wcs == 2 &&
+                std::ranges::equal(original.g5x, after.g5x,
+                                   [](double a, double b) { return std::abs(a - b) < 1e-6; }) &&
+                std::ranges::equal(original.g92, after.g92,
+                                   [](double a, double b) { return std::abs(a - b) < 1e-6; }) &&
                 before_apply == position(),
             applied ? std::format("G55 applied {:.3f}° without changing origin, shifts or position",
                                   after.rotation_xy)

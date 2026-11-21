@@ -1770,8 +1770,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!after_raw || impl_->status.link() != Link::live)
         return false;
       const auto after = to_status(*after_raw, impl_->config, impl_->hal, Link::live);
-      return ready(*after_raw, after) && after.wcs == frame.wcs && after.g5x == frame.g5x &&
-             after.g92 == frame.g92 && after.tool_offset == measurement.tool_offset &&
+      const auto same_offset = [](const auto& a, const auto& b) {
+        return std::ranges::equal(a, b, [](double x, double y) { return std::abs(x - y) < 1e-6; });
+      };
+      return ready(*after_raw, after) && after.wcs == frame.wcs &&
+             same_offset(after.g5x, frame.g5x) && same_offset(after.g92, frame.g92) &&
+             same_offset(after.tool_offset, measurement.tool_offset) &&
              std::abs(after.rotation_xy - measurement.degrees) < 1e-6 &&
              std::ranges::equal(
                  after.controller.axes, before.controller.axes,

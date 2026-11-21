@@ -1,25 +1,28 @@
 <script setup lang="ts">
 import type { ProbeDirection } from '../protocol'
 
-defineProps<{ travel: ProbeDirection | null }>()
+
+// `travel` is one face's probe travel; a corner lights the travels of both of its faces.
+const props = defineProps<{ travel: ProbeDirection | null; corner?: readonly ProbeDirection[] | null }>()
+const lit = (direction: ProbeDirection): boolean => props.travel === direction || (props.corner?.includes(direction) ?? false)
 </script>
 
 <template>
   <figure class="workpiece" aria-label="Workpiece viewed from above. The arrows point toward the edge as the probe moves.">
-    <div class="approach back" :class="{ active: travel === 'y_minus' }">
+    <div class="approach back" :class="{ active: lit('y_minus') }">
       <span>Y+</span><i aria-hidden="true">↓</i>
     </div>
-    <div class="approach left" :class="{ active: travel === 'x_plus' }">
+    <div class="approach left" :class="{ active: lit('x_plus') }">
       <span>X−</span><i aria-hidden="true">→</i>
     </div>
-    <div class="part" :class="travel">
+    <div class="part" :class="[travel, ...(corner ?? [])]">
       <span class="top-contact" aria-hidden="true"></span>
       <span>Z top</span>
     </div>
-    <div class="approach right" :class="{ active: travel === 'x_minus' }">
+    <div class="approach right" :class="{ active: lit('x_minus') }">
       <i aria-hidden="true">←</i><span>X+</span>
     </div>
-    <div class="approach front" :class="{ active: travel === 'y_plus' }">
+    <div class="approach front" :class="{ active: lit('y_plus') }">
       <i aria-hidden="true">↑</i><span>Y−</span>
     </div>
   </figure>

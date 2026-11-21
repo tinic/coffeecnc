@@ -211,10 +211,11 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 420)
         add_test(NAME linuxcnc_material_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          -u ${units} -t 165 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_material_probe_${units}
+          -u ${units} -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_material_probe_${units}
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> material)
+        # The corner and the ball calibration each run two probe sequences beside the work.
         set_tests_properties(linuxcnc_material_probe_${units} PROPERTIES LABELS linuxcnc
-          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 495)
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 600)
         add_test(NAME linuxcnc_jog_contact_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 25 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_jog_contact_${units}
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MaterialProbeControls from '../src/components/MaterialProbeControls.vue'
+import NumberDialog from '../src/components/NumberDialog.vue'
 import { panel, send } from '../src/machine'
 import type { CommandResult, ProbeDirection } from '../src/protocol'
 import { setterState } from '../src/setter-state'
@@ -14,6 +15,7 @@ vi.mock('../src/machine', async () => {
   const panel = reactive({ status: null }) as typeof import('../src/machine').panel
   return { panel, allHomed: computed(() => false), homingActive: computed(() => false),
     manualBlock: computed(() => panel.status?.interp === 'idle' ? null : 'A program is running'),
+    findTool: (): { diameter: number } => ({ diameter: 2 }),
     send: vi.fn(), onResult: (listener: ResultListener): (() => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -54,6 +56,48 @@ const faces: [string, ProbeDirection, 'X' | 'Y' | 'Z', string, string][] = [
   ['Y−', 'y_plus', 'Y', 'front edge', '+Y'],
   ['Y+', 'y_minus', 'Y', 'back edge', '−Y'],
 ]
+
+const cornerCases: [string, 'x_minus' | 'x_plus', 'y_minus' | 'y_plus', string][] = [
+  ['X− Y−', 'x_plus', 'y_plus', 'front-left corner'],
+  ['X+ Y−', 'x_minus', 'y_plus', 'front-right corner'],
+  ['X− Y+', 'x_plus', 'y_minus', 'back-left corner'],
+  ['X+ Y+', 'x_minus', 'y_minus', 'back-right corner'],
+]
+
+describe('corner probe workflow', () => {
+  it.each(cornerCases)('probes the %s corner from over the part and sets X0 and Y0', async (label, x, y, name) => {
+    const fixture = await probe(label)
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'corner', x_direction: x, y_direction: y,
+      tool: 99, x: 0, y: 0, z: 0 })
+    expect(fixture.get('.setter-band.busy p').text()).toBe(`Probing the ${name}…`)
+    expect(fixture.get('.workpiece .part').classes()).toEqual(expect.arrayContaining([x, y]))
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, material: { wcs: 2, axis: 'XY' } } })
+    expect(fixture.get('.setter-band.done p').text()).toBe(`G55 X0 Y0 set at the ${label} ${name}.`)
+  })
+
+  it('asks for a measured probe first, since the corner goes below Z0', async () => {
+    setterState.value = { calibration: [0, 0, -10], measurement: null, measured_tools: [98] }
+    const fixture = await probe('X− Y−')
+    expect(send).not.toHaveBeenCalled()
+    expect(fixture.get('.setter-band.blocked p').text()).toBe('Touch off T99 and probe Z top before probing a corner.')
+  })
+})
+
+describe('ball calibration', () => {
+  it('asks for the gauge width, probes both sides and reports the saved diameter', async () => {
+    const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 } })
+    await fixture.get('button.calibrate').trigger('click')
+    const dialog = fixture.findComponent(NumberDialog)
+    expect(dialog.exists()).toBe(true)
+    dialog.vm.$emit('confirm', 20.1, '20.1')
+    await nextTick()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'ball', gauge_width: 20.1,
+      tool: 99, x: 0, y: 0, z: 0 })
+    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing both sides of the gauge…')
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, ball_diameter: 2.1 } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('T99 ball measured 2.100 mm and saved to the tool table.')
+  })
+})
 
 describe('material probe workflow', () => {
   it.each(faces)('approaches the %s face and confirms the active WCS', async (label, direction, axis, face, approach) => {

@@ -382,7 +382,10 @@ export interface SetterState {
   measurement: SetterMeasurement | null
   /** Tools touched off against this calibration, the reference tool included. */
   measured_tools?: number[]
-  material?: { wcs: number; axis: 'X' | 'Y' | 'Z' }
+  /** The axes a material probe set: one face, or 'XY' for a corner. */
+  material?: { wcs: number; axis: 'X' | 'Y' | 'Z' | 'XY' }
+  /** After a ball calibration: the effective ball diameter written to the tool table, mm. */
+  ball_diameter?: number
 }
 
 export interface DirectoryEntry {
@@ -582,6 +585,16 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
   | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
   | { action: 'material'; direction: ProbeDirection; tool: number; x: number; y: number; z: number }
+  /**
+   * A corner: the X face, then the Y face, probed from beside the work below its top (Z0 of the
+   * active work system), then X0 and Y0 set together. Directions are the probe's travel.
+   */
+  | { action: 'corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number }
+  /**
+   * Measures the effective ball diameter: both X faces of a gauge `gauge_width` mm wide, probed
+   * from beside it below its top (Z0), and writes it to the tool table.
+   */
+  | { action: 'ball'; gauge_width: number; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

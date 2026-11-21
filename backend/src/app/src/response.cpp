@@ -43,9 +43,12 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
         {"calibration", setter->calibration ? Json(*setter->calibration) : Json(nullptr)},
         {"measurement", std::move(measurement)},
         {"measured_tools", setter->measured_tools}};
+    if (setter->ball_diameter)
+      message["setter"]["ball_diameter"] = *setter->ball_diameter;
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
-                                       {"axis", std::string(1, material->axis)}};
+                                       {"axis", material->corner ? std::string{"XY"}
+                                                                 : std::string(1, material->axis)}};
   }
   if (restart) {
     const auto& p = restart->point;

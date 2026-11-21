@@ -319,6 +319,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("Fixed setter requires the confirmed tool and a stopped spindle.");
           return idle(s, TaskMode::mdi,
                       c.action != SetterAction::material && c.action != SetterAction::corner &&
+                          c.action != SetterAction::ball &&
                           limits_.homing_required);
         } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
           if (s.interp != InterpState::idle || !s.in_position || s.requested_tool || homing(s))

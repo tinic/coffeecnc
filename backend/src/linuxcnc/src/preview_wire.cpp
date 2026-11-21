@@ -233,17 +233,21 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
     auto line = text.substr(0, newline);
     text.remove_prefix(newline + 1);
     const auto key = word(line);
-    if (key == "seg") {
+    // `seg line r|f tool points…`, or `segf line tool feed points…` for a feed move whose
+    // programmed feed (mm/min) is known.
+    if (key == "seg" || key == "segf") {
       PreviewSegment segment;
       if (output.problem)
         return defect("a segment after the record that ends the path");
       if (!line_number(line, segment.line))
         return defect("a segment with a line that is none of the program");
-      const auto kind = word(line);
+      const auto kind = key == "segf" ? std::string_view{"f"} : word(line);
       if (kind != "r" && kind != "f")
         return defect("a segment of an unknown kind");
       if (!number(line, segment.tool) || segment.tool < 0 || segment.tool > OutputLimits::max_tool)
         return defect("a segment with a tool number out of range");
+      if (key == "segf" && (!finite_number(line, segment.feed) || segment.feed < 0))
+        return defect("a segment with a feed that is not a finite, positive number");
       segment.kind = kind == "r" ? MoveKind::rapid : MoveKind::feed;
       // Every pass removes one word from `line`, or returns.
       for (;;) {
@@ -261,6 +265,16 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       if (segment.points.size() < 2)
         return defect("a segment of fewer than two points");
       output.segments.push_back(std::move(segment));
+    } else if (key == "dwell") {
+      PreviewDwell dwell;
+      if (output.problem)
+        return defect("a dwell after the record that ends the path");
+      if (!line_number(line, dwell.line) || !finite_number(line, dwell.seconds) ||
+          dwell.seconds < 0)
+        return defect("a dwell with a line or duration that is not valid");
+      if (output.dwells.size() >= limits.max_points)
+        return defect("more dwells than the preview allows");
+      output.dwells.push_back(dwell);
     } else if (key == "error" || key == "stop" || key == "cut") {
       PreviewError problem;
       if (output.problem)

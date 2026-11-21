@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { chooseProgramLayout, findTool, live, panel, reported } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
+import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
+import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
 import type { ProgramLayout } from '../store'
 import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
@@ -74,6 +76,36 @@ const runState = computed(() => {
   if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
 })
+// Cycle time from the drawn preview: before the run the estimate, during it elapsed and left.
+const time = computed(() => {
+  const preview = drawn.value
+  const limits = velocityLimits(panel.hello)
+  return preview !== null && limits !== null && preview.state === 'ready' ? cycleTime(preview, limits) : null
+})
+const sectionTimes = computed(() => time.value === null ? [] : sectionSeconds(time.value, sections.value))
+const timeLabel = computed(() => {
+  const estimate = time.value
+  const elapsed = elapsedSeconds.value
+  if (elapsed !== null && programExecuting.value) {
+    const line = motionLine.value > 0 ? motionLine.value : currentLine.value
+    // Feeds scale with the override; rapids do not, so this stays an estimate.
+    const override = Math.max(status.value?.motion.feed_override ?? 1, 0.05)
+    const left = estimate !== null && line > 0 ? remainingFrom(estimate, line) / override : null
+    return `Elapsed ${formatDuration(elapsed)}${left === null ? '' : ` · about ${formatDuration(left)} left`}`
+  }
+  if (estimate === null) return ''
+  const changes = estimate.toolChanges
+  const parts = [`Estimated ${formatDuration(estimate.total)}`]
+  if (changes > 0) parts.push(`+ ${String(changes)} tool ${changes === 1 ? 'change' : 'changes'}`)
+  if (runClock.lastSeconds !== null) {
+    parts.push(`last ${formatDuration(runClock.lastSeconds)}`, `${String(runClock.parts)} ${runClock.parts === 1 ? 'part' : 'parts'}`)
+  }
+  return parts.join(' · ')
+})
+const timeNote = computed(() => time.value?.unknownFeeds === true
+  ? 'Some feeds are not per minute (G93/G95) and are counted at full speed.'
+  : 'At 100 % overrides, without acceleration, tool changes or pauses.')
+
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
 const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
   sections.value.length > 0)
@@ -134,7 +166,7 @@ async function showFailure(): Promise<void> {
             <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
               <button class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
                 <span class="section-number mono">{{ index + 1 }}</span>
-                <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}</small></span>
+                <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}<template v-if="sectionTimes[index] !== undefined"> · {{ formatDuration(sectionTimes[index] ?? 0) }}</template></small></span>
               </button>
               <button v-if="canRestart" class="btn section-restart" type="button" :aria-label="`Restart ${sectionName(index)}`" @click="restartSection(index)">Restart</button>
             </div>
@@ -152,7 +184,7 @@ async function showFailure(): Promise<void> {
       </aside>
     </div>
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
-    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="line-count mono">{{ lineLabel }}</span></div>
+    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 
@@ -175,7 +207,7 @@ async function showFailure(): Promise<void> {
 .tool { border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }.tool-title { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; }.tool-title strong { font-size: 13px; font-weight: 500; }.tool-title small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 11px; }.tool-glyph { display: flex; padding: 10px; background: var(--bg-sunken); border-radius: 8px; color: var(--text-dim); }
 .kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { flex: none; min-width: 14ch; text-align: right; color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
-.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.warning { color: var(--stop); }
+.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 46ch 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.run-time { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
 .status-row .program-feedback { margin: 0; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }

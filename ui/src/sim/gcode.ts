@@ -8,7 +8,7 @@
 //   block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
 
-import type { LengthUnit, Preview, PreviewSegment, SpindleDirection, Tool, Vec3 } from '../protocol'
+import type { LengthUnit, Preview, PreviewDwell, PreviewSegment, SpindleDirection, Tool, Vec3 } from '../protocol'
 
 export type AxisIndex = 0 | 1 | 2
 export const axisIndices: readonly AxisIndex[] = [0, 1, 2]
@@ -753,6 +753,7 @@ function motion(
 export function previewProgram(modal: Modal, lines: string[], blockDelete: boolean, context: number): Preview {
   const m = cloneModal(modal)
   const segments: PreviewSegment[] = []
+  const dwells: PreviewDwell[] = []
   const min: Vec3 = [Infinity, Infinity, Infinity]
   const max: Vec3 = [-Infinity, -Infinity, -Infinity]
   let feeds = false
@@ -776,7 +777,9 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
               }
             }
           }
-          segments.push({ line: op.line, kind: op.motion, tool: op.tool, points })
+          segments.push({ line: op.line, kind: op.motion, tool: op.tool, points, feed: op.motion === 'feed' ? op.feed : 0 })
+        } else if (op.kind === 'dwell' && op.seconds > 0) {
+          dwells.push({ line: index + 1, seconds: op.seconds })
         }
       }
     } catch (caught) {
@@ -797,5 +800,6 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
     error,
     segments,
     bounds: feeds ? { min, max } : null,
+    dwells,
   }
 }

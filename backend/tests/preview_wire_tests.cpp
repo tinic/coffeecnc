@@ -63,6 +63,17 @@ void wire_formats() {
               output.problem->text == "reads a thing" && output.segments.size() == 1 &&
               output.defect.empty(),
           "A stop with its line and text");
+  output = parse_output("segf 3 2 450.5 0 0 0 1 0 0\ndwell 4 1.5\nseg 5 f 2 0 0 0 2 0 0\nend ok\n");
+  require(output.end == HelperEnd::ok && output.defect.empty() && output.segments.size() == 2 &&
+              output.segments[0].kind == MoveKind::feed && output.segments[0].tool == 2 &&
+              output.segments[0].feed == 450.5 && output.segments[1].feed == 0 &&
+              output.dwells == std::vector<PreviewDwell>{{4, 1.5}},
+          "A feed move with its feed, a dwell, and a feed move whose feed is unknown");
+  require(!parse_output("segf 3 2 -1 0 0 0 1 0 0\nend ok\n").defect.empty() &&
+              !parse_output("segf 3 2 nan 0 0 0 1 0 0\nend ok\n").defect.empty() &&
+              !parse_output("dwell 4 -1\nend ok\n").defect.empty() &&
+              !parse_output("dwell 4\nend ok\n").defect.empty(),
+          "A negative or missing feed or dwell is a defect");
   require(parse_output("").end == HelperEnd::missing && parse_output("").defect.empty() &&
               parse_output("end ok\n").end == HelperEnd::ok,
           "Nothing, and nothing but the end");

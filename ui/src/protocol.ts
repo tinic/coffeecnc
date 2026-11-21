@@ -237,6 +237,14 @@ export interface PreviewSegment {
    * offset exactly once; the panel never applies offsets to preview points.
    */
   points: number[]
+  /** Programmed feed of a feed move, mm/min; 0 for a rapid, or when the feed is not per minute. */
+  feed: number
+}
+
+/** A dwell (G4, or a canned cycle's P) the program makes at `line`. */
+export interface PreviewDwell {
+  line: number
+  seconds: number
 }
 
 /**
@@ -258,6 +266,7 @@ export interface Preview {
   segments: PreviewSegment[]
   /** Extent of the feed moves (tool tip, machine coordinates), or null without any. */
   bounds: { min: Vec3; max: Vec3 } | null
+  dwells: PreviewDwell[]
 }
 
 /** All nine work coordinate systems, sent after `ready` and whenever values or availability change. */

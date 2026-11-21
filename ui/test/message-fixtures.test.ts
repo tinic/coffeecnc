@@ -836,7 +836,8 @@ const examples = [
     "state": "pending",
     "error": null,
     "segments": [],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "preview",
@@ -855,7 +856,8 @@ const examples = [
           0,
           0,
           2
-        ]
+        ],
+        "feed": 0
       },
       {
         "line": 5,
@@ -874,7 +876,8 @@ const examples = [
           30,
           20.5,
           -1.5
-        ]
+        ],
+        "feed": 450
       }
     ],
     "bounds": {
@@ -888,7 +891,13 @@ const examples = [
         20.5,
         2
       ]
-    }
+    },
+    "dwells": [
+      {
+        "line": 6,
+        "seconds": 2
+      }
+    ]
   },
   {
     "type": "preview",
@@ -910,10 +919,12 @@ const examples = [
           0,
           0,
           2
-        ]
+        ],
+        "feed": 0
       }
     ],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "preview",
@@ -921,7 +932,8 @@ const examples = [
     "state": "unavailable",
     "error": null,
     "segments": [],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "message",

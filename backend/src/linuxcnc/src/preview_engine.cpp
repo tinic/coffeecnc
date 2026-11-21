@@ -592,6 +592,7 @@ auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lin
   PreviewOutcome outcome;
   outcome.segments = std::move(output.segments);
   outcome.bounds = feed_bounds(outcome.segments);
+  outcome.dwells = std::move(output.dwells);
   outcome.state = PreviewState::failed;
   const bool exited = run.how == HelperExit::by_itself && WIFEXITED(run.status);
   const bool well = exited && WEXITSTATUS(run.status) == 0;

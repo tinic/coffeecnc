@@ -146,6 +146,15 @@ void lines_and_bounds() {
   require(o.segments[1].line == 3 && o.segments[1].kind == MoveKind::feed &&
               near(o.segments[1].points.back(), {20, 5, 2}) && o.segments[2].line == 4,
           "Feed moves carry their line: " + text_of(o));
+  require(o.segments[0].feed == 0 && o.segments[1].feed == 100 && o.segments[2].feed == 100,
+          "Feed moves carry their feed per minute, rapids none: " + text_of(o));
+  const auto timed = rig.preview("G21 G90\nG1 X1 F250\nG4 P2.5\nG20 G1 X1 F10\nG95 G1 X2 F0.1\nM2\n");
+  require(timed.state == PreviewState::ready && timed.segments.size() == 3 &&
+              std::abs(timed.segments[0].feed - 250) < 1e-6 &&
+              std::abs(timed.segments[1].feed - 254) < 1e-6 && timed.segments[2].feed == 0 &&
+              timed.dwells == std::vector<PreviewDwell>{{3, 2.5}},
+          "Feeds in mm/min, inches converted, per-revolution unknown, and the dwell: " +
+              text_of(timed));
   require(o.bounds && near(o.bounds->min, {10, 5, -1}) && near(o.bounds->max, {20, 15, 2}),
           "Bounds are of the feed moves only");
   require(rig.work_is_empty(), "The private directory is removed");

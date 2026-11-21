@@ -333,7 +333,7 @@ async function showFailure(): Promise<void> {
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
 .program-check, .air-cut, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
-.breakpoint-chip { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
+.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
 .air-cut.selected { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); opacity: 1; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }

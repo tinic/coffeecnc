@@ -7,9 +7,17 @@ CoffeeCNC is a touch-first operator panel for LinuxCNC milling machines. A nativ
 
 LinuxCNC continues to own motion, interpretation and real-time control. CoffeeCNC gives the operator a clear screen for each step of the job: set up, measure tools, find the material, and run the program.
 
-CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine definitions in [tinic/linuxcnc](https://github.com/tinic/linuxcnc).
+CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any LinuxCNC 2.9 milling machine with X, Y and Z axes. It is developed on a Grizzly G0759 mill with a Mesa 7i76e ([configuration](docs/machines/g0759.md)).
 
 ![CoffeeCNC Manual workspace on the G0759](ui/screenshots/g0759-manual.png)
+
+## Install
+
+1. Download the `.deb` for Debian 13 (amd64 or arm64) from the [releases](https://github.com/tinic/coffeecnc/releases).
+2. Install it with `sudo apt install ./coffeecnc_<version>_<arch>.deb`. It needs LinuxCNC 2.9 (`linuxcnc-uspace`) from linuxcnc.org.
+3. Set `[DISPLAY] DISPLAY = coffeecnc` in your machine's INI file and add the CoffeeCNC HAL file.
+
+[Set up CoffeeCNC on your machine](docs/setup.md) gives each step, the INI keys and the optional functions (tool setter, touch probe, Z jog during a pause).
 
 ## Features
 
@@ -81,16 +89,16 @@ npm run dev
 
 Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). The simulator does not include the tool setter or the touch probe. See [UI development and checks](ui/README.md).
 
-## Build and install
+## Build from source
 
-The native application builds with CMake and packages as a Debian package for the controller. See [the backend build](backend/README.md) and [packaging](docs/packaging.md). The tests include LinuxCNC simulation scenarios for jogging, tool setting and probing.
+The native application builds with CMake and packages as a Debian package for the controller. A `v*` tag builds and publishes the packages ([release workflow](.github/workflows/release.yml)). See [the backend build](backend/README.md) and [packaging](docs/packaging.md). The tests include LinuxCNC simulation scenarios for jogging, tool setting and probing.
 
 ## Design
 
 - A native C++ application owns the LinuxCNC connection and the command lifecycle. Separate command, status and HAL threads keep jog-stop handling independent of blocked NML commands.
 - GTK/WebKit hosts the local web UI through an in-process message bridge.
 - Plain G-code is a first-class input. STEP models, setup sheets and CAM metadata add to a job when they are available.
-- Machine settings and HAL integration stay separate from the shared application code. See [the G0759 configuration](docs/machines/g0759.md).
+- Machine settings and HAL integration stay separate from the shared application code. See [setup](docs/setup.md) and [the G0759 configuration](docs/machines/g0759.md) as an example.
 
 More: [architecture](docs/architecture.md), [native shell](docs/shell.md), [product brief](docs/product-brief.md), [machinist workflows](docs/research/machinist-workflows.md), [sample catalog](samples/README.md), [logo and identity](docs/design/branding/README.md).
 

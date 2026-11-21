@@ -311,8 +311,10 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     };
     add("Programs", config->program_prefix);
     add("Home", environment("HOME"));
-    if (const auto user = environment("USER"))
+    if (const auto user = environment("USER"); user && !user->empty()) {
       add("USB", "/media/" + *user);
+      add("USB (system)", "/run/media/" + *user);
+    }
   }
   const auto ui = panel_directory(options);
   if (!ui) {

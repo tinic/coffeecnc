@@ -128,9 +128,9 @@ struct SetToolModelAssignment {
 using ToolModelCommand = std::variant<SetToolModelDefaults, SetToolModelAssignment>;
 
 [[nodiscard]] constexpr auto valid_tool_holder(std::string_view holder) -> bool {
-  constexpr std::array<std::string_view, 13> holders{
-      "r8",     "tts-4",  "tts-5",  "tts-6",    "tts-7",    "tts-8",   "tts-9",
-      "tts-10", "tts-11", "tts-12", "tts-er16", "tts-er20", "tts-er32"};
+  constexpr std::array<std::string_view, 18> holders{
+      "r8",      "tts-4",    "tts-5",  "tts-6", "tts-7", "tts-8", "tts-9", "tts-10", "tts-11",
+      "tts-12",  "tts-er16", "tts-er20", "tts-er32", "er16", "er20", "er32", "bt30", "generic"};
   return holder.empty() || std::ranges::find(holders, holder) != holders.end();
 }
 

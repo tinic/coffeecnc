@@ -55,7 +55,8 @@ function selectAirCut(value: number): void {
   if (lift) breakpointSelection.value = null
   airEditor.value = null
 }
-const check = computed(() => describeProgramCheck(currentProgramPreview(panel.preview, status.value), panel.unit))
+const checkedPreview = computed(() => currentProgramPreview(panel.preview, status.value))
+const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const checkLabel = computed(() => check.value === null ? 'Checking program'
   : check.value.errors.length ? 'Cycle start blocked'
   : check.value.warnings.length ? 'Review program warnings'
@@ -158,7 +159,7 @@ const breakpointBlock = computed(() => machineBlock(panel, true) ??
   (homingRequired.value && !allHomed.value ? 'Axes are not homed' : null) ??
   (status.value?.interp !== 'idle' || !status.value.motion.in_position ? 'Stop the program before running to a line' : null))
 const breakpointLines = computed(() => {
-  const preview = currentProgramPreview(panel.preview, status.value)
+  const preview = checkedPreview.value
   return new Set(canRestart.value && preview?.state === 'ready' && preview.check
     ? preview.segments.map((segment) => segment.line) : [])
 })

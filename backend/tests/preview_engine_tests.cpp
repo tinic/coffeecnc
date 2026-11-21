@@ -151,6 +151,48 @@ void lines_and_bounds() {
   require(rig.work_is_empty(), "The private directory is removed");
 }
 
+void restart_checkpoints() {
+  Rig rig{"restart"};
+  rig.inputs.start.position = {0, 0, 70};
+  rig.inputs.raw_tools.push_back({98, 98, 98, {0, 0, 35}, 3, 0, 0, 0});
+  const fs::path samples{COFFEECNC_SAMPLES_DIRECTORY};
+  rig.inputs.program_file = (samples / "air/03-pocket.ngc").string();
+  rig.inputs.restart_line = 24;
+  auto outcome = rig.compute().outcome;
+  require(outcome.state == PreviewState::ready && outcome.restart,
+          "Second pocket level: " + outcome.restart_blocked + " " + text_of(outcome));
+  const auto& pocket = *outcome.restart;
+  require(pocket.tool == 1 && pocket.h == 1 && pocket.wcs == 1 &&
+              near(pocket.spindle_rpm, 1500) && pocket.spindle_direction == SpindleDirection::forward &&
+              near(pocket.feed, 360) && near(pocket.clearance_z, 30) &&
+              near(pocket.start, {24, 20, 15}),
+          "Pocket restart restores the modal state before the second depth block");
+
+  rig.inputs.program_file = (samples / "air/06-toolchange.ngc").string();
+  rig.inputs.restart_line = 23;
+  outcome = rig.compute().outcome;
+  require(outcome.state == PreviewState::ready && outcome.restart &&
+              outcome.restart->tool == 98 && outcome.restart->h == 98 &&
+              outcome.restart->spindle_direction == SpindleDirection::stopped &&
+              near(outcome.restart->start, {0, 0, 30}),
+          "Restart in the T98 section: " + outcome.restart_blocked + " " + text_of(outcome));
+
+  rig.inputs.program_file = (rig.root / "nc" / "part.ngc").string();
+  rig.inputs.restart_line = 3;
+  outcome = rig.preview("G21 G90 G17\nG0 X10 Y0 Z1\nG2 X0 Y-10 I-10 J0 F100\nM2\n");
+  require(outcome.state == PreviewState::ready && outcome.restart &&
+              near(outcome.restart->start, {10, 0, 1}),
+          "A complete arc can restart from its interpreted start: " + outcome.restart_blocked);
+  outcome = rig.preview("G21 G90 G17\nG0 Z10\nG81 X1 Y1 Z-2 R3 F100\nG80\nM2\n");
+  require(outcome.state == PreviewState::ready && !outcome.restart &&
+              outcome.restart_blocked.find("canned cycle") != std::string::npos,
+          "Canned cycles block restart: " + outcome.restart_blocked);
+  outcome = rig.preview("G21 G90 G17\nT1 M6\nG0 Z10\nM2\n");
+  require(outcome.state == PreviewState::ready && !outcome.restart &&
+              outcome.restart_blocked.find("tool length") != std::string::npos,
+          "Missing tool length blocks restart: " + outcome.restart_blocked);
+}
+
 // Every chord of an arc is within the tolerance of the circle.
 void require_arc(const PreviewSegment& segment, std::size_t first, std::size_t second,
                  const Vec3& centre, double radius, const std::string& what) {
@@ -1080,6 +1122,7 @@ auto main(int argc, char** argv) -> int {
     scratch = fs::absolute(argv[2]) / "preview_engine";
     fs::create_directories(scratch);
     lines_and_bounds();
+    restart_checkpoints();
     arcs_in_three_planes();
     units();
     offsets_rotation_and_g92();

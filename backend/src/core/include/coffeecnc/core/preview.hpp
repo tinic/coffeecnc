@@ -68,6 +68,31 @@ struct PreviewInputs {
   // which blocks the rest of the program runs.
   bool block_delete{};
   InterpreterStart start;
+  std::optional<int> restart_line;
+};
+
+// Interpreter state immediately before a selected motion block. Linear values use mm.
+struct RestartPoint {
+  int line{};
+  int tool{};
+  int wcs{1};
+  int h{};
+  SpindleDirection spindle_direction{SpindleDirection::stopped};
+  double spindle_rpm{};
+  bool flood{};
+  bool mist{};
+  double feed{};
+  LengthUnit units{LengthUnit::mm};
+  int plane{17};
+  bool incremental{};
+  bool absolute_arc{};
+  double clearance_z{};
+  Vec3 start{};
+  Vec3 g5x{};
+  Vec3 g92{};
+  Vec3 tool_offset{};
+  double rotation{};
+  friend auto operator==(const RestartPoint&, const RestartPoint&) -> bool = default;
 };
 
 // What a computation found: Preview without its context.
@@ -76,6 +101,8 @@ struct PreviewOutcome {
   std::optional<PreviewError> error;
   std::vector<PreviewSegment> segments;
   std::optional<Bounds> bounds;
+  std::optional<RestartPoint> restart;
+  std::string restart_blocked;
   friend auto operator==(const PreviewOutcome&, const PreviewOutcome&) -> bool = default;
 };
 

@@ -1,7 +1,7 @@
 #ifndef COFFEECNC_LINUXCNC_PREVIEW_WIRE_HPP
 #define COFFEECNC_LINUXCNC_PREVIEW_WIRE_HPP
 
-#include <coffeecnc/core/panel_messages.hpp>
+#include <coffeecnc/core/preview.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -60,6 +60,7 @@ struct HelperRequest {
   // would move by the mode it inherits ends the preview.
   std::string inherited_motion;
   std::vector<HelperTool> tools;
+  std::optional<int> restart_line;
   friend auto operator==(const HelperRequest&, const HelperRequest&) -> bool = default;
 };
 
@@ -93,7 +94,11 @@ struct HelperOutput {
   // helper writes. Empty for a result that is whole, and for one that only stops short (a
   // helper that was ended): then `end` is missing and nothing more.
   std::string defect;
+  std::optional<RestartPoint> restart;
+  std::string restart_blocked;
 };
+
+[[nodiscard]] auto write_restart(const RestartPoint& point) -> std::string;
 
 // What a result may hold at most.
 struct OutputLimits {

@@ -629,8 +629,11 @@ auto outcome_of(const PreviewSettings& settings, HelperRun& run, int program_lin
         0, std::format("The preview program's result is not valid ({}); the path is shown as "
                        "far as it was.",
                        output.defect)};
-  else if (output.end == HelperEnd::ok && well)
+  else if (output.end == HelperEnd::ok && well) {
     outcome.state = PreviewState::ready;
+    outcome.restart = std::move(output.restart);
+    outcome.restart_blocked = std::move(output.restart_blocked);
+  }
   else if (output.end == HelperEnd::error && output.problem)
     // The interpreter's own error, with its line: that is the reason, however the helper
     // ended after it.
@@ -762,6 +765,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.codes = start->codes;
   request.inherited_motion = start->inherited_motion;
   request.tools = to_helper_tools(inputs.raw_tools);
+  request.restart_line = inputs.restart_line;
 
   const auto watch = [lookups = lookups_, search_path = settings_.search_path](
                          std::shared_ptr<const Manifest> manifest) -> PreviewComputation::Watch {

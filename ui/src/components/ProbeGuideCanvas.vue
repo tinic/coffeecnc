@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import {
-  AmbientLight, AxesHelper, BoxGeometry, BufferGeometry, CylinderGeometry, DirectionalLight,
-  ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group, Line, LineBasicMaterial, Mesh,
-  MeshStandardMaterial, OrthographicCamera, Path, Scene, Shape, SphereGeometry, Vector3, WebGLRenderer,
+  Box3, BufferGeometry, DataTexture, DirectionalLight, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
+  HemisphereLight, LatheGeometry, Line, LineBasicMaterial, LinearFilter, LinearMipmapLinearFilter, Mesh,
+  MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, OrthographicCamera, Path, PCFShadowMap,
+  PlaneGeometry, RepeatWrapping, RingGeometry, Scene, ShadowMaterial, Shape, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
-import { orbit, type Camera } from '../pathview'
+import { basis, orbit, type Camera } from '../pathview'
 import type { ProbeGuidePlan, ProbeGuideStep } from '../probe-guide'
+import { ToolMesh } from '../tool-mesh'
 
 const props = defineProps<{ plan: ProbeGuidePlan; playing: boolean; ruby: boolean }>()
 const emit = defineEmits<{ step: [index: number]; unavailable: [] }>()
@@ -17,25 +19,55 @@ const failed = ref(false)
 const scene = new Scene()
 const stage = new Group()
 const tool = new Group()
+const toolMesh = new ToolMesh()
 const camera = new OrthographicCamera()
-const view: Camera = { azimuth: -0.88, elevation: 0.47, scale: 1, centre: [0, 0, 7] }
-const grid = new GridHelper(108, 18, 0x687787, 0x47535f)
-const axes = new AxesHelper(10)
-const stockMaterial = new MeshStandardMaterial({ color: 0x8195a5, metalness: 0.22, roughness: 0.62 })
-const steel = new MeshStandardMaterial({ color: 0xb5c3ce, metalness: 0.57, roughness: 0.33 })
-const rubyMaterial = new MeshStandardMaterial({ color: 0xcf173d, metalness: 0.16, roughness: 0.25 })
-const gold = new MeshStandardMaterial({ color: 0xeeab34, metalness: 0.25, roughness: 0.48 })
-const contactMaterial = new MeshStandardMaterial({ color: 0xffb432, emissive: 0xb25514, emissiveIntensity: 0.65 })
-const datumMaterial = new MeshStandardMaterial({ color: 0x3addbc, emissive: 0x19745e, emissiveIntensity: 0.7 })
-const contact = new Mesh(new SphereGeometry(1.1, 16, 12), contactMaterial)
-const datum = new Mesh(new SphereGeometry(1, 16, 12), datumMaterial)
-const start = new Mesh(new SphereGeometry(0.7, 14, 10), datumMaterial)
+const view: Camera = { azimuth: -0.88, elevation: 0.60, scale: 1, centre: [0, 0, 9] }
+const grid = new GridHelper(132, 22, 0x7490a5, 0x7490a5)
+const floor = new Mesh(new PlaneGeometry(240, 240), new ShadowMaterial({ opacity: 0.26 }))
+const stockMaterial = new MeshStandardMaterial({ metalness: 0.49, roughness: 0.38 })
+const machinedTop = stockMaterial.clone()
+const walls = new MeshStandardMaterial({ color: 0x8098aa, metalness: 0.43, roughness: 0.47 })
+const baseMaterial = new MeshStandardMaterial({ color: 0x394653, metalness: 0.5, roughness: 0.42 })
+const plunger = new MeshStandardMaterial({ color: 0xedb160, metalness: 0.55, roughness: 0.32 })
+const key = new DirectionalLight(0xfff5e9, 2.7)
+
+function brushedFinish(): DataTexture {
+  const size = 64
+  const pixels = new Uint8Array(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    const phase = 2 * Math.PI * y / size
+    const shade = Math.round(242 + 7 * Math.cos(12 * phase) + 3 * Math.cos(19 * phase))
+    for (let x = 0; x < size; x++) pixels.set([shade, shade, shade, 255], 4 * (y * size + x))
+  }
+  const texture = new DataTexture(pixels, size, size)
+  texture.colorSpace = SRGBColorSpace
+  texture.wrapS = texture.wrapT = RepeatWrapping
+  texture.repeat.set(1 / 48, 1 / 36)
+  texture.magFilter = LinearFilter
+  texture.minFilter = LinearMipmapLinearFilter
+  texture.generateMipmaps = true
+  texture.needsUpdate = true
+  return texture
+}
+
+const finish = brushedFinish()
+machinedTop.map = finish
+
+function marker(color: number, radius: number): Mesh<RingGeometry, MeshBasicMaterial> {
+  const mesh = new Mesh(new RingGeometry(radius * 0.71, radius, 40),
+    new MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }))
+  mesh.renderOrder = 3
+  return mesh
+}
+
+const contact = marker(0xffb74a, 2.4)
+const datum = marker(0x28dec0, 2.55)
+const start = marker(0x6fbaff, 1.9)
 const track = new BufferGeometry()
 const trackPoints = new Float32BufferAttribute(new Float32Array(6), 3)
 track.setAttribute('position', trackPoints)
 const trace = new Line(track, new LineBasicMaterial({ color: 0x44aefe, transparent: true, opacity: 0.92 }))
 trace.frustumCulled = false
-let stock: Mesh | null = null
 let renderer: WebGLRenderer | null = null
 let resize: ResizeObserver | null = null
 let frame = 0
@@ -44,42 +76,70 @@ let phaseIndex = 0
 let phaseTime = 0
 let drag: { id: number; x: number; y: number } | null = null
 let measuredEdge: [Vector3, Vector3] | null = null
+let framing: Vector3[] = []
 
-function cylinder(radius: number, height: number, color: MeshStandardMaterial, z: number): Mesh {
-  const mesh = new Mesh(new CylinderGeometry(radius, radius, height, 48), color)
-  mesh.rotation.x = Math.PI / 2
-  mesh.position.z = z
+function corners({ min, max }: Box3): Vector3[] {
+  return [min.x, max.x].flatMap(x => [min.y, max.y].flatMap(y => [min.z, max.z].map(z => new Vector3(x, y, z))))
+}
+
+function turned(profile: readonly [number, number][], material: MeshStandardMaterial): Mesh {
+  const geometry = new LatheGeometry(profile.map(([radius, z]) => new Vector2(radius, z)), 64)
+  const mesh = new Mesh(geometry.rotateX(Math.PI / 2), material)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
   return mesh
 }
 
-function makeStock(): Mesh {
+function makeStock(): void {
   switch (props.plan.object) {
-    case 'bore': {
-      const shape = new Shape().moveTo(-24, -18).lineTo(24, -18).lineTo(24, 18).lineTo(-24, 18).closePath()
-      shape.holes.push(new Path().absarc(0, 0, 13, 0, 2 * Math.PI, true))
-      const mesh = new Mesh(new ExtrudeGeometry(shape, { depth: 14, bevelEnabled: false, curveSegments: 32 }), stockMaterial)
-      mesh.position.z = -14
-      return mesh
-    }
-    case 'boss': return cylinder(14, 14, stockMaterial, -7)
-    case 'setter': return cylinder(10, 12, gold, -6)
+    case 'boss':
+      stage.add(turned([[0, -14], [13.6, -14], [14, -13.6], [14, -0.55], [13.45, 0], [0, 0]], stockMaterial))
+      break
+    case 'setter':
+      stage.add(turned([[0, -14], [12, -14], [12.8, -13], [12.8, -5], [12, -4], [0, -4]], baseMaterial),
+        turned([[0, -4], [8, -4], [9.5, -2.5], [9.5, -0.7], [8.8, 0], [0, 0]], plunger))
+      break
+    case 'bore':
     case 'stock':
     case 'gauge': {
-      const mesh = new Mesh(new BoxGeometry(props.plan.object === 'gauge' ? 28 : 48, 36, 14), stockMaterial)
-      mesh.position.z = -7
-      return mesh
+      const bevel = 0.65
+      const x = (props.plan.object === 'gauge' ? 14 : 24) - bevel
+      const y = 18 - bevel
+      const shape = new Shape().moveTo(-x, -y).lineTo(x, -y).lineTo(x, y).lineTo(-x, y).closePath()
+      if (props.plan.object === 'bore') shape.holes.push(new Path().absarc(0, 0, 13, 0, 2 * Math.PI, true))
+      const geometry = new ExtrudeGeometry(shape, { depth: 14 - 2 * bevel, bevelThickness: bevel,
+        bevelSize: bevel, bevelSegments: 2, curveSegments: 48, steps: 1 })
+      const stock = new Mesh(geometry, [machinedTop, walls])
+      stock.position.z = -14 + bevel
+      stock.castShadow = true
+      stock.receiveShadow = true
+      stage.add(stock)
+      break
     }
   }
 }
 
-function build(): void {
-  if (stock !== null) {
-    stage.remove(stock)
-    stock.geometry.dispose()
+function clearStock(): void {
+  for (const part of stage.children) {
+    if (part instanceof Mesh) {
+      const geometry: unknown = part.geometry
+      if (geometry instanceof BufferGeometry) geometry.dispose()
+    }
   }
-  stock = makeStock()
-  stock.rotation.z += props.plan.rotation
-  stage.add(stock)
+  stage.clear()
+}
+
+function build(): void {
+  clearStock()
+  makeStock()
+  stage.rotation.z = props.plan.rotation
+  view.elevation = props.plan.object === 'bore' ? 0.85 : 0.57
+  const toolBounds = corners(new Box3().setFromObject(toolMesh.group)).map(point => point.sub(tool.position))
+  framing = corners(new Box3().setFromObject(stage))
+  for (const step of props.plan.steps) {
+    const position = new Vector3(...step.point)
+    framing.push(...toolBounds.map(point => point.clone().add(position)))
+  }
   if (props.plan.steps[0]) start.position.set(...props.plan.steps[0].point)
   datum.position.set(...props.plan.datum)
   const [x, y] = props.plan.datum
@@ -121,6 +181,7 @@ function draw(): void {
   if (step.contact) contact.position.set(...step.contact)
   datum.visible = step.kind === 'result'
   start.visible = step.kind === 'start'
+  for (const cue of [contact, datum, start]) cue.quaternion.copy(camera.quaternion)
   renderer.render(scene, camera)
 }
 
@@ -150,8 +211,16 @@ function setView(): void {
   if (renderer === null || surface === null) return
   const width = surface.clientWidth
   const height = surface.clientHeight
-  if (width <= 0 || height <= 0) return
-  view.scale = Math.min(width / 112, height / 77)
+  if (width <= 48 || height <= 40) return
+  const { right, up } = basis(view)
+  const horizontal = new Vector3(...right)
+  const vertical = new Vector3(...up)
+  const x = framing.map(point => point.dot(horizontal))
+  const y = framing.map(point => point.dot(vertical))
+  const left = Math.min(...x), rightEdge = Math.max(...x)
+  const bottom = Math.min(...y), top = Math.max(...y)
+  view.scale = Math.min((width - 48) / (rightEdge - left), (height - 40) / (top - bottom), 4.2)
+  view.centre = horizontal.multiplyScalar((left + rightEdge) / 2).addScaledVector(vertical, (bottom + top) / 2).toArray()
   syncModelCamera(camera, view, width, height, 110)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(width, height, false)
@@ -159,7 +228,15 @@ function setView(): void {
 }
 
 function applyTheme(): void {
-  stockMaterial.color.setHex(theme.value === 'dark' ? 0x7895ab : 0x728b9e)
+  const dark = theme.value === 'dark'
+  stockMaterial.color.setHex(dark ? 0xaeb8c1 : 0xabb5bc)
+  machinedTop.color.copy(stockMaterial.color)
+  walls.color.setHex(dark ? 0x8299ab : 0x8394a1)
+  grid.material.opacity = dark ? 0.19 : 0.17
+  contact.material.color.setHex(dark ? 0xffbc57 : 0xc66a14)
+  datum.material.color.setHex(dark ? 0x3edac5 : 0x007b68)
+  start.material.color.setHex(dark ? 0x6fbaff : 0x216ece)
+  toolMesh.setTheme(dark)
   draw()
 }
 
@@ -191,20 +268,39 @@ onMounted(() => {
   try {
     renderer = new WebGLRenderer({ canvas: surface, alpha: true, antialias: true })
     renderer.setClearColor(0, 0)
-    const light = new DirectionalLight(0xffeed5, 2.5)
-    light.position.set(-45, -64, 82)
-    const rim = new DirectionalLight(0xaacfff, 1.45)
-    rim.position.set(50, 44, 25)
+    renderer.toneMapping = NeutralToneMapping
+    renderer.toneMappingExposure = 0.94
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = PCFShadowMap
+    key.position.set(-42, -50, 72)
+    key.castShadow = true
+    key.shadow.camera.left = key.shadow.camera.bottom = -57
+    key.shadow.camera.right = key.shadow.camera.top = 57
+    key.shadow.camera.far = 160
+    key.shadow.normalBias = 0.12
+    key.shadow.radius = 3
+    key.shadow.mapSize.set(512, 512)
+    const rim = new DirectionalLight(0xe2f0ff, 1.2)
+    rim.position.set(48, 44, 62)
     grid.rotation.x = Math.PI / 2
     grid.position.z = -14.1
-    axes.position.set(-30, -23, -13.9)
-    if (props.ruby) {
-      tool.add(new Mesh(new SphereGeometry(2, 24, 18), rubyMaterial), cylinder(0.8, 9, steel, 6.5),
-        cylinder(2.7, 9, steel, 15.5), cylinder(3.6, 5, steel, 21.5))
-    } else {
-      tool.add(cylinder(2.5, 16, steel, 10), cylinder(3.4, 8, steel, 22))
-    }
-    scene.add(new AmbientLight(0xffffff, 1.65), light, rim, grid, axes, stage, tool, contact, datum, start, trace)
+    grid.material.transparent = true
+    grid.material.depthWrite = false
+    floor.position.z = -14.2
+    floor.receiveShadow = true
+    toolMesh.build(props.ruby
+      ? { family: 'touch-probe', dimensions: { diameter: 4, bodyDiameter: 10, bodyLength: 10,
+        stylusLength: 10, shankDiameter: 5.5 }, nominalDiameter: false, customized: false }
+      : { family: 'end-mill', dimensions: { diameter: 5, cuttingLength: 10, shankDiameter: 5,
+        overallLength: 24, stickout: 19, tipAngle: 90 }, nominalDiameter: false, customized: false })
+    toolMesh.group.position.z = -2
+    toolMesh.group.traverse(node => {
+      if (node instanceof Mesh) node.castShadow = true
+      else if (node instanceof Line) node.visible = false
+    })
+    toolMesh.light(renderer)
+    tool.add(toolMesh.group)
+    scene.add(new HemisphereLight(0xe9f4ff, 0x565562, 1.35), key, rim, floor, grid, stage, tool, contact, datum, start, trace)
     build()
     surface.addEventListener('webglcontextlost', lost)
     resize = new ResizeObserver(setView)
@@ -221,16 +317,18 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(frame)
   resize?.disconnect()
   canvas.value?.removeEventListener('webglcontextlost', lost)
-  scene.traverse(node => {
-    if (node === grid || node === axes) return
-    if (node instanceof Mesh || node instanceof Line) {
-      const geometry: unknown = node.geometry
-      if (geometry instanceof BufferGeometry) geometry.dispose()
-    }
-  })
-  for (const material of [stockMaterial, steel, rubyMaterial, gold, contactMaterial, datumMaterial, trace.material]) material.dispose()
+  clearStock()
+  toolMesh.dispose()
+  for (const cue of [contact, datum, start]) {
+    cue.geometry.dispose()
+    cue.material.dispose()
+  }
+  for (const material of [stockMaterial, machinedTop, walls, baseMaterial, plunger, floor.material, trace.material]) material.dispose()
+  finish.dispose()
+  floor.geometry.dispose()
+  track.dispose()
   grid.dispose()
-  axes.dispose()
+  key.shadow.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()
 })
@@ -247,7 +345,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.guide-canvas { position: relative; min-height: 0; min-width: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 46%, var(--panel-raised), var(--bg-sunken) 74%); }
+.guide-canvas { position: relative; min-height: 0; min-width: 0; overflow: hidden; background: radial-gradient(ellipse at 47% 38%, var(--panel-raised), var(--bg-sunken) 82%); }
 canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 canvas:active { cursor: grabbing; }
 .unavailable { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 30px; color: var(--warn); text-align: center; }

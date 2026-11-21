@@ -297,6 +297,9 @@ export XDG_DATA_HOME="$directory/xdg-data"
 # starts with the same HOME makes that file again with its own table, also while this run uses
 # it: tools of another table appear and this run's tools disappear. The run's processes get a
 # HOME of their own; LinuxCNC's debug logs go there too. The lock above uses the caller's HOME.
+# Caches (fonts, the panel's web engine) stay the caller's: built again for every run, they
+# would slow a run down.
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 rm -rf "$directory/home"
 mkdir -p "$directory/home" || exit 125
 export HOME="$directory/home"

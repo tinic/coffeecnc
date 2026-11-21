@@ -305,7 +305,8 @@ auto command(const Json& object) -> Command {
                                               {"corner", SetterAction::corner},
                                               {"ball", SetterAction::ball},
                                               {"bore", SetterAction::bore},
-                                              {"boss", SetterAction::boss}});
+                                              {"boss", SetterAction::boss},
+                                              {"angle", SetterAction::angle}});
     FixedSetterRequest request{action};
     if (action != SetterAction::status) {
       if (action == SetterAction::material) {
@@ -319,6 +320,14 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::ball) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "gauge_width"});
         request.gauge_width_mm = number(object, "gauge_width");
+      } else if (action == SetterAction::angle) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction", "spacing"});
+        request.direction = choice<ProbeDirection>(object, "direction",
+                                                   {{"x_minus", ProbeDirection::x_minus},
+                                                    {"x_plus", ProbeDirection::x_plus},
+                                                    {"y_minus", ProbeDirection::y_minus},
+                                                    {"y_plus", ProbeDirection::y_plus}});
+        request.gauge_width_mm = number(object, "spacing");
       } else if (action == SetterAction::boss) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
         request.gauge_width_mm = number(object, "diameter");

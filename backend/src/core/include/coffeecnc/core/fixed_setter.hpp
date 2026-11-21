@@ -20,7 +20,7 @@ struct FixedSetterLimits {
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
-enum class SetterAction : std::uint8_t { status, touch_off, material, corner, ball, bore, boss };
+enum class SetterAction : std::uint8_t { status, touch_off, material, corner, ball, bore, boss, angle };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
 struct FixedSetterRequest {
@@ -32,7 +32,7 @@ struct FixedSetterRequest {
   // For a corner, the Y travel (y_minus or y_plus).
   ProbeDirection y_direction{ProbeDirection::y_plus};
   // For a ball calibration, the width in X of the gauge the probe starts over; for a boss, its
-  // approximate diameter. Millimetres.
+  // approximate diameter; for an edge angle, how far apart along the edge it probes. Millimetres.
   double gauge_width_mm{};
 };
 
@@ -69,6 +69,9 @@ struct SetterState {
   std::optional<double> ball_diameter{};
   // After a bore or boss: its diameter, mm (the chord through the centre).
   std::optional<double> center_diameter{};
+  // After an edge angle: how far the edge turns from the machine axis, degrees, counterclockwise
+  // seen from above.
+  std::optional<double> edge_angle_deg{};
 };
 
 } // namespace coffeecnc

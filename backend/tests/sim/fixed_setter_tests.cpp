@@ -398,6 +398,21 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   halcmd("unlinkp sim-ruby-release.in");
   halcmd("net sim-setter-trip sim-ruby-release.in");
 
+  // An edge angle: the front edge (contact at y 6 mm) at two points 20 mm apart in X; the
+  // simulated edge is square to X.
+  start_at();
+  window('y', 6, 100);
+  FixedSetterRequest angle_request{SetterAction::angle, 99, position(), ProbeDirection::y_plus};
+  angle_request.gauge_width_mm = 20;
+  const auto edge = port->fixed_setter(angle_request, epoch, {});
+  require(edge && edge->edge_angle_deg && std::abs(*edge->edge_angle_deg) < 0.05,
+          edge ? std::format("the square front edge measured {:.3f}°", edge->edge_angle_deg.value_or(99))
+               : edge.error());
+  angle_request.gauge_width_mm = 2;
+  angle_request.start = position();
+  const auto close = port->fixed_setter(angle_request, epoch, {});
+  require(!close && close.error().contains("5 to 300 mm"), close ? "expected a refusal" : close.error());
+
   start_at();
   mdi("G10 L2 P2 R90");
   window('y', 6, 100);

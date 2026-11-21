@@ -1643,7 +1643,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
   const bool boss = request.action == SetterAction::boss;
-  const bool material = request.action == SetterAction::material || corner || ball || bore || boss;
+  const bool angle = request.action == SetterAction::angle;
+  const bool material =
+      request.action == SetterAction::material || corner || ball || bore || boss || angle;
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1743,6 +1745,61 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         ++impl_->loads->mdi_blocks;
     return {};
   };
+  if (angle) {
+    // An edge angle: the edge from beside the work, as a single face, then again `spacing`
+    // further along the edge. Only measured: nothing is written.
+    const auto line = probe_line(request.direction, 0);
+    if (line.axis == 2)
+      return std::unexpected("An edge angle needs an X or Y edge.");
+    if (before.rotation_xy != 0)
+      return std::unexpected("Edge angles are measured in a work system without rotation.");
+    const double spacing = request.gauge_width_mm;
+    if (!(std::abs(spacing) >= 5 && std::abs(spacing) <= 300))
+      return std::unexpected("Enter how far apart to probe along the edge, 5 to 300 mm.");
+    const auto contact = [&](const std::array<double, 3>& from,
+                             std::optional<std::array<double, 3>> approach)
+        -> std::expected<std::array<double, 3>, std::string> {
+      const auto found = probe_fixed_setter({.tool = tool,
+                                             .start = from,
+                                             .travel_mm = limits->material_travel_mm,
+                                             .feed_mm_min = limits->feed_mm_min,
+                                             .approach = approach,
+                                             .material = request.direction},
+                                            wanted);
+      if (!found)
+        return std::unexpected(found.error());
+      return found->machine;
+    };
+    const auto first = contact(request.start, std::nullopt);
+    if (!first)
+      return std::unexpected("First point: " + first.error());
+    // Along the edge: Y for an X face, X for a Y face, at the start height.
+    const std::size_t along = line.axis == 0 ? 1 : 0;
+    const auto* now = impl_->stat();
+    if (now == nullptr || impl_->status.link() != Link::live)
+      return std::unexpected("Controller status was lost between the edge points.");
+    const auto between = to_status(*now, impl_->config, impl_->hal, Link::live);
+    const std::array here{between.controller.axes[0].machine, between.controller.axes[1].machine,
+                          between.controller.axes[2].machine};
+    auto next = request.start;
+    next[along] += spacing;
+    const auto second = contact(here, next);
+    if (!second)
+      return std::unexpected("Second point: " + second.error());
+    // The face moves across by `across` while the probe moves `spacing` along it.
+    const double across = (*second)[line.axis] - (*first)[line.axis];
+    const double run = (*second)[along] - (*first)[along];
+    const double degrees = (line.axis == 0 ? -1.0 : 1.0) * std::atan2(across, run) * 180 / std::numbers::pi;
+    if (!std::isfinite(degrees) || std::abs(degrees) > 10)
+      return std::unexpected(std::format(
+          "The edge turns {:.2f}° over {:.1f} mm, more than 10°. Check that both points touched "
+          "the same straight edge.",
+          degrees, run));
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks)};
+    state.edge_angle_deg = degrees;
+    return state;
+  }
   if (bore) {
     // A bore: the ball starts inside it, below its top. Both X walls from there; the midpoint of
     // any chord lies on the centre line, so the centre X follows. Then both Y walls from the

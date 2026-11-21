@@ -482,3 +482,64 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.main-action').text()).toContain('Resume')
   })
 })
+
+describe('override sliders', () => {
+  function slider(view: VueWrapper, label: string): ReturnType<VueWrapper['get']> {
+    return view.get(`input[type="range"][aria-label="${label}"]`)
+  }
+  it('leave the arrow and page keys to jogging after a touch', () => {
+    wrapper = mount(WorkspaceControls, { attachTo: document.body })
+    for (const label of ['Feed override', 'Spindle override', 'Jog speed']) {
+      vi.mocked(send).mockClear()
+      const element = slider(wrapper, label).element as HTMLInputElement
+      element.focus()
+      expect(document.activeElement).toBe(element)
+      const key = new KeyboardEvent('keydown', { code: 'PageUp', bubbles: true, cancelable: true })
+      element.dispatchEvent(key)
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'PageUp' }))
+      expect(key.defaultPrevented).toBe(true)
+      expect(send).toHaveBeenCalledWith({ type: 'jog_step', axis: 'z', distance: 1, velocity: 750 })
+      expect(vi.mocked(send).mock.calls.some(([command]) => command.type === 'set_override')).toBe(false)
+    }
+    const element = wrapper.element as Element
+    wrapper.unmount(); element.remove(); wrapper = null
+  })
+  it('show the machine again after a drag back to the start, a cancelled drag or Reset', async () => {
+    wrapper = mount(RunBar)
+    const view = wrapper
+    const readout = (): string => view.findAll('.override').find((row) => row.text().includes('Feed override'))?.get('.value').text() ?? ''
+    const feed = slider(view, 'Feed override')
+    /** The finger moves the slider: an input event, no change event yet. */
+    const drag = async (value: string): Promise<void> => {
+      ;(feed.element as HTMLInputElement).value = value
+      await feed.trigger('input')
+    }
+    const machine = async (factor: number): Promise<void> => {
+      if (panel.status === null) throw new Error('Missing status')
+      panel.status = { ...panel.status, motion: { ...panel.status.motion, feed_override: factor } }
+      await nextTick()
+    }
+    await machine(1)
+    // Away and back to 100 %: a browser fires no change event for that release.
+    await drag('80'); await drag('100'); await feed.trigger('pointerup')
+    await machine(0.5)
+    expect(readout()).toBe('50 %')
+    expect(send).not.toHaveBeenCalled()
+    // A cancelled drag asks for nothing.
+    await drag('70'); await feed.trigger('pointercancel')
+    await machine(0.6)
+    expect(readout()).toBe('60 %')
+    expect(send).not.toHaveBeenCalled()
+    // Reset during a drag shows the machine again.
+    await drag('70')
+    expect(readout()).toBe('70 %')
+    await view.findAll('button').find((button) => button.text() === 'Reset 100%')?.trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 1 })
+    await machine(1)
+    expect(readout()).toBe('100 %')
+    // A release asks once for the value shown.
+    vi.mocked(send).mockClear()
+    await drag('90'); await feed.trigger('pointerup'); await feed.trigger('change')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 0.9 })
+  })
+})

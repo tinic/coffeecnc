@@ -30,6 +30,8 @@
 
 #include <signal.h> // kill: POSIX, not in <csignal>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -345,6 +347,19 @@ void units() {
               near(o.segments[1].points.back(), {50.8, 0, 12.7}),
           "A tool length of 2 inches lowers the tip by 50.8 mm: " + text_of(o));
   require(near(o.segments[2].points.back(), {25.4, 0, 12.7}), "G21 on an inch machine");
+
+  // G10 L1 in the other unit: the interpreter hands SET_TOOL_TABLE_ENTRY the machine's unit
+  // (PROGRAM_TO_USER_LEN, interp_convert.cc), the unit the helper's table is in.
+  o = rig.preview("G20 G90\nG1 X1 F10\nG10 L1 P1 Z2\nG43 H1\nG1 Z0.5\nM2\n");
+  require(o.state == PreviewState::ready && o.segments.size() == 2 &&
+              near(o.segments[1].points.front(), {25.4, 0, -50.8}) &&
+              near(o.segments[1].points.back(), {25.4, 0, 12.7}),
+          "G10 L1 Z2 in an inch program on a millimetre machine is 50.8 mm: " + text_of(o));
+  o = inch.preview("G21 G90\nG1 X10 F100\nG10 L1 P1 Z25\nG43 H1\nG1 Z5\nM2\n");
+  require(o.state == PreviewState::ready && o.segments.size() == 2 &&
+              near(o.segments[1].points.front(), {35.4, 0, -25}) &&
+              near(o.segments[1].points.back(), {35.4, 0, 5}),
+          "G10 L1 Z25 in a millimetre program on an inch machine is 25 mm: " + text_of(o));
 }
 
 void offsets_rotation_and_g92() {
@@ -524,6 +539,23 @@ void errors_and_limits() {
           "A cancelled computation ends its helper at once");
 }
 
+void helper_with_closed_standard_descriptors() {
+  Rig rig{"closed-descriptors"};
+  write(rig.file(), "G21 G90\nG0 X5\nM2\n");
+  const pid_t child = ::fork();
+  require(child >= 0, "Fork a private preview caller");
+  if (child == 0) {
+    ::close(STDIN_FILENO);
+    ::close(STDOUT_FILENO);
+    ::close(STDERR_FILENO);
+    const auto result = rig.compute().outcome;
+    ::_exit(result.state == PreviewState::ready && result.segments.size() == 1 ? 0 : 1);
+  }
+  int status = 0;
+  require(::waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+          "The real helper returns its result when the caller has closed standard descriptors");
+}
+
 void parameters_are_refused() {
   Rig rig{"parameters"};
   const std::string head = "G21 G90\nG1 X1 F100\n";
@@ -544,6 +576,10 @@ void parameters_are_refused() {
   stops("G28", "G28");
   stops("G30 X1", "G30");
   stops("G92.3", "G92.3");
+  require(refused_block("G+28") == refused_block("G28") &&
+              refused_block("G+92.3") == refused_block("G92.3") &&
+              motion_use("G+1 X5") == MotionUse::sets,
+          "An explicit positive G word follows the same rules as the unsigned form");
   stops("G38.2 X5 F10", "probe");
   stops("M66 P0 L0", "M66");
   stops("M101", "M101");
@@ -644,6 +680,22 @@ void active_comments_are_refused() {
                 parsed.segments.empty() && !fs::exists(marker),
             "The helper itself scans every file it could read before the interpreter reads: " +
                 result);
+    // A file it cannot read is not scanned, so the interpreter gets nothing either.
+    const auto hidden = direct / "subs" / "other.ngc";
+    write(hidden, "o<other> sub\n;py," + make + "\no<other> endsub\n");
+    fs::permissions(hidden, fs::perms::none);
+    if (!read_text_file(hidden.string(), 1024)) {
+      fs::remove(out);
+      const int unread = std::system(command.c_str());
+      const auto ended =
+          parse_output(read_text_file(out.string(), std::size_t{64} << 20).value_or(std::string()));
+      require(unread == 0 && ended.end == HelperEnd::error && ended.problem &&
+                  ended.problem->text.find("other.ngc cannot be read") != std::string::npos &&
+                  ended.segments.empty() && !fs::exists(marker),
+              "A subroutine file the helper cannot read ends the preview before the interpreter "
+              "starts");
+    }
+    fs::permissions(hidden, fs::perms::owner_all);
   }
 
   // (msg, (debug, (print: nothing but text, unless they hold a parameter.
@@ -722,6 +774,13 @@ void start_state() {
           "Axis words before it do end the preview: " + text_of(o));
   o = with({"G1", "G17", "G21", "G90", "G94", "G54", "G41"}, 100);
   require(o.state == PreviewState::unavailable, "Cutter compensation active: no preview");
+  rig.inputs.start.spindle_speed = 120;
+  rig.inputs.start.spindle_direction = SpindleDirection::forward;
+  o = with({"G1", "G17", "G21", "G90", "G94", "G54", "G96"}, 100);
+  require(o.state == PreviewState::ready && o.segments.size() == 2,
+          "An active constant surface speed mode seeds its S word: " + text_of(o));
+  rig.inputs.start.spindle_speed = 0;
+  rig.inputs.start.spindle_direction = SpindleDirection::stopped;
   // Block delete.
   rig.inputs.start.active_codes = {"G1", "G21", "G90", "G94", "G54"};
   rig.inputs.start.feed = 100;
@@ -1169,6 +1228,14 @@ void refusals_of_the_settings() {
               settings.tool_change_quill_up && !settings.tool_change_at_g30 &&
               settings.interpreter_options == std::vector<std::string>{"RETAIN_G43 = 1"},
           "The settings of an INI file");
+  // The tool change switches as the interpreter reads them: a nonzero integer, nothing else.
+  write(config.ini_file, "[EMCIO]\nTOOL_CHANGE_AT_G30 = -1\nTOOL_CHANGE_QUILL_UP = YES\n");
+  settings = load_preview_settings(config, helper, "x");
+  require(settings.tool_change_at_g30 && !settings.tool_change_quill_up,
+          "-1 moves to G30 at a tool change, YES does not lift the quill, as in LinuxCNC");
+  write(config.ini_file, "[EMCIO]\nRANDOM_TOOLCHANGER = -1\n");
+  require(!load_preview_settings(config, helper, "x").refusal.empty(),
+          "-1 is a random tool changer");
   write(config.ini_file, "[RS274NGC]\nREMAP = M6 modalgroup=6 ngc=change\n");
   require(load_preview_settings(config, helper, "x").refusal.find("REMAP") != std::string::npos,
           "A machine that remaps codes gets no preview");
@@ -1201,6 +1268,7 @@ auto main(int argc, char** argv) -> int {
     subroutines();
     errors_and_limits();
     parameters_are_refused();
+    helper_with_closed_standard_descriptors();
     active_comments_are_refused();
     printed_text_is_not_a_result();
     start_state();

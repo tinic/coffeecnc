@@ -35,6 +35,8 @@ struct PanelEvents {
   std::function<void(PageToken, std::string_view, std::chrono::milliseconds)> message;
   // The current document's animation-frame heartbeat. It is outside the command stream.
   std::function<void(PageToken, std::chrono::milliseconds)> frame;
+  // The program LinuxCNC has open: only its STEP model is served (resolve_program_part).
+  std::function<std::string()> loaded_program;
 };
 
 // Opens the display. False when there is none.

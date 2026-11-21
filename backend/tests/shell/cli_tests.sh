@@ -83,11 +83,14 @@ net measured-rpm encoder.scaled-velocity
 EOF
 cat >"$work/sim/checker-postgui.hal" <<'EOF'
     source "checker/nested post.hal" # quoted path
-EOF
-cat >"$work/sim/checker/nested post.hal" <<'EOF'
-source coffeecnc_postgui.hal
 net measured-rpm => \
     coffeecnc.spindle-rpm
+# halcmd -f joins comments too \
+net hidden encoder.scaled-velocity => coffeecnc.probe-input
+EOF
+cat >"$work/sim/checker/nested post.hal" <<'EOF'
+# halcmd source parses comments one line at a time \
+source coffeecnc_postgui.hal
 net at-speed spindle.0.at-speed => coffeecnc.spindle-at-speed
 net ruby ruby.out => coffeecnc.probe-input
 unlinkp coffeecnc.probe-input

@@ -22,6 +22,8 @@ struct NmlPanelSource::Impl {
   ToolReader tools;
   ProgramReader programs;
   const NmlLoads* loads;
+  std::optional<int> observed_abort;
+  std::uint64_t task_aborts{};
   std::function<Clock::time_point()> clock;
 
   // The table accepted last, and what the panel is shown of it.
@@ -151,6 +153,7 @@ struct NmlPanelSource::Impl {
                  std::vector<ControllerMessage>& messages) {
     if (!pass) {
       pending.reset();
+      pending_raw.reset();
       if (!std::exchange(tools_failed, true))
         messages.push_back({true, "LinuxCNC's tool table cannot be read."});
       return;
@@ -315,10 +318,15 @@ auto NmlPanelSource::read() -> PanelReading {
   reading.tool_table = impl_->tool_table;
   reading.accepted_tools = impl_->withheld;
   reading.preview_tools = impl_->preview_tools;
-  reading.tools_settled = !impl_->pending_raw.has_value();
+  reading.tools_settled = !impl_->tools_failed && !impl_->pending_raw;
   reading.task_executing = status.task_executing;
   reading.commanded_position = status.commanded_position;
-  reading.program_aborts = impl_->loads ? impl_->loads->aborts.load() : 0;
+  if (status.controller.link == Link::live && status.task_abort &&
+      impl_->observed_abort != status.echo_serial) {
+    impl_->observed_abort = status.echo_serial;
+    ++impl_->task_aborts;
+  }
+  reading.program_aborts = impl_->task_aborts + (impl_->loads ? impl_->loads->aborts.load() : 0);
   reading.program_failed = status.task_failed;
   reading.work_systems = to_work_systems(status);
   reading.program = loaded ? impl_->program : nullptr;

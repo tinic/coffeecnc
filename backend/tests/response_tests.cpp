@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -60,6 +61,10 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
+  const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
+  require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),
+          "An invalid measurement returns a failed request without corrupt JSON values");
 }
 
 void operator_messages() {

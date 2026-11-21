@@ -36,6 +36,7 @@ auto scenario(const std::filesystem::path& directory, bool broken, bool wrong_pa
       }
     },
     .frame = {},
+    .loaded_program = {},
   });
   active = &window;
   struct Timeout { PanelWindow& window; bool& expired; } timeout{window, timed_out};

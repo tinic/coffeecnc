@@ -39,10 +39,13 @@ struct Asset {
 
 // `coffeecnc://panel/program-part?program=<percent-encoded absolute path>`: the STEP model that
 // belongs to that program, a regular file in the same directory with the same base name and the
-// extension .step or .stp (either case). Nothing for another URL, a program that does not exist,
-// or no such model. The panel loads it with the program.
+// extension .step or .stp (either case), as its canonical path. Only for `loaded`, the program
+// LinuxCNC has open (it may be in any directory): nothing for another program, another URL, a
+// program that does not exist, or no such model. A model that is a symbolic link is followed:
+// the operator put it beside the program. The panel loads it with the program.
 inline constexpr std::string_view program_part_path = "/program-part";
-[[nodiscard]] auto resolve_program_part(std::string_view url) -> std::optional<std::string>;
+[[nodiscard]] auto resolve_program_part(std::string_view url, std::string_view loaded)
+    -> std::optional<std::string>;
 
 // The URL is one of the panel's own: the only place the window may navigate to.
 [[nodiscard]] auto is_panel_url(std::string_view url) -> bool;

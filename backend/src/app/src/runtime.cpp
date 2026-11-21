@@ -52,7 +52,7 @@ Runtime::~Runtime() {
 }
 
 auto Runtime::begin_page(bool watch_frames) -> PageToken {
-  return session_.begin_page(watch_frames);
+  return session_.begin_page(watch_frames, now());
 }
 void Runtime::end_page(PageToken page) { session_.end_page(page); }
 void Runtime::panel_frame(PageToken page, std::chrono::milliseconds rendered_at) {
@@ -62,6 +62,8 @@ auto Runtime::submit(PageToken page, std::string_view json, std::chrono::millise
     -> Outcome {
   return session_.submit(page, json, now(), rendered_at);
 }
+
+auto Runtime::loaded_program() const -> std::string { return session_.loaded_program(); }
 
 auto Runtime::timing() const -> Timing {
   return {control_periods_.load(), std::chrono::nanoseconds{longest_control_period_.load()}};

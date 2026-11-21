@@ -504,9 +504,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                         &loads};
   source.raw_tools([&pass]() -> std::vector<PreviewTool> { return pass; });
 
-  // Declared in the order they are made; destroyed in reverse: the publisher first, then the
-  // runtime with its safe shutdown, the window last. By then the window is closed and drops
-  // what the worker still posts.
+  // The services outlive the GTK callbacks at close, and stop while the window can still
+  // accept their final posts.
   // The preview: an engine that starts the helper, and the thread that computes with it. Both
   // outlive the publisher, which hands contexts over and takes results.
   const WorkDirectory work;
@@ -530,22 +529,44 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   PanelWindow window{{.ui_directory = *ui,
                       .windowed = options.windowed,
                       .developer_tools = options.developer_tools},
-                     {.begin_page = [&]() -> PageToken { return runtime->begin_page(true); },
+                     {.begin_page = [&]() -> PageToken {
+                        return runtime ? runtime->begin_page(true) : PageToken{};
+                      },
                       .end_page = [&](PageToken page) -> void {
-                        feed->page_ended(page);
-                        runtime->end_page(page);
+                        if (feed)
+                          feed->page_ended(page);
+                        if (runtime)
+                          runtime->end_page(page);
                       },
                       .message = [&](PageToken page, std::string_view json,
                                      std::chrono::milliseconds rendered_at) -> void {
+                        if (!runtime)
+                          return;
                         auto outcome = runtime->submit(page, json, rendered_at);
                         const bool ready = outcome.send_snapshots;
                         window.post(outcome.page, std::move(outcome.messages));
-                        if (ready)
+                        if (ready && feed)
                           feed->page_ready(page);
                       },
                       .frame = [&](PageToken page, std::chrono::milliseconds rendered_at) -> void {
-                        runtime->panel_frame(page, rendered_at);
+                        if (runtime)
+                          runtime->panel_frame(page, rendered_at);
+                      },
+                      .loaded_program = [&]() -> std::string {
+                        return runtime ? runtime->loaded_program() : std::string{};
                       }}};
+  const struct Shutdown {
+    PanelWindow& window;
+    std::unique_ptr<PanelFeed>& feed;
+    std::unique_ptr<Runtime>& runtime;
+    std::unique_ptr<ToolModelStore>& models;
+    ~Shutdown() {
+      window.close();
+      feed.reset();
+      runtime.reset();
+      models.reset();
+    }
+  } shutdown{window, feed, runtime, models};
   int code = 0;
   try {
     models = std::make_unique<ToolModelStore>(
@@ -585,10 +606,6 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(error.what());
     code = 1;
   }
-  window.close();
-  feed.reset();
-  runtime.reset();
-  models.reset();
   return code;
 }
 

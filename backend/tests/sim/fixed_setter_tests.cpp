@@ -270,6 +270,13 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
             "the front edge converged after delayed release past the retract");
     halcmd("setp sim-ruby-release.off-delay 0");
   }
+  start_at();
+  mdi("G21 G10 L2 P2 R30");
+  window('x', 6, 100);
+  check_cycle(ProbeDirection::x_plus, 0, -(6 / std::sqrt(0.75) + 1));
+  require(std::abs(port->status().rotation_xy - 30) < 0.01,
+          "rotated X probing follows the work axis and keeps the work rotation");
+  mdi("G21 G10 L2 P2 R0");
   mdi("G54");
   require(port->status().g5x == g54, "probing G55 left G54 unchanged");
   mdi("G55");
@@ -306,6 +313,15 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   mdi("G21");
   mdi("G10 L20 P0 Z8");
   const auto corner_before = port->status();
+  corner_window('z', -100, 0); // No contact at the lateral search depth.
+  const auto missed_corner = port->fixed_setter(
+      {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus},
+      epoch, {});
+  require(!missed_corner && missed_corner.error().contains("lifted clear") &&
+              std::abs(position()[2] - 20) < 0.2 && port->status().g5x == corner_before.g5x,
+          missed_corner ? "expected a missed outside face" : missed_corner.error());
+  start_at();
+  corner_window('z', -100, 12);
   const auto corner = port->fixed_setter(
       {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
       {});
@@ -374,6 +390,20 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
           boss ? std::format("the boss centre is X0 Y0, diameter {:.3f} mm (work {:.3f} {:.3f})",
                              boss->center_diameter.value_or(0), boss_after.work[0], boss_after.work[1])
                : boss.error());
+
+  // Both contacts can be real yet lie on the same side of the confirmed starting point.
+  // Refuse to write their midpoint to the work origin.
+  start_at();
+  mdi("G10 L20 P0 Z8");
+  corner_window('x', 1, 5);
+  boss_request.start = position();
+  // The simulator searches only 20 mm. Start close enough that both contacts are reachable.
+  boss_request.gauge_width_mm = 2;
+  const auto before_wrong_boss = port->status().g5x;
+  const auto wrong_boss = port->fixed_setter(boss_request, epoch, {});
+  require(!wrong_boss && wrong_boss.error().contains("do not enclose") &&
+              port->status().g5x == before_wrong_boss && std::abs(position()[2] - 20) < 0.2,
+          wrong_boss ? "expected a refusal for a boss outside the start" : wrong_boss.error());
 
   // A bore: the ball trips outside x -9..+9 and y -7..+7 (NAND of both windows); centre 0, 0, a
   // 14 mm centre chord in Y plus the 2 mm ball: 16 mm.

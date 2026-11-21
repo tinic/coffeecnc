@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(coffeecnc_backend VERSION 0.1.1 LANGUAGES CXX)
+project(coffeecnc_backend VERSION 0.1.2 LANGUAGES CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake -S backend -B build/backend")
@@ -41,6 +41,14 @@ if(BUILD_TESTING)
   target_link_libraries(coffeecnc_text_file_tests PRIVATE coffeecnc_core coffeecnc_project_options)
   coffeecnc_enable_analyzers(coffeecnc_text_file_tests)
   add_test(NAME text_file COMMAND coffeecnc_text_file_tests ${PROJECT_BINARY_DIR})
+  # How the adapter replaces the tool table and its records: POSIX only, built from its source
+  # so that it runs wherever the core does.
+  add_executable(coffeecnc_durable_file_tests tests/durable_file_tests.cpp
+    src/linuxcnc/src/durable_file.cpp)
+  target_link_libraries(coffeecnc_durable_file_tests PRIVATE coffeecnc_core
+    coffeecnc_project_options)
+  coffeecnc_enable_analyzers(coffeecnc_durable_file_tests)
+  add_test(NAME durable_file COMMAND coffeecnc_durable_file_tests ${PROJECT_BINARY_DIR})
   if(COFFEECNC_BUILD_APP)
     add_executable(coffeecnc_request_tests tests/request_tests.cpp)
     target_link_libraries(coffeecnc_request_tests PRIVATE coffeecnc_app coffeecnc_project_options)
@@ -248,6 +256,11 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_restore_spindle_tool_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
       endforeach()
+      add_test(NAME linuxcnc_probe_tool_interlock COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -u mm -t 60 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_tool_interlock
+        $<TARGET_FILE:coffeecnc_sim_tests> probe-interlock)
+      set_tests_properties(linuxcnc_probe_tool_interlock PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
       add_test(NAME linuxcnc_edge_rotation_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

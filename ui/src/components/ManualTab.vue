@@ -165,10 +165,11 @@ function stopPointerDown(event: PointerEvent): void {
   }
 }
 
+/** A field has the keyboard. A slider does not: the arrow and page keys keep jogging. */
 function typing(): boolean {
   const element = document.activeElement
   return (
-    element instanceof HTMLInputElement ||
+    (element instanceof HTMLInputElement && element.type !== 'range') ||
     element instanceof HTMLTextAreaElement ||
     element instanceof HTMLSelectElement ||
     (element instanceof HTMLElement && element.isContentEditable)
@@ -260,11 +261,6 @@ onBeforeUnmount(() => {
 
 function setJogVelocity(event: Event): void {
   panel.jogVelocity = Number((event.target as HTMLInputElement).value)
-}
-
-function blur(event: Event): void {
-  // Leave the slider, so that the arrow keys jog again.
-  ;(event.target as HTMLElement).blur()
 }
 
 const pad: readonly (readonly [JogKey, string, 'up' | 'down' | 'left' | 'right'])[] = [
@@ -522,7 +518,6 @@ function coolant(which: 'flood' | 'mist'): void {
           aria-label="Jog speed"
           :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
           @input="setJogVelocity"
-          @change="blur"
         />
         <span class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</span>
         <span class="hint">{{ velocityUnit(unit) }}</span>

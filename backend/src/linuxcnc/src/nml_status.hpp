@@ -47,6 +47,10 @@ private:
   bool have_status_{};
 };
 
+// Convert all coordinates from the same machine position using the active work frame.
+[[nodiscard]] auto work_position(const Vec3& machine, const Vec3& g5x, const Vec3& g92,
+                                 const Vec3& tool, double rotation) -> Vec3;
+
 // One EMC_STAT in protocol units. `link` is the caller's own reading of the write counter.
 [[nodiscard]] auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* hal,
                              Link link) -> NmlStatus;

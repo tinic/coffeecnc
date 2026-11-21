@@ -6,6 +6,7 @@
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include "durable_file.hpp"
 #include "nml_gate.hpp"
 #include "nml_status.hpp"
 #include "program_watch.hpp"
@@ -54,19 +55,10 @@ auto load_touched(const std::string& file) -> std::optional<TouchedOff> {
     text += line + '\n';
   return parse_touched_off(text);
 }
+// The records beside the tool table say what is in the spindle and where a run stopped: on
+// disk, whole, before anything relies on them.
 auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> bool {
-  auto temporary = path;
-  temporary += ".new";
-  {
-    std::ofstream out(temporary);
-    out << text;
-    out.close();
-    if (!out)
-      return false;
-  }
-  std::error_code error;
-  std::filesystem::rename(temporary, path, error);
-  return !error;
+  return replace_synced(path.string(), text).has_value();
 }
 void save_touched(const std::string& file, const TouchedOff& touched) {
   static_cast<void>(write_sidecar(file, format_touched_off(touched)));
@@ -311,6 +303,8 @@ struct NmlPort::Impl {
   // The joint or axis and the jjogmode of the jog stop that is the last command written, until
   // task echoes it.
   std::optional<std::pair<int, int>> unanswered_stop;
+  // Space of the last jog this port may have submitted for each axis.
+  std::array<std::optional<JogSpace>, 3> jog_spaces{};
   std::vector<ControllerMessage> messages;
   // A jog-stop text read in the present collect(), not yet attributed.
   struct JogStopText {
@@ -807,21 +801,16 @@ struct NmlPort::Impl {
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
   // edit can be withdrawn and leaves nothing behind; between them only half of it.
   [[nodiscard]] auto load_tool_table(const std::string& table) -> ActionResult {
+    // On disk before LinuxCNC reads it: a power cut leaves the old table or the new one.
     const std::string temporary = config.tool_table + ".coffeecnc";
-    {
-      std::ofstream out{temporary, std::ios::binary | std::ios::trunc};
-      out << table;
-      out.flush();
-      if (!out)
-        return failed(std::format("Cannot write tool table {}.", temporary));
-    }
-    std::error_code error;
+    if (!write_synced(temporary, table))
+      return failed(std::format("Cannot write tool table {}.", temporary));
     if (!still()) {
+      std::error_code error;
       std::filesystem::remove(temporary, error);
       return withdrawn();
     }
-    std::filesystem::rename(temporary, config.tool_table, error);
-    if (error)
+    if (!rename_synced(temporary, config.tool_table))
       return failed(std::format("Cannot replace tool table {}.", config.tool_table));
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;
@@ -931,7 +920,10 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
     recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {
     finish_breakpoint(wanted);
-    return;
+    if (impl_->breakpoint)
+      return;
+    // An orphaned wrapper stays blocked for program commands until the operator opens
+    // a new file, but does not prevent restoring the already recorded spindle tool.
   }
   if (impl_->startup_tool.value_or(0) <= 0)
     return;
@@ -1137,6 +1129,7 @@ auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace spac
     return withdrawn();
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
+  impl_->jog_spaces.at(static_cast<std::size_t>(index_of(axis))) = space;
   EMC_JOG_CONT message;
   // World mode jogs the axis, joint mode its joint.
   message.joint_or_axis = space == JogSpace::axis ? index_of(axis) : joint_of(impl_->config, axis);
@@ -1150,26 +1143,32 @@ auto NmlPort::stop_jog(Axis axis) -> ActionResult {
   const Impl::Scope scope{*impl_};
   const EMC_STAT* s = impl_->stat();
   const bool answered = impl_->answered(s);
-  // Task answers a jog stop with an error unless the machine is on, and nothing jogs outside
-  // manual mode. That holds for what task has taken up: with a command of this port still
-  // unanswered, or without any status, the stop is sent and its real outcome reported.
-  if (s != nullptr && answered &&
-      (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
+  auto& previous = impl_->jog_spaces.at(static_cast<std::size_t>(index_of(axis)));
+  const bool live = s != nullptr && impl_->status.link() == Link::live;
+  // After task has taken up our commands, a live mode discloses where motion can be jogging.
+  // If status is missing or an earlier command could still be queued, retain its known space.
+  if (live && answered &&
+      (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL)) {
+    previous.reset();
     return {};
+  }
+  const auto reported = s != nullptr && s->motion.traj.mode == EMC_TRAJ_MODE_TELEOP
+                            ? JogSpace::axis : JogSpace::joint;
+  const auto space = live && answered ? reported : previous.value_or(reported);
   EMC_JOG_STOP message;
-  // A jog runs in the space motion is in: axis jogs need world mode, joint jogs joint mode. The
-  // stop addresses what the jog did: the axis, or the axis's joint.
-  message.jjogmode = s != nullptr && s->motion.traj.mode == EMC_TRAJ_MODE_TELEOP ? 0 : 1;
-  message.joint_or_axis = message.jjogmode == 0 ? index_of(axis) : joint_of(impl_->config, axis);
-  // The stop for this axis is in the command queue already: task will execute it after
-  // everything written before it. Writing it again would only fill the queue.
+  message.jjogmode = space == JogSpace::axis ? 0 : 1;
+  message.joint_or_axis = space == JogSpace::axis ? index_of(axis) : joint_of(impl_->config, axis);
+  // Retry the stop already in the queue without filling it with duplicate commands.
   const std::pair stop{message.joint_or_axis, message.jjogmode};
-  if (!answered && impl_->unanswered_stop == stop)
-    return impl_->finished(from);
-  if (auto wrote = impl_->write(message); !accepted(wrote))
-    return wrote;
-  impl_->unanswered_stop = stop;
-  return impl_->finished(from);
+  if (answered || impl_->unanswered_stop != stop) {
+    if (auto wrote = impl_->write(message); !accepted(wrote))
+      return wrote;
+    impl_->unanswered_stop = stop;
+  }
+  auto stopped = impl_->finished(from);
+  if (accepted(stopped))
+    previous.reset();
+  return stopped;
 }
 
 auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space,
@@ -1182,6 +1181,7 @@ auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpac
     return withdrawn();
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
+  impl_->jog_spaces.at(static_cast<std::size_t>(index_of(axis))) = space;
   EMC_JOG_INCR message;
   message.joint_or_axis = space == JogSpace::axis ? index_of(axis) : joint_of(impl_->config, axis);
   // The sign of the velocity is the direction; the increment is a magnitude.
@@ -1243,8 +1243,14 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
   };
   const auto& c = before.controller;
-  const auto search_start = move.approach.value_or(move.start);
   const auto line = probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
+  const bool rotated = material && line.axis != 2 && before.rotation_xy != 0;
+  auto search_start = move.approach.value_or(move.start);
+  if (rotated && !move.approach) {
+    // Hold the commanded transverse position, as the trajectory planner will.
+    search_start[0] = before.commanded_position[0];
+    search_start[1] = before.commanded_position[1];
+  }
   const auto endpoint = line.advance(search_start, move.travel_mm);
   const auto coordinate = [&](const auto& point) { return line.distance(search_start, point); };
   const auto in_travel = [&](const std::array<double, 3>& point) {
@@ -1284,7 +1290,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const bool restore_incremental = std::ranges::contains(before.active_codes, "G91");
   const double program_scale = c.program_units == LengthUnit::inch ? 25.4 : 1.0;
   const double machine_scale = impl_->config.millimetres_per_unit;
-  auto line_origin = move.start;
+  auto line_origin = move.approach ? move.start : search_start;
   const auto on_line = [&](const std::array<double, 3>& point,
                            const std::array<double, 3>& origin) {
     // A linear encoder can lag on reversal. The machine defines the acceptable deviation.
@@ -1519,11 +1525,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     const auto timeout = std::chrono::milliseconds{
         static_cast<int>((travel / feed * seconds_per_minute + 3) * 1000)};
     std::string code;
-    if (material && line.axis != 2 && before.rotation_xy != 0) {
-      // Supply both coordinates in a rotated frame. LinuxCNC can carry an unintended
-      // coordinate on the omitted axis of an incremental probe after a rotation change.
-      auto target = before.work;
-      target[line.axis] += line.sign * (begin_at + travel);
+    if (rotated) {
+      // Supply both coordinates in the rotated frame from one commanded machine target.
+      const auto target = work_position(line.advance(search_start, begin_at + travel), before.g5x,
+                                        before.g92, before.tool_offset, before.rotation_xy);
       code = std::format("G90 G38.3 X{:.8f} Y{:.8f} F{:.8f}", target[0] / program_scale,
                          target[1] / program_scale, feed / program_scale);
     } else {
@@ -1583,8 +1588,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       }));
       raw = live_cycle();
       const auto released = interlock();
-      if (raw == nullptr || !released || !released_at_backoff(*raw, *released))
+      if (raw == nullptr || !released || !released_at_backoff(*raw, *released)) {
+        if (material && backoff < 0 && raw != nullptr && released && *released->probe_input)
+          return interrupt("The probe did not release at the confirmed start. Start farther from "
+                           "the workpiece before trying again.");
         return interrupt("The setter did not release before the latch pass.");
+      }
 
       const double latch_travel = std::min(2 * limits->latch_backoff_mm, move.travel_mm - retreat);
       contact = search(retreat, latch_travel, limits->latch_feed_mm_min);
@@ -1654,12 +1663,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     vertical_at = machine_position(raw->motion.traj.actualPosition);
     if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
                std::chrono::seconds{30}, false, true))
-      return interrupt(std::format("Could not lift the probe above the ridge ({}).", block_failure));
+      return interrupt(std::format("Could not lift the probe to the clearance height ({}).", block_failure));
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
           impl_->config.motion_tolerances.probe_backlash_mm))
-      return interrupt("The probe did not reach the clearance height above the ridge.");
+      return interrupt("The probe did not reach the clearance height.");
     line_origin[2] = lift_z;
     vertical_at.reset();
     positioning = false;
@@ -1873,9 +1882,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const double previous_length = *previous * machine_scale;
   if (checking && previous_length == 0 && !std::ranges::contains(current_marks, tool))
     return std::unexpected("Set the loaded tool's length before checking it.");
-  // Sets the measured axes of the active work system at machine `origin`. Verify the command
-  // against the encoder lag, then optionally lift to machine Z `lift_to`.
-  const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to,
+  // Sets the measured axes of the active work system at machine `origin` and verifies the
+  // command against the encoder lag. The probe cycle has already returned to clearance.
+  const auto set_xy_origin = [&](std::array<double, 2> origin,
                                  std::array<bool, 2> axes = {true, true})
       -> std::expected<void, std::string> {
       const auto from = impl_->begin(&wanted);
@@ -1926,16 +1935,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       });
       if (!verified)
         return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
-      // Leave the probe above the work, clear of the faces.
-      EMC_TASK_PLAN_EXECUTE lift;
-      if (lift_to && put(lift.command, std::format("G90 G53 G0 Z{:.8f}", *lift_to / scale)) &&
-          accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
-      EMC_TASK_PLAN_EXECUTE distance;
-      if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
-          accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
     return {};
+  };
+  const auto encloses_start = [&](std::size_t axis, double low, double high) {
+    return low < request.start[axis] && request.start[axis] < high;
   };
   if (inside_corner || pocket || slot || ridge) {
     if (before.rotation_xy != 0)
@@ -2024,12 +2027,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto high = face(ridge ? negative : positive);
       if (!high)
         return std::unexpected(high.error());
-      if (!(*low < request.start[axis] && request.start[axis] < *high))
+      if (!encloses_start(axis, *low, *high))
         return std::unexpected("The probed faces do not enclose the confirmed starting point.");
       origin[axis] = std::midpoint(*low, *high);
       state.feature_size[axis] = *high - *low;
     }
-    if (auto set = set_xy_origin(origin, std::nullopt, axes); !set)
+    if (auto set = set_xy_origin(origin, axes); !set)
       return std::unexpected(set.error());
     return state;
   }
@@ -2149,6 +2152,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     const auto x_minus = wall(ProbeDirection::x_minus, *at, std::nullopt);
     if (!x_minus)
       return std::unexpected("−X wall: " + x_minus.error());
+    if (!encloses_start(0, *x_minus, *x_plus))
+      return std::unexpected("The probed X faces do not enclose the confirmed bore starting point.");
     const double centre_x = (*x_plus + *x_minus) / 2;
     at = here();
     if (!at)
@@ -2162,9 +2167,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     const auto y_minus = wall(ProbeDirection::y_minus, *at, std::nullopt);
     if (!y_minus)
       return std::unexpected("−Y wall: " + y_minus.error());
+    if (!encloses_start(1, *y_minus, *y_plus))
+      return std::unexpected("The probed Y faces do not enclose the confirmed bore starting point.");
     const double centre_y = (*y_plus + *y_minus) / 2;
     const double diameter = *y_plus - *y_minus + 2 * radius;
-    if (auto set = set_xy_origin({centre_x, centre_y}, std::nullopt); !set)
+    if (auto set = set_xy_origin({centre_x, centre_y}); !set)
       return std::unexpected(set.error());
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
@@ -2230,7 +2237,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                                .feed_mm_min = limits->feed_mm_min,
                                                .approach = approach,
                                                .clearance_z = clearance,
-                                               .material = direction},
+                                               .material = direction,
+                                               .return_to_clearance = true},
                                               wanted);
       if (!contact)
         return std::unexpected(contact.error());
@@ -2250,6 +2258,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                               *at, half_gauge + outside);
       if (!right)
         return std::unexpected("+X face: " + right.error());
+      if (!encloses_start(0, *left, *right))
+        return std::unexpected("The probed X faces do not enclose the confirmed boss starting point.");
       const double centre_x = (*left + *right) / 2;
       std::array through{centre_x, request.start[1], request.start[2]};
       at = here();
@@ -2266,8 +2276,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                              half_gauge + outside, through);
       if (!back)
         return std::unexpected("+Y face: " + back.error());
+      if (!encloses_start(1, *front, *back))
+        return std::unexpected("The probed Y faces do not enclose the confirmed boss starting point.");
       const double centre_y = (*front + *back) / 2;
-      if (auto set = set_xy_origin({centre_x, centre_y}, clearance); !set)
+      if (auto set = set_xy_origin({centre_x, centre_y}); !set)
         return std::unexpected(set.error());
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks),
@@ -2320,14 +2332,6 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       });
       if (!written)
         return std::unexpected("Could not verify the ball diameter in the tool table.");
-      EMC_TASK_PLAN_EXECUTE lift;
-      if (put(lift.command, std::format("G90 G53 G0 Z{:.8f}", clearance / scale)) &&
-          accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
-      EMC_TASK_PLAN_EXECUTE distance;
-      if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
-          accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks)};
       state.ball_diameter = diameter;
@@ -2343,7 +2347,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     if (!y_face)
       return std::unexpected("Y face: " + y_face.error());
 
-    if (auto set = set_xy_origin({*x_face, *y_face}, clearance); !set)
+    if (auto set = set_xy_origin({*x_face, *y_face}); !set)
       return std::unexpected(set.error());
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
@@ -2619,6 +2623,14 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return closed;
   if (auto opened = impl_->run(open, from); !accepted(opened))
     return opened;
+  // The public status maps the temporary wrapper to its original. Check the exact file
+  // reported by Task before revalidating the inputs or sending PLAN_RUN.
+  if (auto settled = impl_->settled(from, "LinuxCNC did not open the checked program.",
+                                   [&](const EMC_STAT& now) -> bool {
+                                     return text_of(now.task.file) == open.file;
+                                   });
+      !accepted(settled))
+    return settled;
   if (!current())
     return failed(stale);
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
@@ -2648,7 +2660,10 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   }
   if (impl_->loads)
     impl_->loads->breakpoint.store(impl_->breakpoint);
-  return start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+  auto started = start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+  if (!accepted(started))
+    finish_breakpoint(wanted);
+  return started;
 }
 
 void NmlPort::finish_breakpoint(const Wanted& wanted) {
@@ -3105,7 +3120,19 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
         "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
   std::this_thread::sleep_for(gate_settle);
   const auto now = status();
-  return safe(now) && arrived(now) ? ActionResult{} : stopped;
+  if (!safe(now) || !arrived(now))
+    return stopped;
+  if (clear) {
+    // LinuxCNC samples count deltas with the gate closed but does not apply them. Leave the
+    // gate closed for a full control interval on either side of resetting the baseline.
+    if (!hal->rebase_paused_z_counts())
+      return stopped;
+    std::this_thread::sleep_for(gate_settle);
+    const auto rebased = status();
+    if (!safe(rebased) || !arrived(rebased))
+      return stopped;
+  }
+  return {};
 }
 
 auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) -> ActionResult {
@@ -3388,7 +3415,8 @@ auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
   const auto table = impl_->read_tool_table();
   if (!table)
     return failed(table.error());
-  return impl_->load_tool_table(with_tool(*table, tool, impl_->config.millimetres_per_unit));
+  const auto edited = with_tool(*table, tool, impl_->config.millimetres_per_unit);
+  return edited ? impl_->load_tool_table(*edited) : failed(edited.error());
 }
 
 auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {

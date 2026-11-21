@@ -8,9 +8,13 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
+#include <initializer_list>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <unistd.h>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -137,6 +141,66 @@ void saved_positions() {
   requested.document.saved_positions = {{std::string(64, 'a'), {1, 2, 3}}};
   require(operator_settings_command_error(requested, limits).empty(),
           "A 64-byte name is accepted");
+}
+// A save request replaces the whole document: a damaged optional field refuses it, where a damaged
+// file only falls back for that field.
+void damaged_requests() {
+  OperatorSettingsFile value{"G0759", 1, command().document};
+  value.document.saved_positions = {{"Vise jaw", {-120.5, 33.25, -10}}};
+  value.document.recent_programs = {"/home/turo/nc/a.ngc"};
+  const auto document = Json::parse(encode_operator_settings_file(value).value_or("{}"))["document"];
+  const auto valid = decode_operator_preferences(document.dump());
+  require(valid && *valid == value.document, "A valid save request decodes exactly");
+  auto older = document;
+  older.erase("program_layout");
+  older.erase("theme");
+  older.erase("tool_reference_height");
+  require(decode_operator_preferences(older.dump()).has_value(),
+          "A save request may still omit the optional fields");
+  auto seventeen = Json::array();
+  for (int index = 0; index < 17; ++index)
+    seventeen.push_back({{"name", "P"}, {"position", {0, 0, 0}}});
+  for (const auto& [field, damaged] : std::initializer_list<std::pair<std::string, Json>>{
+           {"saved_positions", Json("x")},
+           {"saved_positions", seventeen},
+           {"saved_positions", Json::array({Json{{"name", "A\n"}, {"position", {1, 2, 3}}}})},
+           {"saved_positions", Json::array({Json{{"name", "A"}, {"position", {1, 2, 1e7}}}})},
+           {"recent_programs", Json::array({"relative.ngc"})},
+           {"recent_programs", Json("/a.ngc")},
+           {"program_layout", Json(false)},
+           {"program_layout", Json("sideways")},
+           {"theme", Json("sepia")}}) {
+    auto invalid = document;
+    invalid[field] = damaged;
+    const auto decoded = decode_operator_preferences(invalid.dump());
+    require(!decoded, "A save request with a damaged " + field + " is refused");
+  }
+}
+// The writer never writes a file the reader refuses: that would leave the settings unavailable.
+void bounded_files() {
+  auto requested = command();
+  requested.document.recent_programs.assign(8, '/' + std::string(2100, 'p'));
+  require(operator_settings_command_error(requested, limits).empty(),
+          "Eight long recent programs are valid preferences");
+  const auto encoded = encode_operator_settings_file({"G0759", 1, requested.document});
+  require(!encoded, "A file over 16 KiB is not encoded");
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  ToolModelArchive owner{files, location};
+  owner.open();
+  OperatorSettingsArchive archive{files, limits};
+  archive.open(owner.shared_location());
+  require(archive.apply(command()).outcome == CommandOutcome::accepted, "Initial file saved");
+  const auto saved = disk.files.at(file);
+  requested.base_revision = 1;
+  require(archive.apply(requested).outcome == CommandOutcome::rejected &&
+              disk.files.at(file) == saved && archive.settings().revision == 1,
+          "A save over 16 KiB is refused and the saved file is unchanged");
+  OperatorSettingsArchive restarted{files, limits};
+  restarted.open(owner.shared_location());
+  require(restarted.settings().availability == ToolModelAvailability::available &&
+              restarted.settings().revision == 1,
+          "Settings stay available after a refused large save");
 }
 void archive_and_restart() {
   FakeDisk disk;
@@ -324,6 +388,8 @@ auto main() -> int {
   try {
     documents_and_limits();
     saved_positions();
+    damaged_requests();
+    bounded_files();
     archive_and_restart();
     failures();
     writer_delivery();

@@ -74,6 +74,8 @@ struct ControllerState {
   // Protocol values are millimetres; composed G-code must be written in this unit.
   LengthUnit program_units{LengthUnit::mm};
   std::string program_file;
+  std::string active_mdi; // LinuxCNC's active input block while MDI waits at a tool exchange.
+  bool mdi_queued{};
   bool spindle_active{};
   bool unresolved_legacy_offset{};
   bool breakpoint_program{};
@@ -216,6 +218,7 @@ struct TouchOff {
 struct ToolTouchOff {
   double value;
 };
+inline constexpr std::size_t max_tool_comment_bytes = 255;
 struct Tool {
   int number{};
   int pocket{};
@@ -259,7 +262,8 @@ class CommandPolicy {
 public:
   explicit CommandPolicy(const Limits& limits);
   // Permission to attempt an action, NOT a protocol CommandResult/acknowledgement.
-  [[nodiscard]] auto evaluate(const Command&, const ControllerState&) const -> Decision;
+  [[nodiscard]] auto evaluate(const Command&, const ControllerState&,
+                              bool increment_in_progress = false) const -> Decision;
 
 private:
   Limits limits_;

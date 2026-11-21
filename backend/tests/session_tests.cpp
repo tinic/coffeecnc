@@ -393,6 +393,37 @@ void stale_pages_are_dropped() {
           "The current page is unaffected by the stale page's IDs");
 }
 
+void controller_messages_wait_for_ready() {
+  Rig rig{false};
+  rig.port.published.push_back({true, "Motor drive reports a fault."});
+  const auto clock = [] { return at(0ms); };
+  require(rig.session.work(clock).outcome.messages.empty() && rig.port.published.size() == 1,
+          "Controller messages wait while the new page is loading");
+  require(rig.session.submit(rig.page, R"({"id":1,"type":"ready"})", at(0ms)).send_snapshots,
+          "The document is now ready");
+  const auto message = rig.session.work(clock).outcome.messages;
+  require(message.size() == 1 && Json::parse(message.front()).at("text") == "Motor drive reports a fault.",
+          "The ready document gets the retained controller fault");
+}
+
+void panel_watchdog_uses_a_monotonic_page_clock() {
+  Rig rig{false};
+  auto& session = rig.session;
+  const auto page = session.begin_page(true, at(0ms));
+  require(session.submit(page, R"({"id":1,"type":"ready"})", at(0ms)).send_snapshots,
+          "Ready before the first frame");
+  session.panel_frame(page, at(80ms).unix_time, at(80ms));
+  session.panel_frame(page, at(160ms).unix_time, {at(160ms).monotonic, at(160ms).unix_time - 1h});
+  require(!session.control({at(161ms).monotonic, at(161ms).unix_time - 1h}, {}),
+          "A backward correction does not put a fresh document on hold");
+  const auto queued = session.submit(page, R"({"id":2,"type":"mdi","text":"G55"})",
+                                     {at(180ms).monotonic, at(180ms).unix_time + 1h}, at(160ms).unix_time);
+  require(results(queued).empty(), "A forward correction does not make fresh commands stale");
+  session.panel_frame(page, at(300ms).unix_time, {at(690ms).monotonic, at(690ms).unix_time + 1h});
+  require(session.control({at(690ms).monotonic, at(690ms).unix_time + 1h}, {}),
+          "A delayed animation frame remains stale after a wall-clock correction");
+}
+
 void panel_watchdog_cancels_waiting_work() {
   Rig rig{false};
   auto& session = rig.session;
@@ -486,7 +517,12 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   constexpr auto reason = "A touch probe is loaded";
   for (const auto* body : {R"("type":"set_spindle","direction":"forward","rpm":200)",
                            R"("type":"set_spindle","direction":"reverse","rpm":200)",
-                           R"("type":"mdi","text":"S200 m +0 3")"}) {
+                           R"("type":"mdi","text":"S200 m +0 3")",
+                           R"("type":"mdi","text":"M61 Q1")",
+                           R"("type":"mdi","text":"G33 Z-1 K1")",
+                           R"("type":"mdi","text":"G76 P1 Z-1 I-1 J1 K1")",
+                           R"("type":"mdi","text":"G84.2 Z-1")",
+                           R"("type":"mdi","text":"G84.3 Z-1")"}) {
     rig.expect(body, "rejected", reason);
     rig.acted({}, "A probe rejects spindle starts before mode change or dispatch");
   }
@@ -527,6 +563,46 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   rig.expect(R"("type":"resume")", "rejected",
              "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
   rig.acted({}, "Editing the source cannot certify a paused run that started without a probe");
+}
+
+void pending_probe_tool_changes() {
+  FakeToolModels models;
+  models.probe = 99;
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, &models};
+  auto& state = rig.port.state;
+  state.tool_in_spindle = 1;
+  rig.expect(R"("type":"mdi","text":"M61 Q99 S200 M3")", "rejected",
+             "Separate M61 from tool changes and spindle commands.");
+  rig.acted({}, "An identity change cannot share an MDI block with spindle actuation");
+  rig.accepted(R"("type":"mdi","text":"M61 Q1 G43 H1")");
+  rig.acted({"set_task_mode mdi", "mdi M61 Q1 G43 H1"}, "Ordinary spindle-off identification still works");
+
+  state.requested_tool = 99;
+  state.tool_request = 10;
+  state.active_mdi = "T99 M6 S200 M3";
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Press Stop, then load the touch probe with a separate tool change.");
+  rig.acted({}, "A pending MDI exchange cannot acknowledge a probe before a spindle command");
+  state.active_mdi = "T99 M6 G43 H99";
+  state.mdi_queued = true;
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Press Stop, then load the touch probe with a separate tool change.");
+  rig.acted({}, "Pending MDI cannot be certified when blocks are queued behind it");
+  state.mdi_queued = false;
+  rig.accepted(R"("type":"tool_changed")");
+  rig.acted({"tool_changed tool 99 request 10"}, "A stand-alone tool change can mount the probe");
+
+  state.mode = TaskMode::automatic;
+  state.program_file = "/home/cnc/nc_files/part.ngc";
+  state.active_mdi.clear();
+  state.requested_tool = 99;
+  state.tool_request = 11;
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Stop the program and load the touch probe from Tools before running.");
+  rig.acted({}, "A program started with a cutting tool cannot mount a probe without a safe plan");
+  state.requested_tool = 2;
+  rig.accepted(R"("type":"tool_changed")");
+  rig.acted({"tool_changed tool 2 request 11"}, "Ordinary AUTO tool changes remain available");
 }
 
 constexpr auto remove_model =
@@ -1001,6 +1077,15 @@ void directory_listing() {
 
 void program_paths() {
   Rig rig;
+  require(rig.session.loaded_program().empty(),
+          "No program is loaded while LinuxCNC has none open");
+  rig.port.state.program_file = "/srv/jobs/bracket.ngc";
+  rig.session.observe(rig.port.state, rig.driver.now.monotonic);
+  require(rig.session.loaded_program() == "/srv/jobs/bracket.ngc",
+          "The loaded program is LinuxCNC's, wherever it is");
+  rig.port.state.program_file.clear();
+  rig.session.observe(rig.port.state, rig.driver.now.monotonic);
+  require(rig.session.loaded_program().empty(), "None once LinuxCNC has none open");
   for (const auto* path : {"part.ngc", "/home/cnc/nc_files/part.ngc", "fixtures/../part.ngc",
                            "/home/cnc/nc_files/./fixtures/../part.ngc"}) {
     rig.accepted(std::format(R"("type":"open_program","path":"{}")", path));
@@ -1122,11 +1207,21 @@ void jog_presses_and_refreshes() {
   }
   rig.acted({}, "Refreshes are answered without a controller action");
 
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)");
-  rig.acted({"start_jog x -1 600 axis"}, "A changed direction is a new press");
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)");
-  rig.acted({"start_jog x -1 900 axis"}, "A changed velocity is a new press");
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)");
+  constexpr auto opposite = R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)";
+  constexpr auto faster = R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)";
+  rig.expect(opposite, "rejected", release_reason);
+  rig.acted({"stop_jog x"}, "A change in direction stops an active press");
+  rig.expect(opposite, "rejected", release_reason);
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "The original control was released");
+  rig.accepted(opposite);
+  rig.acted({"start_jog x -1 600 axis"}, "A new press can move in the other direction");
+  rig.expect(faster, "rejected", release_reason);
+  rig.acted({"stop_jog x"}, "A change in velocity also stops the active press");
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "Release clears the latch");
+  rig.accepted(faster);
+  rig.acted({"start_jog x -1 900 axis"}, "A new press picks up the new speed");
   rig.accepted(hold_y);
   rig.acted({"start_jog y -1 600 axis"}, "Axes are held independently");
 
@@ -1165,11 +1260,13 @@ void jog_failures() {
   rig.accepted(hold_x);
   rig.acted({"start_jog x 1 600 axis"}, "A new press starts; no lease was left by the failed one");
 
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "Release before starting the opposite jog");
   rig.port.script["start_jog"] = {{ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)", "timed_out",
              "LinuxCNC did not answer.");
   rig.acted({"start_jog x -1 600 axis", "stop_jog x"},
-            "A lost change of direction does not leave the old jog running");
+            "A start with no answer is independently followed by a stop");
   rig.clock += 1s;
   static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Its lease is gone");
@@ -1760,6 +1857,25 @@ void port_is_told_when_a_request_goes_stale() {
 
 // An increment is motion nobody holds. From the moment it is sent it counts as moving, so a stop
 // decision raises the jog-stop level for it, until the controller was seen at rest again.
+void home_after_increment() {
+  Rig rig;
+  rig.port.state.axes[0].machine = rig.port.state.axes[0].max_limit - 1;
+  rig.accepted(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)");
+  rig.acted({"jog_increment x 1 300 axis"}, "An increment may end at the configured limit");
+  rig.port.state.axes[0].machine = rig.port.state.axes[0].max_limit;
+  rig.clock = 10ms;
+  static_cast<void>(rig.tick(at(rig.clock)));
+  require(!rig.driver.level, "A completed step at the limit does not assert jog stop");
+  rig.acted({}, "The limit endpoint does not schedule a jog stop");
+  rig.accepted(R"("type":"home","axis":"x")");
+  rig.acted({"stop_jog x", "home x"}, "Homing fences an old increment before sending Home");
+  rig.port.state.axes[0].homing = true;
+  rig.clock = 20ms;
+  static_cast<void>(rig.tick(at(rig.clock)));
+  require(!rig.driver.level, "Old increment tracking leaves homing alone");
+  rig.acted({}, "No stop is sent after homing started");
+}
+
 void increments_are_tracked() {
   constexpr auto long_step = R"("type":"jog_step","axis":"x","distance":100,"velocity":600)";
   struct Row {
@@ -2010,10 +2126,13 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.page = rig.begin_page();
   rig.acted({"stop_jog x"}, "The page boundary asks for the stop");
   auto outcome = rig.tick(at(1ms));
-  require(outcome.messages.size() == 1 &&
-              outcome.messages.front().find("Jog stop failed on X") != std::string::npos,
-          "A stop that failed at the page boundary is reported to the new page");
+  require(outcome.messages.empty(), "The loading page has no operator messages yet");
   rig.acted({"stop_jog x"}, "The tick retries the failed stop without a lease");
+  rig.next_id = 1;
+  outcome = rig.send(R"("type":"ready")");
+  require(outcome.send_snapshots && outcome.messages.size() == 2 &&
+              outcome.messages.back().find("Jog stop failed on X") != std::string::npos,
+          "The failed stop is retained for the new page when it is ready");
   outcome = rig.tick(at(2ms));
   require(outcome.messages.empty(), "A retry that fails again does not repeat the message");
   rig.acted({"stop_jog x"}, "It keeps retrying");
@@ -2378,11 +2497,14 @@ auto main(int argc, char** argv) -> int {
   try {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
+    controller_messages_wait_for_ready();
+    panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
+    pending_probe_tool_changes();
     operator_settings_go_to_storage();
     ids_strictly_increase();
     decode_errors();
@@ -2411,6 +2533,7 @@ auto main(int argc, char** argv) -> int {
     stale_requests_send_nothing();
     port_is_told_when_a_request_goes_stale();
     increments_are_tracked();
+    home_after_increment();
     close_holds_the_level();
     end_of_page();
     exactly_one_result(seed);

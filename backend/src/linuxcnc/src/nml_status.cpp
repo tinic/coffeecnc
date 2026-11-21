@@ -60,6 +60,16 @@ auto text_of(std::span<const char> field) -> std::string {
   return text;
 }
 
+auto work_position(const Vec3& machine, const Vec3& g5x, const Vec3& g92, const Vec3& tool,
+                   double rotation) -> Vec3 {
+  const double angle = rotation * std::numbers::pi / 180;
+  const double x = machine[0] - tool[0] - g5x[0];
+  const double y = machine[1] - tool[1] - g5x[1];
+  return {x * std::cos(angle) + y * std::sin(angle) - g92[0],
+          -x * std::sin(angle) + y * std::cos(angle) - g92[1],
+          machine[2] - tool[2] - g5x[2] - g92[2]};
+}
+
 auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* hal, Link link)
     -> NmlStatus {
   NmlStatus out;
@@ -89,17 +99,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   const auto dtg = xyz(motion.traj.dtg);
   // A teleop jog leaves traj.inpos set; its velocity shows.
   bool moving = !motion.traj.inpos || motion.traj.current_vel != 0;
-  // As AXIS computes it: less tool offset and G5x, rotated back, less G92.
-  std::array<double, 3> work{};
-  for (std::size_t i = 0; i < work.size(); ++i)
-    work[i] = machine[i] - tool[i] - g5x[i];
-  if (task.rotation_xy != 0) {
-    const double angle = -task.rotation_xy * std::numbers::pi / 180;
-    const double x = work[0] * std::cos(angle) - work[1] * std::sin(angle);
-    const double y = work[0] * std::sin(angle) + work[1] * std::cos(angle);
-    work[0] = x;
-    work[1] = y;
-  }
+  const auto work = work_position(machine, g5x, g92, tool, task.rotation_xy);
   // Trivial kinematics: a grouped axis is homed when all of its joints are, and moving,
   // homing or on a limit when any of its joints are.
   const auto read_axis = [&](AxisState& axis, std::size_t index, std::span<const int> joints,
@@ -121,7 +121,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   };
   for (std::size_t i = 0; i < c.axes.size(); ++i) {
     read_axis(c.axes[i], i, config.axis_joints[i], machine[i], mm);
-    out.work[i] = (work[i] - g92[i]) * mm;
+    out.work[i] = work[i] * mm;
     out.dtg[i] = dtg[i] * mm;
     out.g5x[i] = g5x[i] * mm;
     out.g92[i] = g92[i] * mm;
@@ -152,6 +152,9 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   }
   c.in_position = !moving;
   c.program_loaded = task.file[0] != '\0';
+  if (c.mode == TaskMode::mdi)
+    c.active_mdi = text_of(task.command);
+  c.mdi_queued = task.queuedMDIcommands != 0;
   c.tool_in_spindle = s.io.tool.toolInSpindle;
   // As the control thread read the pins last; nothing of it while that thread has stalled.
   const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt;
@@ -167,6 +170,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   c.program_units = task.programUnits == CANON_UNITS_INCHES ? LengthUnit::inch : LengthUnit::mm;
 
   out.echo_serial = s.echo_serial_number;
+  out.task_abort = s.command_type == EMC_TASK_ABORT_TYPE;
   out.command_done = s.status == RCS_DONE;
   out.task_executing = task.execState != EMC_TASK_EXEC_DONE || s.status == RCS_EXEC;
   out.task_failed = task.execState == EMC_TASK_EXEC_ERROR || s.status == RCS_ERROR;

@@ -78,7 +78,8 @@ void PanelComposer::count(const PanelReading& reading) {
   // A coherent start: the machine at rest, its tool table accepted, the status live. Only from
   // such a reading are the machine's state taken as input and a program known to have a
   // start state.
-  const bool coherent = !running && reading.tools_settled && status.link == Link::live;
+  const bool coherent = !running && status.motion.in_position && !reading.task_executing &&
+                        reading.tools_settled && status.link == Link::live;
   const auto context = preview_context_.update(inputs, !coherent);
   const std::pair program{inputs.program_file, inputs.program_revision};
   if (coherent) {
@@ -97,8 +98,12 @@ void PanelComposer::count(const PanelReading& reading) {
   // under the other setting stay so.
   plan_broken_ =
       running && (plan_broken_ || inputs.block_delete != block_delete_before_run_);
-  submit_due_ = submit_due_ || context != context_;
-  context_ = context;
+  if (context != context_) {
+    submit_due_ = true;
+    context_ = context;
+    if (preview_ != nullptr)
+      preview_->advance_context(context);
+  }
   // At rest again with the inputs it had before: a preview is a function of its inputs, so
   // the result that exists for this context is the preview, and nothing is computed. It was
   // not shown meanwhile, so the service compares its files once more first.

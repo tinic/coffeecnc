@@ -434,7 +434,20 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
     close(result[1]);
     return run;
   }
+  // If the panel was launched with standard descriptors closed, redirecting the child's
+  // diagnostics could overwrite the result pipe before it is moved to descriptor 3.
+  if (result[1] <= STDERR_FILENO) {
+    const int moved = fcntl(result[1], F_DUPFD_CLOEXEC, 4);
+    close(result[1]);
+    result[1] = moved;
+  }
   const int null = open("/dev/null", O_RDONLY | O_CLOEXEC);
+  if (result[1] < 0 || null < 0) {
+    for (const int fd : {result[0], result[1], diagnostics[0], diagnostics[1], null})
+      if (fd >= 0)
+        close(fd);
+    return run;
+  }
   // Everything the child needs is made before the fork: after it only system calls.
   const std::string home = "HOME=" + directory.string();
   const std::string ini = "INI_FILE_NAME=" + (directory / "preview.ini").string();
@@ -457,7 +470,7 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   if (child == 0) {
     // The result pipe on descriptor 3, diagnostics on 1 and 2, nothing else inherited.
     setpgid(0, 0);
-    if (null < 0 || dup2(null, 0) < 0 || dup2(diagnostics[1], 1) < 0 ||
+    if (dup2(null, 0) < 0 || dup2(diagnostics[1], 1) < 0 ||
         dup2(diagnostics[1], 2) < 0)
       _exit(126);
     if (result[1] == 3) {
@@ -795,8 +808,7 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     return value != nullptr ? std::optional<std::string>{value} : std::nullopt;
   };
   const auto positive = [&](const char* section, const char* key) -> bool {
-    const auto value = text(section, key);
-    return value && std::atoi(value->c_str()) > 0;
+    return linuxcnc_switch(text(section, key).value_or(""));
   };
   const auto physical_min = text("COFFEECNC", "TRAVEL_MIN_MM");
   const auto physical_max = text("COFFEECNC", "TRAVEL_MAX_MM");
@@ -890,11 +902,13 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
   request.codes = start->codes;
+  const bool css = std::ranges::contains(inputs.start.active_codes, "G96");
   for (const auto& code : inputs.start.active_codes)
-    if (code == "G61" || code == "G61.1" || code == "G96")
+    if (code == "G61" || code == "G61.1")
       request.codes.push_back(code);
-  if (inputs.start.spindle_speed > 0)
-    request.codes.push_back(std::format("S{:.8f}", inputs.start.spindle_speed));
+  // LinuxCNC requires the S word in the G96 block, even if S was already set.
+  if (css || inputs.start.spindle_speed > 0)
+    request.codes.push_back(std::format("{}S{:.8f}", css ? "G96 " : "", inputs.start.spindle_speed));
   if (inputs.start.spindle_direction != SpindleDirection::stopped)
     request.codes.push_back(inputs.start.spindle_direction == SpindleDirection::forward ? "M3"
                                                                                         : "M4");

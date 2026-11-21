@@ -438,11 +438,26 @@ auto decode_request(std::string_view json) -> DecodedRequest {
     return DecodeError{std::nullopt, "Invalid JSON request."};
   std::optional<RequestId> id;
   try {
+    if (json.size() > max_request_bytes) {
+      // Keep only the top-level command name before constructing a full DOM for an oversized
+      // save. JSON can put the fields in any order. The full parser still validates every key.
+      const auto first = json.find_first_not_of(" \t\r\n");
+      if (first == std::string_view::npos || json[first] != '{')
+        return DecodeError{std::nullopt, too_long};
+      const auto header = Json::parse(json.begin(), json.end(),
+          [](int depth, Json::parse_event_t event, const Json& value) -> bool {
+            using Event = Json::parse_event_t;
+            if ((event == Event::object_start || event == Event::array_start) &&
+                depth >= max_request_depth)
+              throw InvalidRequest("Request nesting limit exceeded.");
+            if (event == Event::key)
+              return depth == 1 && value == "type";
+            return depth == 0 || event == Event::value || event == Event::object_end;
+          });
+      if (!header.is_object() || header.value("type", Json{}) != "save_program")
+        return DecodeError{std::nullopt, too_long};
+    }
     const auto object = parse(json);
-    // Above 16 KiB only a program to save, and nothing about it is answered by its ID.
-    if (json.size() > max_request_bytes &&
-        (!object.is_object() || object.value("type", Json{}) != "save_program"))
-      return DecodeError{std::nullopt, too_long};
     id = request_id(object);
     return Request{*id, command(object)};
   } catch (const InvalidRequest& error) {

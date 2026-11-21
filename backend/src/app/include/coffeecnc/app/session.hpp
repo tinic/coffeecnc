@@ -227,7 +227,8 @@ public:
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
-  [[nodiscard]] auto begin_page(bool watch_frames = false) -> PageToken;
+  [[nodiscard]] auto begin_page(bool watch_frames = false,
+                                std::optional<Instant> frame_clock = {}) -> PageToken;
 
   // Call when the page unloads or the window closes without a replacement. A stop decision;
   // every message is dropped until the next begin_page. Ignored for a token that is not current.
@@ -243,6 +244,10 @@ public:
 
   // The controller state as just read.
   void observe(const ControllerState& state, JogLease::Time now);
+
+  // The program LinuxCNC has open, as last observed; empty before the first state or with none.
+  // Any thread; does not wait for the controller.
+  [[nodiscard]] auto loaded_program() const -> std::string;
 
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
@@ -349,6 +354,8 @@ private:
   [[nodiscard]] static auto staged(ActionResult result) -> Stage;
   void drop_requests();
   void expire_panel_frame(JogLease::Time now);
+  [[nodiscard]] auto frame_age(Instant now, std::chrono::milliseconds rendered_at) const
+      -> std::chrono::milliseconds;
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto check_program_start(const Queued& request, const Run& command,
                                          const ControllerState& state,
@@ -408,6 +415,7 @@ private:
   // When the last control period ran.
   JogLease::Time control_at_{};
   JogLease::Time last_panel_frame_received_{};
+  std::optional<Instant> panel_frame_clock_;
   std::optional<Instant> last_panel_frame_;
   std::optional<std::chrono::milliseconds> panel_recovered_at_;
   std::optional<RequestId> last_id_;

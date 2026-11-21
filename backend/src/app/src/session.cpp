@@ -121,7 +121,13 @@ constexpr std::string_view probe_code_unknown =
 
 // Check the accepted subset of RS274 before dispatch. LinuxCNC ignores case and spaces between
 // digits. O-words, indirect M-codes, state restore and custom M-codes can hide spindle actions.
-auto probe_code_block(std::string_view line) -> std::string_view {
+struct ProbeCode {
+  std::string_view refusal;
+  bool changes_tool{};
+  bool relabels_tool{};
+};
+
+auto inspect_probe_code(std::string_view line) -> ProbeCode {
   std::string code;
   std::string comment;
   bool inside = false;
@@ -132,7 +138,7 @@ auto probe_code_block(std::string_view line) -> std::string_view {
   };
   for (char c : line) {
     if (c == '\0' || c == '\r' || c == '\n')
-      return probe_code_unknown;
+      return {probe_code_unknown};
     if (c >= 'A' && c <= 'Z')
       c = static_cast<char>(c - 'A' + 'a');
     if (c == ' ' || c == '\t' || c == '\v' || c == '\f')
@@ -143,13 +149,13 @@ auto probe_code_block(std::string_view line) -> std::string_view {
     }
     if (inside) {
       if (c == '(')
-        return probe_code_unknown;
+        return {probe_code_unknown};
       if (c != ')') {
         comment += c;
         continue;
       }
       if (active_comment())
-        return probe_code_unknown;
+        return {probe_code_unknown};
       comment.clear();
       inside = false;
     } else if (c == ';') {
@@ -162,9 +168,10 @@ auto probe_code_block(std::string_view line) -> std::string_view {
     }
   }
   if (inside || active_comment())
-    return probe_code_unknown;
+    return {probe_code_unknown};
+  ProbeCode result;
   if (code.find_first_of("o#[]<>") != std::string::npos)
-    return probe_code_unknown;
+    result.refusal = probe_code_unknown;
   for (std::size_t pos = code.find('g'); pos != std::string::npos; pos = code.find('g', pos + 1)) {
     const char* first = code.data() + pos + 1;
     const char* last = code.data() + code.size();
@@ -172,15 +179,18 @@ auto probe_code_block(std::string_view line) -> std::string_view {
       ++first;
     double value = 0;
     const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
-    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 999)
-      return probe_code_unknown;
+    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 999) {
+      result.refusal = probe_code_unknown;
+      continue;
+    }
     const auto number = static_cast<int>(std::round(value * 10));
-    // Rigid tapping, tapping and boring cycles can reverse or restart the spindle themselves.
-    if (number == 331 || number == 740 || number == 840 || number == 860 || number == 880)
-      return probe_loaded_reason;
+    // Spindle-synchronized, tapping and boring motion requires a cutting tool.
+    constexpr std::array spindle_cycles{330, 331, 740, 760, 840, 842, 843, 860, 880};
+    if (std::ranges::contains(spindle_cycles, number) && result.refusal.empty())
+      result.refusal = probe_loaded_reason;
   }
   constexpr std::array ordinary_m_codes{0, 1, 2, 5, 6, 7, 8, 9, 30, 48, 49, 50, 51, 52, 53,
-                                       60, 61, 62, 63, 64, 65, 66, 67, 68, 70, 71};
+                                       60, 62, 63, 64, 65, 66, 67, 68, 70, 71};
   for (std::size_t pos = code.find('m'); pos != std::string::npos; pos = code.find('m', pos + 1)) {
     const char* first = code.data() + pos + 1;
     const char* last = code.data() + code.size();
@@ -188,16 +198,32 @@ auto probe_code_block(std::string_view line) -> std::string_view {
       ++first;
     double value = 0;
     const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
-    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 199)
-      return probe_code_unknown;
+    if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 199) {
+      result.refusal = probe_code_unknown;
+      continue;
+    }
     const auto number = static_cast<int>(std::round(value));
-    if (number == 3 || number == 4 || number == 19)
-      return probe_loaded_reason;
-    if (value != number || std::ranges::find(ordinary_m_codes, number) == ordinary_m_codes.end())
-      return probe_code_unknown;
+    if (value == number && number == 61) {
+      result.relabels_tool = true;
+      continue;
+    }
+    if (value == number && number == 6)
+      result.changes_tool = true;
+    if (number == 3 || number == 4 || number == 19) {
+      if (result.refusal.empty())
+        result.refusal = probe_loaded_reason;
+    } else if (value != number || !std::ranges::contains(ordinary_m_codes, number)) {
+      result.refusal = probe_code_unknown;
+    }
   }
-  return {};
+  return result;
 }
+
+auto probe_code_block(std::string_view line) -> std::string_view {
+  const auto block = inspect_probe_code(line);
+  return block.relabels_tool ? probe_loaded_reason : block.refusal;
+}
+
 
 // The tool-model command in a request, if it is one.
 auto tool_model_command(Command& command) -> std::optional<ToolModelCommand> {
@@ -282,7 +308,7 @@ auto Session::staged(ActionResult result) -> Stage {
   return answer(reply(std::move(result)));
 }
 
-auto Session::begin_page(bool watch_frames) -> PageToken {
+auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) -> PageToken {
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
@@ -292,6 +318,7 @@ auto Session::begin_page(bool watch_frames) -> PageToken {
   drop_requests();
   ready_ = false;
   watch_frames_ = watch_frames;
+  panel_frame_clock_ = frame_clock;
   last_panel_frame_.reset();
   panel_recovered_at_.reset();
   last_id_.reset();
@@ -343,15 +370,28 @@ void Session::expire_panel_frame(JogLease::Time now) {
     problems_.emplace_back(panel_frame_stop);
 }
 
+auto Session::frame_age(Instant now, std::chrono::milliseconds rendered_at) const
+    -> std::chrono::milliseconds {
+  // Compare the document's epoch-based monotonic timestamp to the native clock
+  // projected from the start of the document. Wall-clock corrections cannot renew
+  // or invalidate a motion lease.
+  const auto clock = panel_frame_clock_.value_or(now);
+  return clock.unix_time +
+         std::chrono::duration_cast<std::chrono::milliseconds>(now.monotonic - clock.monotonic) -
+         rendered_at;
+}
+
 void Session::panel_frame(PageToken page, std::chrono::milliseconds rendered_at, Instant now) {
   const std::scoped_lock lock{mutex_};
   if (!watch_frames_ || !page_open_ || page != PageToken{pages_})
     return;
   expire_panel_frame(now.monotonic);
-  const auto age = now.unix_time - rendered_at;
+  const auto age = frame_age(now, rendered_at);
   if (rendered_at.count() <= 0 || age < -panel_clock_slop || age > panel_frame_max_transit ||
       (last_panel_frame_ && rendered_at <= last_panel_frame_->unix_time))
     return;
+  if (!panel_frame_clock_)
+    panel_frame_clock_ = now;
   const Instant frame{now.monotonic - std::max(age, std::chrono::milliseconds::zero()),
                       rendered_at};
   if (!panel_recovered_at_ && last_panel_frame_ &&
@@ -398,12 +438,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   }
   expire_panel_frame(now.monotonic);
   const bool requires_frame = watch_frames_ && needs_panel_frame(request.command);
-  if (requires_frame &&
-      (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
-       now.unix_time - rendered_at >= panel_frame_timeout ||
-       rendered_at - now.unix_time > panel_clock_slop)) {
-    result(CommandOutcome::rejected, panel_frame_reason);
-    return outcome;
+  if (requires_frame) {
+    const auto age = frame_age(now, rendered_at);
+    if (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
+        age >= panel_frame_timeout || age < -panel_clock_slop) {
+      result(CommandOutcome::rejected, panel_frame_reason);
+      return outcome;
+    }
   }
 
   if (auto* settings = std::get_if<SetOperatorSettings>(&request.command)) {
@@ -479,6 +520,11 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
                decision.allowed ? std::string(release_reason) : std::move(decision.reason));
         return outcome;
       }
+      if (axis.pressed || axis.running) {
+        stop_jogs();
+        result(CommandOutcome::rejected, release_reason);
+        return outcome;
+      }
       if (requests_.size() >= max_queued) {
         result(CommandOutcome::rejected, busy_reason);
         return outcome;
@@ -506,7 +552,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     for (const auto& waiting : requests_)
       if (!waiting.stop)
         outcome.messages.push_back(
-            encode_result(waiting.id, CommandOutcome::rejected, cancelled_reason));
+            encode_result(waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
+                          waiting.sent ? mode_changed_reason : cancelled_reason));
     drop_requests();
   }
   auto& queue = stop_request ? stops_ : requests_;
@@ -518,6 +565,11 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   queue.push_back({page, epoch_, cancels_, request.id, std::move(request.command), false, stops});
   wake();
   return outcome;
+}
+
+auto Session::loaded_program() const -> std::string {
+  const std::scoped_lock lock{mutex_};
+  return have_status_ ? status_.program_file : std::string{};
 }
 
 void Session::observe(const ControllerState& state, JogLease::Time now) {
@@ -567,7 +619,8 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
         continue;
       const auto& moving = jog_[i].running ? jog_[i].held : jog_[i].step;
       const auto decision =
-          policy_.evaluate(Jog{axes[i], moving.direction, moving.velocity, true}, state);
+          policy_.evaluate(Jog{axes[i], moving.direction, moving.velocity, true}, state,
+                           !jog_[i].running && jog_[i].stepping);
       stop = !decision.allowed || decision.jog_space != moving.space ||
              (decision.required_mode && *decision.required_mode != state.mode);
     }
@@ -646,13 +699,16 @@ auto Session::work(const Clock& clock) -> Work {
     };
     if (available())
       port_.idle_maintenance(available);
-    published = port_.take_messages();
+    if (idle_page)
+      published = port_.take_messages();
   }
   const auto now = clock();
   const std::scoped_lock lock{mutex_};
-  if (!page_open_)
+  if (!page_open_ || !ready_)
     return result;
   result.outcome.page = PageToken{pages_};
+  if (idle_page && idle_page != result.outcome.page)
+    published.clear();
   for (const auto& message : published)
     result.outcome.messages.push_back(encode_message(
         message.error ? MessageLevel::error : MessageLevel::info, message.text, now.unix_time));
@@ -695,10 +751,12 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (step.kind == StageKind::blocked) {
     const std::scoped_lock lock{mutex_};
     // Still the next request: order is kept.
-    if (current(request))
+    if (current(request)) {
       requests_.push_front(std::move(request));
-    result.status = WorkStatus::blocked;
-    return result;
+      result.status = WorkStatus::blocked;
+      return result;
+    }
+    step = cancelled();
   }
   if (step.kind == StageKind::cancelled) {
     forget_press(request);
@@ -815,6 +873,8 @@ void Session::wake() {
 }
 
 void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
+  if (!ready_)
+    return;
   for (const auto& problem : problems_)
     outcome.messages.push_back(encode_message(MessageLevel::error, problem, unix_time));
   problems_.clear();
@@ -1063,7 +1123,14 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
 auto Session::send_restart(Queued& request, const PreparedRestart& restart, bool after_change)
     -> Stage {
   const auto still = token(request);
-  const auto current_files = [&] { return still() && !restart.files_changed([&] { return !still(); }); };
+  const auto cutting_tool = [&] {
+    return tool_models_ == nullptr || tool_models_->touch_probe_loaded(restart.plan.point.tool) == false;
+  };
+  if (!cutting_tool())
+    return answer({CommandOutcome::rejected, "Restart requires a tool verified for machining."});
+  const auto current_files = [&] {
+    return still() && cutting_tool() && !restart.files_changed([&] { return !still(); });
+  };
   if (!current_files())
     return answer({CommandOutcome::rejected, "The restart was cancelled or the program changed."});
   {
@@ -1117,6 +1184,10 @@ auto Session::resume_restart(Queued& request, const ControllerState& state) -> S
       restart->plan.point.tool != state.requested_tool || !wanted(restart->owner))
     return answer({CommandOutcome::rejected, "The restart tool change is no longer pending."});
   const auto still = token(request);
+  if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(restart->plan.point.tool) != false) {
+    static_cast<void>(port_.abort());
+    return answer({CommandOutcome::failed, "Restart requires a tool verified for machining."});
+  }
   if (!still() || restart->files_changed([&] { return !still(); })) {
     static_cast<void>(port_.abort());
     return answer({CommandOutcome::failed, "The restart was cancelled or the program changed."});
@@ -1136,14 +1207,35 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
   const bool check_tool = setter && setter->action == SetterAction::check;
   const bool program = std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command) ||
                        std::holds_alternative<Resume>(command);
-  if (tool_models_ == nullptr || (!check_tool && !program && mdi == nullptr &&
+  const bool confirms_probe_candidate = std::holds_alternative<ToolChanged>(command) &&
+      state.requested_tool && !(restart_ && restart_->tool_request);
+  if (tool_models_ == nullptr || (!confirms_probe_candidate && !check_tool && !program && mdi == nullptr &&
                                  (spindle == nullptr || spindle->direction == SpindleDirection::stopped)))
     return {};
-  const auto loaded = tool_models_->touch_probe_loaded(state.tool_in_spindle);
+  if (mdi) {
+    const auto block = inspect_probe_code(mdi->text);
+    if (block.relabels_tool && (block.changes_tool || !block.refusal.empty()))
+      return "Separate M61 from tool changes and spindle commands.";
+  }
+  const auto loaded = tool_models_->touch_probe_loaded(
+      confirms_probe_candidate ? *state.requested_tool : state.tool_in_spindle);
   if (!loaded)
     return "Cannot verify the loaded tool type. Check tool model storage.";
   if (!*loaded)
     return {};
+  if (confirms_probe_candidate) {
+    if (state.spindle_active)
+      return probe_loaded_reason;
+    if (state.mode == TaskMode::mdi) {
+      const auto block = inspect_probe_code(state.active_mdi);
+      if (block.changes_tool && !block.relabels_tool && block.refusal.empty() && !state.mdi_queued)
+        return {};
+      return "Press Stop, then load the touch probe with a separate tool change.";
+    }
+    if (state.mode != TaskMode::automatic || state.program_file.empty() ||
+        state.program_file != verified_probe_program_)
+      return "Stop the program and load the touch probe from Tools before running.";
+  }
   if (check_tool)
     return "Load a cutting tool before checking its length.";
   if (mdi != nullptr)
@@ -1163,7 +1255,9 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
   // The source can have changed while being read through a different controller client.
   const auto now = port_.snapshot();
   if (now.link != Link::live || now.program_file != state.program_file ||
-      now.tool_in_spindle != state.tool_in_spindle || now.spindle_active)
+      now.tool_in_spindle != state.tool_in_spindle || now.spindle_active ||
+      (confirms_probe_candidate && (now.tool_request != state.tool_request ||
+                                    now.requested_tool != state.requested_tool)))
     return "A touch probe is loaded. Machine state changed during the spindle check.";
   return {};
 }
@@ -1182,7 +1276,12 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<SelectWcs>(request.command) ||
       std::holds_alternative<SetWorkOffset>(request.command) ||
       std::holds_alternative<RestoreOffset>(request.command) ||
-      std::holds_alternative<TouchOff>(request.command)) {
+      std::holds_alternative<TouchOff>(request.command) ||
+      std::holds_alternative<ToolTouchOff>(request.command) ||
+      std::holds_alternative<SetTool>(request.command) ||
+      std::holds_alternative<RemoveTool>(request.command) ||
+      std::holds_alternative<OpenProgram>(request.command) ||
+      std::holds_alternative<EditProgram>(request.command)) {
     const std::scoped_lock lock{mutex_};
     if (changes_datum)
       ++setter_datum_;
@@ -1226,6 +1325,22 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           done.quit = true;
           return done;
         } else if constexpr (std::is_same_v<T, Home>) {
+          // Retire any previously acknowledged increment before homing. It has to be fenced
+          // even while motion reports at rest because it may have been queued without moving yet.
+          bool had_jog = false;
+          {
+            const std::scoped_lock lock{mutex_};
+            had_jog = std::ranges::any_of(jog_, [](const AxisJog& axis) {
+              return axis.running || axis.stepping || axis.in_flight || axis.pressed;
+            });
+          }
+          if (had_jog)
+            cancel_jogs(nullptr);
+          {
+            const std::scoped_lock lock{mutex_};
+            if (hold_ || low_periods_ < settled_periods || !reconciled())
+              return Stage{StageKind::blocked, {}, {}};
+          }
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.home(c.axis, still);
           });
@@ -1256,7 +1371,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           const auto file = programs_.resolve_program(c.path);
           if (!file)
             return answer({CommandOutcome::rejected, file.error()});
-          if (*file != state.program_file)
+          const auto loaded = programs_.resolve_program(state.program_file);
+          if (!loaded || *file != *loaded)
             return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
           return act(request, [&](const Wanted& still) -> ActionResult {
             auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
@@ -1269,11 +1385,15 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (program_writer_ == nullptr)
             return answer({CommandOutcome::rejected, "This CoffeeCNC cannot save programs."});
           // Through a link too: the file LinuxCNC has open is never written over.
-          if (const auto target = programs_.resolve_new_program(c.path);
-              c.replace && target && target->exists && !state.program_file.empty() &&
-              programs_.resolve_program(target->path).value_or("") == state.program_file)
-            return answer({CommandOutcome::rejected,
-                           "The loaded program is not replaced. Choose another name."});
+          if (c.replace && !state.program_file.empty()) {
+            const auto target = programs_.resolve_new_program(c.path);
+            const auto loaded = programs_.resolve_program(state.program_file);
+            if (target && target->exists &&
+                (target->path == state.program_file ||
+                 (loaded && programs_.resolve_program(target->path).value_or("") == *loaded)))
+              return answer({CommandOutcome::rejected,
+                             "The loaded program is not replaced. Choose another name."});
+          }
           auto written = program_writer_->create(c.path, c.text, c.replace);
           if (!written)
             return answer({CommandOutcome::failed, written.error()});

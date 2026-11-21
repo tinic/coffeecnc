@@ -36,6 +36,13 @@ auto feed_and_speed_numbers(std::string_view text) -> std::vector<Span> {
     }
     if (c == ';')
       break;
+    if (c == '<') {
+      const auto end = text.find('>', i + 1);
+      if (end == std::string_view::npos)
+        break;
+      i = end;
+      continue;
+    }
     if (c != 'F' && c != 'f' && c != 'S' && c != 's')
       continue;
     std::size_t begin = i + 1;

@@ -176,6 +176,7 @@ public:
   std::unique_ptr<Runtime> runtime;
   PreviewWorker* restart_preview{};
   PreviewEngine* restart_engine{};
+  ToolModelService* interlock_models{};
   PageToken page;
   RequestId next_id{1};
 
@@ -189,7 +190,7 @@ public:
     runtime =
         std::make_unique<Runtime>(port, reader, control, config.limits, programs,
                                   [this](const Outcome& outcome) -> void { absorb(outcome); },
-                                  nullptr, Runtime::Quit{}, restart_preview, restart_engine);
+                                  interlock_models, Runtime::Quit{}, restart_preview, restart_engine);
     // The control thread arms the watchdog and lowers the level a stopped runtime left high.
     pump_until(2s, [&]() -> bool { return probe.watchdog_ok() && !probe.jog_stop(); });
     new_page();
@@ -385,7 +386,7 @@ void tool_table_text() {
   check("tool_table_replace_keeps_other_words",
         with_tool(table, tool, 25.4) ==
             "T1 P1 Z50 D6 ;6 mm end mill\nT2 P5 Z1 D0.5 I30 ;half inch\n",
-        with_tool(table, tool, 25.4));
+        with_tool(table, tool, 25.4).value_or("tool row rejected"));
   tool.number = 7;
   check("tool_table_add", with_tool(table, tool, 1) == table + "T7 P5 Z25.4 D12.7 ;half inch\n");
   check("tool_table_remove", without_tool(table, 1) == "T2 P2 Z40 D3 I30 ;drill\n" &&
@@ -694,6 +695,12 @@ void axis_jogs(Rig& rig) {
 
   const auto beyond = rig.send(R"("type":"jog_step","axis":"z","distance":500,"velocity":600)");
   check("jog_step_beyond_travel_rejected", beyond.outcome == "rejected", beyond.text());
+  const auto home = rig.send(R"("type":"home","axis":"z")");
+  const bool homed = rig.pump_until(12s, [&] {
+    const auto axis = rig.snapshot().axes[2];
+    return axis.homed && !axis.homing && near(axis.machine, 0);
+  });
+  check("home_after_jog_step", home.accepted() && homed, home.text());
 }
 
 // Waits out the rest of `time` since `since`.
@@ -2616,6 +2623,20 @@ void tools(Rig& rig) {
                     hal_pin("iocontrol.0.tool-change")));
   const auto resume = rig.send(R"("type":"resume")");
   check("no_resume_during_tool_change", resume.outcome == "rejected", resume.text());
+
+  for (const auto* body : {R"("type":"set_spindle","direction":"forward","rpm":500)",
+                           R"("type":"jog_step","axis":"x","distance":1,"velocity":100)",
+                           R"("type":"home","axis":"all")",
+                           R"("type":"mdi","text":"G0 X1")"}) {
+    const auto blocked = rig.send(body);
+    const auto state = rig.snapshot();
+    check("no_motion_during_tool_change",
+          blocked.outcome == "rejected" &&
+              blocked.reason == "Confirm the pending tool change or press Stop first." &&
+              state.requested_tool == 1 && !state.spindle_active &&
+              near(state.axes[0].machine, waiting.controller.axes[0].machine),
+          std::format("{} {}", body, blocked.text()));
+  }
   // A confirmation that is withdrawn when the port is about to hand it to the control thread
   // is not handed over: tool-changed stays low. Port and pins alone.
   rig.direct([&]() -> void {
@@ -4251,15 +4272,54 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
               refused_resume.reason.find("original program changed") != std::string::npos &&
               at_breakpoint(4),
           refused_resume.text());
-    const auto stopped = recovered.send(R"("type":"abort")");
-    check("breakpoint_stop_reopens_original_after_restart",
-          stopped.accepted() && recovered.pump_until(5s, [&] {
-            return recovered.idle() && recovered.status().program_file == oracle.program &&
-                   !std::filesystem::exists(runtime / copy.filename()) &&
-                   !std::filesystem::exists(runtime / record.filename()) &&
-                   std::filesystem::exists(copy) && std::filesystem::exists(record);
-          }), stopped.text());
+    // Stop from another NML client. The panel keeps polling, but no page can reopen the
+    // original until the source has seen the external abort in Task's status.
+    recovered.runtime->end_page(recovered.page);
+    const auto abort_count = oracle.source.read().program_aborts;
+    const auto foreign = NmlPort::connect(migrated, &rig.shared);
+    const bool stopped = foreign && (*foreign)->abort().status == ActionStatus::accepted;
+    check("breakpoint_source_observes_external_stop",
+          stopped && recovered.pump_until(3s, [&] {
+            return oracle.source.read().program_aborts > abort_count;
+          }));
+    recovered.new_page();
+    check("breakpoint_stop_reopens_original_after_restart", stopped && recovered.pump_until(5s, [&] {
+      return recovered.idle() && recovered.status().program_file == oracle.program &&
+             !std::filesystem::exists(runtime / copy.filename()) &&
+             !std::filesystem::exists(runtime / record.filename()) &&
+             std::filesystem::exists(copy) && std::filesystem::exists(record);
+    }));
     recovered.stop();
+  }
+  auto orphan_config = migrated;
+  orphan_config.remember_spindle_tool = true;
+  const auto orphan_dir = runtime / "orphan";
+  orphan_config.runtime_directory = orphan_dir.string();
+  std::filesystem::create_directories(orphan_dir);
+  const auto orphan_file = orphan_dir / copy.filename();
+  std::ofstream{orphan_file} << "M2\n";
+  std::ofstream{orphan_dir / "coffeecnc-spindle-tool.txt"} << "1\n";
+  rig.direct([&] {
+    const auto mode = rig.port.set_task_mode(TaskMode::mdi, always());
+    const auto unloaded = rig.port.mdi("M61 Q0 G49", always());
+    const auto opened = rig.port.open_program(orphan_file.string(), always());
+    check("breakpoint_orphan_fixture_loaded",
+          mode.status == ActionStatus::accepted && unloaded.status == ActionStatus::accepted &&
+          opened.status == ActionStatus::accepted && rig.port.status().controller.tool_in_spindle == 0);
+  });
+  rig.stop();
+  if (const auto orphaned = NmlPort::connect(orphan_config, &rig.shared, &loads)) {
+    Rig orphan{orphan_config, rig.hal, rig.shared, **orphaned, rig.reader, rig.view, rig.probe};
+    check("breakpoint_orphan_allows_spindle_restore", orphan.pump_until(5s, [&] {
+      const auto state = orphan.status();
+      return state.program_file == orphan_file.string() && state.controller.tool_in_spindle == 1;
+    }));
+    const auto refused = orphan.send(R"("type":"run")");
+    check("breakpoint_orphan_still_blocks_run",
+          !refused.accepted() && refused.reason.find("breakpoint") != std::string::npos, refused.text());
+    orphan.stop();
+  } else {
+    check("breakpoint_orphan_allows_spindle_restore", false, orphaned.error());
   }
   rig.restart_preview = nullptr;
   rig.start();
@@ -4334,6 +4394,9 @@ void paused_z_jog(Rig& rig) {
             rig.pump_until(5s, [&] { return rig.idle() && near(rig.machine(0), 5); }) &&
             near(rig.machine(2), base),
         continued.text());
+  const auto rebased = rig.shared.paused_z_outputs(Clock::now());
+  check("paused_z_rebases_counts_after_clear", !rebased.enable && rebased.counts == 0,
+        std::to_string(rebased.counts));
 
   if (!at_pause("M5"))
     return;
@@ -5237,10 +5300,70 @@ void rotary_readouts(Rig& rig) {
   check("rotary_configuration_xyz_jog", jog.accepted() && linear_jog, jog.text());
 }
 
+class InterlockProbeTool final : public ToolModelService {
+public:
+  auto submit(PageToken, RequestId, ToolModelCommand) -> std::optional<std::string> override {
+    return "This fixture uses a fixed probe tool.";
+  }
+  void page_ended(PageToken) override {}
+  auto touch_probe_loaded(int number) -> std::optional<bool> override { return number == 2; }
+};
+
+void probe_tool_exchange(Rig& rig) {
+  const auto pending = [&] {
+    return rig.pump_until(4s, [&] { return rig.snapshot().requested_tool == 2; });
+  };
+  const auto unsafe = rig.send(R"("type":"mdi","text":"T2 M6 S600 M3")");
+  const bool waiting = pending();
+  const auto refused = rig.send(R"("type":"tool_changed")");
+  check("probe_mdi_exchange_blocks_spindle_after_m6",
+        unsafe.accepted() && waiting && refused.outcome == "rejected" &&
+            refused.reason == "Press Stop, then load the touch probe with a separate tool change." &&
+            !rig.snapshot().spindle_active && rig.snapshot().requested_tool == 2,
+        unsafe.text() + " " + refused.text());
+  static_cast<void>(rig.send(R"("type":"abort")"));
+  rig.settle();
+
+  const auto safe = rig.send(R"("type":"mdi","text":"T2 M6 G43 H2")");
+  const bool safe_waiting = pending();
+  const auto confirmed = rig.send(R"("type":"tool_changed")");
+  const bool loaded = rig.pump_until(4s, [&] {
+    const auto state = rig.snapshot();
+    return state.tool_in_spindle == 2 && !state.requested_tool && rig.idle();
+  });
+  check("probe_mdi_exchange_remains_available",
+        safe.accepted() && safe_waiting && confirmed.accepted() && loaded,
+        safe.text() + " " + confirmed.text());
+  const auto relabel = rig.send(R"("type":"mdi","text":"M61 Q1")");
+  check("probe_identity_cannot_be_relabelled",
+        relabel.outcome == "rejected" && rig.snapshot().tool_in_spindle == 2, relabel.text());
+
+  const auto cutter = rig.send(R"("type":"mdi","text":"T1 M6 G43 H1")");
+  const bool cutter_wait = rig.pump_until(4s, [&] { return rig.snapshot().requested_tool == 1; });
+  const auto cutter_ack = rig.send(R"("type":"tool_changed")");
+  const bool cutter_loaded = rig.pump_until(4s, [&] {
+    return rig.snapshot().tool_in_spindle == 1 && rig.idle();
+  });
+  check("probe_can_be_swapped_for_cutter",
+        cutter.accepted() && cutter_wait && cutter_ack.accepted() && cutter_loaded, cutter_ack.text());
+  const auto path = std::filesystem::path(rig.config.program_prefix) / "probe-interlock.ngc";
+  std::ofstream(path) << "T2 M6\nS600 M3\nM2\n";
+  const auto opened = rig.send(std::format(R"("type":"open_program","path":{})", Json(path.string()).dump()));
+  const auto run = rig.send(R"("type":"run")");
+  const bool auto_wait = pending();
+  const auto auto_ack = rig.send(R"("type":"tool_changed")");
+  check("unverified_auto_cannot_acknowledge_probe",
+        opened.accepted() && run.accepted() && auto_wait && auto_ack.outcome == "rejected" &&
+            auto_ack.reason == "Stop the program and load the touch probe from Tools before running." &&
+            !rig.snapshot().spindle_active && rig.snapshot().requested_tool == 2,
+        opened.text() + " " + run.text() + " " + auto_ack.text());
+  static_cast<void>(rig.send(R"("type":"abort")"));
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
-         bool gantry_only, bool history_only, bool rotary_only) -> int {
+         bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5309,11 +5432,23 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
       return 1;
   }
 
+  InterlockProbeTool interlock_model;
   Rig rig{*config, *hal, shared, **port, **reader, **view, *probe};
+  if (probe_interlock_only) {
+    rig.stop();
+    rig.interlock_models = &interlock_model;
+    rig.start();
+  }
   rig.mailbox = &mailbox;
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (probe_interlock_only) {
+    homing(rig);
+    probe_tool_exchange(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (rotary_only) {
     rotary_readouts(rig);
     power_off(rig);
@@ -5461,6 +5596,7 @@ auto main(int argc, char** argv) -> int {
   bool gantry_only = false;
   bool history_only = false;
   bool rotary_only = false;
+  bool probe_interlock_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5481,6 +5617,7 @@ auto main(int argc, char** argv) -> int {
     gantry_only = gantry_only || std::string_view(argv[i]) == "gantry";
     history_only = history_only || std::string_view(argv[i]) == "offset-history";
     rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
+    probe_interlock_only = probe_interlock_only || std::string_view(argv[i]) == "probe-interlock";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5492,7 +5629,7 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only);
+               history_only, rotary_only, probe_interlock_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

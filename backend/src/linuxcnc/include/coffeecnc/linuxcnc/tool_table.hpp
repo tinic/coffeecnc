@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <expected>
 #include <map>
 #include <optional>
 #include <string>
@@ -23,7 +24,7 @@ inline constexpr std::size_t max_tool_table_bytes = std::size_t{4} << 20;
 // The table with this tool's row replaced or, when it has none, added at the end. Words of an
 // existing row that are not P, Z or D (other offsets, angles, orientation) are kept.
 [[nodiscard]] auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_unit)
-    -> std::string;
+    -> std::expected<std::string, std::string>;
 
 // The table without the row of this tool number; nothing when there is no such row.
 [[nodiscard]] auto without_tool(std::string_view table, int number) -> std::optional<std::string>;

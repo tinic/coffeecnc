@@ -427,9 +427,13 @@ void panel_watchdog_cancels_waiting_work() {
       session.submit(page, R"({"id":3,"type":"mdi","text":"G55"})", at(830ms), at(660ms).unix_time);
   require(results(old).at(0).at("outcome") == "rejected",
           "A command for a frame that predates recovery is refused at the bridge");
-  require(control(1320ms), "The frame watchdog releases no stop on its own");
+  require(control(1320ms), "The jog hold returns when the recovered page stalls again");
   rig.driver.now = at(1330ms);
-  const auto stop = session.submit(page, R"({"id":4,"type":"abort"})", rig.driver.now);
+  const auto reset =
+      session.submit(page, R"({"id":4,"type":"set_machine","state":"off"})", rig.driver.now);
+  require(results(reset).at(0).at("outcome") == "rejected",
+          "A stale power request cannot reset E-stop");
+  const auto stop = session.submit(page, R"({"id":5,"type":"abort"})", rig.driver.now);
   require(results(stop).empty(), "Abort is admitted with no fresh frame");
   const auto aborted = session.work([&]() -> Instant { return rig.driver.now; });
   require(results(aborted.outcome).at(0).at("outcome") == "accepted" && !rig.port.calls.empty(),

@@ -118,17 +118,18 @@ struct Work {
 // and stop-all wait in a queue of their own, at most max_queued_stops, that is served first. A
 // request that finds its queue full is `rejected`. Abort, E-stop and power off also reject every
 // request waiting in the ordinary queue: what was asked before a stop must not run after it.
-// Every queued request carries its page, the jog epoch and the count of aborts it was queued
+// Every queued request carries its page, the jog epoch and the cancellation count it was queued
 // in. The worker asks whether a request is still wanted after every call that can block (a
 // status reading, the program store, a command) and before every command it sends: a request of
-// an ended page sends nothing more and gets no result; one overtaken by abort, E-stop or power
-// off sends nothing more and is answered as cancelled: `rejected` when nothing at all was sent
+// an ended page sends nothing more and gets no result; one overtaken by a stop or a stale panel
+// sends nothing more and is answered as cancelled: `rejected` when nothing at all was sent
 // for it, `failed` with what was sent and what was not when part of it was (a mode change, the
 // first of two commands); a jog start or increment of an earlier
 // epoch is not sent. The port is handed the same question (`Wanted`) with every action and asks
 // it down to the moment it writes each command. Requests that only stop something (abort,
-// E-stop, power off, jog release, stop-all, spindle stop, coolant off) are executed whatever
-// became of their page and are never withdrawn.
+// E-stop, jog release, stop-all, spindle stop, coolant off) are executed whatever became of
+// their page. The watched panel's power-off request requires a current frame because the
+// protocol uses the same request to reset E-stop.
 //
 // Limitation: several axes can be held at once, but the jog-stop level is common to all of them,
 // so releasing one stops them all, and each of the others must be released and pressed again.
@@ -225,7 +226,7 @@ public:
   // every message is dropped until the next begin_page. Ignored for a token that is not current.
   void end_page(PageToken page);
 
-  // A painted-frame timestamp from the current document. A heartbeat can never carry a command.
+  // An animation-frame timestamp from the current document, outside the command stream.
   void panel_frame(PageToken page, std::chrono::milliseconds rendered_at, Instant now);
 
   // A request from the page. The outcome holds what is answered at once; the results of queued
@@ -296,8 +297,7 @@ private:
     Command command;
     // Something was sent to the controller for it already: a refusal is `failed`, not `rejected`.
     bool sent{};
-    // It only stops something (abort, E-stop, power off, jog release, stop-all, spindle stop,
-    // coolant off): executed whatever became of its page, and never withdrawn.
+    // A stop that is carried out even if its page is gone.
     bool stop{};
   };
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };

@@ -194,6 +194,9 @@ auto only_stops(const Command& command) -> bool {
 }
 
 auto needs_panel_frame(const Command& command) -> bool {
+  // Protocol "off" can reset an asserted E-stop. It needs a current view of the machine.
+  if (const auto* machine = std::get_if<SetMachine>(&command))
+    return machine->state != MachineState::estop;
   if (const auto* setter = std::get_if<FixedSetterRequest>(&command))
     return setter->action != SetterAction::status;
   return !only_stops(command) && !std::holds_alternative<Pause>(command);
@@ -359,7 +362,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     return outcome;
   }
   expire_panel_frame(now.monotonic);
-  if (watch_frames_ && needs_panel_frame(request.command) &&
+  const bool requires_frame = watch_frames_ && needs_panel_frame(request.command);
+  if (requires_frame &&
       (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
        now.unix_time - rendered_at >= panel_frame_timeout ||
        rendered_at - now.unix_time > panel_clock_slop)) {
@@ -398,7 +402,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   // one of those that go first.
   if ((setter_busy_ || restart_busy_) && std::holds_alternative<Pause>(request.command))
     request.command = Abort{};
-  const bool stops = only_stops(request.command);
+  const bool stops = only_stops(request.command) && !requires_frame;
   if (setter_busy_ && !stops) {
     result(CommandOutcome::rejected, "A fixed setter operation is in progress.");
     return outcome;
@@ -552,7 +556,7 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   } else if (!hold_ && low_periods_ == settled_periods && !requests_.empty()) {
     wake(); // a start may have waited for the level to fall
   }
-  // From close on the level is high for good, whatever was reconciled.
+  // Startup, a stale panel, and shutdown hold the level even after the stops were reconciled.
   const bool hold = hold_ || closing_ || (watch_frames_ && (!ready_ || !panel_recovered_at_));
   if (hold)
     level_epoch_ = epoch_;

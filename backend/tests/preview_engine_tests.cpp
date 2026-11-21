@@ -173,6 +173,7 @@ void restart_checkpoints() {
   outcome = rig.compute().outcome;
   require(outcome.state == PreviewState::ready && outcome.restart &&
               outcome.restart->tool == 98 && outcome.restart->h == 98 &&
+              outcome.restart->path_control == 610 &&
               outcome.restart->spindle_direction == SpindleDirection::stopped &&
               near(outcome.restart->start, {0, 0, 30}),
           "Restart in the T98 section: " + outcome.restart_blocked + " " + text_of(outcome));

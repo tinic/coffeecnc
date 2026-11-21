@@ -96,6 +96,9 @@ struct Canon {
   CANON_DIRECTION spindle{CANON_STOPPED};
   bool flood{};
   bool mist{};
+  CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
+  double path_tolerance{}; // mm
+  double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
   int last_index{};
 
@@ -517,9 +520,11 @@ double GET_EXTERNAL_SPEED(int) { return canon.spindle_rpm; }
 CANON_DIRECTION GET_EXTERNAL_SPINDLE(int) { return canon.spindle; }
 int GET_EXTERNAL_FLOOD() { return canon.flood; }
 int GET_EXTERNAL_MIST() { return canon.mist; }
-CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return CANON_CONTINUOUS; }
-double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return 0; }
-double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() { return 0; }
+CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return canon.path_control; }
+double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return canon.path_tolerance / program_unit(); }
+double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() {
+  return canon.naivecam_tolerance / program_unit();
+}
 int GET_EXTERNAL_QUEUE_EMPTY() { return 1; }
 int GET_EXTERNAL_AXIS_MASK() { return 7; } // X, Y, Z
 int GET_EXTERNAL_FEED_OVERRIDE_ENABLE() { return 1; }
@@ -547,8 +552,11 @@ void SET_FEED_RATE(double rate) { canon.feed = rate * program_unit(); }
 void SET_TRAVERSE_RATE(double) {}
 void SET_FEED_REFERENCE(CANON_FEED_REFERENCE) {}
 void SET_FEED_MODE(int, int) {}
-void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE, double) {}
-void SET_NAIVECAM_TOLERANCE(double) {}
+void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE mode, double tolerance) {
+  canon.path_control = mode;
+  canon.path_tolerance = tolerance * program_unit();
+}
+void SET_NAIVECAM_TOLERANCE(double tolerance) { canon.naivecam_tolerance = tolerance * program_unit(); }
 void SET_CUTTER_RADIUS_COMPENSATION(double) {}
 void START_CUTTER_RADIUS_COMPENSATION(int) {}
 void STOP_CUTTER_RADIUS_COMPENSATION() {}

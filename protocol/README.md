@@ -42,6 +42,17 @@ These are **additive protocol v1 fields**. Existing command bodies and request d
 | `status.spindle.actual_rpm` | Nonnegative finite number or null | Configured measured speed magnitude, separate from commanded RPM and override. This does not report measured direction. | Null/absent is unknown; never replace it with commanded RPM or zero. |
 | `status.spindle.at_speed` | Boolean or null | Configured at-speed feedback. False is a reported negative result. | Null/absent is unknown, not false. |
 | `status.probe_input` | Boolean or null | Configured probe input; true is tripped, false is clear. | Null/absent is unknown. |
+| `status.paused_z` | Object with numeric `offset` and `max_lift` in mm, boolean `displaced`, and string `reason` | Applied external Z lift and its configured maximum. An empty reason permits a step, subject to native bounds. | Absent means the panel omits paused Z controls. |
+
+The optional `jog_paused_z` command takes a signed `distance` in millimetres.
+When Z has been lifted, `resume` verifies the return to the paused position
+before allowing program motion.
+
+When `status.paused_z.spindle` is `can_stop`, a positive jog can carry
+`stop_spindle: true` after an operator confirms the stop. `stopping` reports
+that CoffeeCNC is waiting for measured spindle stop. `restore` reports
+that Resume also needs to restart the saved spindle command and verify
+at-speed. `recover` requires Stop after an interrupted hold.
 
 For example, the G0759 configuration may supply these hello additions after native configuration validation:
 

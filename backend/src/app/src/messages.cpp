@@ -290,42 +290,65 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     program_fields["air_offset_owned"] = true;
   if (const auto breakpoint = program.breakpoint)
     program_fields["breakpoint"] = {{"line", breakpoint->line}, {"reached", breakpoint->reached}};
-  return fields.finish(
-      {{"type", "status"},
-       {"seq", fields.count(seq, "seq")},
-       {"link", name(status.link)},
-       {"machine", name(status.machine)},
-       {"mode", name(status.mode)},
-       {"interp", name(status.interp)},
-       {"axes", std::move(axes)},
-       {"offsets",
-        {{"wcs", status.offsets.wcs},
-         {"g5x", fields.vec(status.offsets.g5x, "offsets.g5x")},
-         {"g92", fields.vec(status.offsets.g92, "offsets.g92")},
-         {"tool", fields.vec(status.offsets.tool, "offsets.tool")},
-         {"rotation_xy", fields.real(status.offsets.rotation_xy, "offsets.rotation_xy")}}},
-       {"motion",
-        {{"velocity", fields.real(motion.velocity, "motion.velocity")},
-         {"feed_mode", name(motion.feed_mode)},
-         {"programmed_feed", fields.real(motion.programmed_feed, "motion.programmed_feed")},
-         {"feed_override", fields.real(motion.feed_override, "motion.feed_override")},
-         {"rapid_override", fields.real(motion.rapid_override, "motion.rapid_override")},
-         {"in_position", motion.in_position}}},
-       {"spindle",
-        {{"direction", name(spindle.direction)},
-         {"commanded_rpm", fields.real(spindle.commanded_rpm, "spindle.commanded_rpm")},
-         {"override", fields.real(spindle.override, "spindle.override")},
-         {"actual_rpm", std::move(actual_rpm)},
-         {"at_speed", nullable(spindle.at_speed)}}},
-       {"coolant", {{"flood", status.coolant.flood}, {"mist", status.coolant.mist}}},
-       {"tool",
-        {{"in_spindle", status.tool.in_spindle}, {"prepared", nullable(status.tool.prepared)}}},
-       {"program", std::move(program_fields)},
-       {"preview_context", fields.count(status.preview_context, "preview_context")},
-       {"wait", wait(fields, status.wait)},
-       {"active_codes", status.active_codes},
-       {"program_units", name(status.program_units)},
-       {"probe_input", nullable(status.probe_input)}});
+  Json message = {
+      {"type", "status"},
+      {"seq", fields.count(seq, "seq")},
+      {"link", name(status.link)},
+      {"machine", name(status.machine)},
+      {"mode", name(status.mode)},
+      {"interp", name(status.interp)},
+      {"axes", std::move(axes)},
+      {"offsets",
+       {{"wcs", status.offsets.wcs},
+        {"g5x", fields.vec(status.offsets.g5x, "offsets.g5x")},
+        {"g92", fields.vec(status.offsets.g92, "offsets.g92")},
+        {"tool", fields.vec(status.offsets.tool, "offsets.tool")},
+        {"rotation_xy", fields.real(status.offsets.rotation_xy, "offsets.rotation_xy")}}},
+      {"motion",
+       {{"velocity", fields.real(motion.velocity, "motion.velocity")},
+        {"feed_mode", name(motion.feed_mode)},
+        {"programmed_feed", fields.real(motion.programmed_feed, "motion.programmed_feed")},
+        {"feed_override", fields.real(motion.feed_override, "motion.feed_override")},
+        {"rapid_override", fields.real(motion.rapid_override, "motion.rapid_override")},
+        {"in_position", motion.in_position}}},
+      {"spindle",
+       {{"direction", name(spindle.direction)},
+        {"commanded_rpm", fields.real(spindle.commanded_rpm, "spindle.commanded_rpm")},
+        {"override", fields.real(spindle.override, "spindle.override")},
+        {"actual_rpm", std::move(actual_rpm)},
+        {"at_speed", nullable(spindle.at_speed)}}},
+      {"coolant", {{"flood", status.coolant.flood}, {"mist", status.coolant.mist}}},
+      {"tool",
+       {{"in_spindle", status.tool.in_spindle}, {"prepared", nullable(status.tool.prepared)}}},
+      {"program", std::move(program_fields)},
+      {"preview_context", fields.count(status.preview_context, "preview_context")},
+      {"wait", wait(fields, status.wait)},
+      {"active_codes", status.active_codes},
+      {"program_units", name(status.program_units)},
+      {"probe_input", nullable(status.probe_input)}};
+  if (const auto& z = status.paused_z) {
+    message["paused_z"] = {{"offset", fields.real(z->offset, "paused_z.offset")},
+                           {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},
+                           {"displaced", z->displaced},
+                           {"reason", z->reason}};
+    switch (z->spindle) {
+    case PausedSpindle::can_stop:
+      message["paused_z"]["spindle"] = "can_stop";
+      break;
+    case PausedSpindle::stopping:
+      message["paused_z"]["spindle"] = "stopping";
+      break;
+    case PausedSpindle::restore:
+      message["paused_z"]["spindle"] = "restore";
+      break;
+    case PausedSpindle::recover:
+      message["paused_z"]["spindle"] = "recover";
+      break;
+    case PausedSpindle::none:
+      break;
+    }
+  }
+  return fields.finish(std::move(message));
 }
 
 auto encode_tool_table(const ToolTable& table) -> Encoded {

@@ -1,9 +1,11 @@
 #ifndef COFFEECNC_LINUXCNC_HAL_CONTROL_HPP
 #define COFFEECNC_LINUXCNC_HAL_CONTROL_HPP
 
+#include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/safety_outputs.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -33,6 +35,7 @@ struct HalInputs {
   bool probe_motion_permitted{};
   bool probe_cycle_active{};
   bool jog_contact{};
+  std::optional<PausedZInputs> paused_z{};
 };
 
 // The same for the other threads.
@@ -46,6 +49,7 @@ struct HalView {
   bool probe_setter_selected{};
   bool probe_motion_permitted{};
   bool probe_cycle_active{};
+  std::optional<PausedZInputs> paused_z{};
 };
 
 // What crosses between the control thread, which alone touches the HAL component, and every
@@ -97,6 +101,15 @@ public:
   void finish_probe_cycle();
   [[nodiscard]] auto probe_cycle_outputs(Clock::time_point now) const -> ProbeCycleOutputs;
 
+  // Worker-owned spindle hold state, reported with controller status.
+  std::atomic<PausedSpindle> paused_spindle{PausedSpindle::none};
+
+  [[nodiscard]] auto begin_paused_z(Clock::time_point now) -> bool;
+  [[nodiscard]] auto move_paused_z(Clock::time_point now, std::int32_t delta, bool clear) -> bool;
+  [[nodiscard]] auto renew_paused_z(Clock::time_point now) -> bool;
+  void stop_paused_z();
+  [[nodiscard]] auto paused_z_outputs(Clock::time_point now) const -> PausedZOutputs;
+
 private:
   mutable std::mutex mutex_;
   HalInputs inputs_;
@@ -110,6 +123,9 @@ private:
   JogStopHistory history_;
   std::optional<Clock::time_point> probe_deadline_;
   bool probe_setter_{true};
+  std::optional<Clock::time_point> paused_z_deadline_;
+  std::int32_t paused_z_counts_{}; // Hold the count while disabled. LinuxCNC acts on deltas.
+  bool paused_z_clear_{};
 };
 
 // The control thread's use of the HAL component, as the runtime sees it. Every member is called

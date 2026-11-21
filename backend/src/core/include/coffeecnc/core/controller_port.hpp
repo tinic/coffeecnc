@@ -166,6 +166,9 @@ public:
     return {ActionStatus::failed, "Restart from line is unavailable on this controller."};
   }
   [[nodiscard]] virtual auto pause(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto jog_paused_z(double, bool, const Wanted&) -> ActionResult {
+    return {ActionStatus::failed, "Paused Z jog is unavailable on this controller."};
+  }
   [[nodiscard]] virtual auto resume(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto step(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto abort() -> ActionResult = 0;

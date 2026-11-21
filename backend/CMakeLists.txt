@@ -256,6 +256,16 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 raised-run)
         set_tests_properties(linuxcnc_raised_run_g0759 PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 405)
+        add_test(NAME linuxcnc_paused_spindle_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 105 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_paused_spindle_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 paused-spindle)
+        set_tests_properties(linuxcnc_paused_spindle_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 440)
+        add_test(NAME linuxcnc_paused_z_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 70 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_paused_z_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 paused-z)
+        set_tests_properties(linuxcnc_paused_z_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
         add_test(NAME linuxcnc_program_breakpoint_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -p g0759 -t 70 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_program_breakpoint_g0759
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 program-breakpoint)

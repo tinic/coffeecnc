@@ -176,6 +176,11 @@ auto command(const Json& object) -> Command {
       throw InvalidRequest("Jog direction must be -1 or 1.");
     return Jog{axis(object), direction, number(object, "velocity"), boolean(object, "held")};
   }
+  if (type == "jog_paused_z") {
+    fields(object, {"id", "type", "distance"}, {"stop_spindle"});
+    return JogPausedZ{number(object, "distance"),
+                      object.contains("stop_spindle") && boolean(object, "stop_spindle")};
+  }
   if (type == "jog_step") {
     fields(object, {"id", "type", "axis", "distance", "velocity"});
     return JogStep{axis(object), number(object, "distance"), number(object, "velocity")};

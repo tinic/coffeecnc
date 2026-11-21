@@ -182,6 +182,7 @@ struct Status {
   LengthUnit program_units{LengthUnit::mm};
   // True while the probe is tripped. Empty when the machine has no probe input.
   std::optional<bool> probe_input;
+  std::optional<PausedZStatus> paused_z{};
   friend auto operator==(const Status&, const Status&) -> bool = default;
 };
 

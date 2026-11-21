@@ -316,6 +316,37 @@ struct NmlPort::Impl {
   Clock::time_point breakpoint_retry{};
   bool breakpoint_reported{};
   bool breakpoint_recovered{};
+  struct SpindleHold {
+    std::string file;
+    int line;
+    int tool;
+    SpindleDirection direction;
+    double rpm;
+    Vec3 base;
+    [[nodiscard]] auto matches(const NmlStatus& status) const -> bool {
+      const auto& c = status.controller;
+      return c.link == Link::live && c.machine == MachineState::on &&
+             c.mode == TaskMode::automatic && c.interp == InterpState::paused && status.paused &&
+             status.program_file == file && status.current_line == line &&
+             c.tool_in_spindle == tool && !c.requested_tool;
+    }
+    [[nodiscard]] auto at_base(const NmlStatus& status) const -> bool {
+      const auto& c = status.controller;
+      return matches(status) && status.paused_z_motion_ready && c.paused_z &&
+             !c.paused_z->displaced && status.spindle_actual_rpm && status.spindle_at_speed &&
+             std::ranges::equal(c.axes, base, [](const AxisState& axis, double expected) {
+               return std::abs(axis.machine - expected) <= 0.01;
+             });
+    }
+    [[nodiscard]] auto at_speed(const NmlStatus& status) const -> bool {
+      return at_base(status) && status.spindle_direction == direction &&
+             std::abs(status.spindle_rpm - rpm) < 0.01 && *status.spindle_at_speed &&
+             *status.spindle_actual_rpm >= 1.0;
+    }
+  };
+  std::filesystem::path spindle_hold_marker;
+  std::optional<SpindleHold> spindle_hold;
+  Clock::time_point spindle_hold_retry{};
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -331,6 +362,7 @@ struct NmlPort::Impl {
     breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     breakpoint_recovered = bool(breakpoint);
+    spindle_hold_marker = std::filesystem::path(config.directory) / ".coffeecnc-spindle-hold";
     std::error_code error;
     if (std::filesystem::exists(air_marker, error)) {
       if (const auto text = read_text_file(air_marker.string(), 64)) {
@@ -345,6 +377,22 @@ struct NmlPort::Impl {
     } else {
       air_bad_marker = bool(error);
     }
+  }
+
+  void spindle_recovery() {
+    spindle_hold.reset();
+    hal->paused_spindle.store(PausedSpindle::recover);
+  }
+
+  void finish_spindle_hold() {
+    std::error_code error;
+    std::filesystem::remove(spindle_hold_marker, error);
+    if (error) {
+      spindle_recovery();
+      return;
+    }
+    spindle_hold.reset();
+    hal->paused_spindle.store(PausedSpindle::none);
   }
 
   [[nodiscard]] auto owns_air_offset() const -> bool {
@@ -794,6 +842,13 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
     -> std::expected<std::unique_ptr<NmlPort>, std::string> {
   auto impl = std::make_unique<Impl>(config);
   impl->hal = hal;
+  if (hal && config.paused_z) {
+    std::error_code error;
+    if (std::filesystem::exists(impl->spindle_hold_marker, error) || error)
+      impl->spindle_recovery();
+    else
+      hal->paused_spindle.store(PausedSpindle::none);
+  }
   impl->loads = loads;
   impl->publish_air();
   if (loads)
@@ -856,6 +911,8 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
 }
 
 void NmlPort::idle_maintenance(const Wanted& wanted) {
+  if (impl_->hal && impl_->hal->paused_spindle.load() != PausedSpindle::none)
+    recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {
     finish_breakpoint(wanted);
     return;
@@ -2862,6 +2919,174 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused != 0; });
 }
 
+auto NmlPort::jog_paused_z(double distance, bool stop_spindle, const Wanted& wanted)
+    -> ActionResult {
+  return move_paused_z(distance, false, wanted, stop_spindle);
+}
+
+auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wanted,
+                            bool stop_spindle) -> ActionResult {
+  const auto& limits = impl_->config.paused_z;
+  auto* hal = impl_->hal;
+  const auto start = status();
+  const auto& z = start.controller.paused_z;
+  if (!wanted())
+    return withdrawn();
+  if (!limits || !hal || !z || !start.paused_z_feedback)
+    return failed("Paused Z feedback is unavailable.");
+  if (stop_spindle && (returning || distance <= 0 || z->spindle != PausedSpindle::can_stop))
+    return failed("The paused spindle state changed. Review the controls and try again.");
+  if (!stop_spindle && !z->reason.empty())
+    return failed(z->reason);
+  if (!std::isfinite(distance) ||
+      (!returning && (distance == 0 || std::abs(distance) > limits->lift_mm)))
+    return failed("The paused Z jog distance is out of range.");
+
+  const double count = limits->count_mm;
+  const double tolerance = count / 2;
+  const auto delta = returning ? 0 : static_cast<std::int32_t>(std::round(distance / count));
+  const double target = returning ? 0 : z->offset + delta * count;
+  if (target < -tolerance || target > limits->lift_mm + 1e-9 || (!returning && delta == 0))
+    return failed("Z must stay between the paused position and the configured lift limit.");
+  const auto& axes = start.controller.axes;
+  const double base_z = axes[2].machine - z->offset;
+  const bool clear = std::abs(target) <= tolerance;
+  const double end_z = base_z + (clear ? 0 : target);
+  if (!std::isfinite(end_z) || !std::isfinite(axes[2].min_limit) ||
+      !std::isfinite(axes[2].max_limit) || end_z < axes[2].min_limit || end_z > axes[2].max_limit)
+    return failed("The requested lift would cross a Z travel limit.");
+  if (stop_spindle) {
+    auto held = hold_paused_spindle(start, wanted);
+    if (!accepted(held))
+      return held;
+  }
+  if (!hal->begin_paused_z(Clock::now()))
+    return failed("The paused Z motion interlock is open.");
+  const struct Permit {
+    HalShared& hal;
+    ~Permit() { hal.stop_paused_z(); }
+  } permit{*hal};
+
+  const auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.");
+  const auto safe = [&](const NmlStatus& now) {
+    return wanted() && now.controller.paused_z && now.paused_z_feedback &&
+           now.paused_z_interlock.empty() && now.program_file == start.program_file &&
+           now.current_line == start.current_line;
+  };
+  // Let the realtime gate open before changing the counts. LinuxCNC samples counts even
+  // with the gate closed, so changing the enable and counts in the same cycle can lose a step.
+  constexpr auto gate_settle = std::chrono::milliseconds{40};
+  const auto enable_at = Clock::now();
+  bool interrupted = false;
+  until(gate_settle, [&] {
+    interrupted = !safe(status()) || !hal->renew_paused_z(Clock::now());
+    return interrupted || Clock::now() - enable_at >= gate_settle;
+  });
+  if (interrupted || !hal->move_paused_z(Clock::now(), delta, clear))
+    return stopped;
+
+  // Include acceleration and allow for the slower tail at either end of the move.
+  using Seconds = std::chrono::duration<double>;
+  const auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+      Seconds{std::min(120.0, std::abs(end_z - axes[2].machine) / limits->velocity_mm_s +
+                                  limits->velocity_mm_s / limits->acceleration_mm_s2 + 2.0)});
+  const auto arrived = [&](const NmlStatus& now) {
+    const auto& current = now.controller.axes;
+    return now.paused_z_still &&
+           std::abs(now.paused_z_feedback->offset - (clear ? 0 : target)) <= tolerance &&
+           std::abs(current[0].machine - axes[0].machine) <= 0.01 &&
+           std::abs(current[1].machine - axes[1].machine) <= 0.01 &&
+           std::abs(current[2].machine - end_z) <= 0.01 &&
+           (!clear || !now.controller.paused_z->displaced);
+  };
+  const bool finished = until(timeout, [&] {
+    const auto now = status();
+    interrupted = !safe(now) || !hal->renew_paused_z(Clock::now());
+    return interrupted || arrived(now);
+  });
+  hal->stop_paused_z();
+  if (interrupted)
+    return stopped;
+  if (!finished)
+    return failed(
+        "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
+  std::this_thread::sleep_for(gate_settle);
+  const auto now = status();
+  return safe(now) && arrived(now) ? ActionResult{} : stopped;
+}
+
+auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) -> ActionResult {
+  auto hold = Impl::SpindleHold{
+      start.program_file,      start.current_line, start.controller.tool_in_spindle,
+      start.spindle_direction, start.spindle_rpm,  restart_position(start.controller)};
+  if (!wanted() || hold.file.empty() || !hold.matches(status()))
+    return failed("The paused program changed before stopping the spindle.");
+  // After a restart there is no trustworthy in-memory pause identity. Keep only a recovery
+  // marker on disk, written before changing the spindle.
+  if (!write_sidecar(impl_->spindle_hold_marker, "CoffeeCNC interrupted spindle hold\n"))
+    return failed("Could not save spindle hold recovery state.");
+  impl_->hal->paused_spindle.store(PausedSpindle::stopping);
+  auto stopped = spindle_command(SpindleDirection::stopped, 0, wanted, true);
+  if (!accepted(stopped)) {
+    impl_->spindle_recovery();
+    return stopped;
+  }
+  bool interrupted = false;
+  const bool verified = until(std::chrono::seconds{15}, [&] {
+    const auto now = status();
+    interrupted = !wanted() || !hold.matches(now);
+    return interrupted || (now.spindle_actual_rpm && !now.controller.spindle_active);
+  });
+  if (interrupted || !verified) {
+    impl_->spindle_recovery();
+    return failed("Spindle stop was not verified. Press Stop before continuing.");
+  }
+  impl_->spindle_hold = std::move(hold);
+  impl_->hal->paused_spindle.store(PausedSpindle::restore);
+  return {};
+}
+
+auto NmlPort::restore_paused_spindle(const Wanted& wanted) -> ActionResult {
+  const auto& hold = impl_->spindle_hold;
+  const auto before = status();
+  if (!hold || !wanted() || !hold->at_base(before) || before.controller.spindle_active)
+    return failed("Return Z and verify the stopped spindle before continuing.");
+  auto started = spindle_command(hold->direction, hold->rpm, wanted, true);
+  bool interrupted = false;
+  const bool at_speed =
+      accepted(started) && until(std::chrono::seconds{15}, [&] {
+        const auto now = status();
+        interrupted = !wanted() || !hold->at_base(now);
+        return interrupted || hold->at_speed(now);
+      });
+  if (at_speed && !interrupted)
+    return {};
+  impl_->spindle_recovery();
+  static_cast<void>(spindle_command(SpindleDirection::stopped, 0, {}, true));
+  return failed("Spindle restart was not verified. Press Stop before continuing.");
+}
+
+void NmlPort::recover_paused_spindle(const Wanted& wanted) {
+  const auto now = status();
+  if (now.controller.link != Link::live || !now.spindle_actual_rpm || !wanted())
+    return;
+  if (now.controller.interp == InterpState::idle && !now.controller.spindle_active) {
+    impl_->finish_spindle_hold();
+    return;
+  }
+  if (impl_->spindle_hold && impl_->spindle_hold->matches(now))
+    return;
+  impl_->spindle_recovery();
+  if (now.controller.spindle_active && Clock::now() >= impl_->spindle_hold_retry) {
+    impl_->spindle_hold_retry = Clock::now() + std::chrono::seconds{1};
+    // A crash can happen just after PLAN_RESUME. Abort the program before removing torque.
+    if (now.controller.interp != InterpState::idle && !now.paused)
+      static_cast<void>(abort());
+    else
+      static_cast<void>(spindle_command(SpindleDirection::stopped, 0, {}, true));
+  }
+}
+
 auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   if (!impl_->breakpoint && status().controller.breakpoint_program)
     return failed("The breakpoint source is unavailable. Stop and reopen the original program.");
@@ -2882,18 +3107,47 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
       return failed("The original program changed. Stop and reopen it before running again.");
     impl_->breakpoint_recovered = false;
   }
+  const auto before = status();
+  if (impl_->config.paused_z && (before.controller.link != Link::live || !before.paused_z_feedback))
+    return failed("Paused Z feedback is unavailable. Resume could not check the Z position.");
+  if (before.controller.paused_z && before.controller.paused_z->spindle == PausedSpindle::recover)
+    return failed("Press Stop before continuing after an interrupted spindle hold.");
+  if (before.controller.paused_z && before.controller.paused_z->displaced) {
+    auto returned = move_paused_z(0, true, wanted);
+    if (!accepted(returned))
+      return returned;
+  }
+  const bool restoring = impl_->spindle_hold.has_value();
+  if (restoring) {
+    auto at_speed = restore_paused_spindle(wanted);
+    if (!accepted(at_speed))
+      return at_speed;
+  }
   const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
-  const auto from = impl_->begin(&wanted);
-  const Impl::Scope scope{*impl_};
-  if (!impl_->still())
-    return withdrawn();
-  EMC_TASK_PLAN_RESUME message;
-  if (auto sent = impl_->send(message); !accepted(sent))
-    return sent;
-  auto resumed = impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
-    return now.task.task_paused == 0 ||
-           (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
-  });
+  const auto resume_program = [&]() -> ActionResult {
+    if (restoring && !impl_->spindle_hold->at_speed(status()))
+      return failed("Spindle speed or the paused position changed before Resume.");
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    if (!impl_->still())
+      return withdrawn();
+    EMC_TASK_PLAN_RESUME message;
+    if (auto sent = impl_->send(message); !accepted(sent))
+      return sent;
+    return impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
+      return now.task.task_paused == 0 ||
+             (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
+    });
+  };
+  auto resumed = resume_program();
+  if (restoring) {
+    if (accepted(resumed)) {
+      impl_->finish_spindle_hold();
+    } else {
+      impl_->spindle_recovery();
+      static_cast<void>(abort());
+    }
+  }
   if (accepted(resumed) && at_breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
       !impl_->save_breakpoint())
     impl_->messages.push_back({true, "Could not save that the breakpoint has resumed."});
@@ -2946,15 +3200,22 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
 
 auto NmlPort::set_spindle(SpindleDirection direction, double rpm, const Wanted& wanted)
     -> ActionResult {
-  // A spindle stop is never withdrawn.
-  const auto from = impl_->begin(direction == SpindleDirection::stopped ? nullptr : &wanted);
+  return spindle_command(direction, rpm, wanted, false);
+}
+
+auto NmlPort::spindle_command(SpindleDirection direction, double rpm, const Wanted& wanted,
+                              bool during_pause) -> ActionResult {
+  // A stop already sent is never withdrawn. A confirmed stop-and-lift can be cancelled before
+  // the spindle command is sent, just like the lift itself.
+  const auto from = impl_->begin(
+      wanted && (during_pause || direction != SpindleDirection::stopped) ? &wanted : nullptr);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
     return withdrawn();
   if (direction == SpindleDirection::stopped) {
     EMC_SPINDLE_OFF message;
     message.spindle = 0;
-    return impl_->run(message, from);
+    return during_pause ? impl_->pass(message, from) : impl_->run(message, from);
   }
   EMC_SPINDLE_ON message;
   message.spindle = 0;
@@ -2963,7 +3224,7 @@ auto NmlPort::set_spindle(SpindleDirection direction, double rpm, const Wanted& 
   message.factor = 0;
   message.xoffset = 0;
   message.wait_for_spindle_at_speed = 1;
-  return impl_->run(message, from);
+  return during_pause ? impl_->pass(message, from) : impl_->run(message, from);
 }
 
 auto NmlPort::set_coolant(bool flood, bool mist, const Wanted& wanted) -> ActionResult {

@@ -177,6 +177,14 @@ export interface Status {
   coolant: { flood: boolean; mist: boolean }
   /** Configured probe input: true means tripped. Null/absent = unavailable. */
   probe_input?: boolean | null
+  /** Available on machines configured for external Z offsets. Lengths are in mm. */
+  paused_z?: {
+    offset: number
+    max_lift: number
+    displaced: boolean
+    reason: string
+    spindle?: 'can_stop' | 'stopping' | 'restore' | 'recover'
+  }
   tool: {
     /** Tool LinuxCNC considers loaded (0 for none). */
     in_spindle: number
@@ -465,6 +473,12 @@ export interface JogStep extends CommandBase {
   distance: number
   velocity: number
 }
+export interface JogPausedZ extends CommandBase {
+  type: 'jog_paused_z'
+  /** Signed lift step in millimetres. */
+  distance: number
+  stop_spindle?: true
+}
 export interface JogStopAll extends CommandBase {
   type: 'jog_stop_all'
 }
@@ -673,6 +687,7 @@ export type ToMachine =
   | StartRestart
   | EditProgram
   | SetAirCut
+  | JogPausedZ
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

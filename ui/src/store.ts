@@ -142,6 +142,8 @@ export function describeCommand(command: CommandBody): string {
     case 'jog':
     case 'jog_step':
       return `Jog ${command.axis.toUpperCase()}`
+    case 'jog_paused_z':
+      return command.distance > 0 ? 'Lift paused Z' : 'Lower paused Z'
     case 'jog_stop_all':
       return 'Stop jog'
     case 'mdi':
@@ -251,7 +253,7 @@ export function createPanel(options: PanelOptions): Panel {
     simulatorFault: transport.simulator?.fault() ?? 'none',
   })
 
-  const pending = new Map<number, { command: CommandBody; sent: number }>()
+  const pending = new Map<number, { command: CommandBody; deadline: number }>()
   const resultListeners = new Set<ResultListener>()
   let nextId = 1
   let nextLogId = 1
@@ -422,10 +424,7 @@ export function createPanel(options: PanelOptions): Panel {
   function checkPending(): void {
     const time = now()
     for (const [id, entry] of pending) {
-      const command = entry.command
-      const timeout = command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : answerTimeoutMs
-      if (time - entry.sent > timeout) {
+      if (time > entry.deadline) {
         // A local deadline must also end held controls through their result listeners. It
         // does not prove the controller cancelled the command; a release is still necessary.
         result({ type: 'result', id, outcome: 'timed_out', reason: 'No answer from the machine' })
@@ -440,7 +439,12 @@ export function createPanel(options: PanelOptions): Panel {
     send: (command): number => {
       const id = nextId
       nextId += 1
-      pending.set(id, { command, sent: now() })
+      const pausedZMove = command.type === 'jog_paused_z' ||
+        command.type === 'resume' && (state.status?.paused_z?.displaced === true ||
+          state.status?.paused_z?.spindle === 'restore')
+      const timeout = command.type === 'fixed_setter' && command.action !== 'status'
+        ? 1_600_000 : pausedZMove ? 160_000 : answerTimeoutMs
+      pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })
         if (state.mdi.length > maxMdiEntries) {

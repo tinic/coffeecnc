@@ -117,7 +117,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   c.program_loaded = task.file[0] != '\0';
   c.tool_in_spindle = s.io.tool.toolInSpindle;
   // As the control thread read the pins last; nothing of it while that thread has stalled.
-  if (const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt) {
+  const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt;
+  if (view) {
     if (view->tool_change_request) {
       c.requested_tool = view->tool_change_request->tool;
       c.tool_request = view->tool_change_request->generation;
@@ -160,6 +161,80 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.optional_stop = task.optional_stop_state;
   out.block_delete = task.block_delete_state;
   out.paused = task.task_paused != 0;
+  if (const auto& limits = config.paused_z) {
+    // A feed-held path can retain queued motion and clear traj.inpos even at rest.
+    constexpr double rest_mm_s = 0.0001;
+    out.paused_z_still = std::abs(motion.traj.current_vel * mm) < rest_mm_s;
+    for (std::size_t i = 0; i < c.axes.size(); ++i)
+      out.paused_z_still = out.paused_z_still &&
+                           std::abs(motion.joint[i].velocity * mm) < rest_mm_s &&
+                           std::abs(motion.axis[i].velocity * mm) < rest_mm_s;
+    // LinuxCNC 2.9's NML motion status does not serialize the external-offset pose.
+    // Read applied offset from HAL; the NML axis position independently checks the move.
+    if (view && view->paused_z) {
+      const double offset = view->paused_z->offset * mm;
+      if (std::isfinite(offset))
+        out.paused_z_feedback =
+            PausedZInputs{offset, view->paused_z->active, view->paused_z->limited};
+    }
+    const auto& feedback = out.paused_z_feedback;
+    const double z_mm = feedback ? feedback->offset : 0;
+    const double tolerance = limits->count_mm / 2;
+    // The planner can finish within its servo-cycle tolerance of zero.
+    const bool displaced = feedback && (feedback->active || std::abs(z_mm) > tolerance);
+    const auto blocked = [&]() -> std::string {
+      if (link != Link::live || c.machine != MachineState::on || !motion.traj.enabled ||
+          c.mode != TaskMode::automatic || c.interp != InterpState::paused || !out.paused)
+        return "Pause a running program before jogging Z.";
+      if (std::ranges::any_of(c.axes,
+                              [](const AxisState& axis) { return !axis.homed || axis.homing; }))
+        return "Home all axes before jogging Z while paused.";
+      if (c.requested_tool)
+        return "Finish the tool change before jogging Z.";
+      if (!view || !feedback || !view->watchdog_ok || view->jog_stop_high ||
+          view->probe_cycle_active || (view->probe_input && *view->probe_input))
+        return "The paused Z motion interlock is open.";
+      if (feedback->limited || motion.on_soft_limit ||
+          std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
+        return "A travel limit blocks paused Z motion.";
+      if (z_mm < -tolerance || z_mm > limits->lift_mm + tolerance)
+        return "The active external offset is outside the paused Z range.";
+      return {};
+    };
+    auto spindle_state = hal ? hal->paused_spindle.load() : PausedSpindle::none;
+    out.paused_z_interlock = blocked();
+    if (spindle_state == PausedSpindle::recover)
+      out.paused_z_interlock = "Press Stop before continuing after an interrupted spindle hold.";
+    out.paused_z_motion_ready = out.paused_z_interlock.empty() && out.paused_z_still;
+    const bool fixed_rpm = std::ranges::find(task.activeGCodes, 970) != std::end(task.activeGCodes);
+    const bool synchronized = std::ranges::any_of(
+        task.activeGCodes, [](int code) { return code == 330 || code == 331 || code == 760; });
+    const bool can_stop =
+        out.paused_z_motion_ready && !displaced && spindle_state == PausedSpindle::none &&
+        fixed_rpm && !synchronized && out.spindle_at_speed.has_value() &&
+        out.spindle_actual_rpm.has_value() && out.spindle_direction != SpindleDirection::stopped &&
+        std::isfinite(out.spindle_rpm) && out.spindle_rpm >= 1.0 &&
+        out.spindle_rpm <= config.limits.max_spindle_rpm &&
+        (!config.touch_probe_tool || c.tool_in_spindle != *config.touch_probe_tool);
+    if (can_stop)
+      spindle_state = PausedSpindle::can_stop;
+    // The last motion's M code can describe an earlier block. HAL also gates on spindle.0.on.
+    if (out.paused_z_interlock.empty() && (!out.spindle_actual_rpm || c.spindle_active)) {
+      if (spindle_state == PausedSpindle::stopping)
+        out.paused_z_interlock = "Waiting for the spindle to stop.";
+      else if (spindle_state == PausedSpindle::restore)
+        out.paused_z_interlock = "Waiting for the spindle to reach speed.";
+      else
+        out.paused_z_interlock =
+            can_stop ? "Stop the spindle before jogging Z."
+                     : "Pause after stopping the spindle in the program (M5) before jogging Z.";
+    }
+    c.paused_z = PausedZStatus{
+        z_mm,         limits->lift_mm, displaced, feedback.has_value(), out.paused_z_interlock,
+        spindle_state};
+    if (c.paused_z->reason.empty() && !out.paused_z_still)
+      c.paused_z->reason = "Wait for the axes to stop.";
+  }
   out.dwell_seconds_left = task.delayLeft;
   out.queued_mdi = task.queuedMDIcommands;
   // Element 0 of each array is the line number the codes were read at; -1 marks an empty

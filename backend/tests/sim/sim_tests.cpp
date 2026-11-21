@@ -4315,9 +4315,270 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
   rig.start();
 }
 
+void paused_z_jog(Rig& rig) {
+  constexpr auto lift = R"("type":"jog_paused_z","distance":3)";
+  constexpr auto lower = R"("type":"jog_paused_z","distance":-1)";
+  constexpr auto stop = R"("type":"abort")";
+  constexpr auto resume = R"("type":"resume")";
+  const auto file = rig.config.program_prefix + "/coffeecnc_paused_z.ngc";
+  const auto at_pause = [&](std::string_view spindle) {
+    std::ofstream{file} << "G21 G90 G54 G49 G94 G97\n"
+                        << spindle << "\nG53 G0 X0 Y0 Z-10\nM0\nG53 G1 X5 F600\nM30\n";
+    const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+    const auto run = rig.send(R"("type":"run")");
+    const bool paused = rig.pump_until(7s, [&] {
+      const auto status = rig.status();
+      return status.paused && status.controller.in_position;
+    });
+    check("paused_z_program_pause", open.accepted() && run.accepted() && paused,
+          open.text() + " " + run.text());
+    return paused && run.accepted();
+  };
+  const auto offset_at = [&](double value) {
+    const auto z = rig.status().controller.paused_z;
+    return z && near(z->offset, value, 0.001) && z->displaced == (value != 0);
+  };
+  if (!at_pause("M5"))
+    return;
+  const auto unhomed = rig.send(lift);
+  check("paused_z_requires_homing",
+        !unhomed.accepted() && unhomed.reason.find("Home all axes") != std::string::npos,
+        unhomed.text());
+  rig.send(stop);
+  for (const auto axis : {"x", "y", "z"}) {
+    const auto homed = rig.send(std::format(R"("type":"home","axis":"{}")", axis));
+    check("paused_z_home_in_place", homed.accepted(), homed.text());
+  }
+  if (!at_pause("S650 M3"))
+    return;
+  const auto spinning = rig.send(lift);
+  check("paused_z_requires_spindle_off",
+        !spinning.accepted() && spinning.reason.find("spindle") != std::string::npos &&
+            offset_at(0),
+        spinning.text());
+  rig.send(stop);
+  if (!at_pause("M5"))
+    return;
+
+  const double base = rig.machine(2);
+  auto raised = rig.send(lift);
+  check("paused_z_lifts_only_z",
+        raised.accepted() && offset_at(3) && near(rig.machine(2), base + 3) &&
+            near(rig.machine(0), 0) && near(rig.machine(1), 0) && rig.status().paused,
+        std::format("{} z={:.4f} base={:.4f} permit={} reason={}", raised.text(), rig.machine(2),
+                    base, hal_signal("coffeecnc-eoffset-permit"), rig.status().paused_z_interlock));
+  if (!raised.accepted())
+    return;
+  const auto too_high = rig.send(R"("type":"jog_paused_z","distance":8)");
+  const auto too_low = rig.send(R"("type":"jog_paused_z","distance":-4)");
+  const auto step = rig.send(R"("type":"step")");
+  check("paused_z_stays_in_range",
+        !too_high.accepted() && !too_low.accepted() && !step.accepted() && offset_at(3),
+        too_high.text() + " " + too_low.text() + " " + step.text());
+  const auto lowered = rig.send(lower);
+  check("paused_z_lowers_toward_base",
+        lowered.accepted() && offset_at(2) && near(rig.machine(2), base + 2), lowered.text());
+  const auto continued = rig.send(resume);
+  check("paused_z_returns_before_resume",
+        continued.accepted() && offset_at(0) && near(rig.machine(2), base) &&
+            rig.pump_until(5s, [&] { return rig.idle() && near(rig.machine(0), 5); }) &&
+            near(rig.machine(2), base),
+        continued.text());
+
+  if (!at_pause("M5"))
+    return;
+  rig.pump(120ms);
+  raised = rig.send(lift);
+  const bool lifted_before_stop = raised.accepted() && offset_at(3);
+  check("paused_z_lift_before_cancel", lifted_before_stop, raised.text());
+  if (!lifted_before_stop)
+    return;
+  const auto returned = rig.post(resume);
+  const bool lowering = rig.pump_until(3s, [&] {
+    return rig.status().paused && rig.machine(2) < base + 2.7 && rig.machine(2) > base + 1;
+  });
+  const auto stopped = rig.send(stop);
+  const auto cancelled = rig.await(returned);
+  check("paused_z_stop_cancels_return",
+        raised.accepted() && lowering && stopped.accepted() && !cancelled.accepted() &&
+            rig.pump_until(2s, [&] { return rig.idle() && rig.status().controller.in_position; }) &&
+            rig.machine(2) > base + 0.5 && near(rig.machine(0), 0),
+        std::format("{} {} lowering={} z={:.3f} base={:.3f}", stopped.text(), cancelled.text(),
+                    lowering, rig.machine(2), base));
+  const double held = rig.machine(2);
+  const auto blocked = rig.send(R"("type":"run")");
+  rig.pump(250ms);
+  check("paused_z_stop_holds_height",
+        !blocked.accepted() && blocked.reason.find("still lifted") != std::string::npos &&
+            near(rig.machine(2), held) && held > base + 0.5,
+        blocked.text());
+  const auto off = rig.send(R"("type":"set_machine","state":"off")");
+  const auto on = rig.send(R"("type":"set_machine","state":"on")");
+  check("paused_z_power_cycle_clears_without_motion",
+        off.accepted() && on.accepted() && rig.pump_until(3s, [&] { return offset_at(0); }) &&
+            near(rig.machine(2), held),
+        std::format("{} {} held={:.4f} z={:.4f}", off.text(), on.text(), held, rig.machine(2)));
+
+  // Feed hold leaves the interrupted move in the queue even after the axes have stopped.
+  std::ofstream{file} << "G21 G90 G54 G49 G94 G97\nM5\nG53 G0 X0 Y0 Z-10\n"
+                         "G53 G1 X30 F600\nM30\n";
+  const auto opened = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  const auto started = rig.send(R"("type":"run")");
+  const bool traversing = rig.pump_until(6s, [&] { return rig.machine(0) > 2; });
+  const auto hold = rig.send(R"("type":"pause")");
+  const bool at_rest = rig.pump_until(4s, [&] {
+    const auto status = rig.status();
+    return status.paused && status.paused_z_still;
+  });
+  const double x = rig.machine(0);
+  const auto held_status = rig.status();
+  const auto fed_lift = rig.send(lift);
+  check("paused_z_after_feed_hold",
+        opened.accepted() && started.accepted() && traversing && hold.accepted() && at_rest &&
+            fed_lift.accepted() && offset_at(3) && near(rig.machine(0), x) && x < 25,
+        std::format("{} {} codes={} rpm={} spinning={} x={:.3f}", hold.text(), fed_lift.text(),
+                    Json(held_status.active_codes).dump(),
+                    held_status.spindle_actual_rpm.value_or(-1),
+                    held_status.controller.spindle_active, x));
+  if (!fed_lift.accepted())
+    return;
+  const auto returning = rig.post(resume);
+  const bool moving_down = rig.pump_until(3s, [&] {
+    return rig.status().paused && rig.machine(2) < base + 2.7 && rig.machine(2) > base + 1;
+  });
+  const auto estop = rig.send(R"("type":"set_machine","state":"estop")");
+  const auto interrupted = rig.await(returning);
+  rig.pump(250ms);
+  check("paused_z_estop_prevents_resume",
+        moving_down && estop.accepted() && !interrupted.accepted() &&
+            rig.snapshot().machine == MachineState::estop && rig.machine(2) > base + 0.5 &&
+            near(rig.machine(0), x),
+        estop.text() + " " + interrupted.text());
+}
+
+void paused_spindle(Rig& rig, NmlLoads& loads) {
+  constexpr auto lift = R"("type":"jog_paused_z","distance":2,"stop_spindle":true)";
+  constexpr auto resume = R"("type":"resume")";
+  constexpr auto abort = R"("type":"abort")";
+  const auto file = rig.config.program_prefix + "/coffeecnc_paused_spindle.ngc";
+  const auto marker = std::filesystem::path(rig.config.directory) / ".coffeecnc-spindle-hold";
+  std::ofstream{file} << "G21 G90 G54 G49 G94 G97\nS650 M4\nG53 G0 X0 Y0 Z-10\n"
+                         "M0\nG53 G1 X5 F600\nM5\nM30\n";
+  for (const auto axis : {"x", "y", "z"}) {
+    const auto homed = rig.send(std::format(R"("type":"home","axis":"{}")", axis));
+    check("paused_spindle_home_in_place", homed.accepted(), homed.text());
+  }
+  const auto paused_with_spindle = [&] {
+    halcmd("sets spindle-at-speed TRUE");
+    halcmd("sets spindle-vel-fb-rpm-abs 650");
+    const auto opened = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+    const auto started = rig.send(R"("type":"run")");
+    const bool eligible = rig.pump_until(7s, [&] {
+      const auto status = rig.status();
+      return status.paused && status.controller.paused_z &&
+             status.controller.paused_z->spindle == PausedSpindle::can_stop;
+    });
+    check("paused_spindle_offer", opened.accepted() && started.accepted() && eligible,
+          std::format("{} {} codes={} speed={} actual={} reason={}", opened.text(), started.text(),
+                      Json(rig.status().active_codes).dump(), rig.status().spindle_rpm,
+                      rig.status().spindle_actual_rpm.value_or(-1),
+                      rig.status().paused_z_interlock));
+    return eligible;
+  };
+  const auto held = [&] {
+    const auto jog = rig.post(lift);
+    const bool off = rig.pump_until(3s, [] { return hal_signal("spindle-enable") == "FALSE"; });
+    rig.pump(150ms);
+    check("paused_spindle_waits_for_measured_stop",
+          off && !rig.result(jog) && near(rig.machine(2), -10) && std::filesystem::exists(marker));
+    halcmd("sets spindle-vel-fb-rpm-abs 0");
+    const auto raised = rig.await(jog);
+    const auto status = rig.status();
+    check("paused_spindle_stays_off_for_z_lift",
+          raised.accepted() && near(rig.machine(2), -8) && status.paused &&
+              status.spindle_direction == SpindleDirection::stopped,
+          raised.text());
+    return raised.accepted();
+  };
+  if (!paused_with_spindle())
+    return;
+  const auto declined = rig.send(R"("type":"jog_paused_z","distance":2)");
+  check("paused_spindle_requires_confirmation",
+        !declined.accepted() && hal_signal("spindle-enable") == "TRUE" && near(rig.machine(2), -10),
+        declined.text());
+  if (!held())
+    return;
+  const auto step = rig.send(R"("type":"step")");
+  check("paused_spindle_disallows_step", !step.accepted(), step.text());
+  halcmd("sets spindle-at-speed FALSE");
+  const auto continuing = rig.post(resume);
+  const bool starting = rig.pump_until(6s, [] { return hal_signal("spindle-enable") == "TRUE"; });
+  halcmd("sets spindle-vel-fb-rpm-abs 650");
+  rig.pump(200ms);
+  const auto restoring = rig.status();
+  check("paused_spindle_starts_only_after_verified_return",
+        starting && restoring.paused && near(rig.machine(0), 0) && near(rig.machine(2), -10) &&
+            restoring.spindle_direction == SpindleDirection::reverse &&
+            near(restoring.spindle_rpm, 650) && !rig.result(continuing));
+  halcmd("sets spindle-at-speed TRUE");
+  const auto continued = rig.await(continuing);
+  const bool past_pause = rig.pump_until(5s, [&] { return rig.idle() && near(rig.machine(0), 5); });
+  check("paused_spindle_resumes_after_at_speed",
+        continued.accepted() && past_pause && !std::filesystem::exists(marker), continued.text());
+  halcmd("sets spindle-vel-fb-rpm-abs 0");
+
+  for (const auto stop : {abort, R"("type":"set_machine","state":"estop")"}) {
+    if (!paused_with_spindle() || !held())
+      return;
+    halcmd("sets spindle-at-speed FALSE");
+    const auto retry = rig.post(resume);
+    const bool spinning = rig.pump_until(6s, [] { return hal_signal("spindle-enable") == "TRUE"; });
+    halcmd("sets spindle-vel-fb-rpm-abs 200");
+    const auto stopped = rig.send(stop);
+    const auto cancelled = rig.await(retry);
+    halcmd("sets spindle-vel-fb-rpm-abs 0");
+    const bool idle = rig.pump_until(3s, [&] {
+      return rig.idle() && hal_signal("spindle-enable") == "FALSE" &&
+             !std::filesystem::exists(marker);
+    });
+    check("paused_spindle_stop_interrupts_spinup",
+          spinning && stopped.accepted() && !cancelled.accepted() && idle &&
+              near(rig.machine(0), 0),
+          stopped.text() + " " + cancelled.text());
+    if (rig.status().controller.machine == MachineState::estop) {
+      rig.send(R"("type":"set_machine","state":"off")");
+      rig.send(R"("type":"set_machine","state":"on")");
+    }
+  }
+
+  if (!paused_with_spindle() || !held())
+    return;
+  rig.stop();
+  auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads);
+  check("paused_spindle_reconnect_port", restarted.has_value());
+  if (restarted) {
+    Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
+    recovered.pump(120ms);
+    const auto interrupted = recovered.send(resume);
+    check("paused_spindle_restart_requires_stop",
+          !interrupted.accepted() && interrupted.reason.find("Press Stop") != std::string::npos &&
+              near(recovered.machine(2), -8) && hal_signal("spindle-enable") == "FALSE",
+          interrupted.text());
+    const auto stopped = recovered.send(abort);
+    const bool cleared = recovered.pump_until(
+        3s, [&] { return recovered.idle() && !std::filesystem::exists(marker); });
+    check("paused_spindle_restart_stop_recovers",
+          stopped.accepted() && cleared && near(recovered.machine(2), -8) &&
+              near(recovered.machine(0), 0) && hal_signal("spindle-enable") == "FALSE",
+          stopped.text());
+    recovered.stop();
+  }
+  rig.start();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only, bool raised_only,
-         bool breakpoint_only) -> int {
+         bool breakpoint_only, bool paused_z_only, bool paused_spindle_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4389,6 +4650,16 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (paused_spindle_only) {
+    paused_spindle(rig, loads);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (paused_z_only) {
+    paused_z_jog(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (breakpoint_only) {
     program_breakpoint(rig, loads);
     power_off(rig);
@@ -4505,6 +4776,8 @@ auto main(int argc, char** argv) -> int {
   bool preflight_only = false;
   bool raised_only = false;
   bool breakpoint_only = false;
+  bool paused_z_only = false;
+  bool paused_spindle_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -4518,6 +4791,8 @@ auto main(int argc, char** argv) -> int {
     restart_only = restart_only || std::string_view(argv[i]) == "restart-cuts";
     preflight_only = preflight_only || std::string_view(argv[i]) == "program-preflight";
     raised_only = raised_only || std::string_view(argv[i]) == "raised-run";
+    paused_spindle_only = paused_spindle_only || std::string_view(argv[i]) == "paused-spindle";
+    paused_z_only = paused_z_only || std::string_view(argv[i]) == "paused-z";
     breakpoint_only = breakpoint_only || std::string_view(argv[i]) == "program-breakpoint";
   }
   if (models_only && !ini_file.empty())
@@ -4528,7 +4803,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               raised_only, breakpoint_only);
+               raised_only, breakpoint_only, paused_z_only, paused_spindle_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

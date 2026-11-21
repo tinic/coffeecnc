@@ -633,13 +633,37 @@ void restore_spindle_tool(Rig& rig) {
           restored && std::ranges::none_of(status.controller.axes,
                                            [](const auto& axis) { return axis.homed; }));
 
-  const auto next = rig.send(R"("type":"mdi","text":"M61 Q2 G43 H2")");
-  const bool saved_next = rig.pump_until(2s, [&] { return saved() == 2; });
-  check("startup_record_tracks_tool_changes", next.accepted() && saved_next);
-  const auto empty = rig.send(R"("type":"mdi","text":"M61 Q0 G49")");
-  const bool saved_empty = rig.pump_until(2s, [&] { return saved() == 0; });
-  check("startup_record_tracks_empty_spindle", empty.accepted() && saved_empty &&
-            rig.snapshot().tool_in_spindle == 0);
+  const auto settled = [](const NmlStatus& current) {
+    return current.command_done && !current.task_executing && current.queued_mdi == 0 &&
+           current.controller.interp == InterpState::idle && current.controller.in_position;
+  };
+  // M61 runs before the dwell and G43. The saved tool can change while MDI is still busy.
+  const auto next = rig.send(R"("type":"mdi","text":"M61 Q2 G4 P0.7 G43 H2")");
+  const bool saved_next = next.accepted() && rig.pump_until(2s, [&] { return saved() == 2; });
+  check("startup_record_tracks_tool_changes", next.accepted() && saved_next, next.text());
+  if (!saved_next)
+    return;
+  constexpr auto empty_tool = R"("type":"mdi","text":"M61 Q0 G49")";
+  const bool still_executing = !settled(rig.status());
+  const auto too_early = rig.send(empty_tool);
+  check("startup_empty_request_while_mdi_busy_leaves_saved_tool",
+        still_executing && too_early.outcome == "rejected" && saved() == 2, too_early.text());
+  const bool t2_settled = rig.pump_until(2s, [&] {
+    const auto sample = rig.mailbox->latest();
+    return sample && settled(sample->status) && sample->status.controller.tool_in_spindle == 2;
+  });
+  check("startup_waits_for_tool_change_block_to_finish", t2_settled);
+  if (!t2_settled)
+    return;
+  const auto empty = rig.send(empty_tool);
+  const bool saved_empty = empty.accepted() && rig.pump_until(2s, [&] {
+    const auto current = rig.status();
+    return settled(current) && current.controller.tool_in_spindle == 0 && saved() == 0 &&
+           near(current.tool_offset[2], 0) && std::ranges::contains(current.active_codes, "G49");
+  });
+  check("startup_record_tracks_empty_spindle", saved_empty,
+        std::format("{} saved={} tool={}", empty.text(), saved(),
+                    rig.status().controller.tool_in_spindle));
 }
 
 void axis_jogs(Rig& rig) {

@@ -57,6 +57,8 @@ FIXED_SETTER = no
 # /usr/share/coffeecnc/hal/coffeecnc_postgui.hal: copy that file beside the INI file, or
 # `source` it from a file of the machine. Post-GUI files of another display program connect
 # that program's pins and cannot be loaded.
-# If the machine already loads watchdog or lut5, allocate the CoffeeCNC instances in the
-# existing loadrt commands and omit the duplicate loadrt lines in your copy of the fragment.
+# If lut5 is already loaded, include the named CoffeeCNC instances in its existing loadrt line.
+# watchdog is a single shared component. Integrate the CoffeeCNC heartbeat and interlocks in
+# the machine's watchdog wiring when it already uses watchdog. Omit duplicate loads and
+# scheduling commands for components that are already set up by the machine.
 POSTGUI_HALFILE = coffeecnc_postgui.hal

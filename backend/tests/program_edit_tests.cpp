@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -28,7 +27,9 @@ void require(bool condition, std::string_view message) {
 
 auto read(const fs::path& file) -> std::string {
   std::ifstream in(file, std::ios::binary);
-  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  std::ostringstream text;
+  text << in.rdbuf();
+  return text.str();
 }
 
 void edits_only_feed_or_speed_numbers() {

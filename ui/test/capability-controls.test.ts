@@ -43,6 +43,7 @@ beforeEach(() => {
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; panel.tab = 'manual'; touchInput.value = false
   panel.workOffsets = null
+  panel.preview = null
   panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
 })
@@ -290,5 +291,56 @@ describe('capability-aware controls', () => {
     await nextTick()
     expect(start().attributes('disabled')).toBeDefined()
     expect(start().attributes('title')).toBe('Homing in progress')
+  })
+
+  it('shows a blocking program check without issuing a Run request', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false, max_spindle_rpm: 1500 }
+    panel.status.preview_context = 9
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [{ tool: 98, length: 'missing' }], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'fits', errors: ['T98 has no verified length.'], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    await wrapper.get('.main-action').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Cycle start blocked')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('T98 has no verified length.')
+    expect(wrapper.findAll('[role="dialog"] button').some((button) => button.text().includes('Run program'))).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('starts directly when physical travel is the only unverified item', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    await wrapper.get('.main-action').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9, display_units: 'mm' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('confirms warnings against the reviewed context and rejects a stale dialog', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['inch'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    await wrapper.get('.main-action').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Program units differ')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button.primary').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
+      display_units: 'mm', confirmed: true })
+    vi.mocked(send).mockClear()
+    await wrapper.get('.main-action').trigger('click')
+    panel.status.preview_context = 10
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('The program check changed')
+    expect(wrapper.find('[role="dialog"] button.primary').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled()
   })
 })

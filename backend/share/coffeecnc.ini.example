@@ -14,6 +14,11 @@ DISPLAY = coffeecnc
 # [SPINDLE_0] MAX_FORWARD_VELOCITY is taken, then [DISPLAY] MAX_SPINDLE_0_SPEED; with none of
 # the three coffeecnc does not start.
 MAX_SPINDLE_RPM = 1500
+# Optional verified physical envelope for Program check. Each row is machine X Y Z in mm.
+# Keep LinuxCNC's [AXIS_*] limits in effect separately. Without verified travel on a
+# no-force-homing profile, CoffeeCNC reports physical travel as unverified.
+# TRAVEL_MIN_MM = -160 -70 -100
+# TRAVEL_MAX_MM = 160 70 0
 # yes when the machine's HAL files connect a signal to the pin of the coffeecnc component;
 # only then is the value shown. An unconnected pin is never taken for a measured zero.
 #   SPINDLE_RPM_SIGNAL        coffeecnc.spindle-rpm       float in, measured rpm

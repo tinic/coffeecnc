@@ -139,6 +139,16 @@ public:
       -> ActionResult = 0;
   // From the first line of the loaded program.
   [[nodiscard]] virtual auto run(const Wanted& wanted) -> ActionResult = 0;
+  [[nodiscard]] virtual auto validate_program_inputs(const PreviewInputs&) -> std::string {
+    return {};
+  }
+  // Starts only the checked file, even if task has an older descriptor for the same path.
+  [[nodiscard]] virtual auto run_checked(const PreviewInputs&, const Wanted& current,
+                                         const Wanted& wanted) -> ActionResult {
+    if (!current())
+      return {ActionStatus::failed, "The program check changed. Review the current results."};
+    return run(wanted);
+  }
   // Validates the approach without sending controller commands and updates its clearance.
   [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
     return "Restart from line is unavailable on this controller.";

@@ -67,7 +67,10 @@
 #include <linuxcnc.h>
 #include <tooldata.hh>
 
+using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
+using coffeecnc::ProgramFrameCheck;
+using coffeecnc::ProgramRange;
 using coffeecnc::RestartPoint;
 using coffeecnc::Vec3;
 
@@ -97,6 +100,7 @@ struct Canon {
   CANON_DIRECTION spindle{CANON_STOPPED};
   bool flood{};
   bool mist{};
+  bool surface_speed{};
   CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
@@ -125,6 +129,7 @@ struct Canon {
   bool used_output{};
   bool restart_inherits_preparation{};
   bool restart_needs_preparation{};
+  coffeecnc::HelperOutput::ProgramFacts check;
 
   Halt halt{Halt::none};
 };
@@ -195,11 +200,76 @@ auto tip(const Vec3& controlled) -> Vec3 {
           controlled[2] - canon.tool_offset[2]};
 }
 
+void expand(std::optional<Bounds>& bounds, const Vec3& point) {
+  if (!bounds)
+    bounds = Bounds{point, point};
+  for (std::size_t axis = 0; axis < point.size(); ++axis) {
+    bounds->min[axis] = std::min(bounds->min[axis], point[axis]);
+    bounds->max[axis] = std::max(bounds->max[axis], point[axis]);
+  }
+}
+
+void expand(std::optional<ProgramRange>& range, double value) {
+  if (!std::isfinite(value) || value <= 0)
+    return;
+  if (!range)
+    range = ProgramRange{value, value};
+  range->min = std::min(range->min, value);
+  range->max = std::max(range->max, value);
+}
+
+void record_units() {
+  canon.check.mm |= canon.length_units == CANON_UNITS_MM;
+  canon.check.inch |= canon.length_units == CANON_UNITS_INCHES;
+}
+
+void record_tool() {
+  auto& tools = canon.check.tools;
+  const int tool = canon.tool_in_spindle;
+  if (tool > 0 && std::ranges::find(tools, tool) == tools.end())
+    tools.push_back(tool);
+}
+
+auto used_frame() -> ProgramFrameCheck& {
+  auto& frames = canon.check.frames;
+  const auto found = std::ranges::find(frames, canon.g5x_index, &ProgramFrameCheck::wcs);
+  if (found != frames.end())
+    return *found;
+  return frames.emplace_back(ProgramFrameCheck{canon.g5x_index, false});
+}
+
+void record_move(bool feed, const Vec3& from, const Vec3& to) {
+  record_units();
+  expand(canon.check.machine, from);
+  expand(canon.check.machine, to);
+  auto& frame = used_frame();
+  frame.available = true;
+  for (const auto& point : {from, to}) {
+    auto work = to_program(point);
+    for (auto& coordinate : work)
+      coordinate *= program_unit();
+    expand(frame.bounds, work);
+  }
+  if (feed) {
+    record_tool();
+    if (canon.surface_speed)
+      canon.check.variable_spindle = true;
+    else if (canon.spindle != CANON_STOPPED)
+      expand(canon.check.spindle, std::abs(canon.spindle_rpm));
+    if (canon.feed_mode != 0)
+      canon.check.feed_per_revolution = true;
+    else
+      expand(canon.check.feed, canon.feed);
+  }
+}
+
 // Whether motion may be written now; says why not, once.
 auto may_move() -> bool {
   if (canon.halt != Halt::none)
     return false;
   if (canon.g5x_index != canon.request.wcs) {
+    if (canon.recording)
+      static_cast<void>(used_frame());
     static constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59",
                                       "G59.1", "G59.2", "G59.3"};
     const auto index = static_cast<std::size_t>(canon.g5x_index - 1);
@@ -216,6 +286,8 @@ void move(bool feed, const Vec3& to) {
   const Vec3 from = std::exchange(canon.end, to);
   if (!canon.recording)
     return;
+  if (!canon.request.restart_line)
+    record_move(feed, from, to);
   const Vec3 a = tip(from);
   const Vec3 b = tip(to);
   if (const auto target = canon.request.restart_line) {
@@ -432,7 +504,11 @@ void SET_G92_OFFSET(double x, double y, double z, double, double, double, double
   canon.g92 = {x * unit, y * unit, z * unit};
 }
 void SET_XY_ROTATION(double degrees) { canon.rotation = degrees; }
-void USE_LENGTH_UNITS(CANON_UNITS units) { canon.length_units = units; }
+void USE_LENGTH_UNITS(CANON_UNITS units) {
+  canon.length_units = units;
+  if (canon.recording)
+    record_units();
+}
 void SELECT_PLANE(CANON_PLANE plane) { canon.plane = plane; }
 void USE_TOOL_LENGTH_OFFSET(EmcPose given) {
   flush_run(); // the tool tip is elsewhere from here on
@@ -459,6 +535,8 @@ void CHANGE_TOOL(int index) {
     move(false, *position);
   flush_run();
   load_spindle(index);
+  if (canon.recording)
+    record_tool();
   canon.selected_index = -1;
 }
 void CHANGE_TOOL_NUMBER(int index) {
@@ -582,18 +660,33 @@ void DWELL(double seconds) {
   flush_run();
   put(std::format("dwell {} {:.6f}\n", canon.line, seconds));
 }
-void SET_SPINDLE_MODE(int, double) {}
+void SET_SPINDLE_MODE(int spindle, double css_maximum) {
+  if (spindle == 0) {
+    canon.surface_speed = css_maximum != 0;
+    if (canon.recording && canon.surface_speed)
+      canon.check.variable_spindle = true;
+  }
+}
 void SET_SPINDLE_SPEED(int spindle, double speed) {
-  if (spindle == 0)
+  if (spindle == 0) {
     canon.spindle_rpm = speed;
+    if (canon.recording && !canon.surface_speed)
+      expand(canon.check.spindle, std::abs(speed));
+  }
 }
 void START_SPINDLE_CLOCKWISE(int spindle, int) {
-  if (spindle == 0)
+  if (spindle == 0) {
     canon.spindle = CANON_CLOCKWISE;
+    if (canon.recording && !canon.surface_speed)
+      expand(canon.check.spindle, std::abs(canon.spindle_rpm));
+  }
 }
 void START_SPINDLE_COUNTERCLOCKWISE(int spindle, int) {
-  if (spindle == 0)
+  if (spindle == 0) {
     canon.spindle = CANON_COUNTERCLOCKWISE;
+    if (canon.recording && !canon.surface_speed)
+      expand(canon.check.spindle, std::abs(canon.spindle_rpm));
+  }
 }
 void STOP_SPINDLE_TURNING(int spindle) {
   if (spindle == 0)
@@ -948,6 +1041,8 @@ auto run(const HelperRequest& request) -> int {
       interp->synch();
   }
   flush_run();
+  if (!request.restart_line)
+    put(coffeecnc::write_check(canon.check));
   if (request.restart_line && canon.halt == Halt::none) {
     if (canon.subroutine)
       restart_blocked = "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.";

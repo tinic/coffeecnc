@@ -5,6 +5,7 @@ import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
+import { currentProgramPreview, describeProgramCheck } from '../program-check'
 import type { ProgramLayout } from '../store'
 import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
@@ -12,12 +13,19 @@ import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
 import RestartDialog from './RestartDialog.vue'
+import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
 const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
+const checkOpen = ref(false)
+const check = computed(() => describeProgramCheck(currentProgramPreview(panel.preview, status.value), panel.unit))
+const checkLabel = computed(() => check.value === null ? 'Checking program'
+  : check.value.errors.length ? 'Cycle start blocked'
+  : check.value.warnings.length ? 'Review program warnings'
+  : check.value.travel === 'unknown' ? 'Physical travel unverified' : 'Program check passed')
 const program = computed(() => panel.program)
 watch(() => panel.program?.revision, () => { selected.value = null })
 const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.file === status.value.program.file && program.value.revision === status.value.program.revision)
@@ -139,7 +147,18 @@ async function showFailure(): Promise<void> {
       <section class="scene">
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
-          <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ label }}</button></div>
+          <div class="scene-actions">
+            <button
+              v-if="status?.program.file" type="button" class="btn program-check"
+              :title="checkLabel" :aria-label="`Program check · ${checkLabel}`"
+              :class="{ blocked: check?.errors.length, review: check?.warnings.length }"
+              @click="checkOpen = true"
+            >
+              <AppIcon :name="check?.errors.length || check?.warnings.length ? 'warning' : check ? 'check' : 'list'" />
+              Program check
+            </button>
+            <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ label }}</button></div>
+          </div>
         </header>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
@@ -184,6 +203,7 @@ async function showFailure(): Promise<void> {
       </aside>
     </div>
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
+    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
     <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
@@ -194,6 +214,11 @@ async function showFailure(): Promise<void> {
 .scene { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
 .scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
+.scene-actions { display: flex; align-items: center; gap: 9px; }
+.program-check { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check :deep(.icon) { width: 14px; height: 14px; }
+.program-check.blocked { color: var(--stop); }
+.program-check.review:not(.blocked) { color: var(--accent); }
 .view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }

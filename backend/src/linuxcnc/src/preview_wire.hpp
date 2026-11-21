@@ -97,9 +97,23 @@ struct HelperOutput {
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
   std::vector<PreviewDwell> dwells;
+  // Recorded by canonical callbacks, with controlled-point travel and tool-tip work bounds.
+  struct ProgramFacts {
+    std::vector<int> tools;
+    std::vector<ProgramFrameCheck> frames;
+    std::optional<Bounds> machine;
+    std::optional<ProgramRange> feed;
+    std::optional<ProgramRange> spindle;
+    bool mm{};
+    bool inch{};
+    bool variable_spindle{};
+    bool feed_per_revolution{};
+  };
+  std::optional<ProgramFacts> check{};
 };
 
 [[nodiscard]] auto write_restart(const RestartPoint& point) -> std::string;
+[[nodiscard]] auto write_check(const HelperOutput::ProgramFacts& check) -> std::string;
 
 // What a result may hold at most.
 struct OutputLimits {

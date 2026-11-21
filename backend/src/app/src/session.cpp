@@ -1124,8 +1124,9 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, JogStep>) {
           return jog_step(request, c, decision);
         } else if constexpr (std::is_same_v<T, JogPausedZ>) {
-          return act(request,
-                     [&](const Wanted& still) { return port_.jog_paused_z(c.distance, still); });
+          return act(request, [&](const Wanted& still) {
+            return port_.jog_paused_z(c.distance, c.stop_spindle, still);
+          });
         } else if constexpr (std::is_same_v<T, JogStopAll>) {
           return answer(reply(stop_all()));
         } else if constexpr (std::is_same_v<T, Mdi>) {

@@ -48,6 +48,12 @@ The optional `jog_paused_z` command takes a signed `distance` in millimetres.
 When Z has been lifted, `resume` verifies the return to the paused position
 before allowing program motion.
 
+When `status.paused_z.spindle` is `can_stop`, a positive jog can carry
+`stop_spindle: true` after an operator confirms the stop. `stopping` reports
+that CoffeeCNC is waiting for measured spindle stop. `restore` reports
+that Resume also needs to restart the saved spindle command and verify
+at-speed. `recover` requires Stop after an interrupted hold.
+
 For example, the G0759 configuration may supply these hello additions after native configuration validation:
 
 ```json

@@ -80,6 +80,7 @@ struct NmlStatus {
   // Safety interlocks checked even while an external offset is moving.
   std::string paused_z_interlock;
   bool paused_z_still{};
+  bool paused_z_motion_ready{};
   std::optional<PausedZInputs> paused_z_feedback{};
 };
 
@@ -267,7 +268,8 @@ public:
                                    bool after_change, const Wanted& files_current,
                                    const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto pause(const Wanted& wanted) -> ActionResult override;
-  [[nodiscard]] auto jog_paused_z(double distance, const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto jog_paused_z(double distance, bool stop_spindle, const Wanted& wanted)
+      -> ActionResult override;
   [[nodiscard]] auto resume(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto step(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto abort() -> ActionResult override;
@@ -308,8 +310,14 @@ private:
   [[nodiscard]] auto write_air_offset(double lift, const Wanted& wanted) -> ActionResult;
   void recover_air_offset(const Wanted& wanted);
   void finish_breakpoint(const Wanted& wanted);
-  [[nodiscard]] auto move_paused_z(double distance, bool returning, const Wanted& wanted)
+  [[nodiscard]] auto move_paused_z(double distance, bool returning, const Wanted& wanted,
+                                   bool stop_spindle = false) -> ActionResult;
+  [[nodiscard]] auto hold_paused_spindle(const NmlStatus& start, const Wanted& wanted)
       -> ActionResult;
+  [[nodiscard]] auto restore_paused_spindle(const Wanted& wanted) -> ActionResult;
+  [[nodiscard]] auto spindle_command(SpindleDirection direction, double rpm, const Wanted& wanted,
+                                     bool during_pause) -> ActionResult;
+  void recover_paused_spindle(const Wanted& wanted);
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

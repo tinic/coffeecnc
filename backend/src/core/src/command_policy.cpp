@@ -118,6 +118,10 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         }
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
+        if (s.paused_z && s.paused_z->spindle == PausedSpindle::recover &&
+            !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
+            !std::is_same_v<T, OpenProgram>)
+          return reject("Press Stop before continuing after an interrupted spindle hold.");
 
         if (s.paused_z && !s.paused_z->feedback_available && !std::is_same_v<T, SetMachine> &&
             !std::is_same_v<T, Quit> && !std::is_same_v<T, OpenProgram>)
@@ -245,7 +249,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, JogPausedZ>) {
           if (!s.paused_z)
             return reject("Paused Z jog is unavailable on this machine.");
-          if (!s.paused_z->reason.empty())
+          const bool stopping_spindle =
+              c.stop_spindle && c.distance > 0 && s.paused_z->spindle == PausedSpindle::can_stop;
+          if (c.stop_spindle && !stopping_spindle)
+            return reject("The paused spindle state changed. Review the controls and try again.");
+          if (!stopping_spindle && !s.paused_z->reason.empty())
             return reject(s.paused_z->reason);
           if (!std::isfinite(c.distance) || c.distance == 0 ||
               std::abs(c.distance) > s.paused_z->max_lift)
@@ -257,6 +265,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("There is no paused execution ready to resume.");
           return allow();
         } else if constexpr (std::is_same_v<T, Step>) {
+          if (s.paused_z && s.paused_z->spindle == PausedSpindle::restore)
+            return reject("Use Resume to restore the program spindle before continuing.");
           if (s.paused_z && s.paused_z->displaced)
             return reject("Use Resume to return Z before continuing.");
           if (s.breakpoint_program)

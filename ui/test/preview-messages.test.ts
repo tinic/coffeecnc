@@ -8,7 +8,7 @@ import { SimMachine } from '../src/sim/machine'
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({}) as typeof import('../src/machine').panel
-  return { panel, live: computed(() => true) }
+  return { panel, live: computed(() => panel.link === 'live') }
 })
 vi.mock('../src/appearance', async () => ({ theme: (await import('vue')).ref('light') }))
 vi.mock('../src/step', () => ({ part: { attachment: null }, showPart: false, partBlock: '' }))
@@ -36,6 +36,17 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('preview messages', () => {
+  it('keeps homing guidance while leaving connection warnings to the message band', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = null
+    for (const axis of panel.status.axes) axis.homed = false
+    wrapper = shallowMount(PathView)
+    expect(wrapper.get('.banners').text()).toBe('Home the axes to show the tool position')
+    panel.link = 'stale'
+    await nextTick()
+    expect(wrapper.find('.banners').exists()).toBe(false)
+  })
+
   it('hides a brief recomputation and delays a current pending notice for one second', async () => {
     vi.useFakeTimers()
     if (panel.status === null || panel.preview === null) throw new Error('Missing fixture')

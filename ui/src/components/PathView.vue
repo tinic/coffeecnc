@@ -124,6 +124,13 @@ const travelBox = computed((): { min: Vec3; max: Vec3 } | null => {
 
 const homingRequired = computed(() => requiresHoming(panel.hello))
 const toolTip = computed((): Vec3 | null => reportedToolTip(panel.status, homingRequired.value))
+const toolPositionHint = computed(() => {
+  const s = panel.status
+  if (!live.value || s === null || toolTip.value !== null || s.axes.some(axis => axis.homing)) return ''
+  return homingRequired.value && s.axes.some(axis => !axis.homed)
+    ? 'Home the axes to show the tool position'
+    : 'Tool position unavailable'
+})
 const toolBody = computed(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments,
   toolModels.defaults, homingRequired.value))
 const showTool = ref(true)
@@ -454,8 +461,8 @@ onBeforeUnmount(() => {
     <div class="viewport">
       <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
       <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-      <div v-if="(live && (toolTip === null || (part.attachment && partBlock))) || modelError" class="banners">
-        <span v-if="live && toolTip === null" class="warn">Home the axes to show the tool position</span>
+      <div v-if="toolPositionHint || modelError || (live && part.attachment && partBlock)" class="banners">
+        <span v-if="toolPositionHint" class="warn">{{ toolPositionHint }}</span>
         <span v-if="modelError || (live && part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
       </div>
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>

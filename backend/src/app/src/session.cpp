@@ -1199,7 +1199,8 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
         return {};
       return "Press Stop, then load the touch probe with a separate tool change.";
     }
-    if (state.mode != TaskMode::automatic || state.program_file != verified_probe_program_)
+    if (state.mode != TaskMode::automatic || state.program_file.empty() ||
+        state.program_file != verified_probe_program_)
       return "Stop the program and load the touch probe from Tools before running.";
   }
   if (check_tool)

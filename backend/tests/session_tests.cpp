@@ -562,6 +562,7 @@ void pending_probe_tool_changes() {
   rig.acted({"tool_changed tool 99 request 10"}, "A stand-alone tool change can mount the probe");
 
   state.mode = TaskMode::automatic;
+  state.program_file = "/home/cnc/nc_files/part.ngc";
   state.active_mdi.clear();
   state.requested_tool = 99;
   state.tool_request = 11;

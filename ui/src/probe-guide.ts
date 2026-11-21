@@ -68,6 +68,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
   let title: string
   let setup: string
   let result: string
+  let example: string | undefined
   let object: ProbeGuidePlan['object'] = 'stock'
   let start: Vec3
   let datum: Vec3
@@ -121,6 +122,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       title = 'Probe bore centre'
       setup = 'Jog the ball inside the bore below its top. Leave room to touch both X walls and both Y walls within the search travel.'
       result = 'Set X0 and Y0 at the centre and report the diameter'
+      example = 'X0 and Y0 at centre · example Ø26 mm'
       object = 'bore'
       start = [2, -3, -4]
       datum = [0, 0, 0]
@@ -141,6 +143,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       setup = target.kind === 'boss' ? 'Set Z0 on the boss top first. Jog above the middle and enter its approximate diameter.'
         : 'Set Z0 on the gauge top first. Jog above the middle of a gauge with parallel X faces and enter its known width.'
       result = target.kind === 'boss' ? 'Set X0 and Y0 at the centre and report the diameter' : 'Save the measured ball diameter to the tool table'
+      example = target.kind === 'boss' ? 'X0 and Y0 at centre · example Ø28 mm' : 'Save example ball Ø4 mm'
       object = target.kind === 'boss' ? 'boss' : 'gauge'
       clearance = 9
       start = [0, 0, clearance]
@@ -158,6 +161,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       title = 'Measure edge angle'
       setup = `Jog beside the ${edge.face.toLowerCase()} with the ball below the top. Leave room for two touches along ${along === 0 ? 'X' : 'Y'} on the same straight face.`
       result = 'Report the angle. Rotation is applied in a separate confirmation.'
+      example = 'Measured angle · example +7°'
       const angledFace = (offset: number): Face => {
         const slope = (edge.axis === 0 ? -1 : 1) * Math.tan(rotation)
         const surface = edge.faceAt / Math.cos(rotation) + offset * slope
@@ -221,6 +225,6 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     at = [0, 0, 20]
     steps[steps.length - 1] = { label: 'Retract to clearance', point: at, kind: 'move' }
   }
-  steps.push({ label: result, point: at, kind: 'result', contact: datum })
+  steps.push({ label: example ?? result, point: at, kind: 'result', contact: datum })
   return { title, setup, result, object, steps, datum, rotation }
 }

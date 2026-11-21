@@ -40,6 +40,7 @@ CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine 
 - **Bore centre** and **Boss centre** set X0 and Y0 at the centre and show the diameter.
 - **Edge angle** probes the front edge at two points and shows how far it turns, to square a vise.
 - **Calibrate ball** measures the effective ball diameter on a gauge of known width and saves it to the tool table.
+- Each probe mode opens a 3D guide with the jog position, cycle limits, and expected result. Play or step through the moves, then tap **Start probe** once the tool is in position. [Corner guide](ui/screenshots/probe-guide-corner-light.png) · [Edge-angle guide](ui/screenshots/probe-guide-angle-dark.png)
 - Every move between contacts runs with the probe active, so an unexpected contact stops the machine. Nothing is written unless every contact succeeds.
 - Results go into the active work coordinate system. Edge results include the probe ball radius.
 - The probe can teach the tool setter, so you do not need to measure T98 first when the tool lengths are valid.

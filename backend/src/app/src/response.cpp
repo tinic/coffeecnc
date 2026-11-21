@@ -45,7 +45,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
         {"measured_tools", setter->measured_tools}};
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
-                                       {"axis", std::string(1, material->axis)}};
+                                       {"axis", material->corner ? std::string{"XY"}
+                                                                 : std::string(1, material->axis)}};
   }
   if (restart) {
     const auto& p = restart->point;

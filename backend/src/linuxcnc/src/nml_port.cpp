@@ -1045,7 +1045,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   for (std::size_t axis = 0; axis < move.start.size(); ++axis)
     if (!near(c.axes[axis].machine, move.start[axis]))
       return std::unexpected("The machine moved after the probe was confirmed.");
-  if (!in_travel(search_start) || !in_travel(endpoint) || search_start[2] < move.start[2])
+  // The height the approach traverses at: never below the start or the search start.
+  const double lift_z = move.clearance_z.value_or(search_start[2]);
+  const bool descends = move.approach && move.clearance_z && search_start[2] < lift_z;
+  if (!in_travel(search_start) || !in_travel(endpoint) ||
+      (!move.clearance_z && search_start[2] < move.start[2]) ||
+      (move.clearance_z && (!move.approach || !std::isfinite(lift_z) || lift_z < move.start[2] ||
+                            lift_z < search_start[2] ||
+                            !in_travel({move.start[0], move.start[1], lift_z}) ||
+                            !in_travel({search_start[0], search_start[1], lift_z}))))
     return std::unexpected("The probe move is outside the configured travel.");
 
   const bool restore_feed_override = raw->motion.traj.feed_override_enabled;
@@ -1084,6 +1092,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   bool positioning = false;
   bool traversing_xy = false;
+  bool descending = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
     return normal_mode(s) && std::ranges::contains(s.active_codes, "G40") &&
@@ -1093,7 +1102,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            s.controller.program_units == c.program_units && s.feed_mode == before.feed_mode &&
            s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
            s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
-           (traversing_xy ? near(s.controller.axes[2].machine, search_start[2])
+           (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
+            : descending  ? near(s.controller.axes[0].machine, search_start[0]) &&
+                               near(s.controller.axes[1].machine, search_start[1])
                           : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
                                      s.controller.axes[2].machine},
                                     line_origin));
@@ -1214,39 +1225,52 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       !near(line.distance(move.start, machine_position(raw->motion.traj.position)), 0))
     return interrupt("Probe input, position or feed controls changed before descent.");
 
+  // Back-offs and the final retract move away from the setter: twice the search feed (turo).
+  const auto feed_word = std::format(" F{:.8f}", 2 * move.feed_mm_min / program_scale);
   if (move.approach) {
     constexpr auto positioning_timeout = std::chrono::seconds{30};
     positioning = true;
-    if (search_start[2] > move.start[2] &&
-        !block(std::format("G90 G53 G0 Z{:.8f}", search_start[2] / program_scale),
-               positioning_timeout, false, true))
+    if (lift_z > move.start[2] &&
+        !block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale), positioning_timeout,
+               false, true))
       return interrupt("Could not raise Z to setter clearance.");
     raw = live_cycle();
-    if (raw == nullptr ||
-        !near(raw->motion.traj.actualPosition.tran.z * machine_scale, search_start[2]))
+    if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
+        !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
+          probe_backlash_allowance_mm))
       return interrupt("The machine did not reach the setter clearance height.");
     traversing_xy = true;
     if (!block(std::format("G90 G53 G0 X{:.8f} Y{:.8f}", search_start[0] / program_scale,
                            search_start[1] / program_scale),
                positioning_timeout, false, true))
-      return interrupt("Could not position XY above the setter.");
-    line_origin = search_start;
+      return interrupt(material ? "Could not position XY for the probe."
+                                : "Could not position XY above the setter.");
     traversing_xy = false;
+    if (descends) {
+      // Feed down beside the work: a contact on the way stops the motion (probe permit).
+      descending = true;
+      if (!block(std::format("G90 G53 G1 Z{:.8f}{}", search_start[2] / program_scale, feed_word),
+                 positioning_timeout, false, true))
+        return interrupt("Could not lower the probe to the search height; check that the way down "
+                         "is clear.");
+      descending = false;
+    }
+    line_origin = search_start;
     positioning = false;
     raw = live_cycle();
     const auto positioned = interlock();
     if (raw == nullptr || !positioned || *positioned->probe_input ||
         raw->motion.traj.probeval != 0 ||
-        !near(raw->motion.traj.actualPosition.tran.z * machine_scale, search_start[2]) ||
+        !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - search_start[2]) <=
+          probe_backlash_allowance_mm) ||
         !near(raw->motion.traj.position.tran.z * machine_scale, search_start[2]) ||
         std::hypot(raw->motion.traj.actualPosition.tran.x * machine_scale - search_start[0],
                    raw->motion.traj.actualPosition.tran.y * machine_scale - search_start[1]) >
             limits->xy_tolerance_mm)
-      return interrupt("The tool must be centered above a clear setter before probing.");
+      return interrupt(material ? "The probe did not reach a clear search position."
+                                : "The tool must be centered above a clear setter before probing.");
   }
 
-  // Back-offs and the final retract move away from the setter: twice the search feed (turo).
-  const auto feed_word = std::format(" F{:.8f}", 2 * move.feed_mm_min / program_scale);
   bool missed = false;
   const auto search = [&](double begin_at, double travel, double feed) -> Contact {
     saw_probe = false;
@@ -1472,7 +1496,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!ready(*raw, before))
     return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
-  const bool material = request.action == SetterAction::material;
+  const bool corner = request.action == SetterAction::corner;
+  const bool material = request.action == SetterAction::material || corner;
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1513,6 +1538,133 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
+  if (corner) {
+    // A corner: the X face, then the Y face, each probed from beside the work below its top.
+    // The operator jogs the probe over the work within corner_reach_mm of both faces; Z0 of the
+    // active work system is the top (probe Z top first). Nothing is written unless both touch.
+    constexpr double corner_reach_mm = 10;     // how far inside the corner the probe may start
+    constexpr double corner_margin_mm = 3;     // beyond the face before going down
+    constexpr double corner_clearance_mm = 5;  // above the top while traversing
+    constexpr double corner_depth_mm = 2;      // ball equator below the top
+    const auto x_line = probe_line(request.direction, 0);
+    const auto y_line = probe_line(request.y_direction, 0);
+    if (x_line.axis != 0 || y_line.axis != 1)
+      return std::unexpected("A corner needs one X and one Y probe direction.");
+    if (before.rotation_xy != 0)
+      return std::unexpected("Corner probing needs a work system without rotation.");
+    if (before.wcs < 1 || before.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    if (!std::ranges::contains(current_marks, tool) ||
+        std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+        !std::ranges::contains(before.active_codes, "G43"))
+      return std::unexpected(std::format(
+          "Touch off T{} and apply its length before probing a corner: the corner uses Z0 as the top.",
+          tool));
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table before probing a corner.");
+    // Machine Z of the probe tip where the active work system reads Z0.
+    const double top = before.controller.axes[2].machine - before.work[2];
+    const double clearance = std::max(request.start[2], top + corner_clearance_mm);
+    const double depth = top - radius - corner_depth_mm;
+    const double outside = corner_reach_mm + radius + corner_margin_mm;
+    if (!std::isfinite(top) || request.start[2] < top + radius)
+      return std::unexpected("Start the corner with the probe above the top of the work.");
+    if (limits->material_travel_mm < outside + radius)
+      return std::unexpected("The material probe travel is too short for a corner.");
+
+    const auto here = [&]() -> std::optional<std::array<double, 3>> {
+      const auto* s = impl_->stat();
+      if (s == nullptr || impl_->status.link() != Link::live)
+        return std::nullopt;
+      const auto status = to_status(*s, impl_->config, impl_->hal, Link::live);
+      return std::array{status.controller.axes[0].machine, status.controller.axes[1].machine,
+                        status.controller.axes[2].machine};
+    };
+    const auto face = [&](const ProbeLine& line, ProbeDirection direction,
+                          const std::array<double, 3>& from) -> std::expected<double, std::string> {
+      auto approach = request.start;
+      approach[line.axis] -= line.sign * outside;
+      approach[2] = depth;
+      const auto contact = probe_fixed_setter({.tool = tool,
+                                               .start = from,
+                                               .travel_mm = limits->material_travel_mm,
+                                               .feed_mm_min = limits->feed_mm_min,
+                                               .approach = approach,
+                                               .clearance_z = clearance,
+                                               .material = direction},
+                                              wanted);
+      if (!contact)
+        return std::unexpected(contact.error());
+      // The ball's centre touched: the face is one radius further along the travel.
+      return contact->machine[line.axis] + line.sign * radius;
+    };
+    const auto x_face = face(x_line, request.direction, request.start);
+    if (!x_face)
+      return std::unexpected("X face: " + x_face.error());
+    const auto between = here();
+    if (!between)
+      return std::unexpected("Controller status was lost between the corner faces.");
+    const auto y_face = face(y_line, request.y_direction, *between);
+    if (!y_face)
+      return std::unexpected("Y face: " + y_face.error());
+
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto* current = impl_->stat();
+    if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+      return std::unexpected("Corner probing was cancelled before setting the work origin.");
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+        after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
+        after.tool_offset != before.tool_offset ||
+        after.controller.program_units != before.controller.program_units ||
+        impl_->read_tool_table() != table)
+      return std::unexpected("Machine or tool table changed before setting the work origin.");
+    // G10 L20 applies at the commanded position (see the single faces).
+    const auto& commanded = current->motion.traj.position;
+    const std::array<double, 2> at{commanded.tran.x * machine_scale, commanded.tran.y * machine_scale};
+    const std::array<double, 2> expected{at[0] - *x_face, at[1] - *y_face};
+    const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    EMC_TASK_PLAN_EXECUTE command;
+    if (!put(command.command, std::format("G10 L20 P0 X{:.8f} Y{:.8f}", expected[0] / scale,
+                                          expected[1] / scale)))
+      return std::unexpected("Could not format the corner work origin.");
+    const auto result = impl_->run(command, from);
+    if (!accepted(result))
+      return std::unexpected(result.reason.empty() ? "LinuxCNC did not set the work origin."
+                                                   : result.reason);
+    if (impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    const bool verified = until(settle_timeout, [&] {
+      const auto* applied = impl_->stat();
+      if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
+          applied->status != RCS_DONE || impl_->status.link() != Link::live)
+        return false;
+      const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+      const auto& traj = applied->motion.traj;
+      const std::array lag{(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
+                           (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale};
+      for (std::size_t i = 0; i < expected.size(); ++i)
+        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+          return false;
+      return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
+             s.tool_offset == before.tool_offset;
+    });
+    if (!verified)
+      return std::unexpected("Could not verify the corner work origin. Check the active WCS.");
+    // Leave the probe above the work, clear of both faces.
+    EMC_TASK_PLAN_EXECUTE lift;
+    if (put(lift.command, std::format("G90 G53 G0 Z{:.8f}", clearance / scale)) &&
+        accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    EMC_TASK_PLAN_EXECUTE distance;
+    if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
+        accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
+  }
   if (material) {
     const auto line = probe_line(request.direction, before.rotation_xy);
     if (before.wcs < 1 || before.wcs > 9)

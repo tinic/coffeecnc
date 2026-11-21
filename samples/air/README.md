@@ -21,7 +21,8 @@ The machine soft limits do not protect this area. The program is the only limit.
 
 1. Set G54 X0 Y0 at the center of a clear area of at least 60 × 60 mm.
 2. Set G54 Z0 on the stock top, or on a surface below the path.
-3. Load T1 with a valid length.
-4. For program 05, turn on Optional stop to test M1.
-5. For program 06, make sure that T98 has a valid length. T98 moves with the spindle stopped.
-6. Each program first moves to Z+30, then to the start point.
+3. Make sure that G54 has no rotation and that no G52 or G92 offset is active. These offsets move the full path.
+4. Load T1 with a valid length.
+5. Move the tool to a clear position near G54 X0 Y0 Z+30. Each program first moves straight to Z+30, then to the start point in X and Y.
+6. For program 05, turn on Optional stop to test M1.
+7. For program 06, make sure that T98 has a valid length and clears the area at Z+30. T98 moves with the spindle stopped.

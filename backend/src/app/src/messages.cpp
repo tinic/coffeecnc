@@ -82,6 +82,18 @@ auto name(InterpState state) -> std::string_view {
   return "idle";
 }
 
+auto name(ProgramCycle cycle) -> std::string_view {
+  switch (cycle) {
+  case ProgramCycle::idle:
+    return "idle";
+  case ProgramCycle::running:
+    return "running";
+  case ProgramCycle::completed:
+    return "completed";
+  }
+  return "idle";
+}
+
 auto name(LengthUnit unit) -> std::string_view { return unit == LengthUnit::inch ? "inch" : "mm"; }
 
 auto name(SpindleDirection direction) -> std::string_view {
@@ -290,6 +302,8 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     program_fields["air_offset_owned"] = true;
   if (const auto breakpoint = program.breakpoint)
     program_fields["breakpoint"] = {{"line", breakpoint->line}, {"reached", breakpoint->reached}};
+  if (const auto cycle = program.cycle)
+    program_fields["cycle"] = name(*cycle);
   Json message = {
       {"type", "status"},
       {"seq", fields.count(seq, "seq")},

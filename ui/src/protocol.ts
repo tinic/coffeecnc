@@ -151,6 +151,8 @@ export interface ProgramStatus {
   air_offset_owned?: boolean
   /** Original source line and whether the temporary pause has been reached. */
   breakpoint?: { line: number; reached: boolean }
+  /** Progress of a cutting cycle, independent of Restart there and air cuts. */
+  cycle?: 'idle' | 'running' | 'completed'
 }
 
 /** Why a running program is not moving. The panel shows this instead of guessing. */

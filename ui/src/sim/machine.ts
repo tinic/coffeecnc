@@ -176,6 +176,7 @@ export class SimMachine {
   private program: { file: string; lines: string[]; revision: number } | null = null
   /** Where the program last stopped before its end, for that program revision. */
   private stoppedAt: { revision: number; line: number; tool: number } | null = null
+  private cutCompleted = false
   private programRevision = 0
   private optionalStop = false
   private blockDelete = false
@@ -371,11 +372,12 @@ export class SimMachine {
         motion_line: exec?.source === 'program' && move !== null ? move.line : 0,
         optional_stop: this.optionalStop,
         block_delete: this.blockDelete,
+        cycle: this.airLift ? 'idle' : exec?.source === 'program' ? 'running' : this.cutCompleted ? 'completed' : 'idle',
         ...(this.airLift ? { air_z: this.airLift } : {}),
         ...(this.airOffsetOwned ? { air_offset_owned: true } : {}),
         ...(exec?.breakpoint ? { breakpoint: { line: exec.breakpoint.line,
           reached: exec.breakpoint.reached && exec.paused && exec.nextLine < exec.breakpoint.line } } : {}),
-        ...(exec === null && this.stoppedAt !== null && this.stoppedAt.revision === this.program?.revision
+        ...(exec === null && !this.airLift && this.stoppedAt !== null && this.stoppedAt.revision === this.program?.revision
           ? { restart_hint: { line: this.stoppedAt.line, tool: this.stoppedAt.tool } } : {}),
       },
       preview_context: this.previewContext,
@@ -682,7 +684,10 @@ export class SimMachine {
         break
       case 'end':
         this.exec = null
-        this.stoppedAt = null
+        if (exec.source === 'program' && !this.airOffsetOwned) {
+          this.stoppedAt = null
+          this.cutCompleted = true
+        }
         this.clearAirOffset()
         break
     }
@@ -774,9 +779,12 @@ export class SimMachine {
   /** Stops program, MDI, jogs, homing and the spindle. */
   private abort(): void {
     const exec = this.exec
-    if (exec?.source === 'program' && this.program !== null && exec.currentLine > 0) {
-      const line = exec.active?.kind === 'move' ? exec.active.op.line : exec.currentLine
-      this.stoppedAt = { revision: this.program.revision, line, tool: this.toolInSpindle }
+    if (exec?.source === 'program' && !this.airOffsetOwned) {
+      this.cutCompleted = false
+      if (this.program !== null && exec.currentLine > 0) {
+        const line = exec.active?.kind === 'move' ? exec.active.op.line : exec.currentLine
+        this.stoppedAt = { revision: this.program.revision, line, tool: this.toolInSpindle }
+      }
     }
     this.exec = null
     this.clearAirOffset()
@@ -907,6 +915,7 @@ export class SimMachine {
         if (this.exec !== null || !this.inPosition()) return reject('Stop the program before changing the air-cut lift.')
         if (command.air_z > 0 && this.program === null) return reject('Load a program first.')
         this.airLift = command.air_z
+        this.cutCompleted = false
         return null
       case 'run': {
         if ((command.air_z ?? 0) !== this.airLift) return reject('The air-cut selection changed.')
@@ -1250,6 +1259,7 @@ export class SimMachine {
     }
     this.programRevision += 1
     this.airLift = 0
+    this.cutCompleted = false
     this.program = { file: path, lines: splitLines(text), revision: this.programRevision }
     this.emit({ type: 'program', ...this.program })
     return null
@@ -1277,7 +1287,7 @@ export class SimMachine {
     }
     this.stopJogs()
     this.syncModal()
-    this.stoppedAt = null
+    if (!this.airLift) this.stoppedAt = null
     this.mode = 'auto'
     this.exec = {
       source: 'program',

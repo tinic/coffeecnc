@@ -244,6 +244,11 @@ if(BUILD_TESTING)
       set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
       if(TARGET coffeecnc_preview)
+        add_test(NAME linuxcnc_whole_job_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 310 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_whole_job_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 whole-job)
+        set_tests_properties(linuxcnc_whole_job_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 655)
         add_test(NAME linuxcnc_air_cuts_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -p g0759 -t 420 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_air_cuts_g0759
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 air-cuts)

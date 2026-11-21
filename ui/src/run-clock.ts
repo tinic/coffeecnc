@@ -1,6 +1,6 @@
 // Times program runs while the panel is open, whatever workspace is shown: elapsed time of the
 // run in progress, the length of the last run that reached its end, and how many did (parts).
-// A run that stops early leaves a restart hint behind, so it is neither a part nor a cycle time.
+// The controller confirms a completed cutting cycle separately from its restart hint.
 
 import { computed, reactive, watch } from 'vue'
 
@@ -19,10 +19,13 @@ export const runClock = reactive({
 
 const executing = computed(() => {
   const s = panel.status
-  if (!s) return false
-  return s.machine === 'on' && s.mode === 'auto' && (s.interp !== 'idle' || s.wait.kind !== 'none')
+  if (s?.machine !== 'on') return false
+  if (s.program.cycle !== undefined && !s.program.air_offset_owned && !s.program.air_z)
+    return s.program.cycle === 'running'
+  return s.mode === 'auto' && (s.interp !== 'idle' || s.wait.kind !== 'none' || !s.motion.in_position)
 })
 
+let airCut = false
 watch(() => panel.status?.program.file ?? null, (file) => {
   if (file === runClock.file) return
   runClock.file = file
@@ -35,8 +38,11 @@ watch(executing, (running, was) => {
   runClock.now = now
   if (running && !was) {
     runClock.startedAt = now
+    airCut = (panel.status?.program.air_z ?? 0) > 0 || panel.status?.program.air_offset_owned === true
   } else if (!running && was && runClock.startedAt !== null) {
-    const completed = panel.status?.machine === 'on' && panel.status.program.restart_hint === undefined
+    const s = panel.status
+    const completed = s?.machine === 'on' && !airCut &&
+      (s.program.cycle === undefined ? s.program.restart_hint === undefined : s.program.cycle === 'completed')
     if (completed) {
       runClock.lastSeconds = (now - runClock.startedAt) / 1000
       runClock.parts += 1

@@ -60,6 +60,18 @@ const current = computed(
   () => drawn.value !== null && panel.status !== null && drawn.value.context === panel.status.preview_context,
 )
 
+const showComputing = ref(false)
+watch(
+  () => panel.preview?.state === 'pending' ? panel.preview.context : null,
+  (context, _previous, onCleanup) => {
+    showComputing.value = false
+    if (context === null) return
+    const timer = window.setTimeout(() => { showComputing.value = true }, 1000)
+    onCleanup(() => { window.clearTimeout(timer) })
+  },
+  { immediate: true },
+)
+
 const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
   const preview = panel.preview
   if (preview === null) {
@@ -75,7 +87,7 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     }
   }
   if (preview.state === 'pending') {
-    return { text: 'Computing preview', tone: 'warn' }
+    return { text: showComputing.value ? 'Computing preview' : '', tone: 'warn' }
   }
   if (!current.value) {
     return { text: 'Preview out of date', tone: 'warn' }

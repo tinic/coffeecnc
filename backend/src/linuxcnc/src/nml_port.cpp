@@ -322,12 +322,26 @@ struct NmlPort::Impl {
     int tool;
     SpindleDirection direction;
     double rpm;
+    Vec3 base;
     [[nodiscard]] auto matches(const NmlStatus& status) const -> bool {
       const auto& c = status.controller;
       return c.link == Link::live && c.machine == MachineState::on &&
              c.mode == TaskMode::automatic && c.interp == InterpState::paused && status.paused &&
              status.program_file == file && status.current_line == line &&
              c.tool_in_spindle == tool && !c.requested_tool;
+    }
+    [[nodiscard]] auto at_base(const NmlStatus& status) const -> bool {
+      const auto& c = status.controller;
+      return matches(status) && status.paused_z_motion_ready && c.paused_z &&
+             !c.paused_z->displaced && status.spindle_actual_rpm && status.spindle_at_speed &&
+             std::ranges::equal(c.axes, base, [](const AxisState& axis, double expected) {
+               return std::abs(axis.machine - expected) <= 0.01;
+             });
+    }
+    [[nodiscard]] auto at_speed(const NmlStatus& status) const -> bool {
+      return at_base(status) && status.spindle_direction == direction &&
+             std::abs(status.spindle_rpm - rpm) < 0.01 && *status.spindle_at_speed &&
+             *status.spindle_actual_rpm >= 1.0;
     }
   };
   std::filesystem::path spindle_hold_marker;
@@ -2827,9 +2841,9 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
 }
 
 auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) -> ActionResult {
-  auto hold =
-      Impl::SpindleHold{start.program_file, start.current_line, start.controller.tool_in_spindle,
-                        start.spindle_direction, start.spindle_rpm};
+  auto hold = Impl::SpindleHold{
+      start.program_file,      start.current_line, start.controller.tool_in_spindle,
+      start.spindle_direction, start.spindle_rpm,  restart_position(start.controller)};
   if (!wanted() || hold.file.empty() || !hold.matches(status()))
     return failed("The paused program changed before stopping the spindle.");
   // After a restart there is no trustworthy in-memory pause identity. Keep only a recovery
@@ -2855,24 +2869,16 @@ auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) 
 
 auto NmlPort::restore_paused_spindle(const Wanted& wanted) -> ActionResult {
   const auto& hold = impl_->spindle_hold;
-  const auto at_base = [&](const NmlStatus& status) {
-    return wanted() && hold && hold->matches(status) && status.paused_z_still &&
-           status.paused_z_feedback && !status.paused_z_feedback->limited &&
-           status.controller.paused_z && !status.controller.paused_z->displaced &&
-           status.spindle_actual_rpm && status.spindle_at_speed;
-  };
   const auto before = status();
-  if (!at_base(before) || before.controller.spindle_active)
+  if (!hold || !wanted() || !hold->at_base(before) || before.controller.spindle_active)
     return failed("Return Z and verify the stopped spindle before continuing.");
   auto started = spindle_command(hold->direction, hold->rpm, wanted, true);
   bool interrupted = false;
   const bool at_speed =
       accepted(started) && until(std::chrono::seconds{15}, [&] {
         const auto now = status();
-        interrupted = !at_base(now);
-        return interrupted || (now.spindle_direction == hold->direction &&
-                               std::abs(now.spindle_rpm - hold->rpm) < 0.01 &&
-                               *now.spindle_at_speed && *now.spindle_actual_rpm >= 1.0);
+        interrupted = !wanted() || !hold->at_base(now);
+        return interrupted || hold->at_speed(now);
       });
   if (at_speed && !interrupted)
     return {};
@@ -2940,6 +2946,8 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   }
   const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
   const auto resume_program = [&]() -> ActionResult {
+    if (restoring && !impl_->spindle_hold->at_speed(status()))
+      return failed("Spindle speed or the paused position changed before Resume.");
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};
     if (!impl_->still())

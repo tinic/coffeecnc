@@ -118,6 +118,10 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         }
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
+        if (s.paused_z && s.paused_z->spindle == PausedSpindle::recover &&
+            !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
+            !std::is_same_v<T, OpenProgram>)
+          return reject("Press Stop before continuing after an interrupted spindle hold.");
 
         if (s.paused_z && !s.paused_z->feedback_available && !std::is_same_v<T, SetMachine> &&
             !std::is_same_v<T, Quit> && !std::is_same_v<T, OpenProgram>)
@@ -256,15 +260,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("The paused Z jog distance is out of range.");
           return allow();
         } else if constexpr (std::is_same_v<T, Resume>) {
-          if (s.paused_z && s.paused_z->spindle == PausedSpindle::recover)
-            return reject("Press Stop before continuing after an interrupted spindle hold.");
           if (s.machine != MachineState::on || s.interp != InterpState::paused ||
               s.mode == TaskMode::manual || s.requested_tool)
             return reject("There is no paused execution ready to resume.");
           return allow();
         } else if constexpr (std::is_same_v<T, Step>) {
-          if (s.paused_z && s.paused_z->spindle == PausedSpindle::recover)
-            return reject("Press Stop before continuing after an interrupted spindle hold.");
           if (s.paused_z && s.paused_z->spindle == PausedSpindle::restore)
             return reject("Use Resume to restore the program spindle before continuing.");
           if (s.paused_z && s.paused_z->displaced)

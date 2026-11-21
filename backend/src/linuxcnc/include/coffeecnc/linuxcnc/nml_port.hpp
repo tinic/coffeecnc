@@ -80,6 +80,7 @@ struct NmlStatus {
   // Safety interlocks checked even while an external offset is moving.
   std::string paused_z_interlock;
   bool paused_z_still{};
+  bool paused_z_motion_ready{};
   std::optional<PausedZInputs> paused_z_feedback{};
 };
 

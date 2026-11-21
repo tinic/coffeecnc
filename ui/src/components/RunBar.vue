@@ -62,7 +62,7 @@ const spindlePause = computed(() => {
 watch(spindlePause, () => { spindleConfirm.value = null })
 watch([live, computed(() => panel.hello)], () => { pendingZ.value = null; spindleConfirm.value = null })
 function sendZ(distance: number, stopSpindle = false): void {
-  const command = { type: 'jog_paused_z', distance, ...(stopSpindle ? { stop_spindle: true } : {}) } as const
+  const command = { type: 'jog_paused_z', distance, ...(stopSpindle ? { stop_spindle: true as const } : {}) } as const
   pendingZ.value = command
   send(command)
 }

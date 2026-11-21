@@ -205,15 +205,16 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     out.paused_z_interlock = blocked();
     if (spindle_state == PausedSpindle::recover)
       out.paused_z_interlock = "Press Stop before continuing after an interrupted spindle hold.";
+    out.paused_z_motion_ready = out.paused_z_interlock.empty() && out.paused_z_still;
     const bool fixed_rpm = std::ranges::find(task.activeGCodes, 970) != std::end(task.activeGCodes);
     const bool synchronized = std::ranges::any_of(
         task.activeGCodes, [](int code) { return code == 330 || code == 331 || code == 760; });
     const bool can_stop =
-        out.paused_z_interlock.empty() && out.paused_z_still && !displaced &&
-        spindle_state == PausedSpindle::none && fixed_rpm && !synchronized &&
-        out.spindle_at_speed.has_value() && out.spindle_actual_rpm.has_value() &&
-        out.spindle_direction != SpindleDirection::stopped && std::isfinite(out.spindle_rpm) &&
-        out.spindle_rpm >= 1.0 && out.spindle_rpm <= config.limits.max_spindle_rpm &&
+        out.paused_z_motion_ready && !displaced && spindle_state == PausedSpindle::none &&
+        fixed_rpm && !synchronized && out.spindle_at_speed.has_value() &&
+        out.spindle_actual_rpm.has_value() && out.spindle_direction != SpindleDirection::stopped &&
+        std::isfinite(out.spindle_rpm) && out.spindle_rpm >= 1.0 &&
+        out.spindle_rpm <= config.limits.max_spindle_rpm &&
         (!config.touch_probe_tool || c.tool_in_spindle != *config.touch_probe_tool);
     if (can_stop)
       spindle_state = PausedSpindle::can_stop;

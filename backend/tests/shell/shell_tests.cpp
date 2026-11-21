@@ -1669,7 +1669,11 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
             before.identity != now.identity &&
             rig.js("return window.__coffeecncPage;") == now.identity,
         std::format("old={} new={}", before.identity, now.identity));
-  const std::string late = R"({"id":2,"type":"set_machine","state":"estop"})";
+  // Leave room for the new page's automatic requests, including settings for named machines.
+  const auto request_id = rig.js("return Math.max(0, ...__t.sent.map(m => m?.id ?? 0)) + 1000;").get<int>();
+  const std::string late =
+      std::format(R"({{"id":{},"type":"set_machine","state":"estop"}})", request_id);
+  const auto received = std::format("__t.resultIds.includes({})", request_id);
   rig.hooks.deliver_from_page(before.identity + ":" + late);
   rig.hooks.deliver_from_page(late); // and one without any identity
   std::this_thread::sleep_for(700ms);
@@ -1677,7 +1681,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("late_request_of_old_document_is_dropped",
         after_late.rejected == now.rejected + 2 &&
             rig.status().controller.machine == MachineState::on &&
-            rig.js("return __t.resultIds.includes(2);") == false,
+            rig.js("return " + received + ";") == false,
         std::format("rejected={}->{} machine_on={} results={}", now.rejected, after_late.rejected,
                     rig.status().controller.machine == MachineState::on,
                     rig.js("return __t.resultIds;").dump()));
@@ -1687,7 +1691,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
     return rig.status().controller.machine == MachineState::estop;
   });
   check("request_of_present_document_is_executed",
-        executed && rig.wait_js("__t.resultIds.includes(2)"),
+        executed && rig.wait_js(received),
         rig.js("return __t.resultIds;").dump());
   // The page's own request numbering is now behind the session's: a fresh page for what follows.
   const auto last = rig.hooks.state();

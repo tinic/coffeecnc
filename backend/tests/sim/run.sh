@@ -2,7 +2,7 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759|gantry] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
+#   run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
 #          [-d run-directory] [-n] <program> [arguments...]
 #   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-k] [-t ...] [-d ...] [-n] <program> ...
 #
@@ -11,6 +11,7 @@
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
 #   gantry a router with two motors on Y (joints X Y Y Z), coffeecnc_gantry.ini.in; millimetres
 #          only; home switches
+#   rotary the test mill with A, B and C in degrees and simulated home-in-place
 # With -m, no profile: a machine's own INI file and HAL files with the hardware replaced by the
 # -s file; see assemble_machine.sh for exactly what differs from the machine's files. The INI
 # file in the run directory then has the machine file's name.
@@ -96,11 +97,11 @@ while getopts "p:u:t:d:nm:s:w:i:k" option; do
 done
 shift $((OPTIND - 1))
 if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
-  { [ "$profile" != sim ] && [ "$profile" != g0759 ] && [ "$profile" != gantry ]; } ||
-  { [ "$profile" != sim ] && [ "$units" != mm ]; } ||
+  { [ "$profile" != sim ] && [ "$profile" != g0759 ] && [ "$profile" != gantry ] && [ "$profile" != rotary ]; } ||
+  { [ "$profile" != sim ] && [ "$profile" != rotary ] && [ "$units" != mm ]; } ||
   { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; } ||
   { [ -n "$identity" ] && { [ "$profile" != sim ] || [ -n "$machine" ]; }; }; then
-  echo "usage: run.sh [-p sim|g0759|gantry] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
+  echo "usage: run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
     "[-d run-directory] [-n] <program> [arguments...]  (g0759 and gantry are millimetres only;" \
     "g0759 has its own machine ID), or" \
     "run.sh -m <machine INI file> -s <simulated hardware HAL file> ..." >&2
@@ -115,9 +116,15 @@ plain() {
   *[!A-Za-z0-9_./+:=,@%-]*) return 1 ;;
   esac
 }
-if [ "$profile" = sim ]; then
+template=$profile
+if [ "$profile" = sim ] || [ "$profile" = rotary ]; then
   flavour=$units
+  template=sim
   fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_sim_home.hal"
+  if [ "$profile" = rotary ]; then
+    flavour=rotary-$units
+    fragments="$fragments coffeecnc_rotary_sim.hal"
+  fi
 elif [ "$profile" = gantry ]; then
   flavour=$profile
   fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_gantry_sim.hal"
@@ -239,12 +246,38 @@ if [ -n "$machine" ]; then
 else
 # The run directory holds only generated files.
 perl -pe '
-  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; }
+  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; $rotary = shift eq "rotary"; }
+  if ($rotary) {
+    s/^COORDINATES = X Y Z$/COORDINATES = X Y Z A B C/;
+    s/^JOINTS = 3$/JOINTS = 6/;
+    s/^(HALFILE = coffeecnc_sim_home[.]hal)$/$1\nHALFILE = coffeecnc_rotary_sim.hal/;
+  }
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
   s/\@RUN\@/$run/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$directory/display.sh" "$directory" "$here/coffeecnc_$profile.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh" "$directory" "$profile" "$here/coffeecnc_$template.ini.in" >"$directory/$ini" || exit 125
+if [ "$profile" = rotary ]; then
+  for axis in A B C; do
+    printf '\n[AXIS_%s]\nMIN_LIMIT = -360\nMAX_LIMIT = 360\nMAX_VELOCITY = 120\nMAX_ACCELERATION = 600\n' "$axis"
+  done >>"$directory/$ini"
+  for joint in 3 4 5; do
+    cat <<END
+[JOINT_$joint]
+TYPE = ANGULAR
+MIN_LIMIT = -360
+MAX_LIMIT = 360
+MAX_VELOCITY = 120
+MAX_ACCELERATION = 600
+FERROR = 2
+MIN_FERROR = 0.5
+HOME = 0
+HOME_OFFSET = 0
+HOME_SEQUENCE = 2
+
+END
+  done >>"$directory/$ini"
+fi
 if [ -n "$identity" ]; then
   printf '\n[COFFEECNC]\nMACHINE_ID = %s\nDATA_DIRECTORY = %s/coffeecnc-data\n' \
     "$identity" "$directory" >>"$directory/$ini" || exit 125

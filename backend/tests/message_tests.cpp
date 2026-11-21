@@ -158,6 +158,14 @@ void status_rules() {
   require(status.at("tool").at("prepared").is_null() && status.at("program").at("file").is_null(),
           "No prepared tool and no program are null");
 
+  auto rotary = valid_status();
+  rotary.rotary_axes.push_back({'b', true, false, 45.0, {}, 0.0, true});
+  const auto angles = parsed(encode_status(rotary, 1)).at("rotary_axes");
+  require(angles == Json::array({Json{{"axis", "b"}, {"homed", true}, {"homing", false},
+                                     {"machine", 45.0}, {"work", nullptr}, {"dtg", 0.0},
+                                     {"on_hard_limit", true}}}),
+          "Rotary angles use degrees and missing positions are sent as null");
+
   auto measured = valid_status();
   measured.spindle.commanded_rpm = 6000;
   measured.spindle.actual_rpm = 0;

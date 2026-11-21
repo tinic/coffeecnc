@@ -22,6 +22,7 @@
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
@@ -4874,10 +4875,46 @@ void gantry(Rig& rig) {
         std::format("{} {} {}", open.text(), run.text(), joint_positions()));
 }
 
+void rotary_readouts(Rig& rig) {
+  const auto all = rig.send(R"("type":"home","axis":"all")");
+  const bool homed = rig.pump_until(25s, [&] {
+    return all_homed(rig) &&
+           std::ranges::all_of(rig.snapshot().rotary_axes, [](const auto& axis) {
+             return axis.enabled && axis.homed && !axis.homing;
+           });
+  });
+  check("rotary_home_all", all.accepted() && homed, all.text());
+  if (!homed)
+    return;
+  rig.settle();
+  const auto offsets = rig.send(R"("type":"mdi","text":"G10 L2 P1 A10 B20 C-15")");
+  rig.settle();
+  const auto turn = rig.send(R"("type":"mdi","text":"G54 G90 G0 A30 B45 C60")");
+  const bool reached = rig.pump_until(15s, [&] {
+    const auto value = rig.status();
+    const auto& abc = value.controller.rotary_axes;
+    return value.controller.in_position && near(abc[0].machine, 40) &&
+           near(abc[1].machine, 65) && near(abc[2].machine, 45);
+  });
+  const auto status = to_panel_status(rig.status(), rig.config, {}, 0);
+  check("rotary_work_and_machine_readouts",
+        offsets.accepted() && turn.accepted() && reached && status.rotary_axes.size() == 3 &&
+            status.rotary_axes[0].axis == 'a' && near(status.rotary_axes[0].work.value_or(-999), 30) &&
+            status.rotary_axes[1].axis == 'b' && near(status.rotary_axes[1].work.value_or(-999), 45) &&
+            status.rotary_axes[2].axis == 'c' && near(status.rotary_axes[2].work.value_or(-999), 60),
+        offsets.text() + " " + turn.text());
+  rig.settle();
+  const auto jog = rig.send(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)");
+  const bool linear_jog = rig.pump_until(5s, [&] {
+    return near(rig.snapshot().axes[0].machine, 1) && rig.snapshot().in_position;
+  });
+  check("rotary_configuration_xyz_jog", jog.accepted() && linear_jog, jog.text());
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
-         bool gantry_only) -> int {
+         bool gantry_only, bool rotary_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4951,6 +4988,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (rotary_only) {
+    rotary_readouts(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (gantry_only) {
     gantry(rig);
     power_off(rig);
@@ -5085,6 +5127,7 @@ auto main(int argc, char** argv) -> int {
   bool paused_spindle_only = false;
   bool whole_job_only = false;
   bool gantry_only = false;
+  bool rotary_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5103,6 +5146,7 @@ auto main(int argc, char** argv) -> int {
     whole_job_only = whole_job_only || std::string_view(argv[i]) == "whole-job";
     // The scenario for run.sh -p gantry.
     gantry_only = gantry_only || std::string_view(argv[i]) == "gantry";
+    rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5110,10 +5154,11 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|gantry|jog-contact|"
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|gantry|rotary|jog-contact|"
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only);
+               breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
+               rotary_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

@@ -1,4 +1,4 @@
-import type { LengthUnit } from './protocol'
+import type { LengthUnit, Vec3 } from './protocol'
 import { validMachineId } from './tool-model-settings'
 
 export type ProgramLayout = 'path' | 'text' | 'split'
@@ -26,7 +26,18 @@ export interface OperatorPreferences {
   theme: PanelTheme
   /** Programs opened most recently first, absolute paths on the machine; at most eight. */
   recent_programs: string[]
+  /** Positions the operator saved in Manual, machine coordinates in mm; at most sixteen. */
+  saved_positions: SavedPosition[]
 }
+
+export interface SavedPosition {
+  /** At most 64 UTF-8 bytes, not blank, no control characters. */
+  name: string
+  position: Vec3
+}
+
+export const maxSavedPositions = 16
+export const maxPositionNameBytes = 64
 
 export const maxRecentPrograms = 8
 
@@ -41,6 +52,27 @@ function decodeRecentPrograms(value: unknown): string[] {
     ? [...(value as string[])] : []
 }
 
+export function validPositionName(name: unknown): name is string {
+  // eslint-disable-next-line no-control-regex
+  return typeof name === 'string' && /[^ ]/.test(name) && !/[\u0000-\u001f\u007f]/.test(name) &&
+    new TextEncoder().encode(name).length <= maxPositionNameBytes
+}
+
+function decodeSavedPositions(value: unknown): SavedPosition[] {
+  if (!Array.isArray(value) || value.length > maxSavedPositions) return []
+  const positions: SavedPosition[] = []
+  for (const entry of value as unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return []
+    const e = entry as Record<string, unknown>
+    const position = e['position']
+    if (Object.keys(e).some((key) => key !== 'name' && key !== 'position') || !validPositionName(e['name']) ||
+        !Array.isArray(position) || position.length !== 3 ||
+        position.some((axis: unknown) => typeof axis !== 'number' || !Number.isFinite(axis) || Math.abs(axis) > 1e6)) return []
+    positions.push({ name: e['name'], position: [...(position as Vec3)] })
+  }
+  return positions
+}
+
 export type OperatorSettings = {
   type: 'operator_settings'
   machine_id: string | null
@@ -52,14 +84,14 @@ export type OperatorSettings = {
 export function defaultOperatorPreferences(): OperatorPreferences {
   return { version: 1, startup_units: 'machine', enabled_wcs: [1, 2, 3, 4, 5, 6, 7, 8, 9],
     default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0, program_layout: 'path', theme: 'light',
-    recent_programs: [] }
+    recent_programs: [], saved_positions: [] }
 }
 
 export function decodeOperatorPreferences(value: unknown): OperatorPreferences | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const keys = ['version', 'startup_units', 'enabled_wcs', 'default_spindle_rpm', 'default_jog_velocity']
-  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'recent_programs'].includes(key)) ||
+  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'recent_programs', 'saved_positions'].includes(key)) ||
       v['version'] !== 1 || !['machine', 'mm', 'inch'].includes(String(v['startup_units']))) return null
   const systems = v['enabled_wcs']
   if (!Array.isArray(systems) || systems.length < 1 || systems.length > 9 ||
@@ -74,7 +106,8 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
   return { version: 1, startup_units: v['startup_units'] as OperatorPreferences['startup_units'],
     enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog,
     tool_reference_height: reference, program_layout: decodeProgramLayout(v['program_layout']) ?? 'path',
-    theme: decodeTheme(v['theme']) ?? 'light', recent_programs: decodeRecentPrograms(v['recent_programs']) }
+    theme: decodeTheme(v['theme']) ?? 'light', recent_programs: decodeRecentPrograms(v['recent_programs']),
+    saved_positions: decodeSavedPositions(v['saved_positions']) }
 }
 
 export function decodeOperatorSettings(value: unknown): OperatorSettings | null {

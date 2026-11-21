@@ -174,9 +174,9 @@ if(BUILD_TESTING)
       # The real Session on NmlPort against a running LinuxCNC on a simulated mill. Exists only
       # where the LinuxCNC adapter builds; `ctest -L linuxcnc` selects it, `-LE linuxcnc` skips it.
       add_executable(coffeecnc_sim_tests tests/sim/sim_tests.cpp tests/sim/hal_probe.cpp)
-      # hal_probe.cpp is a HAL component of the test's own and includes hal.h.
+      # The fixture reads the source INI and owns a HAL component.
       target_include_directories(coffeecnc_sim_tests SYSTEM PRIVATE
-        ${COFFEECNC_LINUXCNC_INCLUDE_DIR})
+        ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
         COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
         COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
@@ -184,7 +184,8 @@ if(BUILD_TESTING)
         add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
       endif()
       target_link_libraries(coffeecnc_sim_tests PRIVATE coffeecnc_app coffeecnc_linuxcnc
-        coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL})
+        coffeecnc_project_options nlohmann_json::nlohmann_json ${COFFEECNC_LINUXCNC_HAL}
+        ${COFFEECNC_LINUXCNC_INI})
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
       add_executable(coffeecnc_fixed_setter_tests tests/sim/fixed_setter_tests.cpp)
       target_link_libraries(coffeecnc_fixed_setter_tests PRIVATE

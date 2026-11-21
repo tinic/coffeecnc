@@ -85,7 +85,7 @@ function range(min: number, max: number, format: (value: number) => string): str
 .issues.blocked { border-color: var(--stop); background: var(--stop-soft); }
 .issues.blocked > .icon, .unverified { color: var(--stop); }
 .issues ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 17px; }
-.metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); border-radius: 9px; background: var(--line); overflow: hidden; margin: 0; }
+.metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-shrink: 0; gap: 1px; border: 1px solid var(--line); border-radius: 9px; background: var(--line); overflow: hidden; margin: 0; }
 .metrics > div { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 6px; padding: 10px; background: var(--panel); }
 dt, small, .notice { color: var(--text-dim); }
 dt, dd { margin: 0; font-size: 13px; }

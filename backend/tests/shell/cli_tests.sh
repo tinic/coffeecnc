@@ -139,16 +139,35 @@ cycle="$work/sim/check-cycle.ini"
 sed 's/POSTGUI_HALFILE = checker-postgui.hal/POSTGUI_HALFILE = checker-cycle.hal/' "$before" >"$cycle"
 printf 'source checker-cycle.hal\n' >"$work/sim/checker-cycle.hal"
 run --check "$cycle"
-[ "$code" = 0 ] && said 'HAL source cycle' && ! said '^  \[COFFEECNC\] SPINDLE_RPM_SIGNAL = yes$'
+[ "$code" = 1 ] && said 'HAL source cycle' && ! said '^  \[COFFEECNC\] SPINDLE_RPM_SIGNAL = yes$'
 check check_reports_source_cycles $? "$(detail)"
 
 missing="$work/sim/missing-postgui.ini"
 sed 's/POSTGUI_HALFILE = checker-postgui.hal/POSTGUI_HALFILE = absent.hal/' "$before" >"$missing"
 cp "$missing" "$work/sim/missing-postgui.before" && rm -f "$missing.bak" || exit 125
 run --check "$missing" --write-ini
-[ "$code" = 1 ] && said 'post-GUI HAL file cannot be read' &&
+[ "$code" = 1 ] && said 'post-GUI HAL sources could not be loaded' && said 'Cannot read HAL file .*absent.hal' &&
   cmp -s "$missing" "$work/sim/missing-postgui.before" && [ ! -e "$missing.bak" ]
 check missing_postgui_blocks_the_write $? "$(detail)"
+
+invalid="$work/sim/check-invalid.ini"
+sed 's/^COORDINATES = X Y Z/COORDINATES = X Z/' "$before" >"$invalid"
+cp "$invalid" "$work/sim/check-invalid.before" && rm -f "$invalid.bak" || exit 125
+run --check "$invalid" --write-ini
+[ "$code" = 1 ] && said 'Could not repair the INI: .*COORDINATES' &&
+  cmp -s "$invalid" "$work/sim/check-invalid.before" && [ ! -e "$invalid.bak" ]
+check invalid_ini_blocks_the_write $? "$(detail)"
+
+locked="$work/sim/check-lock.ini"
+cp "$before" "$locked" && rm -f "$locked.bak" || exit 125
+exec 9<"$locked"
+flock -n 9 || exit 125
+run --check "$locked" --write-ini
+flock -u 9
+exec 9<&-
+[ "$code" = 1 ] && said 'could not be locked' &&
+  cmp -s "$locked" "$before" && [ ! -e "$locked.bak" ]
+check concurrent_ini_write_is_refused $? "$(detail)"
 
 run -ini "$work/sim/coffeecnc_sim.ini" --ui "$work/no-panel"
 [ "$code" = 1 ] && said 'coffeecnc: No panel in .*index.html is missing'

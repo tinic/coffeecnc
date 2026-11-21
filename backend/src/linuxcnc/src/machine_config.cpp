@@ -267,6 +267,8 @@ auto inspect_machine_ini(const std::string& ini_file)
   const auto file = std::filesystem::absolute(ini_file, error);
   if (error)
     return std::unexpected(std::format("Cannot resolve INI file {}.", ini_file));
+  if (!std::filesystem::is_regular_file(file, error))
+    return std::unexpected(std::format("Cannot read INI file {}.", file.string()));
   Ini ini{file.string()};
   if (!ini.open())
     return std::unexpected(std::format("Cannot read INI file {}.", file.string()));

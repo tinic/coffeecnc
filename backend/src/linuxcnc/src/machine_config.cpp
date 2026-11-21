@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <initializer_list>
@@ -97,26 +98,34 @@ auto positive_settings(Ini& ini, std::initializer_list<std::pair<const char*, do
   return {};
 }
 
-auto default_machine_id(std::string_view name) -> std::optional<std::string> {
-  if (valid_machine_id(name))
-    return std::string(name);
+auto default_machine_id(std::string_view name, std::string_view ini_path)
+    -> std::optional<std::string> {
+  constexpr std::size_t max_name = 47; // 64 characters, including the hyphen and 16 hex digits.
   std::string id;
   bool separator = false;
   for (const char c : name) {
     if (c == '_' || c == '-' || valid_machine_id(std::string_view(&c, 1))) {
       if (id.empty() && (c == '_' || c == '-'))
         continue;
-      if (separator && !id.empty() && id.size() < 63)
+      if (separator && !id.empty() && id.size() + 1 < max_name)
         id += '-';
       separator = false;
       id += c;
-      if (id.size() >= 64)
+      if (id.size() >= max_name)
         break;
     } else {
       separator = true;
     }
   }
-  return id.empty() ? std::nullopt : std::optional{std::move(id)};
+  if (id.empty())
+    return std::nullopt;
+  // Stable across processes. The path distinguishes configurations with the same display name.
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const char byte : ini_path) {
+    hash ^= static_cast<unsigned char>(byte);
+    hash *= 1099511628211ULL;
+  }
+  return std::format("{}-{:016x}", id, hash);
 }
 
 // [TRAJ] NO_FORCE_HOMING as LinuxCNC's task reads it (sscanf %d): the leading integer, above
@@ -395,7 +404,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   const auto name = ini.text("EMC", "MACHINE").value_or("");
   auto machine_id = ini.text("COFFEECNC", "MACHINE_ID");
   if (!machine_id)
-    machine_id = default_machine_id(name);
+    machine_id = default_machine_id(name, file.string());
   MotionTolerances tolerances;
   if (const auto parsed = positive_settings(ini,
           {{"PROBE_OFF_LINE_TOLERANCE_MM", &tolerances.probe_off_line_mm},
@@ -436,9 +445,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
 }
 
 auto MachineConfig::touched_off_file() const -> std::string {
-  const auto directory = runtime_directory.empty() ? std::filesystem::path(tool_table).parent_path()
+  const auto state_dir = runtime_directory.empty() ? std::filesystem::path(tool_table).parent_path()
                                                    : std::filesystem::path(runtime_directory);
-  return (directory / "coffeecnc-touched-off.txt").string();
+  return (state_dir / "coffeecnc-touched-off.txt").string();
 }
 
 } // namespace coffeecnc

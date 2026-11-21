@@ -309,6 +309,7 @@ struct NmlPort::Impl {
   std::optional<int> observed_tool;
   bool unresolved_legacy_offset{};
   std::filesystem::path breakpoint_copy;
+  std::string legacy_breakpoint_copy;
   std::filesystem::path breakpoint_record;
   std::shared_ptr<const BreakpointSource> breakpoint;
   Clock::time_point breakpoint_retry{};
@@ -359,6 +360,8 @@ struct NmlPort::Impl {
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
     breakpoint_copy = runtime / ".coffeecnc-breakpoint.ngc";
+    legacy_breakpoint_copy =
+        (std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc").string();
     breakpoint_record = runtime / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     breakpoint_recovered = bool(breakpoint);
@@ -831,8 +834,6 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
       hal->paused_spindle.store(PausedSpindle::none);
   }
   impl->loads = loads;
-  if (loads)
-    loads->breakpoint.store(impl->breakpoint);
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
       !impl->status.valid() ||
       impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
@@ -840,6 +841,27 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
         std::format("Cannot open LinuxCNC's NML channels from {}.", impl->config.nml_file));
   // The first reading of the write counter: the next can tell whether task is running.
   static_cast<void>(until(echo_timeout, [&]() -> bool { return impl->stat() != nullptr; }));
+  if (const auto* raw = impl->stat();
+      raw && impl->legacy_breakpoint_copy != impl->breakpoint_copy.string() &&
+      to_status(*raw, config, hal, impl->status.link()).program_file ==
+          impl->legacy_breakpoint_copy) {
+    // An application-only restart can leave LinuxCNC paused in the copy made before migration.
+    // Reuse its mapping only when the migrated copy still matches the exact execution file.
+    constexpr auto max_copy = (std::size_t{16} << 20) + 256;
+    const auto active = read_text_file(impl->legacy_breakpoint_copy, max_copy);
+    const auto imported = read_text_file(impl->breakpoint_copy.string(), max_copy);
+    if (impl->breakpoint && active && active == imported) {
+      const auto& record = *impl->breakpoint;
+      impl->breakpoint = std::make_shared<const BreakpointSource>(
+          record.original, impl->legacy_breakpoint_copy, record.line, record.receipt,
+          record.marker_seen.load());
+    } else {
+      impl->breakpoint.reset();
+      impl->breakpoint_recovered = false;
+    }
+  }
+  if (loads)
+    loads->breakpoint.store(impl->breakpoint);
   return std::unique_ptr<NmlPort>(new NmlPort(std::move(impl)));
 }
 
@@ -874,7 +896,8 @@ auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();
   auto result = s ? to_status(*s, impl_->config, impl_->hal, impl_->status.link()) : NmlStatus{};
   result.controller.unresolved_legacy_offset = impl_->unresolved_legacy_offset;
-  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string();
+  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string() ||
+                                         result.program_file == impl_->legacy_breakpoint_copy;
   map_breakpoint(result, impl_->breakpoint.get());
   return result;
 }
@@ -2329,7 +2352,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
-  if (path == impl_->breakpoint_copy.string())
+  if (path == impl_->breakpoint_copy.string() || path == impl_->legacy_breakpoint_copy)
     return failed("Open the original program instead of its temporary breakpoint copy.");
   return open_program_file(path, wanted, true);
 }

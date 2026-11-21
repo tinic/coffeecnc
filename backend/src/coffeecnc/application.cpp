@@ -375,8 +375,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     add("Programs", config->program_prefix);
     add("Home", environment("HOME"));
     if (const auto user = environment("USER"); user && !user->empty()) {
+      const auto before_usb = config->program_places.size();
       add("USB", "/media/" + *user);
-      add("USB (system)", "/run/media/" + *user);
+      add(config->program_places.size() == before_usb ? "USB" : "USB (system)", "/run/media/" + *user);
     }
   }
   const auto ui = panel_directory(options);

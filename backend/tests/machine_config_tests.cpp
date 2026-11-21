@@ -308,11 +308,17 @@ void increments_and_signals() {
 void tool_model_settings() {
   constexpr std::string_view own = "MAX_SPINDLE_RPM = 1500\n";
   const auto none = load(g0759);
-  require(none && none->machine_id == "G0759-shaped" && !none->data_directory,
+  require(none && none->machine_id && none->machine_id->starts_with("G0759-shaped-") &&
+              valid_machine_id(*none->machine_id) && !none->data_directory,
           "without an explicit ID the machine name supplies it");
+  const auto other_file = scratch / "other-machine.ini";
+  std::filesystem::copy_file(none->ini_file, other_file, std::filesystem::copy_options::overwrite_existing);
+  const auto other = load_machine_config(other_file.string());
+  require(other && other->machine_id && other->machine_id != none->machine_id,
+          "different profiles with the same machine name use different data folders");
   const auto normalized = load(with(std::string(g0759), "MACHINE = G0759-shaped",
                                     "MACHINE = Toolroom mill / 7"));
-  require(normalized && normalized->machine_id == "Toolroom-mill-7",
+  require(normalized && normalized->machine_id && normalized->machine_id->starts_with("Toolroom-mill-7-"),
           "filesystem separators and spaces in the name become a single hyphen");
   const auto both = load(with(std::string(g0759), own,
                               "MAX_SPINDLE_RPM = 1500\nMACHINE_ID = Mill_7-a\n"
@@ -334,7 +340,7 @@ void tool_model_settings() {
               (spaced ? spaced->machine_id.value_or("(none)") : spaced.error()) + "\"");
   const auto empty = load(with(std::string(g0759), own,
                                "MAX_SPINDLE_RPM = 1500\nMACHINE_ID =\nDATA_DIRECTORY =\n"));
-  require(empty && empty->machine_id == "G0759-shaped" && !empty->data_directory,
+  require(empty && empty->machine_id == none->machine_id && !empty->data_directory,
           "LinuxCNC's INI reader gives a key without a value as an absent key");
 }
 
@@ -374,7 +380,8 @@ void shipped_example() {
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,
           "the example's signals set to yes");
-  require(config->machine_id == "G0759-shaped" && !config->data_directory,
+  require(config->machine_id && config->machine_id->starts_with("G0759-shaped-") &&
+              !config->data_directory,
           "the example uses the machine name and default data root");
   // Its two commented-out keys, taken into use, are the identity it documents.
   auto named = section;
@@ -423,7 +430,8 @@ void simulation_profiles() {
                 config->home_all_configured && config->jog_increments.empty() &&
                 !config->signals.spindle_rpm && !config->signals.probe,
             std::format("the {} simulation INI is accepted as before", units));
-    require(config->machine_id == "CoffeeCNC-sim" && !config->data_directory,
+    require(config->machine_id && config->machine_id->starts_with("CoffeeCNC-sim-") &&
+                !config->data_directory,
             std::format("the {} simulation derives its data identity from the machine name", units));
   }
   const auto config = assembled("-p g0759", "g0759");

@@ -16,6 +16,7 @@
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
+#include <coffeecnc/core/text_file.hpp>
 
 #include <array>
 #include <cerrno>
@@ -29,6 +30,8 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
+#include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -412,10 +415,31 @@ auto check_configuration(const Options& options) -> int {
                     : std::format("not saved: {}", location.reason))
             << '\n';
 
+  // A machine may wire the prompt in its own post-GUI file instead (the G0759 does): look for
+  // the component's pin there and in the files it sources, one level deep.
+  const auto wires_prompt = [&]() -> bool {
+    const auto mentions = [](const std::string& file) -> bool {
+      const auto text = read_text_file(file, 1 << 20);
+      return text && text->find("coffeecnc.tool-change") != std::string::npos;
+    };
+    if (config->postgui_halfile.empty() || mentions(config->postgui_halfile))
+      return !config->postgui_halfile.empty();
+    const auto text = read_text_file(config->postgui_halfile, 1 << 20).value_or("");
+    const auto directory = std::filesystem::path(config->postgui_halfile).parent_path();
+    std::istringstream lines{text};
+    for (std::string line; std::getline(lines, line);)
+      if (line.starts_with("source "))
+        if (mentions((directory / line.substr(7)).string()))
+          return true;
+    return false;
+  }();
+  const auto prompt = config->manual_tool_change ? std::string("on")
+                      : wires_prompt
+                          ? std::string("on  (wired in the post-GUI HAL file)")
+                          : std::string("off  ([COFFEECNC] MANUAL_TOOLCHANGE = yes)");
   const auto& signals = config->signals;
   std::cout << "\nOptional functions\n"
-            << "  Manual tool change prompt    " << on_off(config->manual_tool_change)
-            << (config->manual_tool_change ? "" : "  ([COFFEECNC] MANUAL_TOOLCHANGE = yes)") << '\n'
+            << "  Manual tool change prompt    " << prompt << '\n'
             << "  Measured spindle speed       " << on_off(signals.spindle_rpm)
             << (signals.spindle_rpm ? "" : "  (SPINDLE_RPM_SIGNAL = yes)") << '\n'
             << "  Spindle at speed             " << on_off(signals.spindle_at_speed)

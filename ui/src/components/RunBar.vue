@@ -44,10 +44,13 @@ const pausedZ = computed(() => paused.value && status.value?.mode === 'auto' ? s
 const showZ = computed(() => panel.tab === 'program' && pausedZ.value !== undefined)
 const zStep = computed(() => panel.unit === 'inch' ? 1.27 : 1)
 const length = (mm: number): string => `${formatLength(mm, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
-const zBlocked = computed(() => linkBlock.value ?? (pendingZ.value ? 'Moving Z' : pausedZ.value?.reason || null))
+const zBlocked = computed(() => {
+  const reason = pausedZ.value?.reason ?? ''
+  return linkBlock.value ?? (pendingZ.value ? 'Moving Z' : reason === '' ? null : reason)
+})
 const up = computed(() => Math.min(zStep.value, (pausedZ.value?.max_lift ?? 0) - (pausedZ.value?.offset ?? 0)))
 const down = computed(() => Math.min(zStep.value, pausedZ.value?.offset ?? 0))
-watch(live, (connected) => { if (!connected) pendingZ.value = null })
+watch([live, computed(() => panel.hello)], () => { pendingZ.value = null })
 function jogPausedZ(distance: number): void {
   if (zBlocked.value !== null || distance === 0) return
   const command = { type: 'jog_paused_z', distance } as const
@@ -159,17 +162,25 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 <template>
   <footer class="runbar" :class="{ 'touch-off': touchOff }">
     <OverrideControl v-if="!touchOff" label="Feed override" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
-    <div v-if="showZ" class="paused-z" role="group" aria-label="Paused Z lift" v-tooltip="zBlocked">
+    <div v-if="showZ" v-tooltip="zBlocked" class="paused-z" role="group" aria-label="Paused Z lift">
       <div class="paused-z-reading">
         <span>Z lift</span>
         <strong class="mono">{{ length(pausedZ?.offset ?? 0) }}</strong>
       </div>
-      <button class="btn" type="button" aria-label="Lower paused Z"
-        v-tooltip="zBlocked ?? (down > 0 ? `Lower Z by ${length(down)}` : 'At the paused Z position')"
-        :disabled="zBlocked !== null || down <= 0" @click="jogPausedZ(-down)">−Z</button>
-      <button class="btn" type="button" aria-label="Lift paused Z"
-        v-tooltip="zBlocked ?? (up > 0 ? `Lift Z by ${length(up)}` : 'At the Z lift limit')"
-        :disabled="zBlocked !== null || up <= 0" @click="jogPausedZ(up)">+Z</button>
+      <button
+        v-tooltip="zBlocked ?? (down > 0 ? `Lower Z by ${length(down)}` : 'At the paused Z position')" class="btn" type="button"
+        aria-label="Lower paused Z"
+        :disabled="zBlocked !== null || down <= 0" @click="jogPausedZ(-down)"
+      >
+        −Z
+      </button>
+      <button
+        v-tooltip="zBlocked ?? (up > 0 ? `Lift Z by ${length(up)}` : 'At the Z lift limit')" class="btn" type="button"
+        aria-label="Lift paused Z"
+        :disabled="zBlocked !== null || up <= 0" @click="jogPausedZ(up)"
+      >
+        +Z
+      </button>
     </div>
     <OverrideControl v-else-if="!touchOff" label="Spindle override" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
@@ -202,7 +213,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .runbar.touch-off { grid-template-columns: 1fr; justify-items: end; }
 .command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
 .paused-z { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
-.paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: auto; font-size: 12px; color: var(--text-dim); }
+.paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: 6px; font-size: 12px; color: var(--text-dim); }
 .paused-z-reading strong { color: var(--text); white-space: nowrap; }
 .paused-z .btn { min-width: 47px; height: 48px; padding: 0 8px; border-radius: 9px; }
 .stop-button { color: var(--stop); min-width: 88px; }.main-action { min-width: 156px; }

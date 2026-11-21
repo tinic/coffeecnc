@@ -2525,7 +2525,7 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
                                   limits->velocity_mm_s / limits->acceleration_mm_s2 + 2.0)});
   const auto arrived = [&](const NmlStatus& now) {
     const auto& current = now.controller.axes;
-    return now.controller.in_position &&
+    return now.paused_z_still &&
            std::abs(now.controller.paused_z->offset - (clear ? 0 : target)) <= tolerance &&
            std::abs(now.paused_z_feedback->offset - (clear ? 0 : target)) <= tolerance &&
            std::abs(current[0].machine - axes[0].machine) <= 0.01 &&
@@ -2541,9 +2541,19 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
   hal->stop_paused_z();
   if (interrupted)
     return stopped;
-  if (!finished)
+  if (!finished) {
+    const auto now = status();
+    std::cerr << std::format("paused-z end: still={} inpos={} nml={} hal={} active={} xyz={},{},{} "
+                             "expected_z={} target={}\n",
+                             now.paused_z_still, now.controller.in_position,
+                             now.controller.paused_z ? now.controller.paused_z->offset : -999.0,
+                             now.paused_z_feedback ? now.paused_z_feedback->offset : -999.0,
+                             now.controller.paused_z && now.controller.paused_z->displaced,
+                             now.controller.axes[0].machine, now.controller.axes[1].machine,
+                             now.controller.axes[2].machine, end_z, target);
     return failed(
         "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
+  }
   std::this_thread::sleep_for(gate_settle);
   const auto now = status();
   return safe(now) && arrived(now) ? ActionResult{} : stopped;

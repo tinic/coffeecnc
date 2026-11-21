@@ -162,6 +162,13 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.block_delete = task.block_delete_state;
   out.paused = task.task_paused != 0;
   if (const auto& limits = config.paused_z) {
+    // A feed-held path can retain queued motion and clear traj.inpos even at rest.
+    constexpr double rest_mm_s = 0.0001;
+    out.paused_z_still = std::abs(motion.traj.current_vel * mm) < rest_mm_s;
+    for (std::size_t i = 0; i < c.axes.size(); ++i)
+      out.paused_z_still = out.paused_z_still &&
+                           std::abs(motion.joint[i].velocity * mm) < rest_mm_s &&
+                           std::abs(motion.axis[i].velocity * mm) < rest_mm_s;
     const auto& offset = motion.eoffset_pose;
     const double z_mm = offset.tran.z * mm;
     if (view && view->paused_z) {
@@ -169,8 +176,11 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       out.paused_z_feedback->offset *= mm;
     }
     const auto& feedback = out.paused_z_feedback;
-    const bool displaced = motion.external_offsets_applied || z_mm != 0 ||
-                           (feedback && (feedback->active || feedback->offset != 0));
+    // LinuxCNC's offset planner stops within its servo-cycle tolerance of its command.
+    const double tolerance = limits->count_mm / 2;
+    const bool displaced =
+        motion.external_offsets_applied || !std::isfinite(z_mm) || std::abs(z_mm) > tolerance ||
+        (feedback && (feedback->active || std::abs(feedback->offset) > tolerance));
     const auto blocked = [&]() -> std::string {
       if (link != Link::live || c.machine != MachineState::on || !motion.traj.enabled ||
           c.mode != TaskMode::automatic || c.interp != InterpState::paused || !out.paused)
@@ -197,7 +207,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     out.paused_z_interlock = blocked();
     c.paused_z = PausedZStatus{std::isfinite(z_mm) ? z_mm : 0, limits->lift_mm, displaced,
                                out.paused_z_interlock};
-    if (c.paused_z->reason.empty() && !c.in_position)
+    if (c.paused_z->reason.empty() && !out.paused_z_still)
       c.paused_z->reason = "Wait for the axes to stop.";
   }
   out.dwell_seconds_left = task.delayLeft;

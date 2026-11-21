@@ -42,6 +42,8 @@ struct PanelReading {
   bool task_executing{};
   // What the source itself has to tell the operator (a file it cannot read), each once.
   std::vector<ControllerMessage> messages;
+  // The point task plans from when the axes are at rest, independent of encoder backlash.
+  std::optional<Vec3> commanded_position{};
 };
 
 // The text of a program for the `program` message: ProgramStore::read_program, handed to an

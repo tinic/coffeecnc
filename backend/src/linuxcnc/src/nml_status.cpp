@@ -114,6 +114,9 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.command_done = s.status == RCS_DONE;
   out.task_executing = task.execState != EMC_TASK_EXEC_DONE || s.status == RCS_EXEC;
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
+  out.commanded_position = xyz(motion.traj.position);
+  for (auto& coordinate : out.commanded_position)
+    coordinate *= mm;
   out.wcs = task.g5x_index;
   out.rotation_xy = task.rotation_xy;
   out.velocity = motion.traj.current_vel * mm * seconds_per_minute;

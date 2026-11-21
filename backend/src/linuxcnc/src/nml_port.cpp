@@ -1735,7 +1735,8 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
 
 namespace {
 
-constexpr double restart_position_tolerance = 0.2; // mm, including encoder backlash at rest
+constexpr double restart_position_tolerance = 0.5; // mm, same encoder allowance as probing
+constexpr double restart_command_tolerance = 0.001; // mm
 
 auto restart_near(const Vec3& a, const Vec3& b, double tolerance = 1e-6) -> bool {
   return std::ranges::equal(a, b, [=](double x, double y) { return std::abs(x - y) <= tolerance; });
@@ -1751,6 +1752,16 @@ auto restart_frame(const NmlStatus& s, const RestartPoint& p, const PreviewInput
 
 auto restart_position(const ControllerState& s) -> Vec3 {
   return {s.axes[0].machine, s.axes[1].machine, s.axes[2].machine};
+}
+
+auto restart_at(const NmlStatus& s, const Vec3& target) -> bool {
+  return restart_near(s.commanded_position, target, restart_command_tolerance) &&
+         restart_near(restart_position(s.controller), target, restart_position_tolerance);
+}
+
+auto restart_at_z(const NmlStatus& s, double z) -> bool {
+  return std::abs(s.commanded_position[2] - z) <= restart_command_tolerance &&
+         std::abs(s.controller.axes[2].machine - z) <= restart_position_tolerance;
 }
 
 auto restart_endpoint(const RestartPoint& point) -> Vec3 {
@@ -1792,8 +1803,7 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
     return "Machine power, the program or the work coordinate system changed.";
   if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
-      !restart_near(restart_position(s.controller), inputs.start.position,
-                    restart_position_tolerance))
+      !restart_at(s, inputs.start.position))
     return "The machine must remain stopped at the position shown in the preview.";
   if (point.tool == config.touch_probe_tool)
     return "Remove the touch probe before running a program from a line.";
@@ -1809,14 +1819,14 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
   // Raise the controlled point enough for both tools before a manual exchange.
   const double original_clearance = restart_clearance(point);
   const double old_tool_difference = std::max(0.0, s.tool_offset[2] - point.tool_offset[2]);
-  const double minimum = std::max(s.controller.axes[2].machine, original_clearance + old_tool_difference);
+  const double minimum = std::max(s.commanded_position[2], original_clearance + old_tool_difference);
   point.clearance_z += minimum - original_clearance;
   point.approach_feed = std::min(
       {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
   const auto end = restart_endpoint(point);
   const double clearance = restart_clearance(point);
   if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
-      !restart_travel({s.controller.axes[0].machine, s.controller.axes[1].machine, clearance}, config))
+      !restart_travel({s.commanded_position[0], s.commanded_position[1], clearance}, config))
     return "The restart approach is outside the configured machine travel.";
   return {};
 }
@@ -1898,9 +1908,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     } else {
       const auto before = read();
       if (!idle(before) || before.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
-          !restart_near(restart_position(before.controller), inputs.start.position,
-                        restart_position_tolerance) ||
-          before.controller.axes[2].machine > clearance + 1e-6)
+          !restart_at(before, inputs.start.position) ||
+          before.commanded_position[2] > clearance + restart_command_tolerance)
         return failed("The machine moved after the restart was reviewed.");
       if (before.controller.mode != TaskMode::mdi)
         if (auto switched = mode(EMC_TASK_MODE_MDI); !accepted(switched))
@@ -1922,14 +1931,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         return done;
       const auto now = read();
       if (!idle(now) || now.controller.spindle_active ||
-          now.controller.axes[2].machine > clearance + 1e-6)
+          !restart_at(now, inputs.start.position) ||
+          now.commanded_position[2] > clearance + restart_command_tolerance)
         return failed("The spindle or approach position changed before retracting.");
       if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
                             std::chrono::seconds{45}); !accepted(done))
         return done;
       const auto lifted = read();
-      if (!idle(lifted) || std::abs(lifted.controller.axes[2].machine - clearance) >
-                               restart_position_tolerance)
+      if (!idle(lifted) || !restart_at_z(lifted, clearance))
         return failed("The machine did not reach the confirmed Z clearance.");
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
@@ -1943,13 +1952,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     const auto loaded = read();
     if (!idle(loaded) || loaded.controller.mode != TaskMode::mdi ||
         loaded.controller.tool_in_spindle != point.tool ||
-        std::abs(loaded.controller.axes[2].machine - clearance) > restart_position_tolerance)
+        !restart_at_z(loaded, clearance))
       return failed("The tool or clearance changed before the restart approach.");
     if (auto done = block(point.h == 0 ? "G49" : std::format("G43 H{}", point.h),
                           completion_timeout); !accepted(done))
       return done;
     const auto compensated = read();
-    if (!idle(compensated) || !restart_near(compensated.tool_offset, point.tool_offset) ||
+    if (!idle(compensated) || !restart_at_z(compensated, clearance) ||
+        !restart_near(compensated.tool_offset, point.tool_offset) ||
         compensated.work[2] < point.clearance_z - restart_position_tolerance)
       return failed("LinuxCNC did not confirm the tool offset and Z clearance.");
     if (auto done = block(std::format("G53 G0 X{:.8f} Y{:.8f}", endpoint[0], endpoint[1]),
@@ -1964,8 +1974,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return done;
     const auto at_clearance = read();
     const Vec3 above{endpoint[0], endpoint[1], clearance};
-    if (!idle(at_clearance) || !restart_near(restart_position(at_clearance.controller), above,
-                                           restart_position_tolerance) ||
+    if (!idle(at_clearance) || !restart_at(at_clearance, above) ||
         at_clearance.spindle_direction != point.spindle_direction ||
         at_clearance.flood != point.flood || at_clearance.mist != point.mist)
       return failed("LinuxCNC did not confirm the restart position, spindle or coolant.");
@@ -2000,7 +2009,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return failed("The restart program or tool length changed during the approach.");
     const auto at_start = read();
     if (!idle(at_start) ||
-        !restart_near(restart_position(at_start.controller), endpoint, restart_position_tolerance) ||
+        !restart_at(at_start, endpoint) ||
         !restart_near(at_start.tool_offset, point.tool_offset))
       return failed("The machine did not reach the verified restart point.");
     if (auto switched = mode(EMC_TASK_MODE_AUTO); !accepted(switched))

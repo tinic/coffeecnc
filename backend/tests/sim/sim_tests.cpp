@@ -2171,7 +2171,7 @@ struct PreviewOracle {
           !reading.preview_tools.empty() && reading.status.program.file == program)
         break;
     }
-    const auto inputs = preview_inputs(reading, position());
+    const auto inputs = preview_inputs(reading, reading.commanded_position.value_or(position()));
     auto computed = engine.compute(inputs, {});
     fact("oracle_inputs",
          std::format("open={} codes={} wcs={} feed={} tool={} tool_offset_z={:.3f} g5x={:.3f},"
@@ -3919,6 +3919,35 @@ void restart_cuts(Rig& rig) {
       check("restart_pocket_setup", repositioned);
       if (repositioned)
         approach("03-pocket.ngc", 24, 1, false);
+    }
+    if (failures == 0) {
+      const bool repositioned = mdi("G43 H1") && mdi("G0 Z30") && mdi("G0 X0 Y0");
+      const auto [approved, path] = plan("G21 G90 G17 G54 G94 G97 G40 G61\nG43 H1\n"
+                                        "G0 Z30\nG1 X12 F600\nM30\n", 4);
+      // The encoder changes after the operator has reviewed the plan. The trajectory's
+      // commanded Z is already at the clearance and must not be moved down before XY.
+      const bool encoder = halcmd("loadrt sum2 names=restart-z-encoder") &&
+          halcmd("addf restart-z-encoder servo-thread") &&
+          halcmd("net z-pos-cmd restart-z-encoder.in0") &&
+          halcmd("net restart-z-feedback restart-z-encoder.out") &&
+          halcmd("unlinkp joint.2.motor-pos-fb") &&
+          halcmd("net restart-z-feedback joint.2.motor-pos-fb") &&
+          halcmd("setp restart-z-encoder.in1 0.125") &&
+          rig.pump_until(2s, [&] {
+            const auto s = rig.status();
+            return near(s.controller.axes[2].machine - s.commanded_position[2], 0.125, 0.01);
+          });
+      check("restart_encoder_backlash_setup", repositioned && approved.accepted() && encoder,
+            approved.text());
+      if (approved.accepted() && encoder) {
+        const auto restarted = rig.send(start_command(approved));
+        const bool finished = rig.pump_until(8s, [&] {
+          return rig.idle() && near(rig.status().work[0], 12, 0.05);
+        });
+        check("restart_with_encoder_backlash", restarted.accepted() && finished, restarted.text());
+      }
+      if (encoder)
+        static_cast<void>(halcmd("setp restart-z-encoder.in1 0"));
     }
   }
 

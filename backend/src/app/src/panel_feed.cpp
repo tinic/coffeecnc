@@ -60,10 +60,15 @@ void PanelComposer::count(const PanelReading& reading) {
   const bool running = status.interp != InterpState::idle ||
       (automatic && (reading.task_executing || !status.motion.in_position ||
                      !std::holds_alternative<WaitNone>(status.wait)));
-  if (!running && status.motion.in_position)
-    for (const auto& axis : status.axes)
-      if (const auto index = axis_index(axis.axis))
-        rest_position_.at(*index) = axis.machine;
+  if (!running && status.motion.in_position) {
+    if (reading.commanded_position) {
+      rest_position_ = *reading.commanded_position;
+    } else {
+      for (const auto& axis : status.axes)
+        if (const auto index = axis_index(axis.axis))
+          rest_position_.at(*index) = axis.machine;
+    }
+  }
   auto inputs = preview_inputs(reading, rest_position_);
   if (preview_ != nullptr)
     inputs.files_generation = preview_->files_generation();

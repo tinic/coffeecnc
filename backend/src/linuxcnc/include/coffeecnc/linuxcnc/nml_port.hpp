@@ -26,6 +26,7 @@ namespace coffeecnc {
 // millimetres, mm/min, rpm, factors. Read from one EMC_STAT.
 struct NmlStatus {
   ControllerState controller;
+  Vec3 commanded_position{}; // trajectory's controlled point in machine coordinates, mm
   std::array<double, 3> work{}; // machine position less G5x, G92 and tool offset, rotated
   std::array<double, 3> dtg{};
   std::array<double, 3> g5x{};

@@ -20,15 +20,15 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount() })
 
 describe('machine feedback presentation', () => {
-  it.each([true, false, null])('shows stopped spindle at-speed as not applicable even when the input is %s', async (atSpeed) => {
+  it.each([true, false])('shows stopped spindle at-speed as not applicable when its input is %s', async (atSpeed) => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.spindle.direction = 'stopped'; panel.status.spindle.at_speed = atSpeed
     wrapper = mount(MachineFeedback)
     expect(wrapper.get('.at-speed').text()).toBe('—')
     panel.status.spindle.direction = 'forward'; await nextTick()
-    expect(wrapper.get('.at-speed').text()).toBe(atSpeed === null ? 'Unavailable' : atSpeed ? 'Yes' : 'No')
+    expect(wrapper.get('.at-speed').text()).toBe(atSpeed ? 'Yes' : 'No')
   })
-  it.each(['null', 'absent'])('shows %s feedback as unavailable, never from the spindle command', (kind) => {
+  it.each(['null', 'absent'])('hides %s feedback and the empty telemetry row', (kind) => {
     if (panel.status === null) throw new Error('Missing status')
     if (kind === 'null') {
       panel.status.spindle.actual_rpm = null; panel.status.spindle.at_speed = null; panel.status.probe_input = null
@@ -36,9 +36,15 @@ describe('machine feedback presentation', () => {
       delete panel.status.spindle.actual_rpm; delete panel.status.spindle.at_speed; delete panel.status.probe_input
     }
     wrapper = mount(MachineFeedback, { props: { showProbe: true } })
-    expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['Unavailable', 'Unavailable', 'Unavailable'])
-    expect(wrapper.text()).not.toContain('9000')
-    expect(wrapper.text()).not.toContain('18000')
+    expect(wrapper.find('dl').exists()).toBe(false)
+  })
+
+  it('shows measured RPM alone when the stopped spindle has no at-speed signal', () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.spindle.direction = 'stopped'
+    panel.status.spindle.at_speed = null
+    wrapper = mount(MachineFeedback)
+    expect(wrapper.findAll('dd').map(value => value.text())).toEqual(['6500 rpm'])
   })
 
   it('shows real zero/false readings and updates to measured feedback', async () => {
@@ -62,8 +68,7 @@ describe('machine feedback presentation', () => {
   it.each(['down', 'incompatible', 'connecting'] as const)('discards %s placeholders', (link) => {
     panel.link = link
     wrapper = mount(MachineFeedback, { props: { showProbe: true } })
-    expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['Unavailable', 'Unavailable', 'Unavailable'])
-    expect(wrapper.find('dd.tripped').exists()).toBe(false)
+    expect(wrapper.find('dl').exists()).toBe(false)
   })
 
   it('also respects the native stale/down link when the panel link has not caught up', async () => {
@@ -73,14 +78,14 @@ describe('machine feedback presentation', () => {
     expect(wrapper.text()).toContain('6500 rpm · stale')
     panel.status.link = 'down'
     await nextTick()
-    expect(wrapper.findAll('dd').map((value) => value.text())).toEqual(['Unavailable', 'Unavailable'])
-    expect(wrapper.text()).not.toContain('Probe input')
+    expect(wrapper.find('dl').exists()).toBe(false)
   })
 
   it.each([NaN, Infinity, -1])('does not display an invalid measured RPM value (%s)', (rpm) => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.spindle.actual_rpm = rpm
     wrapper = mount(MachineFeedback)
-    expect(wrapper.get('dd').text()).toBe('Unavailable')
+    expect(wrapper.find('.rpm').exists()).toBe(false)
+    expect(wrapper.get('.at-speed').text()).toBe('Yes')
   })
 })

@@ -94,6 +94,17 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.mdi .setter-band p').text()).toBe('Axes are not homed')
     expect(wrapper.get('.jog .setter-band p').text()).toBe('Axis limits: Z 750 mm/min')
   })
+  it('turns the passive spindle hint into a refusal only on press and clears it once ready', async () => {
+    wrapper = mount(ManualTab)
+    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
+    const forward = wrapper.findAll('button').find(button => button.text() === 'Forward')
+    if (!forward) throw new Error('Missing Forward button')
+    await forward.trigger('click')
+    expect(wrapper.get('.spindle-status.blocked p').text()).toBe('Enter a spindle speed above zero')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('input[aria-label="Spindle speed, rpm"]').setValue('1200')
+    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
+  })
   it('keeps probe-specific guidance in the Touch off card', async () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.machine = 'off'

@@ -148,7 +148,7 @@ void lines_and_bounds() {
           "Feed moves carry their line: " + text_of(o));
   require(o.segments[0].feed == 0 && o.segments[1].feed == 100 && o.segments[2].feed == 100,
           "Feed moves carry their feed per minute, rapids none: " + text_of(o));
-  const auto timed = rig.preview("G21 G90\nG1 X1 F250\nG4 P2.5\nG20 G1 X1 F10\nS1000 M3\nG95 G1 X2 F0.1\nM5\nM2\n");
+  const auto timed = rig.preview("G21 G90\nG1 X1 F250\nG4 P2.5\nG20\nG1 X1 F10\nS1000 M3\nG95 G1 X2 F0.1\nM5\nM2\n");
   require(timed.state == PreviewState::ready && timed.segments.size() == 3 &&
               std::abs(timed.segments[0].feed - 250) < 1e-6 &&
               std::abs(timed.segments[1].feed - 254) < 1e-6 && timed.segments[2].feed == 0 &&

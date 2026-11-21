@@ -205,6 +205,16 @@ void restart_checkpoints() {
   require(outcome.state == PreviewState::ready && !outcome.restart &&
               outcome.restart_blocked.find("tool length") != std::string::npos,
           "Missing tool length blocks restart: " + outcome.restart_blocked);
+
+  rig.inputs.restart_line = 6;
+  const std::string prefix = "G21 G90 G17\nT1 M6\nG43 H1\nG0 Z20\nT2\nG1 X10 F100\n";
+  outcome = rig.preview(prefix + "M6\nG43 H2\nG0 Z20\nM2\n");
+  require(outcome.state == PreviewState::ready && !outcome.restart &&
+              outcome.restart_blocked.find("A later M6") != std::string::npos,
+          "M6 cannot inherit a discarded tool preparation: " + outcome.restart_blocked);
+  outcome = rig.preview(prefix + "T2 M6\nG43 H2\nG0 Z20\nM2\n");
+  require(outcome.state == PreviewState::ready && outcome.restart,
+          "An explicit T word in the suffix prepares its own M6: " + outcome.restart_blocked);
 }
 
 // Every chord of an arc is within the tolerance of the circle.

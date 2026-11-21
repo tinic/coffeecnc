@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
@@ -25,7 +26,7 @@ const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};
@@ -87,6 +88,55 @@ void documents_and_limits() {
   ControllerState down;
   require(CommandPolicy(limits).evaluate(command(), down).allowed,
           "Preferences do not require machine power or motion");
+}
+void saved_positions() {
+  OperatorSettingsFile value{"G0759", 1, command().document};
+  value.document.saved_positions = {{"Vise jaw", {-120.5, 33.25, -10}}, {"Position 2", {0, 0, 0}}};
+  const auto encoded = encode_operator_settings_file(value);
+  require(encoded.has_value(), "File with saved positions encodes");
+  const auto decoded = decode_operator_settings_file(encoded.value_or(""));
+  require(decoded && decoded->document == value.document, "Saved positions round trip exactly");
+  require(Json::parse(*encoded)["document"]["saved_positions"][0] ==
+              Json{{"name", "Vise jaw"}, {"position", {-120.5, 33.25, -10}}},
+          "Saved positions are a list of name and machine XYZ");
+  auto older = Json::parse(*encoded);
+  older["document"].erase("saved_positions");
+  const auto upgraded = decode_operator_settings_file(older.dump());
+  require(upgraded && upgraded->document.saved_positions.empty() &&
+              upgraded->document.default_spindle_rpm == 1800,
+          "Documents without saved positions keep their other preferences");
+  for (const auto& damaged :
+       {Json("x"), Json::array({Json{{"name", "A"}, {"position", {1, 2}}}}),
+        Json::array({Json{{"name", ""}, {"position", {1, 2, 3}}}}),
+        Json::array({Json{{"name", "   "}, {"position", {1, 2, 3}}}}),
+        Json::array({Json{{"name", "A\n"}, {"position", {1, 2, 3}}}}),
+        Json::array({Json{{"name", std::string(65, 'a')}, {"position", {1, 2, 3}}}}),
+        Json::array({Json{{"name", "A"}, {"position", {1, "2", 3}}}}),
+        Json::array({Json{{"name", "A"}, {"position", {1, 2, 1e7}}}}),
+        Json::array({Json{{"name", "A"}, {"position", {1, 2, 3}}, {"z", true}}})}) {
+    auto invalid = Json::parse(*encoded);
+    invalid["document"]["saved_positions"] = damaged;
+    const auto dropped = decode_operator_settings_file(invalid.dump());
+    require(dropped && dropped->document.saved_positions.empty() &&
+                dropped->document.default_spindle_rpm == 1800,
+            "A damaged position list is dropped without losing other settings");
+  }
+  auto seventeen = Json::parse(*encoded);
+  seventeen["document"]["saved_positions"] = Json::array();
+  for (int index = 0; index < 17; ++index)
+    seventeen["document"]["saved_positions"].push_back({{"name", "P"}, {"position", {0, 0, 0}}});
+  const auto many = decode_operator_settings_file(seventeen.dump());
+  require(many && many->document.saved_positions.empty(), "At most sixteen saved positions");
+  auto requested = command();
+  requested.document.saved_positions = {{"A", {0, 0, std::nan("")}}};
+  require(!operator_settings_command_error(requested, limits).empty(),
+          "A non-finite saved position is refused");
+  requested.document.saved_positions.assign(17, SavedPosition{"A", {0, 0, 0}});
+  require(!operator_settings_command_error(requested, limits).empty(),
+          "A seventeenth saved position is refused");
+  requested.document.saved_positions = {{std::string(64, 'a'), {1, 2, 3}}};
+  require(operator_settings_command_error(requested, limits).empty(),
+          "A 64-byte name is accepted");
 }
 void archive_and_restart() {
   FakeDisk disk;
@@ -273,6 +323,7 @@ void host_file_restart() {
 auto main() -> int {
   try {
     documents_and_limits();
+    saved_positions();
     archive_and_restart();
     failures();
     writer_delivery();

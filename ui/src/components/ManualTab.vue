@@ -1,3 +1,8 @@
+<script lang="ts">
+/** The motion mode of the jog card, kept while CoffeeCNC runs. */
+const manualMotion: { mode: 'jog' | 'feed' | 'positions' } = { mode: 'jog' }
+</script>
+
 <script setup lang="ts">
 import WorkSystemSelector from './WorkSystemSelector.vue'
 import { vTooltip } from '../tooltip'
@@ -24,9 +29,12 @@ import AppIcon from './AppIcon.vue'
 import MaterialProbeControls from './MaterialProbeControls.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
+import PowerFeedControls from './PowerFeedControls.vue'
+import SavedPositions from './SavedPositions.vue'
+import type { SetterStatusLine } from '../setter-state'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
-defineProps<{ touchOff?: boolean }>()
+const props = defineProps<{ touchOff?: boolean }>()
 
 const jogs: Readonly<Record<JogKey, { axis: AxisLetter; direction: -1 | 1 }>> = {
   'x+': { axis: 'x', direction: 1 },
@@ -58,6 +66,21 @@ const jogMachineBlock = computed(() => manualBlock.value ?? (homingActive.value 
 const jogUnavailable = computed(() => jogMachineBlock.value ?? stepUnavailable.value)
 const materialProbeTool = computed(() => panel.hello?.fixed_setter?.material_travel_mm
   ? panel.hello.touch_probe_tool : undefined)
+
+const motionModes = [
+  ['jog', 'Jog', 'Jog while held, or by a step'],
+  ['feed', 'Power feed', 'Feed one axis to the soft limit or a set distance'],
+  ['positions', 'Positions', 'Save machine positions and go back to them'],
+] as const
+type MotionMode = (typeof motionModes)[number][0]
+const motionMode = ref<MotionMode>(manualMotion.mode)
+const mode = computed<MotionMode>(() => props.touchOff ? 'jog' : motionMode.value)
+const modeLine = ref<SetterStatusLine>({ text: '', level: 'info' })
+function chooseMode(next: MotionMode): void {
+  motionMode.value = next
+  manualMotion.mode = next
+  modeLine.value = { text: '', level: 'info' }
+}
 
 const jogHold = new JogHold<JogKey>(
   {
@@ -154,7 +177,7 @@ function typing(): boolean {
 
 function keyDown(event: KeyboardEvent): void {
   const key = keyboard[event.code]
-  if (key === undefined || typing() || openDialogs.value > 0 || event.ctrlKey || event.altKey || event.metaKey) {
+  if (key === undefined || mode.value !== 'jog' || typing() || openDialogs.value > 0 || event.ctrlKey || event.altKey || event.metaKey) {
     return
   }
   event.preventDefault()
@@ -221,6 +244,7 @@ watch(jogUnavailable, (reason) => {
 }, { flush: 'sync' })
 watch(allHomed, lostAttention, { flush: 'sync' })
 watch(unit, lostAttention, { flush: 'sync' })
+watch(mode, lostAttention, { flush: 'sync' })
 
 onBeforeUnmount(() => {
   window.removeEventListener('touchend', touchesEnded, true)
@@ -405,9 +429,26 @@ function coolant(which: 'flood' | 'mist'): void {
   <div class="manual">
     <section class="card jog">
       <div class="jog-heading">
-        <h2>Jog</h2>
+        <h2 v-if="touchOff">Jog</h2>
+        <div v-else class="segmented modes" role="tablist" aria-label="Manual motion">
+          <button
+            v-for="[value, label, tip] in motionModes"
+            :key="value"
+            v-tooltip="tip"
+            class="btn"
+            type="button"
+            role="tab"
+            :aria-selected="mode === value"
+            :class="{ on: mode === value }"
+            @click="chooseMode(value)"
+          >
+            {{ label }}
+          </button>
+        </div>
       </div>
-      <div class="jog-controls">
+      <PowerFeedControls v-if="mode === 'feed'" @line="modeLine = $event" />
+      <SavedPositions v-else-if="mode === 'positions'" @line="modeLine = $event" />
+      <div v-if="mode === 'jog'" class="jog-controls">
         <div class="pads">
           <div class="pad">
             <button
@@ -470,7 +511,7 @@ function coolant(which: 'flood' | 'mist'): void {
         </div>
       </div>
 
-      <div class="line">
+      <div v-if="mode === 'jog'" class="line">
         <span class="label">Speed</span>
         <input
           type="range"
@@ -513,10 +554,10 @@ function coolant(which: 'flood' | 'mist'): void {
           }}</span>
         </button>
       </div>
-      <p v-if="!touchOff" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
+      <p v-if="!touchOff && mode === 'jog'" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
         Keyboard: arrows X/Y · Page Up/Down Z
       </p>
-      <SetterStatusBand class="jog-status" :line="jogLine" />
+      <SetterStatusBand class="jog-status" :line="mode === 'jog' ? jogLine : modeLine" />
     </section>
 
     <div class="side" :class="{ 'probe-side': touchOff }">
@@ -757,6 +798,7 @@ function coolant(which: 'flood' | 'mist'): void {
 .probe-side .work-system { margin-top: 0; }
 .side > .probe-card { gap: 12px; padding: 14px; }
 .probe-contact { color: var(--warn); }
+.modes .btn { min-width: 0; padding: 0 16px; font-size: 13px; }
 .jog-heading h2, .wcs-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
 .wcs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.wcs-heading h2 { flex: none; }
 
@@ -765,6 +807,8 @@ function coolant(which: 'flood' | 'mist'): void {
   flex-direction: column;
   gap: 2px;
   min-height: 0;
+  /* A long history scrolls inside the card instead of pushing the cards below off the screen. */
+  contain: size;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: var(--radius);

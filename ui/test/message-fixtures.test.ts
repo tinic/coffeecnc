@@ -1167,6 +1167,16 @@ const examples = [
       "theme": "dark",
       "recent_programs": [
         "/home/cnc/nc_files/air/03-pocket.ngc"
+      ],
+      "saved_positions": [
+        {
+          "name": "Vise jaw",
+          "position": [
+            -120.5,
+            33.25,
+            -10
+          ]
+        }
       ]
     }
   },

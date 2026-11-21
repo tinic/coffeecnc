@@ -19,7 +19,13 @@ struct Options {
   bool windowed{};
   bool developer_tools{};
   bool help{};
+  bool check{}; // --check <file>: report on the INI file and exit; no window, no LinuxCNC
 };
+
+// `coffeecnc --check <ini>`: loads the machine's INI file as start-up does and tells, on standard
+// output, whether CoffeeCNC starts with it and which optional functions are on or off and why.
+// Exit status 0 when it starts, 1 when it does not. Reads files only; LinuxCNC need not run.
+[[nodiscard]] auto check_configuration(const Options& options) -> int;
 
 // The command line after the program name. LinuxCNC starts its DISPLAY program as
 // `<program> -ini <file>`. Fails with a sentence for the terminal.

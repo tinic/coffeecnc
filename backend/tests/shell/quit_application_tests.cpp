@@ -44,7 +44,7 @@ constexpr const char* script = R"js((() => {
       if (m.type === 'hello' && m.quit_supported) mark('supported');
       if (m.type === 'hello') mark('coolant:' + JSON.stringify(m.coolant ?? null));
       if (m.type === 'result' && m.id >= 1000000 && m.outcome !== 'accepted') mark('failed');
-      if (m.type === 'result' && m.id === 1000002 && m.outcome === 'accepted') mark('accepted');
+      if (m.type === 'result' && [1000002, 1000006].includes(m.id) && m.outcome === 'accepted') mark('accepted');
       if (m.type !== 'status' || m.link !== 'live') return;
       if (phase === 'reset' && m.machine === 'estop') {
         phase = 'on'; post({type:'set_machine',state:'off',id:1000000});
@@ -63,7 +63,7 @@ constexpr const char* script = R"js((() => {
         phase = 'confirmed'; post({type:'tool_changed',id:1000005});
       } else if ((phase === 'change' || phase === 'confirmed') && m.tool.in_spindle === 1 && m.interp === 'idle') {
         mark('tool-loaded');
-        phase = 'done'; post({type:'quit',id:1000002});
+        phase = 'done'; post({type:'quit',id:1000006});
       }
     }; }
   });

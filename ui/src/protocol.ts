@@ -394,6 +394,8 @@ export interface SetterState {
   ball_diameter?: number
   /** After a bore or boss: its diameter through the centre, mm. */
   center_diameter?: number
+  /** After an edge angle: how far the edge turns from the machine axis, degrees counterclockwise. */
+  edge_angle?: number
 }
 
 export interface DirectoryEntry {
@@ -608,6 +610,8 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'bore'; tool: number; x: number; y: number; z: number }
   /** X0 Y0 at the centre of a boss of about `diameter` mm; probed from outside below Z0. */
   | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number }
+  /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
+  | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

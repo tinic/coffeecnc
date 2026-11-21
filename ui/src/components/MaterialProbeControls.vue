@@ -11,7 +11,7 @@ import NumberDialog from './NumberDialog.vue'
 import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { label: 'Z top', travel: 'z_top', surface: 'top surface', approach: '−Z' },
@@ -64,7 +64,13 @@ function centreBoss(diameter: number): void {
   askingBoss.value = false
   probe('x_plus', undefined, { kind: 'boss', size: diameter })
 }
-interface Feature { kind: 'ball' | 'boss' | 'bore'; size: number }
+interface Feature { kind: 'ball' | 'boss' | 'bore' | 'angle'; size: number }
+// The angle of the front edge (Y−, probed toward +Y) over a distance along X: squaring a vise.
+const askingAngle = shallowRef(false)
+function measureAngle(spacing: number): void {
+  askingAngle.value = false
+  probe('y_plus', undefined, { kind: 'angle', size: spacing })
+}
 
 function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): void {
   const gauge = feature?.kind === 'ball' ? feature.size : undefined
@@ -92,7 +98,9 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
     line.value = { text: reason ?? 'Waiting for the machine position.', level: 'blocked' }
     return
   }
-  const request: Request = feature?.kind === 'bore'
+  const request: Request = feature?.kind === 'angle'
+    ? { type: 'fixed_setter', action: 'angle', direction: 'y_plus', spacing: feature.size, tool: props.tool, x, y, z }
+    : feature?.kind === 'bore'
     ? { type: 'fixed_setter', action: 'bore', tool: props.tool, x, y, z }
     : feature?.kind === 'boss'
     ? { type: 'fixed_setter', action: 'boss', diameter: feature.size, tool: props.tool, x, y, z }
@@ -103,7 +111,8 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
       : { type: 'fixed_setter', action: 'corner', x_direction: corner.x, y_direction: corner.y, tool: props.tool, x, y, z }
   pending.value = request
   const surface = surfaces.find((entry) => entry.travel === direction)
-  line.value = { text: feature?.kind === 'bore' ? 'Probing the bore walls…'
+  line.value = { text: feature?.kind === 'angle' ? 'Probing the front edge at two points…'
+    : feature?.kind === 'bore' ? 'Probing the bore walls…'
     : feature?.kind === 'boss' ? 'Probing round the boss…'
     : gauge !== undefined ? 'Probing both sides of the gauge…'
     : `Probing ${corner === undefined ? surface?.surface ?? 'surface' : `the ${corner.name}`}…`, level: 'busy' }
@@ -120,6 +129,17 @@ const removeListener = onResult((command, result) => {
   const request = pending.value
   pending.value = null
   if (result.outcome === 'timed_out') send({ type: 'abort' })
+  if (request.action === 'angle') {
+    const degrees = result.setter?.edge_angle
+    if (result.outcome !== 'accepted' || degrees === undefined) {
+      line.value = { text: result.reason || 'The machine did not report the edge angle.', level: 'blocked' }
+      return
+    }
+    if (result.setter) setterState.value = result.setter
+    const rise = Math.tan(degrees * Math.PI / 180) * request.spacing
+    line.value = { text: `Front edge turns ${degrees >= 0 ? '+' : '−'}${Math.abs(degrees).toFixed(3)}° (${Math.abs(rise).toFixed(3)} mm over ${String(request.spacing)} mm).`, level: 'done' }
+    return
+  }
   if (request.action === 'bore' || request.action === 'boss') {
     const measured = result.setter?.center_diameter
     if (result.outcome !== 'accepted' || measured === undefined || !result.setter?.material) {
@@ -207,6 +227,12 @@ onBeforeUnmount(() => {
         >
           Boss centre…
         </button>
+        <button
+          v-tooltip="'Jog beside the front edge as for Y−, then enter how far to move along X. Shows how far the edge turns.'"
+          type="button" class="btn" :class="{ on: pending?.action === 'angle' }" @click="askingAngle = true"
+        >
+          Edge angle…
+        </button>
       </div>
       <button
         v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
@@ -216,6 +242,12 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <SetterStatusBand :line="displayLine" />
+    <NumberDialog
+      v-if="askingAngle"
+      title="Measure the front edge angle"
+      effect="Probes the front edge (Y−) here and again further along X. Nothing is written; the result shows how far the edge turns."
+      label="Distance along X" unit="mm" initial="50" action="Probe" @confirm="measureAngle" @close="askingAngle = false"
+    />
     <NumberDialog
       v-if="askingBoss"
       title="Centre on a boss"
@@ -239,7 +271,7 @@ onBeforeUnmount(() => {
 .probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
 .probe-actions button.corner { min-height: 44px; }
 .calibrate { grid-column: 2; justify-self: end; min-height: 36px; font-size: 12px; }
-.centres { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.centres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .centres button { min-height: 44px; }
 @container (max-width: 390px) {
   .probe-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }

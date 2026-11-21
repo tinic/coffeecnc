@@ -5,9 +5,9 @@ import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { airLiftLabel, currentProgramPreview, describeProgramCheck } from '../program-check'
 import type { ProgramLayout } from '../store'
-import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
+import { formatLength, formatVelocity, fromDisplay, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
@@ -24,6 +24,35 @@ const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
 const checkOpen = ref(false)
+const airEditor = ref<{ initial: string; unit: typeof panel.unit; revision: number } | null>(null)
+const airError = ref('')
+const airZ = computed(() => status.value?.program.air_z ?? 0)
+const airOwned = computed(() => status.value?.program.air_offset_owned === true)
+const airLabel = computed(() => airZ.value > 0 ? `Air cut · Z ${airLiftLabel(airZ.value, panel.unit)}`
+  : airOwned.value ? 'Clearing air cut' : 'Air cut')
+const airEditable = computed(() => live.value && status.value?.interp === 'idle' &&
+  status.value.motion.in_position && !airOwned.value)
+function openAirCut(): void {
+  if (!airEditable.value || !status.value?.program.file) return
+  airError.value = ''
+  airEditor.value = { initial: formatLength(airZ.value || 25, panel.unit), unit: panel.unit,
+    revision: status.value.program.revision }
+}
+function selectAirCut(value: number): void {
+  const editor = airEditor.value
+  if (!editor) return
+  if (!airEditable.value || status.value?.program.revision !== editor.revision) {
+    airError.value = 'The machine or loaded program changed. Reopen Air cut.'
+    return
+  }
+  const lift = fromDisplay(value, editor.unit)
+  if (lift < 0 || lift > 1000 || lift > 0 && lift < 0.001) {
+    airError.value = 'Enter a positive lift up to 1,000 mm, or 0 to turn air cut off.'
+    return
+  }
+  send({ type: 'set_air_cut', air_z: lift })
+  airEditor.value = null
+}
 const check = computed(() => describeProgramCheck(currentProgramPreview(panel.preview, status.value), panel.unit))
 const checkLabel = computed(() => check.value === null ? 'Checking program'
   : check.value.errors.length ? 'Cycle start blocked'
@@ -119,7 +148,7 @@ const timeNote = computed(() => time.value?.unknownFeeds === true
 
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
 const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
-  sections.value.length > 0)
+  sections.value.length > 0 && !airZ.value && !airOwned.value)
 const restartAt = ref<{ line: number; section: string } | null>(null)
 function sectionName(index: number): string {
   const section = sections.value[index]
@@ -184,6 +213,12 @@ async function showFailure(): Promise<void> {
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
           <div class="scene-actions">
             <button
+              v-if="status?.program.file || airOwned" class="btn air-cut" :class="{ selected: airZ || airOwned }"
+              type="button" :disabled="!airEditable" :aria-pressed="airZ > 0 || airOwned" @click="openAirCut"
+            >
+              {{ airLabel }}
+            </button>
+            <button
               v-if="status?.program.file" type="button" class="btn program-check"
               :title="checkLabel" :aria-label="`Program check · ${checkLabel}`"
               :class="{ blocked: check?.errors.length, review: check?.warnings.length }"
@@ -245,7 +280,12 @@ async function showFailure(): Promise<void> {
       action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
     />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
-    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
+    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :air-z="airZ" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
+    <NumberDialog
+      v-if="airEditor" title="Air cut" label="Z lift" :initial="airEditor.initial" :unit="airEditor.unit"
+      effect="Raise Z for the next run. Enter 0 to turn air cut off." action="Apply lift" :error="airError"
+      @confirm="selectAirCut" @close="airEditor = null"
+    />
     <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
@@ -257,7 +297,8 @@ async function showFailure(): Promise<void> {
 .scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
-.program-check { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check, .air-cut { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.air-cut.selected { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); opacity: 1; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-check.blocked { color: var(--stop); }
 .program-check.review:not(.blocked) { color: var(--accent); }

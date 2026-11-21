@@ -145,6 +145,10 @@ export interface ProgramStatus {
    * while idle and for the same program file.
    */
   restart_hint?: { line: number; tool: number }
+  /** Selected Z lift for the next run in millimetres. */
+  air_z?: number
+  /** CoffeeCNC owns a temporary offset in LinuxCNC and must clear it after the run. */
+  air_offset_owned?: boolean
 }
 
 /** Why a running program is not moving. The panel shows this instead of guessing. */
@@ -474,6 +478,11 @@ export interface Run extends CommandBase {
   preview_context?: number
   display_units?: LengthUnit
   confirmed?: boolean
+  air_z?: number
+}
+export interface SetAirCut extends CommandBase {
+  type: 'set_air_cut'
+  air_z: number
 }
 export interface Pause extends CommandBase {
   type: 'pause'
@@ -636,6 +645,7 @@ export type ToMachine =
   | PlanRestart
   | StartRestart
   | EditProgram
+  | SetAirCut
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LengthUnit, ProgramCheck } from '../protocol'
 import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '../units'
+import { airLiftLabel } from '../program-check'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
@@ -10,6 +11,7 @@ const props = defineProps<{
   maxRpm?: number | undefined
   canConfirm?: boolean
   changed?: boolean
+  airZ?: number
 }>()
 const emit = defineEmits<{ close: []; confirm: [] }>()
 
@@ -25,6 +27,7 @@ function range(min: number, max: number, format: (value: number) => string): str
     <p v-if="changed" class="notice" role="status">The program check changed. Close and review it again before starting.</p>
     <p v-else-if="!check" class="notice" role="status">Checking the loaded program…</p>
     <template v-else>
+      <p v-if="airZ" class="air-notice"><strong>Air cut</strong> · Z {{ airLiftLabel(airZ, unit) }}</p>
       <div v-if="check.errors.length || check.warnings.length" class="issues" :class="{ blocked: check.errors.length }">
         <AppIcon name="warning" />
         <div>
@@ -42,7 +45,7 @@ function range(min: number, max: number, format: (value: number) => string): str
         <div><dt>Spindle</dt><dd class="mono">{{ check.spindle ? `${range(check.spindle.min, check.spindle.max, rpm)} rpm` : '—' }}<small v-if="maxRpm">Limit {{ rpm(maxRpm) }} rpm</small></dd></div>
       </dl>
       <section v-if="check.frames.length" class="frame-list">
-        <h3>Work extents <small>{{ unit }}</small></h3>
+        <h3>{{ airZ ? 'Raised work extents' : 'Work extents' }} <small>{{ unit }}</small></h3>
         <div v-for="frame in check.frames" :key="frame.wcs" class="frame">
           <strong>{{ wcsName(frame.wcs) }}</strong>
           <span v-if="!frame.available" class="unverified">Origin unverified</span>
@@ -66,7 +69,7 @@ function range(min: number, max: number, format: (value: number) => string): str
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">{{ canConfirm ? 'Cancel' : 'Done' }}</button>
       <button v-if="canConfirm && check && !check.errors.length && !changed" class="btn primary" type="button" @click="emit('confirm')">
-        <AppIcon name="play" />Run program
+        <AppIcon name="play" />{{ airZ ? 'Start air cut' : 'Run program' }}
       </button>
     </template>
   </ModalDialog>
@@ -74,6 +77,7 @@ function range(min: number, max: number, format: (value: number) => string): str
 
 <style scoped>
 .issues { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); font-size: 13px; }
+.air-notice { margin: 0; font-size: 13px; color: var(--warn); }
 .issues.blocked { border-color: var(--stop); background: var(--stop-soft); }
 .issues.blocked > .icon, .unverified { color: var(--stop); }
 .issues ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 17px; }

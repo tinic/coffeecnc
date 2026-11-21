@@ -677,6 +677,87 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   return check;
 }
 
+auto air_cut_source_error(const Manifest& manifest, bool independent_tool_change,
+                          const Cancelled& cancelled) -> std::string {
+  const auto inspect = [&](const SnapshotFile& file) -> std::string {
+    std::string_view remaining = file.bytes;
+    for (int line = 1; !remaining.empty(); ++line) {
+      if (line % 1024 == 0 && is_cancelled(cancelled))
+        return {};
+      const auto end = remaining.find('\n');
+      const auto block = bare_block(remaining.substr(0, end));
+      remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+      for (std::size_t i = 0; i + 1 < block.size(); ++i) {
+        const char word = block[i];
+        if (word != 'g' && word != 'm')
+          continue;
+        double value{};
+        const auto first = i + (block[i + 1] == '+' ? 2U : 1U);
+        const auto [parsed, error] =
+            std::from_chars(block.data() + first, block.data() + block.size(), value);
+        if (error != std::errc{} || !std::isfinite(value) || value < 0 || value > 1000)
+          continue;
+        i = static_cast<std::size_t>(parsed - block.data()) - 1;
+        const auto code = std::lround(value * 10);
+        const bool changes_geometry =
+            word == 'g' &&
+            (code == 100 || code == 280 || code == 300 || code == 520 || code == 530 ||
+             (code >= 382 && code <= 385) || (code >= 920 && code <= 923));
+        if (changes_geometry || (word == 'm' && code == 60 && independent_tool_change))
+          return std::format("{} line {} uses {}{}, which cannot be verified for an air cut.",
+                             file.name, line, word == 'g' ? 'G' : 'M', value);
+      }
+    }
+    return {};
+  };
+  if (auto reason = inspect(manifest.program); !reason.empty())
+    return reason;
+  for (const auto& routine : manifest.subroutines)
+    if (auto reason = inspect(routine); !reason.empty())
+      return reason;
+  return {};
+}
+
+auto air_cut_matches(const PreviewOutcome& original, const PreviewOutcome& raised, double lift)
+    -> bool {
+  if (original.state != PreviewState::ready || raised.state != PreviewState::ready ||
+      original.segments.size() != raised.segments.size() || raised.segments.empty())
+    return false;
+  constexpr double tolerance = 2e-5; // mm, above the helper's output rounding
+  const auto near = [](double a, double b) { return std::abs(a - b) <= tolerance; };
+  for (std::size_t i = 0; i < raised.segments.size(); ++i) {
+    const auto& base = original.segments[i];
+    const auto& air = raised.segments[i];
+    if (base.kind != air.kind || base.tool != air.tool || base.line != air.line ||
+        base.points.size() != air.points.size())
+      return false;
+    for (std::size_t j = 0; j < air.points.size(); ++j) {
+      const auto& point = air.points[j];
+      const auto& expected = base.points[j];
+      // The first point is the tool's actual position. Only a vertical rapid can join it
+      // to the translated path without traversing at the unraised cutting height.
+      const bool initial = i == 0 && j == 0 && air.kind == MoveKind::rapid &&
+                           air.points.size() >= 2 && near(point[0], air.points[1][0]) &&
+                           near(point[1], air.points[1][1]);
+      if (!near(expected[0], point[0]) || !near(expected[1], point[1]) ||
+          !near(expected[2] + (initial ? 0 : lift), point[2]))
+        return false;
+    }
+  }
+  return true;
+}
+
+void refuse_air_cut(PreviewOutcome& outcome, std::string reason) {
+  if (!outcome.check)
+    outcome.check.emplace();
+  outcome.check->errors.push_back(reason);
+  outcome.error = PreviewError{0, std::move(reason)};
+  outcome.state = PreviewState::failed;
+  outcome.segments.clear();
+  outcome.bounds.reset();
+  outcome.dwells.clear();
+}
+
 auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, HelperRun& run,
                 int program_lines, const CheckToolFiles& files) -> PreviewOutcome {
   if (run.how == HelperExit::not_started)
@@ -970,6 +1051,48 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
         settings_, inputs, run,
         static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000)),
         *last_tools);
+    if (inputs.air_z != 0) {
+      const bool independent_tool_change = settings_.tool_change_quill_up ||
+                                           settings_.tool_change_at_g30 ||
+                                           settings_.tool_change_position.has_value();
+      if (inputs.g92 != Vec3{}) {
+        refuse_air_cut(outcome, "Clear the active G52 or G92 offset before an air cut.");
+      } else if (auto reason = air_cut_source_error(*manifest, independent_tool_change, cancelled);
+                 !reason.empty()) {
+        refuse_air_cut(outcome, std::move(reason));
+      } else if (outcome.state != PreviewState::ready) {
+        refuse_air_cut(outcome, "Air cut needs a complete preview.");
+      } else {
+        const double program_scale = inputs.start.program_units == LengthUnit::inch ? 25.4 : 1.0;
+        request.codes.push_back(std::format("G52 Z{:.12f}", inputs.air_z / program_scale));
+        const bool saved = write_file(request_file, write_request(request));
+        request.codes.pop_back();
+        if (!saved) {
+          refuse_air_cut(outcome, "The raised preview could not be prepared.");
+        } else {
+          ++runs_;
+          auto raised = run_helper(settings_, directory.path(), working, request_file, cancelled);
+          if (raised.how == HelperExit::cancelled)
+            return {{}, true, {}};
+          auto candidate =
+              outcome_of(settings_, inputs, raised,
+                         static_cast<int>(std::ranges::count(text, '\n') + 1), *last_tools);
+          const bool matches = air_cut_matches(outcome, candidate, inputs.air_z);
+          outcome = std::move(candidate);
+          if (!matches)
+            refuse_air_cut(outcome, "The raised path could not be verified. Start the program with "
+                                    "a vertical Z rapid before XY or feed motion.");
+          else if (outcome.check)
+            for (auto& frame : outcome.check->frames) {
+              // Report the raised path in the work coordinates the operator set on the stock.
+              if (auto& bounds = frame.bounds) {
+                bounds->min[2] += inputs.air_z;
+                bounds->max[2] += inputs.air_z;
+              }
+            }
+        }
+      }
+    }
     if (outcome.restart && outcome.restart->tool != inputs.start.tool_in_spindle &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||
          settings_.tool_change_quill_up)) {

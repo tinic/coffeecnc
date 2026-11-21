@@ -57,6 +57,9 @@ struct ControllerState {
   LengthUnit program_units{LengthUnit::mm};
   std::string program_file;
   bool spindle_active{};
+  double air_z{}; // selected lift, millimetres
+  bool air_offset_owned{};
+  bool air_offset_recovery{};
 };
 
 struct Limits {
@@ -121,6 +124,10 @@ struct Run {
   std::optional<std::uint64_t> preview_context{};
   std::optional<LengthUnit> display_units{};
   bool confirmed{};
+  double air_z{};
+};
+struct SetAirCut {
+  double air_z{}; // zero selects a normal run
 };
 struct PlanRestart {
   int line{};
@@ -194,7 +201,7 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram>;
+                 EditProgram, SetAirCut>;
 
 struct Decision {
   bool allowed{};

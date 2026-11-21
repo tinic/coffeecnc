@@ -87,6 +87,8 @@ struct NmlLoads {
   std::atomic<std::uint64_t> mdi_blocks{};
   std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
   std::atomic<std::uint64_t> aborts{};
+  std::atomic<double> air_z{};
+  std::atomic<bool> air_offset_owned{};
 };
 
 struct FixedSetterMove {
@@ -192,6 +194,7 @@ public:
   // least a few times per second.
   [[nodiscard]] auto take_messages() -> std::vector<ControllerMessage> override;
   void idle_maintenance(const Wanted& wanted) override;
+  [[nodiscard]] auto set_air_cut(double lift) -> ActionResult override;
 
   // Cancellation, as ControllerPort asks. Every action asks its `Wanted` after each wait of
   // its own (the collecting of earlier errors, the switch between world and joint mode, a
@@ -269,6 +272,12 @@ public:
 
 private:
   struct Impl;
+  [[nodiscard]] auto start_checked(const PreviewInputs&, const Wanted&, const Wanted&)
+      -> ActionResult;
+  [[nodiscard]] auto read_air_registers(const Wanted& wanted)
+      -> std::expected<std::array<double, 9>, ActionResult>;
+  [[nodiscard]] auto write_air_offset(double lift, const Wanted& wanted) -> ActionResult;
+  void recover_air_offset(const Wanted& wanted);
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

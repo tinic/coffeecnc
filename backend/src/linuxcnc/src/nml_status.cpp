@@ -147,6 +147,10 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   // Element 0 of each array is the line number the codes were read at; -1 marks an empty
   // group. G codes are stored times ten: 540 is G54, 591 is G59.1.
   for (std::size_t i = 1; i < std::size(task.activeGCodes); ++i) {
+    // Index 2 is the last nonmodal word. Index 16 is LinuxCNC's G92 bookkeeping,
+    // which can change its reported word without changing the effective offset.
+    if (i == 2 || i == 16)
+      continue;
     const int code = task.activeGCodes[i];
     if (code < 0)
       continue;
@@ -157,9 +161,12 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     else if (code == 950)
       out.feed_mode = FeedMode::per_revolution;
   }
-  for (std::size_t i = 1; i < std::size(task.activeMCodes); ++i)
+  for (std::size_t i = 2; i < std::size(task.activeMCodes); ++i) {
+    if (i == 3)
+      continue; // A tool change is nonmodal. Tool and pending request are reported separately.
     if (const int code = task.activeMCodes[i]; code >= 0)
       out.active_codes.push_back(std::format("M{}", code));
+  }
   // The interpreter keeps F in the program's unit; an inverse time feed has no length in it.
   const double feed_scale =
       out.feed_mode == FeedMode::inverse_time || c.program_units == LengthUnit::mm ? 1.0 : 25.4;

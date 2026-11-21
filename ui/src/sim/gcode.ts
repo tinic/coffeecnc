@@ -858,3 +858,42 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
     ...(checks ? { check: report } : {}),
   }
 }
+
+export function previewAirCut(modal: Modal, lines: string[], blockDelete: boolean, context: number,
+  checks: { travel: { min: Vec3; max: Vec3 }; spindleLimit: number | undefined }, lift: number): Preview {
+  const base = previewProgram(modal, lines, blockDelete, context, checks)
+  const stop = (preview: Preview, text: string): Preview => ({ ...preview, state: 'failed',
+    error: { line: 0, text }, segments: [], bounds: null, dwells: [],
+    ...(preview.check ? { check: { ...preview.check, errors: [...preview.check.errors, text] } } : {}),
+  })
+  if (modal.g92.some((coordinate) => coordinate !== 0)) return stop(base, 'Clear the active G52 or G92 offset before an air cut.')
+  if (base.state !== 'ready') return stop(base, 'Air cut needs a complete preview.')
+  for (const [index, line] of lines.entries()) {
+    const stripped = line.replace(/\([^)]*\)/g, '').split(';')[0] ?? ''
+    const codes = stripped.replace(/\s/g, '').matchAll(/g([+]?\d*\.?\d+)/gi)
+    if ([...codes].some((code) => [10, 28, 30, 38.2, 38.3, 38.4, 38.5, 52, 53, 92, 92.1, 92.2, 92.3].includes(Number(code[1]))))
+      return stop(base, `Line ${String(index + 1)} changes the work frame or uses machine-coordinate motion.`)
+  }
+  const shifted = cloneModal(modal)
+  shifted.g92[2] = lift
+  const air = previewProgram(shifted, lines, blockDelete, context, checks)
+  const near = (a: number, b: number): boolean => Math.abs(a - b) < 2e-5
+  const matches = air.state === 'ready' && air.segments.length > 0 &&
+    air.segments.length === base.segments.length && air.segments.every((segment, i) => {
+      const original = base.segments[i]
+      if (original?.kind !== segment.kind || original.line !== segment.line ||
+        original.tool !== segment.tool || original.points.length !== segment.points.length) return false
+      const firstVertical = i === 0 && segment.kind === 'rapid' &&
+        near(segment.points[0] ?? NaN, segment.points[3] ?? NaN) &&
+        near(segment.points[1] ?? NaN, segment.points[4] ?? NaN)
+      return segment.points.every((point, j) => near(point,
+        (original.points[j] ?? NaN) + (j % 3 === 2 && !(j === 2 && firstVertical) ? lift : 0)))
+    })
+  if (!matches) return stop(air, 'The raised path could not be verified. Start with a vertical Z rapid before XY or feed motion.')
+  for (const frame of air.check?.frames ?? []) {
+    if (!frame.bounds) continue
+    frame.bounds.min[2] += lift
+    frame.bounds.max[2] += lift
+  }
+  return air
+}

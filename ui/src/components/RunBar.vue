@@ -52,7 +52,7 @@ const zBlocked = computed(() => {
 })
 const up = computed(() => Math.min(zStep.value, (pausedZ.value?.max_lift ?? 0) - (pausedZ.value?.offset ?? 0)))
 const down = computed(() => Math.min(zStep.value, pausedZ.value?.offset ?? 0))
-const canStopSpindle = computed(() => live.value && pendingZ.value === null && pausedZ.value?.spindle === 'can_stop')
+const canStopSpindle = computed(() => showZ.value && live.value && pendingZ.value === null && pausedZ.value?.spindle === 'can_stop')
 const spindlePause = computed(() => {
   const s = status.value
   if (!s || !canStopSpindle.value) return ''
@@ -114,6 +114,7 @@ const pauseBlock = computed((): string | null => {
 })
 
 const stepBlock = computed((): string | null => {
+  if (spindleConfirm.value !== null) return 'Dismiss the spindle confirmation before continuing'
   if (startBlock.value !== null) {
     return startBlock.value
   }
@@ -226,7 +227,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
         </div>
       </details>
       <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="closeConfirmation(); spindleConfirm = null; breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
-      <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
+      <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || spindleConfirm !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
     <ModalDialog v-if="spindleConfirm" title="Stop the spindle to lift Z?" size="small" fresh-gesture @close="spindleConfirm = null">
       <p class="spindle-effect">Z will lift {{ length(spindleConfirm.distance) }} once the spindle stops. Resume returns Z, restarts the spindle, and waits for it to reach speed.</p>

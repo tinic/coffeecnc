@@ -162,6 +162,8 @@ describe('capability-aware controls', () => {
     await lift.trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('Stop the spindle to lift Z?')
     expect(send).not.toHaveBeenCalled()
+    expect(wrapper.get('.main-action').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.stop-button').attributes('disabled')).toBeUndefined()
     panel.status.program.current_line += 1
     await nextTick()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

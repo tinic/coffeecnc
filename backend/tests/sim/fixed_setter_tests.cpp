@@ -268,26 +268,27 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
 
   // A corner of a block: X and Y faces at machine -5 mm, its top at 12 mm (controlled point,
   // the ruby's length applied). The probe starts 5 mm inside both faces, 8 mm above the top.
-  halcmd("loadrt wcomp names=sim-corner-x,sim-corner-y,sim-corner-z");
-  halcmd("loadrt and2 names=sim-corner-xy,sim-corner-xyz");
-  for (const auto* component :
-       {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-xy", "sim-corner-xyz"})
+  // Each axis inside its window (near: |in1 - in2| <= difference), all three at once (logic AND).
+  // wcomp and and2 are loaded already, and a realtime module loads once.
+  halcmd("loadrt near names=sim-corner-x,sim-corner-y,sim-corner-z");
+  halcmd("loadrt logic names=sim-corner-in personality=0x103");
+  for (const auto* component : {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-in"})
     halcmd(std::format("addf {} servo-thread", component));
-  halcmd("net sim-corner-px axis.x.pos-cmd sim-corner-x.in");
-  halcmd("net sim-corner-py axis.y.pos-cmd sim-corner-y.in");
-  halcmd("net sim-corner-pz axis.z.pos-cmd sim-corner-z.in");
-  halcmd(std::format("setp sim-corner-x.min {}", -5 / scale));
-  halcmd(std::format("setp sim-corner-x.max {}", 100 / scale));
-  halcmd(std::format("setp sim-corner-y.min {}", -5 / scale));
-  halcmd(std::format("setp sim-corner-y.max {}", 100 / scale));
-  halcmd(std::format("setp sim-corner-z.min {}", -100 / scale));
-  halcmd(std::format("setp sim-corner-z.max {}", 12 / scale));
-  halcmd("net sim-corner-inx sim-corner-x.out sim-corner-xy.in0");
-  halcmd("net sim-corner-iny sim-corner-y.out sim-corner-xy.in1");
-  halcmd("net sim-corner-inxy sim-corner-xy.out sim-corner-xyz.in0");
-  halcmd("net sim-corner-inz sim-corner-z.out sim-corner-xyz.in1");
+  const auto corner_window = [&](char axis, double low, double high) {
+    const auto name = std::format("sim-corner-{}", axis);
+    halcmd(std::format("net sim-corner-p{} axis.{}.pos-cmd {}.in1", axis, axis, name));
+    halcmd(std::format("setp {}.in2 {}", name, (low + high) / 2 / scale));
+    halcmd(std::format("setp {}.difference {}", name, (high - low) / 2 / scale));
+    halcmd(std::format("setp {}.scale 1", name));
+  };
+  corner_window('x', -5, 100);
+  corner_window('y', -5, 100);
+  corner_window('z', -100, 12);
+  halcmd("net sim-corner-inx sim-corner-x.out sim-corner-in.in-00");
+  halcmd("net sim-corner-iny sim-corner-y.out sim-corner-in.in-01");
+  halcmd("net sim-corner-inz sim-corner-z.out sim-corner-in.in-02");
   halcmd("unlinkp sim-ruby-release.in");
-  halcmd("net sim-corner-trip sim-corner-xyz.out sim-ruby-release.in");
+  halcmd("net sim-corner-trip sim-corner-in.and sim-ruby-release.in");
   start_at();
   mdi("G21");
   mdi("G10 L20 P0 Z8");

@@ -121,6 +121,8 @@ struct Canon {
   bool subroutine{};
   bool changed_tool_table{};
   bool used_output{};
+  bool restart_inherits_preparation{};
+  bool restart_needs_preparation{};
 
   Halt halt{Halt::none};
 };
@@ -431,10 +433,15 @@ void USE_TOOL_LENGTH_OFFSET(EmcPose given) {
   canon.tool_offset = {given.tran.x * unit, given.tran.y * unit, given.tran.z * unit};
 }
 
-void SELECT_TOOL(int number) { canon.selected_index = find_index(number); }
+void SELECT_TOOL(int number) {
+  canon.selected_index = find_index(number);
+  canon.restart_inherits_preparation = false;
+}
 void CHANGE_TOOL(int index) {
   if (canon.halt != Halt::none)
     return;
+  if (canon.restart_inherits_preparation)
+    canon.restart_needs_preparation = true;
   if (canon.request.tool_change_at_g30) {
     halt(Halt::stop, "a tool change that moves to the saved G30 position "
                      "([EMCIO] TOOL_CHANGE_AT_G30)");
@@ -909,6 +916,9 @@ auto run(const HelperRequest& request) -> int {
     if (target) {
       before = modal_g_codes(*interp);
       restart = capture_restart(*interp, before);
+      // LinuxCNC parses a skipped T word but drops its IO prepare command. A subsequent
+      // M6 would use the slot that IO actually has prepared.
+      canon.restart_inherits_preparation = canon.selected_index >= 0;
     }
     result = interp->execute();
     if (canon.halt != Halt::none)
@@ -929,6 +939,8 @@ auto run(const HelperRequest& request) -> int {
   if (request.restart_line && canon.halt == Halt::none) {
     if (canon.subroutine)
       restart_blocked = "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.";
+    else if (canon.restart_needs_preparation)
+      restart_blocked = "A later M6 depends on a tool selected before this restart line.";
     else if (!restart)
       restart_blocked = "The selected line is not executed in this program.";
     if (!restart_blocked.empty())

@@ -361,6 +361,7 @@ async function showFailure(): Promise<void> {
 .preview-diagnostic button { pointer-events: auto; }
 /* Over the views, bottom left, so it never moves the code or the preview. */
 .stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.views:has(.line-actions, .follow) .stopped-at { display: none; }
 .stopped-at .btn { height: 36px; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }

@@ -458,9 +458,7 @@ onBeforeUnmount(() => {
         <span v-if="!live" class="stop">Tool position not live</span>
         <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
         <span v-if="modelError || (part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
-        <span v-else-if="showPart && !part.placed" class="warn">Part placement unconfirmed</span>
         <span v-if="visibleTool">T{{ visibleTool.number }} envelope{{ visibleTool.model.nominalDiameter ? ' · nominal diameter' : '' }}{{ visibleTool.model.holder ? ` · ${holderLabel(visibleTool.model.holder)}` : '' }}</span>
-        <span v-if="showPart && part.attachment?.note" class="warn">Sample model · not paired with this program</span>
       </div>
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>

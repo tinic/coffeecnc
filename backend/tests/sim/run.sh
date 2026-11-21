@@ -231,11 +231,11 @@ shipped_postgui=$here/../../share/hal/coffeecnc_postgui.hal
 if [ -n "$machine" ]; then
   # A machine's own configuration: assembled from its files, never written to.
   rm -f "$directory/linuxcnc.log"
+  "$here/assemble_machine.sh" "$machine" "$layer" "$directory" "$directory/display.sh" \
+    "$shipped_postgui" || exit 125
   if [ -z "$keep_data" ]; then
     rm -f "$directory/coffeecnc-spindle-tool.txt"
   fi
-  "$here/assemble_machine.sh" "$machine" "$layer" "$directory" "$directory/display.sh" \
-    "$shipped_postgui" || exit 125
 else
 # The run directory holds only generated files.
 perl -pe '

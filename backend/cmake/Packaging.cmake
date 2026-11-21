@@ -11,6 +11,10 @@
 include(GNUInstallDirs)
 install(FILES ${PROJECT_SOURCE_DIR}/share/hal/coffeecnc_postgui.hal
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc/hal)
+# Examples for the optional functions, sourced after the fragment by the machine's own file.
+install(FILES ${PROJECT_SOURCE_DIR}/share/hal/examples/paused_z.hal
+  ${PROJECT_SOURCE_DIR}/share/hal/examples/fixed_setter.hal
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc/hal/examples)
 install(FILES ${PROJECT_SOURCE_DIR}/share/coffeecnc.ini.example
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc)
 

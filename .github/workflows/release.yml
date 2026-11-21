@@ -1,6 +1,6 @@
 # Builds the CoffeeCNC Debian package for Debian 13 (trixie) with LinuxCNC 2.9 (uspace) from
 # linuxcnc.org, amd64 and arm64. A `v*` tag publishes both packages as a GitHub release; a manual
-# run only keeps them as workflow artifacts.
+# run or a pull request that changes packaging only keeps them as workflow artifacts.
 #
 # The package depends on the LinuxCNC series it is built against (backend/cmake/Packaging.cmake),
 # so it installs on trixie with linuxcnc-uspace 2.9.x at or above the version used here.
@@ -10,6 +10,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  # A change to the packaging builds both packages before it merges.
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - backend/cmake/Packaging.cmake
+      - backend/share/**
 
 permissions:
   contents: write

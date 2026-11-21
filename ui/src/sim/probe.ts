@@ -27,7 +27,7 @@ const starts = {
   'inside-front-left': [165, 81, -5], 'inside-front-right': [179, 81, -5],
   'inside-back-left': [165, 89, -5], 'inside-back-right': [179, 89, -5],
   pocket: [174, 83, -5], 'slot-x': [126, 110, -5], 'slot-y': [125, 108, -5],
-  'ridge-x': [285, 148, 8], 'ridge-y': [285, 148, 8],
+  'ridge-x': [...ridge.centre, 8], 'ridge-y': [...ridge.centre, 8],
   bore: [155, 108, -4], boss: [235, 170, 8],
   angle: [230, 48, -4], 'angle-left': [208, 61, -4], ball: [285, 190, 8],
   setter: [55, 55, -22], measure: [55, 55, -22],
@@ -322,7 +322,7 @@ export class SimProbe {
         return 'Jog the ball into the simulated recess below its top and clear of the floor.'
       }
       const hit = (direction: XY): Vec3 | null => outsideRidge
-        ? outside(path, gaugeZ, start, direction, command.width / 2 + tableRadius + margin, at => rayBox(at, direction, ridge))
+        ? outside(path, gaugeZ, start, direction, command.width / 2 + tableRadius + margin + reach, at => rayBox(at, direction, ridge))
         : lateral(path, start, direction, rayInnerWall(start, direction, recess))
       if (command.action === 'inside_corner') {
         const x = directions[command.x_direction], y = directions[command.y_direction]

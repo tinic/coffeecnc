@@ -44,6 +44,7 @@ const hint: SetterStatusLine = {
   level: 'info',
 }
 const line = shallowRef(hint)
+const cycleFailed = shallowRef(false)
 const toolBlock = computed(() => panel.link === 'live' && panel.status !== null &&
   (panel.status.tool.in_spindle !== props.tool || panel.status.wait.kind === 'tool_change')
   ? `Load T${String(props.tool)} to probe material.` : null)
@@ -59,7 +60,12 @@ watch([
   machineReason, toolBlock, spindleStopped, (): boolean | undefined => panel.status?.motion.in_position,
   (): boolean | null | undefined => panel.status?.probe_input, (): boolean => touchedOff(props.tool),
 ], () => {
-  if (line.value.level === 'blocked') line.value = hint
+  if (!cycleFailed.value && line.value.level === 'blocked') line.value = hint
+})
+// Motion can return to idle in the same update as a failed probe result.
+watch([toolBlock, (): string => panel.link, (): string | undefined => panel.status?.machine], () => {
+  if (cycleFailed.value) line.value = hint
+  cycleFailed.value = false
 })
 let statusRequest: CommandBody | null = null
 
@@ -99,6 +105,7 @@ function applyRotation(): void {
 
 function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): void {
   if (pending.value) return
+  cycleFailed.value = false
   edgeRotation.value = null
   askingRotation.value = false
   const status = panel.status
@@ -176,6 +183,7 @@ const removeListener = onResult((command, result) => {
   if (command !== pending.value) return
   const request = pending.value
   pending.value = null
+  cycleFailed.value = result.outcome !== 'accepted'
   if (result.outcome === 'timed_out') send({ type: 'abort' })
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle
@@ -320,7 +328,7 @@ onBeforeUnmount(() => {
       <div class="probe-utilities">
         <button
           v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
-          type="button" class="btn" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
+          type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
         >
           Calibrate ball…
         </button>

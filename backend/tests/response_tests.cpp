@@ -54,6 +54,12 @@ void command_results() {
           "Fixed setter measurement reports the stopping distance in mm");
   require(measurement.at("setter").at("measured_tools") == Json{98, 2},
           "Fixed setter state lists the tools touched off against its calibration");
+  SetterState slot{};
+  slot.material = SetterState::Material{2, 'Y'};
+  slot.feature_size[1] = 12.5;
+  const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
+  require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
+          "Slot response reports the physical width in millimetres for the measured axis only");
 }
 
 void operator_messages() {

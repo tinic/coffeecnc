@@ -125,7 +125,7 @@ describe('browser probe scene', () => {
 
   it.each([
     ['slot-x', 'x', 'X', 125, 11.96], ['slot-y', 'y', 'Y', 110, 27.96],
-    ['ridge-x', 'x', 'X', 285, 16.04], ['ridge-y', 'y', 'Y', 148, 32.04],
+    ['ridge-x', 'x', 'X', 343, 16.04], ['ridge-y', 'y', 'Y', 146, 32.04],
   ] as const)('measures %s and preserves the two unprobed axes', (setup, axis, name, centre, width) => {
     const { sim, cycle } = scene(setup)
     const before = sim.status()

@@ -1311,7 +1311,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   bool positioning = false;
   bool traversing_xy = false;
-  bool descending = false;
+  bool at_search_xy = false;
   bool lifting = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
@@ -1325,7 +1325,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
             : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
                                near(s.controller.axes[1].machine, move.start[1])
-            : descending  ? near(s.controller.axes[0].machine, search_start[0]) &&
+            : at_search_xy ? near(s.controller.axes[0].machine, search_start[0]) &&
                                near(s.controller.axes[1].machine, search_start[1])
                           : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
                                      s.controller.axes[2].machine},
@@ -1487,12 +1487,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
-      descending = true;
+      at_search_xy = true;
       if (!block(std::format("G90 G53 G1 Z{:.8f}{}", search_start[2] / program_scale, feed_word),
                  positioning_timeout, false, true))
         return interrupt("Could not lower the probe to the search height; check that the way down "
                          "is clear.");
-      descending = false;
+      at_search_xy = false;
     }
     line_origin = search_start;
     positioning = false;
@@ -1644,6 +1644,22 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                      why + ".");
   }
 
+  if (move.return_to_clearance && descends) {
+    positioning = true;
+    at_search_xy = true;
+    if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
+               std::chrono::seconds{30}, false, true))
+      return interrupt(std::format("Could not lift the probe above the ridge ({}).", block_failure));
+    raw = live_cycle();
+    if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
+        !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
+          impl_->config.motion_tolerances.probe_backlash_mm))
+      return interrupt("The probe did not reach the clearance height above the ridge.");
+    line_origin[2] = lift_z;
+    at_search_xy = false;
+    positioning = false;
+  }
+
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
                          before.programmed_feed / program_scale),
              completion_timeout) ||
@@ -1663,7 +1679,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       }))
     return std::unexpected("The probe retracted, but the interlock did not return to idle.");
   if (missed)
-    return std::unexpected("No probe contact within the search travel. Returned to the start.");
+    return std::unexpected(move.return_to_clearance && descends
+                               ? "No probe contact within the search travel. Retracted and lifted clear."
+                               : "No probe contact within the search travel. Returned to the start.");
   if (unstable_spread)
     return std::unexpected(
         std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread));
@@ -1897,10 +1915,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                              (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale};
         for (std::size_t i = 0; i < axes.size(); ++i)
           if (axes[i] ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
-                      : s.g5x[i] != frame.g5x[i])
+                      : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
             return false;
         return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-               s.tool_offset == before.tool_offset && s.g5x[2] == frame.g5x[2];
+               s.tool_offset == before.tool_offset && std::abs(s.g5x[2] - frame.g5x[2]) <= 1e-6;
       });
       if (!verified)
         return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
@@ -1944,7 +1962,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         return std::unexpected("Set Z0 on the ridge top and start with the probe above it.");
       clearance = std::max(request.start[2], top + geometry.clearance_mm);
       depth = top - radius - geometry.depth_mm;
-      step_off = request.gauge_width_mm / 2 + radius + geometry.margin_mm;
+      step_off = request.gauge_width_mm / 2 + radius + geometry.margin_mm + geometry.reach_mm;
+      if (limits->material_travel_mm < geometry.margin_mm + geometry.reach_mm)
+        return std::unexpected("The material probe travel is too short for the ridge approach.");
     }
 
     const auto face = [&](ProbeDirection direction) -> std::expected<double, std::string> {
@@ -1964,6 +1984,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         move.approach = line.advance(request.start, -step_off);
         (*move.approach)[2] = depth;
         move.clearance_z = clearance;
+        move.return_to_clearance = true;
       } else if (!back_at(status, request.start)) {
         return std::unexpected("The probe did not return to the confirmed point inside the feature.");
       }
@@ -2004,7 +2025,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       origin[axis] = std::midpoint(*low, *high);
       state.feature_size[axis] = *high - *low;
     }
-    if (auto set = set_xy_origin(origin, clearance, axes); !set)
+    if (auto set = set_xy_origin(origin, std::nullopt, axes); !set)
       return std::unexpected(set.error());
     return state;
   }

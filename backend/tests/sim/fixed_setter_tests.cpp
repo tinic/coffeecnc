@@ -539,7 +539,7 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
       require(hit && hit->material && hit->material->corner &&
                   std::abs(status.work[0] - (2 - edge_x)) < 0.03 &&
                   std::abs(status.work[1] - (1 - edge_y)) < 0.03 &&
-                  std::abs(machine()[2] - 20) < 0.03 && status.g5x[2] == initial.g5x[2],
+                  std::abs(machine()[2] - 20) < 0.03 && std::abs(status.g5x[2] - initial.g5x[2]) < 1e-6,
               hit ? "inside corner sets both axes using the selected wall signs" : hit.error());
     }
   }
@@ -550,7 +550,7 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
               std::abs(*pocket->feature_size[0] - 20) < 0.03 &&
               std::abs(*pocket->feature_size[1] - 16) < 0.03 &&
               std::abs(pocket_status.work[0] + 2) < 0.03 && std::abs(pocket_status.work[1] - 3) < 0.03 &&
-              pocket_status.g5x[2] == initial.g5x[2],
+              std::abs(pocket_status.g5x[2] - initial.g5x[2]) < 1e-6,
           pocket ? "rectangular pocket finds both physical widths and sets XY together" : pocket.error());
 
   const auto selected = scale == 1 ? ProbeDirection::y_plus : ProbeDirection::x_plus;
@@ -565,7 +565,8 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
                 std::abs(*measured->feature_size[across] - expected_width) < 0.03 &&
                 !measured->feature_size[1 - across] &&
                 std::abs(after.work[across] - (machine()[across] - (across == 0 ? 4 : -2))) < 0.03 &&
-                after.g5x[1 - across] == before.g5x[1 - across] && after.g5x[2] == before.g5x[2] &&
+                std::abs(after.g5x[1 - across] - before.g5x[1 - across]) < 1e-6 &&
+                std::abs(after.g5x[2] - before.g5x[2]) < 1e-6 &&
                 after.g92 == before.g92 && std::abs(machine()[2] - 20) < 0.03,
             measured ? "span sets one axis with ball compensation and leaves the other axes intact"
                      : measured.error());
@@ -585,7 +586,15 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
   halcmd("unlinkp coffeecnc.probe-input");
   halcmd("net sim-feature-outer sim-feature-solid.and motion.probe-input coffeecnc.probe-input");
   span(SetterAction::ridge, across == 0 ? 16 : 12, across == 0 ? 16 : 12);
-  require(port.status().g5x[2] == initial.g5x[2] && port.status().g92 == initial.g92 &&
+  at_start();
+  const auto ridge_origin = port.status().g5x;
+  limits('z', -100, -99);
+  const auto ridge_miss =
+      run(SetterAction::ridge, selected, ProbeDirection::y_plus, across == 0 ? 16 : 12);
+  require(!ridge_miss && ridge_miss.error().contains("lifted clear") &&
+              port.status().g5x == ridge_origin && std::abs(machine()[2] - 20) < 0.03,
+          ridge_miss ? "expected a missed ridge face" : ridge_miss.error());
+  require(std::abs(port.status().g5x[2] - initial.g5x[2]) < 1e-6 && port.status().g92 == initial.g92 &&
               port.status().tool_offset == initial.tool_offset &&
               std::ranges::contains(port.status().active_codes, "G91"),
           "feature cycles preserve Z, tool compensation, G92 and distance mode");

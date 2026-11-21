@@ -1093,6 +1093,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   bool positioning = false;
   bool traversing_xy = false;
   bool descending = false;
+  bool lifting = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
     return normal_mode(s) && std::ranges::contains(s.active_codes, "G40") &&
@@ -1103,6 +1104,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
            s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
            (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
+            : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
+                               near(s.controller.axes[1].machine, move.start[1])
             : descending  ? near(s.controller.axes[0].machine, search_start[0]) &&
                                near(s.controller.axes[1].machine, search_start[1])
                           : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
@@ -1230,10 +1233,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (move.approach) {
     constexpr auto positioning_timeout = std::chrono::seconds{30};
     positioning = true;
+    // Straight up: off the search line of an edge, so only X and Y are held.
+    lifting = true;
     if (lift_z > move.start[2] &&
         !block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale), positioning_timeout,
                false, true))
       return interrupt("Could not raise Z to setter clearance.");
+    lifting = false;
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=

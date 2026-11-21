@@ -2479,6 +2479,7 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
       return failed("The original program changed. Stop and reopen it before running again.");
     impl_->breakpoint_recovered = false;
   }
+  const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -2486,10 +2487,11 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_RESUME message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
-  auto resumed = impl_->settled(from, "LinuxCNC did not resume.", [](const EMC_STAT& now) -> bool {
-    return now.task.task_paused == 0;
+  auto resumed = impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
+    return now.task.task_paused == 0 ||
+           (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
   });
-  if (accepted(resumed) && impl_->breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
+  if (accepted(resumed) && at_breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
       !impl_->save_breakpoint())
     impl_->messages.push_back({true, "Could not save that the breakpoint has resumed."});
   return resumed;

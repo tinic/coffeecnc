@@ -2,12 +2,12 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-import { allHomed, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
+import { allHomed, homingRequired, linkBlock, live, onResult, panel, reported, send } from '../machine'
 import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
 import { currentProgramPreview, describeProgramCheck } from '../program-check'
-import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
+import { breakpointSelection, selectedBreakpoint, type BreakpointSelection } from '../program-breakpoint'
 import type { LengthUnit } from '../protocol'
 import { touchProbeLoaded } from '../tool-models'
 
@@ -23,9 +23,15 @@ const airOwned = computed(() => status.value?.program.air_offset_owned === true)
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
 const breakpoint = computed(() => airZ.value || activeBreakpoint.value ? null : selectedBreakpoint(status.value))
 watch(activeBreakpoint, (active) => {
-  if (active?.line === selectedBreakpoint(status.value)) breakpointSelection.value = null
+  if (active?.line === selectedBreakpoint(status.value)?.line) breakpointSelection.value = null
 })
-const confirmation = ref<{ context: number; unit: LengthUnit; airZ: number; breakpoint: number | null } | null>(null)
+onBeforeUnmount(onResult((command, result) => {
+  const selected = breakpointSelection.value
+  if (command.type === 'run' && command.breakpoint && result.outcome !== 'accepted' &&
+    command.breakpoint.line === selected?.line && command.breakpoint.text === selected.text)
+    breakpointSelection.value = null
+}))
+const confirmation = ref<{ context: number; unit: LengthUnit; airZ: number; breakpoint: BreakpointSelection | null } | null>(null)
 const checkChanged = computed(() => confirmation.value !== null &&
   (checkedPreview.value?.context !== confirmation.value.context || panel.unit !== confirmation.value.unit ||
     airZ.value !== confirmation.value.airZ || breakpoint.value !== confirmation.value.breakpoint))
@@ -79,7 +85,7 @@ const primary = computed(() => {
   if (paused.value) return { label: 'Resume', icon: 'play' as const, type: 'resume' as const, blocked: linkBlock.value ?? probeWithSpindle.value }
   if (programRunning.value || status.value?.mode === 'mdi' && status.value.interp !== 'idle')
     return { label: 'Feed hold', icon: 'pause' as const, type: 'pause' as const, blocked: pauseBlock.value }
-  const label = airZ.value ? 'Start air cut' : breakpoint.value ? `Run to line ${String(breakpoint.value)}` : 'Cycle start'
+  const label = airZ.value ? 'Start air cut' : breakpoint.value ? `Run to line ${String(breakpoint.value.line)}` : 'Cycle start'
   return { label, icon: 'play' as const, type: 'run' as const, blocked: runBlock.value }
 })
 function primaryAction(): void {
@@ -99,9 +105,12 @@ function primaryAction(): void {
     confirmation.value = { context: preview.context, unit: panel.unit, airZ: airZ.value, breakpoint: breakpoint.value }
   } else {
     send({ type: 'run', preview_context: preview.context, display_units: panel.unit,
-      ...(breakpoint.value ? { breakpoint: breakpoint.value } : {}) })
+      ...(breakpoint.value ? { breakpoint: { line: breakpoint.value.line, text: breakpoint.value.text } } : {}) })
   }
 }
+watch(breakpointSelection, (selection) => {
+  if (selection && selection === breakpoint.value && primary.value.type === 'run') primaryAction()
+})
 
 function confirmRun(): void {
   const reviewed = confirmation.value
@@ -110,7 +119,12 @@ function confirmRun(): void {
   confirmation.value = null
   send({ type: 'run', preview_context: reviewed.context, display_units: reviewed.unit, confirmed: true,
     ...(reviewed.airZ ? { air_z: reviewed.airZ } : {}),
-    ...(reviewed.breakpoint ? { breakpoint: reviewed.breakpoint } : {}) })
+    ...(reviewed.breakpoint ? { breakpoint: { line: reviewed.breakpoint.line, text: reviewed.breakpoint.text } } : {}) })
+}
+
+function closeConfirmation(): void {
+  if (confirmation.value?.breakpoint) breakpointSelection.value = null
+  confirmation.value = null
 }
 
 function option(which: 'optional_stop' | 'block_delete'): void {
@@ -135,14 +149,14 @@ function option(which: 'optional_stop' | 'block_delete'): void {
           </div>
         </div>
       </details>
-      <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="confirmation = null; send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
+      <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="closeConfirmation(); breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
       <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
     <ProgramCheckDialog
       v-if="confirmation" :check="check" :unit="panel.unit"
       :max-rpm="panel.hello?.max_spindle_rpm" :changed="checkChanged" :air-z="confirmation.airZ"
-      :breakpoint-line="confirmation.breakpoint" can-confirm
-      @close="confirmation = null" @confirm="confirmRun"
+      :breakpoint-line="confirmation.breakpoint?.line ?? null" can-confirm
+      @close="closeConfirmation" @confirm="confirmRun"
     />
   </footer>
 </template>

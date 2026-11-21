@@ -4296,6 +4296,16 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
     Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
     check("breakpoint_restart_preserves_original_file_and_pause",
           recovered.pump_until(4s, [&] { return at_breakpoint(4); }));
+    {
+      std::ofstream changed{oracle.program, std::ios::app};
+      changed << "(Changed on disk after the pause)\n";
+    }
+    const auto refused_resume = recovered.send(R"("type":"resume")");
+    check("breakpoint_recovery_refuses_changed_source",
+          refused_resume.outcome == "failed" &&
+              refused_resume.reason.find("original program changed") != std::string::npos &&
+              at_breakpoint(4),
+          refused_resume.text());
     const auto stopped = recovered.send(R"("type":"abort")");
     check("breakpoint_stop_reopens_original_after_restart",
           stopped.accepted() && recovered.pump_until(5s, restored), stopped.text());

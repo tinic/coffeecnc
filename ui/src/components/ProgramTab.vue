@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
-import { chooseProgramLayout, findTool, live, onResult, panel, reported, send } from '../machine'
+import { allHomed, chooseProgramLayout, findTool, homingRequired, live, onResult, panel, reported, send } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
@@ -114,7 +114,7 @@ const runState = computed(() => {
   const s = status.value
   if (s === null || machineBlock(panel) !== null) return ''
   if (s.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
-  if (s.wait.kind === 'paused') return s.program.breakpoint?.reached ? 'Breakpoint reached' : 'Program paused'
+  if (s.program.breakpoint?.reached) return 'Breakpoint reached'
   if (s.wait.kind === 'dwell') return 'Dwelling'
   if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
@@ -153,7 +153,10 @@ const timeNote = computed(() => time.value?.unknownFeeds === true
 const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
   sections.value.length > 0 && !airZ.value && !airOwned.value && !status.value.program.breakpoint)
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
-const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value) ?? 0)
+const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value)?.line ?? 0)
+const breakpointBlock = computed(() => machineBlock(panel, true) ??
+  (homingRequired.value && !allHomed.value ? 'Axes are not homed' : null) ??
+  (status.value?.interp !== 'idle' || !status.value.motion.in_position ? 'Stop the program before running to a line' : null))
 const breakpointLines = computed(() => {
   const preview = currentProgramPreview(panel.preview, status.value)
   return new Set(canRestart.value && preview?.state === 'ready' && preview.check
@@ -163,8 +166,9 @@ const breakpointLabel = computed(() => activeBreakpoint.value?.reached
   ? `Paused before line ${String(breakpointLine.value)}` : `Pause before line ${String(breakpointLine.value)}`)
 function chooseBreakpoint(line: number): void {
   const loaded = status.value?.program
-  if (loaded?.file && breakpointLines.value.has(line))
-    breakpointSelection.value = { file: loaded.file, revision: loaded.revision, line }
+  const text = program.value?.lines[line - 1]
+  if (breakpointBlock.value === null && loaded?.file && text !== undefined && breakpointLines.value.has(line))
+    breakpointSelection.value = { file: loaded.file, revision: loaded.revision, line, text }
 }
 const restartAt = ref<{ line: number; section: string } | null>(null)
 function sectionName(index: number): string {
@@ -262,6 +266,7 @@ async function showFailure(): Promise<void> {
             <NcText
               v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart"
               :breakpoint-line="breakpointLine" :breakpoint-lines="breakpointLines" :breakpoint-reached="activeBreakpoint?.reached === true"
+              :breakpoint-block="breakpointBlock"
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
             />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>

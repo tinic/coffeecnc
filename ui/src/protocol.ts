@@ -482,7 +482,7 @@ export interface Run extends CommandBase {
   confirmed?: boolean
   air_z?: number
   /** Pause before this 1-based source motion line. */
-  breakpoint?: number
+  breakpoint?: { line: number; text: string }
 }
 export interface SetAirCut extends CommandBase {
   type: 'set_air_cut'

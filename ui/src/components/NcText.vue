@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '../tooltip'
 // The program text. The executing line is highlighted and kept in view until the operator
 // scrolls; from then on the view stays where it was put, and a button offers to follow again.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
@@ -18,6 +19,7 @@ const props = defineProps<{
   breakpointLines?: ReadonlySet<number>
   breakpointLine?: number
   breakpointReached?: boolean
+  breakpointBlock?: string | null
 }>()
 const emit = defineEmits<{ restart: [line: number]; editRate: [line: number, offset: number]; breakpoint: [line: number] }>()
 
@@ -217,8 +219,11 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="restartable && picked > 0" class="line-actions">
-      <button v-if="breakpointLines?.has(picked)" class="btn breakpoint-action" type="button" @click="emit('breakpoint', picked); picked = 0">
-        Pause before line {{ picked }}
+      <button
+        v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? 'Run from the beginning and pause before this line'"
+        class="btn primary breakpoint-action" type="button" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); picked = 0"
+      >
+        Run to line <span class="follow-count mono">{{ picked }}</span>
       </button>
       <button class="btn primary restart" type="button" @click="emit('restart', picked)">
         Restart from line <span class="follow-count mono">{{ picked }}</span>
@@ -340,7 +345,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 6px;
 }
-.breakpoint-action { background: var(--panel-raised); }
 .row.breakpoint { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--warn); }
 .row.breakpoint .number { color: var(--warn); }
 

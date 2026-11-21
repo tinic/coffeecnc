@@ -368,15 +368,15 @@ describe('capability-aware controls', () => {
     if (!panel.status?.program.file) throw new Error('Missing loaded program')
     panel.hello = { ...hello, homing_required: false }
     panel.status.preview_context = 9
-    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 5 }
     panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
       check: { tools: [], frames: [], feed: null, spindle: null,
         units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
     wrapper = mount(RunBar)
+    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 5, text: 'G1 Z2 F900' }
+    await nextTick()
     expect(wrapper.get('.main-action').text()).toContain('Run to line 5')
-    await wrapper.get('.main-action').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
-      display_units: 'mm', breakpoint: 5 })
+      display_units: 'mm', breakpoint: { line: 5, text: 'G1 Z2 F900' } })
     panel.status.mode = 'auto'
     panel.status.interp = 'paused'
     panel.status.wait = { kind: 'paused' }

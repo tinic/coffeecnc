@@ -910,10 +910,13 @@ export class SimMachine {
         if ((command.air_z ?? 0) !== this.airLift) return reject('The air-cut selection changed.')
         if (this.airLift && (command.preview_context === undefined || !command.confirmed || this.preview.state !== 'ready'))
           return reject(this.preview.check?.errors[0] ?? 'Review the raised preview before starting the air cut.')
-        if (command.breakpoint !== undefined && (this.airLift || !Number.isSafeInteger(command.breakpoint) ||
+        const breakpoint = command.breakpoint
+        if (breakpoint && (this.airLift || !Number.isSafeInteger(breakpoint.line) ||
           command.preview_context === undefined || command.display_units === undefined || this.preview.state !== 'ready' ||
-          !this.preview.segments.some((segment) => segment.line === command.breakpoint)))
+          !this.preview.segments.some((segment) => segment.line === breakpoint.line)))
           return reject('Choose a motion line in a complete preview with air cut off.')
+        if (breakpoint && this.program?.lines[breakpoint.line - 1] !== breakpoint.text)
+          return reject('The selected program line changed. Reopen the program and choose the line again.')
         if (command.preview_context !== undefined) {
           if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
             return reject('The program check changed. Review the current results.')
@@ -923,7 +926,7 @@ export class SimMachine {
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
         }
-        const rejection = this.run(false, command.breakpoint)
+        const rejection = this.run(false, breakpoint?.line)
         if (!rejection && this.airLift) {
           this.modal.g92[2] = this.airLift
           this.airOffsetOwned = true

@@ -465,13 +465,14 @@ onBeforeUnmount(() => {
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
-      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
+      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label></div>
       <div class="views">
         <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
         <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
         <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
         <button v-tooltip="'Fit toolpath and visible models'" type="button" aria-label="Fit toolpath and visible models" @click="fitButton('path')"><AppIcon name="fit" /></button>
         <button v-tooltip="'Show and fit machine travel'" type="button" @click="fitButton('machine')">Travel</button>
+        <slot />
       </div>
     </div>
   </div>

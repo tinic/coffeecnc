@@ -5,10 +5,10 @@ import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
-import { airLiftLabel, currentProgramPreview, describeProgramCheck } from '../program-check'
+import { currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
-import { formatLength, formatVelocity, fromDisplay, toolLabel, velocityUnit } from '../units'
+import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import { vTooltip } from '../tooltip'
 import NcText from './NcText.vue'
@@ -20,42 +20,12 @@ import { rateWords, withRate, type RateWord } from '../program-edit'
 import type { CommandBody } from '../protocol'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
-import MachineFeedback from './MachineFeedback.vue'
+import { machineFeedback } from '../machine-feedback'
 
 const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
 const checkOpen = ref(false)
-const airEditor = ref<{ initial: string; unit: typeof panel.unit; revision: number } | null>(null)
-const airError = ref('')
-const airZ = computed(() => status.value?.program.air_z ?? 0)
-const airOwned = computed(() => status.value?.program.air_offset_owned === true)
-const airLabel = computed(() => airZ.value > 0 ? `Air cut · Z ${airLiftLabel(airZ.value, panel.unit)}`
-  : airOwned.value ? 'Clearing air cut' : 'Air cut')
-const airEditable = computed(() => live.value && status.value?.interp === 'idle' &&
-  status.value.motion.in_position && !airOwned.value && !status.value.program.breakpoint)
-function openAirCut(): void {
-  if (!airEditable.value || !status.value?.program.file) return
-  airError.value = ''
-  airEditor.value = { initial: formatLength(airZ.value || 25, panel.unit), unit: panel.unit,
-    revision: status.value.program.revision }
-}
-function selectAirCut(value: number): void {
-  const editor = airEditor.value
-  if (!editor) return
-  if (!airEditable.value || status.value?.program.revision !== editor.revision) {
-    airError.value = 'The machine or loaded program changed. Reopen Air cut.'
-    return
-  }
-  const lift = fromDisplay(value, editor.unit)
-  if (lift < 0 || lift > 1000 || lift > 0 && lift < 0.001) {
-    airError.value = 'Enter a positive lift up to 1,000 mm, or 0 to turn air cut off.'
-    return
-  }
-  send({ type: 'set_air_cut', air_z: lift })
-  if (lift) breakpointSelection.value = null
-  airEditor.value = null
-}
 const checkedPreview = computed(() => currentProgramPreview(panel.preview, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const checkLabel = computed(() => check.value === null ? 'Checking program'
@@ -81,7 +51,18 @@ const sections = computed(() => {
   }
   return rows
 })
-const currentTool = computed(() => selected.value ?? status.value?.tool.in_spindle ?? 0)
+const spindleTool = computed(() => status.value?.tool.in_spindle ?? 0)
+const selectedSection = computed(() => selected.value ?? sections.value.findIndex(section => section.tool === spindleTool.value))
+const currentTool = computed(() => sections.value[selectedSection.value]?.tool ?? spindleTool.value)
+const spindleReading = computed(() => {
+  const s = status.value
+  if (!s) return '—'
+  const { rpm, atSpeed } = machineFeedback(s, panel.link)
+  const speed = rpm.known ? rpm.text : s.spindle.direction === 'stopped'
+    ? 'Stopped' : `${String(Math.round(s.spindle.commanded_rpm * s.spindle.override))} rpm commanded`
+  if (s.spindle.direction === 'stopped' || !atSpeed.known || atSpeed.stale) return speed
+  return `${speed} · ${s.spindle.at_speed ? 'at speed' : 'below speed'}`
+})
 const tool = computed(() => findTool(currentTool.value))
 const toolTitle = computed(() => {
   if (currentTool.value === 0) return 'No tool loaded'
@@ -105,21 +86,23 @@ function lineInText(line: number): number {
 const lineLabel = computed(() => {
   if (!textCurrent.value || program.value === null) return '—'
   const count = program.value.lines.length
-  const line = currentLine.value
+  const line = activeLine.value
   if (Number.isSafeInteger(line) && line > 0) {
     // Do not infer full-file progress from a partial prefix or an out-of-range counter.
     return `Line ${String(line)}${!program.value.truncated && line <= count ? ` / ${String(count)}` : ''}`
   }
   return `${String(count)} ${count === 1 ? 'line' : 'lines'}${program.value.truncated ? ' shown' : ''}`
 })
+const activeLine = computed(() => status.value?.program.breakpoint?.reached
+  ? status.value.program.breakpoint.line : motionLine.value || currentLine.value)
 const runState = computed(() => {
   const s = status.value
-  if (s === null || machineBlock(panel) !== null) return ''
-  if (s.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
-  if (s.program.breakpoint?.reached) return 'Breakpoint reached'
-  if (s.wait.kind === 'dwell') return 'Dwelling'
-  if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
-  return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
+  if (!s || !live.value) return ''
+  if (s.wait.kind === 'tool_change') return `Change tool · ${toolLabel(s.wait.tool)}`
+  if (s.wait.kind === 'paused')
+    return activeLine.value ? `Paused at line ${String(activeLine.value)}` : 'Paused'
+  const tool = spindleTool.value > 0 ? ` · ${toolLabel(spindleTool.value)}` : ''
+  return `${programExecuting.value ? 'Running' : 'Idle'}${tool}`
 })
 // Cycle time from the drawn preview: before the run the estimate, during it elapsed and left.
 const time = computed(() => {
@@ -136,24 +119,23 @@ const timeLabel = computed(() => {
     // Feeds scale with the override; rapids do not, so this stays an estimate.
     const override = Math.max(status.value?.motion.feed_override ?? 1, 0.05)
     const left = estimate !== null && line > 0 ? remainingFrom(estimate, line) / override : null
-    return `Elapsed ${formatDuration(elapsed)}${left === null ? '' : ` · about ${formatDuration(left)} left`}`
+    return `${formatDuration(elapsed)} elapsed${left === null ? '' : ` · ${formatDuration(left)} left`}`
   }
   if (estimate === null) return ''
   const changes = estimate.toolChanges
-  const parts = [`Estimated ${formatDuration(estimate.total)}`]
-  if (changes > 0) parts.push(`+ ${String(changes)} tool ${changes === 1 ? 'change' : 'changes'}`)
-  if (runClock.lastSeconds !== null) {
-    parts.push(`last ${formatDuration(runClock.lastSeconds)}`, `${String(runClock.parts)} ${runClock.parts === 1 ? 'part' : 'parts'}`)
-  }
-  return parts.join(' · ')
+  return `Est. ${formatDuration(estimate.total)}${changes
+    ? ` · ${String(changes)} tool ${changes === 1 ? 'change' : 'changes'}` : ''}`
 })
-const timeNote = computed(() => time.value?.unknownFeeds === true
-  ? 'Some feeds are not per minute (G93/G95) and are counted at full speed.'
-  : 'At 100 % overrides, without acceleration, tool changes or pauses.')
+const timeTooltip = computed(() => {
+  if (!timeLabel.value) return undefined
+  const completed = runClock.lastSeconds === null ? '' :
+    ` · Last ${formatDuration(runClock.lastSeconds)} · ${String(runClock.parts)} ${runClock.parts === 1 ? 'part' : 'parts'}`
+  return `${timeLabel.value}${completed}`
+})
 
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
 const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
-  sections.value.length > 0 && !airZ.value && !airOwned.value && !status.value.program.breakpoint)
+  sections.value.length > 0 && !status.value.program.breakpoint)
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
 const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value)?.line ?? 0)
 const breakpointBlock = computed(() => machineBlock(panel, true) ??
@@ -238,27 +220,6 @@ async function showFailure(): Promise<void> {
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
           <div class="scene-actions">
-            <button
-              v-if="breakpointLine" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
-              :aria-label="activeBreakpoint ? breakpointLabel : 'Clear breakpoint'" @click="breakpointSelection = null"
-            >
-              {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />
-            </button>
-            <button
-              v-if="status?.program.file || airOwned" class="btn air-cut" :class="{ selected: airZ || airOwned }"
-              type="button" :disabled="!airEditable" :aria-pressed="airZ > 0 || airOwned" @click="openAirCut"
-            >
-              {{ airLabel }}
-            </button>
-            <button
-              v-if="status?.program.file" v-tooltip="checkLabel" type="button"
-              class="btn program-check" :aria-label="`Program check · ${checkLabel}`"
-              :class="{ blocked: check?.errors.length, review: check?.warnings.length }"
-              @click="checkOpen = true"
-            >
-              <AppIcon :name="check?.errors.length || check?.warnings.length ? 'warning' : check ? 'check' : 'list'" />
-              Program check
-            </button>
             <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ label }}</button></div>
           </div>
         </header>
@@ -273,7 +234,9 @@ async function showFailure(): Promise<void> {
             />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
-          <PathView v-if="panel.programLayout !== 'text'" />
+          <PathView v-if="panel.programLayout !== 'text'">
+            <PartModel />
+          </PathView>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
             <AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span>
             <button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button>
@@ -287,14 +250,31 @@ async function showFailure(): Promise<void> {
       </section>
       <aside class="inspector">
         <div class="inspector-body">
+          <div class="program-actions">
+            <button
+              v-if="status?.program.file" v-tooltip="checkLabel" type="button" class="btn program-check"
+              :aria-label="`Program check · ${checkLabel}`"
+              :class="{ blocked: check?.errors.length, review: check?.warnings.length, ready: check && !check.errors.length && !check.warnings.length }"
+              @click="checkOpen = true"
+            >
+              <AppIcon :name="check?.errors.length || check?.warnings.length ? 'warning' : check ? 'check' : 'list'" />
+              Program check<span v-if="check?.warnings.length && !check.errors.length">{{ check.warnings.length }}</span>
+            </button>
+            <button
+              v-if="breakpointLine" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
+              :aria-label="activeBreakpoint ? breakpointLabel : 'Clear breakpoint'" @click="breakpointSelection = null"
+            >
+              {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />
+            </button>
+          </div>
           <div class="panel-head"><h2>Tool sequence</h2><span class="kicker">{{ sections.length }} sections</span></div>
           <div class="sections">
             <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
-              <button class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
+              <button class="section" type="button" :aria-pressed="selectedSection === index" @click="selected = index">
                 <span class="section-number mono">{{ index + 1 }}</span>
                 <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}<template v-if="sectionTimes[index] !== undefined"> · {{ formatDuration(sectionTimes[index] ?? 0) }}</template></small></span>
               </button>
-              <button v-if="canRestart" class="btn section-restart" type="button" :aria-label="`Restart ${sectionName(index)}`" @click="restartSection(index)">Restart</button>
+              <button v-if="canRestart && selectedSection === index" class="btn section-restart" type="button" :aria-label="`Restart ${sectionName(index)}`" @click="restartSection(index)">Restart</button>
             </div>
             <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
           </div>
@@ -302,11 +282,10 @@ async function showFailure(): Promise<void> {
             <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
             <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ toolTitle }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
             <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
-            <div class="kv"><span>Spindle command</span><strong class="mono">{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
+            <div class="kv"><span>Spindle</span><strong class="mono">{{ spindleReading }}</strong></div>
             <div class="kv"><span>Current feed</span><strong class="mono">{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
           </div>
         </div>
-        <PartModel />
       </aside>
     </div>
     <NumberDialog
@@ -317,13 +296,12 @@ async function showFailure(): Promise<void> {
       action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
     />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
-    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :air-z="airZ" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
-    <NumberDialog
-      v-if="airEditor" title="Air cut" label="Z lift" :initial="airEditor.initial" :unit="airEditor.unit"
-      effect="Raise Z for the next run. Enter 0 to turn air cut off." action="Apply lift" :error="airError"
-      @confirm="selectAirCut" @close="airEditor = null"
-    />
-    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span v-tooltip="timeLabel ? `${timeLabel} · ${timeNote}` : undefined" class="run-time mono">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
+    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
+    <div class="status-row">
+      <span>{{ runState }}</span>
+      <span v-tooltip="timeTooltip" class="run-time mono">{{ timeLabel }}</span>
+      <span class="line-count mono">{{ lineLabel }}</span>
+    </div>
   </div>
 </template>
 
@@ -334,11 +312,12 @@ async function showFailure(): Promise<void> {
 .scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
-.program-check, .air-cut, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
 .breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
-.air-cut.selected { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); opacity: 1; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
+.program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.program-check.ready { color: var(--go); }
 .program-check.blocked { color: var(--stop); }
 .program-check.review:not(.blocked) { color: var(--warn); }
 .view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
@@ -354,8 +333,11 @@ async function showFailure(): Promise<void> {
 .tool { border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }.tool-title { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; }.tool-title strong { font-size: 13px; font-weight: 500; }.tool-title small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 11px; }.tool-glyph { display: flex; padding: 10px; background: var(--bg-sunken); border-radius: 8px; color: var(--text-dim); }
 .kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { flex: none; min-width: 14ch; text-align: right; color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
-.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 46ch 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.run-time { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--text-dim); }.warning { color: var(--stop); }
-.status-row .program-feedback { margin: 0; }
+.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; }
+.status-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-row > .mono { font-size: 11px; color: var(--text-dim); }
+.line-count { text-align: right; }
+.run-time { text-align: center; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }
 .failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }

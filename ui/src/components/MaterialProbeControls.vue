@@ -40,7 +40,7 @@ const toolBlock = computed(() => panel.link === 'live' && panel.status !== null 
   (panel.status.tool.in_spindle !== props.tool || panel.status.wait.kind === 'tool_change')
   ? `Load T${String(props.tool)} to probe material.` : null)
 const displayLine = computed((): SetterStatusLine => line.value === hint && toolBlock.value !== null
-  ? { text: toolBlock.value, level: 'blocked' } : line.value)
+  ? { text: toolBlock.value, level: 'info' } : line.value)
 const machineReason = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
 let lastMachineReason: string | null = null
 watch(machineReason, () => {

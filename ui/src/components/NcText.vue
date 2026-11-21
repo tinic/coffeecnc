@@ -5,6 +5,7 @@ import { vTooltip } from '../tooltip'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { tokenizeGcodeLine } from '../gcode-syntax'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{
   lines: string[]
@@ -220,14 +221,17 @@ onBeforeUnmount(() => {
               v-for="(token, index) in row.tokens"
               :key="index"
               :data-tone="token.tone ?? undefined"
-              :class="{ editable: restartable && token.tone === 'rate' }"
-              @click="restartable && token.tone === 'rate' && emit('editRate', row.number, offsetOf(row.tokens, index))"
+              :class="{ editable: restartable && row.number === picked && token.tone === 'rate' }"
+              @click="restartable && row.number === picked && token.tone === 'rate' && emit('editRate', row.number, offsetOf(row.tokens, index))"
             >{{ token.text }}</span></span>
           </div>
         </div>
       </div>
     </div>
     <div v-if="restartable && picked > 0" class="line-actions">
+      <button class="btn clear-line" type="button" aria-label="Clear selected line" @click="picked = 0">
+        <AppIcon name="close" />
+      </button>
       <button
         v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? 'Run from the beginning and pause before this line'"
         class="btn primary breakpoint-action" type="button" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); picked = 0"
@@ -330,7 +334,7 @@ onBeforeUnmount(() => {
 
 .text .editable {
   cursor: pointer;
-  text-decoration: underline dotted;
+  text-decoration: underline;
   text-underline-offset: 3px;
 }
 
@@ -357,6 +361,7 @@ onBeforeUnmount(() => {
   padding: 6px 16px 10px;
   border-top: 1px solid var(--line);
 }
+.clear-line { margin-right: auto; min-width: 44px; padding: 0; }
 .row.breakpoint { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--warn); }
 .row.breakpoint .number { color: var(--warn); }
 

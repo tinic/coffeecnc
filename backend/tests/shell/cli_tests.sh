@@ -58,6 +58,9 @@ run --check "$work/sim/coffeecnc_sim.ini"
 [ "$code" = 0 ] && said 'CoffeeCNC starts with this file' && said 'Axes  *X (joint 0), Y (joint 1), Z (joint 2)' &&
   said 'Fixed tool setter  *off' && said 'Manual tool change prompt'
 check check_reports_a_good_file $? "$(detail)"
+# The sim's post-GUI file sources a fragment that wires the prompt itself.
+said 'Manual tool change prompt *on  (wired in the post-GUI HAL file)'
+check check_finds_tool_change_wired_in_hal $? "$(grep 'Manual tool change' "$work/out" | tr ' ' '_')"
 run --check "$work/sim/lathe.ini"
 [ "$code" = 1 ] && said 'CoffeeCNC does not start with this file' && said 'COORDINATES'
 check check_reports_why_a_file_is_refused $? "$(detail)"

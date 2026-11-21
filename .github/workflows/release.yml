@@ -31,7 +31,11 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    container: debian:trixie
+    container:
+      image: debian:trixie
+      # An init process reaps orphans, as on a real system: the preview engine tests kill a
+      # process the helper left behind and wait for it to be gone.
+      options: --init
     steps:
       - name: Build tools and LinuxCNC
         run: |

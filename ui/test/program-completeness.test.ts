@@ -173,7 +173,7 @@ describe('preview diagnostics', () => {
   it('shows why a matching preview is unavailable without inventing a source line', () => {
     if (panel.status === null) throw new Error('Missing fixture')
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'unavailable',
-      error: { line: 0, text: 'The preview helper is not installed.' }, segments: [], bounds: null }
+      error: { line: 0, text: 'The preview helper is not installed.' }, segments: [], bounds: null, dwells: [] }
     wrapper = shallowMount(ProgramTab)
     expect(wrapper.find('.views > .preview-diagnostic').exists()).toBe(true)
     expect(wrapper.getComponent(SetterStatusBand).props('line')).toEqual({ text: 'The preview helper is not installed.', level: 'blocked' })
@@ -184,7 +184,7 @@ describe('preview diagnostics', () => {
   it.each([0, 200])('keeps a failure reason but offers no navigation to unavailable line %i', (line) => {
     if (panel.status === null) throw new Error('Missing fixture')
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'failed',
-      error: { line, text: 'Preview stopped before an unsupported operation.' }, segments: [], bounds: null }
+      error: { line, text: 'Preview stopped before an unsupported operation.' }, segments: [], bounds: null, dwells: [] }
     wrapper = shallowMount(ProgramTab)
     expect(wrapper.get('.preview-diagnostic').text()).toContain('Preview stopped before an unsupported operation.')
     expect(wrapper.find('.failure button').exists()).toBe(false)
@@ -194,7 +194,7 @@ describe('preview diagnostics', () => {
   it('offers navigation only while the failed line belongs to the displayed text', async () => {
     if (panel.status === null) throw new Error('Missing fixture')
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'failed',
-      error: { line: 2, text: 'Unsupported operation.' }, segments: [], bounds: null }
+      error: { line: 2, text: 'Unsupported operation.' }, segments: [], bounds: null, dwells: [] }
     wrapper = shallowMount(ProgramTab)
     expect(wrapper.get('.failure button').text()).toBe('Show line 2')
     expect(wrapper.getComponent(NcText).props('errorLine')).toBe(2)
@@ -208,7 +208,7 @@ describe('preview diagnostics', () => {
   it.each(['failed', 'unavailable'] as const)('does not show an obsolete %s reason for the current context', (state) => {
     if (panel.status === null) throw new Error('Missing fixture')
     panel.preview = { type: 'preview', context: panel.status.preview_context - 1, state,
-      error: { line: 2, text: 'An obsolete reason.' }, segments: [], bounds: null }
+      error: { line: 2, text: 'An obsolete reason.' }, segments: [], bounds: null, dwells: [] }
     wrapper = shallowMount(ProgramTab)
     expect(wrapper.text()).not.toContain('An obsolete reason.')
     expect(wrapper.find('.failure button').exists()).toBe(false)

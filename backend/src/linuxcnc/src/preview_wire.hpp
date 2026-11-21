@@ -96,6 +96,7 @@ struct HelperOutput {
   std::string defect;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  std::vector<PreviewDwell> dwells;
   // Recorded by canonical callbacks, with controlled-point travel and tool-tip work bounds.
   struct ProgramFacts {
     std::vector<int> tools;

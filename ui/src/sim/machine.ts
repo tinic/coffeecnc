@@ -203,6 +203,7 @@ export class SimMachine {
     error: null,
     segments: [],
     bounds: null,
+    dwells: [],
   }
 
   constructor(options: SimOptions) {
@@ -454,6 +455,7 @@ export class SimMachine {
           error: { line: 0, text: 'Block delete changed during the run. The preview updates when it ends.' },
           segments: [],
           bounds: null,
+          dwells: [],
         }
         this.emit(this.preview)
       }
@@ -488,6 +490,7 @@ export class SimMachine {
         error: null,
         segments: [],
         bounds: null,
+        dwells: [],
       }
       this.emit(this.preview)
     }

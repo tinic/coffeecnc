@@ -367,8 +367,12 @@ auto encode_preview(const Preview& preview) -> Encoded {
     segments.push_back({{"line", segment.line},
                         {"kind", segment.kind == MoveKind::feed ? "feed" : "rapid"},
                         {"tool", segment.tool},
-                        {"points", std::move(points)}});
+                        {"points", std::move(points)},
+                        {"feed", fields.real(segment.feed, "segments.feed")}});
   }
+  auto dwells = Json::array();
+  for (const auto& dwell : preview.dwells)
+    dwells.push_back({{"line", dwell.line}, {"seconds", fields.real(dwell.seconds, "dwells.seconds")}});
   Json error = nullptr;
   if (preview.error)
     error = {{"line", preview.error->line}, {"text", preview.error->text}};
@@ -381,7 +385,8 @@ auto encode_preview(const Preview& preview) -> Encoded {
                {"state", name(preview.state)},
                {"error", std::move(error)},
                {"segments", std::move(segments)},
-               {"bounds", std::move(bounds)}};
+               {"bounds", std::move(bounds)},
+               {"dwells", std::move(dwells)}};
   if (const auto& check = preview.check) {
     auto tools = Json::array();
     for (const auto& row : check->tools)

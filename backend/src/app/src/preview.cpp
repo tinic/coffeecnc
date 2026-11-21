@@ -88,7 +88,8 @@ void PreviewWorker::loop() {
       unchecked_.reset();
       latest_ = std::make_shared<const Preview>(
           Preview{request.context, outcome.state, std::move(outcome.error),
-                  std::move(outcome.segments), outcome.bounds, std::move(outcome.check)});
+                  std::move(outcome.segments), outcome.bounds, std::move(outcome.dwells),
+                  std::move(outcome.check)});
       latest_source_ = {std::move(request.inputs), std::move(computed.program_snapshot)};
       files_changed = std::move(computed.files_changed);
       latest_files_ = files_changed;

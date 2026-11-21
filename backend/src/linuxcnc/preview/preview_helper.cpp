@@ -95,12 +95,12 @@ struct Canon {
   int tool_in_spindle{};
   int selected_index{-1};
   double feed{}; // mm/min
+  int feed_mode{}; // 0 per minute, 1 inverse time, 2 per revolution
   double spindle_rpm{};
   CANON_DIRECTION spindle{CANON_STOPPED};
   bool flood{};
   bool mist{};
   bool surface_speed{};
-  bool per_revolution{};
   CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
@@ -118,6 +118,7 @@ struct Canon {
   bool open{};
   int open_line{};
   bool open_feed{};
+  double open_rate{}; // mm/min of the run being collected; 0 for rapids and unknown feeds
   int open_tool{};
   std::vector<Vec3> points;
   std::size_t written{};
@@ -142,8 +143,9 @@ void flush_run() {
   if (!canon.open)
     return;
   canon.open = false;
-  std::string out = std::format("seg {} {} {}", canon.open_line, canon.open_feed ? 'f' : 'r',
-                                canon.open_tool);
+  std::string out = canon.open_feed && canon.open_rate > 0
+      ? std::format("segf {} {} {:.6f}", canon.open_line, canon.open_tool, canon.open_rate)
+      : std::format("seg {} {} {}", canon.open_line, canon.open_feed ? 'f' : 'r', canon.open_tool);
   for (const auto& p : canon.points)
     out += std::format(" {:.5f} {:.5f} {:.5f}", p[0], p[1], p[2]);
   out += '\n';
@@ -254,7 +256,7 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
       canon.check.variable_spindle = true;
     else if (canon.spindle != CANON_STOPPED)
       expand(canon.check.spindle, std::abs(canon.spindle_rpm));
-    if (canon.per_revolution)
+    if (canon.feed_mode != 0)
       canon.check.feed_per_revolution = true;
     else
       expand(canon.check.feed, canon.feed);
@@ -294,13 +296,17 @@ void move(bool feed, const Vec3& to) {
     else if (canon.line < *target)
       canon.highest_tip_z = std::max(canon.highest_tip_z.value_or(b[2]), b[2]);
   }
+  // Time estimates need the programmed feed; only a feed per minute is a speed.
+  const double rate = feed && canon.feed_mode == 0 ? canon.feed : 0.0;
   if (canon.open && (canon.open_line != canon.line || canon.open_feed != feed ||
-                     canon.open_tool != canon.tool_in_spindle || canon.points.back() != a))
+                     canon.open_rate != rate || canon.open_tool != canon.tool_in_spindle ||
+                     canon.points.back() != a))
     flush_run();
   if (!canon.open) {
     canon.open = true;
     canon.open_line = canon.line;
     canon.open_feed = feed;
+    canon.open_rate = rate;
     canon.open_tool = canon.tool_in_spindle;
     canon.points.push_back(a);
     ++canon.written;
@@ -637,7 +643,7 @@ void SET_OPTIONAL_PROGRAM_STOP(bool) {}
 void SET_FEED_RATE(double rate) { canon.feed = rate * program_unit(); }
 void SET_TRAVERSE_RATE(double) {}
 void SET_FEED_REFERENCE(CANON_FEED_REFERENCE) {}
-void SET_FEED_MODE(int, int mode) { canon.per_revolution = mode != 0; }
+void SET_FEED_MODE(int, int mode) { canon.feed_mode = mode; }
 void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE mode, double tolerance) {
   canon.path_control = mode;
   canon.path_tolerance = tolerance * program_unit();
@@ -648,7 +654,12 @@ void START_CUTTER_RADIUS_COMPENSATION(int) {}
 void STOP_CUTTER_RADIUS_COMPENSATION() {}
 void START_SPEED_FEED_SYNCH(int, double, bool) {}
 void STOP_SPEED_FEED_SYNCH() {}
-void DWELL(double) {}
+void DWELL(double seconds) {
+  if (!canon.recording || canon.halt != Halt::none || !(seconds > 0))
+    return;
+  flush_run();
+  put(std::format("dwell {} {:.6f}\n", canon.line, seconds));
+}
 void SET_SPINDLE_MODE(int spindle, double css_maximum) {
   if (spindle == 0) {
     canon.surface_speed = css_maximum != 0;

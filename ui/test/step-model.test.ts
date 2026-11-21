@@ -56,7 +56,7 @@ describe('model registration', () => {
     const status = new SimMachine({ emit: (): void => undefined }).status()
     status.program.file = 'part.ngc'
     const binding: ModelBinding = { file: 'part.ngc', revision: status.program.revision, frame: frameOf(status.offsets) }
-    const preview: Preview = { type: 'preview', state: 'ready', context: status.preview_context, error: null, bounds: null, segments: [] }
+    const preview: Preview = { type: 'preview', state: 'ready', context: status.preview_context, error: null, bounds: null, dwells: [], segments: [] }
     expect(modelBlock(binding, status, preview, true)).toBe('')
     expect(modelBlock(binding, status, preview, false)).toContain('unavailable')
     expect(modelBlock(binding, status, { ...preview, state: 'pending' }, true)).toContain('waiting')

@@ -247,7 +247,7 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
-      5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}};
+      5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};
   Preview preview;
   preview.context = 4821337;
   preview.state = PreviewState::pending;
@@ -255,7 +255,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.state = PreviewState::ready;
   preview.segments = {approach, cut};
   preview.bounds = Bounds{{0, 0, -1.5}, {30, 20.5, 2}};
+  preview.dwells = {{6, 2}};
   messages.push_back(encode_preview(preview));
+  preview.dwells.clear();
   preview.context = 4821338;
   preview.state = PreviewState::failed;
   preview.error = PreviewError{6, "Unknown G code used"};

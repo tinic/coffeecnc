@@ -297,7 +297,7 @@ describe('capability-aware controls', () => {
     if (!panel.status) throw new Error('Missing status')
     panel.hello = { ...hello, homing_required: false, max_spindle_rpm: 1500 }
     panel.status.preview_context = 9
-    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, error: null,
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
       check: { tools: [{ tool: 98, length: 'missing' }], frames: [], feed: null, spindle: null,
         units: ['mm'], travel: 'fits', errors: ['T98 has no verified length.'], warnings: [] } }
     wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
@@ -312,7 +312,7 @@ describe('capability-aware controls', () => {
     if (!panel.status) throw new Error('Missing status')
     panel.hello = { ...hello, homing_required: false }
     panel.status.preview_context = 9
-    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, error: null,
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
       check: { tools: [], frames: [], feed: null, spindle: null,
         units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
     wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
@@ -325,7 +325,7 @@ describe('capability-aware controls', () => {
     if (!panel.status) throw new Error('Missing status')
     panel.hello = { ...hello, homing_required: false }
     panel.status.preview_context = 9
-    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, error: null,
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
       check: { tools: [], frames: [], feed: null, spindle: null,
         units: ['inch'], travel: 'unknown', errors: [], warnings: [] } }
     wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })

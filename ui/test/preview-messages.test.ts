@@ -25,7 +25,7 @@ beforeEach(() => {
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.program.file = '/parts/a.ngc'
   panel.preview = { type: 'preview', context: panel.status.preview_context,
-    state: 'pending', error: null, segments: [], bounds: null }
+    state: 'pending', error: null, segments: [], bounds: null, dwells: [] }
   vi.stubGlobal('ResizeObserver', class {
     observe(): void { /* Layout is not measured in these message tests. */ }
     disconnect(): void { /* No observer was scheduled. */ }
@@ -64,13 +64,13 @@ describe('preview messages', () => {
     if (panel.status === null) throw new Error('Missing status')
     const context = panel.status.preview_context
     panel.preview = { type: 'preview', context, state: 'ready',
-      error: null, bounds: null, segments: [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0] }] }
+      error: null, bounds: null, dwells: [], segments: [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0], feed: 100 }] }
     wrapper = shallowMount(PathView)
     expect(wrapper.classes()).not.toContain('outdated')
 
     panel.status.preview_context += 1
     panel.preview = { type: 'preview', context: context + 1, state: 'unavailable',
-      error: { line: 0, text: 'The preview updates when the run ends.' }, bounds: null, segments: [] }
+      error: { line: 0, text: 'The preview updates when the run ends.' }, bounds: null, dwells: [], segments: [] }
     await nextTick()
     expect(wrapper.classes()).toContain('outdated')
     expect(wrapper.get('.preview-banner').text()).toContain('The preview updates when the run ends.')
@@ -100,7 +100,7 @@ describe('preview messages', () => {
   it('identifies an incomplete path at a known source line', () => {
     if (panel.preview === null) throw new Error('Missing fixture')
     panel.preview.state = 'failed'; panel.preview.error = { line: 3, text: 'Unsupported operation.' }
-    panel.preview.segments = [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0] }]
+    panel.preview.segments = [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0], feed: 100 }]
     wrapper = shallowMount(PathView)
     expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped at line 3: partial path shown')
   })

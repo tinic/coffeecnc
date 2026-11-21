@@ -392,6 +392,8 @@ export interface SetterState {
   material?: { wcs: number; axis: 'X' | 'Y' | 'Z' | 'XY' }
   /** After a ball calibration: the effective ball diameter written to the tool table, mm. */
   ball_diameter?: number
+  /** After a bore or boss: its diameter through the centre, mm. */
+  center_diameter?: number
 }
 
 export interface DirectoryEntry {
@@ -602,6 +604,10 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
    * from beside it below its top (Z0), and writes it to the tool table.
    */
   | { action: 'ball'; gauge_width: number; tool: number; x: number; y: number; z: number }
+  /** X0 Y0 at the centre of a bore; the ball starts inside it, below its top. */
+  | { action: 'bore'; tool: number; x: number; y: number; z: number }
+  /** X0 Y0 at the centre of a boss of about `diameter` mm; probed from outside below Z0. */
+  | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

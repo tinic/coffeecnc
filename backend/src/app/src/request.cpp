@@ -308,7 +308,9 @@ auto command(const Json& object) -> Command {
                                               {"touch_off", SetterAction::touch_off},
                                               {"material", SetterAction::material},
                                               {"corner", SetterAction::corner},
-                                              {"ball", SetterAction::ball}});
+                                              {"ball", SetterAction::ball},
+                                              {"bore", SetterAction::bore},
+                                              {"boss", SetterAction::boss}});
     FixedSetterRequest request{action};
     if (action != SetterAction::status) {
       if (action == SetterAction::material) {
@@ -322,6 +324,9 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::ball) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "gauge_width"});
         request.gauge_width_mm = number(object, "gauge_width");
+      } else if (action == SetterAction::boss) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
+        request.gauge_width_mm = number(object, "diameter");
       } else if (action == SetterAction::corner) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"});
         request.direction = choice<ProbeDirection>(

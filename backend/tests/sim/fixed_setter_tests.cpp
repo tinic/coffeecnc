@@ -270,9 +270,11 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   // the ruby's length applied). The probe starts 5 mm inside both faces, 8 mm above the top.
   // Each axis inside its window (near: |in1 - in2| <= difference), all three at once (logic AND).
   // wcomp and and2 are loaded already, and a realtime module loads once.
-  halcmd("loadrt near names=sim-corner-x,sim-corner-y,sim-corner-z");
-  halcmd("loadrt logic names=sim-corner-in personality=0x103");
-  for (const auto* component : {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-in"})
+  // The pocket instances are loaded here too: a realtime module loads once.
+  halcmd("loadrt near names=sim-corner-x,sim-corner-y,sim-corner-z,sim-pocket-x,sim-pocket-y");
+  halcmd("loadrt logic names=sim-corner-in,sim-pocket-out personality=0x103,0x802");
+  for (const auto* component : {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-in",
+                                "sim-pocket-x", "sim-pocket-y", "sim-pocket-out"})
     halcmd(std::format("addf {} servo-thread", component));
   const auto corner_window = [&](char axis, double low, double high) {
     const auto name = std::format("sim-corner-{}", axis);
@@ -341,6 +343,60 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   require(!wrong && wrong.error().contains("more than 0.5 mm"),
           wrong ? "expected a refused diameter" : wrong.error());
   mdi("G10 L1 P99 R1");
+
+  // A boss: the block's ball-centre contacts at x -9/+9 and y -7/+7, its top at 12 mm. Faces
+  // lie one radius outward of the contacts in the real world, here inward: centre 0, 0 and a
+  // 12 mm chord in Y.
+  corner_window('x', -9, 9);
+  corner_window('y', -7, 7);
+  corner_window('z', -100, 12);
+  start_at();
+  mdi("G21");
+  mdi("G90 G53 G0 X1 Y2");
+  mdi("G10 L20 P0 Z8");
+  FixedSetterRequest boss_request{SetterAction::boss, 99, position()};
+  boss_request.gauge_width_mm = 16;
+  const auto boss = port->fixed_setter(boss_request, epoch, {});
+  const auto boss_after = port->status();
+  require(boss && boss->center_diameter && std::abs(*boss->center_diameter - 12) < 0.03 &&
+              boss->material && boss->material->corner &&
+              std::abs(boss_after.work[0] - (position()[0] - 0)) < 0.03 &&
+              std::abs(boss_after.work[1] - (position()[1] - 0)) < 0.03 &&
+              std::abs(position()[2] - 20) < 0.2,
+          boss ? std::format("the boss centre is X0 Y0, diameter {:.3f} mm (work {:.3f} {:.3f})",
+                             boss->center_diameter.value_or(0), boss_after.work[0], boss_after.work[1])
+               : boss.error());
+
+  // A bore: the ball trips outside x -9..+9 and y -7..+7 (NAND of both windows); centre 0, 0, a
+  // 14 mm centre chord in Y plus the 2 mm ball: 16 mm.
+  const auto pocket_window = [&](char axis, double from, double to) {
+    const auto name = std::format("sim-pocket-{}", axis);
+    halcmd(std::format("net {} {}.in1", std::format("sim-contact-{}", axis), name));
+    halcmd(std::format("setp {}.in2 {}", name, (from + to) / 2 / scale));
+    halcmd(std::format("setp {}.difference {}", name, (to - from) / 2 / scale));
+    halcmd(std::format("setp {}.scale 1", name));
+  };
+  pocket_window('x', -9, 9);
+  pocket_window('y', -7, 7);
+  halcmd("net sim-pocket-inx sim-pocket-x.out sim-pocket-out.in-00");
+  halcmd("net sim-pocket-iny sim-pocket-y.out sim-pocket-out.in-01");
+  // Into the pocket before its walls exist: outside them the probe input is tripped, and a
+  // tripped probe stops any move that is not a probe.
+  start_at();
+  mdi("G21");
+  mdi("G90 G53 G0 X2 Y1");
+  halcmd("unlinkp sim-ruby-release.in");
+  halcmd("net sim-pocket-trip sim-pocket-out.nand sim-ruby-release.in");
+  const auto bore = port->fixed_setter({SetterAction::bore, 99, position()}, epoch, {});
+  const auto bore_after = port->status();
+  require(bore && bore->center_diameter && std::abs(*bore->center_diameter - 16) < 0.03 &&
+              std::abs(bore_after.work[0] - position()[0]) < 0.03 &&
+              std::abs(bore_after.work[1] - position()[1]) < 0.03,
+          bore ? std::format("the bore centre is X0 Y0, diameter {:.3f} mm (work {:.3f} {:.3f})",
+                             bore->center_diameter.value_or(0), bore_after.work[0], bore_after.work[1])
+               : bore.error());
+  halcmd("unlinkp sim-ruby-release.in");
+  halcmd("net sim-corner-trip sim-ruby-release.in");
   halcmd("unlinkp sim-ruby-release.in");
   halcmd("net sim-setter-trip sim-ruby-release.in");
 

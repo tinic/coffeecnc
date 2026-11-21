@@ -83,6 +83,25 @@ describe('corner probe workflow', () => {
   })
 })
 
+describe('bore and boss centres', () => {
+  it('centres on a bore from inside and reports its diameter', async () => {
+    await probe('Bore centre')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore', tool: 99, x: 0, y: 0, z: 0 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      material: { wcs: 2, axis: 'XY' }, center_diameter: 16 } })
+    expect(wrapper?.get('.setter-band.done p').text()).toBe('G55 X0 Y0 set at the bore centre, Ø 16.000 mm.')
+  })
+
+  it('asks for the approximate boss diameter, then centres on it', async () => {
+    const fixture = await probe('Boss centre…')
+    expect(send).not.toHaveBeenCalled()
+    fixture.findComponent(NumberDialog).vm.$emit('confirm', 30, '30')
+    await nextTick()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss', diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
+    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing round the boss…')
+  })
+})
+
 describe('ball calibration', () => {
   it('asks for the gauge width, probes both sides and reports the saved diameter', async () => {
     const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 } })

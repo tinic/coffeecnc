@@ -61,6 +61,8 @@ struct MachineConfig {
   std::string parameter_file;
   std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
   std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
+  // Program browser shortcuts; filled by the application from PROGRAM_PREFIX and the session.
+  std::vector<ProgramPlace> program_places{};
   // [COFFEECNC] MACHINE_ID and DATA_DIRECTORY as written, not judged and not resolved; empty
   // when the key is absent. They say where the tool models are saved (app layer:
   // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.

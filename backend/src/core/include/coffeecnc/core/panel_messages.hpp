@@ -34,6 +34,13 @@ struct CoolantOutputs {
 };
 
 // Sent once after the panel's `ready`: what does not change while the machine runs.
+// A folder the program browser offers as a shortcut.
+struct ProgramPlace {
+  std::string name;
+  std::string path;
+  friend auto operator==(const ProgramPlace&, const ProgramPlace&) -> bool = default;
+};
+
 struct Hello {
   std::string machine_name;
   // No LinuxCNC is behind the session.
@@ -58,6 +65,8 @@ struct Hello {
   std::optional<FixedSetterLimits> fixed_setter{};
   // The tool HAL routes to the spindle touch probe, when the machine declares one.
   std::optional<int> touch_probe_tool{};
+  // Shortcuts of the program browser, first the program directory.
+  std::vector<ProgramPlace> program_places{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

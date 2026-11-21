@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { panel } from '../src/machine'
-import { cancelImport, importPart, part, placePart, removePart } from '../src/step'
+import { cancelImport, importPart, loadProgramPart, part, placePart, programPartUrl, removePart } from '../src/step'
 import { importTimeoutMs, normalizeModel, type ImportReply } from '../src/step-model'
 import { SimMachine } from '../src/sim/machine'
 
@@ -92,3 +92,32 @@ describe('STEP import lifetime', () => {
     expect(part.attachment).toBeNull()
   })
 })
+
+describe('the model beside the program', () => {
+  it('asks the native panel for the STEP file of the loaded program and imports it', async () => {
+    expect(programPartUrl('/home/cnc/my part.ngc')).toBe('coffeecnc://panel/program-part?program=%2Fhome%2Fcnc%2Fmy%20part.ngc')
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.program.file = '/home/cnc/plate.ngc'
+    const fetcher = vi.fn(() => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(3)) } as Response))
+    await loadProgramPart(fetcher)
+    expect(fetcher).toHaveBeenCalledWith('coffeecnc://panel/program-part?program=%2Fhome%2Fcnc%2Fplate.ngc')
+    await vi.waitFor(() => { expect(workers).toHaveLength(1) })
+    workers[0]?.reply({ ok: true, geometry })
+    await vi.waitFor(() => { expect(part.attachment?.name).toBe('plate.step') })
+    expect(part.attachment?.note).toBe('Loaded with the program')
+  })
+
+  it('does nothing without a model, in the simulator, or over a model attached meanwhile', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.program.file = '/home/cnc/lone.ngc'
+    await loadProgramPart(vi.fn(() => Promise.resolve({ ok: false } as Response)))
+    expect(part.attachment).toBeNull()
+    expect(part.error).toBe('')
+    const simulated = vi.fn()
+    ;(panel as { simulated?: boolean }).simulated = true
+    await loadProgramPart(simulated)
+    expect(simulated).not.toHaveBeenCalled()
+    ;(panel as { simulated?: boolean }).simulated = false
+  })
+})
+

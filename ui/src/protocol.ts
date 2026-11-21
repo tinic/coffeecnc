@@ -396,6 +396,7 @@ export interface SetterState {
   center_diameter?: number
   /** After an edge angle: how far the edge turns from the machine axis, degrees counterclockwise. */
   edge_angle?: number
+  edge_rotation?: { measurement_id: number; wcs: number }
 }
 
 export interface DirectoryEntry {
@@ -612,6 +613,7 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number }
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
+  | { action: 'apply_angle'; measurement_id: number; tool: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

@@ -49,6 +49,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["center_diameter"] = *setter->center_diameter;
     if (setter->edge_angle_deg)
       message["setter"]["edge_angle"] = *setter->edge_angle_deg;
+    if (const auto& edge = setter->edge_rotation)
+      message["setter"]["edge_rotation"] = {{"measurement_id", edge->id}, {"wcs", edge->wcs}};
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
                                        {"axis", material->corner ? std::string{"XY"}

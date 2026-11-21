@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -40,28 +41,35 @@ void halcmd(std::string_view command) {
     throw std::runtime_error(std::format("HAL failed: {}", command));
 }
 
-void wire(double scale) {
+void wire(double scale, bool g0759) {
   halcmd("loadrt wcomp names=sim-tool-setter");
-  halcmd("loadrt not names=sim-probe-inactive");
+  if (g0759) {
+    halcmd("unlinkp motion.probe-input");
+    halcmd("unlinkp coffeecnc.probe-input");
+  } else {
+    halcmd("loadrt not names=sim-probe-inactive");
+    halcmd("addf sim-probe-inactive servo-thread");
+  }
+  const auto* inactive = g0759 ? "not.0" : "sim-probe-inactive";
   halcmd("loadrt and2 names=sim-probe-lease,sim-probe-estop");
   halcmd("loadrt or2 names=sim-probe-permit");
-  for (const auto* component : {"sim-tool-setter", "sim-probe-inactive", "sim-probe-lease",
-                                "sim-probe-permit", "sim-probe-estop"})
+  for (const auto* component :
+       {"sim-tool-setter", "sim-probe-lease", "sim-probe-permit", "sim-probe-estop"})
     halcmd(std::format("addf {} servo-thread", component));
   halcmd(std::format("setp sim-tool-setter.min {}", -100 / scale));
   halcmd(std::format("setp sim-tool-setter.max {}", -45 / scale));
   halcmd("net sim-setter-z axis.z.pos-cmd sim-tool-setter.in");
   halcmd("net sim-setter-trip sim-tool-setter.out motion.probe-input coffeecnc.probe-input");
   halcmd("net sim-setter-selected coffeecnc.probe-setter-select coffeecnc.probe-setter-selected");
-  halcmd("net sim-cycle-active coffeecnc.probe-cycle-active sim-probe-inactive.in");
+  halcmd(std::format("net sim-cycle-active coffeecnc.probe-cycle-active {}.in", inactive));
   halcmd("net sim-cycle-lease coffeecnc.probe-cycle-lease sim-probe-lease.in0");
   halcmd("net coffeecnc-watchdog-ok sim-probe-lease.in1");
   halcmd("net sim-cycle-safe sim-probe-lease.out sim-probe-permit.in0");
-  halcmd("net sim-cycle-inactive sim-probe-inactive.out sim-probe-permit.in1");
+  halcmd(std::format("net sim-cycle-inactive {}.out sim-probe-permit.in1", inactive));
   halcmd("net sim-cycle-permit sim-probe-permit.out motion.enable sim-probe-estop.in0 "
          "coffeecnc.probe-motion-permitted");
   halcmd("unlinkp iocontrol.0.emc-enable-in");
-  halcmd("net estop-loop sim-probe-estop.in1");
+  halcmd(g0759 ? "net estop-out sim-probe-estop.in1" : "net estop-loop sim-probe-estop.in1");
   halcmd("net sim-enable sim-probe-estop.out iocontrol.0.emc-enable-in");
 }
 
@@ -463,7 +471,107 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
           "editing the teaching tool drops the plane and preserves other saved marks");
 }
 
-void run(const std::string& ini, bool material) {
+void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  mdi("M61 Q99");
+  mdi("G43 H99");
+  mdi("G54");
+  const auto g54 = port.status().g5x;
+  mdi("G10 L2 P2 X5 Y-7 Z2 R0");
+  mdi("G55");
+  mdi("G92 X2 Y3 Z4");
+  const auto position = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  halcmd("loadrt sum2 names=sim-edge-coordinate");
+  halcmd("addf sim-edge-coordinate servo-thread");
+  halcmd("net sim-edge-x axis.x.pos-cmd");
+  halcmd("net sim-edge-y axis.y.pos-cmd");
+  halcmd("unlinkp sim-tool-setter.in");
+  halcmd("net sim-edge-normal sim-edge-coordinate.out sim-tool-setter.in");
+  halcmd(std::format("setp sim-tool-setter.min {}", 6 / scale));
+  halcmd(std::format("setp sim-tool-setter.max {}", 100 / scale));
+  halcmd("setp sim-edge-coordinate.gain1 -0.05");
+  const SetterEpoch epoch{1, 1, 1, 0};
+  const auto measure = [&](ProbeDirection direction, double spacing, double expected) {
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    // A horizontal edge has Y = 6 + 0.05X, a vertical edge X = 6 + 0.05Y.
+    halcmd("unlinkp sim-edge-coordinate.in0");
+    halcmd("unlinkp sim-edge-coordinate.in1");
+    const bool front = direction == ProbeDirection::y_plus;
+    halcmd(front ? "net sim-edge-y sim-edge-coordinate.in0"
+                 : "net sim-edge-x sim-edge-coordinate.in0");
+    halcmd(front ? "net sim-edge-x sim-edge-coordinate.in1"
+                 : "net sim-edge-y sim-edge-coordinate.in1");
+    mdi(scale == 1 ? "G21" : "G20");
+    const auto before = port.status();
+    FixedSetterRequest request{SetterAction::angle, 99, position(), direction};
+    request.gauge_width_mm = spacing;
+    const auto measured = port.fixed_setter(request, epoch, {});
+    const auto after = port.status();
+    require(measured && measured->edge_angle_deg && measured->edge_rotation &&
+                measured->edge_rotation->wcs == 2 &&
+                std::abs(*measured->edge_angle_deg - expected) < 0.05 && before.g5x == after.g5x &&
+                before.g92 == after.g92 && after.rotation_xy == 0,
+            measured ? std::format("edge measured {:.3f}° in G55 without writing it",
+                                   measured->edge_angle_deg.value_or(99))
+                     : measured.error());
+    return FixedSetterRequest{.action = SetterAction::apply_angle,
+                              .tool = 99,
+                              .edge_measurement = measured->edge_rotation->id};
+  };
+  const double expected = std::atan(0.05) * 180 / std::numbers::pi;
+  const auto stale = measure(ProbeDirection::y_plus, 20, expected);
+  mdi("G10 L2 P2 X6");
+  const auto before_stale = port.writes().size();
+  const auto refused = port.fixed_setter(stale, epoch, {});
+  require(!refused && refused.error().contains("work frame") &&
+              before_stale == port.writes().size(),
+          "a changed work origin refuses the measured rotation before writing");
+  for (const auto& [direction, angle] : {std::pair{ProbeDirection::y_plus, expected},
+                                         std::pair{ProbeDirection::x_plus, -expected}}) {
+    // Travel backwards on the front edge to verify that its orientation is directionless.
+    const auto request = measure(direction, direction == ProbeDirection::y_plus ? -20 : 20, angle);
+    const auto original = port.status();
+    const auto before_apply = position();
+    const auto applied = port.fixed_setter(request, epoch, {});
+    const auto after = port.status();
+    if (!applied)
+      std::cout << std::format(
+          "verify rotation expected={:.10f} actual={:.10f} wcs={} "
+          "g5x_delta={:.12g},{:.12g},{:.12g} g92_delta={:.12g},{:.12g},{:.12g} still={} "
+          "executing={} paused={} spindle={} xyz_delta={:.10g},{:.10g},{:.10g}\n",
+          angle, after.rotation_xy, after.wcs, after.g5x[0] - original.g5x[0],
+          after.g5x[1] - original.g5x[1], after.g5x[2] - original.g5x[2],
+          after.g92[0] - original.g92[0], after.g92[1] - original.g92[1],
+          after.g92[2] - original.g92[2], after.controller.in_position, after.task_executing,
+          after.paused, after.controller.spindle_active, position()[0] - before_apply[0],
+          position()[1] - before_apply[1], position()[2] - before_apply[2]);
+
+    require(applied && applied->edge_angle_deg && std::abs(after.rotation_xy - angle) < 0.05 &&
+                after.wcs == 2 &&
+                std::ranges::equal(original.g5x, after.g5x,
+                                   [](double a, double b) { return std::abs(a - b) < 1e-6; }) &&
+                std::ranges::equal(original.g92, after.g92,
+                                   [](double a, double b) { return std::abs(a - b) < 1e-6; }) &&
+                before_apply == position(),
+            applied ? std::format("G55 applied {:.3f}° without changing origin, shifts or position",
+                                  after.rotation_xy)
+                    : applied.error());
+    const auto replay = port.fixed_setter(request, epoch, {});
+    require(!replay, "a rotation measurement can only be applied once");
+    mdi("G10 L2 P2 R0");
+  }
+  mdi("G54");
+  require(port.status().g5x == g54 && port.status().rotation_xy == 0,
+          "applying G55 rotation leaves G54 unchanged");
+}
+
+void run(const std::string& ini, std::string_view scenario) {
+  const bool material = scenario == "material";
+  const bool edge = scenario == "edge-rotation";
+  const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
     throw std::runtime_error(config.error());
@@ -473,7 +581,7 @@ void run(const std::string& ini, bool material) {
   constexpr int reference_tool = 98;
   const double reference_length = scale == 1 ? 50 : 50.8;
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
-  if (material)
+  if (material || edge)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -482,7 +590,7 @@ void run(const std::string& ini, bool material) {
   if (!component)
     throw std::runtime_error(component.error());
   halcmd(std::format("-f '{}'", config->postgui_halfile));
-  wire(scale);
+  wire(scale, g0759);
   HalShared shared;
   HalControl control{*component, shared};
   std::jthread control_thread{[&](std::stop_token stop) {
@@ -501,7 +609,12 @@ void run(const std::string& ini, bool material) {
   auto port = connect();
   checked(port->set_machine_state(MachineState::off, {}));
   checked(port->set_machine_state(MachineState::on, {}));
-  checked(port->home({}, {}));
+  if (g0759) {
+    for (const auto axis : {Axis::x, Axis::y, Axis::z})
+      checked(port->home(axis, {}));
+  } else {
+    checked(port->home({}, {}));
+  }
   wait_for(*port, [](const NmlStatus& s) {
     return std::ranges::all_of(s.controller.axes, [](auto axis) { return axis.homed; });
   });
@@ -513,6 +626,10 @@ void run(const std::string& ini, bool material) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (edge) {
+    edge_rotations(*port, scale, mdi);
+    return;
+  }
   if (material) {
     material_scenarios(port, shared, scale, mdi, [&] {
       port.reset();
@@ -744,12 +861,17 @@ void run(const std::string& ini, bool material) {
 
 auto main(int argc, char** argv) -> int {
   const auto* run_dir = std::getenv("COFFEECNC_SIM_RUN");
-  if ((argc != 3 && argc != 4) || std::string_view(argv[1]) != "-ini" || run_dir == nullptr ||
-      (argc == 4 && std::string_view(argv[3]) != "material") ||
-      std::filesystem::path(argv[2]) != std::filesystem::path(run_dir) / "coffeecnc_sim.ini")
+  if ((argc != 3 && argc != 4) || std::string_view(argv[1]) != "-ini" || run_dir == nullptr)
+    return 1;
+  const std::string_view scenario = argc == 4 ? argv[3] : "";
+  const std::filesystem::path ini = argv[2];
+  if ((scenario != "" && scenario != "material" && scenario != "edge-rotation") ||
+      ini.parent_path() != run_dir ||
+      (ini.filename() != "coffeecnc_sim.ini" &&
+       !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))
     return 1;
   try {
-    run(argv[2], argc == 4);
+    run(argv[2], scenario);
     return 0;
   } catch (const std::exception& failure) {
     std::cout << "check=native fixed setter failed: " << failure.what() << '\n';

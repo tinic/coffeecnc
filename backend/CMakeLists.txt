@@ -230,6 +230,14 @@ if(BUILD_TESTING)
       endforeach()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
+      add_test(NAME linuxcnc_edge_rotation_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p g0759 -t 110 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_edge_rotation_g0759
+        $<TARGET_FILE:coffeecnc_fixed_setter_tests> edge-rotation)
+      add_test(NAME linuxcnc_edge_rotation_inch COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -u inch -t 110 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_edge_rotation_inch
+        $<TARGET_FILE:coffeecnc_fixed_setter_tests> edge-rotation)
+      set_tests_properties(linuxcnc_edge_rotation_g0759 linuxcnc_edge_rotation_inch PROPERTIES
+        LABELS linuxcnc RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
       add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)

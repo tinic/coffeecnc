@@ -73,7 +73,8 @@ onMounted(() => {
 
 <template>
   <ModalDialog :title="title" size="medium" :expanded="expanded" fresh-gesture @close="emit('close')">
-    <div class="numeric-grid">
+    <div class="numeric-grid" :class="{ 'with-options': !!$slots['options'] }">
+      <div v-if="$slots['options']" class="options"><slot name="options" /></div>
       <p class="effect">{{ effect }}</p>
       <label class="entry">
         <span class="label">{{ label }}</span>
@@ -122,9 +123,10 @@ onMounted(() => {
 
 <style scoped>
 .numeric-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; }
-.effect, .entry, .formula-tools, .corrections { grid-column: 1; }
+.effect, .entry, .formula-tools, .corrections, .options { grid-column: 1; }
 .formula-tools { display: grid; gap: 8px; }
 .keypad { grid-column: 2; grid-row: 1 / 5; }
+.with-options .keypad { grid-row-end: 6; }
 .effect {
   font-size: 13px;
   margin: 0;

@@ -8,10 +8,11 @@ import { wcsName } from '../units'
 import SetterStatusBand from './SetterStatusBand.vue'
 import WorkpieceProbeDiagram from './WorkpieceProbeDiagram.vue'
 import NumberDialog from './NumberDialog.vue'
+import ModalDialog from './ModalDialog.vue'
 import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' | 'apply_angle' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { label: 'Z top', travel: 'z_top', surface: 'top surface', approach: '−Z' },
@@ -65,16 +66,42 @@ function centreBoss(diameter: number): void {
   probe('x_plus', undefined, { kind: 'boss', size: diameter })
 }
 interface Feature { kind: 'ball' | 'boss' | 'bore' | 'angle'; size: number }
-// The angle of the front edge (Y−, probed toward +Y) over a distance along X: squaring a vise.
+const angleFaces = [
+  { label: 'Front · Y−', name: 'Front', travel: 'y_plus', along: 'X' },
+  { label: 'Left · X−', name: 'Left', travel: 'x_plus', along: 'Y' },
+] as const
+const angleFace = shallowRef<(typeof angleFaces)[number]>(angleFaces[0])
 const askingAngle = shallowRef(false)
+const askingRotation = shallowRef(false)
+const edgeRotation = shallowRef<{ id: number; wcs: number; degrees: number; frame: string } | null>(null)
+const frame = computed(() => JSON.stringify(panel.status?.offsets))
+const shifted = computed(() => panel.status?.offsets.g92.some((value) => value !== 0) === true)
+const canApplyRotation = computed(() => edgeRotation.value !== null && frame.value === edgeRotation.value.frame &&
+  panel.status?.offsets.wcs === edgeRotation.value.wcs && !pending.value && !machineReason.value && !toolBlock.value)
+watch(frame, () => {
+  edgeRotation.value = null
+  askingRotation.value = false
+})
+const degreesText = (degrees: number): string => `${degrees >= 0 ? '+' : '−'}${Math.abs(degrees).toFixed(3)}°`
 function measureAngle(spacing: number): void {
   askingAngle.value = false
-  probe('y_plus', undefined, { kind: 'angle', size: spacing })
+  probe(angleFace.value.travel, undefined, { kind: 'angle', size: spacing })
+}
+function applyRotation(): void {
+  const offer = edgeRotation.value
+  if (!canApplyRotation.value || !offer) return
+  askingRotation.value = false
+  const request = { type: 'fixed_setter', action: 'apply_angle', measurement_id: offer.id, tool: props.tool } as const
+  pending.value = request
+  line.value = { text: `Setting ${wcsName(offer.wcs)} rotation…`, level: 'busy' }
+  send(request)
 }
 
 function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): void {
   const gauge = feature?.kind === 'ball' ? feature.size : undefined
   if (pending.value) return
+  edgeRotation.value = null
+  askingRotation.value = false
   const status = panel.status
   const blocked = machineReason.value
   lastMachineReason = blocked
@@ -99,7 +126,7 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
     return
   }
   const request: Request = feature?.kind === 'angle'
-    ? { type: 'fixed_setter', action: 'angle', direction: 'y_plus', spacing: feature.size, tool: props.tool, x, y, z }
+    ? { type: 'fixed_setter', action: 'angle', direction: angleFace.value.travel, spacing: feature.size, tool: props.tool, x, y, z }
     : feature?.kind === 'bore'
     ? { type: 'fixed_setter', action: 'bore', tool: props.tool, x, y, z }
     : feature?.kind === 'boss'
@@ -111,7 +138,7 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
       : { type: 'fixed_setter', action: 'corner', x_direction: corner.x, y_direction: corner.y, tool: props.tool, x, y, z }
   pending.value = request
   const surface = surfaces.find((entry) => entry.travel === direction)
-  line.value = { text: feature?.kind === 'angle' ? 'Probing the front edge at two points…'
+  line.value = { text: feature?.kind === 'angle' ? `Probing the ${angleFace.value.name.toLowerCase()} edge at two points…`
     : feature?.kind === 'bore' ? 'Probing the bore walls…'
     : feature?.kind === 'boss' ? 'Probing round the boss…'
     : gauge !== undefined ? 'Probing both sides of the gauge…'
@@ -129,6 +156,17 @@ const removeListener = onResult((command, result) => {
   const request = pending.value
   pending.value = null
   if (result.outcome === 'timed_out') send({ type: 'abort' })
+  if (request.action === 'apply_angle') {
+    const degrees = result.setter?.edge_angle
+    edgeRotation.value = null
+    if (result.outcome === 'accepted' && degrees !== undefined) {
+      setterState.value = result.setter ?? null
+      line.value = { text: `Work rotation set to ${degreesText(degrees)}.`, level: 'done' }
+    } else {
+      line.value = { text: result.reason || 'The machine did not confirm the rotation.', level: 'blocked' }
+    }
+    return
+  }
   if (request.action === 'angle') {
     const degrees = result.setter?.edge_angle
     if (result.outcome !== 'accepted' || degrees === undefined) {
@@ -137,7 +175,10 @@ const removeListener = onResult((command, result) => {
     }
     if (result.setter) setterState.value = result.setter
     const rise = Math.tan(degrees * Math.PI / 180) * request.spacing
-    line.value = { text: `Front edge turns ${degrees >= 0 ? '+' : '−'}${Math.abs(degrees).toFixed(3)}° (${Math.abs(rise).toFixed(3)} mm over ${String(request.spacing)} mm).`, level: 'done' }
+    const face = angleFaces.find((entry) => entry.travel === request.direction)?.name ?? 'Measured'
+    const offer = result.setter?.edge_rotation
+    if (offer) edgeRotation.value = { id: offer.measurement_id, wcs: offer.wcs, degrees, frame: frame.value }
+    line.value = { text: `${face} edge turns ${degreesText(degrees)} (${Math.abs(rise).toFixed(3)} mm over ${String(Math.abs(request.spacing))} mm).`, level: 'done' }
     return
   }
   if (request.action === 'bore' || request.action === 'boss') {
@@ -179,6 +220,8 @@ watch([
   (): unknown => panel.hello, (): string => panel.link, (): string | undefined => panel.status?.machine,
   allHomed, homingActive,
 ], () => {
+  edgeRotation.value = null
+  askingRotation.value = false
   if (!panel.hello?.fixed_setter) return
   setterState.value = null
   statusRequest = null
@@ -228,7 +271,7 @@ onBeforeUnmount(() => {
           Boss centre…
         </button>
         <button
-          v-tooltip="'Jog beside the front edge as for Y−, then enter how far to move along X. Shows how far the edge turns.'"
+          v-tooltip="'Measure how far the front or left edge turns.'"
           type="button" class="btn" :class="{ on: pending?.action === 'angle' }" @click="askingAngle = true"
         >
           Edge angle…
@@ -241,13 +284,36 @@ onBeforeUnmount(() => {
         Calibrate ball…
       </button>
     </div>
-    <SetterStatusBand :line="displayLine" />
+    <SetterStatusBand :line="displayLine">
+      <template #actions>
+        <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">Apply rotation…</button>
+      </template>
+    </SetterStatusBand>
     <NumberDialog
       v-if="askingAngle"
-      title="Measure the front edge angle"
-      effect="Probes the front edge (Y−) here and again further along X. Nothing is written; the result shows how far the edge turns."
-      label="Distance along X" unit="mm" initial="50" action="Probe" @confirm="measureAngle" @close="askingAngle = false"
-    />
+      title="Measure edge angle"
+      :effect="`Jog beside the ${angleFace.name.toLowerCase()} edge. The probe touches here and again along ${angleFace.along}.`"
+      :label="`Distance along ${angleFace.along}`" unit="mm" initial="50" action="Probe" @confirm="measureAngle" @close="askingAngle = false"
+    >
+      <template #options>
+        <div class="edge-choice" role="group" aria-label="Edge to measure">
+          <button
+            v-for="face in angleFaces" :key="face.travel" class="btn" type="button"
+            :class="{ on: angleFace.travel === face.travel }" :aria-pressed="angleFace.travel === face.travel" @click="angleFace = face"
+          >
+            {{ face.label }}
+          </button>
+        </div>
+      </template>
+    </NumberDialog>
+    <ModalDialog v-if="askingRotation && edgeRotation" title="Apply as G5x rotation?" size="small" fresh-gesture @close="askingRotation = false">
+      <p class="rotation-effect">Rotate the {{ wcsName(edgeRotation.wcs) }} XY axes {{ degreesText(edgeRotation.degrees) }} about its stored origin.</p>
+      <p v-if="shifted" class="rotation-effect">The current G52/G92 shift stays active.</p>
+      <template #footer>
+        <button class="btn" type="button" @click="askingRotation = false">Cancel</button>
+        <button class="btn primary" type="button" :disabled="!canApplyRotation" @click="applyRotation">Apply rotation</button>
+      </template>
+    </ModalDialog>
     <NumberDialog
       v-if="askingBoss"
       title="Centre on a boss"
@@ -264,6 +330,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.edge-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.edge-choice .btn { min-height: 44px; padding-inline: 5px; }
+.rotation-action { flex: none; min-height: 32px; padding-inline: 8px; font-size: 12px; }
+.rotation-effect { margin: 0; line-height: 1.5; }
 .material-probe { min-width: 0; container-type: inline-size; }
 .probe-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(186px, 0.82fr); align-items: center; gap: 12px; }
 .probe-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }

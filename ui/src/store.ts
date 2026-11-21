@@ -187,6 +187,8 @@ export function describeCommand(command: CommandBody): string {
     case 'tool_touch_off':
       return 'Tool length touch-off'
     case 'fixed_setter':
+      if (command.action === 'angle') return 'Measure edge angle'
+      if (command.action === 'apply_angle') return 'Apply work rotation'
       return command.action === 'material' ? 'Material touch-off' : 'Fixed tool setter'
     case 'set_tool':
       return `Edit tool ${String(command.tool.number)}`

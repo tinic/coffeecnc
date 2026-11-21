@@ -125,3 +125,12 @@ The browser simulator switches its simulated machine off (preserving E-stop)
 and explicitly reports that the browser stays open. It refuses busy execution
 without aborting it. No physical machine or native process is controlled by
 these tests.
+
+### Applying an edge angle
+
+A successful `fixed_setter` `angle` reports `setter.edge_angle` in degrees
+counterclockwise and an optional `setter.edge_rotation` with a `measurement_id`
+and `wcs`. After confirmation, send `fixed_setter` with `action: "apply_angle"`,
+the measurement ID and the probe tool. The controller accepts the measurement
+once, in the same operator session and work frame. The applied result reports
+the verified rotation in `setter.edge_angle`.

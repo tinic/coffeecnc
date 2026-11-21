@@ -308,8 +308,18 @@ void increments_and_signals() {
 void tool_model_settings() {
   constexpr std::string_view own = "MAX_SPINDLE_RPM = 1500\n";
   const auto none = load(g0759);
-  require(none && !none->machine_id && !none->data_directory,
-          "neither key: neither value");
+  require(none && none->machine_id && none->machine_id->starts_with("G0759-shaped-") &&
+              valid_machine_id(*none->machine_id) && !none->data_directory,
+          "without an explicit ID the machine name supplies it");
+  const auto other_file = scratch / "other-machine.ini";
+  std::filesystem::copy_file(none->ini_file, other_file, std::filesystem::copy_options::overwrite_existing);
+  const auto other = load_machine_config(other_file.string());
+  require(other && other->machine_id && other->machine_id != none->machine_id,
+          "different profiles with the same machine name use different data folders");
+  const auto normalized = load(with(std::string(g0759), "MACHINE = G0759-shaped",
+                                    "MACHINE = Toolroom mill / 7"));
+  require(normalized && normalized->machine_id && normalized->machine_id->starts_with("Toolroom-mill-7-"),
+          "filesystem separators and spaces in the name become a single hyphen");
   const auto both = load(with(std::string(g0759), own,
                               "MAX_SPINDLE_RPM = 1500\nMACHINE_ID = Mill_7-a\n"
                               "DATA_DIRECTORY = /srv/coffeecnc data\n"));
@@ -330,7 +340,7 @@ void tool_model_settings() {
               (spaced ? spaced->machine_id.value_or("(none)") : spaced.error()) + "\"");
   const auto empty = load(with(std::string(g0759), own,
                                "MAX_SPINDLE_RPM = 1500\nMACHINE_ID =\nDATA_DIRECTORY =\n"));
-  require(empty && !empty->machine_id && !empty->data_directory,
+  require(empty && empty->machine_id == none->machine_id && !empty->data_directory,
           "LinuxCNC's INI reader gives a key without a value as an absent key");
 }
 
@@ -370,9 +380,9 @@ void shipped_example() {
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,
           "the example's signals set to yes");
-  // As shipped the example names no machine: nothing is saved, no directory is configured.
-  require(!config->machine_id && !config->data_directory,
-          "the example as it stands keeps settings for the session only");
+  require(config->machine_id && config->machine_id->starts_with("G0759-shaped-") &&
+              !config->data_directory,
+          "the example uses the machine name and default data root");
   // Its two commented-out keys, taken into use, are the identity it documents.
   auto named = section;
   for (const std::string_view key : {"#MACHINE_ID = ", "#DATA_DIRECTORY = "}) {
@@ -420,9 +430,9 @@ void simulation_profiles() {
                 config->home_all_configured && config->jog_increments.empty() &&
                 !config->signals.spindle_rpm && !config->signals.probe,
             std::format("the {} simulation INI is accepted as before", units));
-    require(!config->machine_id && !config->data_directory,
-            std::format("the {} simulation INI names no machine: tool models are session-only",
-                        units));
+    require(config->machine_id && config->machine_id->starts_with("CoffeeCNC-sim-") &&
+                !config->data_directory,
+            std::format("the {} simulation derives its data identity from the machine name", units));
   }
   const auto config = assembled("-p g0759", "g0759");
   require(config.has_value(), config ? "" : config.error());
@@ -474,6 +484,12 @@ void fixed_setter_is_explicit_and_bounded() {
   require(current && current->fixed_setter &&
               *current->fixed_setter == FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1},
           "two-pass setter reads the clearance and both feeds");
+  const auto geometry = load(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90",
+      "SETTER_MAX_TRAVEL_MM = 90\nTOUCH_PROBE_CORNER_REACH_MM = 9\n"
+      "TOUCH_PROBE_CORNER_MARGIN_MM = 4\nTOUCH_PROBE_CLEARANCE_MM = 6\nTOUCH_PROBE_DEPTH_MM = 3"));
+  require(geometry && geometry->fixed_setter &&
+              geometry->fixed_setter->material_geometry == MaterialProbeGeometry{9, 4, 6, 3},
+          "the configured external probe approach supplies all four distances");
   require(has(error(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90", "SETTER_MAX_TRAVEL_MM = 30")),
               "search must reach below"),
           "the setter rejects a search too short to reach below the reference latch");
@@ -488,6 +504,39 @@ void manual_tool_change_is_opt_in() {
   require(has(error(with(in, "MANUAL_TOOLCHANGE = yes", "MANUAL_TOOLCHANGE = maybe")),
               "MANUAL_TOOLCHANGE"),
           "an invalid tool-change setting is diagnosed");
+}
+
+void motion_settings() {
+  constexpr std::string_view rpm = "MAX_SPINDLE_RPM = 1500\n";
+  const auto defaulted = load(g0759);
+  require(defaulted && near(defaulted->motion_tolerances.probe_position_mm, 0.1) &&
+              near(defaulted->motion_tolerances.probe_off_line_mm, 0.5) &&
+              near(defaulted->motion_tolerances.probe_backlash_mm, 0.5) &&
+              near(defaulted->motion_tolerances.restart_position_mm, 0.5),
+          "the G0759 motion tolerances remain the defaults");
+  const auto tuned = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
+      "PROBE_OFF_LINE_TOLERANCE_MM = 0.2\nPROBE_BACKLASH_TOLERANCE_MM = 0.3\n"
+      "PROBE_POSITION_TOLERANCE_MM = 0.04\nRESTART_POSITION_TOLERANCE_MM = 0.23\n"));
+  require(tuned && near(tuned->motion_tolerances.probe_off_line_mm, 0.2) &&
+              near(tuned->motion_tolerances.probe_backlash_mm, 0.3) &&
+              near(tuned->motion_tolerances.probe_position_mm, 0.04) &&
+              near(tuned->motion_tolerances.restart_position_mm, 0.23),
+          "each motion tolerance can be tuned independently");
+  const auto invalid = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
+      "PROBE_POSITION_TOLERANCE_MM = nan\n"));
+  require(!invalid && has(invalid.error(), "PROBE_POSITION_TOLERANCE_MM"),
+          "an invalid tolerance names the key");
+
+  auto paused = with(std::string(g0759), "MAX_VELOCITY = 12.5\n",
+                     "MAX_VELOCITY = 12.5\nMAX_ACCELERATION = 10\nOFFSET_AV_RATIO = 0.2\n");
+  paused = with(std::move(paused), rpm, "MAX_SPINDLE_RPM = 1500\nSPINDLE_RPM_SIGNAL = yes\n"
+                "PAUSED_Z_MAX_MM = 10\n");
+  const auto missing_speed = load(paused);
+  require(!missing_speed && has(missing_speed.error(), "at-speed"),
+          "paused-Z needs the at-speed feedback as well as RPM");
+  const auto ready = load(with(std::move(paused), "SPINDLE_RPM_SIGNAL = yes\n",
+                              "SPINDLE_RPM_SIGNAL = yes\nSPINDLE_AT_SPEED_SIGNAL = yes\n"));
+  require(ready && ready->paused_z, "paused-Z is enabled with both spindle signals");
 }
 
 } // namespace
@@ -511,6 +560,7 @@ auto main(int argc, char** argv) -> int {
     shipped_example();
     simulation_profiles();
     fixed_setter_is_explicit_and_bounded();
+    motion_settings();
     manual_tool_change_is_opt_in();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;

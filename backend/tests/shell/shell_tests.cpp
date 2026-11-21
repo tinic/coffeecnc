@@ -1669,7 +1669,11 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
             before.identity != now.identity &&
             rig.js("return window.__coffeecncPage;") == now.identity,
         std::format("old={} new={}", before.identity, now.identity));
-  const std::string late = R"({"id":2,"type":"set_machine","state":"estop"})";
+  // Leave room for the new page's automatic requests, including settings for named machines.
+  const auto request_id = rig.js("return Math.max(0, ...__t.sent.map(m => m?.id ?? 0)) + 1000;").get<int>();
+  const std::string late =
+      std::format(R"({{"id":{},"type":"set_machine","state":"estop"}})", request_id);
+  const auto received = std::format("__t.resultIds.includes({})", request_id);
   rig.hooks.deliver_from_page(before.identity + ":" + late);
   rig.hooks.deliver_from_page(late); // and one without any identity
   std::this_thread::sleep_for(700ms);
@@ -1677,7 +1681,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("late_request_of_old_document_is_dropped",
         after_late.rejected == now.rejected + 2 &&
             rig.status().controller.machine == MachineState::on &&
-            rig.js("return __t.resultIds.includes(2);") == false,
+            rig.js("return " + received + ";") == false,
         std::format("rejected={}->{} machine_on={} results={}", now.rejected, after_late.rejected,
                     rig.status().controller.machine == MachineState::on,
                     rig.js("return __t.resultIds;").dump()));
@@ -1687,7 +1691,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
     return rig.status().controller.machine == MachineState::estop;
   });
   check("request_of_present_document_is_executed",
-        executed && rig.wait_js("__t.resultIds.includes(2)"),
+        executed && rig.wait_js(received),
         rig.js("return __t.resultIds;").dump());
   // The page's own request numbering is now behind the session's: a fresh page for what follows.
   const auto last = rig.hooks.state();
@@ -2113,6 +2117,17 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error("usage: coffeecnc_shell_tests -ini <file> (see tests/sim/run.sh)");
+    constexpr std::string_view legacy_marks = "legacy touched-off marks\n";
+    if (scenario == Scenario::tool_models_first_run) {
+      const auto config = load_machine_config(ini_file);
+      if (!config)
+        throw std::runtime_error(config.error());
+      std::ofstream legacy(config->touched_off_file());
+      legacy << legacy_marks;
+      legacy.close();
+      if (!legacy)
+        throw std::runtime_error("could not seed the legacy touched-off file");
+    }
     configure_environment();
     std::unique_ptr<ShellTestHooks> hooks;
     std::thread driver;
@@ -2121,6 +2136,19 @@ auto main(int argc, char** argv) -> int {
     options.ui_directory = COFFEECNC_SOURCE_UI_DIRECTORY;
     const int result = run_application(
         options, {.before_load = [&](PanelWindow& window, const MachineConfig& config) -> void {
+          if (scenario == Scenario::tool_models_first_run) {
+            const auto marks = config.touched_off_file();
+            check("legacy_marks_copied_into_data_directory",
+                  std::filesystem::path(marks).parent_path() == config.runtime_directory &&
+                      read_text_file(marks, 128) == legacy_marks);
+            std::filesystem::remove(marks);
+          } else if (scenario == Scenario::tool_models_second_run) {
+            auto legacy = config;
+            legacy.runtime_directory.clear();
+            check("removed_marks_do_not_return_on_restart",
+                  read_text_file(legacy.touched_off_file(), 128) == legacy_marks &&
+                      !std::filesystem::exists(config.touched_off_file()));
+          }
           hooks = ShellTestHooks::install(window, std::string(instrumentation));
           driver = std::thread(
               [&hooks, config, scenario]() -> void { drive(*hooks, config, scenario); });

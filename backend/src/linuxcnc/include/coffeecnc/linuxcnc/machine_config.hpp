@@ -26,6 +26,13 @@ struct PausedZLimits {
   double count_mm;
 };
 
+struct MotionTolerances {
+  double probe_off_line_mm{0.5};
+  double probe_backlash_mm{0.5};
+  double probe_position_mm{0.1};
+  double restart_position_mm{0.5};
+};
+
 // What the adapter needs from the machine's INI file. Lengths are already millimetres, velocities
 // mm/min. Together with `limits` this is everything a protocol `hello` carries.
 struct MachineConfig {
@@ -65,8 +72,8 @@ struct MachineConfig {
   std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
   // Program browser shortcuts; filled by the application from PROGRAM_PREFIX and the session.
   std::vector<ProgramPlace> program_places{};
-  // [COFFEECNC] MACHINE_ID and DATA_DIRECTORY as written, not judged and not resolved; empty
-  // when the key is absent. They say where the tool models are saved (app layer:
+  // Explicit [COFFEECNC] MACHINE_ID and DATA_DIRECTORY are passed as written. A missing ID
+  // defaults to a filesystem-safe form of [EMC] MACHINE. They say where the data is saved (app layer:
   // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.
   std::optional<std::string> machine_id;
   // Found in HAL once the post-GUI file is loaded; not read from the INI.
@@ -78,6 +85,10 @@ struct MachineConfig {
   std::optional<int> touch_probe_tool{};
   bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
   std::optional<PausedZLimits> paused_z{};
+  MotionTolerances motion_tolerances{};
+  // Resolved and prepared by the application before connecting to LinuxCNC.
+  std::string runtime_directory{};
+  [[nodiscard]] auto touched_off_file() const -> std::string;
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

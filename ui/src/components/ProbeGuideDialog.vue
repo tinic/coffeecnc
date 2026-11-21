@@ -93,8 +93,8 @@ function start(): void {
           </template>
           <template v-if="!material && limits"><dt>Setter XY tolerance</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
           <template v-if="!material && limits?.clearance_mm"><dt>Retract clearance</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
-          <template v-if="outside"><dt>Traverse clearance</dt><dd>5 mm above top min</dd></template>
-          <template v-if="outside"><dt>Ball centre at contact</dt><dd>2 mm below top</dd></template>
+          <template v-if="outside"><dt>Traverse clearance</dt><dd>{{ limits?.material_geometry?.clearance_mm ?? 5 }} mm above top min</dd></template>
+          <template v-if="outside"><dt>Ball centre at contact</dt><dd>{{ limits?.material_geometry?.depth_mm ?? 2 }} mm below top</dd></template>
         </dl>
         <div class="guide-result"><h3>Result</h3><p>{{ plan.result }}<template v-if="tool && !material"> · T{{ tool }}</template></p></div>
       </section>

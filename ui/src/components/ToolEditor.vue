@@ -17,6 +17,7 @@ const props = defineProps<{ tool: Tool | null }>()
 const emit = defineEmits<{ close: [] }>()
 const unit = panel.unit
 const hello = panel.hello
+const suggestedProbe = hello?.touch_probe_tool
 const original = shallowRef<Tool | null>(props.tool === null ? null : { ...props.tool })
 const modelContext = toolModelSettings.context()
 let open = true
@@ -153,7 +154,7 @@ function remove(): void {
           <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
         </div>
         <template v-if="family !== 'none'">
-          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from above · Length to ball bottom<span v-if="original === null"> · Suggested T99</span></p>
+          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from above · Length to ball bottom<span v-if="original === null && suggestedProbe"> · Configured T{{ suggestedProbe }}</span></p>
           <p v-else class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
           <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
         </template>

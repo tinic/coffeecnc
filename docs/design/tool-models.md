@@ -20,7 +20,9 @@ With **Holder** set to None, the preview shows the full tool. Selecting a holder
 
 The TTS previews use bright ground-steel bands on the collar and shank, a dark body, and a dark ER nut with wrench flats. The ER20 product photos show the ground and dark surfaces used as the finish reference. [Tormach TTS catalog, pp. 6 and 8](https://littlemachineshop.com/images/gallery/Instructions/DS10052_TTS_Catalog.pdf) · [Tormach ER20 holder photos](https://littlemachineshop.com/products/collet-holder-tormach-tts-er-20)
 
-The Holder choice is saved with the preview shape and appears in the read-only tool preview and the Machine workspace. Both use the same assembly mesh. The Machine workspace positions the assembly at the reported tip in the shared STEP scene. The toolpath and tip marker remain above the scene. These envelopes are for visual reference, and tool length offsets and setter calculations use controller data.
+The Holder choice is saved with the preview shape and appears in the read-only tool preview and the Machine workspace. Available choices include R8, TTS, ER16/20/32, BT30 and a generic cylindrical holder. The ER nut diameters and the BT30 flange and gauge diameters come from the manufacturer envelopes. [REGO-FIX cylindrical toolholders](https://regousa.com/product-category/er/toolholders/cylindrical/cyl-er/standard-cyl-er/) · [BIG DAISHOWA BT30 dimensions](https://catalog.bigdaishowa.com/view/561181695/654/)
+
+Both views use the same assembly mesh. The Machine workspace positions the assembly at the reported tip in the shared STEP scene. The toolpath and tip marker remain above the scene. These envelopes are for visual reference, and tool length offsets and setter calculations use controller data.
 
 ## Placement in the Machine workspace
 
@@ -32,7 +34,7 @@ The banner identifies the loaded T number and its selected holder, and flags a n
 
 ## Touch probe
 
-Choose **Touch probe** as the preview shape of a numbered tool. T99 is suggested when adding one. Set Diameter to the effective ball diameter and touch off Length at the bottom of the ball. The model uses that point as Z zero. Shank diameter, body diameter, body length and stylus length are editable. Stylus length runs from the top of the ball to the housing. The shank above the housing is drawn one shank diameter tall. Template dimensions stay fixed when the ball diameter changes.
+Choose **Touch probe** as the preview shape of a numbered tool. The editor shows the configured `TOUCH_PROBE_TOOL` when adding one. Set Diameter to the effective ball diameter and touch off Length at the bottom of the ball. The model uses that point as Z zero. Shank diameter, body diameter, body length and stylus length are editable. Stylus length runs from the top of the ball to the housing. The shank above the housing is drawn one shank diameter tall. Template dimensions stay fixed when the ball diameter changes.
 
 ![Touch probe editor with a 4 mm ruby ball](../../ui/screenshots/touch-probe-editor-1280.png)
 

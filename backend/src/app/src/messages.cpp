@@ -271,9 +271,16 @@ auto encode_hello(const Hello& hello) -> Encoded {
         fields.real(setter.latch_backoff_mm, "fixed_setter.latch_backoff_mm");
   }
   if (hello.fixed_setter && hello.touch_probe_tool && hello.fixed_setter->latch_feed_mm_min > 0 &&
-      hello.fixed_setter->material_travel_mm / hello.fixed_setter->feed_mm_min * 60 <= 180)
+      hello.fixed_setter->material_travel_mm / hello.fixed_setter->feed_mm_min * 60 <= 180) {
     message["fixed_setter"]["material_travel_mm"] =
         fields.real(hello.fixed_setter->material_travel_mm, "fixed_setter.material_travel_mm");
+    const auto& geometry = hello.fixed_setter->material_geometry;
+    message["fixed_setter"]["material_geometry"] = {
+        {"reach_mm", fields.real(geometry.reach_mm, "fixed_setter.material_geometry.reach_mm")},
+        {"margin_mm", fields.real(geometry.margin_mm, "fixed_setter.material_geometry.margin_mm")},
+        {"clearance_mm", fields.real(geometry.clearance_mm, "fixed_setter.material_geometry.clearance_mm")},
+        {"depth_mm", fields.real(geometry.depth_mm, "fixed_setter.material_geometry.depth_mm")}};
+  }
   return fields.finish(std::move(message));
 }
 

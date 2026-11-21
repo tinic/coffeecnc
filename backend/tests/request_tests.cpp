@@ -1,6 +1,7 @@
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/tool_models.hpp>
 
+#include <format>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -216,10 +217,13 @@ void tool_model_commands() {
               assignment.overrides.tip_angle == 120 && !assignment.overrides.cutting_length &&
               !assignment.overrides.shank_diameter && !assignment.overrides.overall_length,
           "Assignment: the tool row, the family and the overrides given");
-  const auto with_holder = body<SetToolModelAssignment>(with(
-      assignment_wire, R"("family":"spot-drill")", R"("family":"spot-drill","holder":"tts-er20")"));
-  require(with_holder.holder == "tts-er20" && tool_model_command_error(with_holder).empty(),
-          "Assignment accepts a supported holder");
+  for (const std::string_view holder : {"tts-er20", "er16", "er20", "er32", "bt30", "generic"}) {
+    const auto with_holder = body<SetToolModelAssignment>(with(
+        assignment_wire, R"("family":"spot-drill")",
+        std::format(R"("family":"spot-drill","holder":"{}")", holder)));
+    require(with_holder.holder == holder && tool_model_command_error(with_holder).empty(),
+            "Assignment accepts a supported holder");
+  }
   const auto bad_holder = decode_request(with(assignment_wire, R"("family":"spot-drill")",
                                               R"("family":"spot-drill","holder":"unknown")"));
   require(std::holds_alternative<DecodeError>(bad_holder), "Assignment refuses an unknown holder");

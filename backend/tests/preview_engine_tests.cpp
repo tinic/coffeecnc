@@ -229,9 +229,10 @@ void restart_checkpoints() {
 void program_check_touched_lengths_and_travel() {
   Rig rig{"program-check"};
   const auto table = rig.root / "config" / "tool.tbl";
-  const auto marks = rig.root / "config" / "coffeecnc-touched-off.txt";
+  const auto marks = rig.root / "data" / "runtime" / "coffeecnc-touched-off.txt";
   rig.settings.tool_table = table.string();
   rig.settings.reference_tool = 98;
+  rig.settings.touched_off_file = marks.string();
   rig.settings.max_spindle_rpm = 1500;
   rig.settings.soft_travel = Bounds{{-1000, -1000, -1000}, {1000, 1000, 1000}};
   rig.settings.physical_travel = Bounds{{-40, -40, -40}, {40, 40, 40}};
@@ -239,6 +240,7 @@ void program_check_touched_lengths_and_travel() {
   rig.inputs.raw_tools.push_back({3, 98, 98, {0, 0, 25.4}, 3, 0, 0, 0});
   write(table, "T1 P1 Z50 D6\nT2 P2 Z0 D3\nT98 P98 Z25.4 D3\n");
   write(marks, "reference 25.4\nT2 0\n");
+  write(table.parent_path() / marks.filename(), "reference 25.4\nT2 0\n");
   write(rig.file(), "G20 G90 G17\nT2 M6\nG43 H2\nS1200 M3\nG1 X1 F10\nM5\nM2\n");
   auto result = rig.compute();
   require(result.outcome.check.has_value(), "The interpreter reports program check facts.");

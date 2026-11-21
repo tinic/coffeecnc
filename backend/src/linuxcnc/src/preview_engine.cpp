@@ -591,12 +591,11 @@ struct CheckToolFiles {
   friend auto operator==(const CheckToolFiles&, const CheckToolFiles&) -> bool = default;
 };
 
-auto check_tool_files(const std::string& table, bool fixed_setter) -> CheckToolFiles {
+auto check_tool_files(const std::string& table, const std::string& sidecar) -> CheckToolFiles {
   if (table.empty())
     return {};
-  const auto sidecar = fs::path(table).parent_path() / "coffeecnc-touched-off.txt";
   return {read_file(table, max_tool_table_bytes),
-          fixed_setter ? read_file(sidecar.string(), max_tool_table_bytes) : std::nullopt};
+          sidecar.empty() ? std::nullopt : read_file(sidecar, max_tool_table_bytes)};
 }
 
 auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
@@ -767,8 +766,10 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
   settings.units_per_mm = 1.0 / config.millimetres_per_unit;
   settings.max_spindle_rpm = config.limits.max_spindle_rpm;
   settings.tool_table = config.tool_table;
-  if (config.fixed_setter)
+  if (config.fixed_setter) {
     settings.reference_tool = config.fixed_setter->reference_tool;
+    settings.touched_off_file = config.touched_off_file();
+  }
   auto& soft = settings.soft_travel.emplace();
   for (std::size_t i = 0; i < config.travel.size(); ++i) {
     soft.min[i] = config.travel[i].min;
@@ -904,16 +905,19 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.restart_line = inputs.restart_line;
 
   const std::string check_table = inputs.restart_line ? std::string{} : settings_.tool_table;
-  const bool fixed_setter = settings_.reference_tool.has_value();
+  const std::string touched = !settings_.reference_tool || check_table.empty() ? std::string{}
+      : settings_.touched_off_file.empty()
+          ? (fs::path(check_table).parent_path() / "coffeecnc-touched-off.txt").string()
+          : settings_.touched_off_file;
   const auto watch =
       [lookups = lookups_, search_path = settings_.search_path, check_table,
-       fixed_setter](std::shared_ptr<const Manifest> manifest,
+       touched](std::shared_ptr<const Manifest> manifest,
                      std::shared_ptr<const CheckToolFiles> tools) -> PreviewComputation::Watch {
-    return [manifest = std::move(manifest), lookups, search_path, check_table, fixed_setter,
+    return [manifest = std::move(manifest), lookups, search_path, check_table, touched,
             tools = std::move(tools)](const std::function<bool()>& given_up) -> bool {
       return files_differ(*manifest, search_path, given_up, lookups) ||
              (tools && !is_cancelled(given_up) &&
-              *tools != check_tool_files(check_table, fixed_setter));
+              *tools != check_tool_files(check_table, touched));
     };
   };
   std::shared_ptr<const Manifest> last;
@@ -927,7 +931,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     const auto manifest = std::make_shared<const Manifest>(std::move(*taken));
     last = manifest;
     last_tools =
-        std::make_shared<const CheckToolFiles>(check_tool_files(check_table, fixed_setter));
+        std::make_shared<const CheckToolFiles>(check_tool_files(check_table, touched));
     // The program in a directory of its own, the subroutine files in another, which is the
     // only place the helper's interpreter looks for one, and an empty one to run in.
     const PrivateDirectory directory{settings_.work_directory};

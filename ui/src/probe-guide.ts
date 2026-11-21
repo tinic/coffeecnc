@@ -110,7 +110,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       const x = edges[target.x]
       const y = edges[target.y]
       title = `Probe corner ${x.label} ${y.label}`
-      setup = 'Set Z0 on top first. Jog over the part, with the ball inside and within 10 mm of both selected edges.'
+      setup = `Set Z0 on top first. Jog over the part, with the ball inside and within ${String(limits?.material_geometry?.reach_mm ?? 10)} mm of both selected edges.`
       result = 'Set X0 and Y0 at the corner'
       clearance = 9
       start = [x.faceAt + x.sign * 5, y.faceAt + y.sign * 5, clearance]

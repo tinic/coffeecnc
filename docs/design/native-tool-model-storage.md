@@ -6,7 +6,7 @@ First increment, implemented on 15 November 2026. The panel and native backend i
 
 Persist family defaults and explicit per-tool model assignments. Exclude STEP files, placement, jobs, work offsets, LinuxCNC tool-table edits, and camera state. The native WebKit context stays ephemeral. Browser demonstration defaults keep their existing localStorage key; they are never silently imported into a native machine.
 
-Native persistence requires an explicit `[COFFEECNC] MACHINE_ID`. No display-name slug, hostname or configuration-path fallback: two machines must not share settings accidentally. Missing or empty identity means session-only models, with that lifetime stated in the editor. An invalid configured identity disables storage with an explanation; it must not resolve to another machine's directory. The draft G0759 integration configuration sets the explicit ID `g0759`.
+Native persistence uses the explicit `[COFFEECNC] MACHINE_ID` when provided. Otherwise CoffeeCNC combines a filesystem-safe form of `[EMC] MACHINE` with a stable suffix from the absolute INI path. This keeps configurations with identical display names in separate directories. Use an explicit ID to keep the data location across INI path changes. When no usable name is available, models are session-only. An invalid explicit ID disables storage with an explanation. The G0759 integration configuration sets its own ID.
 
 The backend owns the directory, document and write lifecycle. Default: `$XDG_DATA_HOME/coffeecnc/<machine_id>/` (normal per-user fallback when unset), with `[COFFEECNC] DATA_DIRECTORY` as an absolute configured data root and the machine ID still appended. A relative DATA_DIRECTORY disables persistence with an explanation. Use an absolute XDG_DATA_HOME, otherwise the per-user ~/.local/share fallback; do not resolve a relative environment value against the process working directory. IDs are case-sensitive ASCII `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. The panel never supplies a filesystem path.
 
@@ -21,7 +21,7 @@ The seven cutter defaults are `end-mill`, `ball-mill`, `drill`, `spot-drill`, `c
 - `tool: { number, pocket, diameter, comment }`, recording the reported row used when the operator assigned the model;
 - `family`, one of the default IDs;
 - `overrides`, a subset of the chosen family's fields with diameter supplied by the tool binding. An empty object means inheritance.
-- Optional `holder`, one of `r8`, `tts-4` through `tts-12`, `tts-er16`, `tts-er20` or `tts-er32`. An absent holder means None. Existing assignments load with that default.
+- Optional `holder`, one of `r8`, `tts-4` through `tts-12`, `tts-er16`, `tts-er20`, `tts-er32`, `er16`, `er20`, `er32`, `bt30` or `generic`. An absent holder means None. Existing assignments load with that default.
 
 The structured `tool` binding replaces the UI's current serialized identity string at the storage boundary. Compare its field values, not C++ versus JavaScript JSON formatting. Z offset is deliberately excluded: touching off does not change physical geometry. Tool-table diameter still supplies cutting diameter; the visual editor cannot override it. Persist the exact reported tool_table diameter in millimetres: loaded_tools already converts raw machine units to mm. Do not convert through display units or compare serialized floating-point text.
 
@@ -41,7 +41,7 @@ Changing machine identity clears loaded settings, pending saves and active assig
 
 ## Bridge additions
 
-Protocol v1 additions use explicit optional capability detection. New backends send `Hello.machine_id: string | null` and `Hello.tool_model_storage: 1`. Older backends without that capability remain session-only; the panel sends them no new commands. A missing or invalid configured ID is reported as null; availability/reason distinguishes absent identity from invalid configuration.
+Protocol v1 additions use explicit optional capability detection. New backends send `Hello.machine_id: string | null` and `Hello.tool_model_storage: 1`. Older backends without that capability remain session-only; the panel sends them no new commands. A missing or invalid effective ID is reported as null; availability and reason distinguish absent identity from invalid configuration.
 
 The snapshot shape is:
 
@@ -56,7 +56,7 @@ The snapshot shape is:
 }
 ```
 
-An available snapshot has a valid machine ID and document. Session-only/unavailable snapshots have revision 0 and document null. Missing MACHINE_ID is session_only; invalid configuration, a locked store, corrupt data or unsupported file version is unavailable with an explanation. A missing settings file is normal: available, revision 0, factory defaults and no assignments, without automatically creating a document on disk. Revision 0 is not a previously saved preference set.
+An available snapshot has a valid machine ID and document. Session-only/unavailable snapshots have revision 0 and document null. No effective ID means session-only. Invalid configuration, a locked store, corrupt data or an unsupported file version produces unavailable storage with an explanation. A missing settings file starts at revision 0 with factory defaults and no assignments. The first save creates the document.
 
 After `ready`, send the snapshot for the current page. After a durable write, send the new snapshot **before** its accepted CommandResult. For a stale base revision, send the current snapshot before the rejected result. Reject snapshots not belonging to the current hello identity and capability. Machine ID alone does not replace the shell's page identity checks.
 

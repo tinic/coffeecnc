@@ -294,6 +294,69 @@ private:
   std::string path_;
 };
 
+// Import once, while the runtime lock is held. A restart after an interrupted import keeps
+// files already copied. A successful import can never restore a record later invalidated.
+auto import_runtime_state(LocalToolModelFiles& files, const MachineConfig& config,
+                          const std::string& directory) -> ToolModelFiles::Done {
+  const auto marker = directory + "/.imported";
+  const auto imported = files.read(marker, 0);
+  if (!imported)
+    return std::unexpected(imported.error());
+  if (*imported)
+    return {};
+
+  const auto store = [&](const std::string& target, std::string_view bytes) -> ToolModelFiles::Done {
+    const auto temporary = target + ".import";
+    const auto write = [&]() -> ToolModelFiles::Done {
+      if (auto result = files.open_temporary(temporary); !result)
+        return result;
+      if (auto result = files.write(bytes); !result)
+        return result;
+      if (auto result = files.sync(); !result)
+        return result;
+      return files.rename(temporary, target);
+    };
+    auto result = write();
+    if (!result)
+      files.discard(temporary);
+    return result;
+  };
+  const std::filesystem::path ini_parent = config.directory;
+  const auto tool_parent = std::filesystem::path(config.tool_table).parent_path();
+  struct Record { std::filesystem::path parent; const char* name; std::size_t limit; };
+  const std::array records{
+      Record{ini_parent, ".coffeecnc-breakpoint.ngc", ProgramStore::max_program_bytes + 256},
+      Record{ini_parent, ".coffeecnc-breakpoint.txt", 512},
+      Record{ini_parent, ".coffeecnc-spindle-hold", 512},
+      Record{tool_parent, "coffeecnc-spindle-tool.txt", 512},
+      Record{tool_parent, "coffeecnc-touched-off.txt", ProgramStore::max_program_bytes}};
+  for (const auto& record : records) {
+    if (record.parent.empty())
+      continue;
+    const auto target = directory + '/' + record.name;
+    const auto current = files.read(target, 0);
+    if (!current)
+      return std::unexpected(std::format("{}: {}", target, current.error()));
+    if (*current)
+      continue;
+    const auto source = (record.parent / record.name).string();
+    const auto old = files.read(source, record.limit);
+    if (!old)
+      return std::unexpected(std::format("{}: {}", source, old.error()));
+    if (*old) {
+      if ((*old)->more)
+        return std::unexpected(std::format("{} is too large to import", source));
+      if (const auto copied = store(target, (*old)->bytes); !copied)
+        return std::unexpected(std::format("{}: {}", target, copied.error()));
+    }
+  }
+  if (const auto saved = files.sync_directory(directory); !saved)
+    return saved;
+  if (const auto saved = store(marker, "1\n"); !saved)
+    return saved;
+  return files.sync_directory(directory);
+}
+
 auto run_application(const Options& options, const ApplicationHooks& hooks) -> int {
   auto config = load_machine_config(options.ini_file);
   if (!config) {
@@ -311,8 +374,11 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     };
     add("Programs", config->program_prefix);
     add("Home", environment("HOME"));
-    if (const auto user = environment("USER"))
+    if (const auto user = environment("USER"); user && !user->empty()) {
+      const auto before_usb = config->program_places.size();
       add("USB", "/media/" + *user);
+      add(config->program_places.size() == before_usb ? "USB" : "USB (system)", "/run/media/" + *user);
+    }
   }
   const auto ui = panel_directory(options);
   if (!ui) {
@@ -361,6 +427,25 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   HalShared shared;
   NmlLoads loads;
+  const auto location = resolve_tool_model_location({config->machine_id, config->data_directory,
+                              environment("XDG_DATA_HOME"), environment("HOME")});
+  LocalToolModelFiles runtime_files;
+  if (location.availability == ToolModelAvailability::available) {
+    const auto directory = location.directory + "/runtime";
+    if (const auto prepared = prepare_data_directory(runtime_files, directory); !prepared) {
+      say(std::format("Cannot prepare machine runtime data in {}: {}", directory, prepared.error()));
+      return 1;
+    }
+    if (const auto locked = runtime_files.lock(directory); !locked) {
+      say(std::format("Cannot lock machine runtime data in {}: {}", directory, locked.error().reason));
+      return 1;
+    }
+    if (const auto moved = import_runtime_state(runtime_files, *config, directory); !moved) {
+      say(std::format("Cannot import machine runtime data into {}: {}", directory, moved.error()));
+      return 1;
+    }
+    config->runtime_directory = directory;
+  }
   auto port = NmlPort::connect(*config, &shared, &loads);
   if (!port) {
     say(port.error());
@@ -434,9 +519,6 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                       }}};
   int code = 0;
   try {
-    const auto location =
-        resolve_tool_model_location({config->machine_id, config->data_directory,
-                                     environment("XDG_DATA_HOME"), environment("HOME")});
     models = std::make_unique<ToolModelStore>(
         model_files, location,
         [&window](PageToken page, std::vector<std::string> messages) -> void {

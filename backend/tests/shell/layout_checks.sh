@@ -16,7 +16,7 @@ layout_checks() {
   cmp -s "$source/share/coffeecnc.ini.example" "$prefix/share/coffeecnc/coffeecnc.ini.example"
   check ini_example_installed $? -
   extra=$(cd "$prefix" && find . -type f ! -path './bin/coffeecnc' ! -path './bin/coffeecnc-preview' \
-    ! -path './share/coffeecnc/*' | head -5 | tr '\n' ',')
+    ! -path './share/coffeecnc/*' ! -path './share/doc/coffeecnc/*' | head -5 | tr '\n' ',')
   [ -z "$extra" ]
   check nothing_else_installed $? "${extra:--}"
   root=$(dirname "$source")

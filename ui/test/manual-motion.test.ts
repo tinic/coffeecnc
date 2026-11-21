@@ -195,4 +195,28 @@ describe('saved positions in Manual', () => {
     expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
     expect(band(view)).toContain('Go to stopped before the position was reached')
   })
+  it('stops a Go to that the operator leaves, and sends nothing further', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    const confirm = [...document.querySelectorAll('footer button')].find((candidate) => candidate.textContent.trim() === 'Go to') as HTMLButtonElement
+    confirm.click(); await nextTick()
+    answerLast()
+    panel.status = statusAt({ x: 100, y: 50, z: -10 }, { mode: 'mdi', interp: 'reading' })
+    await button(view, 'Power feed').trigger('click')
+    expect(vi.mocked(send).mock.calls.map(([command]) => command.type)).toEqual(['mdi', 'abort'])
+    panel.status = statusAt({ x: 100, y: 50, z: -0.5 }, { mode: 'mdi' })
+    await button(view, 'Positions').trigger('click')
+    panel.status = statusAt({ x: 100, y: 50, z: -0.5 }, { mode: 'mdi' })
+    await nextTick()
+    expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
+    expect(vi.mocked(send).mock.calls.map(([command]) => command.type)).toEqual(['mdi', 'abort'])
+  })
+  it('leaves the machine alone when the card closes with no Go to running', async () => {
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Power feed').trigger('click')
+    expect(send).not.toHaveBeenCalled()
+  })
 })

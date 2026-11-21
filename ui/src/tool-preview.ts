@@ -4,19 +4,23 @@ import { resolveToolModel, toolDimensionError, toolEnvelope, type ToolDefaults, 
 export interface ToolPreview { number: number; tip: Vec3; model: ToolModel }
 
 /** The same tool-tip coordinates used by PreviewSegment; apply the active offset once. */
-export function reportedToolTip(status: Status | null): Vec3 | null {
+// Without required homing (the G0759) machine coordinates hold for the session, like the program's
+// own frame, so the tool is placed against the path all the same.
+export function reportedToolTip(status: Status | null, homingRequired = true): Vec3 | null {
   if (status === null) return null
   const axes = (['x', 'y', 'z'] as const).map((letter) => status.axes.find((axis) => axis.axis === letter))
-  if (axes.some((axis) => axis === undefined || !axis.homed || axis.homing || !Number.isFinite(axis.machine)) ||
+  if (axes.some((axis) => axis === undefined || (homingRequired && !axis.homed) || axis.homing ||
+    !Number.isFinite(axis.machine)) ||
     !status.offsets.tool.every(Number.isFinite)) return null
   return axes.map((axis, index) => (axis?.machine ?? 0) - (status.offsets.tool[index] ?? 0)) as Vec3
 }
 
 /** Only an explicitly assigned, currently loaded tool may supply a body. */
 export function loadedToolPreview(status: Status | null, live: boolean, tools: Tool[],
-  assignments: ReadonlyMap<number, ToolModelAssignment>, defaults: ToolDefaults): ToolPreview | null {
+  assignments: ReadonlyMap<number, ToolModelAssignment>, defaults: ToolDefaults,
+  homingRequired = true): ToolPreview | null {
   if (!live || status?.link !== 'live' || status.wait.kind === 'tool_change') return null
-  const tip = reportedToolTip(status)
+  const tip = reportedToolTip(status, homingRequired)
   const tool = tools.find((candidate) => candidate.number === status.tool.in_spindle && candidate.number > 0)
   if (tip === null || tool === undefined) return null
   const model = resolveToolModel(tool, assignments.get(tool.number), defaults)

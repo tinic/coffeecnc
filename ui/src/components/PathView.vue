@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { requiresHoming } from '../machine-capabilities'
 import { vTooltip } from '../tooltip'
 // The path view: the planned path from the preview, the part of it the machine has executed, the
 // tool position the machine reports, the active work origin and the machine travel.
@@ -121,8 +122,10 @@ const travelBox = computed((): { min: Vec3; max: Vec3 } | null => {
   }
 })
 
-const toolTip = computed((): Vec3 | null => reportedToolTip(panel.status))
-const toolBody = computed(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments, toolModels.defaults))
+const homingRequired = computed(() => requiresHoming(panel.hello))
+const toolTip = computed((): Vec3 | null => reportedToolTip(panel.status, homingRequired.value))
+const toolBody = computed(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments,
+  toolModels.defaults, homingRequired.value))
 const showTool = ref(true)
 const visibleTool = computed(() => showTool.value ? toolBody.value : null)
 

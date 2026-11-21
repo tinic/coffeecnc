@@ -3670,7 +3670,8 @@ void g0759_config(const MachineConfig& config) {
   double expected_spindle = 1500;
   if (machine_hal) {
     IniFile ini;
-    const char* value = ini.Open(config.ini_file.c_str()) ? ini.Find("MAX_SPINDLE_RPM", "COFFEECNC") : nullptr;
+    const char* value =
+        ini.Open(config.ini_file.c_str()) ? ini.Find("MAX_SPINDLE_RPM", "COFFEECNC") : nullptr;
     expected_spindle = value ? std::atof(value) : 0;
   }
   // The machine's own INI file names the machine and no data directory; the profile has both.

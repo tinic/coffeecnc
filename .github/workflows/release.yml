@@ -2,8 +2,9 @@
 # linuxcnc.org, amd64 and arm64. A `v*` tag publishes both packages after a clean install and
 # purge on both architectures. A manual run or a packaging pull request keeps the artifacts.
 #
-# The package depends on the LinuxCNC series it is built against (backend/cmake/Packaging.cmake),
-# so it installs on trixie with linuxcnc-uspace 2.9.x at or above the version used here.
+# Each package depends on exactly the linuxcnc-uspace version it is built against
+# (backend/cmake/Packaging.cmake): the NML message layout can change in a patch release. The
+# release notes list every package's Depends line.
 name: Release
 
 on:
@@ -262,5 +263,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          {
+            echo "## Packages"
+            echo
+            printf '%s\n' 'Debian 13 (trixie). Each package needs exactly the LinuxCNC version in its Depends line (linuxcnc.org `trixie 2.9-uspace`).'
+            echo
+            for deb in ./*.deb; do
+              printf -- '- `%s`: %s\n' "$(basename "$deb")" "$(dpkg-deb -f "$deb" Depends)"
+            done
+            echo
+          } > notes.md
+          cat notes.md
           gh release create "$GITHUB_REF_NAME" ./*.deb --repo "$GITHUB_REPOSITORY" \
-            --title "CoffeeCNC ${GITHUB_REF_NAME#v}" --generate-notes
+            --title "CoffeeCNC ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes

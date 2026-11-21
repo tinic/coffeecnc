@@ -221,11 +221,13 @@ chmod +x "$directory/display.sh" || exit 125
 
 # What an earlier run saved for its machine.
 [ -n "$keep_data" ] || rm -rf "$directory/coffeecnc-data" "$directory/xdg-data"
+# The post-GUI fragment the package installs: the tests run that very file.
+shipped_postgui=$here/../../share/hal/coffeecnc_postgui.hal
 if [ -n "$machine" ]; then
   # A machine's own configuration: assembled from its files, never written to.
   rm -f "$directory/linuxcnc.log"
   "$here/assemble_machine.sh" "$machine" "$layer" "$directory" "$directory/display.sh" \
-    "$here/coffeecnc_postgui.hal" || exit 125
+    "$shipped_postgui" || exit 125
 else
 # The run directory holds only generated files.
 perl -pe '
@@ -240,7 +242,9 @@ if [ -n "$identity" ]; then
     "$identity" "$directory" >>"$directory/$ini" || exit 125
 fi
 for fragment in $fragments; do
-  cp "$here/$fragment" "$directory/" || exit 125
+  source_file=$here/$fragment
+  [ "$fragment" = coffeecnc_postgui.hal ] && source_file=$shipped_postgui
+  cp "$source_file" "$directory/" || exit 125
 done
 rm -f "$directory/sim.var" "$directory/sim.var.bak" "$directory/linuxcnc.log" \
   "$directory/coffeecnc-spindle-tool.txt"

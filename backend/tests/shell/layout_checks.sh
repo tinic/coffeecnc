@@ -11,7 +11,7 @@ layout_checks() {
     diff -rq "$source/../ui/dist" "$prefix/share/coffeecnc/ui" >/dev/null
   check panel_installed_is_the_built_one $? "files=$(find "$prefix/share/coffeecnc/ui" -type f 2>/dev/null | wc -l)"
   # One fragment: the installed file is the one the simulation tests run.
-  cmp -s "$source/tests/sim/coffeecnc_postgui.hal" "$prefix/share/coffeecnc/hal/coffeecnc_postgui.hal"
+  cmp -s "$source/share/hal/coffeecnc_postgui.hal" "$prefix/share/coffeecnc/hal/coffeecnc_postgui.hal"
   check hal_fragment_is_the_tested_file $? "sha256=$(sha256sum <"$prefix/share/coffeecnc/hal/coffeecnc_postgui.hal" | cut -c1-16)"
   cmp -s "$source/share/coffeecnc.ini.example" "$prefix/share/coffeecnc/coffeecnc.ini.example"
   check ini_example_installed $? -

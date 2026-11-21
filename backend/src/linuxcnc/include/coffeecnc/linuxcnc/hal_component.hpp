@@ -41,7 +41,7 @@ struct ProbeCycleOutputs {
 // The executable's own HAL component: the path to LinuxCNC that needs no NML command channel.
 //
 //   <name>.jog-stop         bit out  a level; drives motion.jog-stop and motion.jog-inhibit
-//                                    (tests/sim/coffeecnc_postgui.hal)
+//                                    (share/hal/coffeecnc_postgui.hal)
 //   <name>.heartbeat        bit out  toggled by beat(); input of a HAL `watchdog`
 //   <name>.watchdog-enable  bit out  arms that watchdog, and re-arms it after it has tripped
 //   <name>.watchdog-ok      bit in   the watchdog's ok-out

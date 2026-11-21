@@ -6,10 +6,10 @@
 #   <prefix>/share/coffeecnc/hal/coffeecnc_postgui.hal
 #   <prefix>/share/coffeecnc/coffeecnc.ini.example
 #
-# The HAL fragment installed is the file the simulation tests run (tests/sim/run.sh copies the
-# same file into every run directory): there is one.
+# The HAL fragment installed is the file the simulation tests run (tests/sim/run.sh copies
+# share/hal/coffeecnc_postgui.hal into every run directory): there is one.
 include(GNUInstallDirs)
-install(FILES ${PROJECT_SOURCE_DIR}/tests/sim/coffeecnc_postgui.hal
+install(FILES ${PROJECT_SOURCE_DIR}/share/hal/coffeecnc_postgui.hal
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc/hal)
 install(FILES ${PROJECT_SOURCE_DIR}/share/coffeecnc.ini.example
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc)
@@ -37,7 +37,7 @@ set(series_floor "${epoch}${CMAKE_MATCH_3}.${CMAKE_MATCH_4}.${CMAKE_MATCH_5}")
 math(EXPR next_minor "${CMAKE_MATCH_4} + 1")
 set(series_ceiling "${epoch}${CMAKE_MATCH_3}.${next_minor}")
 
-set(COFFEECNC_PACKAGE_MAINTAINER "CoffeeCNC <coffeecnc@invalid>" CACHE STRING
+set(COFFEECNC_PACKAGE_MAINTAINER "tinic <tinic@users.noreply.github.com>" CACHE STRING
   "Maintainer field of the Debian package")
 set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_NAME coffeecnc)

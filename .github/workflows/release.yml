@@ -1,0 +1,98 @@
+# Builds the CoffeeCNC Debian package for Debian 13 (trixie) with LinuxCNC 2.9 (uspace) from
+# linuxcnc.org, amd64 and arm64. A `v*` tag publishes both packages as a GitHub release; a manual
+# run only keeps them as workflow artifacts.
+#
+# The package depends on the LinuxCNC series it is built against (backend/cmake/Packaging.cmake),
+# so it installs on trixie with linuxcnc-uspace 2.9.x at or above the version used here.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: debian:trixie
+    steps:
+      - name: Build tools and LinuxCNC
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl gnupg git
+          # LinuxCNC Archive Signing Key <emcboard@linuxcnc.org>
+          gpg --batch --keyserver hkps://keyserver.ubuntu.com \
+            --recv-keys 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927
+          gpg --batch --export 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927 > /usr/share/keyrings/linuxcnc.gpg
+          echo "deb [signed-by=/usr/share/keyrings/linuxcnc.gpg] https://www.linuxcnc.org/ trixie base 2.9-uspace" \
+            > /etc/apt/sources.list.d/linuxcnc.list
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config dpkg-dev file \
+            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev \
+            linuxcnc-uspace-dev
+          dpkg-query -W -f='linuxcnc-uspace ${Version}\n' linuxcnc-uspace
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Panel
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Native build and portable tests
+        working-directory: backend
+        run: |
+          set -eu
+          cmake --preset package -DCOFFEECNC_LINUXCNC=ON
+          cmake --build --preset package
+          # The same selection as the mill's build: no LinuxCNC session, no display server.
+          ctest --preset package -LE linuxcnc -E "xvfb_wrapper|quit_delivery" --output-on-failure
+
+      - name: Package
+        working-directory: backend/build/package
+        run: |
+          set -eu
+          cpack -G DEB
+          for deb in *.deb; do dpkg-deb -I "$deb" | grep -E "Package|Version|Architecture|Depends"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coffeecnc-${{ matrix.arch }}
+          path: backend/build/package/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coffeecnc-*
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" *.deb --repo "$GITHUB_REPOSITORY" \
+            --title "CoffeeCNC ${GITHUB_REF_NAME#v}" --generate-notes

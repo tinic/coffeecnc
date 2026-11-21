@@ -5,8 +5,12 @@
 # the four pid loops, near, scale, abs, not, limit1, the spindle and halui nets.
 #
 # Mesa 7i76E: hostmot2, hm2_eth, and every line with a pin or parameter of the card (step
-# generators, spindle encoder, inputs 16 and 17, output 10, its watchdog and DPLL).
+# generators, spindle encoder, inputs 16–19, output 10, its watchdog and DPLL).
 #drop: hostmot2|hm2_
+# Preserve the chain and selector connections on machine revisions that have them.
+#sim-input: setter-ok hm2_7i76e.0.7i76.0.0.input-17 TRUE
+#sim-input: ruby-tripped hm2_7i76e.0.7i76.0.0.input-18-not FALSE
+#sim-input: setter-tripped hm2_7i76e.0.7i76.0.0.input-19-not FALSE
 # The VFD's userspace component on /dev/ttyUSB0 and the two nets to its pins.
 #drop: svd-ps_vfd
 # The RP2040 encoder component: position feedback of the three axes, scales and resets.
@@ -22,9 +26,10 @@
 #             spindle-vel-fb-rps. The machine's scale.0, abs.0 and near.0 make
 #             spindle-vel-fb-rpm-abs and spindle-at-speed from it, as on the machine.
 #   E-stop    estop-ext has no writer and starts FALSE, the button pressed: a test releases
-#             and presses it with `halcmd sets estop-ext`. It is the machine's only E-stop
-#             input: G0759.hal connects iocontrol.0.user-enable-out to nothing.
-#   probe     probe-in has no writer: a test sets it with `halcmd sets`.
+#             and presses it with `halcmd sets estop-ext`. The setter overtravel signal starts
+#             closed on configurations that wire it into the chain.
+#   probe     tests drive the setter input where the machine has a selector, or probe-in on
+#             older configurations with direct probe wiring.
 #   outputs   machine-is-enabled, coolant and the VFD's speed command go nowhere.
 # Modules loaded here must not be among the machine's or CoffeeCNC's (a module loads once).
 loadrt integ names=coffeecnc-sim-x,coffeecnc-sim-y,coffeecnc-sim-z

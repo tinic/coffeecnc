@@ -233,6 +233,9 @@ if [ -n "$machine" ]; then
   rm -f "$directory/linuxcnc.log"
   "$here/assemble_machine.sh" "$machine" "$layer" "$directory" "$directory/display.sh" \
     "$shipped_postgui" || exit 125
+  if [ -z "$keep_data" ]; then
+    rm -f "$directory/coffeecnc-spindle-tool.txt"
+  fi
 else
 # The run directory holds only generated files.
 perl -pe '

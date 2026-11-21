@@ -106,8 +106,8 @@ auto folded(std::string_view name) -> std::string {
 
 } // namespace
 
-ProgramStore::ProgramStore(const FileSystem& files, std::string root)
-    : files_(files), root_(std::move(root)) {}
+ProgramStore::ProgramStore(const FileSystem& files, std::string root, std::string start)
+    : files_(files), root_(std::move(root)), start_(std::move(start)) {}
 
 auto ProgramStore::resolve(std::string_view path) const -> std::expected<Resolved, std::string> {
   if (root_.empty())
@@ -131,7 +131,8 @@ auto ProgramStore::resolve(std::string_view path) const -> std::expected<Resolve
 
 auto ProgramStore::list(const std::optional<std::string>& path) const
     -> std::expected<Directory, std::string> {
-  const auto where = resolve(path ? std::string_view{*path} : std::string_view{root_});
+  const auto where = resolve(path ? std::string_view{*path}
+                                  : std::string_view{start_.empty() ? root_ : start_});
   if (!where)
     return std::unexpected(where.error());
   const auto info = files_.info(where->path);

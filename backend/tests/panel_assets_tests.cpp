@@ -116,6 +116,31 @@ void run(const std::filesystem::path& scratch) {
               content_type_of("part.step") == "model/step" &&
               content_type_of("data.bin") == "application/octet-stream",
           "Unknown extensions are plain bytes; the extension's case does not matter");
+
+  // The STEP model beside a program: same directory, same base name, .step or .stp.
+  const auto programs = base / "programs";
+  write(programs / "plate.ngc");
+  write(programs / "plate.STEP");
+  write(programs / "lone.ngc");
+  write(programs / "other.step");
+  const auto part_url = [](const std::filesystem::path& program) {
+    std::string url = "coffeecnc://panel/program-part?program=";
+    for (const char c : program.string())
+      url += c == ' ' ? std::string{"%20"} : std::string(1, c);
+    return url;
+  };
+  const auto plate = resolve_program_part(part_url(programs / "plate.ngc"));
+  require(plate && std::filesystem::path(*plate).filename() == "plate.STEP",
+          "A program's model is found beside it, whatever the extension's case");
+  require(!resolve_program_part(part_url(programs / "lone.ngc")),
+          "A program without a model of its name has none");
+  require(!resolve_program_part(part_url(programs / "missing.ngc")),
+          "A program that does not exist has no model");
+  require(!resolve_program_part("coffeecnc://panel/program-part?program=plate.ngc") &&
+              !resolve_program_part("coffeecnc://panel/program-part") &&
+              !resolve_program_part("coffeecnc://panel/index.html?program=" +
+                                    (programs / "plate.ngc").string()),
+          "Only an absolute program path on the program-part URL names a model");
 }
 
 } // namespace

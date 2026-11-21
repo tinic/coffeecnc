@@ -122,6 +122,19 @@ void listing() {
   require(empty && empty->entries.empty() && !empty->truncated, "An empty directory lists empty");
 }
 
+// The application's store: the whole file system, starting in the program directory (turo: not
+// only nc_files).
+void anywhere_from_the_program_directory() {
+  const auto files = shop();
+  const ProgramStore store{files, "/", root};
+  const auto top = store.list(std::nullopt);
+  require(top && top->path == root && top->parent == "/home/cnc",
+          "A null path lists the program directory, which now has a parent");
+  require(store.resolve_program("/home/cnc/secret.ngc").has_value() &&
+              store.list(std::string{"/home/cnc"}).has_value(),
+          "Programs and folders outside the program directory open and list");
+}
+
 void listing_refusals() {
   auto files = shop();
   files.unreadable.emplace_back(in_root("Banana"));
@@ -525,7 +538,8 @@ void on_the_host(const std::filesystem::path& scratch) {
 auto main(int argc, char** argv) -> int {
   try {
     listing();
-    listing_refusals();
+    anywhere_from_the_program_directory();
+  listing_refusals();
     roots();
     listing_caps();
     open_rules();

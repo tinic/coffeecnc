@@ -2,6 +2,7 @@
 #define COFFEECNC_APP_PANEL_ASSETS_HPP
 
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -35,6 +36,13 @@ struct Asset {
 // the panel directory; it is resolved on every call. Reads the file system (names only).
 [[nodiscard]] auto resolve_asset(const std::string& root, std::string_view url)
     -> std::expected<Asset, int>;
+
+// `coffeecnc://panel/program-part?program=<percent-encoded absolute path>`: the STEP model that
+// belongs to that program, a regular file in the same directory with the same base name and the
+// extension .step or .stp (either case). Nothing for another URL, a program that does not exist,
+// or no such model. The panel loads it with the program.
+inline constexpr std::string_view program_part_path = "/program-part";
+[[nodiscard]] auto resolve_program_part(std::string_view url) -> std::optional<std::string>;
 
 // The URL is one of the panel's own: the only place the window may navigate to.
 [[nodiscard]] auto is_panel_url(std::string_view url) -> bool;

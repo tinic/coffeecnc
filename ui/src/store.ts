@@ -142,6 +142,8 @@ export function describeCommand(command: CommandBody): string {
     case 'jog':
     case 'jog_step':
       return `Jog ${command.axis.toUpperCase()}`
+    case 'jog_paused_z':
+      return command.distance > 0 ? 'Lift paused Z' : 'Lower paused Z'
     case 'jog_stop_all':
       return 'Stop jog'
     case 'mdi':

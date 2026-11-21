@@ -22,6 +22,8 @@ export function powerBlock({ link, status }: MachineState): string | null {
   return null
 }
 
+const pausedZRecovery = 'Z is still lifted. Turn machine power off and on to clear the offset here.'
+
 export const homingMessage = 'Homing in progress'
 
 export function interpreterBlock(status: Status | null): string | null {
@@ -35,6 +37,7 @@ export function interpreterBlock(status: Status | null): string | null {
 export function machineBlock(machine: MachineState, allowProgram = false): string | null {
   const power = powerBlock(machine)
   if (power !== null) return power
+  if (machine.status?.paused_z?.displaced && machine.status.interp === 'idle') return pausedZRecovery
   if (machine.status?.axes.some((axis) => axis.homing)) return homingMessage
   return allowProgram && machine.status?.mode === 'auto' ? null : interpreterBlock(machine.status)
 }

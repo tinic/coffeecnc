@@ -157,19 +157,23 @@ describe('program execution context', () => {
   })
 })
 
-describe('tool inspector', () => {
-  it.each([
-    [null, 'T01 · Tool not in table'],
-    ['', 'T01'],
-    ['   ', 'T01'],
-    ['Carbide end mill', 'T01 · Carbide end mill'],
-  ])('labels the loaded tool with table description %j', (comment, title) => {
+describe('status row', () => {
+  // turo: the Tool in spindle block was redundant; the spindle and feed live in the status row.
+  it('has no tool block, and shows the spindle and feed only while they run', async () => {
     if (panel.status === null) throw new Error('Missing status')
-    panel.status.tool.in_spindle = 1
-    const row = { number: 1, pocket: 1, length: 18.975, diameter: 6.35, comment: comment ?? '' }
-    panel.toolTable = { type: 'tool_table', revision: 1, tools: comment === null ? [] : [row] }
+    panel.status.mode = 'manual'; panel.status.interp = 'idle'
+    panel.status.spindle.direction = 'stopped'
+    panel.status.motion.velocity = 0
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.tool-title strong').text()).toBe(title)
+    expect(wrapper.find('.tool-title').exists()).toBe(false)
+    expect(wrapper.find('.status-row .spindle').exists()).toBe(false)
+    expect(wrapper.find('.status-row .feed').exists()).toBe(false)
+    panel.status.spindle.direction = 'forward'
+    panel.status.spindle.commanded_rpm = 6000
+    panel.status.motion.velocity = 600
+    await nextTick()
+    expect(wrapper.get('.status-row .spindle').text()).toContain('Spindle')
+    expect(wrapper.get('.status-row .feed').text()).toBe('Feed 600 mm/min')
   })
 })
 

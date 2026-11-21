@@ -8,7 +8,7 @@ import { machineBlock } from '../machine-block'
 import { currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
-import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
+import { formatVelocity, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import { vTooltip } from '../tooltip'
 import NcText from './NcText.vue'
@@ -53,7 +53,6 @@ const sections = computed(() => {
 })
 const spindleTool = computed(() => status.value?.tool.in_spindle ?? 0)
 const selectedSection = computed(() => selected.value ?? sections.value.findIndex(section => section.tool === spindleTool.value))
-const currentTool = computed(() => sections.value[selectedSection.value]?.tool ?? spindleTool.value)
 const spindleReading = computed(() => {
   const s = status.value
   if (!s) return '—'
@@ -63,13 +62,13 @@ const spindleReading = computed(() => {
   if (s.spindle.direction === 'stopped' || !atSpeed.known || atSpeed.stale) return speed
   return `${speed} · ${s.spindle.at_speed ? 'at speed' : 'below speed'}`
 })
-const tool = computed(() => findTool(currentTool.value))
-const toolTitle = computed(() => {
-  if (currentTool.value === 0) return 'No tool loaded'
-  const label = toolLabel(currentTool.value)
-  if (tool.value === null) return `${label} · Tool not in table`
-  const comment = tool.value.comment.trim()
-  return comment ? `${label} · ${comment}` : label
+// The spindle and feed join the status row (turo: the Tool in spindle block was redundant); only
+// while there is something to read.
+const spindleText = computed(() => status.value && status.value.spindle.direction !== 'stopped' ? `Spindle ${spindleReading.value}` : '')
+const feedText = computed(() => {
+  const s = status.value
+  if (!s || (!programExecuting.value && s.motion.velocity === 0)) return ''
+  return `Feed ${formatVelocity(s.motion.velocity, panel.unit)} ${velocityUnit(panel.unit)}`
 })
 // LinuxCNC can retain counters after a run, through MDI, or across a new file load.
 // Only present them as current program progress in a fresh AUTO execution context.
@@ -284,13 +283,6 @@ async function showFailure(): Promise<void> {
             </div>
             <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
           </div>
-          <div class="tool">
-            <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
-            <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ toolTitle }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
-            <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
-            <div class="kv"><span>Spindle</span><strong class="mono">{{ spindleReading }}</strong></div>
-            <div class="kv"><span>Current feed</span><strong class="mono">{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>
-          </div>
         </div>
       </aside>
     </div>
@@ -305,6 +297,8 @@ async function showFailure(): Promise<void> {
     <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
     <div class="status-row">
       <span>{{ runState }}</span>
+      <span v-if="spindleText" class="spindle mono">{{ spindleText }}</span>
+      <span v-if="feedText" class="feed mono">{{ feedText }}</span>
       <span v-tooltip="timeTooltip" class="run-time mono">{{ timeLabel }}</span>
       <span class="line-count mono">{{ lineLabel }}</span>
     </div>
@@ -336,10 +330,8 @@ async function showFailure(): Promise<void> {
 .section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
 .section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-dim); font-size: 11px; flex: none; }
 .section[aria-pressed=true] .section-number { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 4px; }.section-text strong { font-weight: 500; font-size: 13px; }.section-text small { font-size: 11px; color: var(--text-dim); }
-.tool { border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }.tool-title { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; }.tool-title strong { font-size: 13px; font-weight: 500; }.tool-title small { display: block; margin-top: 4px; color: var(--text-dim); font-size: 11px; }.tool-glyph { display: flex; padding: 10px; background: var(--bg-sunken); border-radius: 8px; color: var(--text-dim); }
-.kv { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 12px; color: var(--text-dim); }.kv strong { flex: none; min-width: 14ch; text-align: right; color: var(--text); font-weight: 500; }.kv .mono { font-size: 11px; }
 .context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
-.status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; }
+.status-row { flex: none; min-height: 20px; display: flex; justify-content: flex-end; align-items: center; gap: 20px; font-size: 12px; }
 .status-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-row > .mono { font-size: 11px; color: var(--text-dim); }
 .line-count { text-align: right; }
@@ -352,7 +344,7 @@ async function showFailure(): Promise<void> {
 .stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
 .stopped-at .btn { height: 36px; }
-@media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
+@media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }
 .inspector-body > * { flex-shrink: 0; }
@@ -362,8 +354,5 @@ async function showFailure(): Promise<void> {
   .panel-head { margin-bottom: 6px; }
   .sections { gap: 0; margin-bottom: 8px; }
   .section { min-height: 44px; padding-block: 6px; }
-  .tool { padding-top: 8px; }
-  .tool-title { margin-block: 6px; }
-  .kv { margin-block: 4px; }
 }
 </style>

@@ -477,6 +477,17 @@ void fixed_setter_is_explicit_and_bounded() {
           "the setter rejects a search too short to reach below the reference latch");
 }
 
+void manual_tool_change_is_opt_in() {
+  require(!load(g0759)->manual_tool_change, "custom HAL keeps its existing tool changer by default");
+  const auto in = with(std::string(g0759), "[COFFEECNC]\n", "[COFFEECNC]\nMANUAL_TOOLCHANGE = yes\n");
+  require(load(in)->manual_tool_change, "the application can wire manual tool changes explicitly");
+  require(!load(with(in, "MANUAL_TOOLCHANGE = yes", "MANUAL_TOOLCHANGE = no"))->manual_tool_change,
+          "no leaves tool-change wiring alone");
+  require(has(error(with(in, "MANUAL_TOOLCHANGE = yes", "MANUAL_TOOLCHANGE = maybe")),
+              "MANUAL_TOOLCHANGE"),
+          "an invalid tool-change setting is diagnosed");
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -498,6 +509,7 @@ auto main(int argc, char** argv) -> int {
     shipped_example();
     simulation_profiles();
     fixed_setter_is_explicit_and_bounded();
+    manual_tool_change_is_opt_in();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

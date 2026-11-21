@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_LINUXCNC_HAL_COMPONENT_HPP
 #define COFFEECNC_LINUXCNC_HAL_COMPONENT_HPP
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <expected>
@@ -63,8 +64,8 @@ struct ProbeCycleOutputs {
 // outright and does not stop a running jog. A stop is therefore a level that is held, never a
 // pulse: a jog start delayed in LinuxCNC's task could run after a pulse has passed.
 //
-// Every member only reads or writes pin memory and never blocks. NOT thread-safe: exactly one
-// thread, the control thread, calls every member, and other threads get what they need from
+// Runtime members only read or write pin memory and never block. NOT thread-safe: exactly one
+// thread, the control thread, calls runtime members, and other threads get what they need from
 // HalShared (hal_control.hpp), which that thread keeps current. The pin memory itself belongs to
 // the HAL signal and is shared with LinuxCNC's realtime thread and with every other component on
 // that signal: each pin access here is a single atomic load or store.
@@ -86,6 +87,9 @@ public:
   HalComponent(const HalComponent&) = delete;
   auto operator=(const HalComponent&) -> HalComponent& = delete;
   ~HalComponent();
+
+  // Startup only, after the machine's post-GUI HAL. Do not replace an existing signal.
+  [[nodiscard]] auto connect_manual_tool_change() -> std::expected<void, std::string>;
 
   // The jog-stop level. `true` drives the pin high at once: every jog in motion stops, whatever
   // the NML command channel is doing, and none starts while it stays high. `false` lowers it,
@@ -121,11 +125,14 @@ public:
 
 private:
   struct Pins;
-  HalComponent(int id, Pins* pins, const HalSignals& wired);
+  HalComponent(int id, Pins* pins, const HalSignals& wired, std::string name);
+  void disconnect_manual_tool_change() noexcept;
 
   int id_{-1};
   Pins* pins_{};
   HalSignals wired_{};
+  std::string name_;
+  std::array<std::string, 3> manual_change_signals_{};
   bool hold_{};
   Clock::time_point stop_raised_{};
   Clock::time_point enable_changed_{};

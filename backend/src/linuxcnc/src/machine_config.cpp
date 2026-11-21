@@ -340,6 +340,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
                           *clearance_mm, *latch_feed, *latch_backoff,          *material_travel};
   }
 
+  const auto manual_tool_change = flag(ini, "MANUAL_TOOLCHANGE");
+  if (!manual_tool_change)
+    return std::unexpected(manual_tool_change.error());
+
   const auto path = [&](const char* section, const char* key) -> std::string {
     const auto value = ini.text(section, key);
     return value && !value->empty() ? absolute(directory, *value) : std::string();
@@ -362,6 +366,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .tool_table = path("EMCIO", "TOOL_TABLE"),
       .parameter_file = path("RS274NGC", "PARAMETER_FILE"),
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
+      .manual_tool_change = *manual_tool_change,
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
       .machine_id = ini.text("COFFEECNC", "MACHINE_ID"),
       .coolant = std::nullopt,

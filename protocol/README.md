@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 35 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 36 cases and the native fixture 35, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -18,6 +18,9 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `slot` | `tool`, machine start `x`, `y`, `z`, and `axis` |
 | `ridge` | `tool`, machine start `x`, `y`, `z`, `axis`, and `width` |
 | `boss` | `tool`, machine start `x`, `y`, `z`, and `diameter` |
+| `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
+| `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
+| `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and `measurement_id` |

@@ -46,7 +46,7 @@ depends=$(field Depends)
 missing=
 # The LinuxCNC series, the window's libraries and the C and C++ runtimes. Library package
 # names are dpkg-shlibdeps' (libgtk-3-0t64 on Debian 13).
-for wanted in 'linuxcnc-uspace (>= ' 'linuxcnc-uspace (<< ' libwebkit2gtk-4.1-0 libgtk-3-0 \
+for wanted in 'linuxcnc-uspace (= ' libwebkit2gtk-4.1-0 libgtk-3-0 \
   libglib2.0-0 libc6 libstdc++6; do
   case $depends in
   *"$wanted"*) ;;

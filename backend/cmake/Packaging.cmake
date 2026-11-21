@@ -49,18 +49,16 @@ if(NOT COFFEECNC_DPKG_QUERY OR NOT COFFEECNC_DPKG)
 endif()
 execute_process(COMMAND ${COFFEECNC_DPKG} --print-architecture
   OUTPUT_VARIABLE architecture OUTPUT_STRIP_TRAILING_WHITESPACE)
-# NML passes EMC_STAT as bytes and its layout changes between LinuxCNC releases: the programs
-# run with the release series they were built against, from the built version on.
+# The NML messages are encoded by the liblinuxcnc.a linked into the programs, and their encoding
+# can change within a series: 2.9.11 adds a field to EMC_SPINDLE_OFF and an argument to the
+# interpreter's STOP_SPINDLE_TURNING. So the package depends on exactly the LinuxCNC it was built
+# against; a LinuxCNC update needs a CoffeeCNC built for it.
 execute_process(COMMAND ${COFFEECNC_DPKG_QUERY} -W -f=\${Version} linuxcnc-uspace
   OUTPUT_VARIABLE linuxcnc_version OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 if(NOT linuxcnc_version MATCHES "^(([0-9]+):)?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
   message(STATUS "linuxcnc-uspace is not an installed package: no Debian package is configured")
   return()
 endif()
-set(epoch "${CMAKE_MATCH_1}")
-set(series_floor "${epoch}${CMAKE_MATCH_3}.${CMAKE_MATCH_4}.${CMAKE_MATCH_5}")
-math(EXPR next_minor "${CMAKE_MATCH_4} + 1")
-set(series_ceiling "${epoch}${CMAKE_MATCH_3}.${next_minor}")
 
 set(COFFEECNC_PACKAGE_MAINTAINER "tinic <tinic@users.noreply.github.com>" CACHE STRING
   "Maintainer field of the Debian package")
@@ -82,6 +80,5 @@ set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/tinic/coffeecnc")
 # Library packages come from dpkg-shlibdeps. LinuxCNC's libraries have no shlibs file, and
 # halcmd is run as a program, so that package is named here.
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_PACKAGE_DEPENDS
-  "linuxcnc-uspace (>= ${series_floor}), linuxcnc-uspace (<< ${series_ceiling})")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "linuxcnc-uspace (= ${linuxcnc_version})")
 include(CPack)

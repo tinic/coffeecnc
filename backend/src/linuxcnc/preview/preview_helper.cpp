@@ -688,10 +688,17 @@ void START_SPINDLE_COUNTERCLOCKWISE(int spindle, int) {
       expand(canon.check.spindle, std::abs(canon.spindle_rpm));
   }
 }
-void STOP_SPINDLE_TURNING(int spindle) {
+// LinuxCNC 2.9.11 adds an at-speed wait argument (canon.hh: `int wait_for_atspeed = 1`); the
+// interpreter then calls the two-argument form. Both are defined so the helper links against
+// either; they share one body, since a call of one from the other would be ambiguous there.
+namespace {
+void stop_spindle(int spindle) {
   if (spindle == 0)
     canon.spindle = CANON_STOPPED;
 }
+} // namespace
+void STOP_SPINDLE_TURNING(int spindle) { stop_spindle(spindle); }
+void STOP_SPINDLE_TURNING(int spindle, int /*wait_for_atspeed*/) { stop_spindle(spindle); }
 void SPINDLE_RETRACT() {}
 void SPINDLE_RETRACT_TRAVERSE() {}
 void ORIENT_SPINDLE(int, double, int) {}

@@ -5,7 +5,7 @@ This guide puts CoffeeCNC on a LinuxCNC machine that already runs with another d
 ## Requirements
 
 - Debian 13 (trixie), amd64 or arm64.
-- LinuxCNC 2.9 (`linuxcnc-uspace`) from the linuxcnc.org `trixie 2.9-uspace` repository. The package works with the 2.9 version it was built against and later 2.9 versions.
+- LinuxCNC 2.9 (`linuxcnc-uspace`) from the linuxcnc.org `trixie 2.9-uspace` repository. Each CoffeeCNC package is built for one LinuxCNC version, given in the release notes and in the package's dependency. After you update LinuxCNC, install the CoffeeCNC package built for the new version.
 - A milling machine with X, Y and Z axes and `trivkins` (joint 0 is X, joint 1 is Y, joint 2 is Z).
 - A gantry router is also supported: two motors on one axis, for example `COORDINATES = X Y Y Z` with `KINEMATICS = trivkins coordinates=XYYZ` (`kinstype=both` is accepted). Give the two joints of the axis the same negative `HOME_SEQUENCE`, as pncconf does, so that they home and square together.
 - A screen of 1280 × 800 or larger. A touch screen is recommended.

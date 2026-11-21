@@ -28,7 +28,7 @@ Installation, the Debian package, and running a machine's own configuration in s
 | Command | `cpack --preset package`, or `cpack -G DEB` in a build directory |
 | File | `coffeecnc_<version>_<arch>.deb`, prefix `/usr` |
 | Version | `project(... VERSION ...)` in `CMakeLists.txt`, the only place |
-| Dependencies | Libraries by `dpkg-shlibdeps`; `linuxcnc-uspace` from the installed version up to the next minor series |
+| Dependencies | Libraries by `dpkg-shlibdeps`; exactly the installed `linuxcnc-uspace` version (the NML encoding can change in a patch release) |
 | Maintainer | `COFFEECNC_PACKAGE_MAINTAINER`, default `tinic <tinic@users.noreply.github.com>` |
 | Check | `package_deb`: control fields, contents, `dpkg-deb -x` below the build directory; `strings` of both programs shows no path of the checkout, the build directory or the home directory |
 

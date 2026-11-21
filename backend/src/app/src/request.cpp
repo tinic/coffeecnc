@@ -177,7 +177,7 @@ auto command(const Json& object) -> Command {
     return Jog{axis(object), direction, number(object, "velocity"), boolean(object, "held")};
   }
   if (type == "jog_paused_z") {
-    fields(object, {"id", "type", "distance", "stop_spindle"});
+    fields(object, {"id", "type", "distance"}, {"stop_spindle"});
     return JogPausedZ{number(object, "distance"),
                       object.contains("stop_spindle") && boolean(object, "stop_spindle")};
   }

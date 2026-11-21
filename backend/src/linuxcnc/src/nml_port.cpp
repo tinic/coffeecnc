@@ -1640,7 +1640,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
   const bool corner = request.action == SetterAction::corner;
-  const bool material = request.action == SetterAction::material || corner;
+  const bool ball = request.action == SetterAction::ball;
+  const bool material = request.action == SetterAction::material || corner || ball;
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1681,40 +1682,44 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
-  if (corner) {
+  if (corner || ball) {
     // A corner: the X face, then the Y face, each probed from beside the work below its top.
+    // A ball calibration: both X faces of a gauge of known width, the same way.
     // The operator jogs the probe over the work within corner_reach_mm of both faces; Z0 of the
     // active work system is the top (probe Z top first). Nothing is written unless both touch.
     constexpr double corner_reach_mm = 10;     // how far inside the corner the probe may start
     constexpr double corner_margin_mm = 3;     // beyond the face before going down
     constexpr double corner_clearance_mm = 5;  // above the top while traversing
     constexpr double corner_depth_mm = 2;      // ball equator below the top
-    const auto x_line = probe_line(request.direction, 0);
+    const auto x_line = probe_line(ball ? ProbeDirection::x_plus : request.direction, 0);
     const auto y_line = probe_line(request.y_direction, 0);
-    if (x_line.axis != 0 || y_line.axis != 1)
+    if (corner && (x_line.axis != 0 || y_line.axis != 1))
       return std::unexpected("A corner needs one X and one Y probe direction.");
+    const double half_gauge = request.gauge_width_mm / 2;
+    if (ball && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
+      return std::unexpected("Enter the gauge width, 2 to 200 mm.");
     if (before.rotation_xy != 0)
-      return std::unexpected("Corner probing needs a work system without rotation.");
+      return std::unexpected("Probing beside the work needs a work system without rotation.");
     if (before.wcs < 1 || before.wcs > 9)
       return std::unexpected("The active work coordinate system is unavailable.");
     if (!std::ranges::contains(current_marks, tool) ||
         std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
         !std::ranges::contains(before.active_codes, "G43"))
       return std::unexpected(std::format(
-          "Touch off T{} and apply its length before probing a corner: the corner uses Z0 as the top.",
+          "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
           tool));
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table before probing a corner.");
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
     // Machine Z of the probe tip where the active work system reads Z0.
     const double top = before.controller.axes[2].machine - before.work[2];
     const double clearance = std::max(request.start[2], top + corner_clearance_mm);
     const double depth = top - radius - corner_depth_mm;
     const double outside = corner_reach_mm + radius + corner_margin_mm;
     if (!std::isfinite(top) || request.start[2] < top + radius)
-      return std::unexpected("Start the corner with the probe above the top of the work.");
+      return std::unexpected("Start with the probe above the top of the work.");
     if (limits->material_travel_mm < outside + radius)
-      return std::unexpected("The material probe travel is too short for a corner.");
+      return std::unexpected("The material probe travel is too short to probe beside the work.");
 
     const auto here = [&]() -> std::optional<std::array<double, 3>> {
       const auto* s = impl_->stat();
@@ -1725,9 +1730,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                         status.controller.axes[2].machine};
     };
     const auto face = [&](const ProbeLine& line, ProbeDirection direction,
-                          const std::array<double, 3>& from) -> std::expected<double, std::string> {
+                          const std::array<double, 3>& from,
+                          double offset) -> std::expected<double, std::string> {
       auto approach = request.start;
-      approach[line.axis] -= line.sign * outside;
+      approach[line.axis] -= line.sign * offset;
       approach[2] = depth;
       const auto contact = probe_fixed_setter({.tool = tool,
                                                .start = from,
@@ -1742,13 +1748,71 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       // The ball's centre touched: the face is one radius further along the travel.
       return contact->machine[line.axis] + line.sign * radius;
     };
-    const auto x_face = face(x_line, request.direction, request.start);
+    if (ball) {
+      // Both faces of the gauge from outside: the ball centres touch one effective diameter
+      // closer together than the gauge is wide.
+      const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
+      if (!left)
+        return std::unexpected("Left face: " + left.error());
+      const auto between = here();
+      if (!between)
+        return std::unexpected("Controller status was lost between the gauge faces.");
+      const auto right = face(probe_line(ProbeDirection::x_minus, 0), ProbeDirection::x_minus,
+                              *between, half_gauge + outside);
+      if (!right)
+        return std::unexpected("Right face: " + right.error());
+      const double centres = (*right + radius) - (*left - radius);
+      const double diameter = request.gauge_width_mm - centres;
+      if (!std::isfinite(diameter) || diameter <= 0 || std::abs(diameter - 2 * radius) > 0.5)
+        return std::unexpected(std::format(
+            "Measured ball diameter {:.3f} mm is more than 0.5 mm from the table's {:.3f} mm. "
+            "Check the gauge width and that the probe started over the gauge.",
+            diameter, 2 * radius));
+      const auto from = impl_->begin(&wanted);
+      const Impl::Scope scope{*impl_};
+      const auto* current = impl_->stat();
+      if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+        return std::unexpected("Ball calibration was cancelled before writing the diameter.");
+      const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+      if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+          after.controller.tool_in_spindle != tool || impl_->read_tool_table() != table)
+        return std::unexpected("Machine or tool table changed before writing the diameter.");
+      const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+      EMC_TASK_PLAN_EXECUTE write;
+      if (!put(write.command, std::format("G10 L1 P{} R{:.6f}", tool, diameter / 2 / scale)))
+        return std::unexpected("Could not format the ball diameter.");
+      if (const auto result = impl_->run(write, from); !accepted(result))
+        return std::unexpected(result.reason.empty() ? "LinuxCNC did not write the ball diameter."
+                                                     : result.reason);
+      if (impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      const bool written = until(settle_timeout, [&] {
+        const auto written_table = impl_->read_tool_table();
+        const auto value = written_table ? tool_diameter(*written_table, tool) : std::nullopt;
+        return value && std::abs(*value * machine_scale - diameter) <= 0.002;
+      });
+      if (!written)
+        return std::unexpected("Could not verify the ball diameter in the tool table.");
+      EMC_TASK_PLAN_EXECUTE lift;
+      if (put(lift.command, std::format("G90 G53 G0 Z{:.8f}", clearance / scale)) &&
+          accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      EMC_TASK_PLAN_EXECUTE distance;
+      if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
+          accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
+                        std::nullopt, std::move(current_marks)};
+      state.ball_diameter = diameter;
+      return state;
+    }
+    const auto x_face = face(x_line, request.direction, request.start, outside);
     if (!x_face)
       return std::unexpected("X face: " + x_face.error());
     const auto between = here();
     if (!between)
       return std::unexpected("Controller status was lost between the corner faces.");
-    const auto y_face = face(y_line, request.y_direction, *between);
+    const auto y_face = face(y_line, request.y_direction, *between, outside);
     if (!y_face)
       return std::unexpected("Y face: " + y_face.error());
 

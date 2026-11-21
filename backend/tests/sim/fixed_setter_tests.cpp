@@ -316,6 +316,31 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
       {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
       {});
   require(!low && low.error().contains("above the top"), low ? "expected a refusal" : low.error());
+
+  // Ball calibration over a gauge: the ball centres touch at -9 and +9 mm. Declared 20.1 mm
+  // wide, the effective ball is 20.1 - 18 = 2.1 mm.
+  corner_window('x', -9, 9);
+  corner_window('y', -100, 100);
+  corner_window('z', -100, 12);
+  const auto gauge = [&](double width) {
+    start_at();
+    mdi("G21");
+    mdi("G90 G53 G0 X1");
+    mdi("G10 L20 P0 Z8");
+    FixedSetterRequest request{SetterAction::ball, 99, position()};
+    request.gauge_width_mm = width;
+    return port->fixed_setter(request, epoch, {});
+  };
+  const auto calibrated = gauge(20.1);
+  require(calibrated && calibrated->ball_diameter && std::abs(*calibrated->ball_diameter - 2.1) < 0.02,
+          calibrated ? std::format("the gauge measured the ball at {:.3f} mm",
+                                   calibrated->ball_diameter.value_or(0))
+                     : calibrated.error());
+  require(std::abs(position()[2] - 20) < 0.2, "the calibration lifted the probe afterwards");
+  const auto wrong = gauge(24);
+  require(!wrong && wrong.error().contains("more than 0.5 mm"),
+          wrong ? "expected a refused diameter" : wrong.error());
+  mdi("G10 L1 P99 R1");
   halcmd("unlinkp sim-ruby-release.in");
   halcmd("net sim-setter-trip sim-ruby-release.in");
 

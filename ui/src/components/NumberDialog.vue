@@ -39,7 +39,7 @@ const preview = computed(() => value.value === null ? 'Enter a valid formula' : 
 function press(key: string): void {
   if (key === '±') {
     text.value = /^[+-]?[\d.,]+$/.test(text.value)
-      ? text.value.startsWith('-') ? text.value.slice(1) : `-${text.value}`
+      ? text.value.startsWith('-') ? text.value.slice(1) : `-${text.value.replace(/^\+/, '')}`
       : `-(${text.value})`
     fresh.value = false
     return

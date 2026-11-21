@@ -29,6 +29,7 @@ import { SimProbe, type ProbePlan } from './probe'
 import { SimOffsetHistory } from './offset-history'
 import { fieldAxis } from '../offset-history'
 import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
+import { inspectProbeCode, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
 import {
   InterpError,
   activeCodes,
@@ -102,6 +103,8 @@ interface Exec {
   nextLine: number
   /** 1-based line being executed. */
   currentLine: number
+  /** Line of the last motion started; it stays between motions, as in the native status. */
+  motionLine?: number
   paused: boolean
   stepping: boolean
   /** A line with content has been interpreted and not yet completed. */
@@ -392,7 +395,7 @@ export class SimMachine {
         file: this.program?.file ?? null,
         revision: this.program?.revision ?? 0,
         current_line: exec?.source === 'program' ? exec.currentLine : 0,
-        motion_line: exec?.source === 'program' && move !== null ? move.line : 0,
+        motion_line: exec?.source === 'program' ? exec.motionLine ?? 0 : 0,
         optional_stop: this.optionalStop,
         block_delete: this.blockDelete,
         cycle: exec?.source === 'program' ? 'running' : this.cutCompleted ? 'completed' : 'idle',
@@ -695,6 +698,7 @@ export class SimMachine {
         if (error === null) {
           if (this.pendingProbe) this.probeContact = false
           exec.active = { kind: 'move', op, index: 1 }
+          if (op.line > 0) exec.motionLine = op.line
         } else {
           this.execError(error)
         }
@@ -953,7 +957,7 @@ export class SimMachine {
         this.stopJogs()
         return null
       case 'mdi':
-        return this.mdi(command.text)
+        return this.probeCode(command.text) ?? this.mdi(command.text)
       case 'list_directory': {
         const listing = listDirectory(this.files, command.path)
         if (listing === null) {
@@ -981,12 +985,12 @@ export class SimMachine {
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
         }
-        return this.run(false, breakpoint?.line)
+        return this.probeCode() ?? this.run(false, breakpoint?.line)
       }
       case 'step':
         if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
         if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.')
-        return this.step()
+        return this.probeCode() ?? this.step()
       case 'pause':
         if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
         if (this.exec === null) {
@@ -1004,6 +1008,10 @@ export class SimMachine {
         if (this.exec?.paused !== true) {
           return reject('Program is not paused')
         }
+        {
+          const blocked = this.probeCode()
+          if (blocked !== null) return blocked
+        }
         this.exec.paused = false
         this.exec.stepping = false
         return null
@@ -1013,23 +1021,28 @@ export class SimMachine {
       case 'set_override':
         return this.setOverride(command.which, command.value)
       case 'set_spindle': {
+        // Stopping is always allowed, as in the native command policy.
+        if (command.direction === 'stopped') {
+          if (this.notOn('') === null && this.busy('') === null) this.mode = 'manual'
+          this.modal.spindle = 'stopped'
+          return null
+        }
         const blocked = this.notOn('control the spindle') ?? this.busy('control the spindle')
         if (blocked !== null) {
           return blocked
         }
-        if (command.direction !== 'stopped') {
-          if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
-          if (!(command.rpm > 0)) {
-            return reject('Spindle speed must be above zero')
-          }
-          this.modal.speed = command.rpm
+        if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
+        if (!(command.rpm > 0)) {
+          return reject('Spindle speed must be above zero')
         }
+        this.modal.speed = command.rpm
         this.mode = 'manual'
         this.modal.spindle = command.direction
         return null
       }
       case 'set_coolant': {
-        const blocked = this.notOn('switch coolant')
+        // Switching coolant off is always allowed, as in the native command policy.
+        const blocked = command.flood || command.mist ? this.notOn('switch coolant') : null
         if (blocked !== null) {
           return blocked
         }
@@ -1042,6 +1055,7 @@ export class SimMachine {
           this.optionalStop = command.on
         } else {
           if (this.exec?.breakpoint) return reject('Stop the breakpoint run before changing block delete.')
+          if (this.exec !== null) return reject('Stop execution before changing block delete.')
           this.blockDelete = command.on
         }
         return null
@@ -1300,11 +1314,40 @@ export class SimMachine {
     if (!this.inPosition()) {
       return reject('Wait for motion to stop before an incremental jog.')
     }
-    if (this.jogVelocity(letter, velocity) === 0 || !Number.isFinite(distance)) {
+    if (this.jogVelocity(letter, velocity) === 0 || !Number.isFinite(distance) || distance === 0) {
       return reject('Jog step needs a distance and a speed above zero')
     }
+    const target = this.phys[axis] + distance
+    if (this.homed[axis] && (target < travel.min[axis] || target > travel.max[axis])) {
+      return reject('Incremental jog exceeds configured travel.')
+    }
     this.mode = 'manual'
-    this.jogs[axis] = { kind: 'step', target: this.phys[axis] + distance, velocity: this.jogVelocity(letter, velocity) }
+    this.jogs[axis] = { kind: 'step', target, velocity: this.jogVelocity(letter, velocity) }
+    return null
+  }
+
+  /**
+   * Refuses MDI text, or the loaded program for run, step and resume, that could start the
+   * spindle while the touch probe is in it (Session::probe_block in the native session).
+   */
+  private probeCode(mdi?: string): Rejection | null {
+    if (!this.probe) return null
+    if (mdi !== undefined) {
+      const block = inspectProbeCode(mdi)
+      if (block.relabelsTool && (block.changesTool || block.refusal !== ''))
+        return reject('Separate M61 from tool changes and spindle commands.')
+    }
+    if (this.toolInSpindle !== demoProbe) return null
+    if (mdi !== undefined) {
+      const reason = probeCodeBlock(mdi)
+      return reason === '' ? null : reject(reason)
+    }
+    if (this.modal.spindle !== 'stopped') return reject(probeLoadedReason)
+    if (this.exec?.source === 'mdi') return reject(probeCodeUnknown)
+    for (const line of this.program?.lines ?? []) {
+      const reason = probeCodeBlock(line)
+      if (reason !== '') return reject(reason)
+    }
     return null
   }
 
@@ -1497,7 +1540,7 @@ export class SimMachine {
       tool: m.tool,
       needs_tool_change: m.tool !== this.toolInSpindle,
       wcs: m.wcs,
-      h: m.toolOffset[2] !== 0 ? m.tool : 0,
+      h: m.lengthTool ?? 0,
       spindle_direction: m.spindle,
       spindle_rpm: m.spindle === 'stopped' ? 0 : m.speed,
       flood: m.flood,

@@ -137,6 +137,20 @@ export function zoom(camera: Camera, factor: number, at: Screen, width: number, 
   }
 }
 
+/** Machine travel as the tool tip reaches it, or null unless all three axes have valid limits. */
+export function travelBounds(axes: readonly { min_limit: number; max_limit: number }[] | undefined,
+  toolOffset: Vec3): { min: Vec3; max: Vec3 } | null {
+  const [x, y, z] = axes ?? []
+  if (x === undefined || y === undefined || z === undefined) return null
+  const limits = [x, y, z]
+  if (!limits.every((axis) => Number.isFinite(axis.min_limit) && Number.isFinite(axis.max_limit) && axis.max_limit > axis.min_limit))
+    return null
+  return {
+    min: [x.min_limit - toolOffset[0], y.min_limit - toolOffset[1], z.min_limit - toolOffset[2]],
+    max: [x.max_limit - toolOffset[0], y.max_limit - toolOffset[1], z.max_limit - toolOffset[2]],
+  }
+}
+
 export function boxCorners(min: Vec3, max: Vec3): Vec3[] {
   const corners: Vec3[] = []
   for (const z of [min[2], max[2]]) {

@@ -1,5 +1,5 @@
-// Helical bore: the tool circles down at the bore's wall (G3, climb milling inside it), one full
-// turn per pitch, then once around the flat bottom. A finish pass leaves `finishAllowance` on
+// Helical bore: the tool circles down at the bore's wall (G3, climb milling inside it) at the plunge
+// feed, one full turn per pitch, then once around the flat bottom at the feed. A finish pass leaves `finishAllowance` on
 // the wall on the way down and cuts it in a helix back up.
 
 import { Checks, Program, checkCommon, feedNumber, number, steps, written, type Common, type Generated } from './program'
@@ -45,13 +45,13 @@ export function bore(b: Bore): Generated {
     `Helix of ${String(turns)} ${turns === 1 ? 'turn' : 'turns'}, ${p.n(b.depth / turns)} per turn, G3 climb milling, plunge feed ${feedNumber(b.plungeFeed, b.unit)}`,
     ...(b.finish ? [`Finish pass: ${p.n(b.finishAllowance)} left on the wall, cut in a helix back up`] : []),
   ])
-  const circle = (r: number, z?: number): void => {
-    p.cut(`G3 X${p.n(b.x + r)} Y${p.n(b.y)}${z === undefined ? '' : ` Z${p.n(z)}`} I${p.n(-r)} J0`, b.feed)
+  const circle = (r: number, z?: number, feed = b.feed): void => {
+    p.cut(`G3 X${p.n(b.x + r)} Y${p.n(b.y)}${z === undefined ? '' : ` Z${p.n(z)}`} I${p.n(-r)} J0`, feed)
   }
   p.add('')
   p.rapidXY(b.x + rough, b.y)
   p.cut('G1 Z0', b.plungeFeed)
-  for (let turn = 1; turn <= turns; turn += 1) circle(rough, (-b.depth * turn) / turns)
+  for (let turn = 1; turn <= turns; turn += 1) circle(rough, (-b.depth * turn) / turns, b.plungeFeed)
   p.add('(Flat bottom)')
   circle(rough)
   if (b.finish) {

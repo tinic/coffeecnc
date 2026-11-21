@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A simple job without CAM: the operator picks an operation and its numbers, the panel writes
 // the program into the program directory and opens it like any other program.
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
@@ -14,7 +14,8 @@ import ModalDialog from './ModalDialog.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
-// The program is written in the unit the panel shows, with G20 or G21 at its start.
+// The program is written in the unit the panel shows, with G20 or G21 at its start. The entered
+// numbers are in that unit, so it stays fixed while the dialog is open.
 const unit: Unit = panel.unit
 const chosen = ref<OperationId>('facing')
 const operation = computed((): Operation => {
@@ -34,7 +35,7 @@ const entered = computed(() => values[chosen.value])
 const fields = computed(() => visibleFields(operation.value, entered.value))
 
 const tools = computed(() => [...panel.toolTable?.tools ?? []].sort((a, b) => a.number - b.number))
-const spindle = panel.status?.tool.in_spindle ?? 0
+const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
 // Until the operator chooses: the tool in the spindle, else one the tool table describes as
 // fitting (the largest for facing, a drill for holes, an end mill otherwise).
 const pickedTool = reactive<Partial<Record<OperationId, number>>>({})
@@ -42,7 +43,7 @@ function suggestedTool(id: OperationId): number {
   const cutting = tools.value.filter((tool) => tool.diameter > 0)
   const named = (wanted: RegExp, unwanted: RegExp): number | undefined =>
     cutting.find((tool) => wanted.test(tool.comment) && !unwanted.test(tool.comment))?.number
-  const loaded = cutting.find((tool) => tool.number === spindle)?.number
+  const loaded = cutting.find((tool) => tool.number === spindle.value)?.number
   const largest = [...cutting].sort((a, b) => b.diameter - a.diameter)[0]?.number
   const fitting = id === 'facing' ? largest : id === 'drilling' ? named(/drill/i, /spot|cent(er|re)/i) : named(/mill/i, /face/i)
   return loaded ?? fitting ?? cutting[0]?.number ?? tools.value[0]?.number ?? 0
@@ -69,7 +70,13 @@ const errors = computed(() => 'errors' in generated.value.result ? generated.val
 
 // The program directory and the names in it, so a new program never takes an existing name.
 const directory = ref<Directory | null>(null)
-let listing: CommandBody | null = { type: 'list_directory', path: null }
+let listing: CommandBody | null = null
+// Asked for once the link is live; asked again when it comes back after a failed listing.
+function list(): void {
+  if (panel.link !== 'live' || listing !== null || directory.value !== null) return
+  listing = { type: 'list_directory', path: null }
+  send(listing)
+}
 const fileName = computed(() => uniqueName(generated.value.base, new Set(directory.value?.entries.map((entry) => entry.name))))
 
 const saving = ref(false)
@@ -92,8 +99,10 @@ function create(): void {
 const removeListener = onResult((command, result) => {
   if (command === listing) {
     listing = null
-    if (result.outcome === 'accepted' && panel.directory !== null) directory.value = panel.directory
-    else feedback.value = result.reason || 'The program directory cannot be read.'
+    if (result.outcome === 'accepted' && panel.directory !== null) {
+      directory.value = panel.directory
+      feedback.value = ''
+    } else feedback.value = result.reason || 'The program directory cannot be read.'
   } else if (command === saveRequest) {
     saveRequest = null
     saving.value = false
@@ -107,7 +116,7 @@ const removeListener = onResult((command, result) => {
   }
 })
 onBeforeUnmount(removeListener)
-send(listing)
+watch(() => panel.link, list, { immediate: true })
 
 function numberUnit(field: Field): string {
   return field.type === 'number' ? unitOf(field.kind, unit) : ''

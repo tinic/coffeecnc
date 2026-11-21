@@ -24,6 +24,8 @@ export function velocityLimits(hello: Hello | null): VelocityLimits | null {
 /** Where in the program the time goes: `start` is the time when `line` begins. */
 export interface TimelineEntry {
   line: number
+  /** Index of the preview segment; a dwell has the one before it. */
+  segment: number
   tool: number
   start: number
   seconds: number
@@ -61,19 +63,21 @@ export function cycleTime(preview: Preview, limits: VelocityLimits): CycleTime {
   let unknownFeeds = false
   let toolChanges = 0
   let tool: number | null = null
-  for (const segment of preview.segments) {
+  for (const [index, segment] of preview.segments.entries()) {
     if (tool !== null && segment.tool !== tool) toolChanges += 1
     tool = segment.tool
     const known = segment.kind === 'rapid' || segment.feed > 0
     if (!known) unknownFeeds = true
     const feed = segment.kind === 'rapid' || !known ? limits.path : segment.feed
-    entries.push({ line: segment.line, tool: segment.tool, seconds: moveSeconds(segment.points, feed, limits) })
+    entries.push({ line: segment.line, segment: index, tool: segment.tool, seconds: moveSeconds(segment.points, feed, limits) })
   }
-  // Dwells go after the moves of earlier lines and of their own line.
+  // Dwells go after the moves of earlier lines and of their own line. The preview gives a dwell
+  // only its line, so a dwell in a subroutine goes where its line first fits.
   for (const dwell of preview.dwells) {
     let at = entries.findIndex((entry) => entry.line > dwell.line)
     if (at < 0) at = entries.length
-    entries.splice(at, 0, { line: dwell.line, tool: entries[at - 1]?.tool ?? 0, seconds: dwell.seconds })
+    const before = entries[at - 1]
+    entries.splice(at, 0, { line: dwell.line, segment: before?.segment ?? 0, tool: before?.tool ?? 0, seconds: dwell.seconds })
   }
   let start = 0
   const timeline = entries.map((entry) => {
@@ -84,18 +88,36 @@ export function cycleTime(preview: Preview, limits: VelocityLimits): CycleTime {
   return { total: start, timeline, unknownFeeds, toolChanges }
 }
 
-/** Seconds of the program still to run when `line` is executing (0 when nothing is). */
-export function remainingFrom(time: CycleTime, line: number): number {
-  const current = time.timeline.find((entry) => entry.line >= line)
+/**
+ * The timeline entry executing when the machine reports `line`, or -1. Subroutines and loops
+ * repeat line numbers, so the search goes forward from `from`, the entry found last in this run;
+ * failing that, the first entry of the line, then the first one past it.
+ */
+export function progressAt(time: CycleTime, line: number, from = 0): number {
+  const timeline = time.timeline
+  for (let at = Math.max(from, 0); at < timeline.length; at += 1) {
+    if (timeline[at]?.line === line) return at
+  }
+  const first = timeline.findIndex((entry) => entry.line === line)
+  return first >= 0 ? first : timeline.findIndex((entry) => entry.line >= line)
+}
+
+/** Seconds of the program still to run from timeline entry `at` (0 when there is none). */
+export function remainingFrom(time: CycleTime, at: number): number {
+  const current = at >= 0 ? time.timeline[at] : undefined
   return current === undefined ? 0 : time.total - current.start
 }
 
-/** Seconds spent in each tool section, keyed by the section's first line. */
-export function sectionSeconds(time: CycleTime, sections: readonly { first: number; last: number }[]): number[] {
+/**
+ * Seconds spent in each tool section. `start` is the index of the section's first preview
+ * segment; a section runs to the next one's start, in execution order, so the moves of a
+ * subroutine count in the section that calls it.
+ */
+export function sectionSeconds(time: CycleTime, sections: readonly { start: number }[]): number[] {
   return sections.map((section, index) => {
-    const end = sections[index + 1]?.first ?? Infinity
+    const end = sections[index + 1]?.start ?? Infinity
     return time.timeline
-      .filter((entry) => entry.line >= section.first && entry.line < end)
+      .filter((entry) => entry.segment >= section.start && entry.segment < end)
       .reduce((sum, entry) => sum + entry.seconds, 0)
   })
 }

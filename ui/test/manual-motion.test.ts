@@ -108,6 +108,23 @@ describe('power feed in Manual', () => {
     await button(view, 'Start feed').trigger('click')
     expect(sentMdi()).toEqual(['G21 G90 G94 G53 G1 Y24.600 F254'])
   })
+  it('holds the feed to the maximum velocity of the axis it moves', async () => {
+    panel.hello = { ...hello, max_jog_velocity: 3000, axis_max_jog_velocity: { x: 3000, y: 3000, z: 750 } }
+    const view = await mountManual()
+    await button(view, 'Power feed').trigger('click')
+    await button(view, 'To limit').trigger('click')
+    await view.get('input[aria-label="Power feed rate"]').setValue('1000')
+    await view.get('input[aria-label="Power feed rate"]').trigger('change')
+    await button(view, 'Z−').trigger('click')
+    expect(band(view)).toContain('The feed is above the machine maximum')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    await button(view, 'X+').trigger('click')
+    expect(document.body.textContent).toContain('F 1000 mm/min')
+    await button(view, 'Cancel').trigger('click')
+    await view.get('input[aria-label="Power feed rate"]').setValue('200')
+    await view.get('input[aria-label="Power feed rate"]').trigger('change')
+    expect(send).not.toHaveBeenCalled()
+  })
   it('refuses with the reason when unhomed, off, running or with the probe loaded', async () => {
     const view = await mountManual()
     await button(view, 'Power feed').trigger('click')

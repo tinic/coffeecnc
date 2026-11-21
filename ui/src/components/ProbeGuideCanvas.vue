@@ -190,15 +190,22 @@ function seek(index: number, settle = !props.playing): void {
 }
 defineExpose({ seek })
 
+// Frames are asked for only while the guide plays; paused, it draws on a change only.
 function animate(now: number): void {
+  frame = 0
+  if (!props.playing || renderer === null || failed.value) return
   const delta = previousFrame === 0 ? 0 : Math.min(now - previousFrame, 65)
   previousFrame = now
-  if (props.playing && renderer !== null && !failed.value) {
-    phaseTime += delta
-    const step = props.plan.steps[phaseIndex]
-    if (step && phaseTime >= duration(step)) seek((phaseIndex + 1) % props.plan.steps.length)
-    draw()
-  }
+  phaseTime += delta
+  const step = props.plan.steps[phaseIndex]
+  if (step && phaseTime >= duration(step)) seek((phaseIndex + 1) % props.plan.steps.length)
+  draw()
+  frame = requestAnimationFrame(animate)
+}
+
+function play(): void {
+  if (frame !== 0 || !props.playing || renderer === null || failed.value) return
+  previousFrame = 0
   frame = requestAnimationFrame(animate)
 }
 
@@ -258,6 +265,7 @@ function lost(event: Event): void {
 
 watch(() => props.plan, build)
 watch(theme, applyTheme)
+watch(() => props.playing, play)
 onMounted(() => {
   const surface = canvas.value
   if (surface === null) return
@@ -298,7 +306,7 @@ onMounted(() => {
     resize.observe(surface)
     applyTheme()
     setView()
-    frame = requestAnimationFrame(animate)
+    play()
   } catch {
     failed.value = true
     emit('unavailable')

@@ -105,6 +105,11 @@ describe('the model beside the program', () => {
     workers[0]?.reply({ ok: true, geometry })
     await vi.waitFor(() => { expect(part.attachment?.name).toBe('plate.step') })
     expect(part.attachment?.note).toBe('Loaded with the program')
+    // It goes with its program: changing the program reports nothing.
+    panel.status.program.file = '/home/cnc/other.ngc'
+    await nextTick()
+    expect(part.attachment).toBeNull()
+    expect(part.error).toBe('')
   })
 
   it('does nothing without a model, in the simulator, or over a model attached meanwhile', async () => {

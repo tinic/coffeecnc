@@ -126,6 +126,19 @@ void hello_rules() {
     spoil(invalid);
     refused(encode_hello(invalid), field);
   }
+
+  auto probing = valid_hello();
+  probing.fixed_setter = FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1};
+  probing.touch_probe_tool = 99;
+  const auto limits = parsed(encode_hello(probing)).at("fixed_setter");
+  require(limits.at("latch_feed_mm_min") == 25 && limits.at("latch_backoff_mm") == 1 &&
+              limits.at("material_travel_mm") == 20,
+          "Probe setup guides receive the configured limits in millimetres");
+  probing.fixed_setter->latch_feed_mm_min = 0;
+  const auto single_pass = parsed(encode_hello(probing)).at("fixed_setter");
+  require(!single_pass.contains("latch_feed_mm_min") && !single_pass.contains("latch_backoff_mm") &&
+              !single_pass.contains("material_travel_mm"),
+          "A single-pass setter advertises no latch or material cycle");
 }
 
 void status_rules() {

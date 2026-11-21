@@ -78,7 +78,7 @@ describe('fixed setter workflow', () => {
     expect(getWrapper().get('.setter-band p').text()).toBe('Machine is off')
     expect(send).not.toHaveBeenCalled()
   })
-  it('teaches and measures directly and shows the result without a dialog', async () => {
+  it('previews teaching and measuring, and sends the same command only on Start', async () => {
     const status = panel.status
     if (!status) throw new Error('Missing status')
     panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 } }
@@ -102,12 +102,20 @@ describe('fixed setter workflow', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
     await answer({ calibration: null, measurement: null })
     await press('Touch off')
+    expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Teach the tool setter')
+    await press('Cancel')
+    expect(send).toHaveBeenCalledTimes(1)
+    await press('Touch off')
     await press('Start probe')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 98, x: 0, y: 0, z: 0 })
     await answer({ ...state, measurement: { calibration: true, tool: 98, contact: [0, 0, -13], value: -40, previous_length: 27, stopping_distance: 0.03 } })
     expect(getWrapper().get('.setter-band p').text()).toBe('Setter taught')
     status.tool.in_spindle = 1
     await nextTick()
+    await press('Touch off')
+    expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Measure tool length')
+    await press('Cancel')
+    expect(send).toHaveBeenCalledTimes(2)
     await press('Touch off')
     await press('Start probe')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })

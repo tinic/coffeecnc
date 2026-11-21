@@ -118,7 +118,10 @@ onBeforeUnmount(() => {
       <button v-else class="btn primary" type="button" @click="guide = { kind: teaching ? 'teach' : 'measure' }">Touch off</button>
     </div>
   </div>
-  <ProbeGuideDialog v-if="guide" :target="guide" :limits="limits" :tool="tool" @start="startGuide" @close="guide = null" />
+  <ProbeGuideDialog
+    v-if="guide" :target="guide" :limits="limits" :tool="tool" :ruby="tool === panel.hello?.touch_probe_tool"
+    @start="startGuide" @close="guide = null"
+  />
 </template>
 
 <style scoped>

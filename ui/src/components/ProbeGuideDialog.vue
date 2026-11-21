@@ -11,6 +11,7 @@ const props = defineProps<{
   target: ProbeGuideTarget
   limits: FixedSetterLimits | undefined
   tool?: number
+  ruby?: boolean
 }>()
 const emit = defineEmits<{ start: [value: number, angle: AngleEdge]; close: [] }>()
 const angle = ref<AngleEdge>('y_plus')
@@ -26,18 +27,19 @@ const valid = computed(() => {
   return length >= field.min && length <= field.max
 })
 const material = computed(() => props.target.kind !== 'teach' && props.target.kind !== 'measure')
+const outside = computed(() => ['corner', 'boss', 'ball'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const playing = ref(!reduced)
 const active = ref(0)
-const stage = useTemplateRef<{ seek: (index: number) => void }>('stage')
+const stage = useTemplateRef<{ seek: (index: number, settle: boolean) => void }>('stage')
 const graphicsAvailable = ref(true)
 const step = computed(() => plan.value.steps[active.value] ?? plan.value.steps[0])
 watch(plan, () => { active.value = 0 })
 function select(index: number): void {
   playing.value = false
   active.value = index
-  stage.value?.seek(index)
+  stage.value?.seek(index, true)
 }
 function unavailable(): void {
   graphicsAvailable.value = false
@@ -52,7 +54,7 @@ function start(): void {
   <ModalDialog :title="plan.title" size="large" expanded fresh-gesture @close="emit('close')">
     <div class="guide-grid">
       <div class="guide-visual">
-        <GuideCanvas ref="stage" :plan="plan" :playing="playing" @step="active = $event" @unavailable="unavailable" />
+        <GuideCanvas ref="stage" :plan="plan" :playing="playing" :ruby="material || ruby" @step="active = $event" @unavailable="unavailable" />
         <div class="timeline">
           <span class="phase-count mono">{{ active + 1 }} / {{ plan.steps.length }}</span>
           <span class="phase-name">{{ step?.label }}</span>
@@ -91,6 +93,8 @@ function start(): void {
           </template>
           <template v-if="!material && limits"><dt>Setter XY tolerance</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
           <template v-if="!material && limits?.clearance_mm"><dt>Retract clearance</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
+          <template v-if="outside"><dt>Traverse clearance</dt><dd>5 mm above top min</dd></template>
+          <template v-if="outside"><dt>Ball centre at contact</dt><dd>2 mm below top</dd></template>
         </dl>
         <div class="guide-result"><h3>Result</h3><p>{{ plan.result }}<template v-if="tool && !material"> · T{{ tool }}</template></p></div>
       </section>
@@ -129,5 +133,8 @@ p { margin: 0; line-height: 1.42; font-size: 13px; }
 }
 @media (max-height: 820px) {
   .guide-visual { min-height: 325px; }
+  .guide-instructions { gap: 7px; }
+  h3 { margin-bottom: 4px; }
+  .limits { row-gap: 3px; }
 }
 </style>

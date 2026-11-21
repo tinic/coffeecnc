@@ -22,6 +22,7 @@ export interface ProbeGuidePlan {
   object: 'stock' | 'bore' | 'boss' | 'gauge' | 'setter'
   steps: ProbeGuideStep[]
   datum: Vec3
+  rotation: number
 }
 
 export const angleChoices = [
@@ -72,6 +73,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
   let datum: Vec3
   let faces: Face[] = []
   let clearance: number | null = null
+  let rotation = 0
   const side = (direction: Edge, base: Vec3, surfaceAt: number = edges[direction].faceAt): Face => {
     const { face, axis, sign } = edges[direction]
     return {
@@ -107,12 +109,12 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       const x = edges[target.x]
       const y = edges[target.y]
       title = `Probe corner ${x.label} ${y.label}`
-      setup = 'Set Z0 on the top first. Jog above the work with the ball within 10 mm of both selected edges.'
+      setup = 'Set Z0 on top first. Jog over the part, with the ball inside and within 10 mm of both selected edges.'
       result = 'Set X0 and Y0 at the corner'
       clearance = 9
       start = [x.faceAt + x.sign * 5, y.faceAt + y.sign * 5, clearance]
       datum = [x.faceAt, y.faceAt, 0]
-      faces = [side(target.x, [start[0], start[1], -2]), side(target.y, [start[0], start[1], -2])]
+      faces = [side(target.x, [start[0], start[1], -tipRadius - 2]), side(target.y, [start[0], start[1], -tipRadius - 2])]
       break
     }
     case 'bore': {
@@ -124,15 +126,17 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       datum = [0, 0, 0]
       const inner = (axis: 0 | 1, sign: number): Face => {
         const base: Vec3 = axis === 0 ? [2, -3, -4] : [0, -3, -4]
-        const wall = Math.sqrt(13 ** 2 - (axis === 0 ? 3 ** 2 : 0))
+        const across = axis === 0 ? 3 : 0
+        const centre = Math.sqrt((13 - tipRadius) ** 2 - across ** 2)
+        const contact = position(base, axis, sign * centre)
         return { label: `${sign > 0 ? '+' : '−'}${axis === 0 ? 'X' : 'Y'} wall`, start: base,
-          contact: position(base, axis, sign * (wall - tipRadius)), surface: position(base, axis, sign * wall), axis }
+          contact, surface: [contact[0] * 13 / (13 - tipRadius), contact[1] * 13 / (13 - tipRadius), contact[2]], axis }
       }
       faces = [inner(0, 1), inner(0, -1), inner(1, 1), inner(1, -1)]
       break
     }
     case 'boss':
-    case 'ball':
+    case 'ball': {
       title = target.kind === 'boss' ? 'Probe boss centre' : 'Calibrate the probe ball'
       setup = target.kind === 'boss' ? 'Set Z0 on the boss top first. Jog above the middle and enter its approximate diameter.'
         : 'Set Z0 on the gauge top first. Jog above the middle of a gauge with parallel X faces and enter its known width.'
@@ -141,18 +145,28 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       clearance = 9
       start = [0, 0, clearance]
       datum = [0, 0, 0]
-      faces = [side('x_plus', [0, 0, -2], -14), side('x_minus', [0, 0, -2], 14)]
-      if (target.kind === 'boss') faces.push(side('y_plus', [0, 0, -2], -14), side('y_minus', [0, 0, -2], 14))
+      const depth: Vec3 = [0, 0, -tipRadius - 2]
+      faces = [side('x_plus', depth, -14), side('x_minus', depth, 14)]
+      if (target.kind === 'boss') faces.push(side('y_plus', depth, -14), side('y_minus', depth, 14))
       break
+    }
     case 'angle': {
       const edge = edges[angle]
       const along = edge.axis === 0 ? 1 : 0
       const step = (distance ?? 50) < 0 ? -12 : 12
+      rotation = 7 * Math.PI / 180
       title = 'Measure edge angle'
       setup = `Jog beside the ${edge.face.toLowerCase()} with the ball below the top. Leave room for two touches along ${along === 0 ? 'X' : 'Y'} on the same straight face.`
       result = 'Report the angle. Rotation is applied in a separate confirmation.'
-      const first = side(angle, position([0, 0, -4], along, -step))
-      const second = side(angle, position([0, 0, -4], along, step))
+      const angledFace = (offset: number): Face => {
+        const slope = (edge.axis === 0 ? -1 : 1) * Math.tan(rotation)
+        const surface = edge.faceAt / Math.cos(rotation) + offset * slope
+        return side(angle, position([0, 0, -4], along, offset), surface)
+      }
+      const first = angledFace(-step)
+      const second = angledFace(step)
+      // The second pass begins on the same machine line, shifted only along the edge.
+      second.start[edge.axis] = first.start[edge.axis]
       faces = [first, second]
       start = first.start
       datum = second.surface
@@ -189,20 +203,24 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     }
     steps.push({ label: `Search · ${face.label}`, point: face.contact, kind: 'search', contact: face.surface })
     if (latch) {
-      const backoff = Math.min(Math.abs(face.start[face.axis] - face.contact[face.axis]), limits?.latch_backoff_mm ?? 1)
+      const available = Math.abs(face.start[face.axis] - face.contact[face.axis])
+      const requested = limits?.latch_backoff_mm ?? 1
+      const backoff = object === 'setter' ? requested : Math.min(available, requested)
       const retreat = face.contact[face.axis] + Math.sign(face.start[face.axis] - face.contact[face.axis]) * backoff
-      steps.push({ label: 'Back off to release', point: position(face.contact, face.axis, retreat), kind: 'move' },
-        { label: 'Touch again at latch feed', point: face.contact, kind: 'contact', contact: face.surface })
+      for (let pass = 1; pass <= 3; pass++) {
+        steps.push({ label: 'Back off to release', point: position(face.contact, face.axis, retreat), kind: 'move' },
+          { label: `Slow latch · ${String(pass)} of 3`, point: face.contact, kind: 'contact', contact: face.surface })
+      }
     }
     steps.push({ label: 'Retract', point: face.start, kind: 'move' })
     at = face.start
   }
   if (clearance !== null) move(position(at, 2, clearance), 'Lift clear of the work')
   if (object === 'setter' && limits?.clearance_mm) {
-    // The taught setter cycle can finish at its configured clearance above contact.
-    steps[steps.length - 1] = { label: 'Retract to clearance', point: [0, 0, 12], kind: 'move' }
-    at = [0, 0, 12]
+    // Keep the full motion in frame while showing a lift above the search start.
+    at = [0, 0, 20]
+    steps[steps.length - 1] = { label: 'Retract to clearance', point: at, kind: 'move' }
   }
   steps.push({ label: result, point: at, kind: 'result', contact: datum })
-  return { title, setup, result, object, steps, datum }
+  return { title, setup, result, object, steps, datum, rotation }
 }

@@ -10,7 +10,7 @@ import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
 import type { ProbeGuidePlan, ProbeGuideStep } from '../probe-guide'
 
-const props = defineProps<{ plan: ProbeGuidePlan; playing: boolean }>()
+const props = defineProps<{ plan: ProbeGuidePlan; playing: boolean; ruby: boolean }>()
 const emit = defineEmits<{ step: [index: number]; unavailable: [] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const failed = ref(false)
@@ -22,7 +22,7 @@ const view: Camera = { azimuth: -0.88, elevation: 0.47, scale: 1, centre: [0, 0,
 const grid = new GridHelper(108, 18, 0x687787, 0x47535f)
 const stockMaterial = new MeshStandardMaterial({ color: 0x8195a5, metalness: 0.22, roughness: 0.62 })
 const steel = new MeshStandardMaterial({ color: 0xb5c3ce, metalness: 0.57, roughness: 0.33 })
-const ruby = new MeshStandardMaterial({ color: 0xcf173d, metalness: 0.16, roughness: 0.25 })
+const rubyMaterial = new MeshStandardMaterial({ color: 0xcf173d, metalness: 0.16, roughness: 0.25 })
 const gold = new MeshStandardMaterial({ color: 0xeeab34, metalness: 0.25, roughness: 0.48 })
 const contactMaterial = new MeshStandardMaterial({ color: 0xffb432, emissive: 0xb25514, emissiveIntensity: 0.65 })
 const datumMaterial = new MeshStandardMaterial({ color: 0x3addbc, emissive: 0x19745e, emissiveIntensity: 0.7 })
@@ -42,6 +42,7 @@ let previousFrame = 0
 let phaseIndex = 0
 let phaseTime = 0
 let drag: { id: number; x: number; y: number } | null = null
+let measuredEdge: [Vector3, Vector3] | null = null
 
 function cylinder(radius: number, height: number, color: MeshStandardMaterial, z: number): Mesh {
   const mesh = new Mesh(new CylinderGeometry(radius, radius, height, 48), color)
@@ -76,10 +77,14 @@ function build(): void {
     stock.geometry.dispose()
   }
   stock = makeStock()
+  stock.rotation.z += props.plan.rotation
   stage.add(stock)
   if (props.plan.steps[0]) start.position.set(...props.plan.steps[0].point)
   datum.position.set(...props.plan.datum)
   const [x, y] = props.plan.datum
+  const faces = props.plan.steps.flatMap(step => step.kind === 'search' && step.contact ? [step.contact] : [])
+  const [first, second] = faces
+  measuredEdge = props.plan.rotation && first && second ? [new Vector3(...first), new Vector3(...second)] : null
   view.azimuth = x === 0 && y === 0 ? -2.3
     : Math.atan2(x || -16, -(y || -16))
   seek(0)
@@ -103,8 +108,14 @@ function draw(): void {
   tool.position.copy(from).lerp(new Vector3(...step.point), blend)
   trackPoints.setXYZ(0, ...before.point)
   trackPoints.setXYZ(1, tool.position.x, tool.position.y, tool.position.z)
+  const showEdge = step.kind === 'result' && measuredEdge !== null
+  if (showEdge && measuredEdge) {
+    const [a, b] = measuredEdge
+    trackPoints.setXYZ(0, a.x, a.y, a.z)
+    trackPoints.setXYZ(1, b.x, b.y, b.z)
+  }
   trackPoints.needsUpdate = true
-  trace.visible = step.kind === 'search' || step.kind === 'move'
+  trace.visible = showEdge || step.kind === 'search' || step.kind === 'move'
   contact.visible = step.contact !== undefined && step.kind !== 'result' && motion >= 1
   if (step.contact) contact.position.set(...step.contact)
   datum.visible = step.kind === 'result'
@@ -112,10 +123,10 @@ function draw(): void {
   renderer.render(scene, camera)
 }
 
-function seek(index: number): void {
+function seek(index: number, settle = !props.playing): void {
   phaseIndex = index
   const step = props.plan.steps[index]
-  phaseTime = !props.playing && step ? duration(step) : 0
+  phaseTime = settle && step ? duration(step) : 0
   emit('step', phaseIndex)
   draw()
 }
@@ -187,8 +198,12 @@ onMounted(() => {
     grid.position.z = -14.1
     const axes = new AxesHelper(10)
     axes.position.set(-30, -23, -13.9)
-    tool.add(new Mesh(new SphereGeometry(2, 24, 18), ruby), cylinder(0.8, 9, steel, 6.5),
-      cylinder(2.7, 9, steel, 15.5), cylinder(3.6, 5, steel, 21.5))
+    if (props.ruby) {
+      tool.add(new Mesh(new SphereGeometry(2, 24, 18), rubyMaterial), cylinder(0.8, 9, steel, 6.5),
+        cylinder(2.7, 9, steel, 15.5), cylinder(3.6, 5, steel, 21.5))
+    } else {
+      tool.add(cylinder(2.5, 16, steel, 10), cylinder(3.4, 8, steel, 22))
+    }
     scene.add(new AmbientLight(0xffffff, 1.65), light, rim, grid, axes, stage, tool, contact, datum, start, trace)
     build()
     surface.addEventListener('webglcontextlost', lost)
@@ -212,7 +227,7 @@ onBeforeUnmount(() => {
       if (geometry instanceof BufferGeometry) geometry.dispose()
     }
   })
-  for (const material of [stockMaterial, steel, ruby, gold, contactMaterial, datumMaterial, trace.material]) material.dispose()
+  for (const material of [stockMaterial, steel, rubyMaterial, gold, contactMaterial, datumMaterial, trace.material]) material.dispose()
   grid.dispose()
   renderer?.dispose()
 })

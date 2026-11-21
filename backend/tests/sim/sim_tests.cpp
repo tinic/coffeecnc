@@ -11,6 +11,7 @@
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/core/text_file.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
+#include <coffeecnc/app/program_progress.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/app/session.hpp>
@@ -4576,9 +4577,230 @@ void paused_spindle(Rig& rig, NmlLoads& loads) {
   rig.start();
 }
 
+// Drive one unmodified program through the same preview and progress messages as the panel.
+void whole_job(Rig& rig, NmlLoads& loads) {
+  const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("job_loaded_tool_table", table.has_value());
+  if (!table)
+    return;
+  PreviewOracle oracle{rig, *table};
+  PreviewWorker preview{oracle.engine};
+  LocalToolModelFiles progress_files;
+  ProgramProgress progress{progress_files, rig.config.directory};
+  PanelComposer composer{oracle.source.hello(), &preview};
+  const auto started_at = Clock::now();
+  auto last_read = started_at - PanelFeed::period;
+  Json panel;
+  const auto directory = std::filesystem::path(rig.config.directory);
+  std::ofstream trace{directory / "whole-job-status.jsonl"};
+  const auto read_panel = [&]() -> const Json& {
+    const auto time = Clock::now();
+    if (time - last_read < PanelFeed::period)
+      return panel;
+    last_read = time;
+    auto reading = oracle.source.read();
+    progress.observe(reading, time);
+    const auto messages = composer.compose(reading, rig.page, false, 0ms);
+    if (!messages)
+      throw std::runtime_error(messages.error());
+    for (const auto& message : *messages) {
+      auto packet = Json::parse(message);
+      if (packet.at("type") == "status") {
+        trace << Json{{"ms", milliseconds(time - started_at)}, {"status", packet}}.dump() << '\n';
+        panel = std::move(packet);
+      }
+    }
+    return panel;
+  };
+  const auto ready_preview = [&](double air_z) {
+    return rig.pump_until(8s, [&] {
+      const auto& status = read_panel();
+      const auto latest = preview.checked_preview().preview;
+      return latest && latest->state == PreviewState::ready && latest->check &&
+             latest->check->errors.empty() && status.contains("preview_context") &&
+             latest->context == status.at("preview_context").get<std::uint64_t>() &&
+             near(status.at("program").value("air_z", 0.0), air_z);
+    });
+  };
+  const auto mdi = [&](std::string_view block) {
+    const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", block));
+    return result.accepted() && rig.pump_until(6s, [&] {
+      const auto s = rig.status();
+      return s.command_done && !s.task_executing && s.queued_mdi == 0 && rig.idle();
+    });
+  };
+  const auto require = [&](std::string_view name, bool passed, const std::string& detail = {}) {
+    check(name, passed, detail);
+    return passed;
+  };
+  rig.stop();
+  rig.restart_preview = &preview;
+  rig.restart_engine = &oracle.engine;
+  rig.start();
+  const auto exercise = [&]() {
+    const auto original = std::filesystem::path(COFFEECNC_SAMPLES_DIRECTORY) / "air/03-pocket.ngc";
+    const auto source = std::filesystem::path(rig.config.program_prefix) / "air/03-pocket.ngc";
+    std::filesystem::create_directories(source.parent_path());
+    std::filesystem::copy_file(original, source, std::filesystem::copy_options::overwrite_existing);
+    oracle.program = source.string();
+    for (const auto axis : {"x", "y", "z"}) {
+      const auto homed = rig.send(std::format(R"("type":"home","axis":"{}")", axis));
+      if (!require("job_home_in_place", homed.accepted(), homed.text()))
+        return;
+    }
+    const auto tool = rig.send(
+        R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6.35,"comment":"End mill"})");
+    const bool prepared = tool.accepted() && mdi("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z-50 R0") &&
+                          mdi("M61 Q1 G43 H1") && mdi("G0 Z30") && mdi("G0 X0 Y0") &&
+                          rig.send(R"("type":"set_override","which":"feed","value":2)").accepted();
+    if (!require("job_fixture_at_start", prepared && distance(rig.status().work, {0, 0, 30}) < 0.01))
+      return;
+    const auto open = rig.send(std::format(R"("type":"open_program","path":{})", Json(oracle.program).dump()));
+    if (!require("job_program_check_ready", open.accepted() && ready_preview(0), open.text()))
+      return;
+    const auto context = read_panel().at("preview_context").get<std::uint64_t>();
+    const auto start = rig.send(std::format(
+        R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true,"breakpoint":{{"line":24,"text":"G1 Z10 F480"}})",
+        context));
+    const bool reached = start.accepted() && spindle_feedback(1500, true) && rig.pump_until(65s, [&] {
+      const auto bp = read_panel().at("program").value("breakpoint", Json::object());
+      return bp.value("reached", false) && bp.value("line", 0) == 24 &&
+             rig.status().paused && near(rig.status().work[2], 15);
+    });
+    if (!require("job_pauses_before_second_level_at_original_line", reached, start.text()))
+      return;
+    const auto at_pause = rig.status().commanded_position;
+    const auto spindle_marker = directory / ".coffeecnc-spindle-hold";
+    const auto unconfirmed = rig.send(R"("type":"jog_paused_z","distance":2)");
+    const auto lift = rig.post(R"("type":"jog_paused_z","distance":2,"stop_spindle":true)");
+    const bool stopped = rig.pump_until(4s, [&] {
+      return rig.status().spindle_direction == SpindleDirection::stopped;
+    }) && !rig.result(lift) && distance(rig.status().commanded_position, at_pause) < 0.01;
+    const bool zero_rpm = spindle_feedback(0, false);
+    const auto lifted = rig.await(lift);
+    if (!require("job_confirmed_lift_waits_for_measured_stop",
+                 !unconfirmed.accepted() && stopped && zero_rpm && lifted.accepted() &&
+                     rig.status().paused && near(rig.machine(2), at_pause[2] + 2) &&
+                     std::filesystem::exists(spindle_marker), lifted.text()))
+      return;
+    static_cast<void>(read_panel());
+    const auto resume = rig.post(R"("type":"resume")");
+    const bool waits = rig.pump_until(6s, [&] {
+      const auto s = rig.status();
+      return s.spindle_direction == SpindleDirection::forward && near(s.spindle_rpm, 1500);
+    }) && rig.status().paused && !rig.result(resume) &&
+        distance(rig.status().commanded_position, at_pause) < 0.01;
+    const bool at_speed = spindle_feedback(1500, true);
+    const auto resumed = rig.await(resume);
+    const bool second_pass = resumed.accepted() && rig.pump_until(6s, [&] {
+      return read_panel().at("program").value("motion_line", 0) == 25 && rig.status().velocity > 0.01;
+    });
+    if (!require("job_resume_returns_z_then_waits_for_spindle_and_preserves_line_map",
+                 waits && at_speed && second_pass && !std::filesystem::exists(spindle_marker),
+                 resumed.text()))
+      return;
+    const auto hold = rig.send(R"("type":"pause")");
+    const bool held = hold.accepted() && rig.pump_until(3s, [&] {
+      static_cast<void>(read_panel());
+      return rig.status().paused && rig.status().controller.in_position;
+    });
+    check("job_feed_hold_during_second_pass", held, hold.text());
+    const auto stop = rig.send(R"("type":"abort")");
+    const bool restored = stop.accepted() && rig.pump_until(8s, [&] {
+      const auto& program = read_panel().at("program");
+      return rig.idle() && program.value("file", std::string{}) == oracle.program &&
+             program.contains("restart_hint") && !std::filesystem::exists(directory / ".coffeecnc-breakpoint.txt");
+    });
+    if (!require("job_stop_restores_source_and_offers_restart_there", restored, stop.text() + " " + panel.dump()))
+      return;
+    const auto next = panel.at("program").at("restart_hint");
+    check("job_restart_hint_is_original_cut_line", next.at("line") == 25 && next.at("tool") == 1, next.dump());
+    const auto plan = rig.send(std::format(R"("type":"plan_restart","line":{},"preview_context":{})",
+                                         next.at("line").get<int>(),
+                                         panel.at("preview_context").get<std::uint64_t>()));
+    if (!require("job_restart_plan_recovers_program_state",
+                 plan.accepted() && plan.restart.value("line", 0) == 25 &&
+                     plan.restart.value("tool", 0) == 1 && plan.restart.value("spindle_rpm", 0) == 1500,
+                 plan.text() + " " + plan.restart.dump()))
+      return;
+    const auto restart = rig.post(std::format(R"("type":"start_restart","plan_id":{})",
+                                             plan.restart.at("plan_id").get<std::uint64_t>()));
+    bool saw_cut = false;
+    const bool completed = rig.pump_until(85s, [&] {
+      const auto& status = read_panel();
+      saw_cut = saw_cut || (rig.status().velocity > 0.01 && status.at("program").value("motion_line", 0) == 25);
+      return saw_cut && rig.idle() && rig.status().spindle_direction == SpindleDirection::stopped &&
+             !status.at("program").contains("restart_hint") &&
+             distance(rig.status().work, {24, 20, 30}) < 0.02;
+    });
+    const auto restarted = rig.result(restart);
+    if (!require("job_restarted_cut_completes_through_m30", restarted && restarted->accepted() && completed,
+                 restarted ? restarted->text() : "pending"))
+      return;
+    const auto air_marker = directory / "coffeecnc-air-cut.txt";
+    const auto enter_air = [&] {
+      const auto selected = rig.send(R"("type":"set_air_cut","air_z":25)");
+      if (!selected.accepted() || !ready_preview(25))
+        return false;
+      const auto result = rig.send(std::format(
+          R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true,"air_z":25)",
+          panel.at("preview_context").get<std::uint64_t>()));
+      return result.accepted() && rig.pump_until(18s, [&] {
+        const auto& program = read_panel().at("program");
+        const auto raw = rig.status();
+        return program.value("air_offset_owned", false) && program.value("motion_line", 0) == 15 &&
+               near(raw.g92[2], 25) && near(raw.commanded_position[2], 8.975, 0.03);
+      });
+    };
+    if (!require("job_air_cut_uses_same_file_at_raised_z", enter_air(), panel.dump()))
+      return;
+    const bool dry_completed = rig.pump_until(110s, [&] {
+      static_cast<void>(read_panel());
+      return rig.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
+             near(rig.status().g92[2], 0) && near(rig.machine(2), 23.975, 0.03);
+    });
+    if (!require("job_air_cut_m30_clears_only_the_offset", dry_completed) || !enter_air())
+      return;
+    const auto air_hold = rig.send(R"("type":"pause")");
+    const bool paused = air_hold.accepted() && rig.pump_until(4s, [&] {
+      static_cast<void>(read_panel());
+      return rig.status().paused && rig.status().controller.in_position;
+    });
+    if (!require("job_air_cut_in_progress_before_app_restart", paused && std::filesystem::exists(air_marker)))
+      return;
+    const auto parked = rig.status().commanded_position;
+    rig.stop();
+    auto reopened = NmlPort::connect(rig.config, &rig.shared, &loads);
+    if (!require("job_app_reconnect", reopened.has_value()))
+      return;
+    Rig recovered{rig.config, rig.hal, rig.shared, **reopened, rig.reader, rig.view, rig.probe};
+    recovered.pump(250ms);
+    const bool preserved = recovered.status().paused && loads.air_offset_owned &&
+                           near(recovered.status().g92[2], 25) &&
+                           distance(recovered.status().commanded_position, parked) < 0.02;
+    const auto recover = recovered.send(R"("type":"abort")");
+    const bool recovered_cleanly = recover.accepted() && recovered.pump_until(6s, [&] {
+      const auto raw = recovered.status();
+      return recovered.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
+             raw.program_file == oracle.program && near(raw.g92[2], 0) &&
+             distance(raw.commanded_position, parked) < 0.02;
+    });
+    check("job_app_restart_preserves_air_lift_until_stop_and_clears_without_motion",
+          preserved && recovered_cleanly, recover.text());
+    check("job_source_unchanged", read_text_file(source.string(), 65536) ==
+                                      read_text_file(original.string(), 65536));
+    recovered.stop();
+  };
+  exercise();
+  rig.stop();
+  rig.restart_preview = nullptr;
+  rig.restart_engine = nullptr;
+  rig.start();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only, bool raised_only,
-         bool breakpoint_only, bool paused_z_only, bool paused_spindle_only) -> int {
+         bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4650,6 +4872,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (whole_job_only) {
+    whole_job(rig, loads);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (paused_spindle_only) {
     paused_spindle(rig, loads);
     power_off(rig);
@@ -4778,6 +5005,7 @@ auto main(int argc, char** argv) -> int {
   bool breakpoint_only = false;
   bool paused_z_only = false;
   bool paused_spindle_only = false;
+  bool whole_job_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -4794,6 +5022,7 @@ auto main(int argc, char** argv) -> int {
     paused_spindle_only = paused_spindle_only || std::string_view(argv[i]) == "paused-spindle";
     paused_z_only = paused_z_only || std::string_view(argv[i]) == "paused-z";
     breakpoint_only = breakpoint_only || std::string_view(argv[i]) == "program-breakpoint";
+    whole_job_only = whole_job_only || std::string_view(argv[i]) == "whole-job";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -4803,7 +5032,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               raised_only, breakpoint_only, paused_z_only, paused_spindle_only);
+               raised_only, breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

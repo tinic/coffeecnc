@@ -149,6 +149,8 @@ export interface ProgramStatus {
   air_z?: number
   /** CoffeeCNC owns a temporary offset in LinuxCNC and must clear it after the run. */
   air_offset_owned?: boolean
+  /** Original source line and whether the temporary pause has been reached. */
+  breakpoint?: { line: number; reached: boolean }
 }
 
 /** Why a running program is not moving. The panel shows this instead of guessing. */
@@ -479,6 +481,8 @@ export interface Run extends CommandBase {
   display_units?: LengthUnit
   confirmed?: boolean
   air_z?: number
+  /** Pause before this 1-based source motion line. */
+  breakpoint?: number
 }
 export interface SetAirCut extends CommandBase {
   type: 'set_air_cut'

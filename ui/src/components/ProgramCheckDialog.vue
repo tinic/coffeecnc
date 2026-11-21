@@ -12,6 +12,7 @@ const props = defineProps<{
   canConfirm?: boolean
   changed?: boolean
   airZ?: number
+  breakpointLine?: number | null
 }>()
 const emit = defineEmits<{ close: []; confirm: [] }>()
 
@@ -28,6 +29,7 @@ function range(min: number, max: number, format: (value: number) => string): str
     <p v-else-if="!check" class="notice" role="status">Checking the loaded program…</p>
     <template v-else>
       <p v-if="airZ" class="air-notice"><strong>Air cut</strong> · Z {{ airLiftLabel(airZ, unit) }}</p>
+      <p v-if="breakpointLine" class="air-notice">Pause before line {{ breakpointLine }}</p>
       <div v-if="check.errors.length || check.warnings.length" class="issues" :class="{ blocked: check.errors.length }">
         <AppIcon name="warning" />
         <div>
@@ -69,7 +71,7 @@ function range(min: number, max: number, format: (value: number) => string): str
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">{{ canConfirm ? 'Cancel' : 'Done' }}</button>
       <button v-if="canConfirm && check && !check.errors.length && !changed" class="btn primary" type="button" @click="emit('confirm')">
-        <AppIcon name="play" />{{ airZ ? 'Start air cut' : 'Run program' }}
+        <AppIcon name="play" />{{ airZ ? 'Start air cut' : breakpointLine ? `Run to line ${String(breakpointLine)}` : 'Run program' }}
       </button>
     </template>
   </ModalDialog>

@@ -2,11 +2,12 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { allHomed, homingRequired, linkBlock, live, panel, reported, send } from '../machine'
 import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
 import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { LengthUnit } from '../protocol'
 import { touchProbeLoaded } from '../tool-models'
 
@@ -19,10 +20,15 @@ const checkedPreview = computed(() => currentProgramPreview(panel.preview ?? nul
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const airZ = computed(() => status.value?.program.air_z ?? 0)
 const airOwned = computed(() => status.value?.program.air_offset_owned === true)
-const confirmation = ref<{ context: number; unit: LengthUnit; airZ: number } | null>(null)
+const activeBreakpoint = computed(() => status.value?.program.breakpoint)
+const breakpoint = computed(() => airZ.value || activeBreakpoint.value ? null : selectedBreakpoint(status.value))
+watch(activeBreakpoint, (active) => {
+  if (active?.line === selectedBreakpoint(status.value)) breakpointSelection.value = null
+})
+const confirmation = ref<{ context: number; unit: LengthUnit; airZ: number; breakpoint: number | null } | null>(null)
 const checkChanged = computed(() => confirmation.value !== null &&
   (checkedPreview.value?.context !== confirmation.value.context || panel.unit !== confirmation.value.unit ||
-    airZ.value !== confirmation.value.airZ))
+    airZ.value !== confirmation.value.airZ || breakpoint.value !== confirmation.value.breakpoint))
 const touchOff = computed(() => panel.tab === 'probe')
 const paused = computed(() => status.value?.wait.kind === 'paused')
 const toolChange = computed(() => status.value?.wait.kind === 'tool_change')
@@ -45,7 +51,9 @@ const startBlock = computed((): string | null => {
 
 const runBlock = computed(() => startBlock.value ?? interpreterBlock(status.value) ??
   (airOwned.value ? 'Clearing the temporary air-cut offset' : null) ??
-  ((panel.preview || airZ.value) && check.value === null ? 'Checking program' : null))
+  (activeBreakpoint.value ? 'Reopening the original program' : null) ??
+  ((panel.preview || airZ.value || breakpoint.value) && check.value === null ? 'Checking program' : null) ??
+  (breakpoint.value && checkedPreview.value?.state !== 'ready' ? 'A breakpoint needs a complete program check' : null))
 
 const pauseBlock = computed((): string | null => {
   const s = status.value
@@ -63,6 +71,7 @@ const stepBlock = computed((): string | null => {
     return startBlock.value
   }
   if (airZ.value || airOwned.value) return 'Turn off air cut before using single block'
+  if (activeBreakpoint.value) return 'Use Resume to continue the breakpoint run'
   return toolChange.value ? 'Waiting for the tool change' : null
 })
 
@@ -70,7 +79,8 @@ const primary = computed(() => {
   if (paused.value) return { label: 'Resume', icon: 'play' as const, type: 'resume' as const, blocked: linkBlock.value ?? probeWithSpindle.value }
   if (programRunning.value || status.value?.mode === 'mdi' && status.value.interp !== 'idle')
     return { label: 'Feed hold', icon: 'pause' as const, type: 'pause' as const, blocked: pauseBlock.value }
-  return { label: airZ.value ? 'Start air cut' : 'Cycle start', icon: 'play' as const, type: 'run' as const, blocked: runBlock.value }
+  const label = airZ.value ? 'Start air cut' : breakpoint.value ? `Run to line ${String(breakpoint.value)}` : 'Cycle start'
+  return { label, icon: 'play' as const, type: 'run' as const, blocked: runBlock.value }
 })
 function primaryAction(): void {
   const { type, blocked } = primary.value
@@ -86,9 +96,10 @@ function primaryAction(): void {
     return
   }
   if (airZ.value || check.value.errors.length || check.value.warnings.length) {
-    confirmation.value = { context: preview.context, unit: panel.unit, airZ: airZ.value }
+    confirmation.value = { context: preview.context, unit: panel.unit, airZ: airZ.value, breakpoint: breakpoint.value }
   } else {
-    send({ type: 'run', preview_context: preview.context, display_units: panel.unit })
+    send({ type: 'run', preview_context: preview.context, display_units: panel.unit,
+      ...(breakpoint.value ? { breakpoint: breakpoint.value } : {}) })
   }
 }
 
@@ -98,7 +109,8 @@ function confirmRun(): void {
     check.value === null || check.value.errors.length > 0) return
   confirmation.value = null
   send({ type: 'run', preview_context: reviewed.context, display_units: reviewed.unit, confirmed: true,
-    ...(reviewed.airZ ? { air_z: reviewed.airZ } : {}) })
+    ...(reviewed.airZ ? { air_z: reviewed.airZ } : {}),
+    ...(reviewed.breakpoint ? { breakpoint: reviewed.breakpoint } : {}) })
 }
 
 function option(which: 'optional_stop' | 'block_delete'): void {
@@ -119,7 +131,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
           <div class="actions">
             <button v-tooltip="stepBlock ?? 'Execute one block, then pause'" class="btn" type="button" :disabled="stepBlock !== null" @click="send({ type: 'step' })"><AppIcon name="step" />Single block</button>
             <button class="btn" type="button" :class="{ on: status?.program.optional_stop }" :disabled="!live" @click="option('optional_stop')">Optional stop M1</button>
-            <button class="btn" type="button" :class="{ on: status?.program.block_delete }" :disabled="!live || airOwned" @click="option('block_delete')">Block delete /</button>
+            <button class="btn" type="button" :class="{ on: status?.program.block_delete }" :disabled="!live || airOwned || !!activeBreakpoint" @click="option('block_delete')">Block delete /</button>
           </div>
         </div>
       </details>
@@ -128,7 +140,8 @@ function option(which: 'optional_stop' | 'block_delete'): void {
     </div>
     <ProgramCheckDialog
       v-if="confirmation" :check="check" :unit="panel.unit"
-      :max-rpm="panel.hello?.max_spindle_rpm" :changed="checkChanged" :air-z="confirmation.airZ" can-confirm
+      :max-rpm="panel.hello?.max_spindle_rpm" :changed="checkChanged" :air-z="confirmation.airZ"
+      :breakpoint-line="confirmation.breakpoint" can-confirm
       @close="confirmation = null" @confirm="confirmRun"
     />
   </footer>

@@ -103,6 +103,7 @@ interface Exec {
   ranLine: boolean
   /** Blocks a restart runs before `nextLine`, as MDI would. */
   preamble?: string[]
+  breakpoint?: { line: number; reached: boolean }
 }
 
 interface PlannedRestart {
@@ -372,6 +373,8 @@ export class SimMachine {
         block_delete: this.blockDelete,
         ...(this.airLift ? { air_z: this.airLift } : {}),
         ...(this.airOffsetOwned ? { air_offset_owned: true } : {}),
+        ...(exec?.breakpoint ? { breakpoint: { line: exec.breakpoint.line,
+          reached: exec.breakpoint.reached && exec.paused && exec.nextLine < exec.breakpoint.line } } : {}),
         ...(exec === null && this.stoppedAt !== null && this.stoppedAt.revision === this.program?.revision
           ? { restart_hint: { line: this.stoppedAt.line, tool: this.stoppedAt.tool } } : {}),
       },
@@ -741,6 +744,12 @@ export class SimMachine {
         this.exec = null
         return
       }
+      if (exec.breakpoint && !exec.breakpoint.reached && exec.nextLine + 1 === exec.breakpoint.line) {
+        exec.breakpoint.reached = true
+        exec.currentLine = exec.breakpoint.line
+        exec.paused = true
+        return
+      }
       const text = this.program.lines[exec.nextLine]
       if (text === undefined) {
         this.execError('File ended with no percent sign or program end (M2 or M30)')
@@ -901,6 +910,10 @@ export class SimMachine {
         if ((command.air_z ?? 0) !== this.airLift) return reject('The air-cut selection changed.')
         if (this.airLift && (command.preview_context === undefined || !command.confirmed || this.preview.state !== 'ready'))
           return reject(this.preview.check?.errors[0] ?? 'Review the raised preview before starting the air cut.')
+        if (command.breakpoint !== undefined && (this.airLift || !Number.isSafeInteger(command.breakpoint) ||
+          command.preview_context === undefined || command.display_units === undefined || this.preview.state !== 'ready' ||
+          !this.preview.segments.some((segment) => segment.line === command.breakpoint)))
+          return reject('Choose a motion line in a complete preview with air cut off.')
         if (command.preview_context !== undefined) {
           if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
             return reject('The program check changed. Review the current results.')
@@ -910,7 +923,7 @@ export class SimMachine {
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
         }
-        const rejection = this.run(false)
+        const rejection = this.run(false, command.breakpoint)
         if (!rejection && this.airLift) {
           this.modal.g92[2] = this.airLift
           this.airOffsetOwned = true
@@ -918,6 +931,7 @@ export class SimMachine {
         return rejection
       }
       case 'step':
+        if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.')
         return this.airLift ? reject('Turn off air cut before using single block.') : this.step()
       case 'pause':
         if (this.exec === null) {
@@ -972,6 +986,7 @@ export class SimMachine {
           this.optionalStop = command.on
         } else {
           if (this.airOffsetOwned) return reject('Stop the air cut before changing block delete.')
+          if (this.exec?.breakpoint) return reject('Stop the breakpoint run before changing block delete.')
           this.blockDelete = command.on
         }
         return null
@@ -1235,7 +1250,7 @@ export class SimMachine {
     return null
   }
 
-  private run(stepping: boolean): Rejection | null {
+  private run(stepping: boolean, breakpoint?: number): Rejection | null {
     const what = stepping ? 'step' : 'run a program'
     const blocked = this.notOn(what)
     if (blocked !== null) {
@@ -1268,6 +1283,7 @@ export class SimMachine {
       paused: false,
       stepping,
       ranLine: false,
+      ...(breakpoint !== undefined ? { breakpoint: { line: breakpoint, reached: false } } : {}),
     }
     return null
   }

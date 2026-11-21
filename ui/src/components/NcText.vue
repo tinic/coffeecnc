@@ -15,8 +15,11 @@ const props = defineProps<{
   errorLine: number
   /** Line numbers can be tapped to restart the program there. */
   restartable?: boolean
+  breakpointLines?: ReadonlySet<number>
+  breakpointLine?: number
+  breakpointReached?: boolean
 }>()
-const emit = defineEmits<{ restart: [line: number]; editRate: [line: number, offset: number] }>()
+const emit = defineEmits<{ restart: [line: number]; editRate: [line: number, offset: number]; breakpoint: [line: number] }>()
 
 /** Where each token starts in its line, so a tapped F or S word can be found again. */
 function offsetOf(tokens: readonly { text: string }[], index: number): number {
@@ -43,7 +46,8 @@ let measureContext: CanvasRenderingContext2D | null = null
 const follow = ref<boolean>(true)
 
 /** The line to keep in view: where motion is, or else where the interpreter is. */
-const active = computed(() => (props.motionLine > 0 ? props.motionLine : props.currentLine))
+const active = computed(() => props.breakpointReached && props.breakpointLine ? props.breakpointLine
+  : props.motionLine > 0 ? props.motionLine : props.currentLine)
 
 const first = computed(() => Math.max(0, Math.floor(scrollTop.value / rowHeight) - overscan))
 const last = computed(() =>
@@ -197,6 +201,7 @@ onBeforeUnmount(() => {
               current: row.number === currentLine && row.number !== motionLine,
               error: row.number === errorLine,
               picked: row.number === picked,
+              breakpoint: row.number === breakpointLine,
             }"
           >
             <span class="number" :class="{ pickable: restartable }" @click="pick(row.number)">{{ row.number }}</span>
@@ -211,10 +216,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <button v-if="restartable && picked > 0" class="btn primary restart" type="button" @click="emit('restart', picked)">
-      Restart from line <span class="follow-count mono">{{ picked }}</span>
-    </button>
-    <button v-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
+    <div v-if="restartable && picked > 0" class="line-actions">
+      <button v-if="breakpointLines?.has(picked)" class="btn breakpoint-action" type="button" @click="emit('breakpoint', picked); picked = 0">
+        Pause before line {{ picked }}
+      </button>
+      <button class="btn primary restart" type="button" @click="emit('restart', picked)">
+        Restart from line <span class="follow-count mono">{{ picked }}</span>
+      </button>
+    </div>
+    <button v-else-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
       Follow line <span class="follow-count mono">{{ active }}</span>
     </button>
   </div>
@@ -321,11 +331,18 @@ onBeforeUnmount(() => {
   box-shadow: inset 3px 0 0 var(--stop);
 }
 
-.restart {
+.line-actions {
   position: absolute;
   right: 16px;
   bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
+.breakpoint-action { background: var(--panel-raised); }
+.row.breakpoint { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--warn); }
+.row.breakpoint .number { color: var(--warn); }
 
 .follow {
   position: absolute;

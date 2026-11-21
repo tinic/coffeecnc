@@ -151,7 +151,7 @@ export function describeCommand(command: CommandBody): string {
     case 'open_program':
       return `Open ${command.path}`
     case 'run':
-      return command.air_z ? 'Start air cut' : 'Cycle start'
+      return command.air_z ? 'Start air cut' : command.breakpoint ? `Run to line ${String(command.breakpoint)}` : 'Cycle start'
     case 'set_air_cut':
       return command.air_z ? 'Set air-cut lift' : 'Turn off air cut'
     case 'pause':

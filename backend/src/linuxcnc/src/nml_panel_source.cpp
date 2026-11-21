@@ -1,4 +1,6 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
+
+#include "nml_status.hpp"
 #include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>

@@ -217,6 +217,20 @@ describe('capability-aware controls', () => {
     await wrapper.get('button[aria-label="Reset feed override to 100%"] ').trigger('click')
     expect(send).not.toHaveBeenCalled()
   })
+  it('follows a drag without asking, and asks once on release', async () => {
+    // turo: the slider jumped while dragging; apply only when releasing.
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.motion.feed_override = 1
+    wrapper = mount(RunBar)
+    const slider = wrapper.get<HTMLInputElement>('input[aria-label="Feed override"]')
+    // setValue would also fire change; a drag fires only input until release.
+    for (const value of ['110', '130', '150']) { slider.element.value = value; await slider.trigger('input') }
+    expect(send).not.toHaveBeenCalled()
+    expect(slider.element.value).toBe('150')
+    expect(wrapper.get('.override .value').text()).toBe('150 %')
+    await slider.trigger('change')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 1.5 })
+  })
   it('puts probing in its own workspace with jogging, WCS and Stop', async () => {
     wrapper = mount(WorkspaceControls)
     expect(wrapper.find('.em-nav').text()).not.toContain('Touch off')

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// One override. The number and the slider show what the machine reports; moving the slider only
-// asks for a new value.
-import { computed } from 'vue'
+// One override. The number and the slider show what the machine reports; dragging shows the value
+// under the finger and asks for it only on release (turo: the slider jumped while the reports of
+// each intermediate value came back).
+import { computed, ref } from 'vue'
 
 import { send } from '../machine'
 import { formatPercent } from '../units'
@@ -16,13 +17,20 @@ const props = defineProps<{
   disabled: boolean
 }>()
 
-const percent = computed(() => Math.round((props.value ?? 1) * 100))
+/** The percent under the finger while dragging; null when the slider shows the machine. */
+const dragging = ref<number | null>(null)
+const percent = computed(() => dragging.value ?? Math.round((props.value ?? 1) * 100))
 
 function set(value: number): void {
   send({ type: 'set_override', which: props.which, value: Math.min(props.max, Math.max(props.min, value)) })
 }
 
 function slide(event: Event): void {
+  dragging.value = Number((event.target as HTMLInputElement).value)
+}
+
+function release(event: Event): void {
+  dragging.value = null
   set(Number((event.target as HTMLInputElement).value) / 100)
 }
 </script>
@@ -32,7 +40,7 @@ function slide(event: Event): void {
     <div class="top">
       <span class="caption">{{ label }}</span>
       <span class="value mono">
-        {{ value === null ? '—' : formatPercent(value) }}
+        {{ dragging !== null ? formatPercent(dragging / 100) : value === null ? '—' : formatPercent(value) }}
       </span>
       <button class="reset" type="button" :aria-label="`Reset ${label.toLowerCase()} to 100%`" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="set(1)">Reset 100%</button>
     </div>
@@ -46,6 +54,7 @@ function slide(event: Event): void {
         :disabled="disabled"
         :aria-label="label"
         @input="slide"
+        @change="release"
       />
     </div>
   </div>

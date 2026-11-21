@@ -34,6 +34,13 @@ export type { ProgramLayout } from './operator-settings'
 export const staleAfterMs = 1000
 /** A command without a result for this long is reported to the operator. */
 export const answerTimeoutMs = 2000
+/**
+ * A restart answers when its approach is done: the machine stops the spindle (up to 15 s), lifts
+ * Z and moves to X Y (45 s each), feeds Z down (up to 180 s) and sends about fifteen blocks of 4 s
+ * each (NmlPort::start_restart). The confirmed tool change of a restart answers after the same
+ * approach. Until then the dialog keeps the request, and Stop still ends it.
+ */
+export const restartTimeoutMs = 420_000
 const watchdogMs = 200
 const maxLogEntries = 500
 const maxMdiEntries = 50
@@ -271,6 +278,8 @@ export function createPanel(options: PanelOptions): Panel {
   let lastStatusAt = 0
   let protocolError: string | null = null
   let watchdog: number | null = null
+  // An accepted restart that waits for its tool change: the confirmation runs the approach.
+  let restartToolChange = false
 
   function log(level: 'error' | 'info', text: string, context: string, time: number, announce = true): void {
     const last = state.log.at(-1)
@@ -317,6 +326,7 @@ export function createPanel(options: PanelOptions): Panel {
     }
     pending.delete(message.id)
     const command = entry.command
+    if (command.type === 'start_restart') restartToolChange = message.outcome === 'accepted'
     if (command.type === 'mdi') {
       const mdi = state.mdi.find((candidate) => candidate.id === message.id)
       if (mdi !== undefined) {
@@ -341,6 +351,7 @@ export function createPanel(options: PanelOptions): Panel {
     if (protocolError !== null && message.type !== 'hello') return
     switch (message.type) {
       case 'hello':
+        restartToolChange = false
         state.operatorSettings = null
         state.toolModels = null
         state.toolTable = null
@@ -370,6 +381,8 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'status':
         state.status = message
+        // A restart without a tool change answers once the program runs.
+        if (message.mode === 'auto') restartToolChange = false
         // A live status identifies the loaded program. Down/stale placeholders must not erase
         // text being read as history; snapshots may also arrive before their matching status.
         if (message.link === 'live' && (message.program.file === null ||
@@ -457,8 +470,11 @@ export function createPanel(options: PanelOptions): Panel {
       const pausedZMove = command.type === 'jog_paused_z' ||
         command.type === 'resume' && (state.status?.paused_z?.displaced === true ||
           state.status?.paused_z?.spindle === 'restore')
+      const restartMove = command.type === 'start_restart' ||
+        command.type === 'tool_changed' && restartToolChange
+      if (command.type === 'tool_changed' || command.type === 'abort') restartToolChange = false
       const timeout = command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 160_000 : answerTimeoutMs
+        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Listener, Transport } from '../src/bridge'
 import type { FromMachine, Status, ToMachine } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
-import { answerTimeoutMs, createPanel, describeCommand, staleAfterMs, type Panel } from '../src/store'
+import { answerTimeoutMs, createPanel, describeCommand, restartTimeoutMs, staleAfterMs, type Panel } from '../src/store'
 import { emptyToolModelDocument } from '../src/tool-model-settings'
 
 interface Rig {
@@ -234,6 +234,34 @@ describe('commands', () => {
     expect(panel.state.log.map((entry) => [entry.context, entry.text, entry.count])).toEqual([
       ['Confirm tool change', 'No answer from the machine', 1],
     ])
+  })
+
+  it('waits for a restart and its tool change as long as their approach can take', () => {
+    const { panel, receive, pass, status } = rig()
+    const outcomes: string[] = []
+    panel.onResult((command, result) => outcomes.push(`${command.type} ${result.outcome}`))
+    const start = panel.send({ type: 'start_restart', plan_id: 1 })
+    pass(answerTimeoutMs + 100)
+    pass(restartTimeoutMs - answerTimeoutMs - 400)
+    expect(outcomes).toEqual([])
+    // Accepted at the tool change: the confirmation runs the approach.
+    receive({ type: 'result', id: start, outcome: 'accepted', reason: '' })
+    receive(status({ mode: 'mdi' }))
+    panel.send({ type: 'tool_changed' })
+    pass(restartTimeoutMs - 100)
+    expect(outcomes).toEqual(['start_restart accepted'])
+    pass(200)
+    expect(outcomes).toEqual(['start_restart accepted', 'tool_changed timed_out'])
+    // The program's own tool change later answers at once.
+    panel.send({ type: 'tool_changed' })
+    pass(answerTimeoutMs + 1)
+    expect(outcomes.at(-1)).toBe('tool_changed timed_out')
+    // So does a tool change after a restart that already runs the program.
+    receive({ type: 'result', id: panel.send({ type: 'start_restart', plan_id: 2 }), outcome: 'accepted', reason: '' })
+    receive(status({ mode: 'auto' }))
+    panel.send({ type: 'tool_changed' })
+    pass(answerTimeoutMs + 1)
+    expect(outcomes.slice(-2)).toEqual(['start_restart accepted', 'tool_changed timed_out'])
   })
 
   it('notifies a held control of a local timeout so it can release, and ignores a late answer', () => {

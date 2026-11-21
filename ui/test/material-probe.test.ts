@@ -33,6 +33,7 @@ beforeEach(() => {
   panel.status = status
   panel.hello = null
   panel.link = 'live'
+  panel.unit = 'mm'
   setterState.value = { calibration: [0, 0, -10], measurement: null, measured_tools: [98, 99] }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.unstubAllGlobals() })
@@ -122,6 +123,55 @@ describe('bore and boss centres', () => {
     await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss', diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Probing the boss sides…')
+  })
+})
+
+describe('recess and ridge setup', () => {
+  async function choose(label: string): Promise<VueWrapper> {
+    panel.hello = { ...hello, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_features: true,
+    } }
+    const setter = setterState.value
+    if (!setter) throw new Error('Missing setter status')
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await answer({ outcome: 'accepted', reason: '', setter })
+    vi.mocked(send).mockClear()
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    const button = fixture.findAll('.feature-options button').find(entry =>
+      (entry.attributes('aria-label') ?? entry.text()) === label)
+    if (!button) throw new Error('Missing feature ' + label)
+    await button.trigger('click')
+    expect(send).not.toHaveBeenCalled()
+    return fixture
+  }
+
+  it('keeps a missed second wall visible as the controller returns to idle', async () => {
+    const fixture = await choose('Inside corner X− Y+')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'inside_corner',
+      tool: 99, x: 0, y: 0, z: 0, x_direction: 'x_minus', y_direction: 'y_plus' })
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    status.interp = 'reading'
+    status.motion.in_position = false
+    await nextTick()
+    status.interp = 'idle'
+    status.motion.in_position = true
+    await answer({ outcome: 'failed', reason: '+Y face: No probe contact within the search travel.' })
+    expect(fixture.get('.setter-band.blocked p').text()).toContain('+Y face')
+  })
+
+  it('reports a one-axis ridge width in the display units', async () => {
+    panel.unit = 'inch'
+    const fixture = await choose('ridge across Y')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    await fixture.get('.dimension input').setValue('1/2in')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'ridge',
+      tool: 99, x: 0, y: 0, z: 0, axis: 'y', width: 12.7 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      material: { wcs: 2, axis: 'Y' }, feature_size: { y: 12.7 } } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('G55 Y0 set at the ridge centre · 0.5000 in')
   })
 })
 

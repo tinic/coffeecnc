@@ -276,6 +276,7 @@ auto encode_hello(const Hello& hello) -> Encoded {
     message["fixed_setter"]["material_travel_mm"] =
         fields.real(hello.fixed_setter->material_travel_mm, "fixed_setter.material_travel_mm");
     const auto& geometry = hello.fixed_setter->material_geometry;
+    message["fixed_setter"]["material_features"] = true;
     message["fixed_setter"]["material_geometry"] = {
         {"reach_mm", fields.real(geometry.reach_mm, "fixed_setter.material_geometry.reach_mm")},
         {"margin_mm", fields.real(geometry.margin_mm, "fixed_setter.material_geometry.margin_mm")},

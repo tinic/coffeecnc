@@ -1311,7 +1311,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   bool positioning = false;
   bool traversing_xy = false;
-  bool descending = false;
+  std::optional<std::array<double, 3>> vertical_at;
   bool lifting = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
@@ -1325,8 +1325,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
             : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
                                near(s.controller.axes[1].machine, move.start[1])
-            : descending  ? near(s.controller.axes[0].machine, search_start[0]) &&
-                               near(s.controller.axes[1].machine, search_start[1])
+            : vertical_at ? near(s.controller.axes[0].machine, (*vertical_at)[0]) &&
+                                near(s.controller.axes[1].machine, (*vertical_at)[1])
                           : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
                                      s.controller.axes[2].machine},
                                     line_origin));
@@ -1487,12 +1487,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
-      descending = true;
+      vertical_at = search_start;
       if (!block(std::format("G90 G53 G1 Z{:.8f}{}", search_start[2] / program_scale, feed_word),
                  positioning_timeout, false, true))
         return interrupt("Could not lower the probe to the search height; check that the way down "
                          "is clear.");
-      descending = false;
+      vertical_at.reset();
     }
     line_origin = search_start;
     positioning = false;
@@ -1644,6 +1644,24 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                      why + ".");
   }
 
+  if (move.return_to_clearance && descends) {
+    positioning = true;
+    // Hold the verified encoder position across the lift. Retraction can leave the measured
+    // axis one backlash allowance from its commanded location.
+    vertical_at = machine_position(raw->motion.traj.actualPosition);
+    if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
+               std::chrono::seconds{30}, false, true))
+      return interrupt(std::format("Could not lift the probe above the ridge ({}).", block_failure));
+    raw = live_cycle();
+    if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
+        !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
+          impl_->config.motion_tolerances.probe_backlash_mm))
+      return interrupt("The probe did not reach the clearance height above the ridge.");
+    line_origin[2] = lift_z;
+    vertical_at.reset();
+    positioning = false;
+  }
+
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
                          before.programmed_feed / program_scale),
              completion_timeout) ||
@@ -1663,7 +1681,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       }))
     return std::unexpected("The probe retracted, but the interlock did not return to idle.");
   if (missed)
-    return std::unexpected("No probe contact within the search travel. Returned to the start.");
+    return std::unexpected(move.return_to_clearance && descends
+                               ? "No probe contact within the search travel. Retracted and lifted clear."
+                               : "No probe contact within the search travel. Returned to the start.");
   if (unstable_spread)
     return std::unexpected(
         std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread));
@@ -1747,12 +1767,15 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const int tool = before.controller.tool_in_spindle;
   const bool checking = request.action == SetterAction::check;
   const bool corner = request.action == SetterAction::corner;
+  const bool inside_corner = request.action == SetterAction::inside_corner;
+  const bool pocket = request.action == SetterAction::pocket;
+  const bool slot = request.action == SetterAction::slot;
+  const bool ridge = request.action == SetterAction::ridge;
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
   const bool boss = request.action == SetterAction::boss;
   const bool angle = request.action == SetterAction::angle;
-  const bool material = request.action == SetterAction::material || corner || ball || bore ||
-                        boss || angle || apply_angle;
+  const bool material = is_material_probe(request.action);
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1848,9 +1871,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const double previous_length = *previous * machine_scale;
   if (checking && previous_length == 0 && !std::ranges::contains(current_marks, tool))
     return std::unexpected("Set the loaded tool's length before checking it.");
-  // Sets X0 and Y0 of the active work system at machine `origin` (XY), applied at the commanded
-  // position and verified against the encoder lag; then optionally lifts to machine Z `lift_to`.
-  const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to)
+  // Sets the measured axes of the active work system at machine `origin`. Verify the command
+  // against the encoder lag, then optionally lift to machine Z `lift_to`.
+  const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to,
+                                 std::array<bool, 2> axes = {true, true})
       -> std::expected<void, std::string> {
       const auto from = impl_->begin(&wanted);
       const Impl::Scope scope{*impl_};
@@ -1870,8 +1894,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       const std::array<double, 2> expected{at[0] - origin[0], at[1] - origin[1]};
       const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
       EMC_TASK_PLAN_EXECUTE command;
-      if (!put(command.command, std::format("G10 L20 P0 X{:.8f} Y{:.8f}", expected[0] / scale,
-                                            expected[1] / scale)))
+      std::string code{"G10 L20 P0"};
+      for (std::size_t axis = 0; axis < axes.size(); ++axis)
+        if (axes[axis])
+          code += std::format(" {}{:.8f}", "XY"[axis], expected[axis] / scale);
+      if (!put(command.command, code))
         return std::unexpected<std::string>("Could not format the work origin.");
       const auto result = impl_->run(command, from);
       if (!accepted(result))
@@ -1888,11 +1915,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         const auto& traj = applied->motion.traj;
         const std::array lag{(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
                              (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale};
-        for (std::size_t i = 0; i < expected.size(); ++i)
-          if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+        for (std::size_t i = 0; i < axes.size(); ++i)
+          if (axes[i] ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+                      : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
             return false;
         return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-               s.tool_offset == before.tool_offset;
+               s.tool_offset == before.tool_offset && std::abs(s.g5x[2] - frame.g5x[2]) <= 1e-6;
       });
       if (!verified)
         return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
@@ -1907,6 +1935,102 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         ++impl_->loads->mdi_blocks;
     return {};
   };
+  if (inside_corner || pocket || slot || ridge) {
+    if (before.rotation_xy != 0)
+      return std::unexpected("Feature probing needs a work system without rotation.");
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
+    const auto selected = probe_line(request.direction, 0).axis;
+    if ((inside_corner && (selected != 0 || probe_line(request.y_direction, 0).axis != 1)) ||
+        ((slot || ridge) && selected > 1))
+      return std::unexpected("Choose the feature's X or Y probing axis.");
+
+    std::optional<double> clearance;
+    double depth{};
+    double step_off{};
+    if (ridge) {
+      if (!(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
+        return std::unexpected("Enter the approximate ridge width, 2 to 200 mm.");
+      if (!std::ranges::contains(current_marks, tool) ||
+          std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+          !std::ranges::contains(before.active_codes, "G43"))
+        return std::unexpected("Touch off the probe and apply its length first. Ridge probing uses Z0 as the top.");
+      const auto& geometry = limits->material_geometry;
+      const double top = before.controller.axes[2].machine - before.work[2];
+      if (!std::isfinite(top) || request.start[2] < top + radius)
+        return std::unexpected("Set Z0 on the ridge top and start with the probe above it.");
+      clearance = std::max(request.start[2], top + geometry.clearance_mm);
+      depth = top - radius - geometry.depth_mm;
+      step_off = request.gauge_width_mm / 2 + radius + geometry.margin_mm + geometry.reach_mm;
+      if (limits->material_travel_mm < geometry.margin_mm + geometry.reach_mm)
+        return std::unexpected("The material probe travel is too short for the ridge approach.");
+    }
+
+    const auto face = [&](ProbeDirection direction) -> std::expected<double, std::string> {
+      const auto line = probe_line(direction, 0);
+      const auto* current = impl_->stat();
+      if (!current || impl_->status.link() != Link::live)
+        return std::unexpected("Controller status was lost between the feature faces.");
+      const auto status = to_status(*current, impl_->config, impl_->hal, Link::live);
+      if (frame_of(status) != frame || status.tool_offset != before.tool_offset ||
+          status.controller.program_units != before.controller.program_units)
+        return std::unexpected("The work frame changed between the feature faces.");
+      const std::array from{status.controller.axes[0].machine, status.controller.axes[1].machine,
+                            status.controller.axes[2].machine};
+      FixedSetterMove move{.tool = tool, .start = from, .travel_mm = limits->material_travel_mm,
+                           .feed_mm_min = limits->feed_mm_min, .material = direction};
+      if (clearance) {
+        move.approach = line.advance(request.start, -step_off);
+        (*move.approach)[2] = depth;
+        move.clearance_z = clearance;
+        move.return_to_clearance = true;
+      } else if (!back_at(status, request.start)) {
+        return std::unexpected("The probe did not return to the confirmed point inside the feature.");
+      }
+      const auto contact = probe_fixed_setter(move, wanted);
+      // The physical face is beyond the centre of the ball in the direction of travel.
+      if (!contact)
+        return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
+                                           line.word(), contact.error()));
+      return contact->machine[line.axis] + line.sign * radius;
+    };
+
+    const std::array<bool, 2> axes{inside_corner || pocket || selected == 0,
+                                  inside_corner || pocket || selected == 1};
+    std::array<double, 2> origin{};
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks),
+                      SetterState::Material{frame.wcs, axes[0] ? 'X' : 'Y', axes[0] && axes[1]}};
+    for (std::size_t axis = 0; axis < axes.size(); ++axis) {
+      if (!axes[axis])
+        continue;
+      if (inside_corner) {
+        const auto wall = face(axis == 0 ? request.direction : request.y_direction);
+        if (!wall)
+          return std::unexpected(wall.error());
+        origin[axis] = *wall;
+        continue;
+      }
+      const auto negative = axis == 0 ? ProbeDirection::x_minus : ProbeDirection::y_minus;
+      const auto positive = axis == 0 ? ProbeDirection::x_plus : ProbeDirection::y_plus;
+      const auto low = face(ridge ? positive : negative);
+      if (!low)
+        return std::unexpected(low.error());
+      const auto high = face(ridge ? negative : positive);
+      if (!high)
+        return std::unexpected(high.error());
+      if (!(*low < request.start[axis] && request.start[axis] < *high))
+        return std::unexpected("The probed faces do not enclose the confirmed starting point.");
+      origin[axis] = std::midpoint(*low, *high);
+      state.feature_size[axis] = *high - *low;
+    }
+    if (auto set = set_xy_origin(origin, std::nullopt, axes); !set)
+      return std::unexpected(set.error());
+    return state;
+  }
   if (angle) {
     // An edge angle: the edge from beside the work, as a single face, then again `spacing`
     // further along the edge. Only measured: nothing is written.

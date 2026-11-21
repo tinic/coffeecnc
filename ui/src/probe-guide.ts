@@ -1,10 +1,14 @@
-import type { FixedSetterLimits, ProbeDirection, Vec3 } from './protocol'
+import type { FixedSetterLimits, ProbeAxis, ProbeDirection, Vec3 } from './protocol'
 
 type Edge = Exclude<ProbeDirection, 'z_top'>
 export type AngleEdge = 'x_plus' | 'y_plus'
 export type MaterialGuideTarget =
   | { kind: 'surface'; direction: ProbeDirection }
   | { kind: 'corner'; x: 'x_plus' | 'x_minus'; y: 'y_plus' | 'y_minus' }
+  | { kind: 'inside_corner'; x: 'x_plus' | 'x_minus'; y: 'y_plus' | 'y_minus' }
+  | { kind: 'pocket' }
+  | { kind: 'slot'; axis: ProbeAxis }
+  | { kind: 'ridge'; axis: ProbeAxis }
   | { kind: 'bore' | 'boss' | 'angle' | 'ball' }
 export type ProbeGuideTarget = MaterialGuideTarget | { kind: 'teach' | 'measure' | 'check' }
 
@@ -19,7 +23,8 @@ export interface ProbeGuidePlan {
   title: string
   setup: string
   result: string
-  object: 'stock' | 'bore' | 'boss' | 'gauge' | 'setter'
+  object: 'stock' | 'bore' | 'boss' | 'gauge' | 'setter' | 'pocket' | 'slot' | 'ridge'
+  featureHalf?: [number, number]
   steps: ProbeGuideStep[]
   datum: Vec3
   rotation: number
@@ -35,10 +40,12 @@ const inputs = {
   boss: { label: 'Approximate diameter', initial: '', min: 2, max: 200 },
   ball: { label: 'Gauge width', initial: '', min: 2, max: 200 },
   angle: { label: 'Distance along the edge', initial: '50', min: 5, max: 300, signed: true },
+  ridge: { label: 'Approximate ridge width', initial: '', min: 2, max: 200 },
 } satisfies Record<string, GuideInput>
 
 export function guideInput(target: ProbeGuideTarget): GuideInput | undefined {
-  return target.kind === 'boss' || target.kind === 'ball' || target.kind === 'angle' ? inputs[target.kind] : undefined
+  return target.kind === 'boss' || target.kind === 'ball' || target.kind === 'angle' || target.kind === 'ridge'
+    ? inputs[target.kind] : undefined
 }
 
 const edges = {
@@ -75,6 +82,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
   let faces: Face[] = []
   let clearance: number | null = null
   let rotation = 0
+  let featureHalf: [number, number] | undefined
   const side = (direction: Edge, base: Vec3, surfaceAt: number = edges[direction].faceAt): Face => {
     const { face, axis, sign } = edges[direction]
     return {
@@ -116,6 +124,46 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       start = [x.faceAt + x.sign * 5, y.faceAt + y.sign * 5, clearance]
       datum = [x.faceAt, y.faceAt, 0]
       faces = [side(target.x, [start[0], start[1], -tipRadius - 2]), side(target.y, [start[0], start[1], -tipRadius - 2])]
+      break
+    }
+    case 'inside_corner':
+    case 'pocket':
+    case 'slot':
+    case 'ridge': {
+      const corner = target.kind === 'inside_corner'
+      const ridge = target.kind === 'ridge'
+      const axis = (target.kind === 'slot' || ridge) && target.axis === 'y' ? 1 : 0
+      const axisName = axis === 0 ? 'X' : 'Y'
+      const xSign = corner && target.x === 'x_minus' ? -1 : 1
+      const ySign = corner && target.y === 'y_minus' ? -1 : 1
+      object = corner ? 'pocket' : target.kind
+      featureHalf = object === 'pocket' ? [14, 10] : axis === 0 ? [7, 14] : [14, 7]
+      const [hx, hy] = featureHalf
+      title = corner ? `Probe inside corner X${xSign > 0 ? '+' : '−'} Y${ySign > 0 ? '+' : '−'}`
+        : target.kind === 'pocket' ? 'Probe rectangular pocket centre' : `Probe ${target.kind} centre · across ${axisName}`
+      setup = ridge
+        ? 'Set Z0 on the ridge top first. Jog above the middle and enter the approximate width across the selected axis.'
+        : corner
+          ? 'Jog the ball inside the recess, below the top and near the selected corner. Both walls must be within search travel.'
+          : `Jog the ball inside the ${target.kind}, below the top and roughly centred. Leave enough room for the ball to reach both walls on each measured axis.`
+      result = corner ? 'Set X0 and Y0 at the inside corner'
+        : target.kind === 'pocket' ? 'Set X0 and Y0 at the centre and report both widths'
+          : `Set ${axisName}0 at the centre and report the width`
+      clearance = ridge ? 9 : null
+      start = corner ? [xSign * (hx - 5), ySign * (hy - 5), -5] : [2, -2, clearance ?? -5]
+      datum = corner ? [hx * xSign, hy * ySign, -3] : [0, 0, 0]
+      const wall = (across: 0 | 1, sign: number): Face => {
+        const surfaceAt = (across === 0 ? hx : hy) * sign
+        const searchAt = ridge ? position([start[0], start[1], -tipRadius - 2], across, surfaceAt + sign * 7) : start
+        const contact = position(searchAt, across, surfaceAt + (ridge ? sign : -sign) * tipRadius)
+        return {
+          label: `${sign > 0 ? '+' : '−'}${across === 0 ? 'X' : 'Y'} ${ridge ? 'face' : 'wall'}`,
+          start: searchAt, contact, surface: position(contact, across, surfaceAt), axis: across,
+        }
+      }
+      faces = corner ? [wall(0, xSign), wall(1, ySign)]
+        : target.kind === 'pocket' ? [wall(0, -1), wall(0, 1), wall(1, -1), wall(1, 1)]
+          : [wall(axis, -1), wall(axis, 1)]
       break
     }
     case 'bore': {
@@ -229,5 +277,5 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     steps[steps.length - 1] = { label: 'Retract to clearance', point: at, kind: 'move' }
   }
   steps.push({ label: example ?? result, point: at, kind: 'result', contact: datum })
-  return { title, setup, result, object, steps, datum, rotation }
+  return { title, setup, result, object, steps, datum, rotation, ...(featureHalf ? { featureHalf } : {}) }
 }

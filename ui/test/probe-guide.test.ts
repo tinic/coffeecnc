@@ -36,4 +36,24 @@ describe('illustrated probe motion', () => {
     expect(starts[0]?.point[1]).toBeGreaterThan(starts[1]?.point[1] ?? 0)
     expect(plan.steps.at(-1)?.label).toContain('example +7°')
   })
+
+  it('approaches inside corners from inside and keeps the pocket searches at one Z', () => {
+    const corner = probeGuide({ kind: 'inside_corner', x: 'x_minus', y: 'y_plus' }, limits, 'y_plus', null)
+    const hits = corner.steps.filter(step => step.kind === 'search')
+    expect(hits.map(step => step.label)).toEqual(['Search · −X wall', 'Search · +Y wall'])
+    expect(hits[0]?.point[0]).toBeLessThan(corner.steps[0]?.point[0] ?? 0)
+    expect(hits[1]?.point[1]).toBeGreaterThan(corner.steps[0]?.point[1] ?? 0)
+    const pocket = probeGuide({ kind: 'pocket' }, limits, 'y_plus', null)
+    expect(pocket.steps.filter(step => step.kind === 'search')).toHaveLength(4)
+    expect(pocket.steps.every(step => step.point[2] === -5)).toBe(true)
+  })
+
+  it('keeps the ridge traverse above the top and probes across the chosen axis', () => {
+    const plan = probeGuide({ kind: 'ridge', axis: 'y' }, limits, 'y_plus', 14)
+    expect(plan.featureHalf).toEqual([14, 7])
+    expect(plan.steps.filter(step => step.kind === 'search').map(step => step.label))
+      .toEqual(['Search · −Y face', 'Search · +Y face'])
+    expect(plan.steps.filter(step => step.label.startsWith('Move above')).every(step => step.point[2] >= 5)).toBe(true)
+    expect(plan.steps.at(-1)?.point[2]).toBe(9)
+  })
 })

@@ -320,6 +320,10 @@ auto command(const Json& object) -> Command {
                                               {"check", SetterAction::check},
                                               {"material", SetterAction::material},
                                               {"corner", SetterAction::corner},
+                                              {"inside_corner", SetterAction::inside_corner},
+                                              {"pocket", SetterAction::pocket},
+                                              {"slot", SetterAction::slot},
+                                              {"ridge", SetterAction::ridge},
                                               {"ball", SetterAction::ball},
                                               {"bore", SetterAction::bore},
                                               {"boss", SetterAction::boss},
@@ -355,7 +359,16 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::boss) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
         request.gauge_width_mm = number(object, "diameter");
-      } else if (action == SetterAction::corner) {
+      } else if (action == SetterAction::slot || action == SetterAction::ridge) {
+        if (action == SetterAction::ridge) {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"});
+          request.gauge_width_mm = number(object, "width");
+        } else {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis"});
+        }
+        request.direction = choice<ProbeDirection>(
+            object, "axis", {{"x", ProbeDirection::x_plus}, {"y", ProbeDirection::y_plus}});
+      } else if (action == SetterAction::corner || action == SetterAction::inside_corner) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"});
         request.direction = choice<ProbeDirection>(
             object, "x_direction", {{"x_minus", ProbeDirection::x_minus}, {"x_plus", ProbeDirection::x_plus}});

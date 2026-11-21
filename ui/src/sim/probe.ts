@@ -9,7 +9,8 @@ type Axis = 'X' | 'Y' | 'Z' | 'XY'
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
 export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string }
 
-const { stock, slanted, gauge, bore, boss, setter, top, boreRadius, bossRadius, stockHeight } = demoFixture
+const { stock, slanted, gauge, pocket, slot, ridge, bore, boss, setter, top,
+  boreRadius, bossRadius, stockHeight, recessDepth } = demoFixture
 const rubyRadius = 2.02
 const reach = 10
 const margin = 3
@@ -23,6 +24,10 @@ const starts = {
   front: [135, 63, -4], back: [135, 137, -4],
   'front-left': [115, 75, 8], 'front-right': [185, 75, 8],
   'back-left': [115, 125, 8], 'back-right': [185, 125, 8],
+  'inside-front-left': [165, 81, -5], 'inside-front-right': [179, 81, -5],
+  'inside-back-left': [165, 89, -5], 'inside-back-right': [179, 89, -5],
+  pocket: [174, 83, -5], 'slot-x': [126, 110, -5], 'slot-y': [125, 108, -5],
+  'ridge-x': [...ridge.centre, 8], 'ridge-y': [...ridge.centre, 8],
   bore: [155, 108, -4], boss: [235, 170, 8],
   angle: [230, 48, -4], 'angle-left': [208, 61, -4], ball: [285, 190, 8],
   setter: [55, 55, -22], measure: [55, 55, -22],
@@ -74,6 +79,13 @@ function rayBox(start: Vec3, direction: XY, block: ProbeBlock): number | null {
     exit = Math.min(exit, Math.max(a, b))
   }
   return entry > 0 && entry <= exit ? entry : null
+}
+function rayInnerWall(start: Vec3, direction: XY, recess: ProbeBlock): number | null {
+  const point = relative(start, recess)
+  const [hx, hy] = recess.half
+  if (Math.abs(point[0]) >= hx - rubyRadius || Math.abs(point[1]) >= hy - rubyRadius) return null
+  const axis = direction[0] ? 0 : 1
+  return recess.half[axis] - rubyRadius - point[axis] * direction[axis]
 }
 function rayRound(start: Vec3, direction: XY, centre: XY, radius: number, inside: boolean): number | null {
   const x = start[0] - centre[0], y = start[1] - centre[1]
@@ -236,9 +248,10 @@ export class SimProbe {
       if (command.direction === 'z_top') {
         if (!applied) return 'Touch off T99 and apply its length first.'
         const solid = (over(start, stock) && radiusFrom(start, bore) > boreRadius) ||
-          over(start, gauge) || over(start, slanted) || radiusFrom(start, boss) <= bossRadius
-        if (!solid || start[2] <= gaugeZ || start[2] - gaugeZ > searchTravel) return noContact
-        const contact: Vec3 = [start[0], start[1], gaugeZ]
+          over(start, gauge) || over(start, ridge) || over(start, slanted) || radiusFrom(start, boss) <= bossRadius
+        const surfaceZ = gaugeZ - (over(start, pocket) || over(start, slot) ? recessDepth : 0)
+        if (!solid || start[2] <= surfaceZ || start[2] - surfaceZ > searchTravel) return noContact
+        const contact: Vec3 = [start[0], start[1], surfaceZ]
         path.touch(start, contact)
         return origin(contact, 'Z')
       }
@@ -246,7 +259,7 @@ export class SimProbe {
       const base = directions[command.direction]
       const direction = turn(base, rotation)
       if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return noContact
-      const distance = [stock, gauge, slanted].reduce<number | null>((nearest, block) => {
+      const distance = [stock, gauge, slanted, ridge].reduce<number | null>((nearest, block) => {
         const hit = rayBox(start, direction, block)
         return hit === null ? nearest : Math.min(nearest ?? Infinity, hit)
       }, null)
@@ -295,6 +308,48 @@ export class SimProbe {
       if (!front || !back) return noContact
       const offset = origin([centre[0], (front[1] + back[1]) / 2, centre[2]], 'XY')
       return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: back[1] - front[1] + tool.diameter }) }
+    }
+
+    if (command.action === 'inside_corner' || command.action === 'pocket' ||
+        command.action === 'slot' || command.action === 'ridge') {
+      const outsideRidge = command.action === 'ridge'
+      const recess = command.action === 'slot' ? slot : pocket
+      if (outsideRidge) {
+        if (!(command.width >= 2 && command.width <= 200)) return 'Enter a width from 2 to 200 mm.'
+        if (!applied || Math.abs(toWork(modal, [start[0], start[1], gaugeZ])[2]) > 0.1 || start[2] < gaugeZ + tableRadius || !over(start, ridge))
+          return 'Touch off T99, set Z0 on the ridge top, and start above its middle.'
+      } else if (!over(start, recess) || start[2] + rubyRadius >= gaugeZ || start[2] <= gaugeZ - recessDepth) {
+        return 'Jog the ball into the simulated recess below its top and clear of the floor.'
+      }
+      const hit = (direction: XY): Vec3 | null => outsideRidge
+        ? outside(path, gaugeZ, start, direction, command.width / 2 + tableRadius + margin + reach, at => rayBox(at, direction, ridge))
+        : lateral(path, start, direction, rayInnerWall(start, direction, recess))
+      if (command.action === 'inside_corner') {
+        const x = directions[command.x_direction], y = directions[command.y_direction]
+        const a = hit(x), b = hit(y)
+        if (!a || !b) return noContact
+        return origin([a[0] + x[0] * tableRadius, b[1] + y[1] * tableRadius, start[2]], 'XY')
+      }
+      const across: Axis = command.action === 'pocket' ? 'XY' : command.axis === 'x' ? 'X' : 'Y'
+      const point: Vec3 = [...start]
+      const size: NonNullable<SetterState['feature_size']> = {}
+      for (const axis of [0, 1] as const) {
+        const label = axis === 0 ? 'X' : 'Y'
+        if (across !== 'XY' && across !== label) continue
+        const forward: XY = axis === 0 ? [1, 0] : [0, 1]
+        const backward: XY = [-forward[0], -forward[1]]
+        const negative = hit(outsideRidge ? forward : backward)
+        const positive = hit(outsideRidge ? backward : forward)
+        if (!negative || !positive) return noContact
+        const correction = outsideRidge ? tableRadius : -tableRadius
+        const low = negative[axis] + correction
+        const high = positive[axis] - correction
+        if (!(low < start[axis] && start[axis] < high)) return 'The faces do not enclose the starting point.'
+        point[axis] = (low + high) / 2
+        size[axis === 0 ? 'x' : 'y'] = high - low
+      }
+      const offset = origin(point, across)
+      return { ...offset, finish: () => ({ ...offset.finish(), feature_size: size }) }
     }
 
     if (!applied || Math.abs(toWork(modal, [start[0], start[1], gaugeZ])[2]) > 0.1 || start[2] <= gaugeZ)

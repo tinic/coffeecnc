@@ -3,8 +3,10 @@ import { createApp, watch } from 'vue'
 import App from './App.vue'
 import { theme, themeOverride } from './appearance'
 import { operatorSettings, panel, start } from './machine'
+import { preventPageZoom } from './page-zoom'
 import './style.css'
 
+preventPageZoom()
 const app = createApp(App)
 if (!panel.simulated && themeOverride === null) {
   // Keep the native panel empty until its per-machine theme arrives. Limit the wait so an

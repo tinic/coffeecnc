@@ -99,6 +99,18 @@ void protocol_forms() {
   rejected(R"({"id":42,"type":"restore_offset","entry":7,"wcs":1})", 42);
   require(body<ToolTouchOff>(R"({"id":42,"type":"tool_touch_off","value":25.4})").value == 25.4,
           "Tool touch-off millimetres");
+  const auto inside = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"inside_corner","tool":99,"x":1,"y":2,"z":3,"x_direction":"x_minus","y_direction":"y_plus"})");
+  require(inside.action == SetterAction::inside_corner && inside.direction == ProbeDirection::x_minus &&
+              inside.y_direction == ProbeDirection::y_plus && inside.start == std::array{1.0, 2.0, 3.0},
+          "Inside corners specify the travel towards each wall");
+  const auto ridge = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"y","width":25.4})");
+  require(ridge.action == SetterAction::ridge && ridge.direction == ProbeDirection::y_plus &&
+              ridge.gauge_width_mm == 25.4,
+          "Ridge requests carry the axis and approximate width in millimetres");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"slot","tool":99,"x":1,"y":2,"z":3,"axis":"z"})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"x"})", 42);
   const auto tool =
       body<SetTool>(
           R"({"id":42,"type":"set_tool","tool":{"number":7,"pocket":3,"length":50.5,"diameter":6.35,"comment":"¼ inch end mill"}})")

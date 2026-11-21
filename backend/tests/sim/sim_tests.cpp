@@ -9,6 +9,8 @@
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/messages.hpp>
+#include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/core/text_file.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/program_progress.hpp>
@@ -49,6 +51,7 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -4875,6 +4878,318 @@ void gantry(Rig& rig) {
         std::format("{} {} {}", open.text(), run.text(), joint_positions()));
 }
 
+// The offset history wired as application.cpp wires it: the panel source on LinuxCNC's status
+// and tool data, the store in a data directory of the run, a runtime that marks the panel's
+// commands in it, and the publisher that shows it every reading. What the publisher posts to
+// the page is kept.
+class HistorySession {
+public:
+  HistorySession(Rig& rig, const LoadedToolTable& table, OffsetHistoryStore& history)
+      : source_(rig.config, *rig.mailbox,
+                [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
+                  return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
+                },
+                [&rig](std::string_view path,
+                       std::uint64_t revision) -> std::expected<ProgramText, std::string> {
+                  return rig.programs.read_program(path, revision);
+                },
+                rig.loads),
+        runtime_(rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
+                 [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
+                 nullptr, {}, nullptr, nullptr, nullptr, &history),
+        feed_(source_,
+              [this](PageToken at, const std::vector<std::string>& messages) -> void {
+                post(at, messages);
+              },
+              nullptr, {}, nullptr, &history),
+        page_(runtime_.begin_page()) {
+    static_cast<void>(send(R"("type":"ready")"));
+    feed_.page_ready(page_);
+  }
+
+  // A request and its result, as {outcome, reason}; nothing within 10 s is "no_result".
+  auto send(std::string_view body) -> std::pair<std::string, std::string> {
+    const auto id = next_id_++;
+    post(page_, runtime_.submit(page_, std::format("{{\"id\":{},{}}}", id, body)).messages);
+    for (const auto end = Clock::now() + 10s; Clock::now() < end;) {
+      {
+        const std::lock_guard lock{mutex_};
+        for (const auto& message : messages_)
+          if (message.at("type") == "result" && message.at("id") == id)
+            return {message.at("outcome").get<std::string>(),
+                    message.at("reason").get<std::string>()};
+      }
+      std::this_thread::sleep_for(2ms);
+    }
+    return {"no_result", ""};
+  }
+  // The last `offset_history` the page was sent.
+  auto shown() -> Json {
+    const std::lock_guard lock{mutex_};
+    for (auto message = messages_.rbegin(); message != messages_.rend(); ++message)
+      if (message->at("type") == "offset_history")
+        return *message;
+    return nullptr;
+  }
+
+private:
+  void post(PageToken at, const std::vector<std::string>& messages) {
+    const std::lock_guard lock{mutex_};
+    if (at != page_)
+      return;
+    std::ranges::transform(messages, std::back_inserter(messages_),
+                           [](const std::string& text) -> Json { return Json::parse(text); });
+  }
+
+  std::mutex mutex_;
+  std::vector<Json> messages_;
+  NmlPanelSource source_;
+  Runtime runtime_;
+  PanelFeed feed_;
+  PageToken page_;
+  RequestId next_id_{1};
+};
+
+// An optional value, NaN where there is none: `near` is then false.
+auto value(const std::optional<double>& given) -> double {
+  return given.value_or(std::numeric_limits<double>::quiet_NaN());
+}
+
+auto change_text(const HistoryEntry& entry) -> std::string {
+  std::string text = std::format("id={} source={} target={} number={}", entry.id,
+                                 history_name(entry.source), history_name(entry.target),
+                                 entry.number);
+  for (const auto& change : entry.changes)
+    text += std::format(" {}={}->{}", history_name(change.field),
+                        change.before ? std::format("{:.4f}", *change.before) : "none",
+                        change.after ? std::format("{:.4f}", *change.after) : "none");
+  return text;
+}
+
+// The offset history against LinuxCNC: a touch-off of the panel, a G10 of another LinuxCNC client
+// and one of the panel's MDI line each become one entry with their source; a Restore writes the
+// earlier value back (G10 L2 for the work offset, G10 L1 for a tool length), is an entry itself,
+// and the history is read back from its file.
+void offset_history(Rig& rig) {
+  auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("history_tool_data", table.has_value(), table ? "tool.mmap" : table.error());
+  if (!table)
+    return;
+  // The run directory outlives a run: what an earlier one saw is not this one's start.
+  const auto directory = rig.config.directory + "/offset-history-data";
+  std::filesystem::remove_all(directory);
+  std::filesystem::create_directories(directory);
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54")"));
+  rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+  rig.stop();
+  LocalToolModelFiles files;
+  std::vector<HistoryEntry> kept;
+  {
+    OffsetHistoryStore history{files, directory};
+    HistorySession session{rig, *table, history};
+    const auto newest = [&]() -> std::optional<HistoryEntry> {
+      const auto entries = history.snapshot()->entries;
+      return entries.empty() ? std::nullopt : std::optional<HistoryEntry>{entries.front()};
+    };
+    // The entry after `after` whose first change is to `field`.
+    const auto awaited = [&](std::uint64_t after, HistoryField field) -> std::optional<HistoryEntry> {
+      std::optional<HistoryEntry> found;
+      rig.pump_until(5s, [&]() -> bool {
+        for (const auto& entry : history.snapshot()->entries)
+          if (entry.id > after && entry.changes.front().field == field)
+            found = entry;
+        return found.has_value();
+      });
+      return found;
+    };
+    const auto last_id = [&]() -> std::uint64_t { return newest() ? newest()->id : 0; };
+    rig.pump_until(3s, [&]() -> bool { return !session.shown().is_null(); });
+    rig.pump(300ms); // the first readings: learnt, no entry
+    check("history_starts_empty_and_saved",
+          history.snapshot()->entries.empty() && history.snapshot()->saved &&
+              session.shown().value("storage", "") == "saved",
+          session.shown().dump());
+
+    const double x_before = rig.status().g5x[0];
+    const auto touch = session.send(R"("type":"touch_off","axis":"x","value":2.5)");
+    const auto touched = awaited(0, HistoryField::x);
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const double x_after = rig.status().g5x[0];
+    check("history_touch_off_entry",
+          touch.first == "accepted" && touched && touched->source == HistorySource::touch_off &&
+              touched->target == HistoryTarget::wcs && touched->number == 1 &&
+              touched->changes.size() == 1 && near(value(touched->changes[0].before), x_before) &&
+              near(value(touched->changes[0].after), x_after) && !near(x_before, x_after),
+          std::format("{} {} x {:.4f}->{:.4f}", touch.first, touched ? change_text(*touched) : "none",
+                      x_before, x_after));
+
+    // Another client of LinuxCNC, after the touch-off's grace has passed.
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_outside = last_id();
+    const auto printed = all_output_of(
+        "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MDI); "
+        "c.wait_complete(); c.mdi(\"G10 L2 P1 Y-7\"); c.wait_complete(); print(\"outside=sent\")'");
+    const auto outside = awaited(before_outside, HistoryField::y);
+    check("history_outside_mdi_entry",
+          printed.find("outside=sent") != std::string::npos && outside &&
+              outside->source == HistorySource::outside && near(value(outside->changes[0].after), -7),
+          std::format("printed={} {}", word(printed), outside ? change_text(*outside) : "none"));
+
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_mdi = last_id();
+    const auto typed = session.send(R"("type":"mdi","text":"G10 L2 P1 Z-3")");
+    const auto panel_mdi = awaited(before_mdi, HistoryField::z);
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    check("history_panel_mdi_entry",
+          typed.first == "accepted" && panel_mdi && panel_mdi->source == HistorySource::mdi &&
+              near(value(panel_mdi->changes[0].after), -3),
+          std::format("{} {}", typed.first, panel_mdi ? change_text(*panel_mdi) : "none"));
+
+    // Restore of the touch-off: X goes back, and the restore is an entry itself.
+    const auto before_restore = last_id();
+    const auto restore = touched ? session.send(std::format(
+                                       R"("type":"restore_offset","entry":{})", touched->id))
+                                 : std::pair<std::string, std::string>{"no_entry", ""};
+    const auto restored = awaited(before_restore, HistoryField::x);
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const auto status = rig.status();
+    check("history_restore_writes_the_old_value",
+          restore.first == "accepted" && near(status.g5x[0], x_before) &&
+              near(status.g5x[1], -7) && near(status.g5x[2], -3) && restored &&
+              restored->source == HistorySource::restore && touched &&
+              restored->restores == touched->id && near(value(restored->changes[0].after), x_before),
+          std::format("{} {} g5x={:.4f},{:.4f},{:.4f} {}", restore.first, restore.second,
+                      status.g5x[0], status.g5x[1], status.g5x[2],
+                      restored ? change_text(*restored) : "none"));
+
+    // A tool length edited in the tool table, restored with G10 L1.
+    const auto rows = loaded_tools(table->read_raw(), rig.config.millimetres_per_unit);
+    const auto row = std::ranges::find_if(
+        rows, [](const LoadedTool& candidate) -> bool { return candidate.tool.number == 2; });
+    if (row == rows.end()) {
+      check("history_tool_row", false, "T2 is not in the tool table");
+    } else {
+      const auto original = row->tool;
+      rig.pump(OffsetHistoryStore::grace + 500ms);
+      const auto before_edit = last_id();
+      const Json edited_row{{"number", 2},
+                            {"pocket", original.pocket},
+                            {"length", original.length + 5},
+                            {"diameter", original.diameter},
+                            {"comment", original.comment}};
+      const auto edit =
+          session.send(std::format(R"("type":"set_tool","tool":{})", edited_row.dump()));
+      const auto edited = awaited(before_edit, HistoryField::length);
+      const auto put_back = edited ? session.send(std::format(
+                                         R"("type":"restore_offset","entry":{})", edited->id))
+                                   : std::pair<std::string, std::string>{"no_entry", ""};
+      const auto back = awaited(edited ? edited->id : before_edit, HistoryField::length);
+      rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+      double length = std::numeric_limits<double>::quiet_NaN();
+      rig.pump_until(5s, [&]() -> bool {
+        for (const auto& candidate :
+             loaded_tools(table->read_raw(), rig.config.millimetres_per_unit))
+          if (candidate.tool.number == 2)
+            length = candidate.tool.length;
+        return near(length, original.length, 0.0001);
+      });
+      check("history_tool_edit_and_restore",
+            edit.first == "accepted" && edited && edited->source == HistorySource::tool_table &&
+                edited->target == HistoryTarget::tool && edited->number == 2 &&
+                put_back.first == "accepted" && back &&
+                back->source == HistorySource::restore && near(length, original.length, 0.0001),
+            std::format("{} {} {} {} length={:.4f} original={:.4f}", edit.first,
+                        edited ? change_text(*edited) : "none", put_back.first + " " + put_back.second,
+                        back ? change_text(*back) : "none", length, original.length));
+    }
+
+    // codex's sequence on #185: a Restore of an X-only G92 entry while G92.2 suspends the shift
+    // must not lose the stored Y, so that G92.3 still brings it back. LinuxCNC refuses that
+    // restore; with the shift applied again, the same restore changes X only.
+    const auto g92_entry = [&](std::uint64_t after) -> std::optional<HistoryEntry> {
+      std::optional<HistoryEntry> found;
+      rig.pump_until(5s, [&]() -> bool {
+        for (const auto& entry : history.snapshot()->entries)
+          if (entry.id > after && entry.target == HistoryTarget::g92)
+            found = entry;
+        return found.has_value();
+      });
+      return found;
+    };
+    const auto mdi_line = [&](std::string_view text) -> std::string {
+      rig.pump(OffsetHistoryStore::grace + 500ms);
+      const auto sent = session.send(std::format(R"("type":"mdi","text":"{}")", text));
+      rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+      return sent.first;
+    };
+    const auto g92_text = [&]() -> std::string {
+      const auto g92 = rig.status().g92;
+      return std::format("{:.4f},{:.4f},{:.4f}", g92[0], g92[1], g92[2]);
+    };
+    // Each line's own entry is awaited before the next line.
+    const auto before_shift = last_id();
+    const auto shifted = mdi_line("G52 X2 Y9");
+    const auto shift = g92_entry(before_shift);
+    const auto before_x_only = shift ? shift->id : last_id();
+    const auto moved = mdi_line("G52 X4");
+    const auto x_only = g92_entry(before_x_only);
+    const auto before_suspend = x_only ? x_only->id : last_id();
+    const auto suspended = mdi_line("G92.2");
+    static_cast<void>(g92_entry(before_suspend));
+    const auto suspended_g92 = g92_text();
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_refused = last_id();
+    const auto refused = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
+                                                           x_only->id))
+                                : std::pair<std::string, std::string>{"no_entry", ""};
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    rig.pump(500ms);
+    const auto refused_g92 = g92_text();
+    const bool nothing_restored = !g92_entry(before_refused);
+    const auto before_resume = last_id();
+    const auto resumed = mdi_line("G92.3");
+    const auto resume = g92_entry(before_resume);
+    const auto resumed_g92 = g92_text();
+    check("history_g92_restore_keeps_a_suspended_shift",
+          shifted == "accepted" && moved == "accepted" && suspended == "accepted" && x_only &&
+              x_only->changes.size() == 1 && x_only->changes[0].field == HistoryField::x &&
+              suspended_g92 == "0.0000,0.0000,0.0000" && refused_g92 == suspended_g92 &&
+              nothing_restored && resumed == "accepted" && resumed_g92 == "4.0000,9.0000,0.0000",
+          std::format("{} {} {} entry={} suspended={} restore={} refused={} nothing={} {} "
+                      "resumed={}",
+                      shifted, moved, suspended, x_only ? change_text(*x_only) : "none",
+                      suspended_g92, refused.first, refused_g92, nothing_restored, resumed,
+                      resumed_g92));
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_applied = resume ? resume->id : last_id();
+    const auto applied = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
+                                                           x_only->id))
+                                : std::pair<std::string, std::string>{"no_entry", ""};
+    const auto restored_x = g92_entry(before_applied);
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const auto applied_g92 = g92_text();
+    check("history_g92_restore_changes_its_axes_only",
+          applied.first == "accepted" && restored_x &&
+              restored_x->source == HistorySource::restore && applied_g92 == "2.0000,9.0000,0.0000",
+          std::format("{} {} g92={}", applied.first + " " + applied.second,
+                      restored_x ? change_text(*restored_x) : "none", applied_g92));
+    static_cast<void>(mdi_line("G92.1"));
+    rig.pump(300ms);
+    const auto shown = session.shown();
+    kept = history.snapshot()->entries;
+    check("history_shown_to_the_page",
+          shown.at("entries").size() == kept.size() && !kept.empty() &&
+              shown.at("entries").at(0).at("id") == kept.front().id,
+          std::format("shown={} kept={}", shown.at("entries").size(), kept.size()));
+  }
+  OffsetHistoryStore again{files, directory};
+  check("history_read_back_from_its_file",
+        again.snapshot()->entries == kept && again.snapshot()->reason.empty(),
+        std::format("entries={} reason={}", again.snapshot()->entries.size(),
+                    word(again.snapshot()->reason)));
+  rig.start();
+}
+
 void rotary_readouts(Rig& rig) {
   const auto all = rig.send(R"("type":"home","axis":"all")");
   const bool homed = rig.pump_until(25s, [&] {
@@ -4914,7 +5229,7 @@ void rotary_readouts(Rig& rig) {
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
-         bool gantry_only, bool rotary_only) -> int {
+         bool gantry_only, bool history_only, bool rotary_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4995,6 +5310,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   }
   if (gantry_only) {
     gantry(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (history_only) {
+    homing(rig);
+    offset_history(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5127,6 +5448,7 @@ auto main(int argc, char** argv) -> int {
   bool paused_spindle_only = false;
   bool whole_job_only = false;
   bool gantry_only = false;
+  bool history_only = false;
   bool rotary_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
@@ -5146,6 +5468,7 @@ auto main(int argc, char** argv) -> int {
     whole_job_only = whole_job_only || std::string_view(argv[i]) == "whole-job";
     // The scenario for run.sh -p gantry.
     gantry_only = gantry_only || std::string_view(argv[i]) == "gantry";
+    history_only = history_only || std::string_view(argv[i]) == "offset-history";
     rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
   }
   if (models_only && !ini_file.empty())
@@ -5158,7 +5481,7 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               rotary_only);
+               history_only, rotary_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

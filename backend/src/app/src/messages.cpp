@@ -521,4 +521,95 @@ auto encode_directory(const Directory& directory) -> Encoded {
                         {"truncated", directory.truncated}});
 }
 
+auto history_name(HistorySource source) -> std::string_view {
+  switch (source) {
+  case HistorySource::touch_off:
+    return "touch_off";
+  case HistorySource::zero:
+    return "zero";
+  case HistorySource::half:
+    return "half";
+  case HistorySource::probe:
+    return "probe";
+  case HistorySource::tool_setter:
+    return "tool_setter";
+  case HistorySource::tool_touch_off:
+    return "tool_touch_off";
+  case HistorySource::tool_table:
+    return "tool_table";
+  case HistorySource::work_offset_table:
+    return "work_offset_table";
+  case HistorySource::mdi:
+    return "mdi";
+  case HistorySource::program:
+    return "program";
+  case HistorySource::restore:
+    return "restore";
+  case HistorySource::outside:
+    return "outside";
+  }
+  return "outside";
+}
+
+auto history_name(HistoryTarget target) -> std::string_view {
+  switch (target) {
+  case HistoryTarget::wcs:
+    return "wcs";
+  case HistoryTarget::g92:
+    return "g92";
+  case HistoryTarget::tool:
+    return "tool";
+  }
+  return "wcs";
+}
+
+auto history_name(HistoryField field) -> std::string_view {
+  switch (field) {
+  case HistoryField::x:
+    return "x";
+  case HistoryField::y:
+    return "y";
+  case HistoryField::z:
+    return "z";
+  case HistoryField::rotation_xy:
+    return "rotation_xy";
+  case HistoryField::length:
+    return "length";
+  case HistoryField::diameter:
+    return "diameter";
+  }
+  return "x";
+}
+
+auto encode_offset_history(const OffsetHistory& history) -> Encoded {
+  Fields fields;
+  const auto value = [&](const std::optional<double>& number, std::string_view field) -> Json {
+    return number ? fields.real(*number, field) : Json(nullptr);
+  };
+  auto entries = Json::array();
+  for (const auto& entry : history.entries) {
+    if (entry.time > static_cast<std::int64_t>(max_safe_integer) || entry.time < 0)
+      fields.fail("entries.time", "is outside 0 to 2^53 - 1");
+    auto changes = Json::array();
+    for (const auto& change : entry.changes)
+      changes.push_back({{"field", history_name(change.field)},
+                         {"before", value(change.before, "entries.changes.before")},
+                         {"after", value(change.after, "entries.changes.after")}});
+    entries.push_back(
+        {{"id", fields.count(entry.id, "entries.id")},
+         {"time", entry.time},
+         {"source", history_name(entry.source)},
+         {"target", history_name(entry.target)},
+         {"number", entry.number},
+         {"changes", std::move(changes)},
+         {"restores", entry.restores ? fields.count(*entry.restores, "entries.restores")
+                                     : Json(nullptr)}});
+  }
+  return fields.finish({{"type", "offset_history"},
+                        {"revision", fields.count(history.revision, "revision")},
+                        {"storage", history.saved ? "saved" : "session_only"},
+                        {"reason", history.reason},
+                        {"entries", std::move(entries)}});
+}
+
 } // namespace coffeecnc

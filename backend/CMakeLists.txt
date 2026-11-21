@@ -89,6 +89,11 @@ if(BUILD_TESTING)
     coffeecnc_enable_analyzers(coffeecnc_program_progress_tests)
     add_test(NAME program_progress COMMAND coffeecnc_program_progress_tests
       ${PROJECT_BINARY_DIR}/program_progress_tests)
+    add_executable(coffeecnc_offset_history_tests tests/offset_history_tests.cpp)
+    target_link_libraries(coffeecnc_offset_history_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_offset_history_tests)
+    add_test(NAME offset_history COMMAND coffeecnc_offset_history_tests)
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)
@@ -231,6 +236,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)
         set_tests_properties(linuxcnc_jog_contact_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 355)
+        add_test(NAME linuxcnc_offset_history_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_history_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
+        set_tests_properties(linuxcnc_offset_history_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
         add_test(NAME linuxcnc_restore_spindle_tool_${units}
           COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 70 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_${units}
@@ -308,11 +318,11 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759 restore-spindle-tool)
       set_tests_properties(linuxcnc_restore_spindle_tool_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 360)
-      # The runner's own test calls run.sh many times. Ten of its runs may each wait for a
+      # The runner's own test calls run.sh many times. Eleven of its runs may each wait for a
       # simulation of another checkout; two wait on the test's own run for fixed times. The
       # time limit is made of those parts, and the script is handed the same lock wait.
-      set(runner_lock_wait 300)   # run.sh -w of each of the ten runs
-      set(runner_waiting_runs 10)
+      set(runner_lock_wait 300)   # run.sh -w of each of the eleven runs
+      set(runner_waiting_runs 11)
       set(runner_own_waits 123)   # the refused run (3 s) and the run that waits its turn (120 s)
       set(runner_run_time 300)    # everything else the test does; about 160 s measured
       math(EXPR runner_timeout

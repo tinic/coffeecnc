@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
 #include <coffeecnc/app/program_edit.hpp>
@@ -519,7 +520,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles model_files;
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
+  LocalToolModelFiles history_files;
   std::unique_ptr<ProgramProgress> progress;
+  std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
@@ -552,13 +555,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         },
         config->limits);
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
+    // Next to the program progress, in the machine's data directory; without one, for this
+    // session only.
+    history = std::make_unique<OffsetHistoryStore>(
+        history_files,
+        location.availability == ToolModelAvailability::available ? location.directory : "",
+        location.availability == ToolModelAvailability::available
+            ? ""
+            : location.reason);
     program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer);
+        &preview, &restart_engine, &*program_writer, history.get());
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source,
@@ -566,7 +577,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
           window.post(page, std::move(messages));
         },
         &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
-        progress.get());
+        progress.get(), history.get());
     if (hooks.before_load)
       hooks.before_load(window, *config);
     window.run();

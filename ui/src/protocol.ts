@@ -322,6 +322,52 @@ export interface WorkOffsets {
   }[]
 }
 
+/**
+ * What made an offset history entry. The panel's own commands are named after the command;
+ * `mdi` is the panel's MDI line, `program` a program that ran, `outside` anything else (another
+ * client, a remap, files edited while CoffeeCNC did not run).
+ */
+export type HistorySource =
+  | 'touch_off'
+  | 'zero'
+  | 'half'
+  | 'probe'
+  | 'tool_setter'
+  | 'tool_touch_off'
+  | 'tool_table'
+  | 'work_offset_table'
+  | 'mdi'
+  | 'program'
+  | 'restore'
+  | 'outside'
+export type HistoryField = 'x' | 'y' | 'z' | 'rotation_xy' | 'length' | 'diameter'
+
+/** One change of a work offset (the active system, its XY rotation, G92/G52) or of a tool. */
+export interface HistoryEntry {
+  id: number
+  /** Milliseconds since the Unix epoch. */
+  time: number
+  source: HistorySource
+  /** `number` is the work system (1 is G54), the tool, or 0 for G92/G52. */
+  target: 'wcs' | 'g92' | 'tool'
+  number: number
+  /** mm or degrees. `before` is null where it was not known (a tool added), `after` where a tool was removed. */
+  changes: { field: HistoryField; before: number | null; after: number | null }[]
+  /** The entry whose earlier values this restore wrote back. */
+  restores: number | null
+}
+
+/** The native offset history, newest first, at most 200 entries. Sent after `ready` and on every change. */
+export interface OffsetHistory {
+  type: 'offset_history'
+  revision: number
+  /** `saved`: kept in the machine's data directory; `session_only`: `reason` says why not. */
+  storage: 'saved' | 'session_only'
+  /** Why the history is not saved, or what went wrong reading or writing it; empty otherwise. */
+  reason: string
+  entries: HistoryEntry[]
+}
+
 /** An operator error or message from LinuxCNC, or from the executable itself. */
 export interface OperatorMessage {
   type: 'message'
@@ -447,6 +493,7 @@ export type FromMachine =
   | ProgramText
   | Preview
   | WorkOffsets
+  | OffsetHistory
   | OperatorMessage
   | CommandResult
   | Directory
@@ -610,6 +657,16 @@ export interface TouchOff extends CommandBase {
   type: 'touch_off'
   axis: AxisLetter
   value: number
+  /** The DRO's quick action that asked for it; only named in the offset history. */
+  origin?: 'zero' | 'half'
+}
+/**
+ * Writes back the `before` values of an offset history entry (G10 L2, G52 or G10 L1), under the
+ * conditions of any other offset edit.
+ */
+export interface RestoreOffset extends CommandBase {
+  type: 'restore_offset'
+  entry: number
 }
 /**
  * Sets the loaded tool's length so Z reads `value` at its present position (G10 L10), and
@@ -723,6 +780,7 @@ export type ToMachine =
   | EditProgram
   | JogPausedZ
   | SaveProgram
+  | RestoreOffset
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

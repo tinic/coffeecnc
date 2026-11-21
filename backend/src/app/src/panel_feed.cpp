@@ -1,4 +1,5 @@
 #include <coffeecnc/app/panel_feed.hpp>
+#include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_progress.hpp>
 
 #include <coffeecnc/app/response.hpp>
@@ -159,7 +160,8 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   if (work_offsets_.revision == 0 || reading.work_systems != work_offsets_.systems)
     work_offsets_ = {work_offsets_.revision + 1, reading.work_systems};
   auto messages = publisher_.publish(
-      {hello_, status, reading.tool_table, work_offsets_, reading.program.get(), preview},
+      {hello_, status, reading.tool_table, work_offsets_, reading.program.get(), preview,
+       reading.offset_history.get()},
       snapshots_due_);
   if (!messages)
     return messages; // Nothing was sent: what was due still is.
@@ -175,9 +177,11 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
 }
 
 PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview,
-                     SnapshotsSent snapshots_sent, ProgramProgress* progress)
+                     SnapshotsSent snapshots_sent, ProgramProgress* progress,
+                     OffsetHistoryStore* history)
     : source_(source), deliver_(std::move(deliver)), snapshots_sent_(std::move(snapshots_sent)),
-      preview_(preview), progress_(progress), thread_([this]() -> void { loop(); }) {}
+      preview_(preview), progress_(progress), history_(history),
+      thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
   {
@@ -215,6 +219,8 @@ void PanelFeed::loop() {
     auto reading = source_.read();
     if (progress_)
       progress_->observe(reading, ProgramProgress::Clock::now());
+    if (history_)
+      history_->observe(reading, unix_now(), OffsetHistoryStore::Clock::now());
     std::optional<PageToken> page;
     bool ready = false;
     {

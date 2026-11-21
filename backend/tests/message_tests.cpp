@@ -256,6 +256,25 @@ void table_rules() {
   offsets.systems.at(8).rotation_xy = 0;
   offsets.revision = max_safe_integer + 1;
   refused(encode_work_offsets(offsets), "revision");
+
+  OffsetHistory history{1, true, "", {}};
+  history.entries.push_back({3, 1700000000000, HistorySource::touch_off, HistoryTarget::wcs, 1,
+                             {{HistoryField::x, std::nullopt, 2.5}}, std::nullopt});
+  const auto entry = parsed(encode_offset_history(history)).at("entries").at(0);
+  require(entry.at("changes").at(0).at("before").is_null() &&
+              entry.at("changes").at(0).at("after") == 2.5 && entry.at("restores").is_null(),
+          "An unknown value and no restored entry are null, never zero");
+  history.entries[0].changes[0].after = nan;
+  refused(encode_offset_history(history), "entries.changes.after");
+  history.entries[0].changes[0].after = 2.5;
+  history.entries[0].changes[0].before = infinity;
+  refused(encode_offset_history(history), "entries.changes.before");
+  history.entries[0].changes[0].before = 0;
+  history.entries[0].time = -1;
+  refused(encode_offset_history(history), "entries.time");
+  history.entries[0].time = 0;
+  history.entries[0].restores = max_safe_integer + 1;
+  refused(encode_offset_history(history), "entries.restores");
 }
 
 void program_and_preview_rules() {

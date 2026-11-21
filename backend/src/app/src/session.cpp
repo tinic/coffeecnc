@@ -1,4 +1,6 @@
 #include <coffeecnc/app/session.hpp>
+
+#include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 
 #include <coffeecnc/app/messages.hpp>
@@ -58,6 +60,37 @@ auto length(double millimetres, const ControllerState& state) -> std::string {
   constexpr double millimetres_per_inch = 25.4;
   return real(state.program_units == LengthUnit::inch ? millimetres / millimetres_per_inch
                                                       : millimetres);
+}
+
+// The offset history's name for a panel command that can change offsets; none for the others.
+auto history_source(const Command& command) -> std::optional<HistorySource> {
+  return std::visit(
+      [](const auto& c) -> std::optional<HistorySource> {
+        using T = std::decay_t<decltype(c)>;
+        if constexpr (std::is_same_v<T, TouchOff>) {
+          return c.origin == TouchOrigin::zero   ? HistorySource::zero
+                 : c.origin == TouchOrigin::half ? HistorySource::half
+                                                 : HistorySource::touch_off;
+        } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
+          return HistorySource::work_offset_table;
+        } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
+          return HistorySource::tool_touch_off;
+        } else if constexpr (std::is_same_v<T, FixedSetterRequest>) {
+          if (c.action == SetterAction::status)
+            return std::nullopt;
+          return c.action == SetterAction::touch_off ? HistorySource::tool_setter
+                                                     : HistorySource::probe;
+        } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
+          return HistorySource::tool_table;
+        } else if constexpr (std::is_same_v<T, Mdi>) {
+          return HistorySource::mdi;
+        } else if constexpr (std::is_same_v<T, RestoreOffset>) {
+          return HistorySource::restore;
+        } else {
+          return std::nullopt;
+        }
+      },
+      command);
 }
 
 constexpr auto busy_reason = "Too many requests are waiting for LinuxCNC.";
@@ -213,9 +246,11 @@ auto starts_jog(const Command& command) -> bool {
 
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
                  ToolModelService* tool_models, PreviewWorker* preview,
-                 PreviewEngine* restart_engine, ProgramWriter* program_writer)
+                 PreviewEngine* restart_engine, ProgramWriter* program_writer,
+                 OffsetHistoryStore* history)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
-      restart_engine_(restart_engine), program_writer_(program_writer), policy_(limits) {}
+      restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
+      policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -1146,17 +1181,26 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<ToolChanged>(request.command) ||
       std::holds_alternative<SelectWcs>(request.command) ||
       std::holds_alternative<SetWorkOffset>(request.command) ||
+      std::holds_alternative<RestoreOffset>(request.command) ||
       std::holds_alternative<TouchOff>(request.command)) {
     const std::scoped_lock lock{mutex_};
     if (changes_datum)
       ++setter_datum_;
     ++setter_tool_;
   }
-  return std::visit(
+  // The offset history attributes what changes while this runs, and for a moment after, to it.
+  // A restore marks itself, with the entry it restores.
+  const auto source = history_source(request.command);
+  const auto mark = history_ != nullptr && source && *source != HistorySource::restore
+                        ? std::optional<std::uint64_t>{history_->begin(*source)}
+                        : std::nullopt;
+  auto stage = std::visit(
       [&](const auto& c) -> Stage {
         using T = std::decay_t<decltype(c)>;
         if constexpr (std::is_same_v<T, Ready>) {
           return {};
+        } else if constexpr (std::is_same_v<T, RestoreOffset>) {
+          return restore_offset(request, c, state, clock);
         } else if constexpr (std::is_same_v<T, ListDirectory>) {
           Stage step;
           step.reply = list_directory(c, step);
@@ -1293,10 +1337,15 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
           // An explicit P index: editing an inactive system must not select it.
           // Omit R so XYZ editing, copying and clearing preserve the XY rotation.
-          return mdi(request, "G10 L2 P" + std::to_string(c.wcs) +
-                                  " X" + length(c.offset[0], state) +
-                                  " Y" + length(c.offset[1], state) +
-                                  " Z" + length(c.offset[2], state));
+          auto written = mdi(request, "G10 L2 P" + std::to_string(c.wcs) +
+                                          " X" + length(c.offset[0], state) +
+                                          " Y" + length(c.offset[1], state) +
+                                          " Z" + length(c.offset[2], state));
+          if (mark && written.kind == StageKind::reply &&
+              written.reply.outcome == CommandOutcome::accepted)
+            history_->written(*mark, c.wcs, {c.offset[0], c.offset[1], c.offset[2], std::nullopt},
+                              clock().unix_time);
+          return written;
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
           return mdi(request, std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));
@@ -1353,6 +1402,89 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         }
       },
       request.command);
+  if (mark)
+    history_->end(*mark, clock().monotonic);
+  return stage;
+}
+
+auto Session::restore_offset(const Queued& request, const RestoreOffset& command,
+                             const ControllerState& state, const Clock& clock) -> Stage {
+  if (history_ == nullptr)
+    return answer({CommandOutcome::rejected, "This CoffeeCNC keeps no offset history."});
+  const auto entry = history_->entry(command.entry);
+  if (!entry)
+    return answer({CommandOutcome::rejected, "That history entry is no longer kept."});
+  std::string words;
+  std::array<std::optional<double>, 4> values{};
+  for (const auto& change : entry->changes) {
+    if (!change.before || !change.after)
+      return answer({CommandOutcome::rejected, "This entry has no earlier value to restore."});
+    const auto value = *change.before;
+    switch (change.field) {
+    case HistoryField::x:
+      words += " X" + length(value, state);
+      values[0] = value;
+      break;
+    case HistoryField::y:
+      words += " Y" + length(value, state);
+      values[1] = value;
+      break;
+    case HistoryField::z:
+      words += " Z" + length(value, state);
+      values[2] = value;
+      break;
+    case HistoryField::rotation_xy:
+      words += " R" + real(value);
+      values[3] = value;
+      break;
+    case HistoryField::length:
+      words += " Z" + length(value, state);
+      break;
+    case HistoryField::diameter:
+      // G10 L1 R is the radius.
+      words += " R" + length(value / 2, state);
+      break;
+    }
+  }
+  std::string block;
+  switch (entry->target) {
+  case HistoryTarget::wcs:
+    block = "G10 L2 P" + std::to_string(entry->number) + words;
+    break;
+  case HistoryTarget::g92: {
+    // G52 sets the G92 offsets themselves; G92 would set them from the present position.
+    // G52 gives an axis it does not name the offset in effect and stores that in #5211-#5213.
+    // While G92.2 suspends the shift that offset is 0: the stored value of an axis the entry
+    // does not restore would be lost, and G92.3 could not bring it back. LinuxCNC is made to
+    // refuse the whole block then: suspended (#5210 0) and such an axis stores a value, so the
+    // divisor is 0. A cleared shift stores 0; with the shift applied the offset in effect is the
+    // stored one.
+    std::string unstored; // 1 when no axis the entry leaves out stores a value
+    for (std::size_t i = 0; i < 3; ++i)
+      if (!values.at(i))
+        unstored += " AND [#521" + std::to_string(i + 1) + " EQ 0]";
+    block = "G52";
+    for (std::size_t i = 0; i < 3; ++i) {
+      if (!values.at(i))
+        continue;
+      auto value = length(*values.at(i), state);
+      if (!unstored.empty())
+        value = "[" + value + "+0/[#5210+[1" + std::exchange(unstored, {}) + "]]]";
+      block += std::string(" ") + "XYZ"[i] + value;
+    }
+    break;
+  }
+  case HistoryTarget::tool:
+    block = "G10 L1 P" + std::to_string(entry->number) + words;
+    break;
+  }
+  const auto mark = history_->begin(HistorySource::restore, entry->id);
+  auto restored = mdi(request, block);
+  if (entry->target == HistoryTarget::wcs && restored.kind == StageKind::reply &&
+      restored.reply.outcome == CommandOutcome::accepted)
+    history_->written(mark, entry->number, values, clock().unix_time);
+  history_->end(mark, clock().monotonic);
+  return restored;
 }
 
 // An increment is motion nobody holds: from the moment it is sent the axis counts as possibly

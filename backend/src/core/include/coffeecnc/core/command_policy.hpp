@@ -206,9 +206,12 @@ struct SetWorkOffset {
   int wcs;
   std::array<double, 3> offset; // XYZ origin in machine coordinates, millimetres
 };
+// What the operator used to set the coordinate: only for the offset history.
+enum class TouchOrigin : std::uint8_t { typed, zero, half };
 struct TouchOff {
   Axis axis;
   double value;
+  TouchOrigin origin{TouchOrigin::typed};
 };
 struct ToolTouchOff {
   double value;
@@ -228,6 +231,10 @@ struct RemoveTool {
   int number;
 };
 struct ToolChanged {};
+// Writes back the earlier values of one offset history entry (OffsetHistoryStore).
+struct RestoreOffset {
+  std::uint64_t entry{};
+};
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
 
@@ -237,7 +244,7 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, JogPausedZ, SaveProgram>;
+                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset>;
 
 struct Decision {
   bool allowed{};

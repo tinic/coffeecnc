@@ -12,6 +12,7 @@ import type {
   FromMachine,
   Hello,
   LengthUnit,
+  OffsetHistory,
   Preview,
   ProgramText,
   Status,
@@ -79,6 +80,8 @@ export interface PanelState {
   /** Startup preset only; never a controller command. */
   startupSpindleRpm: number
   workOffsets: WorkOffsets | null
+  /** Null until the executable sends one; a peer without a history never does. */
+  offsetHistory: OffsetHistory | null
   program: ProgramText | null
   preview: Preview | null
   directory: Directory | null
@@ -183,7 +186,11 @@ export function describeCommand(command: CommandBody): string {
     case 'save_program':
       return `Save ${baseName(command.path)}`
     case 'touch_off':
-      return `Touch off ${command.axis.toUpperCase()}`
+      return command.origin === 'zero' ? `Zero ${command.axis.toUpperCase()}`
+        : command.origin === 'half' ? `Half ${command.axis.toUpperCase()}`
+          : `Touch off ${command.axis.toUpperCase()}`
+    case 'restore_offset':
+      return 'Restore from offset history'
     case 'tool_touch_off':
       return 'Tool length touch-off'
     case 'fixed_setter':
@@ -241,6 +248,7 @@ export function createPanel(options: PanelOptions): Panel {
     preferences: defaultOperatorPreferences(),
     startupSpindleRpm: 0,
     workOffsets: null,
+    offsetHistory: null,
     program: null,
     preview: null,
     directory: null,
@@ -336,6 +344,7 @@ export function createPanel(options: PanelOptions): Panel {
         state.operatorSettings = null
         state.toolModels = null
         state.toolTable = null
+        state.offsetHistory = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
           // These snapshots belong to a protocol we can no longer interpret. Clearing hello
@@ -405,6 +414,9 @@ export function createPanel(options: PanelOptions): Panel {
       }
       case 'work_offsets':
         state.workOffsets = message
+        break
+      case 'offset_history':
+        state.offsetHistory = message
         break
       case 'program':
         state.program = message

@@ -9,7 +9,7 @@ interface PartState {
   placement: Placement; placed: boolean
 }
 export const part = reactive<PartState>({
-  attachment: null, loading: false, error: '', visible: true, opacity: 0.65,
+  attachment: null, loading: false, error: '', visible: true, opacity: 0.8,
   placement: { translation: [0, 0, 0], rotation: [0, 0, 0] }, placed: false,
 })
 export const partBlock = computed(() => part.attachment === null ? '' : modelBlock(part.attachment.binding, panel.status, panel.preview, live.value))

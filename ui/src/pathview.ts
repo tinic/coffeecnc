@@ -97,11 +97,11 @@ export function fit(camera: Camera, points: Vec3[], width: number, height: numbe
   }
 }
 
-export function orbit(camera: Camera, dx: number, dy: number): Camera {
+export function orbit(camera: Camera, dx: number, dy: number, minimumElevation = 0): Camera {
   return {
     ...camera,
     azimuth: camera.azimuth + dx * 0.008,
-    elevation: Math.min(Math.PI / 2, Math.max(0, camera.elevation + dy * 0.008)),
+    elevation: Math.min(Math.PI / 2, Math.max(minimumElevation, camera.elevation + dy * 0.008)),
   }
 }
 

@@ -1,22 +1,23 @@
-import { BufferGeometry, CylinderGeometry, Group, LatheGeometry, LineBasicMaterial, LineLoop, Mesh,
-  MeshStandardMaterial, SphereGeometry, Vector2, Vector3 } from 'three'
+import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group, LatheGeometry, LineBasicMaterial, LineLoop, Mesh,
+  MeshPhysicalMaterial, MeshStandardMaterial, SphereGeometry, Vector2, Vector3 } from 'three'
 import { faceMillGeometry, flutedCutterGeometry } from './cutter-geometry'
 import { holderSurfaces } from './tool-holder'
-import { holderFaceZ, probeEnvelope, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
+import { holderFaceZ, probeEnvelope, shankProfile, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
 
 /** Shared visual envelope for the editor and the machine scene. */
 export class ToolMesh {
   readonly group = new Group()
   // Ground, uncoated tooling is the default visual finish. Coating is not in the tool table.
-  private readonly cutting = new MeshStandardMaterial({ color: '#a7a49f', metalness: 0.81, roughness: 0.32 })
+  private readonly cutting = new MeshStandardMaterial({ color: '#b1ada7', metalness: 0.79, roughness: 0.27 })
   private readonly flutes = this.cutting.clone()
-  private readonly shank = new MeshStandardMaterial({ color: '#bdc1c4', metalness: 0.91, roughness: 0.22 })
-  private readonly groundSteel = new MeshStandardMaterial({ color: '#c6c9cc', metalness: 0.89, roughness: 0.25 })
-  private readonly darkSteel = new MeshStandardMaterial({ color: '#474a4d', metalness: 0.65, roughness: 0.4 })
-  private readonly housing = new MeshStandardMaterial({ color: '#50555a', metalness: 0.42, roughness: 0.36 })
-  private readonly ruby = new MeshStandardMaterial({ color: '#c51c3b', metalness: 0.03, roughness: 0.19 })
+  private readonly shank = new MeshStandardMaterial({ color: '#aeb8c0', metalness: 0.88, roughness: 0.26, envMapIntensity: 0.8 })
+  private readonly groundSteel = new MeshStandardMaterial({ color: '#c0c7cc', metalness: 0.84, roughness: 0.29 })
+  private readonly darkSteel = new MeshStandardMaterial({ color: '#343a40', metalness: 0.58, roughness: 0.4 })
+  private readonly housing = new MeshStandardMaterial({ color: '#525a62', metalness: 0.63, roughness: 0.32, vertexColors: true })
+  private readonly ruby = new MeshPhysicalMaterial({ color: '#b50836', roughness: 0.27,
+    clearcoat: 1, clearcoatRoughness: 0.13, emissive: '#70001d', emissiveIntensity: 0.15 })
   private readonly surfaces = [this.cutting, this.flutes, this.shank, this.groundSteel, this.darkSteel, this.housing, this.ruby]
-  private readonly datum = new LineBasicMaterial({ color: '#377ef2' })
+  private readonly datum = new LineBasicMaterial({ color: '#377ef2', transparent: true, opacity: 0.72, toneMapped: false })
   private readonly geometry: BufferGeometry[] = []
 
   constructor() { this.flutes.vertexColors = true }
@@ -68,7 +69,7 @@ export class ToolMesh {
     const { body, inserts, screws } = faceMillGeometry(diameter, length)
     this.addMesh(body, this.darkSteel, 'head', head)
     for (const insert of inserts) this.addMesh(insert, this.cutting, 'insert', head)
-    for (const screw of screws) this.addMesh(screw, this.housing, 'insert screw', head)
+    for (const screw of screws) this.addMesh(screw, this.darkSteel, 'insert screw', head)
     this.group.add(head)
   }
 
@@ -117,12 +118,21 @@ export class ToolMesh {
     // Extend the stem into the ball so their surfaces intersect.
     cylinder(stylusDiameter, d.stylusLength + d.diameter / 4, d.diameter * 0.75, this.shank)
     const radius = d.bodyDiameter / 2
-    const bevel = Math.min(radius * 0.08, d.bodyLength * 0.12)
-    this.addMesh(this.lathe([
-      [0, bodyStart], [radius - bevel, bodyStart], [radius, bodyStart + bevel],
-      [radius, bodyEnd - bevel], [radius - bevel, bodyEnd], [0, bodyEnd],
-    ]), this.housing, 'probe housing')
-    if (showShank) cylinder(d.shankDiameter, d.shankDiameter, bodyEnd, this.shank)
+    const bevel = Math.min(radius * 0.08, d.bodyLength * 0.09)
+    // The turned rims catch light around the darker probe housing.
+    const rings: [radius: number, z: number, shade: number][] = [
+      [0, bodyStart, 0.62], [radius - bevel, bodyStart, 0.74], [radius, bodyStart + bevel, 1],
+      [radius, bodyStart + bevel * 1.65, 0.96], [radius - bevel * 0.16, bodyStart + bevel * 1.85, 0.42],
+      [radius - bevel * 0.16, bodyEnd - bevel * 1.85, 0.42], [radius, bodyEnd - bevel * 1.65, 0.96],
+      [radius, bodyEnd - bevel, 1], [radius - bevel, bodyEnd, 0.74], [0, bodyEnd, 0.62],
+    ]
+    const profile = this.lathe(rings.map(([r, z]) => [r, z]))
+    const finishes = rings.flatMap(([, , shade]) => [shade, shade, shade])
+    const colours = new Float32Array((profile.parameters.segments + 1) * finishes.length)
+    for (let i = 0; i < colours.length; i += finishes.length) colours.set(finishes, i)
+    profile.setAttribute('color', new Float32BufferAttribute(colours, 3))
+    this.addMesh(profile, this.housing, 'probe housing')
+    if (showShank) this.addMesh(this.lathe(shankProfile(d.shankDiameter / 2, bodyEnd, bodyEnd + d.shankDiameter)), this.shank, 'shank')
   }
 
   setTheme(dark: boolean): void { this.datum.color.set(dark ? '#84b1f8' : '#377ef2') }

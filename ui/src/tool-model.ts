@@ -162,8 +162,12 @@ export function toolProfiles(model: ToolModel): { cutting: [number, number][]; s
   } else cutting.push([radius, 0])
   cutting.push([radius, d.cuttingLength], [0, d.cuttingLength])
   const shankEnd = model.holder === undefined ? d.overallLength : d.stickout
-  return { cutting, shank: shankEnd > d.cuttingLength
-    ? [[0, d.cuttingLength], [d.shankDiameter / 2, d.cuttingLength], [d.shankDiameter / 2, shankEnd], [0, shankEnd]] : [] }
+  return { cutting, shank: shankEnd > d.cuttingLength ? shankProfile(d.shankDiameter / 2, d.cuttingLength, shankEnd) : [] }
+}
+
+export function shankProfile(radius: number, start: number, end: number): [number, number][] {
+  const bevel = Math.min(radius * 0.08, (end - start) * 0.18, 0.55)
+  return [[0, start], [radius, start], [radius, end - bevel], [radius - bevel, end], [0, end]]
 }
 
 /** Dimensions from the ball bottom, which is also the model's Z datum. */

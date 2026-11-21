@@ -27,9 +27,9 @@ const camera = new OrthographicCamera()
 const view: Camera = { azimuth: -0.88, elevation: 0.60, scale: 1, centre: [0, 0, 9] }
 const grid = new GridHelper(132, 22, 0x7490a5, 0x7490a5)
 const floor = new Mesh(new PlaneGeometry(240, 240), new ShadowMaterial({ opacity: 0.2 }))
-const stockMaterial = new MeshStandardMaterial({ metalness: 0.49, roughness: 0.38 })
+const stockMaterial = new MeshStandardMaterial({ metalness: 0.61, roughness: 0.36 })
 const machinedTop = stockMaterial.clone()
-const walls = new MeshStandardMaterial({ color: 0x8098aa, metalness: 0.43, roughness: 0.47 })
+const walls = new MeshStandardMaterial({ color: 0x8098aa, metalness: 0.54, roughness: 0.4 })
 const baseMaterial = new MeshStandardMaterial({ color: 0x394653, metalness: 0.5, roughness: 0.42 })
 const plunger = new MeshStandardMaterial({ color: 0xedb160, metalness: 0.55, roughness: 0.32 })
 const finish = brushedFinish()
@@ -228,7 +228,7 @@ function applyTheme(): void {
   stockMaterial.color.setHex(dark ? 0xaeb8c1 : 0xabb5bc)
   machinedTop.color.copy(stockMaterial.color)
   walls.color.setHex(dark ? 0x919fa9 : 0x929fa7)
-  grid.material.opacity = dark ? 0.14 : 0.13
+  grid.material.opacity = dark ? 0.095 : 0.10
   contact.material.color.setHex(dark ? 0xffbc57 : 0xc66a14)
   datum.material.color.setHex(dark ? 0x3edac5 : 0x007b68)
   start.material.color.setHex(dark ? 0x6fbaff : 0x216ece)

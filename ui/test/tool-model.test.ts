@@ -95,6 +95,29 @@ describe('parametric tool geometry', () => {
       expect(bounds.max.x).toBeLessThanOrEqual(dimensions.diameter / 2)
     } finally { mesh.dispose() }
   })
+  it('keeps the flat mill at its nominal tip and shank lengths after adding end relief', () => {
+    const dimensions = factoryToolDefaults()['end-mill']
+    const mesh = new ToolMesh()
+    try {
+      mesh.build({ family: 'end-mill', dimensions, nominalDiameter: false, customized: false })
+      const cutter = mesh.group.getObjectByName('cutter')
+      const shank = mesh.group.getObjectByName('shank')
+      if (!(cutter instanceof Mesh) || !(shank instanceof Mesh)) throw new Error('Missing end mill geometry')
+      const geometry: unknown = cutter.geometry
+      if (!(geometry instanceof BufferGeometry)) throw new Error('Missing cutter geometry')
+      const positions: unknown = geometry.getAttribute('position')
+      if (!(positions instanceof BufferAttribute)) throw new Error('Missing cutter positions')
+      const axialVertices = Array.from({ length: positions.count }, (_, i) => i)
+        .filter(i => positions.getX(i) === 0 && positions.getY(i) === 0)
+      expect(axialVertices).toHaveLength(2)
+      expect(Math.min(...axialVertices.map(i => positions.getZ(i)))).toBeGreaterThan(0)
+      expect(new Box3().setFromObject(cutter).min.z).toBeCloseTo(0)
+      const bounds = new Box3().setFromObject(shank)
+      expect(bounds.min.z).toBeCloseTo(dimensions.cuttingLength)
+      expect(bounds.max.z).toBeCloseTo(dimensions.overallLength)
+      expect(bounds.max.x - bounds.min.x).toBeCloseTo(dimensions.shankDiameter)
+    } finally { mesh.dispose() }
+  })
   it('builds a spherical probe ball from the table diameter, with its bottom at Z=0', () => {
     const model = resolveToolModel(tool, assignment('touch-probe'), factoryToolDefaults())
     if (model === null) throw new Error('Missing probe')

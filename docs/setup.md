@@ -58,7 +58,15 @@ The file loads the `watchdog` and `lut5` modules. LinuxCNC can load each module 
 - `lut5`: add `coffeecnc-jog-stop,coffeecnc-jog-inhibit,coffeecnc-eoffset-gate` to the `names=` list of your own `loadrt lut5` line. Remove the `loadrt lut5` line from the copy.
 - `watchdog`: it has only one instance. Increase `num_inputs=` of your own `loadrt watchdog` line by one, and change `watchdog.input-0`, `watchdog.timeout-0` in the copy to the new input number. Remove the `loadrt watchdog` and its `addf` lines from the copy.
 
-## 4. Start the machine
+## 4. Check the INI file
+
+```sh
+coffeecnc --check ~/linuxcnc/configs/<your machine>/<your machine>.ini
+```
+
+The check tells you if CoffeeCNC starts with the file and, if not, why. It also lists the optional functions, if each one is on or off, and the keys that switch it on. LinuxCNC does not need to run.
+
+## 5. Start the machine
 
 Start LinuxCNC from a terminal with your INI file. If CoffeeCNC refuses a value in the INI file, it does not start and writes the reason in the terminal, for example `[KINS] JOINTS must be 3.` Correct the value and start again.
 

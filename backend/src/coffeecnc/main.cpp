@@ -23,6 +23,8 @@ auto main(int argc, char** argv) -> int {
       std::cout << coffeecnc::usage();
       return EXIT_SUCCESS;
     }
+    if (options->check)
+      return coffeecnc::check_configuration(*options);
     coffeecnc::configure_environment();
     return coffeecnc::run_application(*options);
   } catch (const std::exception& error) {

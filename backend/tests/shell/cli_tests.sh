@@ -53,6 +53,15 @@ run -ini "$work/sim/lathe.ini"
 [ "$code" = 1 ] && said 'coffeecnc: \[TRAJ\] COORDINATES is "X Z": X, Y and Z are all required'
 check unsupported_machine_is_refused $? "$(detail)"
 
+# --check: a report on the INI file, no window and no LinuxCNC (Ferrum-style config check, #166).
+run --check "$work/sim/coffeecnc_sim.ini"
+[ "$code" = 0 ] && said 'CoffeeCNC starts with this file' && said 'Axes  *X (joint 0), Y (joint 1), Z (joint 2)' &&
+  said 'Fixed tool setter  *off' && said 'Manual tool change prompt'
+check check_reports_a_good_file $? "$(detail)"
+run --check "$work/sim/lathe.ini"
+[ "$code" = 1 ] && said 'CoffeeCNC does not start with this file' && said 'COORDINATES'
+check check_reports_why_a_file_is_refused $? "$(detail)"
+
 run -ini "$work/sim/coffeecnc_sim.ini" --ui "$work/no-panel"
 [ "$code" = 1 ] && said 'coffeecnc: No panel in .*index.html is missing'
 check missing_panel_is_reported $? "$(detail)"

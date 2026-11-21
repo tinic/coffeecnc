@@ -43,6 +43,7 @@ namespace {
 
 constexpr std::string_view usage_text =
     "usage: coffeecnc -ini <file> [--windowed] [--ui <directory>] [--inspector]\n"
+    "       coffeecnc --check <file>\n"
     "\n"
     "The CoffeeCNC operator panel, a DISPLAY program of LinuxCNC: set\n"
     "[DISPLAY] DISPLAY = coffeecnc in the machine's INI file and start LinuxCNC.\n"
@@ -51,6 +52,8 @@ constexpr std::string_view usage_text =
     "  --windowed        a 1280 x 800 window instead of the full screen\n"
     "  --ui <directory>  the built panel (the directory with index.html)\n"
     "  --inspector       allow WebKit's developer tools\n"
+    "  --check <file>    check the INI file: does CoffeeCNC start with it, and which\n"
+    "                    optional functions are on; LinuxCNC need not run\n"
     "  --help            this text\n";
 
 void say(std::string_view reason) { std::cerr << "coffeecnc: " << reason << '\n' << std::flush; }
@@ -171,6 +174,12 @@ auto parse_options(std::span<const std::string_view> arguments)
       if (!file)
         return std::unexpected(std::move(file.error()));
       options.ini_file = std::move(*file);
+    } else if (argument == "--check") {
+      auto file = value();
+      if (!file)
+        return std::unexpected(std::move(file.error()));
+      options.ini_file = std::move(*file);
+      options.check = true;
     } else if (argument == "--ui") {
       auto directory = value();
       if (!directory)
@@ -355,6 +364,76 @@ auto import_runtime_state(LocalToolModelFiles& files, const MachineConfig& confi
   if (const auto saved = store(marker, "1\n"); !saved)
     return saved;
   return files.sync_directory(directory);
+}
+
+auto check_configuration(const Options& options) -> int {
+  std::cout << "CoffeeCNC configuration check: " << options.ini_file << '\n';
+  const auto config = load_machine_config(options.ini_file);
+  if (!config) {
+    std::cout << "\nCoffeeCNC does not start with this file:\n  " << config.error() << '\n';
+    return 1;
+  }
+  std::error_code error;
+  const auto file_state = [&](const std::string& path) -> std::string {
+    if (path.empty())
+      return "not configured";
+    return std::filesystem::exists(path, error) ? path : path + " (missing)";
+  };
+  const auto on_off = [](bool on) -> std::string_view { return on ? "on" : "off"; };
+  constexpr std::array<char, 3> letters{'X', 'Y', 'Z'};
+  std::string axes;
+  for (std::size_t i = 0; i < letters.size(); ++i) {
+    axes += std::format("{}{}", axes.empty() ? "" : ", ", letters[i]);
+    const auto& joints = config->axis_joints[i];
+    axes += joints.size() == 1 ? std::format(" (joint {})", joints.front())
+                               : std::format(" (joints {} and {})", joints.front(), joints.back());
+  }
+  std::cout << "\nCoffeeCNC starts with this file.\n\nMachine\n"
+            << "  Axes              " << axes << '\n'
+            << "  Units             " << (config->millimetres_per_unit == 1.0 ? "mm" : "inch")
+            << '\n'
+            << std::format("  Spindle maximum   {:.0f} rpm\n", config->limits.max_spindle_rpm)
+            << "  Homing            "
+            << (config->limits.homing_required ? "required before MDI and programs"
+                                               : "not required (NO_FORCE_HOMING)")
+            << '\n'
+            << "  Home all          " << (config->home_all_configured ? "configured" : "not configured: home each axis") << '\n'
+            << "\nFiles\n"
+            << "  Programs          " << file_state(config->program_prefix) << '\n'
+            << "  Tool table        " << file_state(config->tool_table) << '\n'
+            << "  Post-GUI HAL      " << file_state(config->postgui_halfile) << '\n';
+
+  const auto location = resolve_tool_model_location({config->machine_id, config->data_directory,
+                                                     environment("XDG_DATA_HOME"),
+                                                     environment("HOME")});
+  std::cout << "  Saved data        "
+            << (location.availability == ToolModelAvailability::available
+                    ? location.directory
+                    : std::format("not saved: {}", location.reason))
+            << '\n';
+
+  const auto& signals = config->signals;
+  std::cout << "\nOptional functions\n"
+            << "  Manual tool change prompt    " << on_off(config->manual_tool_change)
+            << (config->manual_tool_change ? "" : "  ([COFFEECNC] MANUAL_TOOLCHANGE = yes)") << '\n'
+            << "  Measured spindle speed       " << on_off(signals.spindle_rpm)
+            << (signals.spindle_rpm ? "" : "  (SPINDLE_RPM_SIGNAL = yes)") << '\n'
+            << "  Spindle at speed             " << on_off(signals.spindle_at_speed)
+            << (signals.spindle_at_speed ? "" : "  (SPINDLE_AT_SPEED_SIGNAL = yes)") << '\n'
+            << "  Probe input                  " << on_off(signals.probe)
+            << (signals.probe ? "" : "  (PROBE_SIGNAL = yes)") << '\n'
+            << "  Touch probe tool             "
+            << (config->touch_probe_tool ? std::format("T{}", *config->touch_probe_tool)
+                                         : std::string("off  (TOUCH_PROBE_TOOL)"))
+            << '\n'
+            << "  Fixed tool setter            " << on_off(config->fixed_setter.has_value())
+            << (config->fixed_setter ? "" : "  (FIXED_SETTER = yes and the SETTER_* keys)") << '\n'
+            << "  Z jog during a pause         " << on_off(config->paused_z.has_value())
+            << (config->paused_z ? "" : "  (PAUSED_Z_MAX_MM, OFFSET_AV_RATIO, both spindle signals)")
+            << '\n'
+            << "  Remembered spindle tool      " << on_off(config->remember_spindle_tool) << '\n'
+            << "\nSee /usr/share/coffeecnc/coffeecnc.ini.example for every key.\n";
+  return 0;
 }
 
 auto run_application(const Options& options, const ApplicationHooks& hooks) -> int {

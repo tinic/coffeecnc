@@ -825,8 +825,7 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
   const bool dismissed = rig.wait_js("!document.querySelector('.message-area .error')");
   check("dismissed_error_leaves_the_bar", dismissed,
         rig.js("return __t.text(document.querySelector('.message-area'));").dump());
-  rig.js("document.querySelector('details.state-menu').open = true;");
-  check("panel_opens_message_log", rig.click("details.state-menu button", "Message log") == "ok");
+  check("panel_opens_message_log", rig.click(".message-band .message-log", "Message log") == "ok");
   const bool logged = rig.wait_js("/contact/i.test(__t.text(document.querySelector('section.dialog')))");
   check("dismissed_error_stays_in_the_log", logged,
         rig.js("return __t.text(document.querySelector('section.dialog')).slice(0, 300);").dump());

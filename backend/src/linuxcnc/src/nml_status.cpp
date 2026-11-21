@@ -194,8 +194,10 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       if (!view || !feedback || !view->watchdog_ok || view->jog_stop_high ||
           view->probe_cycle_active || (view->probe_input && *view->probe_input))
         return "The paused Z motion interlock is open.";
-      if (!out.spindle_actual_rpm || c.spindle_active || task.activeMCodes[2] != 5)
-        return "Paused Z jog requires a program spindle stop (M5) and zero spindle speed.";
+      // The active M code can come from the motion tag of the preceding move, before M5.
+      // Use current spindle status and measured RPM. HAL also gates on spindle.0.on.
+      if (!out.spindle_actual_rpm || c.spindle_active)
+        return "Pause after stopping the spindle in the program (M5) before jogging Z.";
       if (feedback->limited || motion.on_soft_limit ||
           std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
         return "A travel limit blocks paused Z motion.";

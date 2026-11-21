@@ -112,6 +112,7 @@ struct PreviewOutcome {
   std::optional<Bounds> bounds;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  std::vector<PreviewDwell> dwells;
   friend auto operator==(const PreviewOutcome&, const PreviewOutcome&) -> bool = default;
 };
 

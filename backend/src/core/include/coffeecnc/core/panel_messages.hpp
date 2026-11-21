@@ -222,7 +222,16 @@ struct PreviewSegment {
   int tool{};
   // Tool tip positions in machine coordinates, the tool offset applied exactly once.
   std::vector<Vec3> points;
+  // Programmed feed of a feed move, mm/min; 0 for a rapid, or when the feed is not per minute.
+  double feed{};
   friend auto operator==(const PreviewSegment&, const PreviewSegment&) -> bool = default;
+};
+
+// A dwell (G4, or a canned cycle's P) the program makes at `line`.
+struct PreviewDwell {
+  int line{};
+  double seconds{};
+  friend auto operator==(const PreviewDwell&, const PreviewDwell&) -> bool = default;
 };
 
 struct PreviewError {
@@ -244,6 +253,7 @@ struct Preview {
   std::optional<PreviewError> error;
   std::vector<PreviewSegment> segments;
   std::optional<Bounds> bounds; // extent of the feed moves; empty without any
+  std::vector<PreviewDwell> dwells;
   friend auto operator==(const Preview&, const Preview&) -> bool = default;
 };
 

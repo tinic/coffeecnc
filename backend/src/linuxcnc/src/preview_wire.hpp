@@ -96,6 +96,7 @@ struct HelperOutput {
   std::string defect;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  std::vector<PreviewDwell> dwells;
 };
 
 [[nodiscard]] auto write_restart(const RestartPoint& point) -> std::string;

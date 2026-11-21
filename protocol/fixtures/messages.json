@@ -833,7 +833,8 @@
     "state": "pending",
     "error": null,
     "segments": [],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "preview",
@@ -852,7 +853,8 @@
           0,
           0,
           2
-        ]
+        ],
+        "feed": 0
       },
       {
         "line": 5,
@@ -871,7 +873,8 @@
           30,
           20.5,
           -1.5
-        ]
+        ],
+        "feed": 450
       }
     ],
     "bounds": {
@@ -885,7 +888,13 @@
         20.5,
         2
       ]
-    }
+    },
+    "dwells": [
+      {
+        "line": 6,
+        "seconds": 2
+      }
+    ]
   },
   {
     "type": "preview",
@@ -907,10 +916,12 @@
           0,
           0,
           2
-        ]
+        ],
+        "feed": 0
       }
     ],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "preview",
@@ -918,7 +929,8 @@
     "state": "unavailable",
     "error": null,
     "segments": [],
-    "bounds": null
+    "bounds": null,
+    "dwells": []
   },
   {
     "type": "message",

@@ -370,6 +370,8 @@ export interface FixedSetterLimits {
   xy_tolerance_mm: number
   clearance_mm?: number
   material_travel_mm?: number
+  latch_feed_mm_min?: number
+  latch_backoff_mm?: number
 }
 
 export interface SetterMeasurement {

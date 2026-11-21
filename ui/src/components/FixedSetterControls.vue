@@ -7,6 +7,8 @@ import { machineBlock } from '../machine-block'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
 import { toolLabel } from '../units'
 import { setterState, setterStatus, touchedOff, type SetterStatusLine } from '../setter-state'
+import ProbeGuideDialog from './ProbeGuideDialog.vue'
+import type { ProbeGuideTarget } from '../probe-guide'
 
 const props = defineProps<{ limits: FixedSetterLimits }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
@@ -38,13 +40,8 @@ const localBlock = computed(() => {
   if (!teaching.value && !state.value?.calibration) return `Teach the setter with T${String(props.limits.reference_tool)} or a touched-off tool first`
   return null
 })
-// One line the operator reads before pressing: what Touch off does with this tool, or why it can't.
-const hint = computed(() => {
-  if (!teaching.value) return ''
-  return `Jog ${toolLabel(tool.value)} over the setter, then Touch off.`
-})
 const { line: feedback, allow } = useCardFeedback(
-  () => hint.value,
+  () => '',
   () => localBlock.value,
   [machineReason, localBlock, tool, pending],
 )
@@ -85,6 +82,12 @@ function touchOff(): void {
   if (!allow(reason) || xyz === null) return
   request({ type: 'fixed_setter', action: 'touch_off', tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
 }
+const guide = shallowRef<ProbeGuideTarget | null>(null)
+watch([tool, teaching, (): unknown => panel.hello, (): string => panel.link], () => { guide.value = null })
+function startGuide(): void {
+  guide.value = null
+  touchOff()
+}
 
 const removeListener = onResult((command, result) => {
   if (command !== pending.value) return
@@ -112,9 +115,13 @@ onBeforeUnmount(() => {
   <div class="setter-controls">
     <div class="setter-action">
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
-      <button v-else class="btn primary" type="button" :aria-disabled="!!pending || machineReason !== null || localBlock !== null" @click="touchOff">Touch off</button>
+      <button v-else class="btn primary" type="button" @click="guide = { kind: teaching ? 'teach' : 'measure' }">Touch off</button>
     </div>
   </div>
+  <ProbeGuideDialog
+    v-if="guide" :target="guide" :limits="limits" :tool="tool" :ruby="tool === panel.hello?.touch_probe_tool"
+    @start="startGuide" @close="guide = null"
+  />
 </template>
 
 <style scoped>

@@ -7,8 +7,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -58,17 +60,20 @@ void stops_and_reloads(const fs::path& directory) {
   LocalToolModelFiles files;
   ProgramProgress progress{files, directory.string()};
   progress.observe(sample, now);
-  require(!sample.status.program.restart_hint, "An untouched program has no restart hint.");
+  require(!sample.status.program.restart_hint && sample.status.program.cycle == ProgramCycle::idle,
+          "An untouched program has no restart hint or completed cycle.");
   moves_on_line(sample, 3);
   progress.observe(sample, now + 100ms);
-  require(!sample.status.program.restart_hint, "A running program has no restart hint.");
+  require(!sample.status.program.restart_hint && sample.status.program.cycle == ProgramCycle::running,
+          "A cutting cycle is running before a restart hint exists.");
   moves_on_line(sample, 4);
   progress.observe(sample, now + 200ms);
   ++sample.program_aborts;
   progress.observe(sample, now + 250ms);
   at_rest(sample);
   progress.observe(sample, now + 300ms);
-  require(sample.status.program.restart_hint == RestartHint{4, 98},
+  require(sample.status.program.restart_hint == RestartHint{4, 98} &&
+              sample.status.program.cycle == ProgramCycle::idle,
           "Stop saves the block in motion, ignoring interpreter lookahead.");
 
   LocalToolModelFiles reloaded_files;
@@ -90,7 +95,16 @@ void stops_and_reloads(const fs::path& directory) {
   reloaded.observe(reopened, now + 450ms);
   at_rest(reopened);
   reloaded.observe(reopened, now + 500ms);
-  require(!reopened.status.program.restart_hint, "A completed run removes the saved hint.");
+  require(!reopened.status.program.restart_hint && reopened.status.program.cycle == ProgramCycle::completed,
+          "A completed run confirms the completed cycle and removes the saved hint.");
+  moves_on_line(reopened, 3);
+  reopened.status.program.air_offset_owned = true;
+  reloaded.observe(reopened, now + 600ms);
+  at_rest(reopened);
+  reopened.status.program.air_offset_owned = false;
+  reloaded.observe(reopened, now + 700ms);
+  require(!reopened.status.program.restart_hint && reopened.status.program.cycle == ProgramCycle::idle,
+          "An air cut leaves neither a cutting restart hint nor a completed cycle.");
   moves_on_line(reopened, 3);
   reloaded.observe(reopened, now + 2s);
   // A process or power loss may occur while moving; the record is already on disk.
@@ -110,6 +124,19 @@ void stops_and_reloads(const fs::path& directory) {
   fs::last_write_time(part, fs::last_write_time(part) + 2s);
   reloaded.observe(reopened, now + 2800ms);
   require(!reopened.status.program.restart_hint, "An edited file has no stale restart hint.");
+
+  auto partial = reading(part);
+  ProgramText prefix = *partial.program;
+  prefix.truncated = true;
+  prefix.lines.resize(2);
+  partial.program = std::make_shared<const ProgramText>(std::move(prefix));
+  moves_on_line(partial, 4);
+  reloaded.observe(partial, now + 2900ms);
+  require(partial.status.program.cycle == ProgramCycle::running, "Partial program text can still time a cut.");
+  at_rest(partial);
+  reloaded.observe(partial, now + 3s);
+  require(partial.status.program.cycle == ProgramCycle::completed && !partial.status.program.restart_hint,
+          "A partial text snapshot does not establish a restart line.");
 }
 
 } // namespace

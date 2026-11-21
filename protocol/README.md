@@ -94,6 +94,10 @@ Directory paths and parents are canonical paths within the configured program ro
 
 `preview_context` is an opaque integer token, compared only for equality. It must change when any input used to compute the path changes: program identity/reload, work offsets and rotations, G92, relevant tool data, block delete, and the interpreter's start state. That start snapshot includes active WCS, units, distance mode, loaded tool/active tool offset and any other modal, parameter or initial-position input consumed by the preview interpreter. Freeze the start snapshot while the corresponding program runs; live progress through its modal changes is not a new starting condition. The earlier list in the TypeScript comment was illustrative, not an exhaustive restriction on invalidation inputs.
 
+## Cutting cycle status
+
+The optional `status.program.cycle` reports `running` during a cutting cycle (including pauses), `completed` after a verified finish, and `idle` otherwise. It is independent of `restart_hint`, which may arrive after Stop once the preview is ready. Air cuts leave the cutting cycle idle and preserve any existing cutting restart record.
+
 ## Application shutdown
 
 `hello.quit_supported: true` enables the additive v1 `quit` command. Absent or

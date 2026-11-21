@@ -4593,6 +4593,8 @@ void whole_job(Rig& rig, NmlLoads& loads) {
   Json panel;
   const auto directory = std::filesystem::path(rig.config.directory);
   std::ofstream trace{directory / "whole-job-status.jsonl"};
+  if (!trace)
+    throw std::runtime_error("Could not open the whole-job status trace.");
   const auto read_panel = [&]() -> const Json& {
     const auto time = Clock::now();
     if (time - last_read < PanelFeed::period)
@@ -4702,14 +4704,19 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     const auto hold = rig.send(R"("type":"pause")");
     const bool held = hold.accepted() && rig.pump_until(3s, [&] {
       static_cast<void>(read_panel());
-      return rig.status().paused && rig.status().controller.in_position;
+      return rig.status().paused && near(rig.status().velocity, 0);
     });
-    check("job_feed_hold_during_second_pass", held, hold.text());
+    const auto held_at = rig.status().commanded_position;
+    rig.pump(120ms);
+    check("job_feed_hold_stops_motion", held && distance(rig.status().commanded_position, held_at) < 0.01,
+          hold.text());
     const auto stop = rig.send(R"("type":"abort")");
-    const bool restored = stop.accepted() && rig.pump_until(8s, [&] {
+    const bool restored = stop.accepted() && spindle_feedback(0, false) && rig.pump_until(8s, [&] {
       const auto& program = read_panel().at("program");
       return rig.idle() && program.value("file", std::string{}) == oracle.program &&
-             program.contains("restart_hint") && !std::filesystem::exists(directory / ".coffeecnc-breakpoint.txt");
+             program.contains("restart_hint") && !program.contains("breakpoint") &&
+             program.value("cycle", "") == "idle" &&
+             !std::filesystem::exists(directory / ".coffeecnc-breakpoint.txt");
     });
     if (!require("job_stop_restores_source_and_offers_restart_there", restored, stop.text() + " " + panel.dump()))
       return;
@@ -4725,11 +4732,17 @@ void whole_job(Rig& rig, NmlLoads& loads) {
       return;
     const auto restart = rig.post(std::format(R"("type":"start_restart","plan_id":{})",
                                              plan.restart.at("plan_id").get<std::uint64_t>()));
+    const auto spindle_start = [&] {
+      return rig.status().spindle_direction == SpindleDirection::forward &&
+             near(rig.status().spindle_rpm, 1500);
+    };
     bool saw_cut = false;
-    const bool completed = rig.pump_until(85s, [&] {
+    const bool completed = rig.pump_until(12s, spindle_start) && spindle_feedback(1500, true) &&
+        rig.pump_until(95s, [&] {
       const auto& status = read_panel();
       saw_cut = saw_cut || (rig.status().velocity > 0.01 && status.at("program").value("motion_line", 0) == 25);
       return saw_cut && rig.idle() && rig.status().spindle_direction == SpindleDirection::stopped &&
+             status.at("program").value("cycle", "") == "completed" &&
              !status.at("program").contains("restart_hint") &&
              distance(rig.status().work, {24, 20, 30}) < 0.02;
     });
@@ -4740,31 +4753,37 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     const auto air_marker = directory / "coffeecnc-air-cut.txt";
     const auto enter_air = [&] {
       const auto selected = rig.send(R"("type":"set_air_cut","air_z":25)");
-      if (!selected.accepted() || !ready_preview(25))
+      fact("job_air_cut_selected", selected.text());
+      if (!selected.accepted() || !spindle_feedback(0, false) || !ready_preview(25))
         return false;
       const auto result = rig.send(std::format(
           R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true,"air_z":25)",
           panel.at("preview_context").get<std::uint64_t>()));
-      return result.accepted() && rig.pump_until(18s, [&] {
+      fact("job_air_cut_start", result.text());
+      return result.accepted() && rig.pump_until(10s, spindle_start) && spindle_feedback(1500, true) &&
+          rig.pump_until(18s, [&] {
         const auto& program = read_panel().at("program");
         const auto raw = rig.status();
-        return program.value("air_offset_owned", false) && program.value("motion_line", 0) == 15 &&
+        return program.value("air_offset_owned", false) && program.value("cycle", "") == "idle" &&
+               program.value("motion_line", 0) == 15 &&
                near(raw.g92[2], 25) && near(raw.commanded_position[2], 8.975, 0.03);
       });
     };
-    if (!require("job_air_cut_uses_same_file_at_raised_z", enter_air(), panel.dump()))
+    const bool entered_air = enter_air();
+    if (!require("job_air_cut_uses_same_file_at_raised_z", entered_air, panel.dump()))
       return;
     const bool dry_completed = rig.pump_until(110s, [&] {
       static_cast<void>(read_panel());
       return rig.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
              near(rig.status().g92[2], 0) && near(rig.machine(2), 23.975, 0.03);
     });
-    if (!require("job_air_cut_m30_clears_only_the_offset", dry_completed) || !enter_air())
+    if (!require("job_air_cut_m30_clears_only_the_offset", dry_completed) ||
+        !require("job_starts_second_air_cut", enter_air()))
       return;
     const auto air_hold = rig.send(R"("type":"pause")");
     const bool paused = air_hold.accepted() && rig.pump_until(4s, [&] {
       static_cast<void>(read_panel());
-      return rig.status().paused && rig.status().controller.in_position;
+      return rig.status().paused && near(rig.status().velocity, 0);
     });
     if (!require("job_air_cut_in_progress_before_app_restart", paused && std::filesystem::exists(air_marker)))
       return;
@@ -4779,7 +4798,7 @@ void whole_job(Rig& rig, NmlLoads& loads) {
                            near(recovered.status().g92[2], 25) &&
                            distance(recovered.status().commanded_position, parked) < 0.02;
     const auto recover = recovered.send(R"("type":"abort")");
-    const bool recovered_cleanly = recover.accepted() && recovered.pump_until(6s, [&] {
+    const bool recovered_cleanly = recover.accepted() && spindle_feedback(0, true) && recovered.pump_until(6s, [&] {
       const auto raw = recovered.status();
       return recovered.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
              raw.program_file == oracle.program && near(raw.g92[2], 0) &&
@@ -4787,6 +4806,10 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     });
     check("job_app_restart_preserves_air_lift_until_stop_and_clears_without_motion",
           preserved && recovered_cleanly, recover.text());
+    ProgramProgress reloaded{progress_files, rig.config.directory};
+    auto reading = oracle.source.read();
+    reloaded.observe(reading, Clock::now());
+    check("job_air_cut_does_not_record_a_cutting_restart_hint", !reading.status.program.restart_hint);
     check("job_source_unchanged", read_text_file(source.string(), 65536) ==
                                       read_text_file(original.string(), 65536));
     recovered.stop();

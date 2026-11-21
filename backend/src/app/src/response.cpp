@@ -45,6 +45,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
         {"measured_tools", setter->measured_tools}};
     if (setter->ball_diameter)
       message["setter"]["ball_diameter"] = *setter->ball_diameter;
+    if (setter->center_diameter)
+      message["setter"]["center_diameter"] = *setter->center_diameter;
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
                                        {"axis", material->corner ? std::string{"XY"}

@@ -1641,7 +1641,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const int tool = before.controller.tool_in_spindle;
   const bool corner = request.action == SetterAction::corner;
   const bool ball = request.action == SetterAction::ball;
-  const bool material = request.action == SetterAction::material || corner || ball;
+  const bool bore = request.action == SetterAction::bore;
+  const bool boss = request.action == SetterAction::boss;
+  const bool material = request.action == SetterAction::material || corner || ball || bore || boss;
   if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
                    limits->latch_backoff_mm <= 0))
     return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
@@ -1682,7 +1684,133 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
-  if (corner || ball) {
+  // Sets X0 and Y0 of the active work system at machine `origin` (XY), applied at the commanded
+  // position and verified against the encoder lag; then optionally lifts to machine Z `lift_to`.
+  const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to)
+      -> std::expected<void, std::string> {
+      const auto from = impl_->begin(&wanted);
+      const Impl::Scope scope{*impl_};
+      const auto* current = impl_->stat();
+      if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+        return std::unexpected<std::string>("Probing was cancelled before setting the work origin.");
+      const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+      if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+          after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
+          after.tool_offset != before.tool_offset ||
+          after.controller.program_units != before.controller.program_units ||
+          impl_->read_tool_table() != table)
+        return std::unexpected<std::string>("Machine or tool table changed before setting the work origin.");
+      // G10 L20 applies at the commanded position (see the single faces).
+      const auto& commanded = current->motion.traj.position;
+      const std::array<double, 2> at{commanded.tran.x * machine_scale, commanded.tran.y * machine_scale};
+      const std::array<double, 2> expected{at[0] - origin[0], at[1] - origin[1]};
+      const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+      EMC_TASK_PLAN_EXECUTE command;
+      if (!put(command.command, std::format("G10 L20 P0 X{:.8f} Y{:.8f}", expected[0] / scale,
+                                            expected[1] / scale)))
+        return std::unexpected<std::string>("Could not format the work origin.");
+      const auto result = impl_->run(command, from);
+      if (!accepted(result))
+        return std::unexpected<std::string>(result.reason.empty() ? "LinuxCNC did not set the work origin."
+                                                     : result.reason);
+      if (impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      const bool verified = until(settle_timeout, [&] {
+        const auto* applied = impl_->stat();
+        if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
+            applied->status != RCS_DONE || impl_->status.link() != Link::live)
+          return false;
+        const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+        const auto& traj = applied->motion.traj;
+        const std::array lag{(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
+                             (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale};
+        for (std::size_t i = 0; i < expected.size(); ++i)
+          if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+            return false;
+        return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
+               s.tool_offset == before.tool_offset;
+      });
+      if (!verified)
+        return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
+      // Leave the probe above the work, clear of the faces.
+      EMC_TASK_PLAN_EXECUTE lift;
+      if (lift_to && put(lift.command, std::format("G90 G53 G0 Z{:.8f}", *lift_to / scale)) &&
+          accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+      EMC_TASK_PLAN_EXECUTE distance;
+      if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
+          accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
+        ++impl_->loads->mdi_blocks;
+    return {};
+  };
+  if (bore) {
+    // A bore: the ball starts inside it, below its top. Both X walls from there; the midpoint of
+    // any chord lies on the centre line, so the centre X follows. Then both Y walls from the
+    // centre X: a chord through the centre, which also gives the diameter.
+    if (before.rotation_xy != 0)
+      return std::unexpected("Bore probing needs a work system without rotation.");
+    if (before.wcs < 1 || before.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
+    const auto here = [&]() -> std::optional<std::array<double, 3>> {
+      const auto* s = impl_->stat();
+      if (s == nullptr || impl_->status.link() != Link::live)
+        return std::nullopt;
+      const auto status = to_status(*s, impl_->config, impl_->hal, Link::live);
+      return std::array{status.controller.axes[0].machine, status.controller.axes[1].machine,
+                        status.controller.axes[2].machine};
+    };
+    // The wall's ball-centre contact along the line, from `from`, after an optional traverse
+    // at the start height to `approach`.
+    const auto wall = [&](ProbeDirection direction, const std::array<double, 3>& from,
+                          std::optional<std::array<double, 3>> approach)
+        -> std::expected<double, std::string> {
+      const auto line = probe_line(direction, 0);
+      const auto contact = probe_fixed_setter({.tool = tool,
+                                               .start = from,
+                                               .travel_mm = limits->material_travel_mm,
+                                               .feed_mm_min = limits->feed_mm_min,
+                                               .approach = approach,
+                                               .material = direction},
+                                              wanted);
+      if (!contact)
+        return std::unexpected(contact.error());
+      return contact->machine[line.axis];
+    };
+    const auto x_plus = wall(ProbeDirection::x_plus, request.start, std::nullopt);
+    if (!x_plus)
+      return std::unexpected("+X wall: " + x_plus.error());
+    auto at = here();
+    if (!at)
+      return std::unexpected("Controller status was lost inside the bore.");
+    const auto x_minus = wall(ProbeDirection::x_minus, *at, std::nullopt);
+    if (!x_minus)
+      return std::unexpected("−X wall: " + x_minus.error());
+    const double centre_x = (*x_plus + *x_minus) / 2;
+    at = here();
+    if (!at)
+      return std::unexpected("Controller status was lost inside the bore.");
+    const auto y_plus = wall(ProbeDirection::y_plus, *at, std::array{centre_x, request.start[1], (*at)[2]});
+    if (!y_plus)
+      return std::unexpected("+Y wall: " + y_plus.error());
+    at = here();
+    if (!at)
+      return std::unexpected("Controller status was lost inside the bore.");
+    const auto y_minus = wall(ProbeDirection::y_minus, *at, std::nullopt);
+    if (!y_minus)
+      return std::unexpected("−Y wall: " + y_minus.error());
+    const double centre_y = (*y_plus + *y_minus) / 2;
+    const double diameter = *y_plus - *y_minus + 2 * radius;
+    if (auto set = set_xy_origin({centre_x, centre_y}, std::nullopt); !set)
+      return std::unexpected(set.error());
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
+    state.center_diameter = diameter;
+    return state;
+  }
+  if (corner || ball || boss) {
     // A corner: the X face, then the Y face, each probed from beside the work below its top.
     // A ball calibration: both X faces of a gauge of known width, the same way.
     // The operator jogs the probe over the work within corner_reach_mm of both faces; Z0 of the
@@ -1691,13 +1819,15 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     constexpr double corner_margin_mm = 3;     // beyond the face before going down
     constexpr double corner_clearance_mm = 5;  // above the top while traversing
     constexpr double corner_depth_mm = 2;      // ball equator below the top
-    const auto x_line = probe_line(ball ? ProbeDirection::x_plus : request.direction, 0);
+    const auto x_line = probe_line(ball || boss ? ProbeDirection::x_plus : request.direction, 0);
     const auto y_line = probe_line(request.y_direction, 0);
     if (corner && (x_line.axis != 0 || y_line.axis != 1))
       return std::unexpected("A corner needs one X and one Y probe direction.");
     const double half_gauge = request.gauge_width_mm / 2;
     if (ball && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
       return std::unexpected("Enter the gauge width, 2 to 200 mm.");
+    if (boss && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
+      return std::unexpected("Enter the approximate boss diameter, 2 to 200 mm.");
     if (before.rotation_xy != 0)
       return std::unexpected("Probing beside the work needs a work system without rotation.");
     if (before.wcs < 1 || before.wcs > 9)
@@ -1730,9 +1860,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                         status.controller.axes[2].machine};
     };
     const auto face = [&](const ProbeLine& line, ProbeDirection direction,
-                          const std::array<double, 3>& from,
-                          double offset) -> std::expected<double, std::string> {
-      auto approach = request.start;
+                          const std::array<double, 3>& from, double offset,
+                          std::optional<std::array<double, 3>> base = std::nullopt)
+        -> std::expected<double, std::string> {
+      auto approach = base.value_or(request.start);
       approach[line.axis] -= line.sign * offset;
       approach[2] = depth;
       const auto contact = probe_fixed_setter({.tool = tool,
@@ -1748,6 +1879,44 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       // The ball's centre touched: the face is one radius further along the travel.
       return contact->machine[line.axis] + line.sign * radius;
     };
+    if (boss) {
+      // A boss: both X faces from outside, then both Y faces through the centre X. Faces are
+      // where the surface is, so their midpoints are the centre and their distance the diameter.
+      const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
+      if (!left)
+        return std::unexpected("−X face: " + left.error());
+      auto at = here();
+      if (!at)
+        return std::unexpected("Controller status was lost between the boss faces.");
+      const auto right = face(probe_line(ProbeDirection::x_minus, 0), ProbeDirection::x_minus,
+                              *at, half_gauge + outside);
+      if (!right)
+        return std::unexpected("+X face: " + right.error());
+      const double centre_x = (*left + *right) / 2;
+      std::array through{centre_x, request.start[1], request.start[2]};
+      at = here();
+      if (!at)
+        return std::unexpected("Controller status was lost between the boss faces.");
+      const auto front = face(probe_line(ProbeDirection::y_plus, 0), ProbeDirection::y_plus, *at,
+                              half_gauge + outside, through);
+      if (!front)
+        return std::unexpected("−Y face: " + front.error());
+      at = here();
+      if (!at)
+        return std::unexpected("Controller status was lost between the boss faces.");
+      const auto back = face(probe_line(ProbeDirection::y_minus, 0), ProbeDirection::y_minus, *at,
+                             half_gauge + outside, through);
+      if (!back)
+        return std::unexpected("+Y face: " + back.error());
+      const double centre_y = (*front + *back) / 2;
+      if (auto set = set_xy_origin({centre_x, centre_y}, clearance); !set)
+        return std::unexpected(set.error());
+      SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
+                        std::nullopt, std::move(current_marks),
+                        SetterState::Material{before.wcs, 'X', true}};
+      state.center_diameter = *back - *front;
+      return state;
+    }
     if (ball) {
       // Both faces of the gauge from outside: the ball centres touch one effective diameter
       // closer together than the gauge is wide.
@@ -1816,59 +1985,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     if (!y_face)
       return std::unexpected("Y face: " + y_face.error());
 
-    const auto from = impl_->begin(&wanted);
-    const Impl::Scope scope{*impl_};
-    const auto* current = impl_->stat();
-    if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
-      return std::unexpected("Corner probing was cancelled before setting the work origin.");
-    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
-    if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
-        after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
-        after.tool_offset != before.tool_offset ||
-        after.controller.program_units != before.controller.program_units ||
-        impl_->read_tool_table() != table)
-      return std::unexpected("Machine or tool table changed before setting the work origin.");
-    // G10 L20 applies at the commanded position (see the single faces).
-    const auto& commanded = current->motion.traj.position;
-    const std::array<double, 2> at{commanded.tran.x * machine_scale, commanded.tran.y * machine_scale};
-    const std::array<double, 2> expected{at[0] - *x_face, at[1] - *y_face};
-    const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
-    EMC_TASK_PLAN_EXECUTE command;
-    if (!put(command.command, std::format("G10 L20 P0 X{:.8f} Y{:.8f}", expected[0] / scale,
-                                          expected[1] / scale)))
-      return std::unexpected("Could not format the corner work origin.");
-    const auto result = impl_->run(command, from);
-    if (!accepted(result))
-      return std::unexpected(result.reason.empty() ? "LinuxCNC did not set the work origin."
-                                                   : result.reason);
-    if (impl_->loads != nullptr)
-      ++impl_->loads->mdi_blocks;
-    const bool verified = until(settle_timeout, [&] {
-      const auto* applied = impl_->stat();
-      if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
-          applied->status != RCS_DONE || impl_->status.link() != Link::live)
-        return false;
-      const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
-      const auto& traj = applied->motion.traj;
-      const std::array lag{(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
-                           (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale};
-      for (std::size_t i = 0; i < expected.size(); ++i)
-        if (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
-          return false;
-      return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-             s.tool_offset == before.tool_offset;
-    });
-    if (!verified)
-      return std::unexpected("Could not verify the corner work origin. Check the active WCS.");
-    // Leave the probe above the work, clear of both faces.
-    EMC_TASK_PLAN_EXECUTE lift;
-    if (put(lift.command, std::format("G90 G53 G0 Z{:.8f}", clearance / scale)) &&
-        accepted(impl_->run(lift, from)) && impl_->loads != nullptr)
-      ++impl_->loads->mdi_blocks;
-    EMC_TASK_PLAN_EXECUTE distance;
-    if (std::ranges::contains(before.active_codes, "G91") && put(distance.command, "G91") &&
-        accepted(impl_->run(distance, from)) && impl_->loads != nullptr)
-      ++impl_->loads->mdi_blocks;
+    if (auto set = set_xy_origin({*x_face, *y_face}, clearance); !set)
+      return std::unexpected(set.error());
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
   }

@@ -406,6 +406,28 @@ describe('validation', () => {
     ])
   })
 
+  it('writes no arc whose radius is zero as written', () => {
+    const pocket = { ...mm, x: 0, y: 0, stepover: 50, depth: 1, depthPerPass: 1, plungeFeed: 100 }
+    const hole = { ...mm, x: 0, y: 0, depth: 1, pitch: 1, finish: false, finishAllowance: NaN, plungeFeed: 100 }
+    // A path radius of 0.0003 mm is written as 0.
+    expect(errors(circularPocket({ ...pocket, diameter: 10.0006 }))).toEqual(['The tool (diameter 10) is too big for this pocket.'])
+    expect(errors(bore({ ...hole, diameter: 10.0006 }))).toEqual(['The tool (diameter 10) is too big for this bore.'])
+    expect(errors(bore({ ...hole, diameter: 12, finish: true, finishAllowance: 0.9997 }))).toEqual([
+      'The finish allowance must be less than half the difference of bore and tool diameter.',
+    ])
+    const tools = [{ number: 1, pocket: 1, length: 50, diameter: 10, comment: '' }, { number: 2, pocket: 2, length: 40, diameter: 3, comment: '' }]
+    for (const generated of [
+      // Corner path radius 0.0003 mm.
+      rectangularPocket({ ...pocket, width: 30, height: 20, cornerRadius: 5.0003 }),
+      // Corner radius half the smaller side: the innermost loop's corner radius is 2e-16, not 0.
+      rectangularPocket({ ...pocket, tool: { number: 2, diameter: 3, comment: '' }, stepover: 30, width: 26.8, height: 6.8, cornerRadius: 3.4 }),
+    ]) {
+      const program = text(generated)
+      expect(program).not.toMatch(/^G3 .* I0 J0( |$)/m)
+      expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+    }
+  })
+
   it('checks the hole pattern', () => {
     const base = { ...mm, x: 0, y: 0, columns: 2.5, rows: 0, spacingX: 0, spacingY: 0, count: NaN, radius: NaN, startAngle: NaN,
       cycle: 'G83' as const, peck: 0, depth: 3, retract: 6 }

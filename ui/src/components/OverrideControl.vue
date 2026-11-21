@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // One override. The number and the slider show what the machine reports; dragging shows the value
 // under the finger and asks for it only on release (turo: the slider jumped while the reports of
-// each intermediate value came back).
+// each intermediate value came back). A release back at the machine's value fires no change event,
+// so the finger lifting also ends the drag; a cancelled drag asks for nothing.
 import { computed, ref } from 'vue'
 
 import { send } from '../machine'
@@ -29,9 +30,16 @@ function slide(event: Event): void {
   dragging.value = Number((event.target as HTMLInputElement).value)
 }
 
-function release(event: Event): void {
+/** Asks for the value under the finger, once, unless the machine already has it. */
+function release(): void {
+  const asked = dragging.value
   dragging.value = null
-  set(Number((event.target as HTMLInputElement).value) / 100)
+  if (asked !== null && asked !== Math.round((props.value ?? 1) * 100)) set(asked / 100)
+}
+
+function reset(): void {
+  dragging.value = null
+  set(1)
 }
 </script>
 
@@ -42,7 +50,7 @@ function release(event: Event): void {
       <span class="value mono">
         {{ dragging !== null ? formatPercent(dragging / 100) : value === null ? '—' : formatPercent(value) }}
       </span>
-      <button class="reset" type="button" :aria-label="`Reset ${label.toLowerCase()} to 100%`" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="set(1)">Reset 100%</button>
+      <button class="reset" type="button" :aria-label="`Reset ${label.toLowerCase()} to 100%`" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="reset">Reset 100%</button>
     </div>
     <div class="row">
       <input
@@ -55,6 +63,8 @@ function release(event: Event): void {
         :aria-label="label"
         @input="slide"
         @change="release"
+        @pointerup="release"
+        @pointercancel="dragging = null"
       />
     </div>
   </div>

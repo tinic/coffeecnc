@@ -2,7 +2,7 @@
 // turn per pitch, then once around the flat bottom. A finish pass leaves `finishAllowance` on
 // the wall on the way down and cuts it in a helix back up.
 
-import { Checks, Program, checkCommon, feedNumber, number, steps, type Common, type Generated } from './program'
+import { Checks, Program, checkCommon, feedNumber, number, steps, written, type Common, type Generated } from './program'
 
 export interface Bore extends Common {
   x: number
@@ -28,12 +28,12 @@ export function bore(b: Bore): Generated {
   const tool = b.tool.diameter
   const radius = (b.diameter - tool) / 2
   if (b.diameter > 0 && tool > 0) {
-    checks.check(radius > 0, `The tool (diameter ${number(tool, b.unit)}) is too big for this bore.`)
+    checks.check(written(radius, b.unit) > 0, `The tool (diameter ${number(tool, b.unit)}) is too big for this bore.`)
     checks.check(b.diameter <= 2 * tool, 'The bore is more than twice the tool diameter: a core would stay in the middle. Use a circular pocket.')
   }
   if (b.finish) {
     checks.positive(b.finishAllowance, 'Finish allowance')
-    checks.check(!(radius > 0) || b.finishAllowance < radius, 'The finish allowance must be less than half the difference of bore and tool diameter.')
+    checks.check(!(written(radius, b.unit) > 0) || written(radius - b.finishAllowance, b.unit) > 0, 'The finish allowance must be less than half the difference of bore and tool diameter.')
   }
   if (checks.errors.length) return { errors: checks.errors }
 

@@ -6,7 +6,7 @@ import { vTooltip } from '../tooltip'
 //
 // It is a picture only. Dragging, zooming and the view buttons change the camera and nothing
 // else; no gesture on it sends a command.
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, defineAsyncComponent, type ComputedRef, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
 import { live, panel } from '../machine'
 import { theme } from '../appearance'
@@ -35,6 +35,17 @@ import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 
 const modelError = ref('')
+
+/**
+ * A computed that keeps its last object while the value stays the same. The status is a new
+ * object 20 times a second even at rest, and drawing again for each would redraw the same picture.
+ */
+function unchanged<T>(get: () => T): ComputedRef<T> {
+  return computed((previous) => {
+    const next = get()
+    return previous !== undefined && JSON.stringify(previous) === JSON.stringify(next) ? previous : next
+  })
+}
 const SceneCanvas = defineAsyncComponent({
   loader: () => import('./SceneCanvas.vue'),
   onError: (_error, _retry, fail): void => { modelError.value = '3D renderer could not load; reload the panel'; fail() },
@@ -112,7 +123,7 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
 const toolOffset = computed((): Vec3 => panel.status?.offsets.tool ?? [0, 0, 0])
 
 /** Machine travel as the tool tip can reach it with the tool offset in effect. */
-const travelBox = computed((): { min: Vec3; max: Vec3 } | null => {
+const travelBox = unchanged((): { min: Vec3; max: Vec3 } | null => {
   const axes = panel.status?.axes
   const [x, y, z] = axes ?? []
   if (x === undefined || y === undefined || z === undefined || x.max_limit <= x.min_limit) {
@@ -126,7 +137,7 @@ const travelBox = computed((): { min: Vec3; max: Vec3 } | null => {
 })
 
 const homingRequired = computed(() => requiresHoming(panel.hello))
-const toolTip = computed((): Vec3 | null => reportedToolTip(panel.status, homingRequired.value))
+const toolTip = unchanged((): Vec3 | null => reportedToolTip(panel.status, homingRequired.value))
 const toolPositionHint = computed(() => {
   const s = panel.status
   if (!live.value || s === null || toolTip.value !== null || s.axes.some(axis => axis.homing)) return ''
@@ -134,12 +145,12 @@ const toolPositionHint = computed(() => {
     ? 'Home the axes to show the tool position'
     : 'Tool position unavailable'
 })
-const toolBody = computed(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments,
+const toolBody = unchanged(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments,
   toolModels.defaults, homingRequired.value))
 const showTool = ref(true)
 const visibleTool = computed(() => showTool.value ? toolBody.value : null)
 const probeFixture = computed(() => hasDemoProbeFixture(panel.simulated, panel.hello))
-const workFrame = computed(() => {
+const workFrame = unchanged(() => {
   if (panel.status === null) return null
   const { g5x, g92, rotation_xy: degrees } = panel.status.offsets
   const angle = degrees * Math.PI / 180
@@ -147,6 +158,14 @@ const workFrame = computed(() => {
   const origin: Vec3 = [g5x[0] + g92[0] * cos - g92[1] * sin,
     g5x[1] + g92[0] * sin + g92[1] * cos, g5x[2] + g92[2]]
   return { origin, angle, cos, sin }
+})
+
+/** How far the running program has come: the drawing's only use of the program's progress. */
+const executed = unchanged(() => {
+  const status = panel.status
+  const running = current.value && live.value && status !== null && status.interp !== 'idle' && status.mode === 'auto'
+  const motionLine = running ? status.program.motion_line : 0
+  return { running, motionLine, reached: running ? motionLine || status.program.current_line : 0 }
 })
 
 const tools = computed((): number[] => {
@@ -322,7 +341,6 @@ function draw(): void {
   context.lineCap = 'round'
   const cam = camera.value
   const at = (p: Vec3): Screen => project(cam, p, width, height)
-  const status = panel.status
   const palette = colours[theme.value]
 
   if (probeFixture.value) {
@@ -355,9 +373,7 @@ function draw(): void {
   const preview = drawn.value
   if (preview !== null) {
     const fresh = current.value
-    const running = fresh && live.value && status !== null && status.interp !== 'idle' && status.mode === 'auto'
-    const motionLine = running ? status.program.motion_line : 0
-    const reached = running ? motionLine || status.program.current_line : 0
+    const { running, motionLine, reached } = executed.value
     // Three passes, so that what has been cut lies on top of what is planned.
     for (const pass of ['rapid', 'planned', 'done'] as const) {
       for (const segment of preview.segments) {
@@ -475,7 +491,7 @@ function schedule(): void {
   }
 }
 
-watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link,
+watch([camera, size, drawn, current, executed, travelBox, workFrame, toolTip, live,
   tools, theme, showMachine, probeFixture, visibleTool, modelError], schedule)
 
 let observer: ResizeObserver | null = null

@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -58,22 +60,22 @@ auto saved_position(const SavedPosition& saved) -> bool {
            return std::isfinite(value) && std::abs(value) <= 1e6;
          });
 }
-// A damaged entry drops the whole list, never the other settings.
-auto read_positions(const Json& list) -> std::vector<SavedPosition> {
+// One damaged entry damages the whole list: nullopt.
+auto read_positions(const Json& list) -> std::optional<std::vector<SavedPosition>> {
   std::vector<SavedPosition> positions;
   if (!list.is_array() || list.size() > max_saved_positions)
-    return {};
+    return std::nullopt;
   for (const auto& entry : list) {
     if (!entry.is_object() || entry.size() != 2 || !entry.contains("name") ||
         !entry.contains("position") || !entry.at("name").is_string() ||
         !entry.at("position").is_array() || entry.at("position").size() != 3 ||
         !std::ranges::all_of(entry.at("position"), [](const Json& axis) -> bool { return axis.is_number(); }))
-      return {};
+      return std::nullopt;
     SavedPosition saved{entry.at("name").get<std::string>(), {}};
     for (std::size_t axis = 0; axis < 3; ++axis)
       saved.position.at(axis) = entry.at("position").at(axis).get<double>();
     if (!saved_position(saved))
-      return {};
+      return std::nullopt;
     positions.push_back(std::move(saved));
   }
   return positions;
@@ -121,7 +123,14 @@ auto parse(std::string_view text) -> Json {
         return true;
       });
 }
-auto read_document(const Json& value) -> OperatorPreferences {
+// A saved file keeps its other preferences when an optional one is damaged; a save request with a
+// damaged one is refused, so that it never replaces saved positions or programs with nothing.
+enum class Damaged : std::uint8_t { fall_back, refuse };
+auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
+  const auto fall_back = [&](std::string_view refusal) -> void {
+    if (damaged == Damaged::refuse)
+      throw std::runtime_error(std::string(refusal));
+  };
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
         {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions"});
@@ -157,23 +166,36 @@ auto read_document(const Json& value) -> OperatorPreferences {
       throw std::runtime_error("Tool reference height must be a number.");
     document.tool_reference_height = value.at("tool_reference_height").get<double>();
   }
-  // A missing or invalid presentation preference falls back independently.
+  // A missing presentation preference falls back independently.
   if (const auto layout = value.find("program_layout"); layout != value.end()) {
     if (*layout == "text")
       document.program_layout = ProgramLayout::text;
     else if (*layout == "split")
       document.program_layout = ProgramLayout::split;
+    else if (*layout != "path")
+      fall_back("Invalid panel presentation.");
   }
-  if (const auto theme = value.find("theme"); theme != value.end() && *theme == "dark")
-    document.theme = PanelTheme::dark;
-  // Like the presentation, a damaged list is dropped without losing the other settings.
-  if (const auto recent = value.find("recent_programs"); recent != value.end() && recent->is_array() &&
-      recent->size() <= max_recent_programs &&
-      std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_json_path(path); }))
-    for (const auto& path : *recent)
-      document.recent_programs.push_back(path.get<std::string>());
-  if (const auto positions = value.find("saved_positions"); positions != value.end())
-    document.saved_positions = read_positions(*positions);
+  if (const auto theme = value.find("theme"); theme != value.end()) {
+    if (*theme == "dark")
+      document.theme = PanelTheme::dark;
+    else if (*theme != "light")
+      fall_back("Invalid panel presentation.");
+  }
+  // Like the presentation, a damaged list falls back to none without losing the other settings.
+  if (const auto recent = value.find("recent_programs"); recent != value.end()) {
+    if (recent->is_array() && recent->size() <= max_recent_programs &&
+        std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_json_path(path); }))
+      for (const auto& path : *recent)
+        document.recent_programs.push_back(path.get<std::string>());
+    else
+      fall_back("Recent programs must be at most eight absolute paths.");
+  }
+  if (const auto positions = value.find("saved_positions"); positions != value.end()) {
+    if (auto read = read_positions(*positions))
+      document.saved_positions = std::move(*read);
+    else
+      fall_back("Saved positions must be at most sixteen named, finite machine positions.");
+  }
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -244,7 +266,7 @@ auto operator_settings_command_error(const SetOperatorSettings& command, const L
 }
 auto decode_operator_preferences(std::string_view text)
     -> std::expected<OperatorPreferences, std::string> {
-  return checked([&]() -> OperatorPreferences { return read_document(parse(text)); });
+  return checked([&]() -> OperatorPreferences { return read_document(parse(text), Damaged::refuse); });
 }
 auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
   return checked([&]() -> std::string {
@@ -276,10 +298,14 @@ auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded 
       throw std::runtime_error("Invalid settings file identity or revision.");
     if (auto error = operator_preferences_error(file.document); !error.empty())
       throw std::runtime_error(error);
-    return Json{{"machine_id", file.machine_id},
-                {"revision", file.revision},
-                {"document", document_json(file.document)}}
-        .dump();
+    // The reader takes at most 16 KiB: a longer file would leave the settings unavailable.
+    auto text = Json{{"machine_id", file.machine_id},
+                     {"revision", file.revision},
+                     {"document", document_json(file.document)}}
+                    .dump();
+    if (text.size() > max_operator_settings_bytes)
+      throw std::runtime_error("Settings exceed 16 KiB.");
+    return text;
   });
 }
 auto decode_operator_settings_file(std::string_view text)
@@ -291,7 +317,7 @@ auto decode_operator_settings_file(std::string_view text)
     const auto revision = tool_model_json::revision(file.at("revision"));
     if (!valid_machine_id(machine) || !revision || *revision == 0)
       throw std::runtime_error("Invalid settings file identity or revision.");
-    return {machine, *revision, read_document(file.at("document"))};
+    return {machine, *revision, read_document(file.at("document"), Damaged::fall_back)};
   });
 }
 } // namespace coffeecnc

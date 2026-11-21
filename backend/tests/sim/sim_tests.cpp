@@ -3983,7 +3983,7 @@ void restart_cuts(Rig& rig) {
   rig.start();
 }
 
-void program_preflight(Rig& rig) {
+void program_preflight(Rig& rig, NmlLoads& loads) {
   const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
   check("preflight_loaded_tool_table", table.has_value());
   if (!table)
@@ -4072,159 +4072,25 @@ void program_preflight(Rig& rig) {
         old.check.has_value() && ready && replaced.accepted() && reached_new, replaced.text());
 
   rig.stop();
-  rig.restart_preview = nullptr;
-  rig.start();
-}
-
-void raised_run(Rig& rig, NmlLoads& loads) {
-  const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
-  check("air_cut_loaded_tool_table", table.has_value());
-  if (!table)
-    return;
-  PreviewOracle oracle{rig, *table};
-  PreviewWorker preview{oracle.engine};
-  rig.stop();
-  rig.restart_preview = &preview;
-  rig.start();
-
   const auto marker = std::filesystem::path(rig.config.directory) / "coffeecnc-air-cut.txt";
-  std::uint64_t context = 0;
-  constexpr double lift = 25;
-  const auto load = [&](std::string_view blocks) {
-    const std::string prefix = "G21 G90 G17 G54 G40 G49 G80 G94 G97 G61\n";
-    auto [inputs, baseline] = oracle.preview(prefix + std::string(blocks) + "M30\n");
-    const auto selected = rig.send(R"("type":"set_air_cut","air_z":25)");
-    check("air_cut_selected_without_offset", selected.accepted() && near(rig.status().g92[2], 0),
-          selected.text());
-    inputs.air_z = lift;
-    preview.submit(++context, inputs);
-    check("air_cut_preview_computed", rig.pump_until(5s, [&] {
-      const auto shown = preview.checked_preview().preview;
-      return shown && shown->context == context;
-    }));
-    return preview.checked_preview().preview;
-  };
-  const auto start = [&](bool confirmed) {
-    return rig.send(std::format(
-        R"("type":"run","preview_context":{},"display_units":"mm","confirmed":{},"air_z":25)",
-        context, confirmed));
-  };
-  const auto cleared = [&] {
-    return rig.idle() && !loads.air_offset_owned && !std::filesystem::exists(marker) &&
-           near(rig.status().g92[2], 0);
-  };
-  const auto stop = load("G0 Z15\nG1 Z5 F2400\nM0\n");
-  check("air_cut_shows_raised_path",
-        stop && stop->state == PreviewState::ready && stop->check && stop->check->errors.empty() &&
-            stop->bounds && near(stop->bounds->min[2], 30) && stop->check->frames.size() == 1 &&
-            stop->check->frames[0].bounds && near(stop->check->frames[0].bounds->min[2], 0),
-        stop && stop->error ? stop->error->text : "");
-  const auto no_confirmation = start(false);
-  check("air_cut_requires_explicit_review",
-        no_confirmation.outcome == "rejected" && !std::filesystem::exists(marker),
-        no_confirmation.text());
-  const auto started = start(true);
-  const bool paused = rig.pump_until(5s, [&] {
-    const auto s = rig.status();
-    return s.controller.interp == InterpState::paused && near(s.g92[2], lift) &&
-           near(s.commanded_position[2], 30, 0.02);
-  });
-  check("air_cut_reaches_raised_z",
-        started.accepted() && paused && loads.air_offset_owned && std::filesystem::exists(marker),
-        started.text());
-  const auto aborted = rig.send(R"("type":"abort")");
-  check("air_cut_abort_clears_offset", aborted.accepted() && rig.pump_until(5s, cleared),
-        aborted.text());
-
-  const auto end = load("G0 Z16\nG1 Z8 F2400\n");
-  const auto completed = start(true);
-  check(
-      "air_cut_m30_clears_offset_without_motion",
-      end && completed.accepted() &&
-          rig.pump_until(
-              6s, [&] { return cleared() && near(rig.status().commanded_position[2], 33, 0.02); }),
-      completed.text());
-
-  const auto unsafe = load("G0 Z15\nG53 G0 Z5\n");
-  const auto denied = start(true);
-  check("air_cut_blocks_machine_coordinates",
-        unsafe && unsafe->check && !unsafe->check->errors.empty() && denied.outcome == "rejected" &&
-            denied.reason.find("G53") != std::string::npos && !std::filesystem::exists(marker),
-        denied.text());
-  const auto initial_xy = load("G0 X16\nG0 Z15\nG1 X18 F2400\n");
-  check("air_cut_blocks_unraised_initial_traverse", initial_xy && initial_xy->check &&
-                                                        !initial_xy->check->errors.empty() &&
-                                                        initial_xy->state == PreviewState::failed);
-
-  const auto beyond_limit = load("G0 Z990\nG1 Z980 F2400\n");
-  const auto travel_denied = start(true);
-  check("air_cut_checks_travel_of_raised_path",
-        beyond_limit && beyond_limit->check &&
-            beyond_limit->check->travel == TravelCheck::outside &&
-            travel_denied.outcome == "rejected" && !std::filesystem::exists(marker),
-        travel_denied.text());
-
-  const auto offset = rig.send(R"("type":"mdi","text":"G52 Z7")");
-  const bool offset_set =
-      rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 7); });
-  const auto suspended = rig.send(R"("type":"mdi","text":"G92.2")");
-  const bool suspended_ok =
-      rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); });
-  const auto with_stored = load("G0 Z15\nM0\n");
-  const auto stored_denied = start(true);
-  check("air_cut_preserves_suspended_g92",
-        offset.accepted() && offset_set && suspended.accepted() && suspended_ok && with_stored &&
-            stored_denied.reason.find("stored G52 or G92") != std::string::npos &&
-            !std::filesystem::exists(marker),
-        stored_denied.text());
-  const auto restore = rig.send(R"("type":"mdi","text":"G92.3")");
-  check("air_cut_stored_offset_unchanged",
-        restore.accepted() &&
-            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 7); }),
-        restore.text());
-  const auto reset = rig.send(R"("type":"mdi","text":"G92.1")");
-  check("air_cut_reset_test_offset",
-        reset.accepted() &&
-            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); }),
-        reset.text());
-
-  const auto power_after = load("G0 Z15\nM0\n");
-  const auto during_power = start(true);
-  const bool ready_to_cut_power =
-      rig.pump_until(5s, [&] { return rig.status().controller.interp == InterpState::paused; });
-  const auto e_stop = rig.send(R"("type":"set_machine","state":"estop")");
-  const bool record_preserved = std::filesystem::exists(marker);
-  power(rig);
-  check("air_cut_estop_recovers_on_power_enable",
-        power_after && during_power.accepted() && ready_to_cut_power && e_stop.accepted() &&
-            record_preserved && rig.pump_until(5s, cleared),
-        during_power.text() + " " + e_stop.text());
-
-  const auto seed = rig.send(R"("type":"mdi","text":"G52 Z18")");
-  check("air_cut_seed_crash_offset",
-        seed.accepted() &&
-            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 18); }),
-        seed.text());
-  const auto suspend_owned = rig.send(R"("type":"mdi","text":"G92.2")");
-  check("air_cut_seed_suspended_crash_offset",
-        suspend_owned.accepted() &&
-            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); }),
-        suspend_owned.text());
-  {
-    std::ofstream out{marker};
-    out << "18\n";
+  std::ofstream{marker} << "25\n";
+  const auto position = rig.status().commanded_position;
+  if (auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads)) {
+    Rig blocked{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
+    const auto run = blocked.send(R"("type":"run")");
+    const auto step = blocked.send(R"("type":"step")");
+    check("preflight_legacy_offset_blocks_program_motion",
+          run.outcome == "rejected" && step.outcome == "rejected" &&
+              run.reason.find("temporary Z offset") != std::string::npos &&
+              step.reason.find("temporary Z offset") != std::string::npos &&
+              std::filesystem::exists(marker) &&
+              distance(blocked.status().commanded_position, position) < 0.02,
+          run.text() + " " + step.text());
+    blocked.stop();
+  } else {
+    check("preflight_legacy_offset_blocks_program_motion", false, restarted.error());
   }
-  rig.stop();
-  auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads);
-  check("air_cut_restart_connect", restarted.has_value());
-  if (restarted) {
-    Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
-    check("air_cut_restart_recovers_owned_offset", recovered.pump_until(5s, cleared));
-    const auto reactivate = recovered.send(R"("type":"mdi","text":"G92.3")");
-    check("air_cut_restart_removes_saved_register",
-          reactivate.accepted() && recovered.pump_until(3s, cleared), reactivate.text());
-    recovered.stop();
-  }
+  std::filesystem::remove(marker);
   rig.restart_preview = nullptr;
   rig.start();
 }
@@ -4325,7 +4191,15 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
       std::ofstream changed{oracle.program, std::ios::app};
       changed << "(Changed on disk after the pause)\n";
     }
-    const auto refused_resume = recovered.send(R"("type":"resume")");
+    auto refused_resume = recovered.send(R"("type":"resume")");
+    // The panel's existing reader can report the pause before the new command port is live.
+    // Retry only its stale-status rejection, after changing the source.
+    recovered.pump_until(3s, [&] {
+      if (refused_resume.reason != "Controller status is unavailable or stale.")
+        return true;
+      refused_resume = recovered.send(R"("type":"resume")");
+      return false;
+    });
     check("breakpoint_recovery_refuses_changed_source",
           refused_resume.outcome == "failed" &&
               refused_resume.reason.find("original program changed") != std::string::npos &&
@@ -4602,7 +4476,7 @@ void paused_spindle(Rig& rig, NmlLoads& loads) {
 }
 
 // Drive one unmodified program through the same preview and progress messages as the panel.
-void whole_job(Rig& rig, NmlLoads& loads) {
+void whole_job(Rig& rig) {
   const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
   check("job_loaded_tool_table", table.has_value());
   if (!table)
@@ -4638,16 +4512,14 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     }
     return panel;
   };
-  const auto ready_preview = [&](double air_z) {
+  const auto ready_preview = [&] {
     return rig.pump_until(8s, [&] {
       const auto& status = read_panel();
       const auto latest = preview.checked_preview().preview;
       return latest && latest->state == PreviewState::ready && latest->check &&
              latest->check->errors.empty() && status.contains("preview_context") &&
              latest->context == status.at("preview_context").get<std::uint64_t>() &&
-             status.value("interp", "") == "idle" &&
-             !status.at("program").value("air_offset_owned", false) &&
-             near(status.at("program").value("air_z", 0.0), air_z);
+             status.value("interp", "") == "idle";
     });
   };
   const auto mdi = [&](std::string_view block) {
@@ -4684,7 +4556,7 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     if (!require("job_fixture_at_start", prepared && distance(rig.status().work, {0, 0, 30}) < 0.01))
       return;
     const auto open = rig.send(std::format(R"("type":"open_program","path":{})", Json(oracle.program).dump()));
-    if (!require("job_program_check_ready", open.accepted() && ready_preview(0), open.text()))
+    if (!require("job_program_check_ready", open.accepted() && ready_preview(), open.text()))
       return;
     const auto context = read_panel().at("preview_context").get<std::uint64_t>();
     const auto start = rig.send(std::format(
@@ -4776,71 +4648,8 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     if (!require("job_restarted_cut_completes_through_m30", restarted && restarted->accepted() && completed,
                  restarted ? restarted->text() : "pending"))
       return;
-    const auto air_marker = directory / "coffeecnc-air-cut.txt";
-    const auto enter_air = [&] {
-      const auto selected = rig.send(R"("type":"set_air_cut","air_z":25)");
-      fact("job_air_cut_selected", selected.text());
-      if (!selected.accepted() || !spindle_feedback(0, false) || !ready_preview(25))
-        return false;
-      const auto result = rig.send(std::format(
-          R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true,"air_z":25)",
-          panel.at("preview_context").get<std::uint64_t>()));
-      fact("job_air_cut_start", result.text());
-      return result.accepted() && rig.pump_until(10s, spindle_start) && spindle_feedback(1500, true) &&
-          rig.pump_until(18s, [&] {
-        const auto& program = read_panel().at("program");
-        const auto raw = rig.status();
-        return program.value("air_offset_owned", false) && program.value("cycle", "") == "idle" &&
-               program.value("motion_line", 0) == 15 &&
-               near(raw.g92[2], 25) && near(raw.commanded_position[2], 8.975, 0.03);
-      });
-    };
-    const bool entered_air = enter_air();
-    if (!require("job_air_cut_uses_same_file_at_raised_z", entered_air, panel.dump()))
-      return;
-    const bool dry_completed = rig.pump_until(110s, [&] {
-      const auto& program = read_panel().at("program");
-      return rig.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
-             near(rig.status().g92[2], 0) && near(rig.machine(2), 23.975, 0.03) &&
-             !program.value("air_offset_owned", false) && !program.contains("air_z") &&
-             program.value("cycle", "") == "idle";
-    });
-    if (!require("job_air_cut_m30_clears_only_the_offset", dry_completed) ||
-        !require("job_starts_second_air_cut", enter_air()))
-      return;
-    const auto air_hold = rig.send(R"("type":"pause")");
-    const bool paused = air_hold.accepted() && rig.pump_until(4s, [&] {
-      static_cast<void>(read_panel());
-      return rig.status().paused && near(rig.status().velocity, 0);
-    });
-    if (!require("job_air_cut_in_progress_before_app_restart", paused && std::filesystem::exists(air_marker)))
-      return;
-    const auto parked = rig.status().commanded_position;
-    rig.stop();
-    auto reopened = NmlPort::connect(rig.config, &rig.shared, &loads);
-    if (!require("job_app_reconnect", reopened.has_value()))
-      return;
-    Rig recovered{rig.config, rig.hal, rig.shared, **reopened, rig.reader, rig.view, rig.probe};
-    recovered.pump(250ms);
-    const bool preserved = recovered.status().paused && loads.air_offset_owned &&
-                           near(recovered.status().g92[2], 25) &&
-                           distance(recovered.status().commanded_position, parked) < 0.02;
-    const auto recover = recovered.send(R"("type":"abort")");
-    const bool recovered_cleanly = recover.accepted() && spindle_feedback(0, true) && recovered.pump_until(6s, [&] {
-      const auto raw = recovered.status();
-      return recovered.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
-             raw.program_file == oracle.program && near(raw.g92[2], 0) &&
-             distance(raw.commanded_position, parked) < 0.02;
-    });
-    check("job_app_restart_preserves_air_lift_until_stop_and_clears_without_motion",
-          preserved && recovered_cleanly, recover.text());
-    ProgramProgress reloaded{progress_files, rig.config.directory};
-    auto reading = oracle.source.read();
-    reloaded.observe(reading, Clock::now());
-    check("job_air_cut_does_not_record_a_cutting_restart_hint", !reading.status.program.restart_hint);
     check("job_source_unchanged", read_text_file(source.string(), 65536) ==
                                       read_text_file(original.string(), 65536));
-    recovered.stop();
   };
   exercise();
   rig.stop();
@@ -4850,7 +4659,7 @@ void whole_job(Rig& rig, NmlLoads& loads) {
 }
 
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
-         bool air_only, bool restart_only, bool preflight_only, bool raised_only,
+         bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
@@ -4924,7 +4733,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.pump(300ms);
   power(rig);
   if (whole_job_only) {
-    whole_job(rig, loads);
+    whole_job(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -4943,13 +4752,8 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
-  if (raised_only) {
-    raised_run(rig, loads);
-    power_off(rig);
-    return failures == 0 ? 0 : 1;
-  }
   if (preflight_only) {
-    program_preflight(rig);
+    program_preflight(rig, loads);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5052,7 +4856,6 @@ auto main(int argc, char** argv) -> int {
   bool air_only = false;
   bool restart_only = false;
   bool preflight_only = false;
-  bool raised_only = false;
   bool breakpoint_only = false;
   bool paused_z_only = false;
   bool paused_spindle_only = false;
@@ -5069,7 +4872,6 @@ auto main(int argc, char** argv) -> int {
     air_only = air_only || std::string_view(argv[i]) == "air-cuts";
     restart_only = restart_only || std::string_view(argv[i]) == "restart-cuts";
     preflight_only = preflight_only || std::string_view(argv[i]) == "program-preflight";
-    raised_only = raised_only || std::string_view(argv[i]) == "raised-run";
     paused_spindle_only = paused_spindle_only || std::string_view(argv[i]) == "paused-spindle";
     paused_z_only = paused_z_only || std::string_view(argv[i]) == "paused-z";
     breakpoint_only = breakpoint_only || std::string_view(argv[i]) == "program-breakpoint";
@@ -5083,7 +4885,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               raised_only, breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only);
+               breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

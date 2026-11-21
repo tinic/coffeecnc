@@ -40,18 +40,20 @@ const toolBlock = computed(() => panel.link === 'live' && panel.status !== null 
   (panel.status.tool.in_spindle !== props.tool || panel.status.wait.kind === 'tool_change')
   ? `Load T${String(props.tool)} to probe material.` : null)
 const displayLine = computed((): SetterStatusLine => line.value === hint && toolBlock.value !== null
-  ? { text: toolBlock.value, level: 'blocked' } : line.value)
+  ? { text: toolBlock.value, level: 'info' } : line.value)
 const machineReason = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
-let lastMachineReason: string | null = null
-watch(machineReason, () => {
-  if (lastMachineReason !== null && line.value.text === lastMachineReason) line.value = hint
-  lastMachineReason = null
+const spindleStopped = computed(() => {
+  const spindle = panel.status?.spindle
+  return spindle?.direction === 'stopped' && typeof spindle.actual_rpm === 'number' &&
+    Math.abs(spindle.actual_rpm) < 1
+})
+watch([
+  machineReason, toolBlock, spindleStopped, (): boolean | undefined => panel.status?.motion.in_position,
+  (): boolean | null | undefined => panel.status?.probe_input, (): boolean => touchedOff(props.tool),
+], () => {
+  if (line.value.level === 'blocked') line.value = hint
 })
 let statusRequest: CommandBody | null = null
-
-watch(toolBlock, () => {
-  if (line.value.level === 'blocked' && line.value.text.startsWith('Load T')) line.value = hint
-})
 
 // Ball calibration: the operator enters the gauge width; the probe starts over the gauge.
 const askingGauge = shallowRef(false)
@@ -103,14 +105,11 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
   edgeRotation.value = null
   askingRotation.value = false
   const status = panel.status
-  const blocked = machineReason.value
-  lastMachineReason = blocked
   const [x, y, z] = ['x', 'y', 'z'].map((axis) => status?.axes.find((entry) => entry.axis === axis)?.machine)
-  const rpm = status?.spindle.actual_rpm
-  let reason = blocked
+  let reason = machineReason.value
   if (reason === null && (status?.tool.in_spindle !== props.tool || status.wait.kind === 'tool_change'))
     reason = toolBlock.value ?? `Load T${String(props.tool)} to probe material.`
-  if (reason === null && (rpm === null || rpm === undefined || Math.abs(rpm) >= 1 || status?.spindle.direction !== 'stopped'))
+  if (reason === null && !spindleStopped.value)
     reason = 'Wait for the spindle to stop.'
   if (reason === null && !status?.motion.in_position) reason = 'Wait for the axes to stop.'
   if (reason === null && direction === 'z_top' && !touchedOff(props.tool))

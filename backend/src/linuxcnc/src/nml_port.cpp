@@ -312,13 +312,7 @@ struct NmlPort::Impl {
   std::filesystem::path spindle_tool_file;
   std::optional<int> startup_tool;
   std::optional<int> observed_tool;
-  std::filesystem::path air_marker;
-  std::optional<double> air_offset;
-  double air_z{};
-  bool air_running{};
-  bool air_bad_marker{};
-  bool air_recovery_reported{};
-  Clock::time_point air_retry{};
+  bool unresolved_legacy_offset{};
   std::filesystem::path breakpoint_copy;
   std::filesystem::path breakpoint_record;
   std::shared_ptr<const BreakpointSource> breakpoint;
@@ -366,26 +360,17 @@ struct NmlPort::Impl {
           std::filesystem::path(config.tool_table).parent_path() / "coffeecnc-spindle-tool.txt";
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
-    air_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
     breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
     breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     breakpoint_recovered = bool(breakpoint);
     spindle_hold_marker = std::filesystem::path(config.directory) / ".coffeecnc-spindle-hold";
+    // An interrupted older build may have left G52 active or suspended.
+    // Require recovery with that build before starting a program again.
+    const auto legacy_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
     std::error_code error;
-    if (std::filesystem::exists(air_marker, error)) {
-      if (const auto text = read_text_file(air_marker.string(), 64)) {
-        double lift{};
-        const auto* end = text->data() + text->size();
-        const auto [rest, parsed] = std::from_chars(text->data(), end, lift);
-        if (parsed == std::errc{} && (rest == end || std::string_view{rest, end} == "\n") &&
-            lift >= 0.001 && lift <= 1000)
-          air_offset = lift;
-      }
-      air_bad_marker = !air_offset;
-    } else {
-      air_bad_marker = bool(error);
-    }
+    const auto marker = std::filesystem::symlink_status(legacy_marker, error);
+    unresolved_legacy_offset = marker.type() != std::filesystem::file_type::not_found;
   }
 
   void spindle_recovery() {
@@ -402,17 +387,6 @@ struct NmlPort::Impl {
     }
     spindle_hold.reset();
     hal->paused_spindle.store(PausedSpindle::none);
-  }
-
-  [[nodiscard]] auto owns_air_offset() const -> bool {
-    return air_offset.has_value() || air_bad_marker;
-  }
-
-  void publish_air() const {
-    if (loads) {
-      loads->air_z = air_z;
-      loads->air_offset_owned = owns_air_offset();
-    }
   }
 
   void discard_breakpoint() {
@@ -859,7 +833,6 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
       hal->paused_spindle.store(PausedSpindle::none);
   }
   impl->loads = loads;
-  impl->publish_air();
   if (loads)
     loads->breakpoint.store(impl->breakpoint);
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
@@ -902,11 +875,7 @@ NmlGateHold::~NmlGateHold() = default;
 auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();
   auto result = s ? to_status(*s, impl_->config, impl_->hal, impl_->status.link()) : NmlStatus{};
-  result.controller.air_z = impl_->air_z;
-  result.controller.air_offset_owned = impl_->owns_air_offset();
-  result.controller.air_offset_recovery =
-      result.controller.air_offset_owned &&
-      (!impl_->air_running || result.controller.interp == InterpState::idle);
+  result.controller.unresolved_legacy_offset = impl_->unresolved_legacy_offset;
   result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string();
   map_breakpoint(result, impl_->breakpoint.get());
   return result;
@@ -924,10 +893,6 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
     recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {
     finish_breakpoint(wanted);
-    return;
-  }
-  if (impl_->owns_air_offset()) {
-    recover_air_offset(wanted);
     return;
   }
   if (impl_->startup_tool.value_or(0) <= 0)
@@ -2396,8 +2361,6 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
     // A newly opened file is a load, even when the operator opens the same path again.
     if (impl_->loads)
       ++impl_->loads->programs;
-    impl_->air_z = 0;
-    impl_->publish_air();
     if (impl_->breakpoint)
       impl_->discard_breakpoint();
   }
@@ -2407,8 +2370,6 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
 }
 
 auto NmlPort::run(const Wanted& wanted) -> ActionResult {
-  if (impl_->air_z != 0 || impl_->owns_air_offset())
-    return failed("Air cut needs a complete raised preview.");
   if (status().controller.breakpoint_program)
     return failed("Wait for the original program to reopen after the breakpoint run.");
   const auto from = impl_->begin(&wanted);
@@ -2422,38 +2383,7 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
 
 auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, const Wanted& wanted)
     -> ActionResult {
-  if (inputs.air_z != impl_->air_z || impl_->owns_air_offset())
-    return failed("The air-cut selection or offset changed. Review the current preview.");
-  if (inputs.air_z == 0)
-    return start_checked(inputs, current, wanted);
-  if (!current())
-    return failed("The program or tool data changed. Review the new program check.");
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
-  if (inputs.g92 != Vec3{})
-    return failed("Clear the active G52 or G92 offset before an air cut.");
-  const auto registers = read_air_registers(wanted);
-  if (!registers)
-    return registers.error();
-  if (std::ranges::any_of(*registers, [](double value) { return value != 0; }))
-    return failed("Clear the stored G52 or G92 offset before an air cut.");
-  if (!current())
-    return failed("The program or tool data changed. Review the new program check.");
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
-  if (!write_sidecar(impl_->air_marker, std::format("{:.17g}\n", inputs.air_z)))
-    return failed("Could not save the air-cut recovery record.");
-  impl_->air_offset = inputs.air_z;
-  impl_->publish_air();
-  if (auto applied = write_air_offset(inputs.air_z, wanted); !accepted(applied))
-    return applied;
-  if (auto mode = set_task_mode(TaskMode::automatic, wanted); !accepted(mode))
-    return mode;
-  auto shifted = inputs;
-  shifted.g92[2] = inputs.air_z;
-  auto result = start_checked(shifted, current, wanted);
-  impl_->air_running = accepted(result);
-  return result;
+  return start_checked(inputs, current, wanted);
 }
 
 auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
@@ -2488,9 +2418,8 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
 
 auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view program, int line,
                                 const Wanted& current, const Wanted& wanted) -> ActionResult {
-  if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program ||
-      impl_->air_z != 0 || impl_->owns_air_offset())
-    return failed("The breakpoint needs the original program and no air-cut offset.");
+  if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program)
+    return failed("The breakpoint needs the original program.");
   const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
   const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
@@ -2617,132 +2546,6 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
     return "The work origin changed. Review a fresh program check.";
   return {};
-}
-
-auto NmlPort::set_air_cut(double lift) -> ActionResult {
-  impl_->air_z = lift;
-  impl_->publish_air();
-  return {};
-}
-
-auto NmlPort::read_air_registers(const Wanted& wanted)
-    -> std::expected<std::array<double, 9>, ActionResult> {
-  if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
-    return std::unexpected(std::move(mode));
-  const auto from = impl_->begin(&wanted);
-  const Impl::Scope scope{*impl_};
-  constexpr std::string_view tag = "CoffeeCNC air registers ";
-  EMC_TASK_PLAN_EXECUTE message;
-  const auto block =
-      std::format("(DEBUG,{}%.9f#5211 #5212 #5213 #5214 #5215 #5216 #5217 #5218 #5219)", tag);
-  if (!put(message.command, block))
-    return std::unexpected(failed("Could not read the G52/G92 registers."));
-  if (auto done = impl_->run(message, from); !accepted(done))
-    return std::unexpected(std::move(done));
-  const auto reply = [&] {
-    return std::find_if(impl_->messages.begin() + static_cast<std::ptrdiff_t>(from),
-                        impl_->messages.end(), [&](const ControllerMessage& entry) {
-                          return !entry.error && entry.text.starts_with(tag);
-                        });
-  };
-  static_cast<void>(until(error_text_time, [&] {
-    impl_->collect();
-    return reply() != impl_->messages.end() || !wanted();
-  }));
-  const auto at = reply();
-  if (at == impl_->messages.end())
-    return std::unexpected(wanted() ? failed("LinuxCNC did not report the G52/G92 registers.")
-                                    : withdrawn());
-  std::istringstream values{at->text.substr(tag.size())};
-  impl_->messages.erase(at);
-  std::array<double, 9> offsets{};
-  for (double& value : offsets)
-    if (!(values >> value) || !std::isfinite(value))
-      return std::unexpected(failed("LinuxCNC did not report all G52/G92 registers."));
-  return offsets;
-}
-
-auto NmlPort::write_air_offset(double lift, const Wanted& wanted) -> ActionResult {
-  if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
-    return mode;
-  const auto from = impl_->begin(&wanted);
-  const Impl::Scope scope{*impl_};
-  const auto before = status();
-  if (before.controller.link != Link::live || before.controller.machine != MachineState::on ||
-      before.controller.mode != TaskMode::mdi || !restart_idle(before, impl_->config))
-    return failed("Air-cut offset needs a powered, stationary machine in MDI.");
-  const double units = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
-  EMC_TASK_PLAN_EXECUTE message;
-  if (!put(message.command, std::format("G52 Z{:.12f}", lift / units)))
-    return failed("Could not encode the air-cut offset.");
-  if (auto done = impl_->run(message, from); !accepted(done))
-    return done;
-  if (impl_->loads)
-    ++impl_->loads->mdi_blocks;
-  const Vec3 expected{before.g92[0], before.g92[1], lift};
-  return impl_->settled(
-      from, "LinuxCNC did not verify the temporary air-cut offset.", [&](const EMC_STAT& raw) {
-        const auto s = to_status(raw, impl_->config, impl_->hal, impl_->status.link());
-        return s.controller.link == Link::live && restart_idle(s, impl_->config) &&
-               restart_near(s.g92, expected) && restart_at(s, before.commanded_position);
-      });
-}
-
-void NmlPort::recover_air_offset(const Wanted& wanted) {
-  const auto before = status();
-  const auto& state = before.controller;
-  if (state.link != Link::live || state.machine != MachineState::on ||
-      !restart_idle(before, impl_->config) || !wanted() || Clock::now() < impl_->air_retry)
-    return;
-  impl_->air_retry = Clock::now() + std::chrono::seconds{1};
-  const auto inform = [&](std::string reason) {
-    if (!std::exchange(impl_->air_recovery_reported, true))
-      impl_->messages.push_back({true, std::move(reason)});
-  };
-  if (!impl_->air_offset) {
-    inform("The air-cut recovery record could not be read. Verify the G52 offset before clearing "
-           "the record.");
-    return;
-  }
-  double current_z = before.g92[2];
-  bool other_offsets = before.g92[0] != 0 || before.g92[1] != 0;
-  if (std::abs(current_z) <= 1e-6) {
-    // A previously applied offset can have been suspended. Check the stored Z too before
-    // forgetting ownership, so a later G92.3 cannot bring the temporary lift back.
-    auto stored = read_air_registers(wanted);
-    if (!stored) {
-      if (wanted())
-        inform("Could not verify the stored air-cut offset. " + stored.error().reason);
-      return;
-    }
-    current_z = (*stored)[2] * impl_->config.millimetres_per_unit;
-    (*stored)[2] = 0;
-    other_offsets = std::ranges::any_of(*stored, [](double value) { return value != 0; });
-  }
-  if (std::abs(current_z) > 1e-6) {
-    if (other_offsets || std::abs(current_z - *impl_->air_offset) > 1e-6) {
-      inform("The current G52/G92 Z offset differs from the air-cut record. Verify the offset "
-             "before clearing the record.");
-      return;
-    }
-    if (auto result = write_air_offset(0, wanted); !accepted(result)) {
-      if (wanted())
-        inform("Could not clear the temporary air-cut offset. " + result.reason);
-      return;
-    }
-  }
-  std::error_code error;
-  std::filesystem::remove(impl_->air_marker, error);
-  if (error) {
-    inform("The air-cut offset cleared, but its recovery record could not be removed.");
-    return;
-  }
-  impl_->air_offset.reset();
-  impl_->air_running = false;
-  impl_->air_recovery_reported = false;
-  impl_->air_z = 0;
-  impl_->publish_air();
-  impl_->messages.push_back({false, "Temporary air-cut offset cleared."});
 }
 
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
@@ -3243,7 +3046,6 @@ auto NmlPort::step(const Wanted& wanted) -> ActionResult {
 }
 
 auto NmlPort::abort() -> ActionResult {
-  impl_->air_running = false;
   const auto from = impl_->begin(nullptr);
   const Impl::Scope scope{*impl_};
   if (impl_->loads)

@@ -19,7 +19,7 @@ auto same_inputs(const PreviewInputs& a, const PreviewInputs& b) -> bool {
   return a.program_file == b.program_file && a.program_revision == b.program_revision &&
          a.files_generation == b.files_generation && a.raw_tools == b.raw_tools &&
          a.systems == b.systems && a.g92 == b.g92 && a.block_delete == b.block_delete &&
-         a.start == b.start && a.air_z == b.air_z &&
+         a.start == b.start &&
          std::ranges::equal(a.tools, b.tools, same_tool);
 }
 

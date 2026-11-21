@@ -17,7 +17,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-it('counts the restarted cut once and preserves its time through an air cut', async () => {
+it('counts a restarted cut only after its verified finish', async () => {
   const { panel } = await import('../src/machine')
   const { runClock } = await import('../src/run-clock')
   const base = new SimMachine({ emit: (): void => undefined }).status()
@@ -45,10 +45,4 @@ it('counts the restarted cut once and preserves its time through an air cut', as
   expect(runClock.parts).toBe(1)
   expect(runClock.lastSeconds).toBe(8)
 
-  await publish(14000, 'reading', { air_z: 25, air_offset_owned: true })
-  expect(runClock.startedAt).toBe(14000)
-  await publish(20000, 'idle', { air_z: 25, air_offset_owned: true })
-  await publish(21000, 'idle', {})
-  expect(runClock.parts).toBe(1)
-  expect(runClock.lastSeconds).toBe(8)
 })

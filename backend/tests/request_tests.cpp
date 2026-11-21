@@ -122,6 +122,8 @@ void strict_shapes() {
   for (
       const auto wire :
       {R"({"id":42,"type":"run","line":100})",
+       R"({"id":42,"type":"run","preview_context":7,"display_units":"mm","confirmed":true,"air_z":25})",
+       R"({"id":42,"type":"set_air_cut","air_z":25})",
        R"({"id":42,"type":"set_mode","mode":"auto"})",
        R"({"id":42,"type":null})",
        R"({"id":42,"type":"set_machine","state":"ON"})",

@@ -10,8 +10,9 @@ export function useCardFeedback(
   const attempted = shallowRef<string | null>(null)
   watch(sources, () => { attempted.value = null })
   const line = computed((): SetterStatusLine => {
-    const reason = attempted.value ?? localBlock()
-    return reason === null ? { text: hint(), level: 'info' } : { text: reason, level: 'blocked' }
+    return attempted.value === null
+      ? { text: localBlock() ?? hint(), level: 'info' }
+      : { text: attempted.value, level: 'blocked' }
   })
   function allow(reason: string | null): boolean {
     attempted.value = reason

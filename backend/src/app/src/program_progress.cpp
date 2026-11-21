@@ -111,8 +111,7 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
   auto& program = status.program;
   program.restart_hint.reset();
   program.cycle = ProgramCycle::idle;
-  const bool dry_run = program.air_offset_owned || program.air_z > 0;
-  if (dry_run || (completed_revision_ && *completed_revision_ != program.revision))
+  if (completed_revision_ && *completed_revision_ != program.revision)
     completed_revision_.reset();
   const auto& source = reading.program;
   const bool loaded = source && source->file == program.file && source->revision == program.revision;
@@ -128,8 +127,8 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
     const auto& run = *running_;
     const bool same = loaded && run.progress.path == source->file &&
                       run.revision == program.revision && run.progress.stamp == identity;
-    if (!same || !healthy || run.aborts != reading.program_aborts || !active || dry_run) {
-      if (same && healthy && !dry_run && run.aborts == reading.program_aborts &&
+    if (!same || !healthy || run.aborts != reading.program_aborts || !active) {
+      if (same && healthy && run.aborts == reading.program_aborts &&
           status.mode == TaskMode::automatic && !active) {
         completed_revision_ = program.revision;
         dirty_ = std::erase_if(
@@ -144,7 +143,7 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
   }
   if (!active)
     interrupted_ = false;
-  if (active && healthy && identity && !interrupted_ && !dry_run) {
+  if (active && healthy && identity && !interrupted_) {
     completed_revision_.reset();
     program.cycle = ProgramCycle::running;
     if (!running_)
@@ -164,7 +163,7 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
     save(reading);
     write_after_ = now + write_period;
   }
-  if (!active && !dry_run && complete_text && identity && status.link == Link::live &&
+  if (!active && complete_text && identity && status.link == Link::live &&
       status.motion.in_position) {
     const auto found = std::ranges::find_if(records_, [&](const Record& entry) {
       return entry.path == source->file && entry.stamp == *identity &&

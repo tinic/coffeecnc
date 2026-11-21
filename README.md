@@ -50,14 +50,13 @@ CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine 
 
 - Open an NC program and look at the interpreter-generated toolpath before you run it. See [preview](docs/preview.md). Recently opened programs are listed first in **Open program**.
 - The code list colors G-code by meaning, in both light and dark themes, and follows the running line.
-- The tool sequence lists each section, its tool, its lines and its estimated time. The status line shows the estimated cycle time, then elapsed and remaining time during the run, and the last run time and part count.
+- The tool sequence lists each section, its tool, its lines and its estimated time. The status line shows the run state, cycle time and program line. The time tooltip includes the last run time and part count.
 - **Program check** lists the tools and their lengths, the work extents and lowest Z, feed and spindle ranges and the program units. Errors block Cycle start; warnings need a confirmation.
 - **Restart** from any line or tool section. The restart sheet shows the state at that line and the approach: Z to clearance, the tool change if needed, X and Y, spindle and coolant, then a slow feed down. After a Stop, an E-stop or a power loss, the Machine tab offers **Restart there** at the line where the program stopped.
 - **Run to line** pauses before a chosen line; Resume continues from there.
-- **Air cut** runs the program with Z raised by a set amount, through a temporary offset that CoffeeCNC removes again.
 - During a pause, jog **Z** up to inspect or clear chips. CoffeeCNC stops the spindle if needed, and Resume returns Z, restarts the spindle at speed, then continues.
-- Tap an F or S number in the code list to change it. CoffeeCNC changes only that number in the file and opens the program again.
-- Attach a STEP model to show the stock or part in the work coordinate system.
+- Select a line in the code list and tap an underlined F or S number to change it. CoffeeCNC changes that number in the file and opens the program again.
+- Use **STEP** in the preview toolbar to attach or show a model in the work coordinate system.
 - Cycle start, feed hold, stop, and feed and spindle overrides are always at the bottom of the screen.
 - [Air-cut programs](samples/air/README.md) let you try all of this without material.
 

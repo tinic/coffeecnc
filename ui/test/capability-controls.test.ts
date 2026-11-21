@@ -76,7 +76,7 @@ describe('capability-aware controls', () => {
     wrapper = mount(WorkspaceControls, { attachTo: document.body })
     expect(wrapper.get('.message-band .machine-state').text()).toBe('Machine is off')
     expect(wrapper.findAll('.setter-band p').map((band) => band.text())).toEqual([
-      'Axis limits: Z 750 mm/min', 'Enter a G-code command.', 'Set the speed before starting the spindle.',
+      'Axis limits: Z 750 mm/min', 'Enter a G-code command.', 'Set a speed, then Forward or Reverse.',
     ])
     await wrapper.get('.jogbtn').trigger('click')
     expect(wrapper.get('.jog .setter-band p').text()).toBe('Machine is off')
@@ -93,6 +93,17 @@ describe('capability-aware controls', () => {
     expect(wrapper.find('.message-band .machine-state').exists()).toBe(false)
     expect(wrapper.get('.mdi .setter-band p').text()).toBe('Axes are not homed')
     expect(wrapper.get('.jog .setter-band p').text()).toBe('Axis limits: Z 750 mm/min')
+  })
+  it('turns the passive spindle hint into a refusal only on press and clears it once ready', async () => {
+    wrapper = mount(ManualTab)
+    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
+    const forward = wrapper.findAll('button').find(button => button.text() === 'Forward')
+    if (!forward) throw new Error('Missing Forward button')
+    await forward.trigger('click')
+    expect(wrapper.get('.spindle-status.blocked p').text()).toBe('Enter a spindle speed above zero')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('input[aria-label="Spindle speed, rpm"]').setValue('1200')
+    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
   })
   it('keeps probe-specific guidance in the Touch off card', async () => {
     if (panel.status === null) throw new Error('Missing status')
@@ -408,24 +419,6 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain('The program check changed')
     expect(wrapper.find('[role="dialog"] button.primary').exists()).toBe(false)
     expect(send).not.toHaveBeenCalled()
-  })
-
-  it('requires a separate confirmation with the exact reviewed air-cut lift', async () => {
-    if (!panel.status) throw new Error('Missing status')
-    panel.hello = { ...hello, homing_required: false }
-    panel.status.preview_context = 9
-    panel.status.program.air_z = 25
-    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
-      check: { tools: [], frames: [], feed: null, spindle: null,
-        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
-    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
-    expect(wrapper.get('.main-action').text()).toContain('Start air cut')
-    await wrapper.get('.main-action').trigger('click')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('+25.000 mm')
-    expect(send).not.toHaveBeenCalled()
-    await wrapper.get('[role="dialog"] button.primary').trigger('click')
-    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
-      display_units: 'mm', confirmed: true, air_z: 25 })
   })
 
   it('binds the selected source line to the reviewed run and displays Resume at the pause', async () => {

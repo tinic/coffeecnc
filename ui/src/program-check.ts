@@ -1,9 +1,4 @@
 import type { LengthUnit, Preview, ProgramCheck, Status } from './protocol'
-import { formatLength } from './units'
-
-export function airLiftLabel(lift: number, unit: LengthUnit): string {
-  return `+${formatLength(lift, unit)} ${unit === 'mm' ? 'mm' : 'in'}`
-}
 
 export function currentProgramPreview(preview: Preview | null, status: Status | null): Preview | null {
   return status?.program.file && preview?.context === status.preview_context ? preview : null

@@ -347,8 +347,8 @@ const spindleLocalBlock = computed((): string | null => {
 const spindleBlock = computed(() => manualBlock.value ?? spindleLocalBlock.value)
 const coolantBlock = computed(() => powerBlock(panel))
 const { line: spindleLine, allow: allowSpindle } = useCardFeedback(
-  () => 'Set the speed before starting the spindle.',
-  () => spindleLocalBlock.value,
+  () => 'Set a speed, then Forward or Reverse.',
+  () => touchProbeLoaded.value ? spindleLocalBlock.value : null,
   [manualBlock, coolantBlock, spindleLocalBlock],
 )
 

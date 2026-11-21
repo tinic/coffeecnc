@@ -71,7 +71,6 @@ struct PreviewInputs {
   // Not part of the start state: the operator can change it during a pause, and it changes
   // which blocks the rest of the program runs.
   bool block_delete{};
-  double air_z{};
   InterpreterStart start;
   std::optional<int> restart_line;
 };

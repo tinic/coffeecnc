@@ -96,7 +96,7 @@ Directory paths and parents are canonical paths within the configured program ro
 
 ## Cutting cycle status
 
-The optional `status.program.cycle` reports `running` during a cutting cycle (including pauses), `completed` after a verified finish, and `idle` otherwise. It is independent of `restart_hint`, which may arrive after Stop once the preview is ready. Air cuts leave the cutting cycle idle and preserve any existing cutting restart record.
+The optional `status.program.cycle` reports `running` during a cutting cycle (including pauses), `completed` after a verified finish, and `idle` otherwise. It is independent of `restart_hint`, which may arrive after Stop once the preview is ready.
 
 ## Application shutdown
 

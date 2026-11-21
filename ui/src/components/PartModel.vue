@@ -8,6 +8,7 @@ import { formatLength, wcsName } from '../units'
 import type { Vec3 } from '../protocol'
 import ModalDialog from './ModalDialog.vue'
 import { vNumeric } from '../numeric-input'
+import { vTooltip } from '../tooltip'
 
 const open = ref(false)
 const chooser = useTemplateRef<HTMLInputElement>('chooser')
@@ -19,6 +20,9 @@ const axes = ['X', 'Y', 'Z'] as const
 const available = computed(() => live.value && Boolean(panel.status?.program.file))
 const bounds = computed(() => part.attachment?.geometry.bounds)
 const summary = computed(() => part.loading ? 'Importing STEP…' : part.attachment === null ? 'Attach STEP model' : part.attachment.name)
+const detail = computed(() => part.attachment
+  ? partBlock.value || (part.placed ? 'Placement set by operator' : 'Placement unconfirmed')
+  : part.error)
 watch([open, (): unknown => part.attachment], () => {
   translation.value = part.placement.translation.map(String) as [string, string, string]
   rotation.value = part.placement.rotation.map(String) as [string, string, string]
@@ -60,10 +64,14 @@ function apply(): void {
 
 <template>
   <div class="model-summary">
-    <button class="attach" type="button" @click="open = true"><span class="model-mark">◇</span><span>{{ summary }}</span><span>›</span></button>
-    <small v-if="part.attachment">{{ partBlock || (part.placed ? 'Placement set by operator' : 'Placement unconfirmed') }}</small>
-    <small v-else-if="part.error" class="error">{{ part.error }}</small>
-    <small v-else>Optional part geometry</small>
+    <button
+      v-tooltip="detail ? summary + ' · ' + detail : summary" class="attach" type="button"
+      :class="{ on: part.attachment && part.visible }" :aria-label="'STEP · ' + summary" aria-haspopup="dialog"
+      @click="open = true"
+    >
+      STEP
+    </button>
+    <span class="model-status" role="status">{{ summary }}{{ detail ? ' · ' + detail : '' }}</span>
   </div>
   <ModalDialog v-if="open" title="Part model · STEP" size="medium" @close="open = false">
     <div class="load-row">
@@ -92,9 +100,11 @@ function apply(): void {
 </template>
 
 <style scoped>
-.model-summary { flex: none; border-top: 1px solid var(--line); padding: 8px 20px 10px; }
-.attach { width: 100%; display: flex; align-items: center; gap: 8px; padding: 0; min-height: 30px; border: 0; background: none; text-align: left; cursor: pointer; font-size: 12px; }.attach span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.model-mark { color: var(--accent); font-size: 22px; }
-small { font-size: 10px; color: var(--text-dim); }.model-summary small { display: block; margin-top: 4px; }
+.model-summary { flex: none; }
+.attach { min-height: 30px; padding: 5px 7px; border: 0; border-radius: 6px; background: none; color: var(--text-dim); cursor: pointer; font-size: 10px; }
+.attach.on { color: var(--accent); background: var(--panel); }
+.model-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+small { font-size: 10px; color: var(--text-dim); }
 .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .load-row, .display-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .identity { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }.identity span, .hint { color: var(--text-dim); font-size: 12px; }.hint, .notice, .error { margin: 0; line-height: 1.5; }.notice { color: var(--warn); font-size: 12px; }.error { color: var(--stop); font-size: 12px; }

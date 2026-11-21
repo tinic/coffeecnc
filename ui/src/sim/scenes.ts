@@ -41,6 +41,7 @@ export const sceneNames = [
   'limit',
   'stale',
   'probe',
+  'history',
 ] as const
 
 export type SceneName = (typeof sceneNames)[number]
@@ -206,6 +207,20 @@ export function applyScene(sim: SimMachine, name: string, setup = 'top'): void {
       load(start.tool, start.position)
       break
     }
+    case 'history':
+      // Offset history entries of every kind the panel makes, and a restore of the first.
+      d.homed()
+      d.send({ type: 'mdi', text: 'G0 X-12.5 Y8 Z22.4' })
+      d.idle()
+      d.send({ type: 'touch_off', axis: 'x', value: 0, origin: 'zero' })
+      d.send({ type: 'touch_off', axis: 'y', value: 4, origin: 'half' })
+      d.send({ type: 'touch_off', axis: 'z', value: 0 })
+      d.send({ type: 'set_work_offset', wcs: 2, offset: [120, 80, -45] })
+      d.send({ type: 'set_tool', tool: { number: 2, pocket: 2, length: 52.75, diameter: 6, comment: 'End mill 6 mm, 3 flutes' } })
+      d.send({ type: 'mdi', text: 'G10 L2 P1 R1.5' })
+      d.idle()
+      d.send({ type: 'restore_offset', entry: 1 })
+      break
   }
   sim.quiet = false
 }

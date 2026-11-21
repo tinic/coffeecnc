@@ -47,6 +47,9 @@ struct PanelReading {
   // Explicit operator aborts and controller execution errors distinguish a stop from completion.
   std::uint64_t program_aborts{};
   bool program_failed{};
+  // The history of offset and tool changes, set by OffsetHistoryStore::observe. Null without a
+  // store: no `offset_history` message is sent.
+  std::shared_ptr<const OffsetHistory> offset_history;
 };
 
 // The text of a program for the `program` message: ProgramStore::read_program, handed to an

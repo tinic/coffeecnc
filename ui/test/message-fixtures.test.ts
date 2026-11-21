@@ -1195,13 +1195,128 @@ const examples = [
     "availability": "unavailable",
     "reason": "Operator settings file is corrupt",
     "document": null
+  },
+  {
+    "type": "offset_history",
+    "revision": 4,
+    "storage": "saved",
+    "reason": "",
+    "entries": [
+      {
+        "id": 12,
+        "time": 1700000003000,
+        "source": "restore",
+        "target": "wcs",
+        "number": 1,
+        "changes": [
+          {
+            "field": "x",
+            "before": 0,
+            "after": 112.5
+          }
+        ],
+        "restores": 10
+      },
+      {
+        "id": 11,
+        "time": 1700000002000,
+        "source": "tool_table",
+        "target": "tool",
+        "number": 3,
+        "changes": [
+          {
+            "field": "length",
+            "before": 48.2,
+            "after": 50
+          },
+          {
+            "field": "diameter",
+            "before": 6,
+            "after": 6.35
+          }
+        ],
+        "restores": null
+      },
+      {
+        "id": 10,
+        "time": 1700000001000,
+        "source": "zero",
+        "target": "wcs",
+        "number": 1,
+        "changes": [
+          {
+            "field": "x",
+            "before": 112.5,
+            "after": 0
+          }
+        ],
+        "restores": null
+      },
+      {
+        "id": 9,
+        "time": 1700000000500,
+        "source": "outside",
+        "target": "g92",
+        "number": 0,
+        "changes": [
+          {
+            "field": "z",
+            "before": 0,
+            "after": 2
+          }
+        ],
+        "restores": null
+      },
+      {
+        "id": 8,
+        "time": 1700000000250,
+        "source": "probe",
+        "target": "wcs",
+        "number": 2,
+        "changes": [
+          {
+            "field": "rotation_xy",
+            "before": null,
+            "after": 15
+          }
+        ],
+        "restores": null
+      },
+      {
+        "id": 7,
+        "time": 1700000000000,
+        "source": "tool_table",
+        "target": "tool",
+        "number": 4,
+        "changes": [
+          {
+            "field": "length",
+            "before": 61.75,
+            "after": null
+          },
+          {
+            "field": "diameter",
+            "before": 3.175,
+            "after": null
+          }
+        ],
+        "restores": null
+      }
+    ]
+  },
+  {
+    "type": "offset_history",
+    "revision": 1,
+    "storage": "session_only",
+    "reason": "No machine identity configured",
+    "entries": []
   }
 ] satisfies FromMachine[]
 
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
   hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
-  preview: true, message: true, result: true, directory: true,
+  preview: true, message: true, result: true, directory: true, offset_history: true,
 }
 
 describe('protocol/fixtures/messages.json', () => {

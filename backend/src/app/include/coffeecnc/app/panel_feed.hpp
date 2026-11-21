@@ -24,6 +24,7 @@
 
 namespace coffeecnc {
 
+class OffsetHistoryStore;
 class ProgramProgress;
 
 // The inputs of a preview as one reading gives them. The machine position is the one the
@@ -152,8 +153,10 @@ public:
 
   // The source, and the preview service when there is one, must outlive the feed. Starts the
   // thread.
+  // The offset history, when there is one, sees every reading, also while no page is ready.
   PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr,
-            SnapshotsSent snapshots_sent = {}, ProgramProgress* progress = nullptr);
+            SnapshotsSent snapshots_sent = {}, ProgramProgress* progress = nullptr,
+            OffsetHistoryStore* history = nullptr);
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -174,6 +177,7 @@ private:
   SnapshotsSent snapshots_sent_;
   PreviewService* preview_;
   ProgramProgress* progress_;
+  OffsetHistoryStore* history_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;

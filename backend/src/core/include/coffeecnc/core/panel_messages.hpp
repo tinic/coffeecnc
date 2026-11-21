@@ -218,6 +218,60 @@ struct WorkOffsets {
   friend auto operator==(const WorkOffsets&, const WorkOffsets&) -> bool = default;
 };
 
+// What made a change of a work offset or of a tool's length or diameter. The panel's own
+// commands are named after the command; `mdi` is the panel's MDI line, `program` a program
+// that ran, `outside` anything else (another client, a G10 of a remap, the files edited while
+// CoffeeCNC did not run).
+enum class HistorySource : std::uint8_t {
+  touch_off,         // touch-off on the DRO
+  zero,              // the DRO's Zero quick action
+  half,              // the DRO's Half quick action
+  probe,             // a probing cycle
+  tool_setter,       // the fixed tool setter
+  tool_touch_off,    // the tool length touch-off
+  tool_table,        // the tool table editor
+  work_offset_table, // the work offset editor
+  mdi,
+  program,
+  restore,           // a Restore of the history itself
+  outside,
+};
+// `number` of an entry: the work system (1 is G54 ... 9 is G59.3), the tool, or 0 for G92/G52.
+enum class HistoryTarget : std::uint8_t { wcs, g92, tool };
+enum class HistoryField : std::uint8_t { x, y, z, rotation_xy, length, diameter };
+
+// One field of an entry. No `before`: the value was not known (a system not read before, a
+// tool added). No `after`: the tool was removed.
+struct HistoryChange {
+  HistoryField field{HistoryField::x};
+  std::optional<double> before;
+  std::optional<double> after;
+  friend auto operator==(const HistoryChange&, const HistoryChange&) -> bool = default;
+};
+
+struct HistoryEntry {
+  std::uint64_t id{};  // goes up by one with every entry, across restarts
+  std::int64_t time{}; // milliseconds since the Unix epoch
+  HistorySource source{HistorySource::outside};
+  HistoryTarget target{HistoryTarget::wcs};
+  int number{};
+  std::vector<HistoryChange> changes;
+  // The entry whose earlier values this one wrote back.
+  std::optional<std::uint64_t> restores;
+  friend auto operator==(const HistoryEntry&, const HistoryEntry&) -> bool = default;
+};
+
+// The `offset_history` message. `saved`: kept in the machine's data directory; else for this
+// session only, and `reason` says why. `reason` also says when the saved history could not be
+// read or written.
+struct OffsetHistory {
+  std::uint64_t revision{};
+  bool saved{};
+  std::string reason;
+  std::vector<HistoryEntry> entries; // newest first
+  friend auto operator==(const OffsetHistory&, const OffsetHistory&) -> bool = default;
+};
+
 struct ProgramText {
   std::uint64_t revision{};
   std::string file;

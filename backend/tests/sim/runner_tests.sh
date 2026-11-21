@@ -2,7 +2,7 @@
 # Checks that run.sh never leaves a LinuxCNC behind: after a timeout, and when it is interrupted.
 #   runner_tests.sh <build-directory> [lock wait, seconds]
 #
-# The host's runner lock: ten of the runs below (nine calls, one of them made twice) may each
+# The host's runner lock: eleven of the runs below (ten calls, one of them made twice) may each
 # have to wait for a simulation of another checkout, at most the lock wait given (run.sh -w;
 # 300 without one). The two waits on this test's own run are fixed, 3 s and 120 s. The
 # caller's time limit is made of these.
@@ -156,6 +156,39 @@ long=$(printf 'argument-%03d,' $(seq 40))
 code=$?
 [ "$code" = 0 ] && grep -qxF "arguments=-ini $work/arguments-run/coffeecnc_sim.ini first $long last" "$work/arguments-run/linuxcnc.log"
 check long_arguments_reach_the_program $? "exit=${code}_characters=${#long}"
+
+# The loaded tool table is the run's own: an rs274 started with the caller's HOME while the run
+# is going makes $HOME/.tool.mmap again with its own table (LinuxCNC's sim.tbl: T1 Z0.511
+# D0.125, T2 Z0.1), and must not replace the run's (T1 Z50, T2 Z40). A caller HOME of the test's
+# own, so that no other checkout's simulation is touched; its ai/ is the host's lock directory.
+caller_home=$work/caller-home
+rm -rf "$caller_home" && mkdir -p "$caller_home" || exit 125
+ln -s "$lock_directory" "$caller_home/ai" || exit 125
+cat >"$work/foreign-table" <<'EOF' || exit 125
+#!/bin/bash
+# foreign-table -ini <file> <caller HOME>
+cd "$(dirname "$2")" || exit 1
+printf 'T1 P1 D0.125 Z0.511\nT2 P2 D0.0625 Z0.1\n' >foreign.tbl
+printf 'M2\n' >foreign.ngc
+HOME=$3 rs274 -t foreign.tbl -g foreign.ngc >/dev/null 2>&1 </dev/null
+python3 -c '
+import linuxcnc, os
+s = linuxcnc.stat()
+s.poll()
+tools = {t.id: t.zoffset for t in s.tool_table if t.id > 0}
+print("tools=" + ",".join("T%d:%g" % (n, tools[n]) for n in sorted(tools)))
+print("home=" + os.environ["HOME"])
+'
+EOF
+chmod +x "$work/foreign-table" || exit 125
+HOME=$caller_home "$here/run.sh" -w "$lock_wait" -t 60 -d "$work/foreign" "$work/foreign-table" \
+  "$caller_home" >"$work/foreign.out" 2>&1
+code=$?
+[ "$code" = 0 ] && grep -qxF "tools=T1:50,T2:40" "$work/foreign/linuxcnc.log" &&
+  grep -qxF "home=$work/foreign/home" "$work/foreign/linuxcnc.log" && [ -e "$caller_home/.tool.mmap" ]
+check foreign_rs274_keeps_the_run_tool_table $? \
+  "exit=${code}_$(grep -E '^(tools|home)=' "$work/foreign/linuxcnc.log" | tr '\n' '_')"
+rm -rf "$caller_home"
 
 "$here/run.sh" -w "$lock_wait" -d "$work/with space" "$work/never" >"$work/space.out" 2>&1
 code=$?

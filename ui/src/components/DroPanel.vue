@@ -47,7 +47,7 @@ function confirmQuick(): void {
   const draft = quick.value
   const values = quickValues.value
   if (draft && values && touchBlock.value === null) {
-    send({ type: 'touch_off', axis: draft.axis, value: values.target })
+    send({ type: 'touch_off', axis: draft.axis, value: values.target, origin: draft.operation === 'Half' ? 'half' : 'zero' })
   }
   quick.value = null
 }

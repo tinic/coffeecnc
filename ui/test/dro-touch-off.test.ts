@@ -210,14 +210,14 @@ describe('quick coordinate actions', () => {
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Half X in G54?')
     expect(document.activeElement?.textContent).toBe('Cancel')
     await press('Set X to half')
-    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: 12.345678 / 2 })
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: 12.345678 / 2, origin: 'half' })
   })
   it('zeroes only the chosen axis after confirmation and can cancel', async () => {
     await wrapper.get('button[aria-label="Zero Y"]').trigger('click')
     await press('Cancel'); expect(send).not.toHaveBeenCalled()
     await wrapper.get('button[aria-label="Zero Y"]').trigger('click')
     await press('Set Y to zero')
-    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'y', value: 0 })
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'y', value: 0, origin: 'zero' })
   })
   it.each(['Zero', 'Half'] as const)('keeps the menu and %s confirmation open through feedback changes', async (operation) => {
     if (!panel.status?.axes[0]) throw new Error('Missing axis')
@@ -239,7 +239,7 @@ describe('quick coordinate actions', () => {
       expect(send).not.toHaveBeenCalled()
     }
     await press(`Set X to ${operation.toLowerCase()}`)
-    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: operation === 'Half' ? 12.345987 / 2 : 0 })
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'touch_off', axis: 'x', value: operation === 'Half' ? 12.345987 / 2 : 0, origin: operation === 'Half' ? 'half' : 'zero' })
   })
   it.each(['wcs', 'session', 'units', 'blocked', 'basis', 'missing axis', 'invalid coordinate'])('discards a quick confirmation after %s changes', async (change) => {
     await wrapper.get('button[aria-label="Half X"]').trigger('click')

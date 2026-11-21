@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <string>
+#include <string_view>
 
 namespace coffeecnc {
 
@@ -29,6 +30,13 @@ using Encoded = std::expected<std::string, std::string>;
 [[nodiscard]] auto encode_program(const ProgramText& program) -> Encoded;
 [[nodiscard]] auto encode_preview(const Preview& preview) -> Encoded;
 [[nodiscard]] auto encode_directory(const Directory& directory) -> Encoded;
+// `before` and `after` of a change are `null` when the history has none; `restores` likewise.
+[[nodiscard]] auto encode_offset_history(const OffsetHistory& history) -> Encoded;
+
+// The wire names of the offset history, which its file shares.
+[[nodiscard]] auto history_name(HistorySource source) -> std::string_view;
+[[nodiscard]] auto history_name(HistoryTarget target) -> std::string_view;
+[[nodiscard]] auto history_name(HistoryField field) -> std::string_view;
 
 } // namespace coffeecnc
 

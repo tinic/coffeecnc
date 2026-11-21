@@ -364,6 +364,7 @@ export interface RestartPlan {
 }
 
 export interface FixedSetterLimits {
+  material_geometry?: { reach_mm: number; margin_mm: number; clearance_mm: number; depth_mm: number }
   reference_tool: number
   travel_mm: number
   feed_mm_min: number

@@ -283,8 +283,16 @@ auto command(const Json& object) -> Command {
     return SelectWcs{integer(object, "wcs")};
   }
   if (type == "touch_off") {
-    fields(object, {"id", "type", "axis", "value"});
-    return TouchOff{axis(object), number(object, "value")};
+    fields(object, {"id", "type", "axis", "value"}, {"origin"});
+    TouchOff touch{axis(object), number(object, "value")};
+    if (object.contains("origin"))
+      touch.origin = choice<TouchOrigin>(object, "origin",
+                                         {{"zero", TouchOrigin::zero}, {"half", TouchOrigin::half}});
+    return touch;
+  }
+  if (type == "restore_offset") {
+    fields(object, {"id", "type", "entry"});
+    return RestoreOffset{positive_id(object, "entry")};
   }
   if (type == "set_work_offset") {
     fields(object, {"id", "type", "wcs", "offset"});

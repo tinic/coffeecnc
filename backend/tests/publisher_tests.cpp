@@ -147,6 +147,28 @@ void changes_only() {
   require(rig.types() == Types{"status"}, "Hello is sent only after ready");
 }
 
+void offset_history() {
+  Rig rig;
+  OffsetHistory history{1, true, "", {}};
+  const auto types = [&](bool snapshots) -> Types {
+    const auto messages = rig.publisher.publish({rig.hello, rig.status, rig.tool_table,
+                                                 rig.work_offsets, nullptr, rig.preview, &history},
+                                                snapshots);
+    require(messages.has_value(), "Publishing succeeds");
+    Types found;
+    for (const auto& text : messages.value_or(std::vector<std::string>{}))
+      found.push_back(Json::parse(text).at("type").get<std::string>());
+    return found;
+  };
+  require(types(true) ==
+              Types{"hello", "tool_table", "work_offsets", "offset_history", "preview", "status"},
+          "The history is a snapshot after the work offsets");
+  require(types(false) == Types{"status"}, "Sent once");
+  history.revision = 2;
+  require(types(false) == Types{"offset_history", "status"}, "A new revision is sent");
+  require(types(true).size() == 6, "And again after every ready");
+}
+
 void first_call_without_snapshots() {
   Rig rig;
   require(rig.types() == Types{"tool_table", "work_offsets", "preview", "status"},
@@ -314,6 +336,7 @@ auto main() -> int {
   try {
     snapshots_and_sequence();
     changes_only();
+    offset_history();
     first_call_without_snapshots();
     failures_send_nothing();
     preview_contexts();

@@ -55,6 +55,8 @@ struct PanelState {
   const WorkOffsets& work_offsets;
   const ProgramText* program{}; // null while no program is loaded: protocol v1 then has no message
   const Preview& preview;
+  // Null without a history store: no `offset_history` is sent.
+  const OffsetHistory* offset_history{};
 };
 
 // Turns successive readings into the protocol v1 messages to send to one panel. Call it once per
@@ -62,9 +64,10 @@ struct PanelState {
 //
 // Every call sends a `status`, numbered from 1 and increasing by one. `tool_table`,
 // `work_offsets`, `program` and `preview` are sent when they differ in any field from the one
-// sent last. With `snapshots` (Outcome::send_snapshots, the page sent `ready`) `hello` and all of
-// them are sent. Order: hello, tool_table, work_offsets, program, preview, status; the status is
-// last so that its revisions and preview_context refer to messages already delivered.
+// sent last; `offset_history` when its revision does. With `snapshots` (Outcome::send_snapshots,
+// the page sent `ready`) `hello` and all of them are sent. Order: hello, tool_table,
+// work_offsets, offset_history, program, preview, status; the status is last so that its
+// revisions and preview_context refer to messages already delivered.
 //
 // All or nothing: when one message cannot be encoded nothing is returned but the reason, no
 // number is used up and the same messages are due on the next call. Comparing costs one pass over
@@ -80,6 +83,7 @@ private:
   std::uint64_t seq_{};
   std::optional<ToolTable> tool_table_;
   std::optional<WorkOffsets> work_offsets_;
+  std::optional<std::uint64_t> history_revision_;
   std::optional<ProgramText> program_;
   std::optional<Preview> preview_;
 };

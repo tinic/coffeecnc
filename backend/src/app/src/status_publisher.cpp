@@ -58,12 +58,16 @@ auto StatusPublisher::publish(const PanelState& state, bool snapshots)
   };
   const bool tool_table = snapshots || tool_table_ != state.tool_table;
   const bool work_offsets = snapshots || work_offsets_ != state.work_offsets;
+  const bool history =
+      state.offset_history != nullptr &&
+      (snapshots || history_revision_ != state.offset_history->revision);
   const bool program = state.program != nullptr && (snapshots || program_ != *state.program);
   const bool preview = snapshots || preview_ != state.preview;
 
   if ((snapshots && !add("hello", encode_hello(state.hello))) ||
       (tool_table && !add("tool_table", encode_tool_table(state.tool_table))) ||
       (work_offsets && !add("work_offsets", encode_work_offsets(state.work_offsets))) ||
+      (history && !add("offset_history", encode_offset_history(*state.offset_history))) ||
       (program && !add("program", encode_program(*state.program))) ||
       (preview && !add("preview", encode_preview(state.preview))) ||
       !add("status", encode_status(state.status, seq_ + 1)))
@@ -74,6 +78,8 @@ auto StatusPublisher::publish(const PanelState& state, bool snapshots)
     tool_table_ = state.tool_table;
   if (work_offsets)
     work_offsets_ = state.work_offsets;
+  if (history)
+    history_revision_ = state.offset_history->revision;
   if (program)
     program_ = *state.program;
   else if (state.program == nullptr)

@@ -64,9 +64,12 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                           {"mist", p.mist},
                           {"feed", p.feed},
                           {"units", p.units == LengthUnit::mm ? "mm" : "inch"},
-                          {"plane", p.plane == 17 ? "XY" : p.plane == 18 ? "XZ" : "YZ"},
+                          {"plane", p.plane == 17   ? "XY"
+                                    : p.plane == 18 ? "XZ"
+                                                    : "YZ"},
                           {"distance_mode", p.incremental ? "incremental" : "absolute"},
                           {"clearance_z", p.clearance_z},
+                          {"approach_feed", p.approach_feed},
                           {"start", p.start}};
   }
   return text(message);

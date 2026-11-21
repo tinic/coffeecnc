@@ -767,6 +767,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       restart_.reset();
       return answer(reply(port_.abort()));
     } else if (!only_stops(command) && !std::holds_alternative<ToolChanged>(command)) {
+      reject_press(request);
       return answer({CommandOutcome::rejected, "Finish or stop the restart tool change first."});
     }
   }
@@ -858,8 +859,13 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   if (preview_ == nullptr || restart_engine_ == nullptr)
     return answer({CommandOutcome::rejected, "Restart planning is unavailable."});
   const auto source = preview_->restart_source(command.preview_context);
-  if (!source.inputs || !source.program_snapshot || source.inputs->program_file != state.program_file)
+  if (!source.inputs || !source.program_snapshot ||
+      source.inputs->program_file != state.program_file) {
+    const auto shown = preview_->latest();
+    if (shown && shown->context == command.preview_context && shown->error)
+      return answer({CommandOutcome::rejected, shown->error->text});
     return answer({CommandOutcome::rejected, "Wait for an up-to-date program preview."});
+  }
   auto inputs = *source.inputs;
   inputs.restart_line = command.line;
   auto computed = restart_engine_->compute(inputs, [&] { return !wanted(request); });

@@ -183,6 +183,19 @@ void restart_checkpoints() {
   require(outcome.state == PreviewState::ready && outcome.restart &&
               near(outcome.restart->start, {10, 0, 1}),
           "A complete arc can restart from its interpreted start: " + outcome.restart_blocked);
+  rig.inputs.restart_line = 4;
+  outcome = rig.preview("G21 G90 G17\nG0 X10 Y0 Z1\nG2 X0 Y-10 I-10 J0 F100\n"
+                        "X-10 Y0 I0 J10\nM2\n");
+  require(outcome.state == PreviewState::ready && !outcome.restart &&
+              outcome.restart_blocked.find("explicit G2 or G3") != std::string::npos,
+          "Inherited arcs block restart: " + outcome.restart_blocked);
+  rig.inputs.restart_line = 5;
+  outcome = rig.preview("G21 G90 G17\nT1 M6\nG0 X-10 Y0 Z3\nG41 D1 G1 X0 F100\n"
+                        "G1 X10\nG40 G1 X20\nM2\n");
+  require(outcome.state == PreviewState::ready && !outcome.restart &&
+              outcome.restart_blocked.find("Cutter compensation") != std::string::npos,
+          "Cutter compensation blocks restart: " + outcome.restart_blocked);
+  rig.inputs.restart_line = 3;
   outcome = rig.preview("G21 G90 G17\nG0 Z10\nG81 X1 Y1 Z-2 R3 F100\nG80\nM2\n");
   require(outcome.state == PreviewState::ready && !outcome.restart &&
               outcome.restart_blocked.find("canned cycle") != std::string::npos,

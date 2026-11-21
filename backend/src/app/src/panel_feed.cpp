@@ -38,6 +38,9 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.start.active_codes = status.active_codes;
   inputs.start.feed = status.motion.programmed_feed;
   inputs.start.spindle_speed = status.spindle.commanded_rpm;
+  inputs.start.spindle_direction = status.spindle.direction;
+  inputs.start.flood = status.coolant.flood;
+  inputs.start.mist = status.coolant.mist;
   return inputs;
 }
 

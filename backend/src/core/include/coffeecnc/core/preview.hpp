@@ -29,6 +29,9 @@ struct InterpreterStart {
   // Settings the codes do not carry: the F and S words in effect.
   double feed{};
   double spindle_speed{};
+  SpindleDirection spindle_direction{SpindleDirection::stopped};
+  bool flood{};
+  bool mist{};
   // Identity of the interpreter's parameter file contents (numbered and named parameters).
   std::uint64_t parameters_revision{};
   friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
@@ -87,7 +90,12 @@ struct RestartPoint {
   int plane{17};
   bool incremental{};
   bool absolute_arc{};
+  int motion{800};
+  int path_control{640};
+  double path_tolerance{};
+  double naivecam_tolerance{};
   double clearance_z{};
+  double approach_feed{}; // mm/min, filled by the controller when it validates clearance
   Vec3 start{};
   Vec3 g5x{};
   Vec3 g92{};

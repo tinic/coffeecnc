@@ -272,8 +272,13 @@ auto encoded_messages() -> std::vector<Encoded> {
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
-  const RestartPoint restart{.line = 25, .tool = 98, .h = 98, .feed = 600,
-                             .clearance_z = 30, .start = {-16, 12, 30}};
+  const RestartPoint restart{.line = 25,
+                             .tool = 98,
+                             .h = 98,
+                             .feed = 600,
+                             .clearance_z = 30,
+                             .approach_feed = 300,
+                             .start = {-16, 12, 30}};
   messages.emplace_back(encode_result(45, CommandOutcome::accepted, "", {},
                                       RestartPlan{3, true, restart}));
 

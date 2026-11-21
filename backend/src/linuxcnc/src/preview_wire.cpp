@@ -62,19 +62,22 @@ auto vec(const Vec3& v) -> std::string { return std::format("{} {} {}", v[0], v[
 auto parse_restart(std::string_view line, const OutputLimits& limits, RestartPoint& p) -> bool {
   int spindle = 0;
   bool inch = false;
-  if (!number(line, p.line) || p.line < 1 || p.line > limits.max_line ||
-      !number(line, p.tool) || p.tool < 0 || p.tool > OutputLimits::max_tool ||
-      !number(line, p.wcs) || p.wcs < 1 || p.wcs > 9 ||
-      !number(line, p.h) || (p.h != 0 && p.h != p.tool) ||
-      !number(line, spindle) || spindle < -1 || spindle > 1 ||
-      !finite_number(line, p.spindle_rpm) || p.spindle_rpm < 0 ||
+  if (!number(line, p.line) || p.line < 1 || p.line > limits.max_line || !number(line, p.tool) ||
+      p.tool < 0 || p.tool > OutputLimits::max_tool || !number(line, p.wcs) || p.wcs < 1 ||
+      p.wcs > 9 || !number(line, p.h) || (p.h != 0 && p.h != p.tool) || !number(line, spindle) ||
+      spindle < -1 || spindle > 1 || !finite_number(line, p.spindle_rpm) || p.spindle_rpm < 0 ||
       !flag(line, p.flood) || !flag(line, p.mist) || !finite_number(line, p.feed) || p.feed < 0 ||
       !flag(line, inch) || !number(line, p.plane) || p.plane < 17 || p.plane > 19 ||
-      !flag(line, p.incremental) || !flag(line, p.absolute_arc) ||
+      !flag(line, p.incremental) || !flag(line, p.absolute_arc) || !number(line, p.motion) ||
+      (p.motion != 0 && p.motion != 10 && p.motion != 20 && p.motion != 30 && p.motion != 800) ||
+      !number(line, p.path_control) ||
+      (p.path_control != 610 && p.path_control != 611 && p.path_control != 640) ||
+      !finite_number(line, p.path_tolerance) || p.path_tolerance < 0 ||
+      !finite_number(line, p.naivecam_tolerance) || p.naivecam_tolerance < 0 ||
       !finite_number(line, p.clearance_z) || !finite_vector(line, p.start) ||
-      p.clearance_z < p.start[2] || !finite_vector(line, p.g5x) ||
-      !finite_vector(line, p.g92) || !finite_vector(line, p.tool_offset) ||
-      !finite_number(line, p.rotation) || !word(line).empty())
+      p.clearance_z < p.start[2] || !finite_vector(line, p.g5x) || !finite_vector(line, p.g92) ||
+      !finite_vector(line, p.tool_offset) || !finite_number(line, p.rotation) ||
+      !word(line).empty())
     return false;
   p.units = inch ? LengthUnit::inch : LengthUnit::mm;
   p.spindle_direction = spindle == 1    ? SpindleDirection::forward
@@ -202,11 +205,12 @@ auto write_restart(const RestartPoint& p) -> std::string {
   const int spindle = p.spindle_direction == SpindleDirection::forward    ? 1
                       : p.spindle_direction == SpindleDirection::reverse ? -1
                                                                          : 0;
-  return std::format("restart {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n",
-                     p.line, p.tool, p.wcs, p.h, spindle, p.spindle_rpm, int{p.flood},
-                     int{p.mist}, p.feed, int{p.units == LengthUnit::inch}, p.plane,
-                     int{p.incremental}, int{p.absolute_arc}, p.clearance_z, vec(p.start),
-                     vec(p.g5x), vec(p.g92), vec(p.tool_offset), p.rotation);
+  return std::format(
+      "restart {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", p.line,
+      p.tool, p.wcs, p.h, spindle, p.spindle_rpm, int{p.flood}, int{p.mist}, p.feed,
+      int{p.units == LengthUnit::inch}, p.plane, int{p.incremental}, int{p.absolute_arc}, p.motion,
+      p.path_control, p.path_tolerance, p.naivecam_tolerance, p.clearance_z, vec(p.start),
+      vec(p.g5x), vec(p.g92), vec(p.tool_offset), p.rotation);
 }
 
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {

@@ -646,7 +646,9 @@ auto modal_g_codes(InterpBase& interp) -> GCodes {
   return codes;
 }
 
-auto capture_restart(const GCodes& codes) -> RestartPoint {
+auto capture_restart(InterpBase& interp, const GCodes& codes) -> RestartPoint {
+  std::array<double, ACTIVE_SETTINGS> settings{};
+  interp.active_settings(settings.data());
   auto start = to_program(canon.end);
   for (auto& coordinate : start)
     coordinate *= program_unit();
@@ -664,10 +666,14 @@ auto capture_restart(const GCodes& codes) -> RestartPoint {
           .mist = canon.mist,
           .feed = canon.feed,
           .units = canon.length_units == CANON_UNITS_INCHES ? coffeecnc::LengthUnit::inch
-                                                           : coffeecnc::LengthUnit::mm,
+                                                            : coffeecnc::LengthUnit::mm,
           .plane = codes[3] / 10,
           .incremental = codes[6] == 910,
           .absolute_arc = codes[14] == 901,
+          .motion = codes[1],
+          .path_control = codes[11],
+          .path_tolerance = std::max(0.0, settings[3]) * program_unit(),
+          .naivecam_tolerance = std::max(0.0, settings[4]) * program_unit(),
           .clearance_z = std::max(start[2], peak - canon.g5x[2] - canon.g92[2]),
           .start = start,
           .g5x = canon.g5x,
@@ -676,8 +682,8 @@ auto capture_restart(const GCodes& codes) -> RestartPoint {
           .rotation = canon.rotation};
 }
 
-auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCodes& after)
-    -> std::string {
+auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCodes& after,
+                     std::string_view block) -> std::string {
   const auto canned = [](int code) { return code == 730 || code == 760 ||
                                            (code >= 810 && code <= 890); };
   if (before[4] != 400 || after[4] != 400)
@@ -690,6 +696,11 @@ auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCod
     return "Choose a line that moves the tool.";
   if (after[1] != 0 && after[1] != 10 && after[1] != 20 && after[1] != 30)
     return "Choose a rapid, feed, or arc move for restart.";
+  if (before[1] != 0 && before[1] != 10 && before[1] != 20 && before[1] != 30 && before[1] != 800)
+    return "The prior motion mode cannot be restored for restart.";
+  if ((after[1] == 20 || after[1] == 30) &&
+      coffeecnc::motion_use(block) != coffeecnc::MotionUse::sets)
+    return "Choose an arc block with an explicit G2 or G3.";
   if (canon.changed_tool_table || canon.used_output)
     return "The skipped blocks change tool data or machine outputs.";
   if (point.wcs != canon.g5x_index || point.g5x != canon.g5x || point.g92 != canon.g92 ||
@@ -889,7 +900,7 @@ auto run(const HelperRequest& request) -> int {
     GCodes before{};
     if (target) {
       before = modal_g_codes(*interp);
-      restart = capture_restart(before);
+      restart = capture_restart(*interp, before);
     }
     result = interp->execute();
     if (canon.halt != Halt::none)
@@ -899,7 +910,7 @@ auto run(const HelperRequest& request) -> int {
       break;
     }
     if (target)
-      restart_blocked = restart_refusal(*restart, before, modal_g_codes(*interp));
+      restart_blocked = restart_refusal(*restart, before, modal_g_codes(*interp), text.data());
     if (result == INTERP_EXIT)
       ended = true;
     else if (result == INTERP_EXECUTE_FINISH)

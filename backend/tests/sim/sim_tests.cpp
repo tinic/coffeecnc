@@ -3872,7 +3872,7 @@ void restart_cuts(Rig& rig) {
                                  std::abs(s.work[1] - start[1]) < 0.05);
         return false;
       }
-      if (s.motion_line >= line && s.velocity > 0.01) {
+      if (s.motion_line > 0 && s.velocity > 0.01) {
         if (first_motion == 0)
           first_motion = s.motion_line;
         spindle_on = spindle_on || (s.spindle_rpm > 1000 &&
@@ -3888,6 +3888,10 @@ void restart_cuts(Rig& rig) {
             near_path = near_path || distance(tool_tip, segment.points[i - 1],
                                               segment.points[i]) < 0.25;
         }
+        if (suffix && (!near_path || s.controller.tool_in_spindle != tool))
+          fact("restart_out_of_path", std::format("line={} tool={} length={} tip={},{},{}",
+               s.motion_line, s.controller.tool_in_spindle, s.tool_offset[2], tool_tip[0],
+               tool_tip[1], tool_tip[2]));
         suffix = suffix && near_path && s.controller.tool_in_spindle == tool;
       }
       return first_motion != 0 && !s.task_executing && rig.idle();
@@ -3902,14 +3906,20 @@ void restart_cuts(Rig& rig) {
   };
 
   if (setup) {
-    const auto missing = rig.send(R"("type":"plan_restart","line":23,"preview_context":7)");
-    check("restart_preview_pending", missing.outcome == "rejected", missing.text());
     const auto [canned, unused] = plan("G21 G90 G17\nG0 Z20\nG81 X1 Y1 Z5 R10 F100\nG80\nM2\n", 3);
     check("restart_canned_block", canned.reason.find("canned cycle") != std::string::npos,
           canned.text());
+    const auto missing = rig.send(R"("type":"plan_restart","line":23,"preview_context":7)");
+    check("restart_preview_pending",
+          missing.outcome == "rejected" && missing.reason.find("preview") != std::string::npos,
+          missing.text());
     approach("06-toolchange.ngc", 22, 98, true);
-    if (failures == 0 && mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0"))
-      approach("03-pocket.ngc", 24, 1, false);
+    if (failures == 0) {
+      const bool repositioned = mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0");
+      check("restart_pocket_setup", repositioned);
+      if (repositioned)
+        approach("03-pocket.ngc", 24, 1, false);
+    }
   }
 
   static_cast<void>(rig.send(R"("type":"abort")"));

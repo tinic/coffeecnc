@@ -763,6 +763,20 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
   request.codes = start->codes;
+  if (inputs.restart_line) {
+    for (const auto& code : inputs.start.active_codes)
+      if (code == "G61" || code == "G61.1" || code == "G96")
+        request.codes.push_back(code);
+    if (inputs.start.spindle_speed > 0)
+      request.codes.push_back(std::format("S{:.8f}", inputs.start.spindle_speed));
+    if (inputs.start.spindle_direction != SpindleDirection::stopped)
+      request.codes.push_back(inputs.start.spindle_direction == SpindleDirection::forward ? "M3"
+                                                                                          : "M4");
+    if (inputs.start.flood)
+      request.codes.emplace_back("M8");
+    if (inputs.start.mist)
+      request.codes.emplace_back("M7");
+  }
   request.inherited_motion = start->inherited_motion;
   request.tools = to_helper_tools(inputs.raw_tools);
   request.restart_line = inputs.restart_line;
@@ -824,6 +838,12 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     auto outcome = outcome_of(
         settings_, run, static_cast<int>(std::min<std::ptrdiff_t>(
                             std::ranges::count(text, '\n') + 1, 2000000000)));
+    if (outcome.restart && outcome.restart->tool != inputs.start.tool_in_spindle &&
+        (settings_.tool_change_at_g30 || settings_.tool_change_position ||
+         settings_.tool_change_quill_up)) {
+      outcome.restart.reset();
+      outcome.restart_blocked = "The configured tool change moves the machine independently.";
+    }
     // The result stands only for files that are still what was read.
     if (files_differ(*manifest, settings_.search_path, cancelled, lookups_))
       continue;

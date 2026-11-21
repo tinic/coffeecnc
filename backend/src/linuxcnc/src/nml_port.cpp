@@ -8,6 +8,7 @@
 
 #include "nml_gate.hpp"
 #include "nml_status.hpp"
+#include "program_watch.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -87,6 +88,48 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
   const auto* end = text.data() + text.size();
   const auto [parsed, error] = std::from_chars(text.data(), end, tool);
   return error == std::errc{} && parsed == end && tool >= 0 ? std::optional{tool} : std::nullopt;
+}
+
+auto with_breakpoint(std::string_view program, int target)
+    -> std::expected<std::string, std::string> {
+  std::size_t insertion = std::string_view::npos;
+  auto remaining = program;
+  for (int line = 1; !remaining.empty(); ++line) {
+    const auto end = remaining.find('\n');
+    const auto block = remaining.substr(0, end);
+    if (o_word_name(block))
+      return std::unexpected("A breakpoint needs a program without subroutines or loops.");
+    if (line == target && motion_use(block) != MotionUse::none)
+      insertion = program.size() - remaining.size();
+    remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+  }
+  if (insertion == std::string_view::npos)
+    return std::unexpected("Choose a motion block in the loaded program.");
+  // The copy preserves the original words, comments and line endings on every source line.
+  std::string copied{program};
+  copied.insert(insertion, "M0 (CoffeeCNC breakpoint)\n");
+  return copied;
+}
+
+auto load_breakpoint(const std::filesystem::path& record, const std::filesystem::path& copy)
+    -> std::shared_ptr<const BreakpointSource> {
+  const auto text = read_text_file(record.string(), 512);
+  if (!text)
+    return {};
+  const auto split = text->find('\n');
+  if (split == std::string::npos)
+    return {};
+  int line{};
+  const auto* end = text->data() + split;
+  const auto [rest, error] = std::from_chars(text->data(), end, line);
+  auto original = std::string_view(*text).substr(split + 1);
+  if (original.ends_with('\n'))
+    original.remove_suffix(1);
+  if (error != std::errc{} || rest != end || line <= 0 || !original.starts_with('/') ||
+      original.size() > 254 || original == copy.string() ||
+      std::ranges::any_of(original, [](unsigned char c) { return c < 32 || c == 127; }))
+    return {};
+  return std::make_shared<const BreakpointSource>(std::string(original), copy.string(), line);
 }
 
 using Clock = std::chrono::steady_clock;
@@ -264,6 +307,11 @@ struct NmlPort::Impl {
   bool air_bad_marker{};
   bool air_recovery_reported{};
   Clock::time_point air_retry{};
+  std::filesystem::path breakpoint_copy;
+  std::filesystem::path breakpoint_record;
+  std::shared_ptr<const BreakpointSource> breakpoint;
+  Clock::time_point breakpoint_retry{};
+  bool breakpoint_reported{};
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -275,6 +323,9 @@ struct NmlPort::Impl {
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
     air_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
+    breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
+    breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
+    breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     std::error_code error;
     if (std::filesystem::exists(air_marker, error)) {
       if (const auto text = read_text_file(air_marker.string(), 64)) {
@@ -300,6 +351,15 @@ struct NmlPort::Impl {
       loads->air_z = air_z;
       loads->air_offset_owned = owns_air_offset();
     }
+  }
+
+  void discard_breakpoint() {
+    // Keep the last mapping published while the publisher's mailbox catches up to the reopen.
+    breakpoint.reset();
+    breakpoint_reported = false;
+    std::error_code unused;
+    std::filesystem::remove(breakpoint_record, unused);
+    std::filesystem::remove(breakpoint_copy, unused);
   }
 
   [[nodiscard]] auto stat() -> const EMC_STAT* {
@@ -716,6 +776,8 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
   impl->hal = hal;
   impl->loads = loads;
   impl->publish_air();
+  if (loads)
+    loads->breakpoint.store(impl->breakpoint);
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
       !impl->status.valid() ||
       impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
@@ -761,6 +823,8 @@ auto NmlPort::status() -> NmlStatus {
   result.controller.air_offset_recovery =
       result.controller.air_offset_owned &&
       (!impl_->air_running || result.controller.interp == InterpState::idle);
+  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string();
+  map_breakpoint(result, impl_->breakpoint.get());
   return result;
 }
 
@@ -772,6 +836,10 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
 }
 
 void NmlPort::idle_maintenance(const Wanted& wanted) {
+  if (impl_->breakpoint || status().controller.breakpoint_program) {
+    finish_breakpoint(wanted);
+    return;
+  }
   if (impl_->owns_air_offset()) {
     recover_air_offset(wanted);
     return;
@@ -1743,6 +1811,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
+  if (path == impl_->breakpoint_copy.string())
+    return failed("Open the original program instead of its temporary breakpoint copy.");
+  return open_program_file(path, wanted, true);
+}
+
+auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, bool publish_load)
+    -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1758,11 +1833,15 @@ auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> Actio
     return closed;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
-  // LinuxCNC has taken the file up: a load, also of the file that was loaded before.
-  if (impl_->loads != nullptr)
-    ++impl_->loads->programs;
-  impl_->air_z = 0;
-  impl_->publish_air();
+  if (publish_load) {
+    // A newly opened file is a load, even when the operator opens the same path again.
+    if (impl_->loads)
+      ++impl_->loads->programs;
+    impl_->air_z = 0;
+    impl_->publish_air();
+    if (impl_->breakpoint)
+      impl_->discard_breakpoint();
+  }
   return impl_->settled(
       from, "LinuxCNC did not open the program.",
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
@@ -1771,6 +1850,8 @@ auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> Actio
 auto NmlPort::run(const Wanted& wanted) -> ActionResult {
   if (impl_->air_z != 0 || impl_->owns_air_offset())
     return failed("Air cut needs a complete raised preview.");
+  if (status().controller.breakpoint_program)
+    return failed("Wait for the original program to reopen after the breakpoint run.");
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1817,7 +1898,8 @@ auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, co
 }
 
 auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
-                            const Wanted& wanted) -> ActionResult {
+                            const Wanted& wanted, std::optional<std::string_view> execution_path)
+    -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1828,7 +1910,7 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
     return failed(reason);
   EMC_TASK_PLAN_OPEN open;
-  if (!inputs.program_file || !put(open.file, *inputs.program_file))
+  if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
     return failed("The program path is too long for LinuxCNC.");
   // Refresh the interpreter's descriptor for this path without publishing a new load.
   EMC_TASK_PLAN_CLOSE close;
@@ -1843,6 +1925,55 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
   EMC_TASK_PLAN_RUN message;
   message.line = 0;
   return impl_->start(message, from);
+}
+
+auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view program, int line,
+                                const Wanted& current, const Wanted& wanted) -> ActionResult {
+  if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program ||
+      impl_->air_z != 0 || impl_->owns_air_offset())
+    return failed("The breakpoint needs the original program and no air-cut offset.");
+  const auto copy = with_breakpoint(program, line);
+  if (!copy)
+    return failed(copy.error());
+  if (!current())
+    return failed("The program or tool data changed. Review the new program check.");
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  const auto record = std::format("{}\n{}\n", line, *inputs.program_file);
+  if (!write_sidecar(impl_->breakpoint_record, record) ||
+      !write_sidecar(impl_->breakpoint_copy, *copy)) {
+    impl_->discard_breakpoint();
+    return failed("Could not save the temporary breakpoint program.");
+  }
+  impl_->breakpoint = std::make_shared<const BreakpointSource>(
+      *inputs.program_file, impl_->breakpoint_copy.string(), line);
+  if (impl_->loads)
+    impl_->loads->breakpoint.store(impl_->breakpoint);
+  return start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+}
+
+void NmlPort::finish_breakpoint(const Wanted& wanted) {
+  const auto observed = status();
+  const auto& state = observed.controller;
+  if (state.link != Link::live || state.interp != InterpState::idle || !state.in_position ||
+      state.requested_tool || observed.paused || observed.task_executing || !wanted() ||
+      Clock::now() < impl_->breakpoint_retry)
+    return;
+  impl_->breakpoint_retry = Clock::now() + std::chrono::seconds{1};
+  if (!state.breakpoint_program) {
+    impl_->discard_breakpoint();
+    return;
+  }
+  if (impl_->breakpoint) {
+    const auto reopened = open_program_file(impl_->breakpoint->original, wanted);
+    if (accepted(reopened)) {
+      impl_->discard_breakpoint();
+      return;
+    }
+  }
+  if (wanted() && !std::exchange(impl_->breakpoint_reported, true))
+    impl_->messages.push_back({true, "The original program could not be reopened after the "
+                                     "breakpoint. Open a program to continue."});
 }
 
 namespace {

@@ -60,6 +60,7 @@ struct ControllerState {
   double air_z{}; // selected lift, millimetres
   bool air_offset_owned{};
   bool air_offset_recovery{};
+  bool breakpoint_program{};
 };
 
 struct Limits {
@@ -125,6 +126,7 @@ struct Run {
   std::optional<LengthUnit> display_units{};
   bool confirmed{};
   double air_z{};
+  std::optional<int> breakpoint{}; // pause before this original 1-based source line
 };
 struct SetAirCut {
   double air_z{}; // zero selects a normal run

@@ -59,7 +59,8 @@ void PanelComposer::count(const PanelReading& reading) {
   }
   // The interpreter can already be idle while AUTO still has motion or a wait outstanding.
   const bool automatic = status.mode == TaskMode::automatic && status.program.file.has_value();
-  const bool running = status.program.air_offset_owned || status.interp != InterpState::idle ||
+  const bool running = status.program.air_offset_owned || status.program.breakpoint ||
+                       status.interp != InterpState::idle ||
                        (automatic && (reading.task_executing || !status.motion.in_position ||
                                       !std::holds_alternative<WaitNone>(status.wait)));
   if (!running && status.motion.in_position) {

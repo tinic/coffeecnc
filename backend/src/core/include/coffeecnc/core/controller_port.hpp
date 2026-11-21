@@ -152,6 +152,10 @@ public:
       return {ActionStatus::failed, "The program check changed. Review the current results."};
     return run(wanted);
   }
+  [[nodiscard]] virtual auto run_to_breakpoint(const PreviewInputs&, std::string_view, int,
+                                               const Wanted&, const Wanted&) -> ActionResult {
+    return {ActionStatus::failed, "Program breakpoints are unavailable on this controller."};
+  }
   // Validates the approach without sending controller commands and updates its clearance.
   [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
     return "Restart from line is unavailable on this controller.";

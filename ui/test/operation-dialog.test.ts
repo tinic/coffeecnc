@@ -113,6 +113,40 @@ describe('new operation dialog', () => {
     expect(document.body.textContent).toContain('use an end mill that cuts at its centre')
   })
 
+  it('lists the program directory once the link is live, and again after a failed listing', async () => {
+    panel.link = 'connecting'
+    wrapper = mount(OperationDialog, { attachTo: document.body, global: { stubs: { teleport: true } } })
+    expect(sent()).toEqual([])
+    panel.link = 'live'
+    await nextTick()
+    answer(sent().at(-1), 'failed', 'No answer from the machine')
+    await nextTick()
+    expect(wrapper.text()).toContain('No answer from the machine')
+    panel.link = 'silent'
+    await nextTick()
+    panel.link = 'live'
+    await nextTick()
+    const again = sent().at(-1)
+    expect(sent().map((command) => command.type)).toEqual(['list_directory', 'list_directory'])
+    wire.receive({ type: 'directory', path: programDirectory, parent: null, entries: [] })
+    answer(again)
+    await nextTick()
+    expect(wrapper.text()).not.toContain('No answer from the machine')
+    expect(button('Create and open').disabled).toBe(false)
+  })
+
+  it('suggests the tool that is in the spindle now', async () => {
+    await open()
+    const status = new SimMachine({ emit: (): void => undefined }).status()
+    expect(status.tool.in_spindle).not.toBe(2)
+    wire.receive({ ...status, tool: { ...status.tool, in_spindle: 2 } })
+    await nextTick()
+    button('Create and open').click()
+    const save = sent().at(-1)
+    if (save?.type !== 'save_program') throw new Error('No save')
+    expect(save.text).toContain('\nT2 M6\n')
+  })
+
   it('writes an inch program when the panel shows inches', async () => {
     panel.unit = 'inch'
     await open()

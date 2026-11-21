@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-    <SetterStatusBand :line="displayLine">
+    <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
         <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">Apply rotation…</button>
       </template>
@@ -363,10 +363,9 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
-        <div class="feature-row">
-          <span>Rectangular pocket</span>
-          <button class="btn" type="button" @click="openGuide({ kind: 'pocket' })">Centre and size</button>
-        </div>
+        <button class="btn pocket-action" type="button" @click="openGuide({ kind: 'pocket' })">
+          Rectangular pocket
+        </button>
         <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
           <span class="feature-name">{{ kind }}</span>
           <div class="feature-buttons">
@@ -392,7 +391,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.rotation-action { flex: none; min-height: 32px; padding-inline: 8px; font-size: 12px; }
+.probe-status { height: 48px; }
+.rotation-action { flex: none; min-height: 44px; padding-inline: 8px; font-size: 12px; }
 .rotation-effect { margin: 0; line-height: 1.5; }
 .material-probe { min-width: 0; container-type: inline-size; }
 .probe-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(186px, 0.82fr); align-items: center; gap: 12px; }
@@ -402,12 +402,13 @@ onBeforeUnmount(() => {
 .probe-actions button.corner { min-height: 44px; }
 .probe-utilities { display: flex; gap: 8px; grid-column: 2; align-self: start; }
 .probe-utilities button { flex: 1; min-height: 44px; padding-inline: 5px; }
-.feature-options { display: grid; gap: 12px; }
+.feature-options { display: grid; gap: 8px; }
+.pocket-action { justify-content: flex-start; }
 .feature-row { display: grid; grid-template-columns: minmax(108px, .6fr) 1.4fr; gap: 12px; align-items: center; }
 .feature-name { text-transform: capitalize; }
 .feature-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .feature-buttons button { flex: 1; white-space: nowrap; }
-.feature-row button { min-height: 44px; }
+.feature-options button { min-height: 44px; }
 .centres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .centres button { min-height: 44px; }
 @container (max-width: 390px) {

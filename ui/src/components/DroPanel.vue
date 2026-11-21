@@ -127,8 +127,9 @@ watch([axes, touchBlock], () => {
       <div v-for="axis in rotaryAxes" :key="axis.axis" class="rotary-axis">
         <span class="rotary-letter mono">{{ axis.axis.toUpperCase() }}</span>
         <span class="rotary-angle mono">{{ formatAngle(axis[basis]) }}</span>
-        <span v-if="!live || marker(axis)" class="rotary-marker">{{ !live ? 'Last reported' : marker(axis) }}</span>
+        <span v-if="live && marker(axis)" class="rotary-marker">{{ marker(axis) }}</span>
       </div>
+      <span v-if="!live" class="rotary-marker rotary-stale">Last reported</span>
     </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
     <CoordinateConfirm v-if="quick && quickValues" :axis="quick.axis" :wcs="wcs" :current="quickValues.current" :target="quickValues.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />
@@ -138,12 +139,12 @@ watch([axes, touchBlock], () => {
 <style scoped>
 .dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .dro.has-rotary { flex-wrap: wrap; }
-.rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
-.rotary-axis { display: grid; grid-template-columns: 18px minmax(104px, auto) 62px; align-items: baseline; gap: 10px; padding: 0 12px; white-space: nowrap; }
-.rotary-axis + .rotary-axis { border-left: 1px solid var(--line); }
-.rotary-letter, .rotary-angle { font-size: 19px; font-weight: 500; }
+.rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 6px; padding: 4px 0 0 154px; border-top: 1px solid var(--line); }
+.rotary-axis { display: grid; grid-template-columns: 20px 132px minmax(0, 1fr); flex: 0 0 257px; align-items: baseline; gap: 12px; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
+.rotary-letter, .rotary-angle { font-size: 18px; line-height: 24px; font-weight: 500; }
 .rotary-angle { text-align: right; }
 .rotary-marker { color: var(--warn); font-size: 10px; }
+.rotary-stale { margin-left: auto; padding: 0 12px; white-space: nowrap; }
 .distrust .rotary-angle { color: var(--text-faint); }
 .basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }
 .basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; border-color: var(--line-strong); font-size: 14px; font-weight: 500; white-space: nowrap; }

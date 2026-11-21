@@ -10,6 +10,7 @@ import { operations, parse, uniqueName, unitOf, visibleFields, type Field, type 
 import type { Common, Unit } from '../conversational/program'
 import type { CommandBody, Directory } from '../protocol'
 import { toDisplay } from '../units'
+import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 
 const emit = defineEmits<{ close: [] }>()
@@ -121,10 +122,11 @@ watch(() => panel.link, list, { immediate: true })
 function numberUnit(field: Field): string {
   return field.type === 'number' ? unitOf(field.kind, unit) : ''
 }
-function label(field: Field): string {
-  const shown = numberUnit(field)
-  return shown && field.type === 'number' && field.kind !== 'count' ? `${field.label}, ${shown}` : field.label
-}
+const cutFields = new Set(['feed', 'plungeFeed', 'rpm', 'clearance'])
+const fieldGroups = computed(() => [
+  { label: 'Tool and feeds', includesTool: true, fields: fields.value.filter((field) => cutFields.has(field.key)) },
+  { label: 'Geometry', includesTool: false, fields: fields.value.filter((field) => !cutFields.has(field.key)) },
+])
 </script>
 
 <template>
@@ -140,40 +142,47 @@ function label(field: Field): string {
       </nav>
       <div class="form">
         <p v-if="operation.note" class="operation-note">{{ operation.note }}</p>
-        <div class="fields">
-          <label class="entry tool-entry">
-            <span class="label">Tool</span>
-            <select v-model.number="toolNumber" class="field" aria-label="Tool" :disabled="saving">
-              <option v-if="tools.length === 0" :value="0">No tools in the tool table</option>
-              <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
-            </select>
-          </label>
-          <template v-for="field in fields" :key="`${chosen}-${field.key}-${field.label}`">
-            <div v-if="field.type === 'choice'" class="entry">
-              <span class="label">{{ field.label }}</span>
-              <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="field.label" :disabled="saving">
-                <option v-for="[value, text] in field.options" :key="value" :value="value">{{ text }}</option>
+        <fieldset v-for="group in fieldGroups" :key="group.label">
+          <legend>{{ group.label }}</legend>
+          <div class="fields" :class="{ cutting: group.includesTool }">
+            <label v-if="group.includesTool" class="entry tool-entry">
+              <span class="label">Tool</span>
+              <select v-model.number="toolNumber" class="field" aria-label="Tool" :disabled="saving">
+                <option v-if="tools.length === 0" :value="0">No tools in the tool table</option>
+                <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
               </select>
-              <div v-else class="segmented" role="group" :aria-label="field.label">
-                <button
-                  v-for="[value, text] in field.options" :key="value" class="btn" type="button" :disabled="saving"
-                  :class="{ on: entered[field.key] === value }" :aria-pressed="entered[field.key] === value"
-                  @click="entered[field.key] = value"
-                >
-                  {{ text }}
-                </button>
-              </div>
-            </div>
-            <label v-else class="entry">
-              <span class="label">{{ label(field) }}</span>
-              <input
-                v-model="entered[field.key]" v-numeric="field.kind === 'count' ? 'integer' : undefined"
-                :data-numeric-unit="numberUnit(field)" class="field mono" type="text"
-                :inputmode="field.kind === 'count' ? 'numeric' : 'decimal'" autocomplete="off" spellcheck="false" :disabled="saving"
-              />
             </label>
-          </template>
-        </div>
+            <template v-for="field in group.fields" :key="`${chosen}-${field.key}-${field.label}`">
+              <div v-if="field.type === 'choice'" class="entry">
+                <span class="label">{{ field.label }}</span>
+                <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="field.label" :disabled="saving">
+                  <option v-for="[value, text] in field.options" :key="value" :value="value">{{ text }}</option>
+                </select>
+                <div v-else class="segmented" role="group" :aria-label="field.label">
+                  <button
+                    v-for="[value, text] in field.options" :key="value" class="btn" type="button" :disabled="saving"
+                    :class="{ on: entered[field.key] === value }" :aria-pressed="entered[field.key] === value"
+                    @click="entered[field.key] = value"
+                  >
+                    {{ text }}
+                  </button>
+                </div>
+              </div>
+              <label v-else class="entry">
+                <span class="label">{{ field.label }}</span>
+                <span class="number-field">
+                  <input
+                    v-model="entered[field.key]" v-numeric="field.kind === 'count' ? 'integer' : undefined"
+                    :data-numeric-unit="numberUnit(field)" class="field mono" type="text"
+                    :aria-label="numberUnit(field) ? field.label + ', ' + numberUnit(field) : field.label"
+                    :inputmode="field.kind === 'count' ? 'numeric' : 'decimal'" autocomplete="off" spellcheck="false" :disabled="saving"
+                  />
+                  <span v-if="numberUnit(field)" class="field-unit" aria-hidden="true">{{ numberUnit(field) }}</span>
+                </span>
+              </label>
+            </template>
+          </div>
+        </fieldset>
       </div>
     </div>
     <ul v-if="errors.length" class="errors" role="alert">
@@ -181,7 +190,12 @@ function label(field: Field): string {
     </ul>
     <p v-else-if="feedback || block" class="errors" role="status">{{ feedback || block }}</p>
     <template #footer>
-      <span class="file mono">{{ directory ? fileName : '' }}<span v-if="directory" class="where"> · {{ unit === 'inch' ? 'inch' : 'mm' }} program in {{ directory.path }}</span></span>
+      <div class="file">
+        <template v-if="directory">
+          <strong class="mono">{{ fileName }}</strong>
+          <span v-tooltip="directory.path" class="where">{{ directory.path }}</span>
+        </template>
+      </div>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
       <button class="btn primary" type="button" :disabled="saving || errors.length > 0 || directory === null || block !== null" @click="create">
         {{ saving ? 'Saving…' : 'Create and open' }}
@@ -194,17 +208,24 @@ function label(field: Field): string {
 .operation-editor { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; flex: 1; min-height: 0; }
 .operations { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; }
 .operation { justify-content: flex-start; min-height: 48px; }
-.form { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
-.fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; align-content: start; }
+.form { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }
+.fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
+.fields.cutting { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .tool-entry { grid-column: span 2; }
+.number-field { position: relative; min-width: 0; }
+.number-field:has(.field-unit) input { padding-right: 62px; }
+.field-unit { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 11px; pointer-events: none; }
 .entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .operation-note { margin: 0; font-size: 13px; color: var(--warn); }
 .entry .field { width: 100%; min-width: 0; min-height: 44px; }
 .segmented { display: flex; }.segmented .btn { flex: 1; min-width: 0; padding: 0 8px; }
 .errors { margin: 0; padding: 0 0 0 18px; color: var(--warn); font-size: 12px; line-height: 1.5; }
 p.errors { padding: 0; }
-.file { flex: 1; min-width: 0; overflow: hidden; align-self: center; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.where { color: var(--text-dim); }
-@media (max-width: 1180px) { .fields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.file { flex: 1; min-width: 0; overflow: hidden; align-self: center; font-size: 12px; }
+.file strong, .where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file strong { font-size: 13px; font-weight: 500; }
+.where { margin-top: 2px; color: var(--text-dim); }
+@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

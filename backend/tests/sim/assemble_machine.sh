@@ -21,9 +21,8 @@
 #   [HAL] POSTGUI_HALFILE, [HAL] SHUTDOWN, [EMCIO] TOOL_TABLE   byte for byte copies
 #   [RS274NGC] PARAMETER_FILE   not copied: the interpreter starts without saved offsets
 #
-# Also checked: every command of CoffeeCNC's post-GUI fragment is in the machine's post-GUI
-# file, in the fragment's order (a machine file carries the commands itself; this is what
-# says they have not drifted from the fragment the package ships).
+# Check the shared jog/watchdog wiring against CoffeeCNC's post-GUI fragment. Machine-specific
+# LUT instances can share the load, and the final jog-stop table can enable a probe-contact input.
 #
 # Prints `machine=<step> ...` lines, `machine=assembled ini=<file>` last. Exit code 0, or 125
 # with `machine=error detail=...`.
@@ -124,15 +123,44 @@ done
 postgui=$(values HAL POSTGUI_HALFILE | head -1)
 [ -n "$postgui" ] || fail no-POSTGUI_HALFILE
 result=$(perl -e '
-  sub commands { open(my $f, "<", shift) or exit 2;
-    return map { s/\s+/ /g; s/ $//; $_ } grep { !/^\s*(#|$)/ } <$f>; }
+  sub commands {
+    open(my $f, "<", shift) or exit 2;
+    return grep { length } map { s/#.*//; s/^\s+|\s+$//g; s/\s+/ /g; $_ } <$f>;
+  }
+  sub matches {
+    my ($expected, $actual, $scheduled) = @_;
+    return 1 if $expected eq $actual;
+    return 0 unless $expected =~ /^loadrt lut5 names=(\S+)$/;
+    my @names = split /,/, $1;
+    return 0 unless $actual =~ /^loadrt lut5 names=(\S+)$/;
+    my %present = map { $_ => 1 } split /,/, $1;
+    # Only the instances scheduled by the fragment are needed by the shared wiring.
+    return !grep { $scheduled->{$_} && !$present{$_} } @names;
+  }
+
   my @wanted = commands(shift);
   my @have = commands(shift);
+  my %scheduled = map { /^addf (\S+) / ? ($1 => 1) : () } @wanted;
+  my $stop_table = qr/^setp coffeecnc-jog-stop\.function (\S+)$/;
+  my ($expected_stop) = map { /$stop_table/ } @wanted;
+  my $actual_stop = (map { /$stop_table/ } @have)[-1];
+  @wanted = grep { !/$stop_table/ } @wanted;
+  # The machine can assign the final table after wiring its contact input. Compare the rows
+  # that can be selected by the two shared inputs and, when driven, the contact input.
+  my $contact = grep { /^(?:net|setp) .*\bcoffeecnc-jog-stop\.in-2(?: |$)/ } @have;
+  my $mask = $contact ? 0xff : 0x0f;
+  my $stop_matches = defined($expected_stop) && defined($actual_stop) &&
+    $expected_stop =~ /^0x[0-9a-f]+$/i && $actual_stop =~ /^0x[0-9a-f]+$/i &&
+    ((hex($expected_stop) ^ hex($actual_stop)) & $mask) == 0;
+
   my $at = 0;
-  for my $line (@have) { $at++ if $at < @wanted && $line eq $wanted[$at]; }
+  for my $line (@have) {
+    $at++ if $at < @wanted && matches($wanted[$at], $line, \%scheduled);
+  }
   print "fragment_commands=" . scalar(@wanted) . " in_order=$at";
   print " first_missing=" . ($wanted[$at] =~ s/ /_/gr) if $at < @wanted;
-  exit($at == @wanted ? 0 : 1);
+  print " jog_stop_table=" . ($actual_stop // "missing") . " jog_stop_matches=" . ($stop_matches ? 1 : 0);
+  exit($at == @wanted && $stop_matches ? 0 : 1);
 ' "$fragment" "$directory/$postgui")
 code=$?
 echo "machine=postgui file=$postgui $result"

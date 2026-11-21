@@ -6,6 +6,8 @@ These are unmodified research fixtures. None has been executed in LinuxCNC, geom
 
 ## Start here
 
+To test a job without material, use the [air-cut programs](air/README.md).
+
 | Collection | Files to explore | What it contributes | Qualification |
 |---|---|---|---|
 | [azasypkin/kroneum](https://github.com/azasypkin/kroneum/tree/a6af6f91d12d2eb5daeab3a7beddac1410376e57) | [Rev 0.2 STEP](upstream/kroneum/hw/enclosure/Rev_0.2/kroneum.step), [Rev 0.2 NC](upstream/kroneum/hw/enclosure/Rev_0.2/cnc/), [Rev 0.3 STEP](upstream/kroneum/hw/enclosure/Rev_0.3/kroneum.step), [Rev 0.3 NC](upstream/kroneum/hw/enclosure/Rev_0.3/cnc/), [Rev 0.4 two-sided split NC](upstream/kroneum/hw/enclosure/Rev_0.4/), [PCB isolation/drill NC](upstream/kroneum/hw/pcb/Rev_0.2/cnc/) | Multi-part machined hardware enclosure (base, cap, buttons) across three revisions, two-sided base/top operation splits (`base_base_*`, `button_*_base_*`, `button_*_top_*`), plus PCB milling | Real hardware project (MIT). Rev 0.2 and 0.3 pair `kroneum.step` with `cnc/*.nc`; Rev 0.4 has 16 split NC files without a co-located Rev 0.4 STEP export. Programs omit explicit `G20`/`G21`. |

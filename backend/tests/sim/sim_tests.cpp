@@ -3629,7 +3629,154 @@ void g0759_config(const MachineConfig& config) {
             config.signals.spindle_at_speed && config.signals.probe);
 }
 
-auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only) -> int {
+// The programs are tested with nonzero G54 and unequal tool lengths. The native preview
+// reports the tip in machine coordinates; the simulated HAL signals carry commanded joint
+// positions, so use the offsets in effect in each sample to recover commanded work XYZ.
+auto air_envelope(const Vec3& work) -> bool {
+  constexpr double tolerance = 0.001;
+  return std::abs(work[0]) <= 30 + tolerance && std::abs(work[1]) <= 30 + tolerance &&
+         work[2] >= 5 - tolerance;
+}
+
+void air_cuts(Rig& rig) {
+  constexpr Vec3 origin{10, -8, -50};
+  const auto t1 = rig.send(
+      R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6.35,"comment":"End mill"})");
+  const auto t98 = rig.send(
+      R"("type":"set_tool","tool":{"number":98,"pocket":98,"length":25.4,"diameter":6.35,"comment":"Reference"})");
+  const auto optional = rig.send(
+      R"("type":"set_program_option","option":"optional_stop","on":true)");
+  auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("air_cut_setup", t1.accepted() && t98.accepted() && optional.accepted() && table.has_value(),
+        std::format("T1={} T98={} optional={} tool_data={}", t1.text(), t98.text(), optional.text(),
+                    table.has_value()));
+  if (failures != 0)
+    return;
+  PreviewOracle oracle{rig, *table};
+
+  struct Sample {
+    const char* file;
+    Vec3 end;
+    double low_z;
+    int pauses;
+    int exchanges;
+  };
+  constexpr Sample samples[] = {
+      {"01-square", {-20, -20, 30}, 10, 0, 0},
+      {"02-arcs", {-15, 0, 30}, 5, 0, 0},
+      {"03-pocket", {24, 20, 30}, 5, 0, 0},
+      {"04-drill", {18, 12, 30}, 5, 0, 0},
+      {"05-pauses", {-15, 15, 30}, 10, 2, 0},
+      {"06-toolchange", {16, 12, 30}, 10, 0, 2},
+  };
+
+  for (const auto& sample : samples) {
+    const auto sample_name = std::string{sample.file};
+    const auto filename = std::filesystem::path{COFFEECNC_SAMPLES_DIRECTORY} / "air" /
+                          (sample_name + ".ngc");
+    const auto text = read_text_file(filename.string(), 1 << 16);
+    if (!text) {
+      check(sample_name + "_source", false, "could not read " + filename.string());
+      return;
+    }
+    // Start the tool-change program with T98 so it actually requests both exchanges.
+    const auto start_tool = sample.exchanges > 0 ? 98 : 1;
+    const auto mdi = [&](std::string_view block) -> bool {
+      const auto sent = rig.send(std::format(R"("type":"mdi","text":"{}")", block));
+      const bool done = sent.accepted() && rig.pump_until(10s, [&]() -> bool {
+        const auto s = rig.status();
+        return s.command_done && !s.task_executing && s.queued_mdi == 0 &&
+               s.controller.interp == InterpState::idle && s.controller.in_position;
+      });
+      if (!done)
+        check(sample_name + "_setup_mdi", false, std::format("{}: {}", block, sent.text()));
+      return done;
+    };
+    if (!mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X{} Y{} Z{} R0", origin[0], origin[1],
+                         origin[2])) ||
+        !mdi(std::format("M61 Q{} G43 H{}", start_tool, start_tool)) || !mdi("G0 Z30") ||
+        !mdi("G0 X0 Y0"))
+      return;
+    const auto start = rig.status();
+    const bool at_start = start.controller.tool_in_spindle == start_tool &&
+                          distance(start.work, {0, 0, 30}) < 0.01;
+    check(sample_name + "_start", at_start,
+          std::format("T{} XYZ={:.3f},{:.3f},{:.3f}", start.controller.tool_in_spindle,
+                      start.work[0], start.work[1], start.work[2]));
+    if (!at_start)
+      return;
+
+    const auto preview = oracle.preview(*text).second;
+    const bool preview_inside = std::ranges::all_of(preview.segments, [&](const auto& segment) {
+      return std::ranges::all_of(segment.points, [&](const auto& tip) {
+        return air_envelope({tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]});
+      });
+    });
+    check(sample_name + "_preview",
+          preview.state == PreviewState::ready && !preview.error && !preview.segments.empty() &&
+              preview_inside,
+          std::format("state={} segments={} inside={} error={}", static_cast<int>(preview.state),
+                      preview.segments.size(), preview_inside,
+                      preview.error ? preview.error->text : "-"));
+    if (failures != 0)
+      return;
+
+    rig.clear_messages();
+    const auto run = rig.send(R"("type":"run")");
+    bool ran = false;
+    bool inside = true;
+    bool was_paused = false;
+    std::optional<std::uint64_t> last_exchange;
+    int pauses = 0;
+    int exchanges = 0;
+    double low_z = 1000;
+    const bool finished = run.accepted() && rig.pump_until(160s, [&]() -> bool {
+      const auto s = rig.status();
+      const auto& state = s.controller;
+      const auto joint = rig.probe.commanded();
+      const Vec3 work{joint[0] - origin[0] - s.tool_offset[0],
+                      joint[1] - origin[1] - s.tool_offset[1],
+                      joint[2] - origin[2] - s.tool_offset[2]};
+      low_z = std::min(low_z, work[2]);
+      inside = inside && air_envelope(work);
+      ran = ran || state.interp != InterpState::idle;
+      if (!inside || state.machine != MachineState::on)
+        return true;
+
+      if (state.requested_tool && last_exchange != state.tool_request) {
+        last_exchange = state.tool_request;
+        ++exchanges;
+        if (!rig.send(R"("type":"tool_changed")").accepted())
+          return true;
+      }
+      const bool paused = state.interp == InterpState::paused && !state.requested_tool;
+      if (paused && !was_paused) {
+        ++pauses;
+        if (!rig.send(R"("type":"resume")").accepted())
+          return true;
+      }
+      was_paused = paused;
+      return ran && state.interp == InterpState::idle && state.in_position;
+    });
+    const auto end = rig.status();
+    check(sample_name + "_execution",
+          finished && ran && inside && end.controller.interp == InterpState::idle &&
+              end.controller.in_position && distance(end.work, sample.end) < 0.01 &&
+              end.spindle_direction == SpindleDirection::stopped && !end.flood && !end.mist &&
+              near(low_z, sample.low_z) && pauses == sample.pauses && exchanges == sample.exchanges,
+          std::format("run={} finished={} inside={} min_z={:.3f} end={:.3f},{:.3f},{:.3f} "
+                      "pauses={} tool_changes={} messages={}",
+                      run.text(), finished, inside, low_z, end.work[0], end.work[1], end.work[2],
+                      pauses, exchanges, PreviewOracle::join(rig.all_messages())));
+    if (failures != 0) {
+      static_cast<void>(rig.send(R"("type":"abort")"));
+      return;
+    }
+  }
+}
+
+auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
+         bool air_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -3662,7 +3809,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
                         halcmd("net coffeecnc-tool-change coffeecnc-test.tool-change") &&
                         halcmd("net coffeecnc-tool-changed coffeecnc-test.tool-changed") &&
                         (g0759 || halcmd("net Xpos coffeecnc-test.x-pos"));
-  check("test_pins", watching);
+  const bool air_pins = !air_only ||
+      (halcmd("net x-pos-cmd coffeecnc-test.x-pos") &&
+       halcmd("net y-pos-cmd coffeecnc-test.y-pos") &&
+       halcmd("net z-pos-cmd coffeecnc-test.z-pos"));
+  check("test_pins", watching && air_pins);
   HalShared shared;
   NmlLoads loads;
   if (restore_only) {
@@ -3682,7 +3833,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   auto view = NmlStatusReader::connect(*config, &shared);
   check("nml_status_readers", reader.has_value() && view.has_value(),
         reader ? (view ? std::string("two") : view.error()) : reader.error());
-  if (wired != 0 || !watching || !port || !reader || !view)
+  if (wired != 0 || !watching || !air_pins || !port || !reader || !view)
     return 1;
   if (restore_only && g0759) {
     const auto populated = (*port)->set_tool({1, 1, 50, 6, "Saved end mill"}, always());
@@ -3697,6 +3848,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (air_only) {
+    air_cuts(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (restore_only) {
     restore_spindle_tool(rig);
     return failures == 0 ? 0 : 1;
@@ -3783,6 +3939,7 @@ auto main(int argc, char** argv) -> int {
   bool models_only = false;
   bool contact_only = false;
   bool restore_only = false;
+  bool air_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -3792,6 +3949,7 @@ auto main(int argc, char** argv) -> int {
     models_only = models_only || std::string_view(argv[i]) == "--tool-models";
     contact_only = contact_only || std::string_view(argv[i]) == "jog-contact";
     restore_only = restore_only || std::string_view(argv[i]) == "restore-spindle-tool";
+    air_only = air_only || std::string_view(argv[i]) == "air-cuts";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -3800,7 +3958,7 @@ auto main(int argc, char** argv) -> int {
     if (ini_file.empty())
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
-    code = run(ini_file, g0759, contact_only, restore_only);
+    code = run(ini_file, g0759, contact_only, restore_only, air_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

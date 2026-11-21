@@ -1,0 +1,46 @@
+(03 Pocket - three raster levels and feed changes with T1, about 2 min.)
+(G54 envelope: X/Y -24 to +24 mm, programmed Z +5 to +30 mm.)
+(Set G54 Z0 on the stock top; nothing goes below Z+5.)
+(Start near G54 X0 Y0 Z+30 with the correct tool length active and clear travel.)
+G21 G90 G17 G54 G94 G97 G40 G49 G80 G61
+M5 M9
+M48
+T1 M6
+G43 H1
+G0 Z30
+G0 X-24 Y-20
+S1500 M3
+G4 P2
+G1 Z15 F480
+G1 X24 F360
+G1 Y-10
+G1 X-24
+G1 Y0
+G1 X24
+G1 Y10
+G1 X-24
+G1 Y20
+G1 X24
+G1 Z10 F480
+G1 X-24 F420
+G1 Y10
+G1 X24
+G1 Y0
+G1 X-24
+G1 Y-10
+G1 X24
+G1 Y-20
+G1 X-24
+G1 Z5 F480
+G1 X24 F480
+G1 Y-10
+G1 X-24
+G1 Y0
+G1 X24
+G1 Y10
+G1 X-24
+G1 Y20
+G1 X24
+M5 M9
+G0 Z30
+M30

@@ -23,6 +23,8 @@ struct HalProbe::Pins {
   hal_bit_t* tool_change;
   hal_bit_t* tool_changed;
   hal_float_t* x;
+  hal_float_t* y;
+  hal_float_t* z;
 };
 
 auto HalProbe::create() -> std::expected<HalProbe, std::string> {
@@ -37,7 +39,9 @@ auto HalProbe::create() -> std::expected<HalProbe, std::string> {
       hal_pin_bit_new("coffeecnc-test.watchdog-ok", HAL_IN, &pins->watchdog_ok, id) != 0 ||
       hal_pin_bit_new("coffeecnc-test.tool-change", HAL_IN, &pins->tool_change, id) != 0 ||
       hal_pin_bit_new("coffeecnc-test.tool-changed", HAL_IN, &pins->tool_changed, id) != 0 ||
-      hal_pin_float_new("coffeecnc-test.x-pos", HAL_IN, &pins->x, id) != 0)
+      hal_pin_float_new("coffeecnc-test.x-pos", HAL_IN, &pins->x, id) != 0 ||
+      hal_pin_float_new("coffeecnc-test.y-pos", HAL_IN, &pins->y, id) != 0 ||
+      hal_pin_float_new("coffeecnc-test.z-pos", HAL_IN, &pins->z, id) != 0)
     return std::unexpected(std::string("Creating the pins of coffeecnc-test failed"));
   if (const int result = hal_ready(id); result != 0)
     return std::unexpected(std::format("hal_ready failed: {}", result));
@@ -57,5 +61,8 @@ auto HalProbe::watchdog_ok() const -> bool { return get(pins_->watchdog_ok); }
 auto HalProbe::tool_change() const -> bool { return get(pins_->tool_change); }
 auto HalProbe::tool_changed() const -> bool { return get(pins_->tool_changed); }
 auto HalProbe::x() const -> double { return get(pins_->x); }
+auto HalProbe::commanded() const -> std::array<double, 3> {
+  return {get(pins_->x), get(pins_->y), get(pins_->z)};
+}
 
 } // namespace coffeecnc

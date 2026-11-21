@@ -1,0 +1,31 @@
+(05 Pauses - operator messages, M0, optional M1 and dwell with T1.)
+(G54 envelope: X/Y -15 to +15 mm, programmed Z +10 to +30 mm.)
+(About 25 s of motion and dwell, plus time spent at operator stops.)
+(Set G54 Z0 on the stock top; nothing goes below Z+5.)
+(Start near G54 X0 Y0 Z+30 with the correct tool length active and clear travel.)
+G21 G90 G17 G54 G94 G97 G40 G49 G80 G61
+M5 M9
+T1 M6
+G43 H1
+G0 Z30
+G0 X-15 Y-15
+S1500 M3
+G4 P2
+G1 Z10 F600
+G1 X15 F480
+M5
+G0 Z30
+(MSG, Air cut: mandatory stop. Resume when ready.)
+M0
+G0 Y0
+(MSG, Air cut: optional stop when enabled.)
+M1
+S1500 M3
+G4 P2
+G1 Z10 F600
+G1 X-15 F480
+G1 Y15
+G4 P4
+M5 M9
+G0 Z30
+M30

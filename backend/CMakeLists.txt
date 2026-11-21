@@ -167,6 +167,7 @@ if(BUILD_TESTING)
       target_include_directories(coffeecnc_sim_tests SYSTEM PRIVATE
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR})
       target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
+        COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
         COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
       if(TARGET coffeecnc_preview)
         add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
@@ -222,6 +223,13 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      if(TARGET coffeecnc_preview)
+        add_test(NAME linuxcnc_air_cuts_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 420 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_air_cuts_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 air-cuts)
+        set_tests_properties(linuxcnc_air_cuts_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 750)
+      endif()
       add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759 restore-spindle-tool)

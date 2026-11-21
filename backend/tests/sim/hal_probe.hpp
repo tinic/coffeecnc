@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_TESTS_SIM_HAL_PROBE_HPP
 #define COFFEECNC_TESTS_SIM_HAL_PROBE_HPP
 
+#include <array>
 #include <expected>
 #include <string>
 
@@ -15,6 +16,8 @@ namespace coffeecnc {
 //   coffeecnc-test.tool-change   bit in
 //   coffeecnc-test.tool-changed  bit in
 //   coffeecnc-test.x-pos         float in  position of joint 0, machine units
+//   coffeecnc-test.y-pos         float in  commanded position of joint 1 (air-cut fixture)
+//   coffeecnc-test.z-pos         float in  commanded position of joint 2 (air-cut fixture)
 //
 // One thread, the test's, reads it.
 class HalProbe {
@@ -31,6 +34,7 @@ public:
   [[nodiscard]] auto tool_change() const -> bool;
   [[nodiscard]] auto tool_changed() const -> bool;
   [[nodiscard]] auto x() const -> double;
+  [[nodiscard]] auto commanded() const -> std::array<double, 3>;
 
 private:
   struct Pins;

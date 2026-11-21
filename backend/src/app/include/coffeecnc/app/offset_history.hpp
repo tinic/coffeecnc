@@ -42,7 +42,8 @@ namespace coffeecnc {
 // made to it from outside is seen when it is next active, as one entry.
 // What was last seen is kept in the file too: a change made while CoffeeCNC did not run is an
 // `outside` entry at the first reading. The first value of a system or a tool table is no
-// entry; a tool added has no `before`, a tool removed no `after`.
+// entry; a tool added has no `before`, a tool removed no `after`. Only live readings count, and
+// the tool table only once a pass over it was accepted (revision 1 on) and while it is settled.
 //
 // The file. Written whole by a durable replacement (temporary file, sync, rename, sync of the
 // directory): after an entry at once, after a change of what was seen alone at most once per

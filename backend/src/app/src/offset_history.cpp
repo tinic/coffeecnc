@@ -324,7 +324,8 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
         }
       }
     }
-    if (status.link == Link::live && reading.tools_settled) {
+    // Revision 0: no pass over the tool data has been accepted yet; its empty table is no value.
+    if (status.link == Link::live && reading.tools_settled && reading.tool_table.revision != 0) {
       std::map<int, ToolValue> tools;
       for (const auto& tool : reading.accepted_tools.value_or(reading.tool_table.tools))
         if (tool.number > 0 && std::isfinite(tool.length) && std::isfinite(tool.diameter))

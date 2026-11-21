@@ -40,7 +40,7 @@ auto reading(Vec3 g54 = {10, 20, -30}) -> PanelReading {
   sample.status.machine = MachineState::on;
   sample.status.offsets.wcs = 1;
   sample.status.offsets.g5x = g54;
-  sample.tool_table.tools = {{3, 3, 48.2, 6, "End mill 6 mm"}, {4, 4, 61.75, 3.175, ""}};
+  sample.tool_table = {1, {{3, 3, 48.2, 6, "End mill 6 mm"}, {4, 4, 61.75, 3.175, ""}}};
   return sample;
 }
 
@@ -223,7 +223,10 @@ void tools() {
               entries[2].changes[0].before == 48.2 && entries[2].changes[0].after == 50 &&
               entries[2].source == HistorySource::tool_table,
           "A changed length");
-  // An unsettled pass and T0 are not looked at.
+  // An unsettled pass, a table not accepted yet and T0 are not looked at.
+  auto unaccepted = edited;
+  unaccepted.tool_table = {};
+  f.observe(unaccepted, 4000ms);
   auto unsettled = edited;
   unsettled.tool_table.tools[0].diameter = 99;
   unsettled.tools_settled = false;
@@ -231,7 +234,8 @@ void tools() {
   auto spindle = edited;
   spindle.tool_table.tools.push_back({0, 0, 1, 1, ""});
   f.observe(spindle, 6000ms);
-  require(f.history().entries.size() == 3, "Unsettled passes and T0 make no entries");
+  require(f.history().entries.size() == 3,
+          "Unsettled passes, a table not accepted yet and T0 make no entries");
   // A withheld table counts with the accepted rows.
   auto withheld = edited;
   withheld.accepted_tools = withheld.tool_table.tools;

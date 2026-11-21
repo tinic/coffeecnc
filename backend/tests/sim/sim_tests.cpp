@@ -4974,7 +4974,9 @@ void offset_history(Rig& rig) {
   check("history_tool_data", table.has_value(), table ? "tool.mmap" : table.error());
   if (!table)
     return;
+  // The run directory outlives a run: what an earlier one saw is not this one's start.
   const auto directory = rig.config.directory + "/offset-history-data";
+  std::filesystem::remove_all(directory);
   std::filesystem::create_directories(directory);
   static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54")"));
   rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
@@ -5061,11 +5063,9 @@ void offset_history(Rig& rig) {
 
     // A tool length edited in the tool table, restored with G10 L1.
     const auto rows = loaded_tools(table->read_raw(), rig.config.millimetres_per_unit);
-    const auto row = rows ? std::ranges::find_if(*rows, [](const LoadedTool& candidate) -> bool {
-                       return candidate.tool.number == 2;
-                     })
-                          : std::vector<LoadedTool>::const_iterator{};
-    if (!rows || row == rows->end()) {
+    const auto row = std::ranges::find_if(
+        rows, [](const LoadedTool& candidate) -> bool { return candidate.tool.number == 2; });
+    if (row == rows.end()) {
       check("history_tool_row", false, "T2 is not in the tool table");
     } else {
       const auto original = row->tool;
@@ -5086,11 +5086,10 @@ void offset_history(Rig& rig) {
       rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
       double length = std::numeric_limits<double>::quiet_NaN();
       rig.pump_until(5s, [&]() -> bool {
-        const auto now = loaded_tools(table->read_raw(), rig.config.millimetres_per_unit);
-        if (now)
-          for (const auto& candidate : *now)
-            if (candidate.tool.number == 2)
-              length = candidate.tool.length;
+        for (const auto& candidate :
+             loaded_tools(table->read_raw(), rig.config.millimetres_per_unit))
+          if (candidate.tool.number == 2)
+            length = candidate.tool.length;
         return near(length, original.length, 0.0001);
       });
       check("history_tool_edit_and_restore",

@@ -9,6 +9,7 @@ import type {
   FixedSetter,
   FromMachine,
   Hello,
+  HistorySource,
   InterpState,
   MachineState,
   Preview,
@@ -25,6 +26,8 @@ import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
 import { defaultFiles, listDirectory, newProgramPath, splitLines } from './files'
 import { feedOrSpeedEdit } from '../program-edit'
 import { SimProbe, type ProbePlan } from './probe'
+import { SimOffsetHistory } from './offset-history'
+import { fieldAxis } from '../offset-history'
 import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
 import {
   InterpError,
@@ -187,7 +190,10 @@ export class SimMachine {
   private blockDelete = false
   private toolInSpindle = 0
   private probe: SimProbe | null = null
-  private pendingProbe: { id: number; plan: ProbePlan; contacts: Set<MoveOp> } | null = null
+  private pendingProbe: { id: number; plan: ProbePlan; contacts: Set<MoveOp>; source: HistorySource } | null = null
+  private readonly history = new SimOffsetHistory()
+  /** The panel command whose changes the history is shown now; else what executes. */
+  private historySource: { source: HistorySource; restores: number | null } | null = null
   private probeContact = false
 
   private now = 0
@@ -452,6 +458,17 @@ export class SimMachine {
       this.offsetsRevision += 1
       this.sendOffsets()
     }
+    this.recordHistory()
+  }
+
+  /** Every change of offsets and tools, attributed as the native history does. */
+  private recordHistory(): void {
+    const by = this.historySource ?? {
+      source: this.exec?.source === 'program' ? 'program' : this.exec?.source === 'mdi' ? 'mdi' : 'outside',
+      restores: null,
+    } as const
+    const state = { offsets: this.modal.offsets, rotations: this.modal.rotations, g92: this.modal.g92, tools: this.modal.tools }
+    if (this.history.observe(state, by.source, by.restores, this.clock())) this.emit(this.history.message())
   }
 
   private sendOffsets(): void {
@@ -770,8 +787,10 @@ export class SimMachine {
           this.velocity = 0
           this.syncModal()
           const setter = pending.plan.finish()
+          this.historySource = { source: pending.source, restores: null }
           this.checkTools()
           this.checkOffsets()
+          this.historySource = null
           this.sendStatus()
           this.emit({ type: 'result', id: pending.id, outcome: 'accepted', reason: '', setter })
         }
@@ -838,6 +857,8 @@ export class SimMachine {
       return
     }
     this.plannedResult = null
+    const source = historySource(command)
+    this.historySource = source === null ? null : { source, restores: null }
     const rejection = this.execute(command)
     const restart = this.takePlannedResult()
     const result: CommandResult =
@@ -846,6 +867,7 @@ export class SimMachine {
         : { type: 'result', id: command.id, ...rejection }
     this.checkTools()
     this.checkOffsets()
+    this.historySource = null
     this.checkPreview()
     this.emit(result)
   }
@@ -900,6 +922,7 @@ export class SimMachine {
         this.emit(this.configuration)
         this.sendTools()
         this.sendOffsets()
+        this.emit(this.history.message())
         if (this.program !== null) {
           this.emit({ type: 'program', ...this.program })
         }
@@ -1084,6 +1107,8 @@ export class SimMachine {
         }
         return null
       }
+      case 'restore_offset':
+        return this.restoreOffset(command.entry)
       case 'edit_program':
         return this.editProgram(command.path, command.line, command.old_text, command.new_text)
       case 'save_program':
@@ -1135,7 +1160,10 @@ export class SimMachine {
     }
     if (!plan.moves.length) {
       const setter = plan.finish()
+      this.historySource = { source: command.action === 'touch_off' ? 'tool_setter' : 'probe', restores: null }
+      this.checkTools()
       this.checkOffsets()
+      this.historySource = null
       this.checkPreview()
       this.sendStatus()
       this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter })
@@ -1161,7 +1189,7 @@ export class SimMachine {
       from = move.target
     }
     this.mode = 'mdi'
-    this.pendingProbe = { id, plan, contacts }
+    this.pendingProbe = { id, plan, contacts, source: command.action === 'touch_off' ? 'tool_setter' : 'probe' }
     this.exec = { source: 'mdi', queue, active: null, nextLine: 0, currentLine: 0, paused: false, stepping: false, ranLine: false }
     this.sendStatus()
   }
@@ -1557,6 +1585,35 @@ export class SimMachine {
     return null
   }
 
+  /** Writes back the earlier values of a history entry, as G10 L2, G52 or G10 L1 would. */
+  private restoreOffset(id: number): Rejection | null {
+    const entry = this.history.entry(id)
+    if (entry === undefined) return reject('That history entry is no longer kept.')
+    if (entry.changes.some((change) => change.before === null || change.after === null))
+      return reject('This entry has no earlier value to restore.')
+    const blocked = this.offsetCommand('restore offsets')
+    if (blocked !== null) return blocked
+    const tool = entry.target === 'tool' ? this.modal.tools.find((row) => row.number === entry.number) : undefined
+    if (entry.target === 'tool' && tool === undefined) return fail(`Tool ${String(entry.number)} is not in the tool table`)
+    for (const change of entry.changes) {
+      const value = change.before ?? 0
+      const axis = fieldAxis(change.field)
+      if (tool !== undefined) {
+        if (change.field === 'length') tool.length = value
+        if (change.field === 'diameter') tool.diameter = value
+      } else if (entry.target === 'g92') {
+        if (axis !== null) this.modal.g92[axis] = value
+      } else if (change.field === 'rotation_xy') {
+        this.modal.rotations[entry.number - 1] = value
+      } else if (axis !== null) {
+        const offset = this.modal.offsets[entry.number - 1]
+        if (offset !== undefined) offset[axis] = value
+      }
+    }
+    this.historySource = { source: 'restore', restores: entry.id }
+    return null
+  }
+
   private setTool(tool: Tool): Rejection | null {
     const blocked = this.busy('edit the tool table')
     if (blocked !== null) {
@@ -1578,6 +1635,15 @@ export class SimMachine {
     }
     return null
   }
+}
+
+/** The offset history's name for a panel command that can change offsets. */
+function historySource(command: ToMachine): HistorySource | null {
+  if (command.type === 'touch_off') return command.origin ?? 'touch_off'
+  if (command.type === 'set_work_offset') return 'work_offset_table'
+  if (command.type === 'tool_touch_off') return 'tool_touch_off'
+  if (command.type === 'set_tool' || command.type === 'remove_tool') return 'tool_table'
+  return command.type === 'mdi' ? 'mdi' : null
 }
 
 function blankStatus(): Status {

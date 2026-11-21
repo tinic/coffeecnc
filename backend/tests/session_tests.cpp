@@ -2115,7 +2115,7 @@ void offset_history() {
     reading.status.link = Link::live;
     reading.status.offsets.wcs = 1;
     reading.status.offsets.g5x = g54;
-    reading.tool_table.tools = std::move(tools);
+    reading.tool_table = {1, std::move(tools)};
     return reading;
   };
   const auto observe = [&](PanelReading reading) -> void {
@@ -2148,9 +2148,11 @@ void offset_history() {
   applies("mdi", machine({0, 10, -20}, end_mill(48.2, 12.7)));
   rig.accepted(R"("type":"mdi","text":"G10 L2 P1 Z-20")");
   require(newest().source == HistorySource::mdi, "The panel's MDI line is named");
+  rig.acted({"mdi G10 L20 P0 Y10", "mdi G10 L20 P0 Z5", "mdi G10 L2 P1 Z-20"},
+            "The origin of a touch-off changes nothing that is sent");
   applies("set_tool", machine({0, 10, -20}, end_mill(50, 6)));
   rig.accepted(
-      R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":50,"diameter":6,"comment":"End mill"}})");
+      R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":50,"diameter":6,"comment":"End mill"})");
   const auto edited = newest();
   require(edited.source == HistorySource::tool_table && edited.target == HistoryTarget::tool &&
               edited.number == 3 && edited.changes.size() == 2,

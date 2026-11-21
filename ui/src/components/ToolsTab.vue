@@ -17,6 +17,8 @@ import NumberDialog from './NumberDialog.vue'
 import ToolEditor from './ToolEditor.vue'
 import ToolPreviewDialog from './ToolPreviewDialog.vue'
 import WorkOffsetDialog from './WorkOffsetDialog.vue'
+import OffsetHistoryDialog from './OffsetHistoryDialog.vue'
+import type { HistoryFilter } from '../offset-history'
 import { setterStatus, touchedOff } from '../setter-state'
 import { defaultToolName } from '../tool-models'
 
@@ -117,6 +119,7 @@ const offsetEditor = ref<number | null>(null)
 function editOffset(wcs: number): void {
   if (mdiBlock.value === null && panel.link === 'live' && status.value?.link === 'live') offsetEditor.value = wcs
 }
+const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all' : null)
 </script>
 
 <template>
@@ -130,6 +133,7 @@ function editOffset(wcs: number): void {
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
           <AppIcon name="plus" /><span>Add tool</span>
         </button>
+        <button v-if="panel.offsetHistory" v-tooltip="'Tool length and diameter changes, with Restore'" class="btn square tool-history" type="button" aria-label="Tool history" @click="historyFilter = 'tools'"><AppIcon name="history" /></button>
       </div>
       <SetterStatusBand v-if="panel.hello?.fixed_setter" :line="setterStatus" />
 
@@ -176,6 +180,7 @@ function editOffset(wcs: number): void {
         <h2>Work offsets</h2>
         <span class="hint">{{ unit }} · origins, in machine coordinates</span>
         <span v-if="systems.some(system => system.stale)" class="offset-history">Last reported</span>
+        <button v-if="panel.offsetHistory" v-tooltip="'Changes to work offsets and tools, with Restore'" class="btn history" type="button" @click="historyFilter = 'all'"><AppIcon name="history" /><span>History</span></button>
       </div>
       <div class="scroll">
         <table>
@@ -223,6 +228,7 @@ function editOffset(wcs: number): void {
     <ToolEditor v-if="editing !== null" :tool="editing.tool" @close="editing = null" />
     <ToolPreviewDialog v-if="previewTool !== null" :tool="previewTool" @close="previewTool = null" />
     <WorkOffsetDialog v-if="offsetEditor !== null" :wcs="offsetEditor" @close="offsetEditor = null" />
+    <OffsetHistoryDialog v-if="historyFilter !== null" :filter="historyFilter" @close="historyFilter = null" />
 
     <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">
       <p class="confirm"><strong>{{ loading.comment || `Tool ${loading.number}` }}</strong><br />Length {{ formatLength(loading.length, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }} · Diameter {{ formatLength(loading.diameter, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }}</p>
@@ -280,6 +286,9 @@ function editOffset(wcs: number): void {
 .table .heading { gap: 8px; }
 .table .heading h2 { display: none; }
 .offset-history { margin-left: auto; color: var(--warn); font-size: 12px; }
+.heading > .history { margin-left: auto; }
+.offset-history + .history { margin-left: 0; }
+.heading > .tool-history { width: 44px; padding: 0; }
 .table table { table-layout: fixed; }
 .tool-column { width: 52px; }th.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }

@@ -11,7 +11,7 @@ import NumberDialog from './NumberDialog.vue'
 import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { label: 'Z top', travel: 'z_top', surface: 'top surface', approach: '−Z' },
@@ -56,10 +56,18 @@ watch(toolBlock, () => {
 const askingGauge = shallowRef(false)
 function calibrate(width: number): void {
   askingGauge.value = false
-  probe('x_plus', undefined, width)
+  probe('x_plus', undefined, { kind: 'ball', size: width })
 }
+// Bore and boss centres; a boss needs its approximate diameter to go round it.
+const askingBoss = shallowRef(false)
+function centreBoss(diameter: number): void {
+  askingBoss.value = false
+  probe('x_plus', undefined, { kind: 'boss', size: diameter })
+}
+interface Feature { kind: 'ball' | 'boss' | 'bore'; size: number }
 
-function probe(direction: ProbeDirection, corner?: Corner, gauge?: number): void {
+function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): void {
+  const gauge = feature?.kind === 'ball' ? feature.size : undefined
   if (pending.value) return
   const status = panel.status
   const blocked = machineReason.value
@@ -78,18 +86,26 @@ function probe(direction: ProbeDirection, corner?: Corner, gauge?: number): void
     reason = `Touch off T${String(props.tool)} and probe Z top before probing a corner.`
   if (reason === null && gauge !== undefined && !touchedOff(props.tool))
     reason = `Touch off T${String(props.tool)} and probe Z top on the gauge first.`
+  if (reason === null && feature?.kind === 'boss' && !touchedOff(props.tool))
+    reason = `Touch off T${String(props.tool)} and probe Z top on the boss first.`
   if (reason !== null || x === undefined || y === undefined || z === undefined || ![x, y, z].every(Number.isFinite)) {
     line.value = { text: reason ?? 'Waiting for the machine position.', level: 'blocked' }
     return
   }
-  const request: Request = gauge !== undefined
+  const request: Request = feature?.kind === 'bore'
+    ? { type: 'fixed_setter', action: 'bore', tool: props.tool, x, y, z }
+    : feature?.kind === 'boss'
+    ? { type: 'fixed_setter', action: 'boss', diameter: feature.size, tool: props.tool, x, y, z }
+    : gauge !== undefined
     ? { type: 'fixed_setter', action: 'ball', gauge_width: gauge, tool: props.tool, x, y, z }
     : corner === undefined
       ? { type: 'fixed_setter', action: 'material', direction, tool: props.tool, x, y, z }
       : { type: 'fixed_setter', action: 'corner', x_direction: corner.x, y_direction: corner.y, tool: props.tool, x, y, z }
   pending.value = request
   const surface = surfaces.find((entry) => entry.travel === direction)
-  line.value = { text: gauge !== undefined ? 'Probing both sides of the gauge…'
+  line.value = { text: feature?.kind === 'bore' ? 'Probing the bore walls…'
+    : feature?.kind === 'boss' ? 'Probing round the boss…'
+    : gauge !== undefined ? 'Probing both sides of the gauge…'
     : `Probing ${corner === undefined ? surface?.surface ?? 'surface' : `the ${corner.name}`}…`, level: 'busy' }
   send(request)
 }
@@ -104,6 +120,16 @@ const removeListener = onResult((command, result) => {
   const request = pending.value
   pending.value = null
   if (result.outcome === 'timed_out') send({ type: 'abort' })
+  if (request.action === 'bore' || request.action === 'boss') {
+    const measured = result.setter?.center_diameter
+    if (result.outcome !== 'accepted' || measured === undefined || !result.setter?.material) {
+      line.value = { text: result.reason || 'The machine did not confirm the work origin.', level: 'blocked' }
+      return
+    }
+    setterState.value = result.setter
+    line.value = { text: `${wcsName(result.setter.material.wcs)} X0 Y0 set at the ${request.action} centre, Ø ${measured.toFixed(3)} mm.`, level: 'done' }
+    return
+  }
   if (request.action === 'ball') {
     const measured = result.setter?.ball_diameter
     if (result.outcome !== 'accepted' || measured === undefined) {
@@ -168,6 +194,20 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <WorkpieceProbeDiagram :travel="pending?.action === 'material' ? pending.direction : null" :corner="pendingCorner" />
+      <div class="centres">
+        <button
+          v-tooltip="'Jog the ball into the bore, below its top, then press. Sets X0 Y0 at the centre.'"
+          type="button" class="btn" :class="{ on: pending?.action === 'bore' }" @click="probe('x_plus', undefined, { kind: 'bore', size: 0 })"
+        >
+          Bore centre
+        </button>
+        <button
+          v-tooltip="'Probe Z top on the boss, jog the ball over its middle, then enter its approximate diameter.'"
+          type="button" class="btn" :class="{ on: pending?.action === 'boss' }" @click="askingBoss = true"
+        >
+          Boss centre…
+        </button>
+      </div>
       <button
         v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
         type="button" class="btn quiet calibrate" :class="{ on: pending?.action === 'ball' }" @click="askingGauge = true"
@@ -176,6 +216,12 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <SetterStatusBand :line="displayLine" />
+    <NumberDialog
+      v-if="askingBoss"
+      title="Centre on a boss"
+      effect="Probes the four sides of the boss from outside, below Z0, and sets X0 Y0 at its centre."
+      label="Approximate diameter" unit="mm" initial="" action="Probe" @confirm="centreBoss" @close="askingBoss = false"
+    />
     <NumberDialog
       v-if="askingGauge"
       title="Calibrate the probe ball"
@@ -193,6 +239,8 @@ onBeforeUnmount(() => {
 .probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
 .probe-actions button.corner { min-height: 44px; }
 .calibrate { grid-column: 2; justify-self: end; min-height: 36px; font-size: 12px; }
+.centres { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.centres button { min-height: 44px; }
 @container (max-width: 390px) {
   .probe-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .probe-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }

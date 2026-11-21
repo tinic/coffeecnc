@@ -74,6 +74,7 @@ function primaryAction(): void {
     send({ type })
     return
   }
+  if (confirmation.value !== null) return
   const preview = checkedPreview.value
   if (preview === null || check.value === null) {
     send({ type: 'run' })
@@ -117,7 +118,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
         </div>
       </details>
       <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="confirmation = null; send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
-      <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
+      <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
     <ProgramCheckDialog
       v-if="confirmation" :check="check" :unit="panel.unit"

@@ -388,8 +388,10 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   // Refuse to write their midpoint to the work origin.
   start_at();
   mdi("G10 L20 P0 Z8");
-  corner_window('x', 2, 10);
+  corner_window('x', 1, 5);
   boss_request.start = position();
+  // The simulator searches only 20 mm. Start close enough that both contacts are reachable.
+  boss_request.gauge_width_mm = 2;
   const auto before_wrong_boss = port->status().g5x;
   const auto wrong_boss = port->fixed_setter(boss_request, epoch, {});
   require(!wrong_boss && wrong_boss.error().contains("do not enclose") &&

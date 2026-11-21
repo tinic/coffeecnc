@@ -6,6 +6,7 @@ import type {
   AxisLetter,
   AxisStatus,
   CommandResult,
+  FixedSetter,
   FromMachine,
   Hello,
   InterpState,
@@ -23,6 +24,8 @@ import { protocolVersion } from '../protocol'
 import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
 import { defaultFiles, listDirectory, splitLines } from './files'
 import { feedOrSpeedEdit } from '../program-edit'
+import { SimProbe, type ProbePlan } from './probe'
+import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
 import {
   InterpError,
   activeCodes,
@@ -180,6 +183,9 @@ export class SimMachine {
   private optionalStop = false
   private blockDelete = false
   private toolInSpindle = 0
+  private probe: SimProbe | null = null
+  private pendingProbe: { id: number; plan: ProbePlan; contacts: Set<MoveOp> } | null = null
+  private probeContact = false
 
   private now = 0
   private sinceStatus = 0
@@ -221,6 +227,15 @@ export class SimMachine {
     this.offsetsKey = JSON.stringify([this.modal.offsets, this.modal.rotations])
     this.syncModal()
     this.checkPreview()
+  }
+
+  enableProbing(): void {
+    this.configuration.fixed_setter = demoSetter
+    this.configuration.touch_probe_tool = demoProbe
+    const first = this.modal.tools.find(tool => tool.number === 1)
+    if (first) Object.assign(first, { diameter: 10, comment: 'Carbide end mill 10 mm' })
+    this.modal.tools.push(...demoProbeTools.map(tool => ({ ...tool })))
+    this.probe = new SimProbe(this.modal.tools)
   }
 
   // ---- time -----------------------------------------------------------------------------------
@@ -358,8 +373,10 @@ export class SimMachine {
         rapid_override: this.overrides.rapid,
         in_position: this.inPosition(),
       },
-      spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle, actual_rpm: null, at_speed: null },
-      probe_input: null,
+      spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle,
+        actual_rpm: this.probe ? m.spindle === 'stopped' ? 0 : m.speed * this.overrides.spindle : null,
+        at_speed: this.probe ? m.spindle !== 'stopped' : null },
+      probe_input: this.probe ? this.probeContact : null,
       coolant: { flood: m.flood, mist: m.mist },
       tool: { in_spindle: this.toolInSpindle, prepared: m.prepared },
       program: {
@@ -618,8 +635,8 @@ export class SimMachine {
     const op = active.op
     const speed =
       op.motion === 'rapid'
-        ? rapidVelocity * this.overrides.rapid
-        : Math.min(rapidVelocity, op.feed * this.overrides.feed)
+        ? rapidVelocity * (this.pendingProbe ? 1 : this.overrides.rapid)
+        : Math.min(rapidVelocity, op.feed * (this.pendingProbe ? 1 : this.overrides.feed))
     if (speed <= 0) {
       return -1
     }
@@ -656,6 +673,7 @@ export class SimMachine {
       case 'move': {
         const error = this.limitError(op)
         if (error === null) {
+          if (this.pendingProbe) this.probeContact = false
           exec.active = { kind: 'move', op, index: 1 }
         } else {
           this.execError(error)
@@ -710,6 +728,7 @@ export class SimMachine {
           if (left < 0) {
             return
           }
+          if (this.pendingProbe?.contacts.has(active.op)) this.probeContact = true
         }
         exec.active = null
         continue
@@ -741,6 +760,18 @@ export class SimMachine {
       }
       if (exec.source === 'mdi' || this.program === null) {
         this.exec = null
+        const pending = this.pendingProbe
+        if (pending) {
+          this.pendingProbe = null
+          this.probeContact = false
+          this.velocity = 0
+          this.syncModal()
+          const setter = pending.plan.finish()
+          this.checkTools()
+          this.checkOffsets()
+          this.sendStatus()
+          this.emit({ type: 'result', id: pending.id, outcome: 'accepted', reason: '', setter })
+        }
         return
       }
       if (exec.breakpoint && !exec.breakpoint.reached && exec.nextLine + 1 === exec.breakpoint.line) {
@@ -772,6 +803,9 @@ export class SimMachine {
 
   /** Stops program, MDI, jogs, homing and the spindle. */
   private abort(): void {
+    const pending = this.pendingProbe
+    this.pendingProbe = null
+    this.probeContact = false
     const exec = this.exec
     if (exec?.source === 'program') {
       this.cutCompleted = false
@@ -787,12 +821,17 @@ export class SimMachine {
     this.homing = null
     this.modal.spindle = 'stopped'
     this.syncModal()
+    if (pending) this.emit({ type: 'result', id: pending.id, outcome: 'failed', reason: 'Probing was stopped.' })
   }
 
   // ---- commands -------------------------------------------------------------------------------
 
   handle(command: ToMachine): void {
     if (this.fault === 'silent') {
+      return
+    }
+    if (command.type === 'fixed_setter') {
+      this.fixedSetter(command)
       return
     }
     this.plannedResult = null
@@ -848,7 +887,7 @@ export class SimMachine {
     return null
   }
 
-  private execute(command: ToMachine): Rejection | null {
+  private execute(command: Exclude<ToMachine, FixedSetter>): Rejection | null {
     switch (command.type) {
       case 'set_tool_model_defaults':
       case 'set_operator_settings':
@@ -916,9 +955,11 @@ export class SimMachine {
         return this.run(false, breakpoint?.line)
       }
       case 'step':
+        if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
         if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.')
         return this.step()
       case 'pause':
+        if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
         if (this.exec === null) {
           return reject('Nothing is running')
         }
@@ -948,6 +989,7 @@ export class SimMachine {
           return blocked
         }
         if (command.direction !== 'stopped') {
+          if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
           if (!(command.rpm > 0)) {
             return reject('Spindle speed must be above zero')
           }
@@ -1019,8 +1061,6 @@ export class SimMachine {
           this.internal('G43')
         )
       }
-      case 'fixed_setter':
-        return reject('The fixed setter is unavailable in the browser simulator')
       case 'set_tool':
         return this.setTool(command.tool)
       case 'remove_tool': {
@@ -1057,6 +1097,68 @@ export class SimMachine {
         return null
       }
     }
+  }
+
+  private fixedSetter(command: FixedSetter): void {
+    const id = command.id
+    const refused = (reason: string): void => { this.emit({ type: 'result', id, ...reject(reason) }) }
+    const probe = this.probe
+    if (!probe) {
+      refused('The fixed setter is unavailable in this simulator scene.')
+      return
+    }
+    if (command.action === 'status') {
+      this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.state(this.modal) })
+      return
+    }
+    const blocked = this.notOn('probe') ?? this.busy('probe')
+    const tool = this.modal.tools.find(row => row.number === this.toolInSpindle)
+    const start = this.reported()
+    const confirmed = command.action === 'apply_angle' || [command.x, command.y, command.z].every(
+      (value, axis) => Math.abs(value - (start[axis] ?? Infinity)) <= 0.1,
+    )
+    if (blocked !== null || command.tool !== tool?.number || !this.allHomed() || !this.inPosition() ||
+        this.modal.spindle !== 'stopped' || !confirmed) {
+      refused(blocked?.reason ?? 'Probe from the confirmed position with the axes homed, the tool loaded, and the spindle stopped.')
+      return
+    }
+    this.syncModal()
+    const plan = probe.plan(command, start, this.modal, tool)
+    if (typeof plan === 'string') {
+      this.emit({ type: 'result', id, ...fail(plan) })
+      return
+    }
+    if (!plan.moves.length) {
+      const setter = plan.finish()
+      this.checkOffsets()
+      this.checkPreview()
+      this.sendStatus()
+      this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter })
+      return
+    }
+    const contacts = new Set<MoveOp>()
+    const queue: Op[] = []
+    let from = start
+    for (const move of plan.moves) {
+      const op: MoveOp = {
+        kind: 'move', line: 0, motion: move.feed === undefined ? 'rapid' : 'feed', shape: 'linear',
+        tool: tool.number, feed: move.feed ?? 0, points: [from, move.target], toolOffset: [...this.modal.toolOffset],
+      }
+      if (this.limitError(op) !== null) {
+        refused('The probe cycle would exceed the simulated soft limits.')
+        return
+      }
+      queue.push(op)
+      if (move.contact) {
+        contacts.add(op)
+        queue.push({ kind: 'dwell', seconds: 0.16 })
+      }
+      from = move.target
+    }
+    this.mode = 'mdi'
+    this.pendingProbe = { id, plan, contacts }
+    this.exec = { source: 'mdi', queue, active: null, nextLine: 0, currentLine: 0, paused: false, stepping: false, ranLine: false }
+    this.sendStatus()
   }
 
   /** Work offsets use MDI (G10), subject to the configured homing requirement. */

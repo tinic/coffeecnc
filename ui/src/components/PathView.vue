@@ -31,6 +31,7 @@ import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
 import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-preview'
 import { toolModels } from '../tool-models'
+import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 
 const modelError = ref('')
 const SceneCanvas = defineAsyncComponent({
@@ -135,6 +136,7 @@ const toolBody = computed(() => loadedToolPreview(panel.status, live.value, pane
   toolModels.defaults, homingRequired.value))
 const showTool = ref(true)
 const visibleTool = computed(() => showTool.value ? toolBody.value : null)
+const probeFixture = computed(() => hasDemoProbeFixture(panel.simulated, panel.hello))
 
 const tools = computed((): number[] => {
   const seen: number[] = []
@@ -168,6 +170,10 @@ function fitTo(what: 'path' | 'machine'): void {
   let points = what !== 'path' ? [] : bounds !== null ? boxCorners(bounds.min, bounds.max) : pathPoints()
   if (what === 'path') {
     points = [...points, ...modelPoints.value]
+    if (probeFixture.value) {
+      const { min, max } = probeFixtureBounds()
+      points.push(...boxCorners(min, max))
+    }
     if (visibleTool.value !== null) {
       const bounds = toolPreviewBounds(visibleTool.value)
       points.push(...boxCorners(bounds.min, bounds.max))
@@ -193,7 +199,7 @@ function setView(name: ViewName): void {
 
 watch(() => part.attachment?.geometry, () => { autoFit.value = true; modelError.value = '' })
 // Live position is not a fit dependency: motion must not make the camera follow the tool.
-watch([drawn, size, modelPoints], () => {
+watch([drawn, size, modelPoints, probeFixture], () => {
   if (autoFit.value) {
     fitTo('path')
   }
@@ -285,6 +291,15 @@ function draw(): void {
   const cam = camera.value
   const at = (p: Vec3): Screen => project(cam, p, width, height)
   const status = panel.status
+
+  if (probeFixture.value) {
+    const [x, y] = at(demoFixture.setter)
+    context.fillStyle = theme.value === 'dark' ? '#e5bd70' : '#845614'
+    context.font = '600 12px system-ui, sans-serif'
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    context.fillText('Tool setter', x, y + 24)
+  }
 
   const box = travelBox.value
   if (box !== null && showMachine.value) {
@@ -430,7 +445,7 @@ function schedule(): void {
   }
 }
 
-watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link, tools, theme, showMachine], schedule)
+watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link, tools, theme, showMachine, probeFixture], schedule)
 
 let observer: ResizeObserver | null = null
 
@@ -459,7 +474,11 @@ onBeforeUnmount(() => {
 <template>
   <div class="pathview" :class="{ outdated: drawn !== null && !current }">
     <div class="viewport">
-      <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
+      <SceneCanvas
+        v-if="part.attachment || visibleTool || probeFixture"
+        :camera="camera" :width="size.width" :height="size.height"
+        :tool="visibleTool" :probe-fixture="probeFixture" @error="modelError = $event"
+      />
       <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
       <div v-if="toolPositionHint || modelError || (live && part.attachment && partBlock)" class="banners">
         <span v-if="toolPositionHint" class="warn">{{ toolPositionHint }}</span>
@@ -468,7 +487,12 @@ onBeforeUnmount(() => {
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
-      <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label></div>
+      <div class="legend">
+        <span v-if="probeFixture">Simulated fixtures</span>
+        <span v-if="!probeFixture || drawn"><i class="feed"></i>Cut</span>
+        <span v-if="!probeFixture || drawn"><i class="rapid"></i>Rapid</span>
+        <label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label>
+      </div>
       <div class="views">
         <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
         <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>

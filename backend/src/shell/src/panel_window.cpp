@@ -126,7 +126,8 @@ void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
   }
   const std::string_view uri = webkit_uri_scheme_request_get_uri(request);
   // The STEP model beside the loaded program, outside the panel directory by design.
-  if (const auto part = resolve_program_part(uri)) {
+  const auto loaded = self->events.loaded_program ? self->events.loaded_program() : std::string{};
+  if (const auto part = resolve_program_part(uri, loaded)) {
     GFile* file = g_file_new_for_path(part->c_str());
     GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
                                         G_FILE_QUERY_INFO_NONE, nullptr, nullptr);

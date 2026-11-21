@@ -52,7 +52,14 @@ const removeListener = onResult((command, result) => {
   request.value = null
   if (result.outcome !== 'accepted') {
     failure.value = result.reason || 'The machine did not confirm the restart.'
-    if (command.type === 'start_restart') plan.value = null
+    if (command.type === 'start_restart') {
+      plan.value = null
+      // No answer does not mean nothing moves: stop what the machine may still be doing.
+      if (result.outcome === 'timed_out') {
+        send({ type: 'abort' })
+        failure.value = 'The machine did not confirm the restart. CoffeeCNC sent Stop.'
+      }
+    }
     return
   }
   if (command.type === 'plan_restart') {
@@ -147,7 +154,7 @@ const steps = computed((): string[] => {
       </section>
     </div>
     <template #footer>
-      <button class="btn" type="button" @click="close">Cancel</button>
+      <button class="btn" type="button" @click="close">{{ request?.type === 'start_restart' ? 'Stop' : 'Cancel' }}</button>
       <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
       <button
         v-tooltip="request ? undefined : startBlock ?? 'Run the approach, then the program'"

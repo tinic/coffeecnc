@@ -23,7 +23,12 @@ const positions = computed(() => panel.preferences.saved_positions)
 const length = (mm: number): string => formatLength(mm, unit.value)
 
 const sequence = createMoveSequence({ send, onResult, status: () => panel.status, block: () => powerBlock(panel) })
-onBeforeUnmount(() => { sequence.dispose() })
+// Leaving the card stops a Go to: nothing shows its moves any more, so none may go on. Stop in
+// the run bar stays available throughout.
+onBeforeUnmount(() => {
+  if (sequence.state.running) send({ type: 'abort' })
+  sequence.dispose()
+})
 
 const saving = ref(false)
 const goToBlock = computed(() => sequence.state.running ? 'Go to is moving' : mdiBlock.value)

@@ -207,10 +207,11 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_tool_probe_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 375)
         add_test(NAME linuxcnc_fixed_setter_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-          -u ${units} -t 90 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_fixed_setter_${units}
+          -u ${units} -t 140 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_fixed_setter_${units}
           $<TARGET_FILE:coffeecnc_fixed_setter_tests>)
+        # Include the consecutive tolerance checks at the configured probe speeds.
         set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
-          RESOURCE_LOCK linuxcnc TIMEOUT 420)
+          RESOURCE_LOCK linuxcnc TIMEOUT 470)
         add_test(NAME linuxcnc_material_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 420 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_material_probe_${units}
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> material)

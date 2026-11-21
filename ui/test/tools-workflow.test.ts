@@ -90,6 +90,19 @@ describe('fixed setter workflow', () => {
       value: 25.34, previous_length: 25.4, check_tolerance_mm: 0.1 } })
     expect(getWrapper().get('.setter-band p').text()).toBe('T01 passed · 0.060 mm from table')
     expect(getWrapper().find('.touched').exists()).toBe(false)
+
+    await press('Check length')
+    await press('Start check')
+    status.interp = 'reading'
+    await nextTick()
+    const command = vi.mocked(send).mock.lastCall?.[0]
+    if (!command) throw new Error('Missing request')
+    const reason = 'T1 check failed. Tool is 0.2500 mm shorter.'
+    status.interp = 'idle'
+    for (const listener of resultListeners)
+      listener(command, { type: 'result', id: 2, outcome: 'failed', reason })
+    await nextTick()
+    expect(getWrapper().get('.setter-band p').text()).toBe(reason)
   })
 
   it('explains a blocked setter press in place while the machine is off', async () => {

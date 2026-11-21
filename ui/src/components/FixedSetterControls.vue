@@ -55,11 +55,16 @@ const { line: feedback, allow } = useCardFeedback(
   [machineReason, localBlock, checkBlock, tool, pending],
 )
 const error = shallowRef<string | null>(null)
-watch([machineReason, tool], () => { error.value = null })
+// An idle update can arrive alongside a failed cycle result. Keep the result through that
+// transition, and clear it when the machine or loaded tool changes.
+watch([(): unknown => panel.hello, (): string => panel.link, (): string | undefined => status.value?.machine,
+  tool, allHomed, homingActive], () => { error.value = null })
 const summary = computed(() => {
   const result = state.value?.measurement
   if (result?.tool !== tool.value) return ''
   if (result.check_tolerance_mm !== undefined) {
+    const loaded = findTool(result.tool)
+    if (loaded === null || Math.abs(loaded.length - result.previous_length) > 1e-6) return ''
     const difference = formatLength(Math.abs(result.value - result.previous_length), panel.unit)
     return `${toolLabel(result.tool)} passed · ${difference} ${panel.unit === 'inch' ? 'in' : 'mm'} from table`
   }

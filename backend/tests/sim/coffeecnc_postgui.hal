@@ -38,10 +38,5 @@ net coffeecnc-jog-stop coffeecnc-jog-stop.out => motion.jog-stop
 # No jog starts while nothing watches it.
 net coffeecnc-jog-inhibit coffeecnc-jog-inhibit.out => motion.jog-inhibit
 
-# Manual tool change: coffeecnc takes the place of hal_manualtoolchange. A configuration may have
-# looped these pins back already (LinuxCNC's core_sim.hal does).
-unlinkp iocontrol.0.tool-change
-unlinkp iocontrol.0.tool-changed
-net coffeecnc-tool-change iocontrol.0.tool-change => coffeecnc.tool-change
-net coffeecnc-tool-number iocontrol.0.tool-prep-number => coffeecnc.tool-number
-net coffeecnc-tool-changed coffeecnc.tool-changed => iocontrol.0.tool-changed
+# The machine owns its tool-change pins. Set [COFFEECNC] MANUAL_TOOLCHANGE = yes to let the
+# application wire its manual prompt when the existing change, changed and number pins are free.

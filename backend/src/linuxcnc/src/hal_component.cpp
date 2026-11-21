@@ -144,7 +144,8 @@ auto HalComponent::connect_manual_tool_change() -> std::expected<void, std::stri
       disconnect_manual_tool_change();
       return std::unexpected(std::format("Cannot create HAL signal {}.", signal));
     }
-    const auto& created = manual_change_signals_[i] = std::move(signal);
+    auto& created = manual_change_signals_[i];
+    created = std::move(signal);
     // HAL refuses a pin already linked to another signal. Roll back only signals we created.
     if (hal_link(connection.controller_pin, created.c_str()) != 0 ||
         hal_link(panel_pin.c_str(), created.c_str()) != 0) {

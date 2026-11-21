@@ -187,6 +187,7 @@ export function describeCommand(command: CommandBody): string {
     case 'tool_touch_off':
       return 'Tool length touch-off'
     case 'fixed_setter':
+      if (command.action === 'check') return 'Check tool length'
       if (command.action === 'angle') return 'Measure edge angle'
       if (command.action === 'apply_angle') return 'Apply work rotation'
       return command.action === 'material' ? 'Material touch-off' : 'Fixed tool setter'
@@ -320,7 +321,7 @@ export function createPanel(options: PanelOptions): Panel {
       // These results are shown where the operator asked; the log still keeps them.
       const localResult = command.type === 'plan_restart' || command.type === 'fixed_setter' &&
         (command.action === 'material' && state.tab === 'probe' ||
-         command.action === 'touch_off' && state.tab === 'tools')
+         (command.action === 'touch_off' || command.action === 'check') && state.tab === 'tools')
       log('error', reason, describeCommand(command), now(), !localResult)
     }
     for (const listener of resultListeners) {

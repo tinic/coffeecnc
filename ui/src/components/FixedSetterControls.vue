@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 
-import { allHomed, homingActive, mdiBlock, onResult, panel, send } from '../machine'
+import { allHomed, findTool, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import { useCardFeedback } from '../card-feedback'
 import { machineBlock } from '../machine-block'
 import type { CommandBody, FixedSetterLimits, Vec3 } from '../protocol'
-import { toolLabel } from '../units'
+import { formatLength, toolLabel } from '../units'
 import { setterState, setterStatus, touchedOff, type SetterStatusLine } from '../setter-state'
 import ProbeGuideDialog from './ProbeGuideDialog.vue'
 import type { ProbeGuideTarget } from '../probe-guide'
+import { touchProbeLoaded } from '../tool-models'
 
 const props = defineProps<{ limits: FixedSetterLimits }>()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
@@ -21,7 +22,7 @@ const tool = computed(() => status.value?.tool.in_spindle ?? 0)
 // tool whose saved length is still valid teaches it too (turo: T99 can act like T98).
 const teaching = computed(() => tool.value === props.limits.reference_tool ||
   (!state.value?.calibration && tool.value > 0 && touchedOff(tool.value)))
-const running = computed(() => pending.value?.action === 'touch_off')
+const running = computed(() => pending.value?.action === 'touch_off' || pending.value?.action === 'check')
 const position = computed((): Vec3 | null => {
   const [x, y, z] = ['x', 'y', 'z'].map((letter) => status.value?.axes.find((axis) => axis.axis === letter)?.machine)
   return x !== undefined && y !== undefined && z !== undefined && [x, y, z].every(Number.isFinite)
@@ -37,25 +38,36 @@ const localBlock = computed(() => {
   const rpm = s?.spindle.actual_rpm
   if (rpm === null || rpm === undefined || rpm >= 1 || s?.spindle.direction !== 'stopped') return 'Wait for the spindle to stop'
   if (!s.motion.in_position) return 'Wait for the axes to stop'
-  if (!teaching.value && !state.value?.calibration) return `Teach the setter with T${String(props.limits.reference_tool)} or a touched-off tool first`
+  return null
+})
+const teachFirst = computed(() => `Teach the setter with T${String(props.limits.reference_tool)} or a touched-off tool first`)
+const checkBlock = computed(() => {
+  if (touchProbeLoaded.value) return 'Load a cutting tool before checking its length'
+  if (!state.value?.calibration) return teachFirst.value
+  const loaded = findTool(tool.value)
+  if (loaded === null || (loaded.length === 0 && !touchedOff(tool.value))) return 'Set the loaded tool’s length before checking it'
   return null
 })
 const { line: feedback, allow } = useCardFeedback(
   () => '',
-  () => localBlock.value,
-  [machineReason, localBlock, tool, pending],
+  () => localBlock.value ?? (!teaching.value && !state.value?.calibration ? teachFirst.value : null),
+  [machineReason, localBlock, checkBlock, tool, pending],
 )
 const error = shallowRef<string | null>(null)
 watch([machineReason, tool], () => { error.value = null })
 const summary = computed(() => {
   const result = state.value?.measurement
   if (result?.tool !== tool.value) return ''
+  if (result.check_tolerance_mm !== undefined) {
+    const difference = formatLength(Math.abs(result.value - result.previous_length), panel.unit)
+    return `${toolLabel(result.tool)} passed · ${difference} ${panel.unit === 'inch' ? 'in' : 'mm'} from table`
+  }
   // The length itself is in the tool table: only confirm what happened.
   return result.calibration ? 'Setter taught' : `${toolLabel(result.tool)} measured`
 })
 
 const line = computed((): SetterStatusLine => {
-  if (running.value) return { text: 'Touching off…', level: 'busy' }
+  if (running.value) return { text: pending.value?.action === 'check' ? 'Checking length…' : 'Touching off…', level: 'busy' }
   if (feedback.value.level === 'blocked') return feedback.value
   if (error.value !== null) return { text: error.value, level: 'blocked' }
   if (summary.value) return { text: summary.value, level: 'done' }
@@ -75,18 +87,24 @@ function refresh(): void {
   if (panel.link === 'live') request({ type: 'fixed_setter', action: 'status' })
 }
 
-function touchOff(): void {
-  const xyz = position.value
-  error.value = null
-  const reason = machineReason.value ?? (pending.value ? 'Waiting for setter status' : localBlock.value)
-  if (!allow(reason) || xyz === null) return
-  request({ type: 'fixed_setter', action: 'touch_off', tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
+function startBlock(action: 'touch_off' | 'check'): string | null {
+  const operation = action === 'check' ? checkBlock.value : null
+  return machineReason.value ?? (pending.value ? 'Waiting for setter status' : localBlock.value) ?? operation ??
+    (!teaching.value && !state.value?.calibration ? teachFirst.value : null)
 }
 const guide = shallowRef<ProbeGuideTarget | null>(null)
 watch([tool, teaching, (): unknown => panel.hello, (): string => panel.link], () => { guide.value = null })
+function openCheck(): void {
+  error.value = null
+  if (allow(startBlock('check'))) guide.value = { kind: 'check' }
+}
 function startGuide(): void {
+  const action = guide.value?.kind === 'check' ? 'check' : 'touch_off'
   guide.value = null
-  touchOff()
+  const xyz = position.value
+  error.value = null
+  if (!allow(startBlock(action)) || xyz === null) return
+  request({ type: 'fixed_setter', action, tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
 }
 
 const removeListener = onResult((command, result) => {
@@ -96,7 +114,8 @@ const removeListener = onResult((command, result) => {
   if (result.outcome !== 'accepted') {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
     if (motion) {
-      error.value = result.reason || 'The machine did not confirm the tool measurement.'
+      error.value = result.reason || (command.action === 'check'
+        ? 'The machine did not confirm the tool check.' : 'The machine did not confirm the tool measurement.')
       refresh()
     }
     return
@@ -115,7 +134,10 @@ onBeforeUnmount(() => {
   <div class="setter-controls">
     <div class="setter-action">
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
-      <button v-else class="btn primary" type="button" @click="guide = { kind: teaching ? 'teach' : 'measure' }">Touch off</button>
+      <template v-else>
+        <button v-if="limits.check_tolerance_mm !== undefined" class="btn check-length" type="button" @click="openCheck">Check length</button>
+        <button class="btn primary" type="button" @click="guide = { kind: teaching ? 'teach' : 'measure' }">Touch off</button>
+      </template>
     </div>
   </div>
   <ProbeGuideDialog
@@ -128,4 +150,5 @@ onBeforeUnmount(() => {
 .setter-controls { flex: none; display: flex; flex-direction: row-reverse; align-items: center; gap: 10px; }
 .setter-action { display: flex; align-items: center; gap: 8px; }
 .setter-action button { width: 130px; min-height: 44px; white-space: nowrap; }
+.setter-action .check-length { width: 116px; }
 </style>

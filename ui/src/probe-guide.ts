@@ -6,7 +6,7 @@ export type MaterialGuideTarget =
   | { kind: 'surface'; direction: ProbeDirection }
   | { kind: 'corner'; x: 'x_plus' | 'x_minus'; y: 'y_plus' | 'y_minus' }
   | { kind: 'bore' | 'boss' | 'angle' | 'ball' }
-export type ProbeGuideTarget = MaterialGuideTarget | { kind: 'teach' | 'measure' }
+export type ProbeGuideTarget = MaterialGuideTarget | { kind: 'teach' | 'measure' | 'check' }
 
 export interface ProbeGuideStep {
   label: string
@@ -178,10 +178,13 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     }
     case 'teach':
     case 'measure':
-      title = target.kind === 'teach' ? 'Teach the tool setter' : 'Measure tool length'
+    case 'check':
+      title = target.kind === 'teach' ? 'Teach the tool setter'
+        : target.kind === 'check' ? 'Check tool length' : 'Measure tool length'
       setup = target.kind === 'teach' ? 'Jog the loaded reference tool or a tool with a valid length directly above the centre of the setter.'
         : 'Jog the tool directly above the centre of the taught setter.'
-      result = target.kind === 'teach' ? 'Record the setter height and position' : 'Save the measured tool length'
+      result = target.kind === 'teach' ? 'Record the setter height and position'
+        : target.kind === 'check' ? 'Compare the measured length with the tool table' : 'Save the measured tool length'
       object = 'setter'
       start = [0, 0, 16]
       datum = [0, 0, 0]

@@ -1730,6 +1730,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!ready(*raw, before))
     return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
+  const bool checking = request.action == SetterAction::check;
   const bool corner = request.action == SetterAction::corner;
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
@@ -1745,6 +1746,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         std::format("Load T{} to probe material.", *impl_->config.touch_probe_tool));
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
+  if (checking && tool == impl_->config.touch_probe_tool)
+    return std::unexpected("Load a cutting tool before checking its length.");
 
   const double position_tolerance = impl_->config.motion_tolerances.probe_position_mm;
   const auto near = [position_tolerance](double actual, double expected) {
@@ -1817,8 +1820,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   // Before the setter is taught, any tool with a valid saved length teaches it like the
   // reference (turo: T99 can act like T98).
-  const bool teaching = tool == limits->reference_tool ||
-                        (!calibration && std::ranges::contains(current_marks, tool));
+  const bool teaching = !checking && (tool == limits->reference_tool ||
+                        (!calibration && std::ranges::contains(current_marks, tool)));
   if (!material && !teaching && !calibration)
     return std::unexpected(std::format("Teach the setter with T{} or a touched-off tool first.",
                                        limits->reference_tool));
@@ -1828,6 +1831,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
+  if (checking && previous_length == 0 && !std::ranges::contains(current_marks, tool))
+    return std::unexpected("Set the loaded tool's length before checking it.");
   // Sets X0 and Y0 of the active work system at machine `origin` (XY), applied at the commanded
   // position and verified against the encoder lag; then optionally lifts to machine Z `lift_to`.
   const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to)
@@ -2302,7 +2307,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   }
   const auto contact = probe_fixed_setter(move, wanted);
   if (!contact)
-    return std::unexpected(contact.error());
+    return std::unexpected(checking ? std::format("T{} check failed. {}", tool, contact.error())
+                                    : contact.error());
   if (wanted && !wanted())
     return std::unexpected("The fixed setter result was cancelled.");
   const double value = contact->machine[2] - (teaching ? previous_length : calibration->plane[2]);
@@ -2313,7 +2319,18 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("The tool table changed during the setter cycle.");
 
   const SetterMeasurement measurement{
-      teaching, tool, contact->machine, value, previous_length, contact->stopping_distance};
+      teaching, tool, contact->machine, value, previous_length, contact->stopping_distance,
+      checking ? std::optional{limits->check_tolerance_mm} : std::nullopt};
+  if (checking) {
+    const double difference = value - previous_length;
+    if (std::abs(difference) > limits->check_tolerance_mm)
+      return std::unexpected(std::format(
+          "T{} check failed. Tool is {:.4f} mm {} (measured {:.4f} mm, table {:.4f} mm, "
+          "tolerance {} mm). Inspect the tool.",
+          tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value,
+          previous_length, limits->check_tolerance_mm));
+    return SetterState{calibration->plane, measurement, std::move(current_marks)};
+  }
   if (teaching) {
     calibration = Impl::Calibration{
         epoch.datum,

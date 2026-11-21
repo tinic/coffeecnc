@@ -133,6 +133,7 @@ void hello_rules() {
   probing.touch_probe_tool = 99;
   const auto limits = parsed(encode_hello(probing)).at("fixed_setter");
   require(limits.at("latch_feed_mm_min") == 25 && limits.at("latch_backoff_mm") == 1 &&
+              limits.at("check_tolerance_mm") == 0.1 &&
               limits.at("material_travel_mm") == 20 &&
               limits.at("material_geometry") == Json{{"reach_mm", 8}, {"margin_mm", 4},
                                                     {"clearance_mm", 6}, {"depth_mm", 3}},

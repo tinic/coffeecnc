@@ -60,6 +60,38 @@ afterEach(() => {
 function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body, global: { stubs: { GuideCanvas: true } } }) }
 
 describe('fixed setter workflow', () => {
+  it('previews a read-only length check and reports its result in the setter band', async () => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    panel.hello = { ...hello, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, check_tolerance_mm: 0.1,
+    } }
+    status.spindle.actual_rpm = 0
+    status.axes.forEach(axis => { axis.machine = 0 })
+    status.motion.in_position = true
+    mountTools()
+    const answer = async (setter: SetterState): Promise<void> => {
+      const command = vi.mocked(send).mock.lastCall?.[0]
+      if (!command) throw new Error('Missing request')
+      for (const listener of resultListeners)
+        listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '', setter })
+      await nextTick()
+    }
+    const state: SetterState = { calibration: [0, 0, -40], measurement: null }
+    await answer(state)
+    await press('Check length')
+    expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe('Check tool length')
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('±0.1 mm')
+    expect(send).toHaveBeenCalledTimes(1)
+    await press('Start check')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'check', tool: 1, x: 0, y: 0, z: 0 })
+    expect(getWrapper().get('.setter-band p').text()).toBe('Checking length…')
+    await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13],
+      value: 25.34, previous_length: 25.4, check_tolerance_mm: 0.1 } })
+    expect(getWrapper().get('.setter-band p').text()).toBe('T01 passed · 0.060 mm from table')
+    expect(getWrapper().find('.touched').exists()).toBe(false)
+  })
+
   it('explains a blocked setter press in place while the machine is off', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.status.machine = 'off'

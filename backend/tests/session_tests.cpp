@@ -2176,6 +2176,28 @@ void offset_history() {
             "A tool is restored with G10 L1: length, and the radius of the diameter, in inches");
   rig.port.state.program_units = LengthUnit::mm;
 
+  // A G92 shift is restored with G52, its fields only. G52 stores the offset in effect for an
+  // axis it does not name, 0 while G92.2 suspends the shift: LinuxCNC is made to refuse the
+  // block (a divisor of 0) when the shift is suspended and such an axis stores a value.
+  auto shifted = machine({10, 10, -21}, end_mill(50, 6));
+  shifted.status.offsets.g92 = {2, 9, 0};
+  rig.clock += 10s;
+  observe(shifted);
+  const auto both = newest();
+  shifted.status.offsets.g92 = {4, 9, 0};
+  rig.clock += 10s;
+  observe(shifted);
+  const auto only_x = newest();
+  require(both.target == HistoryTarget::g92 && both.changes.size() == 2 &&
+              only_x.target == HistoryTarget::g92 && only_x.changes.size() == 1 &&
+              only_x.changes[0].field == HistoryField::x,
+          "G92 shifts are in the history");
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", only_x.id));
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", both.id));
+  rig.acted({"mdi G52 X[2+0/[#5210+[1 AND [#5212 EQ 0] AND [#5213 EQ 0]]]]",
+             "mdi G52 X[0+0/[#5210+[1 AND [#5213 EQ 0]]]] Y0"},
+            "G52 names the restored axes; a suspended stored value elsewhere refuses it");
+
   // A work system that was never active: written, but with nothing to restore.
   rig.accepted(R"("type":"set_work_offset","wcs":2,"offset":[25.4,-50.8,0])");
   const auto inactive = newest();

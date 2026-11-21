@@ -303,11 +303,11 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759 restore-spindle-tool)
       set_tests_properties(linuxcnc_restore_spindle_tool_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 360)
-      # The runner's own test calls run.sh many times. Ten of its runs may each wait for a
+      # The runner's own test calls run.sh many times. Eleven of its runs may each wait for a
       # simulation of another checkout; two wait on the test's own run for fixed times. The
       # time limit is made of those parts, and the script is handed the same lock wait.
-      set(runner_lock_wait 300)   # run.sh -w of each of the ten runs
-      set(runner_waiting_runs 10)
+      set(runner_lock_wait 300)   # run.sh -w of each of the eleven runs
+      set(runner_waiting_runs 11)
       set(runner_own_waits 123)   # the refused run (3 s) and the run that waits its turn (120 s)
       set(runner_run_time 300)    # everything else the test does; about 160 s measured
       math(EXPR runner_timeout

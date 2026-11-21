@@ -19,6 +19,10 @@
 # machine, gets `[COFFEECNC] MACHINE_ID = <machine-id>` and `DATA_DIRECTORY =
 # <run-directory>/coffeecnc-data` (the g0759 profile has its own).
 #
+# The program and LinuxCNC run with HOME=<run-directory>/home, made empty for every run: the
+# loaded tool table ($HOME/.tool.mmap) is then this run's own, and an rs274 or LinuxCNC that
+# another checkout starts with the user's HOME cannot replace it.
+#
 # What CoffeeCNC saves for a machine never goes to the user's own data directory from here:
 # the program is started with XDG_DATA_HOME=<run-directory>/xdg-data, which is where a machine
 # with a MACHINE_ID and no DATA_DIRECTORY keeps it (a machine's own INI file with -m: nothing is
@@ -289,6 +293,13 @@ fi
 export COFFEECNC_SIM_RUN="$directory"
 # Where a machine without [COFFEECNC] DATA_DIRECTORY keeps its data: here, not under $HOME.
 export XDG_DATA_HOME="$directory/xdg-data"
+# LinuxCNC keeps the loaded tool table in $HOME/.tool.mmap, and every rs274 or LinuxCNC that
+# starts with the same HOME makes that file again with its own table, also while this run uses
+# it: tools of another table appear and this run's tools disappear. The run's processes get a
+# HOME of their own; LinuxCNC's debug logs go there too. The lock above uses the caller's HOME.
+rm -rf "$directory/home"
+mkdir -p "$directory/home" || exit 125
+export HOME="$directory/home"
 ours() {
   local pid
   for pid in $(pgrep -u "$(id -u)"); do

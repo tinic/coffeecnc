@@ -5101,6 +5101,71 @@ void offset_history(Rig& rig) {
                         edited ? change_text(*edited) : "none", put_back.first + " " + put_back.second,
                         back ? change_text(*back) : "none", length, original.length));
     }
+
+    // codex's sequence on #185: a Restore of an X-only G92 entry while G92.2 suspends the shift
+    // must not lose the stored Y, so that G92.3 still brings it back. LinuxCNC refuses that
+    // restore; with the shift applied again, the same restore changes X only.
+    const auto g92_entry = [&](std::uint64_t after) -> std::optional<HistoryEntry> {
+      std::optional<HistoryEntry> found;
+      rig.pump_until(5s, [&]() -> bool {
+        for (const auto& entry : history.snapshot()->entries)
+          if (entry.id > after && entry.target == HistoryTarget::g92)
+            found = entry;
+        return found.has_value();
+      });
+      return found;
+    };
+    const auto mdi_line = [&](std::string_view text) -> std::string {
+      rig.pump(OffsetHistoryStore::grace + 500ms);
+      const auto sent = session.send(std::format(R"("type":"mdi","text":"{}")", text));
+      rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+      return sent.first;
+    };
+    const auto g92_text = [&]() -> std::string {
+      const auto g92 = rig.status().g92;
+      return std::format("{:.4f},{:.4f},{:.4f}", g92[0], g92[1], g92[2]);
+    };
+    const auto shifted = mdi_line("G52 X2 Y9");
+    const auto before_x_only = last_id();
+    const auto moved = mdi_line("G52 X4");
+    const auto x_only = g92_entry(before_x_only);
+    const auto suspended = mdi_line("G92.2");
+    const auto suspended_g92 = g92_text();
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_refused = last_id();
+    const auto refused = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
+                                                           x_only->id))
+                                : std::pair<std::string, std::string>{"no_entry", ""};
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    rig.pump(500ms);
+    const auto refused_g92 = g92_text();
+    const bool nothing_restored = !g92_entry(before_refused);
+    const auto resumed = mdi_line("G92.3");
+    const auto resumed_g92 = g92_text();
+    check("history_g92_restore_keeps_a_suspended_shift",
+          shifted == "accepted" && moved == "accepted" && suspended == "accepted" && x_only &&
+              x_only->changes.size() == 1 && x_only->changes[0].field == HistoryField::x &&
+              suspended_g92 == "0.0000,0.0000,0.0000" && refused_g92 == suspended_g92 &&
+              nothing_restored && resumed == "accepted" && resumed_g92 == "4.0000,9.0000,0.0000",
+          std::format("{} {} {} entry={} suspended={} restore={} refused={} nothing={} {} "
+                      "resumed={}",
+                      shifted, moved, suspended, x_only ? change_text(*x_only) : "none",
+                      suspended_g92, refused.first, refused_g92, nothing_restored, resumed,
+                      resumed_g92));
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto before_applied = last_id();
+    const auto applied = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
+                                                           x_only->id))
+                                : std::pair<std::string, std::string>{"no_entry", ""};
+    const auto restored_x = g92_entry(before_applied);
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const auto applied_g92 = g92_text();
+    check("history_g92_restore_changes_its_axes_only",
+          applied.first == "accepted" && restored_x &&
+              restored_x->source == HistorySource::restore && applied_g92 == "2.0000,9.0000,0.0000",
+          std::format("{} {} g92={}", applied.first + " " + applied.second,
+                      restored_x ? change_text(*restored_x) : "none", applied_g92));
+    static_cast<void>(mdi_line("G92.1"));
     rig.pump(300ms);
     const auto shown = session.shown();
     kept = history.snapshot()->entries;

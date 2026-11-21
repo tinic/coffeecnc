@@ -1450,10 +1450,29 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
   case HistoryTarget::wcs:
     block = "G10 L2 P" + std::to_string(entry->number) + words;
     break;
-  case HistoryTarget::g92:
+  case HistoryTarget::g92: {
     // G52 sets the G92 offsets themselves; G92 would set them from the present position.
-    block = "G52" + words;
+    // G52 gives an axis it does not name the offset in effect and stores that in #5211-#5213.
+    // While G92.2 suspends the shift that offset is 0: the stored value of an axis the entry
+    // does not restore would be lost, and G92.3 could not bring it back. LinuxCNC is made to
+    // refuse the whole block then: suspended (#5210 0) and such an axis stores a value, so the
+    // divisor is 0. A cleared shift stores 0; with the shift applied the offset in effect is the
+    // stored one.
+    std::string unstored; // 1 when no axis the entry leaves out stores a value
+    for (std::size_t i = 0; i < 3; ++i)
+      if (!values.at(i))
+        unstored += " AND [#521" + std::to_string(i + 1) + " EQ 0]";
+    block = "G52";
+    for (std::size_t i = 0; i < 3; ++i) {
+      if (!values.at(i))
+        continue;
+      auto value = length(*values.at(i), state);
+      if (!unstored.empty())
+        value = "[" + value + "+0/[#5210+[1" + std::exchange(unstored, {}) + "]]]";
+      block += std::string(" ") + "XYZ"[i] + value;
+    }
     break;
+  }
   case HistoryTarget::tool:
     block = "G10 L1 P" + std::to_string(entry->number) + words;
     break;

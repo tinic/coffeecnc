@@ -14,7 +14,10 @@ export const part = reactive<PartState>({
 })
 export const partBlock = computed(() => part.attachment === null ? '' : modelBlock(part.attachment.binding, panel.status, panel.preview, live.value))
 export const showPart = computed(() => part.attachment !== null && part.visible && partBlock.value === '')
+const withProgram = 'Loaded with the program'
 let generation = 0
+/** The note of the import in progress. */
+let importing = ''
 let worker: Worker | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -35,8 +38,11 @@ export function removePart(): void {
 
 watch([(): unknown => panel.status?.program.file, (): unknown => panel.status?.program.revision], () => {
   if (part.attachment !== null || part.loading) {
+    // A model loaded with the program goes with it; only one the operator attached is reported.
+    const attached = (part.attachment !== null && part.attachment.note !== withProgram) ||
+      (part.loading && importing !== withProgram)
     removePart()
-    part.error = 'Part model removed because the program changed'
+    if (attached) part.error = 'Part model removed because the program changed'
   }
   void loadProgramPart()
 })
@@ -61,7 +67,7 @@ export async function loadProgramPart(fetcher: typeof fetch = fetch): Promise<vo
   if (panel.status?.program.file !== file || panel.status.program.revision !== revision ||
     part.attachment !== null || part.loading) return
   const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '')
-  await importPart(new File([bytes], `${base}.step`), 'Loaded with the program')
+  await importPart(new File([bytes], `${base}.step`), withProgram)
 }
 
 export async function importPart(file: File, note = ''): Promise<void> {
@@ -74,6 +80,7 @@ export async function importPart(file: File, note = ''): Promise<void> {
   }
   const binding: ModelBinding = { file: status.program.file, revision: status.program.revision, frame: frameOf(status.offsets) }
   const request = generation
+  importing = note
   part.loading = true
   timer = setTimeout(() => { cancelImport(); part.error = 'STEP import exceeded 30 seconds; try a smaller model' }, importTimeoutMs)
   try {

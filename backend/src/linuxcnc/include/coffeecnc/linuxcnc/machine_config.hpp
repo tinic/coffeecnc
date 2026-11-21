@@ -106,6 +106,20 @@ struct MachineConfig {
 [[nodiscard]] auto load_machine_config(const std::string& ini_file)
     -> std::expected<MachineConfig, std::string>;
 
+// Literal values for the offline checker. Empty values still count as configured.
+struct MachineIniInspection {
+  std::string path;
+  std::optional<std::string> display;
+  std::optional<std::string> postgui;
+  std::array<bool, 3> signal_configured{};
+  std::vector<std::string> halfiles;
+};
+
+inline constexpr std::array coffeecnc_signal_keys{"SPINDLE_RPM_SIGNAL", "SPINDLE_AT_SPEED_SIGNAL",
+                                                  "PROBE_SIGNAL"};
+[[nodiscard]] auto inspect_machine_ini(const std::string& ini_file)
+    -> std::expected<MachineIniInspection, std::string>;
+
 // [DISPLAY] INCREMENTS as millimetres. Entries are separated by commas or, without any comma, by
 // white space. An entry is a number or a fraction (`1/16`) in machine units, or with one of the
 // suffixes mm, cm, um, in, inch, mil. The word `continuous` is skipped. Fails naming the first

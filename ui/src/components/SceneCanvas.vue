@@ -7,7 +7,7 @@ import {
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { boxCorners, type Camera } from '../pathview'
-import { lightPreview } from '../preview-lighting'
+import { lightPreview, PreviewReflections } from '../preview-lighting'
 import { part, showPart } from '../step'
 import { modelToMachine } from '../step-model'
 import { ToolMesh } from '../tool-mesh'
@@ -19,6 +19,7 @@ const props = defineProps<{ camera: Camera; width: number; height: number; tool:
 const emit = defineEmits<{ error: [message: string] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const scene = new Scene()
+const reflections = new PreviewReflections()
 const modelCamera = new OrthographicCamera()
 const group = new Group()
 const toolMesh = new ToolMesh()
@@ -56,8 +57,9 @@ function build(): void {
     else geometry.computeVertexNormals()
     geometries.push(geometry)
     const material = new MeshStandardMaterial({
-      color: mesh.color === null ? new Color('#a5b5be') : new Color(...mesh.color),
-      metalness: 0.36, roughness: 0.42, transparent: true, opacity: part.opacity,
+      color: mesh.color === null ? new Color('#aeb7bf') : new Color(...mesh.color),
+      metalness: mesh.color === null ? 0.56 : 0.16,
+      roughness: 0.37, transparent: true, opacity: part.opacity,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
     })
     surfaces.push(material)
@@ -109,8 +111,8 @@ function draw(): void {
   syncModelCamera(modelCamera, props.camera, props.width, props.height, extent)
   surfaces.forEach((material) => { material.opacity = part.opacity })
   lines.forEach((material) => {
-    material.color.set(theme.value === 'dark' ? '#a3b4bf' : '#4c6474')
-    material.opacity = part.opacity * 0.65
+    material.color.set(theme.value === 'dark' ? '#b8c9d4' : '#3e5363')
+    material.opacity = part.opacity * 0.42
   })
   const ratio = Math.min(window.devicePixelRatio, 2)
   const surface = renderer.domElement
@@ -125,8 +127,7 @@ function draw(): void {
 function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
 function restored(): void {
   contextLost = false
-  toolMesh.resetLighting()
-  if (renderer !== null) scene.environment = toolMesh.light(renderer)
+  if (renderer !== null) reflections.build(scene, renderer)
   emit('error', '')
   draw()
 }
@@ -142,7 +143,7 @@ onMounted(() => {
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
     lightPreview(scene, renderer)
-    scene.environment = toolMesh.light(renderer)
+    reflections.build(scene, renderer)
     scene.add(group, toolMesh.group)
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
@@ -160,6 +161,7 @@ onBeforeUnmount(() => {
   clear()
   fixture?.dispose()
   toolMesh.dispose()
+  reflections.dispose(scene)
   renderer?.dispose()
   renderer?.forceContextLoss()
 })

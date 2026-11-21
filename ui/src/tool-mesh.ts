@@ -1,6 +1,5 @@
 import { BufferGeometry, CylinderGeometry, Group, LatheGeometry, LineBasicMaterial, LineLoop, Mesh,
-  MeshStandardMaterial, PMREMGenerator, SphereGeometry, Vector2, Vector3, type WebGLCubeRenderTarget, type WebGLRenderer } from 'three'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+  MeshStandardMaterial, SphereGeometry, Vector2, Vector3 } from 'three'
 import { faceMillGeometry, flutedCutterGeometry } from './cutter-geometry'
 import { holderSurfaces } from './tool-holder'
 import { holderFaceZ, probeEnvelope, toolProfiles, type ProbeDimensions, type ToolModel } from './tool-model'
@@ -9,17 +8,18 @@ import { holderFaceZ, probeEnvelope, toolProfiles, type ProbeDimensions, type To
 export class ToolMesh {
   readonly group = new Group()
   // Ground, uncoated tooling is the default visual finish. Coating is not in the tool table.
-  private readonly cutting = new MeshStandardMaterial({ color: '#969692', metalness: 0.87, roughness: 0.29, envMapIntensity: 0.75 })
-  private readonly shank = new MeshStandardMaterial({ color: '#a9a9a6', metalness: 0.89, roughness: 0.24, envMapIntensity: 0.75 })
-  private readonly groundSteel = new MeshStandardMaterial({ color: '#c8c8c6', metalness: 0.94, roughness: 0.25, envMapIntensity: 0.78 })
-  private readonly darkSteel = new MeshStandardMaterial({ color: '#343435', metalness: 0.62, roughness: 0.42, envMapIntensity: 0.85 })
-  private readonly housing = new MeshStandardMaterial({ color: '#454749', metalness: 0.45, roughness: 0.38 })
-  private readonly ruby = new MeshStandardMaterial({ color: '#d32643', metalness: 0.08, roughness: 0.23 })
-  private readonly surfaces = [this.cutting, this.shank, this.groundSteel, this.darkSteel, this.housing, this.ruby]
+  private readonly cutting = new MeshStandardMaterial({ color: '#a7a49f', metalness: 0.81, roughness: 0.32 })
+  private readonly flutes = this.cutting.clone()
+  private readonly shank = new MeshStandardMaterial({ color: '#bdc1c4', metalness: 0.91, roughness: 0.22 })
+  private readonly groundSteel = new MeshStandardMaterial({ color: '#c6c9cc', metalness: 0.89, roughness: 0.25 })
+  private readonly darkSteel = new MeshStandardMaterial({ color: '#474a4d', metalness: 0.65, roughness: 0.4 })
+  private readonly housing = new MeshStandardMaterial({ color: '#50555a', metalness: 0.42, roughness: 0.36 })
+  private readonly ruby = new MeshStandardMaterial({ color: '#c51c3b', metalness: 0.03, roughness: 0.19 })
+  private readonly surfaces = [this.cutting, this.flutes, this.shank, this.groundSteel, this.darkSteel, this.housing, this.ruby]
   private readonly datum = new LineBasicMaterial({ color: '#377ef2' })
   private readonly geometry: BufferGeometry[] = []
-  private reflections: WebGLCubeRenderTarget | null = null
-  private lightingReady = false
+
+  constructor() { this.flutes.vertexColors = true }
 
   clear(): void {
     this.group.clear()
@@ -35,7 +35,7 @@ export class ToolMesh {
       if (model.family === 'face-mill') this.buildFaceMill(d.diameter, d.cuttingLength)
       else {
         const cutter = flutedCutterGeometry(model.family, profiles.cutting, d.diameter, d.cuttingLength)
-        this.addMesh(cutter ?? this.lathe(profiles.cutting), this.cutting, 'cutter')
+        this.addMesh(cutter ?? this.lathe(profiles.cutting), cutter ? this.flutes : this.cutting, 'cutter')
       }
       if (profiles.shank.length) this.addMesh(this.lathe(profiles.shank), this.shank, 'shank')
     }
@@ -116,45 +116,19 @@ export class ToolMesh {
     }
     // Extend the stem into the ball so their surfaces intersect.
     cylinder(stylusDiameter, d.stylusLength + d.diameter / 4, d.diameter * 0.75, this.shank)
-    cylinder(d.bodyDiameter, d.bodyLength, bodyStart, this.housing)
+    const radius = d.bodyDiameter / 2
+    const bevel = Math.min(radius * 0.08, d.bodyLength * 0.12)
+    this.addMesh(this.lathe([
+      [0, bodyStart], [radius - bevel, bodyStart], [radius, bodyStart + bevel],
+      [radius, bodyEnd - bevel], [radius - bevel, bodyEnd], [0, bodyEnd],
+    ]), this.housing, 'probe housing')
     if (showShank) cylinder(d.shankDiameter, d.shankDiameter, bodyEnd, this.shank)
-  }
-
-  light(renderer: WebGLRenderer): WebGLCubeRenderTarget['texture'] | null {
-    if (this.lightingReady) return this.reflections?.texture ?? null
-    this.lightingReady = true
-    // Direct scene lighting still works when the GPU can't render a half-float reflection map.
-    if (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float')) return null
-    const generator = new PMREMGenerator(renderer)
-    const room = new RoomEnvironment()
-    try {
-      this.reflections = generator.fromScene(room, 0.03, 0.1, 100, { size: 128 })
-      for (const material of this.surfaces) {
-        material.envMap = this.reflections.texture
-        material.needsUpdate = true
-      }
-    } finally {
-      room.dispose()
-      generator.dispose()
-    }
-    return this.reflections.texture
-  }
-
-  resetLighting(): void {
-    this.lightingReady = false
-    this.reflections?.dispose()
-    this.reflections = null
-    for (const material of this.surfaces) {
-      material.envMap = null
-      material.needsUpdate = true
-    }
   }
 
   setTheme(dark: boolean): void { this.datum.color.set(dark ? '#84b1f8' : '#377ef2') }
 
   dispose(): void {
     this.clear()
-    this.resetLighting()
     this.surfaces.forEach((material) => { material.dispose() })
     this.datum.dispose()
   }

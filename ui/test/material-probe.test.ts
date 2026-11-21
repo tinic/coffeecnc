@@ -102,6 +102,18 @@ describe('bore and boss centres', () => {
   })
 })
 
+describe('edge angle', () => {
+  it('probes the front edge at two points and reports the turn', async () => {
+    const fixture = await probe('Edge angle…')
+    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
+    await nextTick()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'angle', direction: 'y_plus', spacing: 50,
+      tool: 99, x: 0, y: 0, z: 0 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: -0.1 } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Front edge turns −0.100° (0.087 mm over 50 mm).')
+  })
+})
+
 describe('ball calibration', () => {
   it('asks for the gauge width, probes both sides and reports the saved diameter', async () => {
     const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 } })

@@ -802,6 +802,14 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
       rig.wait_js("__t.last.status.program.file && !__t.find('button.main-action').disabled");
   check("panel_run_probe_program", ready && rig.click("button.main-action", "") == "ok",
         rig.js("const b = __t.find('button.main-action'); return [__t.text(b), b.title];").dump());
+  // The preview cannot follow a probe move, so Program check asks to confirm the start, as it
+  // does for the operator.
+  const bool asked =
+      rig.wait_js("!!__t.find('[role=\"dialog\"] footer .btn.primary', 'Run program')");
+  check("panel_confirms_unchecked_program",
+        asked && rig.click("[role=\"dialog\"] footer .btn.primary", "Run program") == "ok",
+        rig.js("return __t.all('[role=\"dialog\"] p, [role=\"dialog\"] li').map(__t.text);")
+            .dump());
   const bool shown = rig.wait_js(
       "__t.received.some((m) => m.type === 'message' && m.level === 'error' && "
       "/contact/i.test(m.text)) && "

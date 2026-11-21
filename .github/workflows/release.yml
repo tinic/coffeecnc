@@ -106,6 +106,21 @@ jobs:
           path: backend/build/package/*.deb
           if-no-files-found: error
 
+      # The exact LinuxCNC package this build ran against, for the install check: some runners
+      # cannot reach linuxcnc.org at all, and the check must not depend on which one it gets.
+      - name: Keep the LinuxCNC package
+        run: |
+          set -eu
+          mkdir -p linuxcnc-debs && cd linuxcnc-debs
+          apt-get download "linuxcnc-uspace=$(dpkg-query -W -f='${Version}' linuxcnc-uspace)"
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linuxcnc-${{ matrix.arch }}
+          path: linuxcnc-debs/*.deb
+          if-no-files-found: error
+
   deb_install:
     name: Install and purge (${{ matrix.arch }})
     needs: deb
@@ -119,13 +134,20 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
       PACKAGE_ARCH: ${{ matrix.arch }}
     steps:
-      - name: Configure the LinuxCNC APT repository
-        run: *linuxcnc-apt
+      # Debian's own repositories only: linuxcnc-uspace comes from the build job (the version
+      # the package was built against), so this check does not need linuxcnc.org.
+      - name: Debian package lists
+        run: apt-get update
 
       - uses: actions/download-artifact@v4
         with:
           name: coffeecnc-${{ matrix.arch }}
           path: package
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linuxcnc-${{ matrix.arch }}
+          path: linuxcnc
 
       - name: Install the release artifact with APT
         run: |
@@ -142,7 +164,8 @@ jobs:
               exit 1
             fi
           done
-          apt-get install -y --no-install-recommends "$1"
+          set -- "$1" ./linuxcnc/linuxcnc-uspace_*.deb
+          apt-get install -y --no-install-recommends "$@"
           for package in coffeecnc linuxcnc-uspace; do
             test "$(dpkg-query -W -f='${db:Status-Status}' "$package")" = installed
             dpkg-query -W "$package"

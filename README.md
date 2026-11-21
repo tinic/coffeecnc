@@ -3,56 +3,63 @@
   <img src="ui/public/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="360">
 </picture>
 
-A new milling frontend for LinuxCNC, with a native C++ core and a modern web interface hosted locally in GTK/WebKit.
+CoffeeCNC is a touch-first operator panel for LinuxCNC milling machines. A native C++ application connects to LinuxCNC. A Vue/TypeScript interface runs inside a GTK/WebKit window on the machine controller.
 
-CoffeeCNC is an independent product. It shares architectural ideas with [Elle](https://github.com/tinic/el-linuxcnc-electron), the electronic leadscrew project, but has its own milling workflows and product scope.
+LinuxCNC continues to own motion, interpretation and real-time control. CoffeeCNC gives the operator a clear screen for each step of the job: set up, measure tools, find the material, and run the program.
 
-**Current status: native operator panel deployed on the G0759, with LinuxCNC simulation coverage.** The C++ executable hosts the Vue/TypeScript panel in GTK/WebKit and connects controller status, program loading, tools and operator commands. Separate command, status and HAL control threads keep heartbeat and jog-stop handling independent of blocked NML commands. A labeled browser simulator remains available for development.
+CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine definitions in [tinic/linuxcnc](https://github.com/tinic/linuxcnc).
 
-The 16 November deployment includes the logo, corrected native Quit, formula entry and the compact Manual layout, with coolant controls shown only for configured outputs. E-STOP sits beside machine power at the same height, followed by an icon-only app menu. The installed UI stamp and running binary were independently verified: [Manual deployment evidence](docs/research/evidence/manual-usability-2026-11-16.txt), [earlier deployment evidence](docs/research/evidence/g0759-deployment-2026-11-16.txt).
+![CoffeeCNC Manual workspace on the G0759](ui/screenshots/g0759-manual.png)
 
-Native interpreter preview, STEP overlay and the tool-model editor now work in LinuxCNC simulation. The [preview](docs/preview.md) supports a bounded subset of G-code and reports unsupported input; persistent job configuration remains in progress. The [native shell reference](docs/shell.md) and [qualification record](docs/research/step-preview.md#native-webkitgtk-qualification) describe tested behavior and sanitizer limits. No hardware operation has been qualified.
+## Features
 
-![CoffeeCNC Manual workspace with a single coordinate-view button](ui/screenshots/manual-dro-cycle-1600.png)
+### Manual
 
-*Current Manual layout at 1600 × 900 in the browser simulator, captured on 16 November 2026. The coordinate-view button cycles Work → Machine → To go. Axis-action menus, tappable coordinates and work-system shortcuts remain available. [Native simulation checks and layout evidence](docs/research/evidence/manual-usability-2026-11-16.txt) · [Formula entry](docs/numeric-entry.md).*
+- Jog continuously or in steps from 0.005 mm. Jogging stops immediately when the touch probe or the tool setter makes contact. This is not an E-stop.
+- Home each axis or all axes, enter MDI commands, and control the spindle and coolant.
+- Large coordinates show work, machine or distance-to-go positions, in mm or inches.
+- Numeric fields accept formulas such as `1/4in` or `7mm/2`. See [numeric entry](docs/numeric-entry.md).
+- Each card shows its own status line, for example why MDI is not available now. Machine-wide states, such as "Machine is off", show once at the top.
 
-The app menu now includes Settings for startup display units, work system shortcuts, default spindle RPM and default jog speed. Native preferences are saved per machine; speed presets never start motion. The Manual selector keeps five shortcuts visible and puts the rest under More, always retaining the active system. Applied G92/G52 shifts are shown separately. [Settings design](docs/design/operator-settings.md) · [Research across other controls](docs/research/coordinate-system-controls-2026-11-16.md).
+### Tools
+
+![Tools and work offsets on the G0759](ui/screenshots/g0759-tools.png)
+
+- The tool table shows which tool lengths are measured and valid.
+- **Touch off** measures the loaded tool on a fixed tool setter. Teach the setter once with the reference tool (T98), or with any tool that already has a valid length.
+- **Load** confirms a manual tool change and applies its length offset. The last tool in the spindle comes back after a restart.
+- Edit the origins of G54–G59.3 with a before/after confirmation.
+- Each tool can have a 3D shape for the preview: end mills, ball-nose, bull-nose, chamfer and face mills, drills or a touch probe. See [the tool workflow](docs/design/tools-workflow.md) and [tool models](docs/design/tool-models.md).
+
+### Touch off
+
+![Material touch-off with the T99 probe on the G0759](ui/screenshots/g0759-touch-off.png)
+
+- With the touch probe (T99) loaded, probe the **Z top** or one workpiece edge: **X−** (left), **X+** (right), **Y−** (front) or **Y+** (back). The diagram shows which face each button probes.
+- The result goes into the active work coordinate system. Edge results include the probe ball radius.
+- The probe can teach the tool setter, so you do not need to measure T98 first when the tool lengths are valid.
+
+### Machine
+
+![Running a program with the toolpath preview](ui/screenshots/machine-running-light.png)
+
+- Open an NC program and look at the interpreter-generated toolpath before you run it. See [preview](docs/preview.md).
+- The tool sequence lists each section, its tool and its lines.
+- Attach a STEP model to show the stock or part in the work coordinate system.
+- Cycle start, feed hold, stop, and feed and spindle overrides are always at the bottom of the screen.
 
 <details>
-<summary>Settings panel at 1280 × 720</summary>
+<summary>Dark theme</summary>
 
-![CoffeeCNC operator settings in the browser simulator](ui/screenshots/settings-1280.png)
-
-*Browser simulator, 16 November 2026. The native settings build is deployed on the G0759; [running binary and UI bundle verified](docs/research/evidence/operator-settings-2026-11-16.txt).*
+![Running a program in the dark theme](ui/screenshots/machine-running-dark.png)
 
 </details>
 
-<details>
-<summary>Earlier G0759 controller deployment screenshot</summary>
+The G0759 screenshots come from the controller. The Machine screenshots come from the browser simulator.
 
-![CoffeeCNC running on the G0759 controller with larger jog controls and aligned coordinates](ui/screenshots/g0759-operator-f0a4264.png)
+## Try it in the browser
 
-*Operator layout on the G0759 controller at 1600 × 900, deployed on 15 November 2026 from UI revision `f0a4264` with Claude's jog-stop fix. The machine is off and axes are not homed. Larger jog controls, aligned coordinates and unit buttons, expanded MDI and the bottom-aligned work coordinate selector are visible. Physical touch retesting remains pending. See [deployment evidence](docs/research/evidence/operator-touch-followup-2026-11-15.txt) and [touch behavior](ui/README.md#touch-operation-and-stable-feedback).*
-
-</details>
-
-<details>
-<summary>First G0759 controller launch</summary>
-
-![CoffeeCNC Manual workspace on the G0759 controller, machine off and axes not homed](ui/screenshots/g0759-controller-first-launch.png)
-
-*First G0759 controller launch reported by Claude on 15 November 2026. The supplied screenshot shows the machine off, all axes not homed, and jogging/MDI unavailable. Probe input is reported as Tripped; its physical meaning remains a commissioning question. See [launch evidence and scope](docs/machines/g0759.md#first-g0759-controller-launch).*
-
-</details>
-
-![Native CoffeeCNC operator panel with Task 17 toolpaths and STEP stock](ui/screenshots/native-task17a-stock-5a04f40.png)
-
-*GTK/WebKit running against LinuxCNC simulation, with the unedited Task 17 A program and its associated 120 × 80 × 18 mm STEP stock. The gray block is initial stock; blue lines are interpreter-generated cutting paths. Placement has been applied in the panel. This view does not simulate stock removal or validate a physical setup.*
-
-The first machine target is the **G0759**, using the definitions in [tinic/linuxcnc](https://github.com/tinic/linuxcnc). Machine settings and HAL integration stay separate from shared application code. See [the configuration review and integration gaps](docs/machines/g0759.md).
-
-## Run the operator panel
+The browser simulator runs the full interface against a simulated machine. You do not need LinuxCNC.
 
 ```sh
 cd ui
@@ -60,74 +67,21 @@ npm ci
 npm run dev
 ```
 
-Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). Use the theme control for the dark version. See [UI development and checks](ui/README.md) and [native backend build instructions](backend/README.md).
+Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). The simulator does not include the tool setter or the touch probe. See [UI development and checks](ui/README.md).
 
-Use **Attach STEP model** to choose a local `.step`/`.stp` file, adjust opacity and place it in the current work coordinate system. The simulator includes a sample model. Import and display stay local; model placement does not change machine work offsets.
+## Build and install
 
-Numeric fields accept formulas such as `1/4in`, `7mm/2` and `7/2mm`, with a result preview in the touch keypad. See [numeric entry and unit conversion](docs/numeric-entry.md).
+The native application builds with CMake and packages as a Debian package for the controller. See [the backend build](backend/README.md) and [packaging](docs/packaging.md). The tests include LinuxCNC simulation scenarios for jogging, tool setting and probing.
 
-In **Tools**, use **Edit** or tap a row to edit it, or use **Load** to confirm a tool change and apply its length. **Settings → Tool reference height** prefills manual length touch-off with the gauge block or setter contact height above work Z zero. The table keeps descriptions readable and puts deletion behind confirmation in the editor. See [the tool workflow](docs/design/tools-workflow.md).
+## Design
 
-![CoffeeCNC Tools table with confirmed loading and a compact spindle header](ui/screenshots/tools-workflow-1600.png)
+- A native C++ application owns the LinuxCNC connection and the command lifecycle. Separate command, status and HAL threads keep jog-stop handling independent of blocked NML commands.
+- GTK/WebKit hosts the local web UI through an in-process message bridge.
+- Plain G-code is a first-class input. STEP models, setup sheets and CAM metadata add to a job when they are available.
+- Machine settings and HAL integration stay separate from the shared application code. See [the G0759 configuration](docs/machines/g0759.md).
 
-*Browser simulator, 16 November 2026. T2 has been loaded through the manual-change prompt and G43 is applied. The tool editor, table and reference-height entry were checked at 1280 × 720 and 1600 × 900. [Validation and deployment status](docs/research/evidence/tools-workflow-2026-11-16.txt).*
+More: [architecture](docs/architecture.md), [native shell](docs/shell.md), [product brief](docs/product-brief.md), [machinist workflows](docs/research/machinist-workflows.md), [sample catalog](samples/README.md), [logo and identity](docs/design/branding/README.md).
 
-Use **Edit** or tap a work-system row to edit its XYZ machine-coordinate origins. **Copy XYZ** and **Clear XYZ** also require a before/after confirmation. Rotation and G92/G52 shifts stay unchanged; opening the editor does not select the system. Unknown origins remain blank until entered explicitly.
+## License
 
-<details>
-<summary>Confirmed work-origin editing at 1280 × 720</summary>
-
-![CoffeeCNC reviewing XYZ origins before writing G55](ui/screenshots/work-offset-review-1280.png)
-
-*Browser simulator, 16 November 2026. Formulas 1/4in, 7mm/2 and 7/2mm resolve to millimetres before confirmation. [Workflow](docs/design/tools-workflow.md#work-origins) · [Validation and deployment status](docs/research/evidence/work-offset-editor-2026-11-16.txt).*
-
-</details>
-
-The tool editor combines Length, Diameter and Description with **Preview shape**, directly editable dimensions and a live 3D preview on the left. **Save tool** saves the row and its shape together; cutting diameter comes from Diameter above. **Settings → Tool shape templates** configures starting proportions for common cutter families. In the browser demo, templates persist and per-tool assignments last for the page session. Native CoffeeCNC saves both per machine when `[COFFEECNC] MACHINE_ID` is configured; see [saved tool models](docs/tool-model-store.md). The Machine preview places the configured loaded tool at the reported tip, with an independent Tool visibility control. Physical dimensions remain independent of LinuxCNC Z offsets. See [tool model behavior and geometry](docs/design/tool-models.md).
-
-![Combined tool details and ball-nose preview shape editor](ui/screenshots/tool-editor-preview-1280.png)
-
-*Browser simulator, 16 November 2026, at 1280 × 720. The blue ring marks the holder-face datum; the cutter and shank are simplified envelopes. [Validation and deployment status](docs/research/evidence/tool-editor-preview-2026-11-16.txt).*
-
-The **Touch probe** shape uses the tool table diameter as its effective ruby ball diameter and places the ball bottom at the Length touch-off datum. A saved probe assignment blocks spindle starts and checks programs before Cycle Start when the probe is loaded. [Touch probe setup and preview](docs/design/tool-models.md#touch-probe).
-
-![Configured loaded tool in the CoffeeCNC Machine preview](ui/screenshots/loaded-tool-preview.jpg)
-
-*The T2 envelope follows the reported tool tip in the browser simulator. Its blue ring marks the holder-face datum; no holder or collision simulation is implied.*
-
-## Explore the concept
-
-Open [the standalone concept](docs/concepts/coffeecnc-mill.html) in a browser after cloning. [The editable fragment](docs/concepts/coffeecnc-mill.fragment.html) is also included. The prototype uses external font and icon resources; it is not an offline production application.
-
-The concept established the panel's visual direction: readable coordinates, a part/toolpath view, operation context, and persistent run controls. Its displayed geometry, measurements, tool readiness and timing are illustrative. The working panel uses that design with jogging, touch-off, tool changes and execution controls exercised against LinuxCNC simulation; machine validation and recovery workflows remain ongoing work.
-
-## Direction
-
-- A native C++ application owns the LinuxCNC connection and command lifecycle.
-- GTK/WebKit hosts a local web UI through an in-process message bridge.
-- LinuxCNC continues to own motion, interpretation and real-time control.
-- Plain G-code is a first-class input. STEP, setup sheets and CAM metadata enrich a job when available.
-- Machine state, operator declarations and preview assumptions remain distinguishable.
-
-## Research and design material
-
-- [Logo and identity assets](docs/design/branding/README.md): scalable light/dark/monochrome logos, app icons, editable vector source, and the original generated concepts and prompts.
-- [Machinist workflows](docs/research/machinist-workflows.md): primary sources, proposed operator scenarios and questions for shop observation.
-- [Sample catalog](samples/README.md): 117 NC/NGC/GCODE/TAP programs and 29 STEP models from 11 GitHub projects, with native FreeCAD CAM files, setup/tool metadata, pinned provenance and upstream licenses.
-- [STEP preview library](docs/research/step-preview.md): selected npm importer, alternatives, corpus checks, browser and native overlay qualification.
-- [Concept review](docs/design/concept-review.md): what the attractive first screen gets wrong and what the next design needs.
-- [Architecture](docs/architecture.md) and [feasibility](docs/feasibility.md): native/web boundaries, prerequisites and implementation sequence.
-- [Frontend landscape in 2026](docs/research/linuxcnc-frontends-2026.md): the original alternatives research.
-- [Product brief](docs/product-brief.md) and [material provenance](docs/provenance.md): decisions, assumptions and the archived original concept.
-
-The samples are research inputs, not machine-qualified jobs. In particular, related STEP/NC files have not been geometrically validated as matching, and some accompanying material/tool data conflict. Those discrepancies are documented in the catalog.
-
-Validate the collected files with Python 3.9 or newer:
-
-```sh
-python3 scripts/verify-samples.py
-```
-
-## License status
-
-A project-wide license for CoffeeCNC has not yet been selected. Third-party sample files retain their own upstream licenses and attribution; they are not relicensed as CoffeeCNC.
+A project-wide license is not selected yet. Third-party sample files keep their own upstream licenses and attribution.

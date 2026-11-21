@@ -1,4 +1,4 @@
-import { BufferGeometry, CylinderGeometry, DataTexture, ExtrudeGeometry, Group, LinearFilter, Mesh,
+import { BoxGeometry, BufferGeometry, CylinderGeometry, DataTexture, ExtrudeGeometry, Group, LinearFilter, Mesh,
   MeshBasicMaterial, MeshStandardMaterial, Path, PlaneGeometry, Shape } from 'three'
 import { brushedFinish } from '../brushed-finish'
 import type { Vec3 } from '../protocol'
@@ -36,7 +36,8 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
   const shadows = [false, true].map(round => new MeshBasicMaterial({
     map: contactShadow(round), transparent: true, depthWrite: false, opacity: 0.38, toneMapped: false,
   }))
-  const { stock, slanted, gauge, bore, boss, setter, top, stockHeight, boreRadius, bossRadius, setterHeight, setterRadius } = demoFixture
+  const { stock, slanted, gauge, pocket, slot, ridge, bore, boss, setter, top,
+    stockHeight, recessDepth, boreRadius, bossRadius, setterHeight, setterRadius } = demoFixture
   const add = (geometry: BufferGeometry, material: Mesh['material'], centre: Vec3, angle = 0): void => {
     const mesh = new Mesh(geometry, material)
     mesh.position.set(...centre)
@@ -48,11 +49,23 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
     const material = shadows[round ? 1 : 0]
     if (material) add(new PlaneGeometry(halfWidth * 2.85, halfHeight * 2.85), material, position, angle)
   }
-  const block = (item: ProbeBlock, materials: MeshStandardMaterial[], hole = false): void => {
+  const block = (item: ProbeBlock, materials: MeshStandardMaterial[]): void => {
     const bevel = 0.55
     const x = item.half[0] - bevel, y = item.half[1] - bevel
     const shape = new Shape().moveTo(-x, -y).lineTo(x, -y).lineTo(x, y).lineTo(-x, y).closePath()
-    if (hole) shape.holes.push(new Path().absarc(bore[0] - item.centre[0], bore[1] - item.centre[1], boreRadius + bevel, 0, 2 * Math.PI, true))
+    if (item === stock) {
+      shape.holes.push(new Path().absarc(bore[0] - item.centre[0], bore[1] - item.centre[1], boreRadius + bevel, 0, 2 * Math.PI, true))
+      for (const recess of [pocket, slot]) {
+        const [hx, hy] = recess.half
+        const [cx, cy] = [recess.centre[0] - stock.centre[0], recess.centre[1] - stock.centre[1]]
+        shape.holes.push(new Path().moveTo(cx - hx - bevel, cy - hy - bevel)
+          .lineTo(cx - hx - bevel, cy + hy + bevel).lineTo(cx + hx + bevel, cy + hy + bevel)
+          .lineTo(cx + hx + bevel, cy - hy - bevel).closePath())
+        const floorHeight = stockHeight - recessDepth
+        add(new BoxGeometry(2 * hx + 2 * bevel, 2 * hy + 2 * bevel, floorHeight), milledSides,
+          [...recess.centre, top - stockHeight + floorHeight / 2])
+      }
+    }
     const base: Vec3 = [item.centre[0], item.centre[1], top - stockHeight]
     add(new ExtrudeGeometry(shape, { depth: stockHeight - 2 * bevel, bevelSize: bevel, bevelThickness: bevel,
       bevelSegments: 2, curveSegments: 48 }), materials, [base[0], base[1], base[2] + bevel], item.angle)
@@ -62,9 +75,10 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
     add(new CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2), material, centre)
   }
 
-  block(stock, [milledTop, milledSides], true)
+  block(stock, [milledTop, milledSides])
   block(slanted, [milledTop, milledSides])
   block(gauge, [gaugeSteel, gaugeSteel])
+  block(ridge, [milledTop, milledSides])
   cylinder(bossRadius, stockHeight, [boss[0], boss[1], top - stockHeight / 2], aluminium)
   shadow(bossRadius, bossRadius, [boss[0], boss[1], top - stockHeight], 0, true)
   cylinder(setterRadius, setterHeight - 3, [setter[0], setter[1], setter[2] - (setterHeight + 3) / 2], black)

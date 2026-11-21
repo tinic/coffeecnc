@@ -84,12 +84,25 @@ function makeStock(): void {
       break
     case 'bore':
     case 'stock':
-    case 'gauge': {
+    case 'gauge':
+    case 'pocket':
+    case 'slot':
+    case 'ridge': {
       const bevel = 0.65
-      const x = (props.plan.object === 'gauge' ? 14 : 24) - bevel
-      const y = 18 - bevel
+      const feature = props.plan.featureHalf
+      const ridge = props.plan.object === 'ridge'
+      const x = (ridge && feature ? feature[0] : props.plan.object === 'gauge' ? 14 : 24) - bevel
+      const y = (ridge && feature ? feature[1] : 18) - bevel
       const shape = new Shape().moveTo(-x, -y).lineTo(x, -y).lineTo(x, y).lineTo(-x, y).closePath()
       if (props.plan.object === 'bore') shape.holes.push(new Path().absarc(0, 0, 13, 0, 2 * Math.PI, true))
+      if (feature && !ridge) {
+        const [hx, hy] = feature.map(value => value + bevel) as [number, number]
+        shape.holes.push(new Path().moveTo(-hx, -hy).lineTo(-hx, hy).lineTo(hx, hy).lineTo(hx, -hy).closePath())
+        const bottom = new Mesh(new PlaneGeometry(hx * 2, hy * 2), walls)
+        bottom.position.z = -10
+        bottom.receiveShadow = true
+        stage.add(bottom)
+      }
       const geometry = new ExtrudeGeometry(shape, { depth: 14 - 2 * bevel, bevelThickness: bevel,
         bevelSize: bevel, bevelSegments: 2, curveSegments: 48, steps: 1 })
       const stock = new Mesh(geometry, [machinedTop, walls])
@@ -116,7 +129,7 @@ function build(): void {
   clearStock()
   makeStock()
   stage.rotation.z = props.plan.rotation
-  view.elevation = props.plan.object === 'bore' ? 0.85 : 0.57
+  view.elevation = ['bore', 'pocket', 'slot'].includes(props.plan.object) ? 0.87 : 0.57
   const toolBounds = corners(new Box3().setFromObject(toolMesh.group)).map(point => point.sub(tool.position))
   framing = corners(new Box3().setFromObject(stage))
   for (const step of props.plan.steps) {

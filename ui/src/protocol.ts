@@ -365,6 +365,7 @@ export interface RestartPlan {
 
 export interface FixedSetterLimits {
   material_geometry?: { reach_mm: number; margin_mm: number; clearance_mm: number; depth_mm: number }
+  material_features?: boolean
   reference_tool: number
   travel_mm: number
   feed_mm_min: number
@@ -400,6 +401,8 @@ export interface SetterState {
   ball_diameter?: number
   /** After a bore or boss: its diameter through the centre, mm. */
   center_diameter?: number
+  /** Physical face-to-face widths in mm, one entry for each axis that was probed. */
+  feature_size?: { x?: number; y?: number }
   /** After an edge angle: how far the edge turns from the machine axis, degrees counterclockwise. */
   edge_angle?: number
   edge_rotation?: { measurement_id: number; wcs: number }
@@ -605,6 +608,7 @@ export interface ToolTouchOff extends CommandBase {
   value: number
 }
 export type ProbeDirection = 'z_top' | 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'
+export type ProbeAxis = 'x' | 'y'
 export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
   | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
@@ -615,6 +619,10 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
    * active work system), then X0 and Y0 set together. Directions are the probe's travel.
    */
   | { action: 'corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number }
+  | { action: 'inside_corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number }
+  | { action: 'pocket'; tool: number; x: number; y: number; z: number }
+  | { action: 'slot'; axis: ProbeAxis; tool: number; x: number; y: number; z: number }
+  | { action: 'ridge'; axis: ProbeAxis; width: number; tool: number; x: number; y: number; z: number }
   /**
    * Measures the effective ball diameter: both X faces of a gauge `gauge_width` mm wide, probed
    * from beside it below its top (Z0), and writes it to the tool table.

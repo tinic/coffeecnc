@@ -98,6 +98,49 @@ describe('browser probe scene', () => {
     expect(sim.status().offsets.g5x).toEqual([155, 108, -120])
   })
 
+  it.each([
+    ['inside-front-left', 'x_minus', 'y_minus', 160.02, 76.02],
+    ['inside-front-right', 'x_plus', 'y_minus', 183.98, 76.02],
+    ['inside-back-left', 'x_minus', 'y_plus', 160.02, 93.98],
+    ['inside-back-right', 'x_plus', 'y_plus', 183.98, 93.98],
+  ] as const)('sets both offsets at the %s pocket corner', (setup, x, y, ox, oy) => {
+    const { sim, cycle } = scene(setup)
+    expect(cycle({ action: 'inside_corner', x_direction: x, y_direction: y }).setter?.material?.axis).toBe('XY')
+    const after = sim.status().offsets.g5x
+    expect(after[0]).toBeCloseTo(ox)
+    expect(after[1]).toBeCloseTo(oy)
+    expect(after[2]).toBe(-120)
+  })
+
+  it('measures a rectangular pocket and sets both axes in the active WCS', () => {
+    const { sim, cycle, send } = scene('pocket')
+    const original = sim.status().offsets.g5x
+    send({ type: 'select_wcs', wcs: 2 })
+    const result = cycle({ action: 'pocket' })
+    expect(result.setter?.feature_size?.x).toBeCloseTo(23.96)
+    expect(result.setter?.feature_size?.y).toBeCloseTo(17.96)
+    expect(sim.status().offsets.g5x.slice(0, 2)).toEqual([172, 85])
+    expect(sim.modal.offsets[0]).toEqual(original)
+  })
+
+  it.each([
+    ['slot-x', 'x', 'X', 125, 11.96], ['slot-y', 'y', 'Y', 110, 27.96],
+    ['ridge-x', 'x', 'X', 285, 16.04], ['ridge-y', 'y', 'Y', 148, 32.04],
+  ] as const)('measures %s and preserves the two unprobed axes', (setup, axis, name, centre, width) => {
+    const { sim, cycle } = scene(setup)
+    const before = sim.status()
+    const index = axis === 'x' ? 0 : 1
+    const result = cycle(setup.startsWith('slot') ? { action: 'slot', axis }
+      : { action: 'ridge', axis, width: width - 0.04 })
+    expect(result.setter?.material?.axis).toBe(name)
+    expect(result.setter?.feature_size?.[axis]).toBeCloseTo(width)
+    const after = sim.status()
+    expect(after.offsets.g5x[index]).toBeCloseTo(centre)
+    expect(after.offsets.g5x[1 - index]).toBe(before.offsets.g5x[1 - index])
+    expect(after.offsets.g5x[2]).toBe(before.offsets.g5x[2])
+    expect(after.axes[2]?.machine).toBeCloseTo(before.axes[2]?.machine ?? Infinity)
+  })
+
   it('finds the boss centre and measures its diameter from outside', () => {
     const { sim, cycle } = scene('boss')
     const result = cycle({ action: 'boss', diameter: 24 })

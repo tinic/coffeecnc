@@ -471,6 +471,128 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
           "editing the teaching tool drops the plane and preserves other saved marks");
 }
 
+void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto at_start = [&] {
+    mdi("G21 G90 G53 G0 X2 Y1 Z20");
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  const auto run = [&](SetterAction action, ProbeDirection x = ProbeDirection::x_plus,
+                       ProbeDirection y = ProbeDirection::y_plus, double width = 0) {
+    return port.fixed_setter({action, 99, machine(), x, y, width}, epoch, {});
+  };
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    at_start();
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  mdi("G10 L2 P2 X5 Y-7 Z2 R0");
+  mdi("G55");
+  mdi("G92 X2 Y3 Z4");
+  mdi("G10 L20 P0 Z8");
+  const auto initial = port.status();
+  halcmd("loadrt near names=sim-feature-x,sim-feature-y,sim-feature-z");
+  halcmd("loadrt logic names=sim-feature-hollow,sim-feature-solid personality=0x802,0x103");
+  for (const auto* part : {"sim-feature-x", "sim-feature-y", "sim-feature-z",
+                           "sim-feature-hollow", "sim-feature-solid"})
+    halcmd(std::format("addf {} servo-thread", part));
+  const auto limits = [&](char axis, double low, double high) {
+    halcmd(std::format("setp sim-feature-{}.in2 {}", axis, (high + low) / 2 / scale));
+    halcmd(std::format("setp sim-feature-{}.difference {}", axis, (high - low) / 2 / scale));
+  };
+  for (const auto axis : {'x', 'y', 'z'}) {
+    halcmd(std::format("setp sim-feature-{}.scale 1", axis));
+    if (axis == 'z')
+      halcmd("net sim-setter-z sim-feature-z.in1");
+    else
+      halcmd(std::format("net sim-position-{0} axis.{0}.pos-cmd sim-feature-{0}.in1", axis));
+  }
+  limits('x', -5, 13);
+  limits('y', -9, 5);
+  limits('z', -100, 12);
+  halcmd("net sim-feature-inx sim-feature-x.out sim-feature-hollow.in-00 sim-feature-solid.in-00");
+  halcmd("net sim-feature-iny sim-feature-y.out sim-feature-hollow.in-01 sim-feature-solid.in-01");
+  halcmd("net sim-feature-inz sim-feature-z.out sim-feature-solid.in-02");
+  halcmd("unlinkp motion.probe-input");
+  halcmd("unlinkp coffeecnc.probe-input");
+  halcmd("net sim-feature-inner sim-feature-hollow.nand motion.probe-input coffeecnc.probe-input");
+
+  for (const auto x : {ProbeDirection::x_minus, ProbeDirection::x_plus}) {
+    for (const auto y : {ProbeDirection::y_minus, ProbeDirection::y_plus}) {
+      at_start();
+      const auto hit = run(SetterAction::inside_corner, x, y);
+      const auto status = port.status();
+      const double edge_x = x == ProbeDirection::x_minus ? -6 : 14;
+      const double edge_y = y == ProbeDirection::y_minus ? -10 : 6;
+      require(hit && hit->material && hit->material->corner &&
+                  std::abs(status.work[0] - (2 - edge_x)) < 0.03 &&
+                  std::abs(status.work[1] - (1 - edge_y)) < 0.03 &&
+                  std::abs(machine()[2] - 20) < 0.03 && status.g5x[2] == initial.g5x[2],
+              hit ? "inside corner sets both axes using the selected wall signs" : hit.error());
+    }
+  }
+  at_start();
+  const auto pocket = run(SetterAction::pocket);
+  const auto pocket_status = port.status();
+  require(pocket && pocket->feature_size[0] && pocket->feature_size[1] &&
+              std::abs(*pocket->feature_size[0] - 20) < 0.03 &&
+              std::abs(*pocket->feature_size[1] - 16) < 0.03 &&
+              std::abs(pocket_status.work[0] + 2) < 0.03 && std::abs(pocket_status.work[1] - 3) < 0.03 &&
+              pocket_status.g5x[2] == initial.g5x[2],
+          pocket ? "rectangular pocket finds both physical widths and sets XY together" : pocket.error());
+
+  const auto selected = scale == 1 ? ProbeDirection::y_plus : ProbeDirection::x_plus;
+  const std::size_t across = scale == 1 ? 1 : 0;
+  const auto span = [&](SetterAction action, double width, double expected_width) {
+    at_start();
+    const auto before = port.status();
+    const auto measured = run(action, selected, ProbeDirection::y_plus, width);
+    const auto after = port.status();
+    require(measured && measured->material && !measured->material->corner &&
+                measured->material->axis == "XY"[across] && measured->feature_size[across] &&
+                std::abs(*measured->feature_size[across] - expected_width) < 0.03 &&
+                !measured->feature_size[1 - across] &&
+                std::abs(after.work[across] - (machine()[across] - (across == 0 ? 4 : -2))) < 0.03 &&
+                after.g5x[1 - across] == before.g5x[1 - across] && after.g5x[2] == before.g5x[2] &&
+                after.g92 == before.g92 && std::abs(machine()[2] - 20) < 0.03,
+            measured ? "span sets one axis with ball compensation and leaves the other axes intact"
+                     : measured.error());
+  };
+  span(SetterAction::slot, 0, across == 0 ? 20 : 16);
+
+  at_start();
+  const auto before_miss = port.status();
+  limits('y', -100, 100);
+  const auto miss = run(SetterAction::inside_corner, ProbeDirection::x_minus, ProbeDirection::y_plus);
+  require(!miss && miss.error().contains("No probe contact") && port.status().g5x == before_miss.g5x &&
+              std::abs(machine()[0] - 2) < 0.03 && std::abs(machine()[1] - 1) < 0.03,
+          miss ? "expected a missed second wall" : miss.error());
+  limits('y', -9, 5);
+
+  halcmd("unlinkp motion.probe-input");
+  halcmd("unlinkp coffeecnc.probe-input");
+  halcmd("net sim-feature-outer sim-feature-solid.and motion.probe-input coffeecnc.probe-input");
+  span(SetterAction::ridge, across == 0 ? 16 : 12, across == 0 ? 16 : 12);
+  require(port.status().g5x[2] == initial.g5x[2] && port.status().g92 == initial.g92 &&
+              port.status().tool_offset == initial.tool_offset &&
+              std::ranges::contains(port.status().active_codes, "G91"),
+          "feature cycles preserve Z, tool compensation, G92 and distance mode");
+  mdi("G54");
+  require(port.status().g5x == g54, "feature probing changes only the active work coordinate system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -571,6 +693,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
 void run(const std::string& ini, std::string_view scenario) {
   const bool material = scenario == "material";
   const bool edge = scenario == "edge-rotation";
+  const bool features = scenario == "features";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -581,7 +704,7 @@ void run(const std::string& ini, std::string_view scenario) {
   constexpr int reference_tool = 98;
   const double reference_length = scale == 1 ? 50 : 50.8;
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
-  if (material || edge)
+  if (material || edge || features)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -626,6 +749,10 @@ void run(const std::string& ini, std::string_view scenario) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (features) {
+    feature_scenarios(*port, scale, mdi);
+    return;
+  }
   if (edge) {
     edge_rotations(*port, scale, mdi);
     return;
@@ -892,7 +1019,8 @@ auto main(int argc, char** argv) -> int {
     return 1;
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
-  if ((scenario != "" && scenario != "material" && scenario != "edge-rotation") ||
+  if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
+       scenario != "features") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

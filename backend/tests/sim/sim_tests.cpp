@@ -1889,6 +1889,27 @@ void program(Rig& rig) {
   });
   check("run", run.accepted() && cutting && rig.snapshot().mode == TaskMode::automatic, run.text());
 
+  // turo: "feed override does not work" -- while a program runs, task reports the program's
+  // status, so a change that waited for its own completion timed out after 3 s with an error.
+  // A slider drag sends many; each must be taken at once.
+  {
+    const auto began = Clock::now();
+    bool all = true;
+    for (const double value : {0.5, 0.8, 1.2, 1.5, 0.5})
+      all = rig.send(std::format(R"("type":"set_override","which":"feed","value":{})", value))
+                .accepted() &&
+            all;
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - began);
+    rig.pump(100ms);
+    const auto during = rig.status();
+    check("feed_override_during_run",
+          all && took < 1500ms && near(during.feed_override, 0.5, 1e-9) &&
+              during.controller.interp != InterpState::idle,
+          std::format("all={} took={}ms feed={} interp_idle={}", all, took.count(),
+                      during.feed_override, during.controller.interp == InterpState::idle));
+    static_cast<void>(rig.send(R"("type":"set_override","which":"feed","value":1)"));
+  }
+
   const auto pause = rig.send(R"("type":"pause")");
   rig.pump(200ms);
   const double held = rig.machine(0);

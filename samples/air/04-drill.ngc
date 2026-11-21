@@ -1,0 +1,27 @@
+(04 Drill - G81 and G83, G98 initial-plane and G99 R-plane returns with T1.)
+(G54 envelope: X/Y -18 to +18 mm, programmed Z +5 to +30 mm, about 35 s.)
+(Set G54 Z0 on the stock top; nothing goes below Z+5.)
+(Start near G54 X0 Y0 Z+30 with the correct tool length active and clear travel.)
+G21 G90 G17 G54 G94 G97 G40 G49 G80 G61
+M5 M9
+T1 M6
+G43 H1
+G0 Z30
+G0 X-18 Y-12
+S1500 M3
+G4 P2
+G98 G81 X-18 Y-12 Z5 R10 F240
+X0 Y-12
+X18 Y-12
+G80
+G0 Z30
+G99 G83 X18 Y0 Z5 R10 Q2 F240
+X0 Y0
+X-18 Y0
+X-18 Y12
+X0 Y12
+X18 Y12
+G80
+M5 M9
+G0 Z30
+M30

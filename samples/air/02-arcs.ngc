@@ -1,0 +1,20 @@
+(02 Arcs - clockwise and counterclockwise circles, radius arc and helix with T1.)
+(G54 envelope: X/Y -20 to +20 mm, programmed Z +5 to +30 mm, about 45 s.)
+(Set G54 Z0 on the stock top; nothing goes below Z+5.)
+(Start near G54 X0 Y0 Z+30 with the correct tool length active and clear travel.)
+G21 G90 G17 G54 G94 G97 G40 G49 G80 G61 G91.1
+M5 M9
+T1 M6
+G43 H1
+G0 Z30
+G0 X15 Y0
+S1500 M3
+G4 P2
+G1 Z20 F600
+G2 X15 Y0 I-15 J0 F600
+G3 X15 Y0 I-15 J0
+G3 X-15 Y0 R15
+G2 X-15 Y0 Z5 I15 J0
+M5 M9
+G0 Z30
+M30

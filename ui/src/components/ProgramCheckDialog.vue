@@ -45,7 +45,7 @@ function range(min: number, max: number, format: (value: number) => string): str
         <div><dt>Spindle</dt><dd class="mono">{{ check.spindle ? `${range(check.spindle.min, check.spindle.max, rpm)} rpm` : '—' }}<small v-if="maxRpm">Limit {{ rpm(maxRpm) }} rpm</small></dd></div>
       </dl>
       <section v-if="check.frames.length" class="frame-list">
-        <h3>Work extents <small>{{ unit }}</small></h3>
+        <h3>{{ airZ ? 'Raised work extents' : 'Work extents' }} <small>{{ unit }}</small></h3>
         <div v-for="frame in check.frames" :key="frame.wcs" class="frame">
           <strong>{{ wcsName(frame.wcs) }}</strong>
           <span v-if="!frame.available" class="unverified">Origin unverified</span>

@@ -4091,7 +4091,8 @@ void raised_run(Rig& rig, NmlLoads& loads) {
   const auto stop = load("G0 Z15\nG1 Z5 F2400\nM0\n");
   check("air_cut_shows_raised_path",
         stop && stop->state == PreviewState::ready && stop->check && stop->check->errors.empty() &&
-            stop->bounds && near(stop->bounds->min[2], 30),
+            stop->bounds && near(stop->bounds->min[2], 30) && stop->check->frames.size() == 1 &&
+            stop->check->frames[0].bounds && near(stop->check->frames[0].bounds->min[2], 0),
         stop && stop->error ? stop->error->text : "");
   const auto no_confirmation = start(false);
   check("air_cut_requires_explicit_review",
@@ -4179,6 +4180,11 @@ void raised_run(Rig& rig, NmlLoads& loads) {
         seed.accepted() &&
             rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 18); }),
         seed.text());
+  const auto suspend_owned = rig.send(R"("type":"mdi","text":"G92.2")");
+  check("air_cut_seed_suspended_crash_offset",
+        suspend_owned.accepted() &&
+            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); }),
+        suspend_owned.text());
   {
     std::ofstream out{marker};
     out << "18\n";
@@ -4189,6 +4195,9 @@ void raised_run(Rig& rig, NmlLoads& loads) {
   if (restarted) {
     Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
     check("air_cut_restart_recovers_owned_offset", recovered.pump_until(5s, cleared));
+    const auto reactivate = recovered.send(R"("type":"mdi","text":"G92.3")");
+    check("air_cut_restart_removes_saved_register",
+          reactivate.accepted() && recovered.pump_until(3s, cleared), reactivate.text());
     recovered.stop();
   }
   rig.restart_preview = nullptr;

@@ -119,7 +119,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
 
-        if (s.air_offset_recovery && !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit>)
+        // A controller that requires homing may refuse the MDI cleanup until it is homed.
+        if (s.air_offset_recovery && !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
+            !(std::is_same_v<T, Home> && limits_.homing_required && !homed(s)))
           return reject("Wait for the temporary air-cut offset to clear.");
 
         if constexpr (std::is_same_v<T, Quit>) {

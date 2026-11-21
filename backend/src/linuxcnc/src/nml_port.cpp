@@ -1792,8 +1792,11 @@ auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, co
     return failed(reason);
   if (inputs.g92 != Vec3{})
     return failed("Clear the active G52 or G92 offset before an air cut.");
-  if (auto registers = check_air_registers(wanted); !accepted(registers))
-    return registers;
+  const auto registers = read_air_registers(wanted);
+  if (!registers)
+    return registers.error();
+  if (std::ranges::any_of(*registers, [](double value) { return value != 0; }))
+    return failed("Clear the stored G52 or G92 offset before an air cut.");
   if (!current())
     return failed("The program or tool data changed. Review the new program check.");
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
@@ -1933,9 +1936,10 @@ auto NmlPort::set_air_cut(double lift) -> ActionResult {
   return {};
 }
 
-auto NmlPort::check_air_registers(const Wanted& wanted) -> ActionResult {
+auto NmlPort::read_air_registers(const Wanted& wanted)
+    -> std::expected<std::array<double, 9>, ActionResult> {
   if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
-    return mode;
+    return std::unexpected(std::move(mode));
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   constexpr std::string_view tag = "CoffeeCNC air registers ";
@@ -1943,9 +1947,9 @@ auto NmlPort::check_air_registers(const Wanted& wanted) -> ActionResult {
   const auto block =
       std::format("(DEBUG,{}%.9f#5211 #5212 #5213 #5214 #5215 #5216 #5217 #5218 #5219)", tag);
   if (!put(message.command, block))
-    return failed("Could not read the G52/G92 registers.");
+    return std::unexpected(failed("Could not read the G52/G92 registers."));
   if (auto done = impl_->run(message, from); !accepted(done))
-    return done;
+    return std::unexpected(std::move(done));
   const auto reply = [&] {
     return std::find_if(impl_->messages.begin() + static_cast<std::ptrdiff_t>(from),
                         impl_->messages.end(), [&](const ControllerMessage& entry) {
@@ -1958,16 +1962,15 @@ auto NmlPort::check_air_registers(const Wanted& wanted) -> ActionResult {
   }));
   const auto at = reply();
   if (at == impl_->messages.end())
-    return failed("LinuxCNC did not report the G52/G92 registers.");
+    return std::unexpected(wanted() ? failed("LinuxCNC did not report the G52/G92 registers.")
+                                    : withdrawn());
   std::istringstream values{at->text.substr(tag.size())};
   impl_->messages.erase(at);
   std::array<double, 9> offsets{};
   for (double& value : offsets)
-    if (!(values >> value))
-      return failed("LinuxCNC did not report all G52/G92 registers.");
-  if (std::ranges::any_of(offsets, [](double value) { return value != 0; }))
-    return failed("Clear the stored G52 or G92 offset before an air cut.");
-  return {};
+    if (!(values >> value) || !std::isfinite(value))
+      return std::unexpected(failed("LinuxCNC did not report all G52/G92 registers."));
+  return offsets;
 }
 
 auto NmlPort::write_air_offset(double lift, const Wanted& wanted) -> ActionResult {
@@ -2012,9 +2015,23 @@ void NmlPort::recover_air_offset(const Wanted& wanted) {
            "the record.");
     return;
   }
-  const double current_z = before.g92[2];
+  double current_z = before.g92[2];
+  bool other_offsets = before.g92[0] != 0 || before.g92[1] != 0;
+  if (std::abs(current_z) <= 1e-6) {
+    // A previously applied offset can have been suspended. Check the stored Z too before
+    // forgetting ownership, so a later G92.3 cannot bring the temporary lift back.
+    auto stored = read_air_registers(wanted);
+    if (!stored) {
+      if (wanted())
+        inform("Could not verify the stored air-cut offset. " + stored.error().reason);
+      return;
+    }
+    current_z = (*stored)[2] * impl_->config.millimetres_per_unit;
+    (*stored)[2] = 0;
+    other_offsets = std::ranges::any_of(*stored, [](double value) { return value != 0; });
+  }
   if (std::abs(current_z) > 1e-6) {
-    if (std::abs(current_z - *impl_->air_offset) > 1e-6) {
+    if (other_offsets || std::abs(current_z - *impl_->air_offset) > 1e-6) {
       inform("The current G52/G92 Z offset differs from the air-cut record. Verify the offset "
              "before clearing the record.");
       return;

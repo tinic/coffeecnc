@@ -889,5 +889,11 @@ export function previewAirCut(modal: Modal, lines: string[], blockDelete: boolea
       return segment.points.every((point, j) => near(point,
         (original.points[j] ?? NaN) + (j % 3 === 2 && !(j === 2 && firstVertical) ? lift : 0)))
     })
-  return matches ? air : stop(air, 'The raised path could not be verified. Start with a vertical Z rapid before XY or feed motion.')
+  if (!matches) return stop(air, 'The raised path could not be verified. Start with a vertical Z rapid before XY or feed motion.')
+  for (const frame of air.check?.frames ?? []) {
+    if (!frame.bounds) continue
+    frame.bounds.min[2] += lift
+    frame.bounds.max[2] += lift
+  }
+  return air
 }

@@ -1082,6 +1082,14 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
           if (!matches)
             refuse_air_cut(outcome, "The raised path could not be verified. Start the program with "
                                     "a vertical Z rapid before XY or feed motion.");
+          else if (outcome.check)
+            for (auto& frame : outcome.check->frames) {
+              // Report the raised path in the work coordinates the operator set on the stock.
+              if (auto& bounds = frame.bounds) {
+                bounds->min[2] += inputs.air_z;
+                bounds->max[2] += inputs.air_z;
+              }
+            }
         }
       }
     }

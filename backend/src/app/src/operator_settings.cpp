@@ -8,6 +8,8 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace coffeecnc {
 namespace {
@@ -30,6 +32,14 @@ auto layout_name(ProgramLayout value) -> std::string_view {
   case ProgramLayout::split: return "split";
   }
   return "";
+}
+constexpr std::size_t max_recent_programs = 8;
+auto recent_path(std::string_view path) -> bool {
+  return !path.empty() && path.size() <= 4096 && path.front() == '/' &&
+         path.find('\0') == std::string_view::npos;
+}
+auto recent_path(const Json& path) -> bool {
+  return path.is_string() && recent_path(std::string_view{path.get_ref<const std::string&>()});
 }
 auto theme_name(PanelTheme value) -> std::string_view {
   switch (value) {
@@ -71,7 +81,7 @@ auto parse(std::string_view text) -> Json {
 auto read_document(const Json& value) -> OperatorPreferences {
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
-        {"tool_reference_height", "program_layout", "theme"});
+        {"tool_reference_height", "program_layout", "theme", "recent_programs"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -113,6 +123,12 @@ auto read_document(const Json& value) -> OperatorPreferences {
   }
   if (const auto theme = value.find("theme"); theme != value.end() && *theme == "dark")
     document.theme = PanelTheme::dark;
+  // Like the presentation, a damaged list is dropped without losing the other settings.
+  if (const auto recent = value.find("recent_programs"); recent != value.end() && recent->is_array() &&
+      recent->size() <= max_recent_programs &&
+      std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_path(path); }))
+    for (const auto& path : *recent)
+      document.recent_programs.push_back(path.get<std::string>());
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -125,7 +141,8 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"default_jog_velocity", document.default_jog_velocity},
           {"tool_reference_height", document.tool_reference_height},
           {"program_layout", layout_name(document.program_layout)},
-          {"theme", theme_name(document.theme)}};
+          {"theme", theme_name(document.theme)},
+          {"recent_programs", document.recent_programs}};
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -141,6 +158,10 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
 auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
   if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty())
     return "Invalid panel presentation.";
+  if (document.recent_programs.size() > max_recent_programs ||
+      !std::ranges::all_of(document.recent_programs,
+                           [](const std::string& path) -> bool { return recent_path(path); }))
+    return "Recent programs must be at most eight absolute paths.";
   if (units(document.startup_units).empty())
     return "Invalid startup units.";
   if (document.enabled_wcs.empty() || document.enabled_wcs.size() > 9 ||

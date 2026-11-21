@@ -5,7 +5,7 @@ import { computed, onMounted } from 'vue'
 
 import { panel, send } from '../machine'
 import type { DirectoryEntry } from '../protocol'
-import { formatBytes } from '../units'
+import { baseName, formatBytes } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
@@ -22,9 +22,18 @@ function choose(entry: DirectoryEntry): void {
   if (entry.kind === 'directory') {
     list(path)
   } else {
-    send({ type: 'open_program', path })
-    emit('close')
+    open(path)
   }
+}
+
+// Recently opened programs, newest first; the loaded one is already open.
+const recent = computed(() => panel.preferences.recent_programs.filter((path) => path !== panel.status?.program.file).slice(0, 5))
+function open(path: string): void {
+  send({ type: 'open_program', path })
+  emit('close')
+}
+function folder(path: string): string {
+  return path.slice(0, path.lastIndexOf('/')) || '/'
 }
 
 function formatDate(time: number): string {
@@ -39,6 +48,14 @@ onMounted(() => {
 
 <template>
   <ModalDialog title="Open program" size="medium" @close="emit('close')">
+    <section v-if="recent.length > 0" class="recent" aria-label="Recent programs">
+      <h3>Recent</h3>
+      <button v-for="path in recent" :key="path" class="entry" type="button" @click="open(path)">
+        <AppIcon name="file" />
+        <span class="name">{{ baseName(path) }}</span>
+        <span class="meta mono">{{ folder(path) }}</span>
+      </button>
+    </section>
     <div class="path">
       <button
         v-tooltip="'Up one directory'"
@@ -66,6 +83,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.recent { display: flex; flex-direction: column; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.recent h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-dim); }
+.recent .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .path {
   display: flex;
   align-items: center;

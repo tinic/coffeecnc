@@ -12,6 +12,7 @@ const props = defineProps<{
   limits: FixedSetterLimits | undefined
   tool?: number
   ruby?: boolean
+  startBlocked?: string | null
 }>()
 const emit = defineEmits<{ start: [value: number, angle: AngleEdge]; close: [] }>()
 const angle = ref<AngleEdge>('y_plus')
@@ -46,7 +47,7 @@ function unavailable(): void {
   playing.value = false
 }
 function start(): void {
-  if (valid.value) emit('start', value.value ?? 0, angle.value)
+  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value)
 }
 </script>
 
@@ -106,8 +107,9 @@ function start(): void {
       </section>
     </div>
     <template #footer>
+      <p v-if="startBlocked" class="start-block" role="status">{{ startBlocked }}</p>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
-      <button class="btn primary start-probe" type="button" :disabled="!valid" @click="start">{{ target.kind === 'check' ? 'Start check' : 'Start probe' }}</button>
+      <button class="btn primary start-probe" type="button" :disabled="!valid || !!startBlocked" @click="start">{{ target.kind === 'check' ? 'Start check' : 'Start probe' }}</button>
     </template>
   </ModalDialog>
 </template>
@@ -137,6 +139,7 @@ p { margin: 0; line-height: 1.42; font-size: 13px; }
 .result-tool { color: var(--text-dim); font-size: 12px; }
 .check-tolerance { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px; color: var(--text-dim); }
 .check-tolerance strong { color: var(--text); white-space: nowrap; }
+.start-block { align-self: center; margin-right: auto; color: var(--warn); }
 .start-probe { min-width: 132px; min-height: 44px; }
 @media (max-width: 730px) {
   .guide-grid { grid-template-columns: 1fr; }

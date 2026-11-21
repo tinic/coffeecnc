@@ -105,6 +105,52 @@ describe('fixed setter workflow', () => {
     expect(getWrapper().get('.setter-band p').text()).toBe(reason)
   })
 
+  it.each([
+    { button: 'Check length', heading: 'Check tool length', startLabel: 'Start check', tool: 1, action: 'check' },
+    { button: 'Touch off', heading: 'Teach the tool setter', startLabel: 'Start probe', tool: 99, action: 'touch_off' },
+  ])('keeps $heading open through a status gap and waits for fresh setter data', async ({ button, heading, startLabel, tool, action }) => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    panel.hello = { ...hello, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, check_tolerance_mm: 0.1,
+    } }
+    status.tool.in_spindle = tool
+    status.spindle.actual_rpm = 0
+    status.motion.in_position = true
+    status.axes.forEach(axis => { axis.machine = 0 })
+    mountTools()
+    const answer = async (): Promise<void> => {
+      const command = vi.mocked(send).mock.lastCall?.[0]
+      if (!command) throw new Error('Missing request')
+      for (const listener of resultListeners) {
+        listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '',
+          setter: { calibration: tool === 1 ? [0, 0, -40] : null, measurement: null, measured_tools: [98, tool] } })
+      }
+      await nextTick()
+    }
+    const start = (): HTMLButtonElement => getWrapper().get<HTMLButtonElement>('.start-probe').element
+    await answer()
+    await press(button)
+    expect(start().disabled).toBe(false)
+
+    panel.link = 'silent'
+    await nextTick()
+    expect(getWrapper().get('[role="dialog"]').attributes('aria-label')).toBe(heading)
+    expect(getWrapper().get('[role="dialog"]').text()).toContain('No updates from the machine')
+    expect(start().disabled).toBe(true)
+    start().click()
+    expect(send).toHaveBeenCalledTimes(1)
+
+    panel.link = 'live'
+    await nextTick()
+    expect(start().disabled).toBe(true)
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'status' })
+    await answer()
+    expect(start().disabled).toBe(false)
+    await press(startLabel)
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action, tool, x: 0, y: 0, z: 0 })
+  })
+
   it('explains a blocked setter press in place while the machine is off', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.status.machine = 'off'

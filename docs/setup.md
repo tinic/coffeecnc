@@ -41,7 +41,8 @@ Open the INI file of your machine. Make these changes:
    ```
 
    - `MAX_SPINDLE_RPM`: the highest spindle speed the panel accepts. If you leave it out, CoffeeCNC uses `[SPINDLE_0] MAX_FORWARD_VELOCITY`.
-   - `MACHINE_ID`: a name for this machine. CoffeeCNC uses it for the folder where it saves tool models and the restart point after a power loss. If you leave it out, these settings are not saved.
+   - `MACHINE_ID` names the machine’s data folder. If omitted, CoffeeCNC uses `[EMC] MACHINE` and a suffix based on the INI path to distinguish profiles with the same name. Set an explicit ID to keep using the same data folder when you move a configuration.
+   - `DATA_DIRECTORY` overrides the data root with an absolute path. By default CoffeeCNC uses `$XDG_DATA_HOME/coffeecnc` or `~/.local/share/coffeecnc`. The machine's `runtime` folder holds touched-off marks, the remembered spindle tool, and breakpoint and spindle recovery files. The first launch imports those records from their old locations.
    - `MANUAL_TOOLCHANGE = yes`: CoffeeCNC shows the tool change prompt and confirms the change to LinuxCNC. Remove `hal_manualtoolchange` or other tool change wiring from your HAL files first: CoffeeCNC connects only free pins, and does not start if another program owns them. With an automatic tool changer, or a tool change routine of your own, set `MANUAL_TOOLCHANGE = no`.
 
 3. In `[HAL]`, set `POSTGUI_HALFILE = coffeecnc_postgui.hal`. A post-GUI file of another display connects pins of that display and does not load with CoffeeCNC.
@@ -71,7 +72,7 @@ Each function stays off until you set its keys. The comments in `coffeecnc.ini.e
 | Probe input display | `PROBE_SIGNAL` | Connect your probe signal to `coffeecnc.probe-input` |
 | Touch probe in the spindle | `TOUCH_PROBE_TOOL` | Route the probe to `motion.probe-input` when this tool is loaded |
 | Fixed tool setter | `FIXED_SETTER` and the `SETTER_*` keys | `/usr/share/coffeecnc/hal/examples/fixed_setter.hal`: probe input, setter selection and the probe-cycle permit; see [tool length probing](design/tool-length-probing.md) |
-| Z jog during a pause | `PAUSED_Z_MAX_MM` | `/usr/share/coffeecnc/hal/examples/paused_z.hal`: external offsets on Z, with `[AXIS_Z] OFFSET_AV_RATIO` in the INI file |
+| Z jog during a pause | `PAUSED_Z_MAX_MM` | External offsets on Z, `[AXIS_Z] OFFSET_AV_RATIO`, and both spindle RPM and at-speed signals. See `/usr/share/coffeecnc/hal/examples/paused_z.hal`. |
 | Travel check in Program check | `TRAVEL_MIN_MM`, `TRAVEL_MAX_MM` | None |
 
 ## Units

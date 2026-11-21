@@ -8,6 +8,14 @@
 
 namespace coffeecnc {
 
+struct MaterialProbeGeometry {
+  double reach_mm{10};
+  double margin_mm{3};
+  double clearance_mm{5};
+  double depth_mm{2};
+  friend auto operator==(const MaterialProbeGeometry&, const MaterialProbeGeometry&) -> bool = default;
+};
+
 struct FixedSetterLimits {
   double travel_mm;
   double feed_mm_min;
@@ -17,6 +25,7 @@ struct FixedSetterLimits {
   double latch_feed_mm_min{};
   double latch_backoff_mm{};
   double material_travel_mm{20};
+  MaterialProbeGeometry material_geometry{};
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 

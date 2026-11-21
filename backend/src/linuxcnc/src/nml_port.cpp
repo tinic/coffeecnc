@@ -47,12 +47,8 @@
 namespace coffeecnc {
 namespace {
 
-// Touched-off lengths beside the tool table (tool_table.hpp: TouchedOff).
-auto touched_path(const std::string& tool_table) -> std::filesystem::path {
-  return std::filesystem::path(tool_table).parent_path() / "coffeecnc-touched-off.txt";
-}
-auto load_touched(const std::string& tool_table) -> std::optional<TouchedOff> {
-  std::ifstream in(touched_path(tool_table));
+auto load_touched(const std::string& file) -> std::optional<TouchedOff> {
+  std::ifstream in(file);
   std::string text;
   for (std::string line; std::getline(in, line);)
     text += line + '\n';
@@ -72,8 +68,8 @@ auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> 
   std::filesystem::rename(temporary, path, error);
   return !error;
 }
-void save_touched(const std::string& tool_table, const TouchedOff& touched) {
-  static_cast<void>(write_sidecar(touched_path(tool_table), format_touched_off(touched)));
+void save_touched(const std::string& file, const TouchedOff& touched) {
+  static_cast<void>(write_sidecar(file, format_touched_off(touched)));
 }
 
 auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> {
@@ -146,7 +142,6 @@ constexpr auto error_companion_time = std::chrono::milliseconds{20};
 // pins once more: three of its 10 ms periods.
 constexpr auto fresh_pins_time = std::chrono::milliseconds{30};
 constexpr double seconds_per_minute = 60;
-constexpr double probe_backlash_allowance_mm = 0.5;
 
 auto failed(std::string_view reason) -> ActionResult {
   return {ActionStatus::failed, std::string(reason)};
@@ -331,6 +326,7 @@ struct NmlPort::Impl {
   std::optional<int> observed_tool;
   bool unresolved_legacy_offset{};
   std::filesystem::path breakpoint_copy;
+  std::string legacy_breakpoint_copy;
   std::filesystem::path breakpoint_record;
   std::shared_ptr<const BreakpointSource> breakpoint;
   Clock::time_point breakpoint_retry{};
@@ -372,16 +368,21 @@ struct NmlPort::Impl {
       : config(std::move(machine)),
         command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()), status(config.nml_file),
         errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {
+    const auto runtime = std::filesystem::path(
+        config.runtime_directory.empty() ? config.directory : config.runtime_directory);
     if (config.remember_spindle_tool && !config.tool_table.empty()) {
-      spindle_tool_file =
-          std::filesystem::path(config.tool_table).parent_path() / "coffeecnc-spindle-tool.txt";
+      const auto tools = config.runtime_directory.empty()
+                            ? std::filesystem::path(config.tool_table).parent_path() : runtime;
+      spindle_tool_file = tools / "coffeecnc-spindle-tool.txt";
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
-    breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
-    breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
+    breakpoint_copy = runtime / ".coffeecnc-breakpoint.ngc";
+    legacy_breakpoint_copy =
+        (std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc").string();
+    breakpoint_record = runtime / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     breakpoint_recovered = bool(breakpoint);
-    spindle_hold_marker = std::filesystem::path(config.directory) / ".coffeecnc-spindle-hold";
+    spindle_hold_marker = runtime / ".coffeecnc-spindle-hold";
     // An interrupted older build may have left G52 active or suspended.
     // Require recovery with that build before starting a program again.
     const auto legacy_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
@@ -850,8 +851,6 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
       hal->paused_spindle.store(PausedSpindle::none);
   }
   impl->loads = loads;
-  if (loads)
-    loads->breakpoint.store(impl->breakpoint);
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
       !impl->status.valid() ||
       impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
@@ -859,6 +858,27 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
         std::format("Cannot open LinuxCNC's NML channels from {}.", impl->config.nml_file));
   // The first reading of the write counter: the next can tell whether task is running.
   static_cast<void>(until(echo_timeout, [&]() -> bool { return impl->stat() != nullptr; }));
+  if (const auto* raw = impl->stat();
+      raw && impl->legacy_breakpoint_copy != impl->breakpoint_copy.string() &&
+      to_status(*raw, config, hal, impl->status.link()).program_file ==
+          impl->legacy_breakpoint_copy) {
+    // An application-only restart can leave LinuxCNC paused in the copy made before migration.
+    // Reuse its mapping only when the migrated copy still matches the exact execution file.
+    constexpr auto max_copy = (std::size_t{16} << 20) + 256;
+    const auto active = read_text_file(impl->legacy_breakpoint_copy, max_copy);
+    const auto imported = read_text_file(impl->breakpoint_copy.string(), max_copy);
+    if (impl->breakpoint && active && active == imported) {
+      const auto& record = *impl->breakpoint;
+      impl->breakpoint = std::make_shared<const BreakpointSource>(
+          record.original, impl->legacy_breakpoint_copy, record.line, record.receipt,
+          record.marker_seen.load());
+    } else {
+      impl->breakpoint.reset();
+      impl->breakpoint_recovered = false;
+    }
+  }
+  if (loads)
+    loads->breakpoint.store(impl->breakpoint);
   return std::unique_ptr<NmlPort>(new NmlPort(std::move(impl)));
 }
 
@@ -893,7 +913,8 @@ auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();
   auto result = s ? to_status(*s, impl_->config, impl_->hal, impl_->status.link()) : NmlStatus{};
   result.controller.unresolved_legacy_offset = impl_->unresolved_legacy_offset;
-  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string();
+  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string() ||
+                                         result.program_file == impl_->legacy_breakpoint_copy;
   map_breakpoint(result, impl_->breakpoint.get());
   return result;
 }
@@ -1263,9 +1284,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   auto line_origin = move.start;
   const auto on_line = [&](const std::array<double, 3>& point,
                            const std::array<double, 3>& origin) {
-    // 0.5 mm: the measured Z comes from a linear encoder that lags the command by the backlash
-    // (0.125 mm on the G0759) and drifts at rest; only real off-line motion must stop the probe.
-    constexpr double off_line_allowance = 0.5; // mm
+    // A linear encoder can lag on reversal. The machine defines the acceptable deviation.
+    const double off_line_allowance = impl_->config.motion_tolerances.probe_off_line_mm;
     const auto projected = line.advance(origin, line.distance(origin, point));
     for (std::size_t i = 0; i < point.size(); ++i)
       if (!(std::abs(point[i] - projected[i]) <= off_line_allowance))
@@ -1280,7 +1300,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const auto reached_backoff = [&](const auto& trajectory, double target) {
     return near(coordinate(machine_position(trajectory.position)), target) &&
            std::abs(coordinate(machine_position(trajectory.actualPosition)) - target) <=
-               probe_backlash_allowance_mm;
+               impl_->config.motion_tolerances.probe_backlash_mm;
   };
   const auto machine_move = [&](double position, const std::string& feed) {
     const auto target = line.advance(search_start, position);
@@ -1441,7 +1461,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
-          probe_backlash_allowance_mm))
+          impl_->config.motion_tolerances.probe_backlash_mm))
       return interrupt(
           raw == nullptr
               ? std::format("The machine did not reach the clearance height ({}).", cycle_failure)
@@ -1473,7 +1493,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (raw == nullptr || !positioned || *positioned->probe_input ||
         raw->motion.traj.probeval != 0 ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - search_start[2]) <=
-          probe_backlash_allowance_mm) ||
+          impl_->config.motion_tolerances.probe_backlash_mm) ||
         !near(raw->motion.traj.position.tran.z * machine_scale, search_start[2]) ||
         std::hypot(raw->motion.traj.actualPosition.tran.x * machine_scale - search_start[0],
                    raw->motion.traj.actualPosition.tran.y * machine_scale - search_start[1]) >
@@ -1654,7 +1674,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   // Saved marks hold without a taught setter while the table still matches the file: tool
   // lengths are relative to the reference, not to the setter (turo: no T98 after a restart).
   const auto saved_marks = [&](std::string_view table) -> std::map<int, double> {
-    const auto saved = load_touched(impl_->config.tool_table);
+    const auto saved = load_touched(impl_->config.touched_off_file());
     const auto reference = tool_z(table, limits->reference_tool);
     if (!saved || !reference || std::abs(saved->reference - *reference) > 0.001)
       return {};
@@ -1671,7 +1691,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     calibration.reset();
     current_marks.clear();
     std::error_code error;
-    std::filesystem::remove(touched_path(impl_->config.tool_table), error);
+    std::filesystem::remove(impl_->config.touched_off_file(), error);
   } else if (calibration && table && !std::ranges::contains(current_marks, calibration->teacher)) {
     // The plane came from the teacher's length: it is gone, the saved marks still hold.
     calibration.reset();
@@ -1682,7 +1702,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                        std::move(current_marks)};
 
   const auto remember = [&]() {
-    save_touched(impl_->config.tool_table,
+    save_touched(impl_->config.touched_off_file(),
                  {calibration->measured.at(limits->reference_tool), calibration->measured});
   };
 
@@ -1726,8 +1746,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
 
-  constexpr double position_tolerance = 0.1; // mm: a hobby mill with encoder feedback
-  const auto near = [](double actual, double expected) {
+  const double position_tolerance = impl_->config.motion_tolerances.probe_position_mm;
+  const auto near = [position_tolerance](double actual, double expected) {
     return std::abs(actual - expected) <= position_tolerance;
   };
   const auto at_start = [&](const NmlStatus& s, const std::array<double, 3>& start) {
@@ -1738,7 +1758,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   // After a probe the Z encoder can lag the command by the backlash (0.125 mm on the mill).
   const auto back_at = [&](const NmlStatus& s, const std::array<double, 3>& start) {
     for (std::size_t i = 0; i < start.size(); ++i)
-      if (!(std::abs(s.controller.axes[i].machine - start[i]) <= probe_backlash_allowance_mm))
+      if (!(std::abs(s.controller.axes[i].machine - start[i]) <= impl_->config.motion_tolerances.probe_backlash_mm))
         return false;
     return true;
   };
@@ -2008,12 +2028,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (corner || ball || boss) {
     // A corner: the X face, then the Y face, each probed from beside the work below its top.
     // A ball calibration: both X faces of a gauge of known width, the same way.
-    // The operator jogs the probe over the work within corner_reach_mm of both faces; Z0 of the
+    // The operator jogs the probe over the work within the configured reach of both faces; Z0 of the
     // active work system is the top (probe Z top first). Nothing is written unless both touch.
-    constexpr double corner_reach_mm = 10;     // how far inside the corner the probe may start
-    constexpr double corner_margin_mm = 3;     // beyond the face before going down
-    constexpr double corner_clearance_mm = 5;  // above the top while traversing
-    constexpr double corner_depth_mm = 2;      // ball equator below the top
+    const auto& geometry = limits->material_geometry;
     const auto x_line = probe_line(ball || boss ? ProbeDirection::x_plus : request.direction, 0);
     const auto y_line = probe_line(request.y_direction, 0);
     if (corner && (x_line.axis != 0 || y_line.axis != 1))
@@ -2038,9 +2055,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("Set the probe ball diameter in the tool table first.");
     // Machine Z of the probe tip where the active work system reads Z0.
     const double top = before.controller.axes[2].machine - before.work[2];
-    const double clearance = std::max(request.start[2], top + corner_clearance_mm);
-    const double depth = top - radius - corner_depth_mm;
-    const double outside = corner_reach_mm + radius + corner_margin_mm;
+    const double clearance = std::max(request.start[2], top + geometry.clearance_mm);
+    const double depth = top - radius - geometry.depth_mm;
+    const double outside = geometry.reach_mm + radius + geometry.margin_mm;
     if (!std::isfinite(top) || request.start[2] < top + radius)
       return std::unexpected("Start with the probe above the top of the work.");
     if (limits->material_travel_mm < outside + radius)
@@ -2302,7 +2319,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.tool_table)),
+        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.touched_off_file())),
         tool};
     remember();
     return SetterState{calibration->plane, measurement, marks(*table)};
@@ -2372,7 +2389,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
-  if (path == impl_->breakpoint_copy.string())
+  if (path == impl_->breakpoint_copy.string() || path == impl_->legacy_breakpoint_copy)
     return failed("Open the original program instead of its temporary breakpoint copy.");
   return open_program_file(path, wanted, true);
 }
@@ -2502,7 +2519,6 @@ void NmlPort::finish_breakpoint(const Wanted& wanted) {
 
 namespace {
 
-constexpr double restart_position_tolerance = 0.5; // mm, same encoder allowance as probing
 constexpr double restart_command_tolerance = 0.001; // mm
 
 auto restart_near(const Vec3& a, const Vec3& b, double tolerance = 1e-6) -> bool {
@@ -2521,14 +2537,14 @@ auto restart_position(const ControllerState& s) -> Vec3 {
   return {s.axes[0].machine, s.axes[1].machine, s.axes[2].machine};
 }
 
-auto restart_at(const NmlStatus& s, const Vec3& target) -> bool {
+auto restart_at(const NmlStatus& s, const Vec3& target, double tolerance) -> bool {
   return restart_near(s.commanded_position, target, restart_command_tolerance) &&
-         restart_near(restart_position(s.controller), target, restart_position_tolerance);
+         restart_near(restart_position(s.controller), target, tolerance);
 }
 
-auto restart_at_z(const NmlStatus& s, double z) -> bool {
+auto restart_at_z(const NmlStatus& s, double z, double tolerance) -> bool {
   return std::abs(s.commanded_position[2] - z) <= restart_command_tolerance &&
-         std::abs(s.controller.axes[2].machine - z) <= restart_position_tolerance;
+         std::abs(s.controller.axes[2].machine - z) <= tolerance;
 }
 
 auto restart_endpoint(const RestartPoint& point) -> Vec3 {
@@ -2575,7 +2591,7 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       s.controller.program_units != start.program_units ||
       s.spindle_direction != start.spindle_direction ||
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
-      std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position) ||
+      std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position, impl_->config.motion_tolerances.restart_position_mm) ||
       !restart_near(s.tool_offset, start.tool_offset) || !restart_near(s.g92, inputs.g92))
     return "The machine state changed. Review a fresh program check.";
   const auto& system = inputs.systems.at(static_cast<std::size_t>(start.wcs - 1));
@@ -2592,7 +2608,7 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
     return "Machine power, the program or the work coordinate system changed.";
   if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
-      !restart_at(s, inputs.start.position))
+      !restart_at(s, inputs.start.position, config.motion_tolerances.restart_position_mm))
     return "The machine must remain stopped at the position shown in the preview.";
   if (point.tool == config.touch_probe_tool)
     return "Remove the touch probe before running a program from a line.";
@@ -2697,7 +2713,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     } else {
       const auto before = read();
       if (!idle(before) || before.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
-          !restart_at(before, inputs.start.position) ||
+          !restart_at(before, inputs.start.position, config.motion_tolerances.restart_position_mm) ||
           before.commanded_position[2] > clearance + restart_command_tolerance)
         return failed("The machine moved after the restart was reviewed.");
       if (before.controller.mode != TaskMode::mdi)
@@ -2720,14 +2736,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         return done;
       const auto now = read();
       if (!idle(now) || now.controller.spindle_active ||
-          !restart_at(now, inputs.start.position) ||
+          !restart_at(now, inputs.start.position, config.motion_tolerances.restart_position_mm) ||
           now.commanded_position[2] > clearance + restart_command_tolerance)
         return failed("The spindle or approach position changed before retracting.");
       if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
                             std::chrono::seconds{45}); !accepted(done))
         return done;
       const auto lifted = read();
-      if (!idle(lifted) || !restart_at_z(lifted, clearance))
+      if (!idle(lifted) || !restart_at_z(lifted, clearance, config.motion_tolerances.restart_position_mm))
         return failed("The machine did not reach the confirmed Z clearance.");
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
@@ -2741,15 +2757,15 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     const auto loaded = read();
     if (!idle(loaded) || loaded.controller.mode != TaskMode::mdi ||
         loaded.controller.tool_in_spindle != point.tool ||
-        !restart_at_z(loaded, clearance))
+        !restart_at_z(loaded, clearance, config.motion_tolerances.restart_position_mm))
       return failed("The tool or clearance changed before the restart approach.");
     if (auto done = block(point.h == 0 ? "G49" : std::format("G43 H{}", point.h),
                           completion_timeout); !accepted(done))
       return done;
     const auto compensated = read();
-    if (!idle(compensated) || !restart_at_z(compensated, clearance) ||
+    if (!idle(compensated) || !restart_at_z(compensated, clearance, config.motion_tolerances.restart_position_mm) ||
         !restart_near(compensated.tool_offset, point.tool_offset) ||
-        compensated.work[2] < point.clearance_z - restart_position_tolerance)
+        compensated.work[2] < point.clearance_z - config.motion_tolerances.restart_position_mm)
       return failed("LinuxCNC did not confirm the tool offset and Z clearance.");
     if (auto done = block(std::format("G53 G0 X{:.8f} Y{:.8f}", endpoint[0], endpoint[1]),
                           std::chrono::seconds{45}); !accepted(done))
@@ -2763,7 +2779,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return done;
     const auto at_clearance = read();
     const Vec3 above{endpoint[0], endpoint[1], clearance};
-    if (!idle(at_clearance) || !restart_at(at_clearance, above) ||
+    if (!idle(at_clearance) || !restart_at(at_clearance, above, config.motion_tolerances.restart_position_mm) ||
         at_clearance.spindle_direction != point.spindle_direction ||
         at_clearance.flood != point.flood || at_clearance.mist != point.mist)
       return failed("LinuxCNC did not confirm the restart position, spindle or coolant.");
@@ -2798,7 +2814,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return failed("The restart program or tool length changed during the approach.");
     const auto at_start = read();
     if (!idle(at_start) ||
-        !restart_at(at_start, endpoint) ||
+        !restart_at(at_start, endpoint, config.motion_tolerances.restart_position_mm) ||
         !restart_near(at_start.tool_offset, point.tool_offset))
       return failed("The machine did not reach the verified restart point.");
     if (auto switched = mode(EMC_TASK_MODE_AUTO); !accepted(switched))

@@ -129,10 +129,13 @@ void hello_rules() {
 
   auto probing = valid_hello();
   probing.fixed_setter = FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1};
+  probing.fixed_setter->material_geometry = {8, 4, 6, 3};
   probing.touch_probe_tool = 99;
   const auto limits = parsed(encode_hello(probing)).at("fixed_setter");
   require(limits.at("latch_feed_mm_min") == 25 && limits.at("latch_backoff_mm") == 1 &&
-              limits.at("material_travel_mm") == 20,
+              limits.at("material_travel_mm") == 20 &&
+              limits.at("material_geometry") == Json{{"reach_mm", 8}, {"margin_mm", 4},
+                                                    {"clearance_mm", 6}, {"depth_mm", 3}},
           "Probe setup guides receive the configured limits in millimetres");
   probing.fixed_setter->latch_feed_mm_min = 0;
   const auto single_pass = parsed(encode_hello(probing)).at("fixed_setter");

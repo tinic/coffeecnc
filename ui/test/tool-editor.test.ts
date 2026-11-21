@@ -55,6 +55,12 @@ describe('combined tool and preview editor', () => {
     expect(view().text()).toContain('6.35 mm · from Diameter above')
     expect(view().find('.diameter-source input').exists()).toBe(false)
   })
+  it('shows the configured native probe number when adding a touch probe', async () => {
+    native.receive({ ...hello, machine_id: 'Mill', touch_probe_tool: 37 })
+    open(null)
+    await view().get('[aria-label="Tool type"]').setValue('touch-probe')
+    expect(view().get('.diameter-source').text()).toContain('Configured T37')
+  })
   it('saves the uncommented G0759 T1 shape without rewriting tool details', async () => {
     open(); await save()
     expect(native.sent).toHaveLength(1)

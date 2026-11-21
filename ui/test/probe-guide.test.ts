@@ -8,6 +8,11 @@ const limits: FixedSetterLimits = {
 }
 
 describe('illustrated probe motion', () => {
+  it('uses the configured corner reach in the jog instructions', () => {
+    const tuned = { ...limits, material_geometry: { reach_mm: 8, margin_mm: 4, clearance_mm: 6, depth_mm: 3 } }
+    expect(probeGuide({ kind: 'corner', x: 'x_plus', y: 'y_plus' }, tuned, 'y_plus', null).setup)
+      .toContain('within 8 mm')
+  })
   it('shows the initial contact, three slow latches, then retract and result', () => {
     const plan = probeGuide({ kind: 'surface', direction: 'z_top' }, limits, 'y_plus', null)
     expect(plan.steps.map(step => step.kind)).toEqual([

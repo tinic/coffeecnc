@@ -3428,12 +3428,13 @@ void power_off(Rig& rig) {
 }
 
 void sim_config(const MachineConfig& config) {
-  // No machine identity: tool models are session-only, and nothing is opened for them.
+  // An unnamed INI override uses the configured machine name and the isolated XDG data root.
   const auto models = tool_model_location(config);
-  check("config_no_machine_id",
-        !config.machine_id && models.availability == ToolModelAvailability::session_only &&
-            models.directory.empty(),
-        models.reason);
+  check("config_default_machine_id",
+        config.machine_id && config.machine_id->starts_with("CoffeeCNC-sim-") &&
+            models.availability == ToolModelAvailability::available &&
+            models.directory.ends_with("/coffeecnc/" + *config.machine_id),
+        models.directory);
   check("config_limits", near(config.limits.max_jog_velocity, 1800, 0.01) &&
                              near(config.limits.max_axis_jog_velocity[2], 1800, 0.01) &&
                              near(config.limits.max_feed_override, 1.5) &&
@@ -4202,11 +4203,17 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
         continue_to_breakpoint.accepted() && rig.pump_until(4s, [&] { return at_breakpoint(4); }),
         continue_to_breakpoint.text());
   rig.stop();
-  auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads);
+  auto migrated = rig.config;
+  migrated.runtime_directory = tool_model_location(migrated).directory + "/runtime";
+  const std::filesystem::path runtime{migrated.runtime_directory};
+  std::filesystem::create_directories(runtime);
+  std::filesystem::copy_file(copy, runtime / copy.filename(), std::filesystem::copy_options::overwrite_existing);
+  std::filesystem::copy_file(record, runtime / record.filename(), std::filesystem::copy_options::overwrite_existing);
+  auto restarted = NmlPort::connect(migrated, &rig.shared, &loads);
   check("breakpoint_restart_connect", restarted.has_value());
   if (restarted) {
-    Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
-    check("breakpoint_restart_preserves_original_file_and_pause",
+    Rig recovered{migrated, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
+    check("breakpoint_migration_preserves_original_file_and_pause",
           recovered.pump_until(4s, [&] { return at_breakpoint(4); }));
     {
       std::ofstream changed{oracle.program, std::ios::app};
@@ -4228,7 +4235,12 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
           refused_resume.text());
     const auto stopped = recovered.send(R"("type":"abort")");
     check("breakpoint_stop_reopens_original_after_restart",
-          stopped.accepted() && recovered.pump_until(5s, restored), stopped.text());
+          stopped.accepted() && recovered.pump_until(5s, [&] {
+            return recovered.idle() && recovered.status().program_file == oracle.program &&
+                   !std::filesystem::exists(runtime / copy.filename()) &&
+                   !std::filesystem::exists(runtime / record.filename()) &&
+                   std::filesystem::exists(copy) && std::filesystem::exists(record);
+          }), stopped.text());
     recovered.stop();
   }
   rig.restart_preview = nullptr;

@@ -106,6 +106,22 @@ describe('parametric tool geometry', () => {
       expect(new Box3().setFromObject(shank).max.z).toBeCloseTo(70)
     } finally { mesh.dispose() }
   })
+  it.each([
+    ['er16', 28], ['er20', 34], ['er32', 50], ['bt30', 46], ['generic', 20],
+  ] as const)('places the %s holder at the stick-out face', (holder, diameter) => {
+    const model = resolveToolModel(tool, { ...assignment(), holder }, factoryToolDefaults())
+    if (model === null || !('stickout' in model.dimensions)) throw new Error('Missing cutter')
+    const mesh = new ToolMesh()
+    try {
+      mesh.build(model)
+      const assembly = mesh.group.getObjectByName('holder')
+      if (!assembly) throw new Error('Missing holder geometry')
+      const bounds = new Box3().setFromObject(assembly)
+      expect(bounds.min.z).toBeCloseTo(model.dimensions.stickout)
+      expect(bounds.max.x - bounds.min.x).toBeCloseTo(diameter)
+      expect(bounds.max.z).toBeGreaterThan(bounds.min.z)
+    } finally { mesh.dispose() }
+  })
   it('scales family lengths with diameter, never with the controller Z offset', () => {
     const model = resolveToolModel(tool, assignment(), factoryToolDefaults())
     if (model === null || !('cuttingLength' in model.dimensions)) throw new Error('Missing cutter')

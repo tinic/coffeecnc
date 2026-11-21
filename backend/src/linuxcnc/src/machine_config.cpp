@@ -6,8 +6,10 @@
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <format>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -83,6 +85,49 @@ auto flag(Ini& ini, const char* key) -> std::expected<bool, std::string> {
   if (word == "NO" || word == "FALSE" || word == "OFF" || word == "0")
     return false;
   return std::unexpected(std::format("[COFFEECNC] {} is \"{}\": use yes or no.", key, *given));
+}
+
+auto positive_settings(Ini& ini, std::initializer_list<std::pair<const char*, double*>> fields)
+    -> std::expected<void, std::string> {
+  for (const auto& [key, out] : fields) {
+    if (const auto text = ini.text("COFFEECNC", key)) {
+      const auto value = number(*text);
+      if (!value || *value <= 0)
+        return std::unexpected(std::format("[COFFEECNC] {} must be above zero in mm.", key));
+      *out = *value;
+    }
+  }
+  return {};
+}
+
+auto default_machine_id(std::string_view name, std::string_view ini_path)
+    -> std::optional<std::string> {
+  constexpr std::size_t max_name = 47; // 64 characters, including the hyphen and 16 hex digits.
+  std::string id;
+  bool separator = false;
+  for (const char c : name) {
+    if (c == '_' || c == '-' || valid_machine_id(std::string_view(&c, 1))) {
+      if (id.empty() && (c == '_' || c == '-'))
+        continue;
+      if (separator && !id.empty() && id.size() + 1 < max_name)
+        id += '-';
+      separator = false;
+      id += c;
+      if (id.size() >= max_name)
+        break;
+    } else {
+      separator = true;
+    }
+  }
+  if (id.empty())
+    return std::nullopt;
+  // Stable across processes. The path distinguishes configurations with the same display name.
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const char byte : ini_path) {
+    hash ^= static_cast<unsigned char>(byte);
+    hash *= 1099511628211ULL;
+  }
+  return std::format("{}-{:016x}", id, hash);
 }
 
 // [TRAJ] NO_FORCE_HOMING as LinuxCNC's task reads it (sscanf %d): the leading integer, above
@@ -362,9 +407,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     const double count = 0.001 * scale; // HAL eoffset-scale, in native machine units per count.
     if (!lift || *lift < count || *lift / count > std::numeric_limits<std::int32_t>::max() ||
         *lift >= travel[2].max - travel[2].min || !ratio || *ratio <= 0 || *ratio > 0.9 ||
-        !velocity || *velocity <= 0 || !acceleration || *acceleration <= 0 || !signals.spindle_rpm)
+        !velocity || *velocity <= 0 || !acceleration || *acceleration <= 0 ||
+        !signals.spindle_rpm || !signals.spindle_at_speed)
       return std::unexpected("Invalid PAUSED_Z_MAX_MM. Check the Z travel, external offset ratio, "
-                             "Z velocity and acceleration, and spindle RPM signal.");
+                             "Z velocity and acceleration, and spindle RPM and at-speed signals.");
     paused_z =
         PausedZLimits{*lift, *ratio * *velocity * scale, *ratio * *acceleration * scale, count};
     signals.paused_z = true;
@@ -425,6 +471,13 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     setter =
         FixedSetterLimits{*distance,     *speed,      static_cast<int>(*tool), *xy,
                           *clearance_mm, *latch_feed, *latch_backoff,          *material_travel};
+    auto& geometry = setter->material_geometry;
+    if (const auto parsed = positive_settings(ini,
+            {{"TOUCH_PROBE_CORNER_REACH_MM", &geometry.reach_mm},
+             {"TOUCH_PROBE_CORNER_MARGIN_MM", &geometry.margin_mm},
+             {"TOUCH_PROBE_CLEARANCE_MM", &geometry.clearance_mm},
+             {"TOUCH_PROBE_DEPTH_MM", &geometry.depth_mm}}); !parsed)
+      return std::unexpected(parsed.error());
   }
 
   const auto manual_tool_change = flag(ini, "MANUAL_TOOLCHANGE");
@@ -439,10 +492,21 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     const auto value = ini.text(section, key);
     return value && !value->empty() ? absolute(directory, *value) : std::string();
   };
+  const auto name = ini.text("EMC", "MACHINE").value_or("");
+  auto machine_id = ini.text("COFFEECNC", "MACHINE_ID");
+  if (!machine_id)
+    machine_id = default_machine_id(name, file.string());
+  MotionTolerances tolerances;
+  if (const auto parsed = positive_settings(ini,
+          {{"PROBE_OFF_LINE_TOLERANCE_MM", &tolerances.probe_off_line_mm},
+           {"PROBE_BACKLASH_TOLERANCE_MM", &tolerances.probe_backlash_mm},
+           {"PROBE_POSITION_TOLERANCE_MM", &tolerances.probe_position_mm},
+           {"RESTART_POSITION_TOLERANCE_MM", &tolerances.restart_position_mm}}); !parsed)
+    return std::unexpected(parsed.error());
   return MachineConfig{
       .ini_file = file.string(),
       .directory = directory.string(),
-      .machine_name = ini.text("EMC", "MACHINE").value_or(""),
+      .machine_name = name,
       // Relative to the directory of the INI file, like every other path in it.
       .nml_file =
           absolute(directory, ini.text("EMC", "NML_FILE").value_or(std::string(default_nml_file))),
@@ -461,7 +525,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
       .manual_tool_change = *manual_tool_change,
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
-      .machine_id = ini.text("COFFEECNC", "MACHINE_ID"),
+      .machine_id = std::move(machine_id),
       .coolant = std::nullopt,
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
@@ -469,7 +533,14 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .remember_spindle_tool = ini.real("EMCIO", "RANDOM_TOOLCHANGER").value_or(0) == 0 &&
                                ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
       .paused_z = paused_z,
+      .motion_tolerances = tolerances,
   };
+}
+
+auto MachineConfig::touched_off_file() const -> std::string {
+  const auto state_dir = runtime_directory.empty() ? std::filesystem::path(tool_table).parent_path()
+                                                   : std::filesystem::path(runtime_directory);
+  return (state_dir / "coffeecnc-touched-off.txt").string();
 }
 
 } // namespace coffeecnc

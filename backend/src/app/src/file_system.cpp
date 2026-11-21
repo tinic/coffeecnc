@@ -24,8 +24,12 @@ auto LocalFileSystem::info(const std::string& path) const -> std::expected<FileI
   std::error_code error;
   const fs::path file{path};
   const auto status = fs::status(file, error);
-  if (error)
-    return std::unexpected(error.message());
+  if (error) {
+    const auto reason = error.message();
+    if (error == std::errc::no_such_file_or_directory && fs::is_symlink(fs::symlink_status(file, error)))
+      return FileInfo{FileKind::other};
+    return std::unexpected(reason);
+  }
   FileInfo found;
   if (fs::is_directory(status)) {
     found.kind = FileKind::directory;

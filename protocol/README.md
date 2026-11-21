@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 32 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The native fixture currently contains 35 cases, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -11,7 +11,16 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | Action | Additional fields |
 | --- | --- |
 | `status` | |
-| `touch_off` | `tool` and machine start `x`, `y`, `z` |
+| `touch_off`, `check` | `tool` and machine start `x`, `y`, `z` |
+| `material` | `tool`, machine start `x`, `y`, `z`, and `direction` |
+| `corner`, `inside_corner` | `tool`, machine start `x`, `y`, `z`, `x_direction`, and `y_direction` |
+| `pocket`, `bore` | `tool` and machine start `x`, `y`, `z` |
+| `slot` | `tool`, machine start `x`, `y`, `z`, and `axis` |
+| `ridge` | `tool`, machine start `x`, `y`, `z`, `axis`, and `width` |
+| `boss` | `tool`, machine start `x`, `y`, `z`, and `diameter` |
+| `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
+| `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
+| `apply_angle` | `tool` and `measurement_id` |
 
 All wire lengths are in millimetres. The reference tool teaches the setter. Another tool positions at the taught XY, probes and saves the offset in one command. A successful result includes `setter.calibration` (machine setter X, Y and effective trigger-plane Z, or null) and `setter.measurement` (null or the result of the completed cycle with `calibration` as a boolean, `tool`, `contact` XYZ, `value`, `previous_length` and `stopping_distance`). Stopping distance is the downward travel from first contact to settled machine Z. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 

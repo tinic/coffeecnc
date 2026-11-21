@@ -52,7 +52,7 @@ Runtime::~Runtime() {
 }
 
 auto Runtime::begin_page(bool watch_frames) -> PageToken {
-  return session_.begin_page(watch_frames);
+  return session_.begin_page(watch_frames, now());
 }
 void Runtime::end_page(PageToken page) { session_.end_page(page); }
 void Runtime::panel_frame(PageToken page, std::chrono::milliseconds rendered_at) {

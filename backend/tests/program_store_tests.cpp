@@ -545,10 +545,11 @@ void on_the_host(const std::filesystem::path& scratch) {
           "names stops at the limit and says there are more; it fails for anything else");
   const auto sub = files.info(top + "/sub");
   const auto escape = files.info(top + "/escape-dir");
+  const auto dangling = files.info(top + "/dangling");
   require(sub && sub->kind == FileKind::directory && escape &&
-              escape->kind == FileKind::directory && !files.info(top + "/dangling").has_value() &&
+              escape->kind == FileKind::directory && dangling && dangling->kind == FileKind::other &&
               !files.canonical(top + "/dangling").has_value(),
-          "info follows links; a dangling link has none");
+          "A dangling link occupies its name but has no canonical target");
 
   // A name as long as the host allows: listed, and too long to open once the root is added.
   const std::string long_name(200, 'n');

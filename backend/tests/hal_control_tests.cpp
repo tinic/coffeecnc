@@ -51,6 +51,20 @@ auto asked(const HalShared& shared, std::chrono::milliseconds elapsed) -> bool {
   return view(shared, elapsed).tool_change_request.has_value();
 }
 
+void paused_z_count_baseline() {
+  HalShared shared;
+  auto inputs = asking({});
+  inputs.paused_z = PausedZInputs{};
+  static_cast<void>(shared.exchange(inputs, at(0ms)));
+  require(shared.begin_paused_z(at(1ms)) && shared.move_paused_z(at(2ms), 300, false),
+          "Enable paused Z and move from its count baseline");
+  require(!shared.rebase_paused_z_counts() && shared.paused_z_outputs(at(3ms)).counts == 300,
+          "The count does not reset while the move gate is open");
+  shared.stop_paused_z();
+  require(shared.rebase_paused_z_counts() && shared.paused_z_outputs(at(4ms)).counts == 0,
+          "The next move starts with a fresh baseline after a confirmed clear");
+}
+
 void handshake_completes() {
   HalShared shared;
   require(!shared.view(at(0ms)), "Nothing is known before the control thread has read the pins");
@@ -231,6 +245,7 @@ void jog_stop_history_is_noted() {
 auto main() -> int {
   try {
     handshake_completes();
+    paused_z_count_baseline();
     withdrawn_request_is_not_confirmed();
     replaced_request_is_not_confirmed();
     old_copy_is_not_handed_out();

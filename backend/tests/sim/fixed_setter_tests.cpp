@@ -270,6 +270,13 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
             "the front edge converged after delayed release past the retract");
     halcmd("setp sim-ruby-release.off-delay 0");
   }
+  start_at();
+  mdi("G21 G10 L2 P2 R30");
+  window('x', 6, 100);
+  check_cycle(ProbeDirection::x_plus, 0, -(6 / std::sqrt(0.75) + 1));
+  require(std::abs(port->status().rotation_xy - 30) < 0.01,
+          "rotated X probing follows the work axis and keeps the work rotation");
+  mdi("G21 G10 L2 P2 R0");
   mdi("G54");
   require(port->status().g5x == g54, "probing G55 left G54 unchanged");
   mdi("G55");

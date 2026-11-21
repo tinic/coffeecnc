@@ -37,6 +37,8 @@ public:
   // The inputs of a new context, with a program loaded. The newest context wins: a computation
   // for an older one is given up.
   virtual void submit(std::uint64_t context, const PreviewInputs& inputs) = 0;
+  // A new context can invalidate a checked preview before there are inputs to compute.
+  virtual void advance_context(std::uint64_t) {}
   // The preview finished last, of whatever context; null before the first, and while that
   // preview is being checked again (revalidate).
   [[nodiscard]] virtual auto latest() const -> std::shared_ptr<const Preview> = 0;
@@ -91,6 +93,7 @@ public:
   auto operator=(const PreviewWorker&) -> PreviewWorker& = delete;
 
   void submit(std::uint64_t context, const PreviewInputs& inputs) override;
+  void advance_context(std::uint64_t context) override;
   [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override;
   void revalidate(std::uint64_t context) override;
   [[nodiscard]] auto files_generation() const -> std::uint64_t override;
@@ -115,7 +118,8 @@ private:
   PreviewComputation::Watch latest_files_;
   // The latest preview while its files are compared again: not finished for anyone meanwhile.
   std::shared_ptr<const Preview> unchecked_;
-  // The context submitted last: a computation for another one is of no use.
+  std::uint64_t revalidation_{};
+  // The latest context: a computation for another one is of no use.
   std::atomic<std::uint64_t> newest_{};
   std::atomic<std::uint64_t> generation_{};
   std::atomic<bool> waiting_{}; // a request waits in wanted_

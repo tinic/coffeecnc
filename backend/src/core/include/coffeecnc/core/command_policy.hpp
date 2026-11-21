@@ -218,6 +218,7 @@ struct TouchOff {
 struct ToolTouchOff {
   double value;
 };
+inline constexpr std::size_t max_tool_comment_bytes = 255;
 struct Tool {
   int number{};
   int pocket{};

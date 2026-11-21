@@ -56,7 +56,7 @@ constexpr const char* document_start_script = R"js((() => {
     const frame = (time) => {
       // Account for frames whose callback had to wait. A stale frame queued in the bridge
       // must not extend the deadline when it eventually arrives.
-      frameTime = Math.round(Date.now() - (performance.now() - time));
+      frameTime = Math.round(performance.timeOrigin + time);
       if (time - lastPost >= 80) {
         lastPost = time;
         post(identity + ':' + frameTime + ':');
@@ -372,6 +372,7 @@ auto PanelWindow::Impl::on_gtk_thread(std::vector<std::function<void()>> work) -
 }
 
 void PanelWindow::Impl::begin_page() {
+  pending_deliveries = 0;
   delivery_failed = false;
   close_when_delivered.reset();
   identity.clear();
@@ -443,16 +444,14 @@ void PanelWindow::Impl::deliver(PageToken token, const std::vector<std::string>&
           if (the_window != nullptr && the_window->outbox == delivery->outbox)
             self = the_window;
         }
-        if (self == nullptr)
+        if (self == nullptr || self->page != delivery->page)
           return;
         --self->pending_deliveries;
-        if (self->page == delivery->page) {
-          if (success)
-            self->delivered += delivery->count;
-          else {
-            self->delivery_failed = true;
-            g_warning("CoffeeCNC message delivery failed; pending Quit will not close the window.");
-          }
+        if (success)
+          self->delivered += delivery->count;
+        else {
+          self->delivery_failed = true;
+          g_warning("CoffeeCNC message delivery failed; pending Quit will not close the window.");
         }
         self->finish_close();
       }, new Delivery{outbox, token, messages.size()});

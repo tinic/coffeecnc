@@ -10,6 +10,8 @@
 #include <system_error>
 #include <vector>
 
+#include <emctool.h>
+
 namespace coffeecnc {
 namespace {
 
@@ -63,7 +65,9 @@ auto tool_number(std::string_view line) -> std::optional<int> {
     if (letter(word) != 'T')
       continue;
     int number{};
-    const auto digits = word.substr(1);
+    auto digits = word.substr(1);
+    if (digits.starts_with('+'))
+      digits.remove_prefix(1);
     const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), number);
     if (error == std::errc{} && end == digits.data() + digits.size())
       return number;
@@ -95,19 +99,24 @@ auto joined(const std::vector<std::string>& lines) -> std::string {
 } // namespace
 
 auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_unit)
-    -> std::string {
+    -> std::expected<std::string, std::string> {
   std::vector<std::string> lines;
-  bool replaced = false;
+  std::optional<std::size_t> replacement;
   for (const auto line : lines_of(table)) {
     if (tool_number(line) != tool.number) {
       lines.emplace_back(line);
-    } else if (!replaced) {
+    } else if (!replacement) {
+      replacement = lines.size();
       lines.push_back(row(tool, millimetres_per_unit, line));
-      replaced = true;
     } // A second row for the same tool is dropped.
   }
-  if (!replaced)
+  if (!replacement) {
+    replacement = lines.size();
     lines.push_back(row(tool, millimetres_per_unit, {}));
+  }
+  // LinuxCNC reads the row with fgets. Its buffer includes the newline and terminating NUL.
+  if (lines.at(*replacement).size() > CANON_TOOL_ENTRY_LEN - 2)
+    return std::unexpected("The tool table row is too long for LinuxCNC. Shorten the comment.");
   return joined(lines);
 }
 

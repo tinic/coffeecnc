@@ -147,8 +147,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             !std::is_same_v<T, OpenProgram>)
           return reject("Press Stop before continuing after an interrupted spindle hold.");
 
-        if (s.paused_z && !s.paused_z->feedback_available && !std::is_same_v<T, SetMachine> &&
-            !std::is_same_v<T, Quit> && !std::is_same_v<T, OpenProgram>)
+        if (s.paused_z && !s.paused_z->feedback_available &&
+            !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
+            !std::is_same_v<T, OpenProgram> && !std::is_same_v<T, EditProgram> &&
+            !std::is_same_v<T, SetTool> && !std::is_same_v<T, RemoveTool> &&
+            !std::is_same_v<T, SetOverride> && !std::is_same_v<T, SetProgramOption>)
           return reject("Wait for paused Z feedback before commanding machine motion.");
         if (s.paused_z && s.paused_z->displaced && s.interp != InterpState::paused &&
             !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit>)
@@ -262,14 +265,21 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         } else if constexpr (std::is_same_v<T, JogPausedZ>) {
           if (!s.paused_z)
             return reject("Paused Z jog is unavailable on this machine.");
+          if (s.machine != MachineState::on || s.interp != InterpState::paused ||
+              s.mode != TaskMode::automatic)
+            return reject("Pause a running program before jogging Z.");
+          if (!homed(s) || homing(s))
+            return reject("Home all axes before jogging Z while paused.");
+          if (s.any_enabled_axis([](const auto& axis) { return axis.on_hard_limit; }))
+            return reject("A travel limit blocks paused Z motion.");
           const bool stopping_spindle =
               c.stop_spindle && c.distance > 0 && s.paused_z->spindle == PausedSpindle::can_stop;
           if (c.stop_spindle && !stopping_spindle)
             return reject("The paused spindle state changed. Review the controls and try again.");
           if (!stopping_spindle && !s.paused_z->reason.empty())
             return reject(s.paused_z->reason);
-          if (!std::isfinite(c.distance) || c.distance == 0 ||
-              std::abs(c.distance) > s.paused_z->max_lift)
+          if (!std::isfinite(s.paused_z->max_lift) ||
+              !between(std::abs(c.distance), 0, s.paused_z->max_lift) || c.distance == 0)
             return reject("The paused Z jog distance is out of range.");
           return allow();
         } else if constexpr (std::is_same_v<T, Resume>) {
@@ -278,6 +288,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             return reject("There is no paused execution ready to resume.");
           return allow();
         } else if constexpr (std::is_same_v<T, Step>) {
+          if (s.paused_z && s.paused_z->spindle == PausedSpindle::stopping)
+            return reject("Wait for the spindle to stop before continuing.");
           if (s.paused_z && s.paused_z->spindle == PausedSpindle::restore)
             return reject("Use Resume to restore the program spindle before continuing.");
           if (s.paused_z && s.paused_z->displaced)
@@ -375,6 +387,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
           if constexpr (std::is_same_v<T, SetTool>) {
             if (c.tool.number <= 0 || c.tool.pocket < 0 || !std::isfinite(c.tool.length) ||
                 !std::isfinite(c.tool.diameter) || c.tool.diameter < 0 ||
+                c.tool.comment.size() > max_tool_comment_bytes ||
                 c.tool.comment.find_first_of("\r\n") != std::string::npos ||
                 c.tool.comment.find('\0') != std::string::npos)
               return reject("Invalid tool table row.");

@@ -138,6 +138,12 @@ void hello_rules() {
               limits.at("material_geometry") == Json{{"reach_mm", 8}, {"margin_mm", 4},
                                                     {"clearance_mm", 6}, {"depth_mm", 3}},
           "Probe setup guides receive the configured limits in millimetres");
+  auto invalid_probe = probing;
+  invalid_probe.fixed_setter->latch_feed_mm_min = nan;
+  refused(encode_hello(invalid_probe), "fixed_setter.latch_feed_mm_min");
+  invalid_probe = probing;
+  invalid_probe.fixed_setter->material_travel_mm = infinity;
+  refused(encode_hello(invalid_probe), "fixed_setter.material_travel_mm");
   probing.fixed_setter->latch_feed_mm_min = 0;
   const auto single_pass = parsed(encode_hello(probing)).at("fixed_setter");
   require(!single_pass.contains("latch_feed_mm_min") && !single_pass.contains("latch_backoff_mm") &&

@@ -487,6 +487,8 @@ auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand comma
     return error;
   {
     const std::scoped_lock lock{mutex_};
+    if (page.value <= ended_through_)
+      return "This page is no longer active.";
     if (pending_.size() >= max_pending)
       return std::string(busy_reason);
     pending_.push_back({page, id, std::move(command)});

@@ -30,6 +30,8 @@
 
 #include <signal.h> // kill: POSIX, not in <csignal>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -537,6 +539,23 @@ void errors_and_limits() {
           "A cancelled computation ends its helper at once");
 }
 
+void helper_with_closed_standard_descriptors() {
+  Rig rig{"closed-descriptors"};
+  write(rig.file(), "G21 G90\nG0 X5\nM2\n");
+  const pid_t child = ::fork();
+  require(child >= 0, "Fork a private preview caller");
+  if (child == 0) {
+    ::close(STDIN_FILENO);
+    ::close(STDOUT_FILENO);
+    ::close(STDERR_FILENO);
+    const auto result = rig.compute().outcome;
+    ::_exit(result.state == PreviewState::ready && result.segments.size() == 1 ? 0 : 1);
+  }
+  int status = 0;
+  require(::waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+          "The real helper returns its result when the caller has closed standard descriptors");
+}
+
 void parameters_are_refused() {
   Rig rig{"parameters"};
   const std::string head = "G21 G90\nG1 X1 F100\n";
@@ -557,6 +576,10 @@ void parameters_are_refused() {
   stops("G28", "G28");
   stops("G30 X1", "G30");
   stops("G92.3", "G92.3");
+  require(refused_block("G+28") == refused_block("G28") &&
+              refused_block("G+92.3") == refused_block("G92.3") &&
+              motion_use("G+1 X5") == MotionUse::sets,
+          "An explicit positive G word follows the same rules as the unsigned form");
   stops("G38.2 X5 F10", "probe");
   stops("M66 P0 L0", "M66");
   stops("M101", "M101");
@@ -751,6 +774,13 @@ void start_state() {
           "Axis words before it do end the preview: " + text_of(o));
   o = with({"G1", "G17", "G21", "G90", "G94", "G54", "G41"}, 100);
   require(o.state == PreviewState::unavailable, "Cutter compensation active: no preview");
+  rig.inputs.start.spindle_speed = 120;
+  rig.inputs.start.spindle_direction = SpindleDirection::forward;
+  o = with({"G1", "G17", "G21", "G90", "G94", "G54", "G96"}, 100);
+  require(o.state == PreviewState::ready && o.segments.size() == 2,
+          "An active constant surface speed mode seeds its S word: " + text_of(o));
+  rig.inputs.start.spindle_speed = 0;
+  rig.inputs.start.spindle_direction = SpindleDirection::stopped;
   // Block delete.
   rig.inputs.start.active_codes = {"G1", "G21", "G90", "G94", "G54"};
   rig.inputs.start.feed = 100;
@@ -1238,6 +1268,7 @@ auto main(int argc, char** argv) -> int {
     subroutines();
     errors_and_limits();
     parameters_are_refused();
+    helper_with_closed_standard_descriptors();
     active_comments_are_refused();
     printed_text_is_not_a_result();
     start_state();

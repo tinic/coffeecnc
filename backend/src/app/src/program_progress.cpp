@@ -29,7 +29,12 @@ auto ProgramProgress::stamp(const std::string& path) -> std::optional<Stamp> {
   const auto bytes = std::filesystem::file_size(path, error);
   if (error)
     return {};
-  return Stamp{time.time_since_epoch().count(), bytes};
+  // Keep the native file-clock epoch and tick size used by existing saved records.
+  using FileTicks = std::chrono::duration<std::int64_t, std::filesystem::file_time_type::period>;
+  const auto ticks = time.time_since_epoch();
+  if (ticks < FileTicks::min() || ticks > FileTicks::max())
+    return {};
+  return Stamp{std::chrono::duration_cast<FileTicks>(ticks).count(), bytes};
 }
 
 void ProgramProgress::load() {
@@ -53,8 +58,7 @@ void ProgramProgress::load() {
       if (entry.path.starts_with('/') &&
           entry.path.size() <= ProgramStore::max_program_path_bytes &&
           entry.path.find('\0') == std::string::npos && entry.next.line > 0 &&
-          entry.next.tool >= 0 && entry.next.tool <= 99999 && entry.completed_line >= 0 &&
-          entry.completed_line < entry.next.line)
+          entry.next.tool >= 0 && entry.next.tool <= 99999 && entry.completed_line >= 0)
         records_.push_back(std::move(entry));
     } catch (const Json::exception&) {
       // A damaged record does not hide the others.
@@ -150,7 +154,7 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
       running_ = Run{{source->file, *identity, {}, 0}, program.revision, reading.program_aborts};
     auto& progress = running_->progress;
     // Motion line 0 means no observed program motion yet, for example while M6 waits.
-    if (complete_text && program.motion_line > progress.next.line &&
+    if (complete_text && program.motion_line > 0 && program.motion_line != progress.next.line &&
         static_cast<std::size_t>(program.motion_line) <= source->lines.size()) {
       progress.completed_line = progress.next.line;
       progress.next = {program.motion_line, status.tool.in_spindle};

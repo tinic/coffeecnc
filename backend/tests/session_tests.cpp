@@ -393,6 +393,19 @@ void stale_pages_are_dropped() {
           "The current page is unaffected by the stale page's IDs");
 }
 
+void controller_messages_wait_for_ready() {
+  Rig rig{false};
+  rig.port.published.push_back({true, "Motor drive reports a fault."});
+  const auto clock = [] { return at(0ms); };
+  require(rig.session.work(clock).outcome.messages.empty() && rig.port.published.size() == 1,
+          "Controller messages wait while the new page is loading");
+  require(rig.session.submit(rig.page, R"({"id":1,"type":"ready"})", at(0ms)).send_snapshots,
+          "The document is now ready");
+  const auto message = rig.session.work(clock).outcome.messages;
+  require(message.size() == 1 && Json::parse(message.front()).at("text") == "Motor drive reports a fault.",
+          "The ready document gets the retained controller fault");
+}
+
 void panel_watchdog_uses_a_monotonic_page_clock() {
   Rig rig{false};
   auto& session = rig.session;
@@ -1247,11 +1260,13 @@ void jog_failures() {
   rig.accepted(hold_x);
   rig.acted({"start_jog x 1 600 axis"}, "A new press starts; no lease was left by the failed one");
 
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "Release before starting the opposite jog");
   rig.port.script["start_jog"] = {{ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)", "timed_out",
              "LinuxCNC did not answer.");
   rig.acted({"start_jog x -1 600 axis", "stop_jog x"},
-            "A lost change of direction does not leave the old jog running");
+            "A start with no answer is independently followed by a stop");
   rig.clock += 1s;
   static_cast<void>(rig.tick(at(rig.clock)));
   rig.acted({}, "Its lease is gone");
@@ -2111,10 +2126,13 @@ void failed_stop_survives_the_page_and_is_retried() {
   rig.page = rig.begin_page();
   rig.acted({"stop_jog x"}, "The page boundary asks for the stop");
   auto outcome = rig.tick(at(1ms));
-  require(outcome.messages.size() == 1 &&
-              outcome.messages.front().find("Jog stop failed on X") != std::string::npos,
-          "A stop that failed at the page boundary is reported to the new page");
+  require(outcome.messages.empty(), "The loading page has no operator messages yet");
   rig.acted({"stop_jog x"}, "The tick retries the failed stop without a lease");
+  rig.next_id = 1;
+  outcome = rig.send(R"("type":"ready")");
+  require(outcome.send_snapshots && outcome.messages.size() == 2 &&
+              outcome.messages.back().find("Jog stop failed on X") != std::string::npos,
+          "The failed stop is retained for the new page when it is ready");
   outcome = rig.tick(at(2ms));
   require(outcome.messages.empty(), "A retry that fails again does not repeat the message");
   rig.acted({"stop_jog x"}, "It keeps retrying");
@@ -2479,6 +2497,7 @@ auto main(int argc, char** argv) -> int {
   try {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
+    controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();

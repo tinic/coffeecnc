@@ -767,6 +767,20 @@ void worker_revalidates_on_its_own_thread() {
           "Changed: a new generation instead of the old result");
 }
 
+void worker_revalidation_ignores_a_check_already_underway() {
+  FakeEngine engine;
+  engine.hold_check = true;
+  PreviewWorker worker{engine, 1s};
+  worker.submit(1, inputs(1));
+  const bool checking = wait_for([&] { return engine.check_thread.load() != std::thread::id{}; });
+  if (checking)
+    worker.revalidate(1);
+  engine.hold_check = false;
+  require(checking && wait_for([&] { return worker.latest() != nullptr; }) &&
+              engine.file_checks >= 2,
+          "A revalidation needs a file check started after the request");
+}
+
 void worker_retires_a_check_without_replacement_inputs() {
   FakeEngine engine;
   PreviewWorker worker{engine, 2ms};
@@ -824,6 +838,7 @@ auto main() -> int {
     worker_watches_the_files();
     worker_revalidates_on_its_own_thread();
     worker_ends_a_computation_when_destroyed();
+    worker_revalidation_ignores_a_check_already_underway();
     worker_retires_a_check_without_replacement_inputs();
     bounds_are_of_the_feed_moves();
     std::cout << checks << " preview checks passed\n";

@@ -873,6 +873,8 @@ void Session::wake() {
 }
 
 void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
+  if (!ready_)
+    return;
   for (const auto& problem : problems_)
     outcome.messages.push_back(encode_message(MessageLevel::error, problem, unix_time));
   problems_.clear();

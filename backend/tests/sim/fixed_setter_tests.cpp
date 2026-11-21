@@ -369,11 +369,11 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
 
   // A bore: the ball trips outside x -9..+9 and y -7..+7 (NAND of both windows); centre 0, 0, a
   // 14 mm centre chord in Y plus the 2 mm ball: 16 mm.
-  const auto pocket_window = [&](char axis, double low, double high) {
+  const auto pocket_window = [&](char axis, double from, double to) {
     const auto name = std::format("sim-pocket-{}", axis);
     halcmd(std::format("net {} {}.in1", std::format("sim-contact-{}", axis), name));
-    halcmd(std::format("setp {}.in2 {}", name, (low + high) / 2 / scale));
-    halcmd(std::format("setp {}.difference {}", name, (high - low) / 2 / scale));
+    halcmd(std::format("setp {}.in2 {}", name, (from + to) / 2 / scale));
+    halcmd(std::format("setp {}.difference {}", name, (to - from) / 2 / scale));
     halcmd(std::format("setp {}.scale 1", name));
   };
   pocket_window('x', -9, 9);

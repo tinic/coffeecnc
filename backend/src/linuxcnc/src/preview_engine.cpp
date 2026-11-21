@@ -673,8 +673,6 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
     check.errors.emplace_back("The program exceeds configured machine travel.");
   } else if (complete && facts->machine && settings.physical_travel) {
     check.travel = TravelCheck::fits;
-  } else if (facts->machine || !complete) {
-    check.warnings.emplace_back("The physical travel needed by the program could not be verified.");
   }
   return check;
 }

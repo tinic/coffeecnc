@@ -775,13 +775,17 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command))
     restart_.reset();
   auto decision = policy_.evaluate(command, state);
-  if (preview_ != nullptr && decision.allowed)
-    if (const auto* run = std::get_if<Run>(&command))
-      if (auto reason = check_program_start(request, *run, state); !reason.empty()) {
+  std::optional<CheckedPreview> verified;
+  if (preview_ != nullptr && decision.allowed) {
+    if (const auto* run = std::get_if<Run>(&command)) {
+      verified = preview_->checked_preview();
+      if (auto reason = check_program_start(request, *run, state, *verified); !reason.empty()) {
         if (!wanted(request))
           return cancelled();
         decision = {false, {}, std::move(reason), {}};
       }
+    }
+  }
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
       decision = {false, {}, std::move(reason), {}};
@@ -830,7 +834,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     verified_probe_program_.clear();
   const bool checked_run = fresh_run && tool_models_ != nullptr &&
       tool_models_->touch_probe_loaded(state.tool_in_spindle) == true;
-  if (checked_run) {
+  if (checked_run && !verified) {
     // LinuxCNC can keep the interpreter's original file open across a pathname replacement.
     // Reopen the checked path before starting a fresh program and verify the source again.
     if (!wanted(request))
@@ -854,15 +858,15 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       return answer({CommandOutcome::failed, "Machine state changed during the spindle check."});
     state = now;
   }
-  auto result = perform(request, decision, state, clock);
+  auto result = perform(request, decision, state, clock, verified);
   if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
     verified_probe_program_ = state.program_file;
   return result;
 }
 
 auto Session::check_program_start(const Queued& request, const Run& command,
-                                  const ControllerState& state) const -> std::string {
-  const auto check = preview_->checked_preview();
+                                  const ControllerState& state, const CheckedPreview& check) const
+    -> std::string {
   if (!check.preview || !check.source.inputs ||
       check.source.inputs->program_file != state.program_file)
     return "Wait for the program check to finish.";
@@ -1031,7 +1035,7 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
 }
 
 auto Session::perform(Queued& request, const Decision& decision, const ControllerState& state,
-                      const Clock& clock) -> Stage {
+                      const Clock& clock, const std::optional<CheckedPreview>& verified) -> Stage {
   // Interpreter commands can reload the same tool number or change the work frame.
   const auto* power = std::get_if<SetMachine>(&request.command);
   const bool changes_datum =
@@ -1100,8 +1104,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.open_program(*file, still);
           });
         } else if constexpr (std::is_same_v<T, Run>) {
-          return act(request,
-                     [&](const Wanted& still) -> ActionResult { return port_.run(still); });
+          return act(request, [&](const Wanted& still) -> ActionResult {
+            if (!verified)
+              return port_.run(still);
+            const auto current = [&] {
+              return still() &&
+                     (verified->files_changed
+                          ? !verified->files_changed([&] { return !still(); })
+                          : probe_block(request.command, port_.snapshot()).empty()) &&
+                     preview_->checked_preview().preview == verified->preview;
+            };
+            return port_.run_checked(*verified->source.inputs, current, still);
+          });
         } else if constexpr (std::is_same_v<T, PlanRestart>) {
           return plan_restart(request, c, state);
         } else if constexpr (std::is_same_v<T, StartRestart>) {

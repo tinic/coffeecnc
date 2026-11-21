@@ -1733,6 +1733,35 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
   return impl_->start(message, from);
 }
 
+auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, const Wanted& wanted)
+    -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  if (!impl_->still())
+    return withdrawn();
+  constexpr auto stale = "The program or tool data changed. Review the new program check.";
+  if (!current())
+    return failed(stale);
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  EMC_TASK_PLAN_OPEN open;
+  if (!inputs.program_file || !put(open.file, *inputs.program_file))
+    return failed("The program path is too long for LinuxCNC.");
+  // Refresh the interpreter's descriptor for this path without publishing a new load.
+  EMC_TASK_PLAN_CLOSE close;
+  if (auto closed = impl_->run(close, from); !accepted(closed))
+    return closed;
+  if (auto opened = impl_->run(open, from); !accepted(opened))
+    return opened;
+  if (!current())
+    return failed(stale);
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  EMC_TASK_PLAN_RUN message;
+  message.line = 0;
+  return impl_->start(message, from);
+}
+
 namespace {
 
 constexpr double restart_position_tolerance = 0.5; // mm, same encoder allowance as probing
@@ -1803,7 +1832,7 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
       s.controller.tool_in_spindle != start.tool_in_spindle ||
-      s.controller.program_units != start.program_units ||
+      s.controller.program_units != start.program_units || s.active_codes != start.active_codes ||
       s.spindle_direction != start.spindle_direction ||
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position) ||

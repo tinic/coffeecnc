@@ -308,13 +308,26 @@ describe('capability-aware controls', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  it('starts directly when physical travel is the only unverified item', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    await wrapper.get('.main-action').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9, display_units: 'mm' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
   it('confirms warnings against the reviewed context and rejects a stale dialog', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.hello = { ...hello, homing_required: false }
     panel.status.preview_context = 9
     panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, error: null,
       check: { tools: [], frames: [], feed: null, spindle: null,
-        units: ['inch'], travel: 'unknown', errors: [], warnings: ['Physical travel is unverified.'] } }
+        units: ['inch'], travel: 'unknown', errors: [], warnings: [] } }
     wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
     await wrapper.get('.main-action').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('Program units differ')

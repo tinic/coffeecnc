@@ -4005,20 +4005,46 @@ void program_preflight(Rig& rig) {
 
   const auto report = load("G0 X8\nG1 X10 F300\n");
   check("preflight_reports_work_and_feed",
-        report.errors.empty() && report.travel == TravelCheck::unknown &&
-            !report.warnings.empty() && report.frames.size() == 1 && report.frames[0].wcs == 1 &&
-            report.frames[0].bounds && near(report.frames[0].bounds->max[0], 10) &&
-            report.feed == ProgramRange{300, 300});
+        report.errors.empty() && report.travel == TravelCheck::unknown && report.warnings.empty() &&
+            report.frames.size() == 1 && report.frames[0].wcs == 1 && report.frames[0].bounds &&
+            near(report.frames[0].bounds->max[0], 10) && report.feed == ProgramRange{300, 300});
+  const auto direct = start(false, context);
+  const bool reached_direct =
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 10, 0.02); });
+  check("preflight_allows_unverified_physical_travel_without_confirmation",
+        direct.accepted() && reached_direct, direct.text());
+
+  const auto inch = load("G20\nG0 X0.25\n");
   const auto review = start(false, context);
   const auto stale = start(true, context - 1);
   check("preflight_requires_current_confirmation",
-        review.outcome == "rejected" && review.reason.find("warnings") != std::string::npos &&
-            stale.outcome == "rejected" && stale.reason.find("changed") != std::string::npos,
+        std::ranges::contains(inch.units, LengthUnit::inch) && review.outcome == "rejected" &&
+            review.reason.find("warnings") != std::string::npos && stale.outcome == "rejected" &&
+            stale.reason.find("changed") != std::string::npos,
         review.text() + " " + stale.text());
   const auto accepted = start(true, context);
   const bool reached =
-      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 10, 0.02); });
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 6.35, 0.02); });
   check("preflight_allows_confirmed_warning", accepted.accepted() && reached, accepted.text());
+
+  // A file save can replace the inode while LinuxCNC still has the earlier program open.
+  const auto [inputs, old] = oracle.preview("G21 G90 G54\nG0 X8\nM30\n");
+  const auto replacement = oracle.program + ".replacement";
+  {
+    std::ofstream updated{replacement};
+    updated << "G21 G90 G54\nG0 X14\nM30\n";
+  }
+  std::filesystem::rename(replacement, oracle.program);
+  preview.submit(++context, inputs);
+  const bool ready = rig.pump_until(3s, [&] {
+    const auto shown = preview.checked_preview().preview;
+    return shown && shown->context == context && shown->check && shown->check->errors.empty();
+  });
+  const auto replaced = start(true, context);
+  const bool reached_new =
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 14, 0.02); });
+  check("preflight_runs_the_checked_replacement_file",
+        old.check.has_value() && ready && replaced.accepted() && reached_new, replaced.text());
 
   rig.stop();
   rig.restart_preview = nullptr;

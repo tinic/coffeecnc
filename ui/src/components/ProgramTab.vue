@@ -22,7 +22,8 @@ const checkOpen = ref(false)
 const check = computed(() => describeProgramCheck(currentProgramPreview(panel.preview, status.value), panel.unit))
 const checkLabel = computed(() => check.value === null ? 'Checking program'
   : check.value.errors.length ? 'Cycle start blocked'
-  : check.value.warnings.length ? 'Review program warnings' : 'Program check passed')
+  : check.value.warnings.length ? 'Review program warnings'
+  : check.value.travel === 'unknown' ? 'Physical travel unverified' : 'Program check passed')
 const program = computed(() => panel.program)
 watch(() => panel.program?.revision, () => { selected.value = null })
 const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.file === status.value.program.file && program.value.revision === status.value.program.revision)

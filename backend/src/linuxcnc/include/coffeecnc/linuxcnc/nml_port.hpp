@@ -231,6 +231,8 @@ public:
       -> ActionResult override;
   [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs) -> std::string override;
+  [[nodiscard]] auto run_checked(const PreviewInputs& inputs, const Wanted& current,
+                                 const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto validate_restart(RestartPoint& point, const PreviewInputs& inputs)
       -> std::string override;
   [[nodiscard]] auto start_restart(const RestartPoint& point, const PreviewInputs& inputs,

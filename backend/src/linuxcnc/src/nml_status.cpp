@@ -194,10 +194,6 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       if (!view || !feedback || !view->watchdog_ok || view->jog_stop_high ||
           view->probe_cycle_active || (view->probe_input && *view->probe_input))
         return "The paused Z motion interlock is open.";
-      // The active M code can come from the motion tag of the preceding move, before M5.
-      // Use current spindle status and measured RPM. HAL also gates on spindle.0.on.
-      if (!out.spindle_actual_rpm || c.spindle_active)
-        return "Pause after stopping the spindle in the program (M5) before jogging Z.";
       if (feedback->limited || motion.on_soft_limit ||
           std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
         return "A travel limit blocks paused Z motion.";
@@ -205,9 +201,37 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
         return "The active external offset is outside the paused Z range.";
       return {};
     };
+    auto spindle_state = hal ? hal->paused_spindle.load() : PausedSpindle::none;
     out.paused_z_interlock = blocked();
-    c.paused_z = PausedZStatus{z_mm, limits->lift_mm, displaced, feedback.has_value(),
-                               out.paused_z_interlock};
+    if (spindle_state == PausedSpindle::recover)
+      out.paused_z_interlock = "Press Stop before continuing after an interrupted spindle hold.";
+    out.paused_z_motion_ready = out.paused_z_interlock.empty() && out.paused_z_still;
+    const bool fixed_rpm = std::ranges::find(task.activeGCodes, 970) != std::end(task.activeGCodes);
+    const bool synchronized = std::ranges::any_of(
+        task.activeGCodes, [](int code) { return code == 330 || code == 331 || code == 760; });
+    const bool can_stop =
+        out.paused_z_motion_ready && !displaced && spindle_state == PausedSpindle::none &&
+        fixed_rpm && !synchronized && out.spindle_at_speed.has_value() &&
+        out.spindle_actual_rpm.has_value() && out.spindle_direction != SpindleDirection::stopped &&
+        std::isfinite(out.spindle_rpm) && out.spindle_rpm >= 1.0 &&
+        out.spindle_rpm <= config.limits.max_spindle_rpm &&
+        (!config.touch_probe_tool || c.tool_in_spindle != *config.touch_probe_tool);
+    if (can_stop)
+      spindle_state = PausedSpindle::can_stop;
+    // The last motion's M code can describe an earlier block. HAL also gates on spindle.0.on.
+    if (out.paused_z_interlock.empty() && (!out.spindle_actual_rpm || c.spindle_active)) {
+      if (spindle_state == PausedSpindle::stopping)
+        out.paused_z_interlock = "Waiting for the spindle to stop.";
+      else if (spindle_state == PausedSpindle::restore)
+        out.paused_z_interlock = "Waiting for the spindle to reach speed.";
+      else
+        out.paused_z_interlock =
+            can_stop ? "Stop the spindle before jogging Z."
+                     : "Pause after stopping the spindle in the program (M5) before jogging Z.";
+    }
+    c.paused_z = PausedZStatus{
+        z_mm,         limits->lift_mm, displaced, feedback.has_value(), out.paused_z_interlock,
+        spindle_state};
     if (c.paused_z->reason.empty() && !out.paused_z_still)
       c.paused_z->reason = "Wait for the axes to stop.";
   }

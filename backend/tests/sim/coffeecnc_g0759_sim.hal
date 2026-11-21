@@ -25,6 +25,7 @@ net estop-out iocontrol.0.user-enable-out => iocontrol.0.emc-enable-in
 # The machine's signals for measured spindle speed, at-speed and the probe, without the encoder
 # and input hardware that drives them: a test sets them with `halcmd sets`. The spindle counts
 # as at speed until then.
+net spindle-enable spindle.0.on
 newsig spindle-vel-fb-rpm-abs float
 net spindle-at-speed => spindle.0.at-speed
 sets spindle-at-speed TRUE

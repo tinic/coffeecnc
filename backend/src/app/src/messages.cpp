@@ -326,11 +326,28 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
       {"active_codes", status.active_codes},
       {"program_units", name(status.program_units)},
       {"probe_input", nullable(status.probe_input)}};
-  if (const auto& z = status.paused_z)
+  if (const auto& z = status.paused_z) {
     message["paused_z"] = {{"offset", fields.real(z->offset, "paused_z.offset")},
                            {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},
                            {"displaced", z->displaced},
                            {"reason", z->reason}};
+    switch (z->spindle) {
+    case PausedSpindle::can_stop:
+      message["paused_z"]["spindle"] = "can_stop";
+      break;
+    case PausedSpindle::stopping:
+      message["paused_z"]["spindle"] = "stopping";
+      break;
+    case PausedSpindle::restore:
+      message["paused_z"]["spindle"] = "restore";
+      break;
+    case PausedSpindle::recover:
+      message["paused_z"]["spindle"] = "recover";
+      break;
+    case PausedSpindle::none:
+      break;
+    }
+  }
   return fields.finish(std::move(message));
 }
 

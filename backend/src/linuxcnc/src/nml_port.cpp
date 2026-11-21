@@ -1386,11 +1386,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   std::string block_failure; // why the last block() did not complete, for the operator
   const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
                          bool watch_probe = false, bool moves = false) -> bool {
-    if (live_cycle() == nullptr || !interlock())
+    if (live_cycle() == nullptr) {
+      block_failure = cycle_failure;
       return false;
+    }
+    if (!interlock()) {
+      block_failure = "probe interlock lost";
+      return false;
+    }
     EMC_TASK_PLAN_EXECUTE command;
-    if (!put(command.command, code) || !accepted(impl_->write(command)))
+    if (!put(command.command, code) || !accepted(impl_->write(command))) {
+      block_failure = "LinuxCNC did not take the block";
       return false;
+    }
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
@@ -1438,7 +1446,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
 
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
-    return interrupt("Could not prepare the probing feed.");
+    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
   if (raw == nullptr || !probe_pin || *probe_pin->probe_input || raw->motion.traj.probeval != 0 ||
@@ -1474,8 +1482,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (!block(std::format("G90 G53 G0 X{:.8f} Y{:.8f}", search_start[0] / program_scale,
                            search_start[1] / program_scale),
                positioning_timeout, false, true))
-      return interrupt(material ? "Could not position XY for the probe."
-                                : "Could not position XY above the setter.");
+      return interrupt(std::format("Could not position XY for {} ({}).",
+                                   material ? "the probe" : "the setter", block_failure));
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
@@ -1647,6 +1655,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
   hal->finish_probe_cycle();
+  // A subsequent cycle must see its own permit. Wait for the control thread to publish and
+  // sample the low level before the next request can mistake the previous cycle for its own.
+  if (!until(settle_timeout, [&] {
+        const auto pins = hal->view(Clock::now());
+        return pins && !pins->probe_cycle_active;
+      }))
+    return std::unexpected("The probe retracted, but the interlock did not return to idle.");
   if (missed)
     return std::unexpected("No probe contact within the search travel. Returned to the start.");
   if (unstable_spread)

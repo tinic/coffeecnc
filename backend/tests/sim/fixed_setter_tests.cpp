@@ -758,7 +758,8 @@ void run(const std::string& ini, std::string_view scenario) {
     const auto failed = port->fixed_setter(check, epoch, {});
     require(!failed && failed.error().contains(direction) && failed.error().contains("tolerance") &&
                 intact(),
-            std::format("a {} tool fails after retract and keeps its table and offset", direction));
+            std::format("a {} tool fails after retract and keeps its table and offset ({})",
+                        direction, failed ? "unexpected pass" : failed.error()));
   }
   halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto unstable = port->fixed_setter(repeat, epoch, [&]() {

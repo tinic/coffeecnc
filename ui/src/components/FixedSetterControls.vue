@@ -50,7 +50,8 @@ const checkBlock = computed(() => {
 })
 const { line: feedback, allow } = useCardFeedback(
   () => '',
-  () => localBlock.value ?? (!teaching.value && !state.value?.calibration ? teachFirst.value : null),
+  () => machineReason.value !== null ? null
+    : localBlock.value ?? (!teaching.value && !state.value?.calibration ? teachFirst.value : null),
   [machineReason, localBlock, checkBlock, tool, pending],
 )
 const error = shallowRef<string | null>(null)

@@ -35,7 +35,7 @@ The rules the C++ layers implement and where, and the known limits. Build and te
 | Stop requests (abort, E-stop, power off, jog release, stop-all) are served first; 16 stops and 32 requests may wait, more are rejected | `Session` |
 | From close on the level is high; the control thread writes it last | `Runtime` |
 | Composed G-code lengths are written in the interpreter's unit | `Session`, `ControllerState::program_units` |
-| The dead-man does not need the command channel: the level on `coffeecnc.jog-stop` drives `motion.jog-stop` and `motion.jog-inhibit` | `HalControl`, `tests/sim/coffeecnc_postgui.hal` |
+| The dead-man does not need the command channel: the level on `coffeecnc.jog-stop` drives `motion.jog-stop` and `motion.jog-inhibit` | `HalControl`, `share/hal/coffeecnc_postgui.hal` |
 | A machine that pulses `motion.jog-stop` on probe contact can wire its contact level to `coffeecnc.jog-contact`. CoffeeCNC shows the reason when LinuxCNC reports a jog aborted near the contact edge. | `HalControl`, `NmlPort`, `linuxcnc_jog_contact_*` |
 | `link` is live only while the status write counter advances | `TaskHeartbeat` |
 | Only an XYZ mill with trivial kinematics, in mm or inch, with `[AXIS_*] MAX_VELOCITY` set, is accepted | `load_machine_config` |

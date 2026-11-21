@@ -96,4 +96,4 @@ More: [architecture](docs/architecture.md), [native shell](docs/shell.md), [prod
 
 ## License
 
-A project-wide license is not selected yet. Third-party sample files keep their own upstream licenses and attribution.
+CoffeeCNC is released under the [MIT License](LICENSE). The package also ships the licenses of what it bundles in `/usr/share/doc/coffeecnc/third-party`: Vue and three.js (MIT), occt-import-js (LGPL-2.1, used as a separate WebAssembly file), nlohmann/json (MIT) and the SM-101 sample model (MIT). Third-party sample files in `samples/upstream` keep their own upstream licenses and attribution.

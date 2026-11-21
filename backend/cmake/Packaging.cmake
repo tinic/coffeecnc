@@ -6,13 +6,34 @@
 #   <prefix>/share/coffeecnc/hal/coffeecnc_postgui.hal
 #   <prefix>/share/coffeecnc/coffeecnc.ini.example
 #
-# The HAL fragment installed is the file the simulation tests run (tests/sim/run.sh copies the
-# same file into every run directory): there is one.
+# The HAL fragment installed is the file the simulation tests run (tests/sim/run.sh copies
+# share/hal/coffeecnc_postgui.hal into every run directory): there is one.
 include(GNUInstallDirs)
-install(FILES ${PROJECT_SOURCE_DIR}/tests/sim/coffeecnc_postgui.hal
+install(FILES ${PROJECT_SOURCE_DIR}/share/hal/coffeecnc_postgui.hal
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc/hal)
 install(FILES ${PROJECT_SOURCE_DIR}/share/coffeecnc.ini.example
   DESTINATION ${CMAKE_INSTALL_DATADIR}/coffeecnc)
+
+# Licenses: CoffeeCNC's own (MIT) as the Debian copyright file, and the notice of everything the
+# package bundles: the panel's runtime libraries (in ui/dist), nlohmann/json (compiled in) and
+# the SM-101 sample model the simulator offers. occt-import-js is LGPL-2.1: its WebAssembly is a
+# separate file of the panel, and its source is https://github.com/kovacsv/occt-import-js.
+set(coffeecnc_doc ${CMAKE_INSTALL_DATADIR}/doc/coffeecnc)
+install(FILES ${PROJECT_SOURCE_DIR}/../LICENSE DESTINATION ${coffeecnc_doc} RENAME copyright)
+set(coffeecnc_ui_modules ${PROJECT_SOURCE_DIR}/../ui/node_modules)
+foreach(notice IN ITEMS "vue:LICENSE" "three:LICENSE" "occt-import-js:LICENSE.md")
+  string(REPLACE ":" ";" parts "${notice}")
+  list(GET parts 0 module)
+  list(GET parts 1 file)
+  install(FILES ${coffeecnc_ui_modules}/${module}/${file}
+    DESTINATION ${coffeecnc_doc}/third-party/${module})
+endforeach()
+install(FILES ${PROJECT_SOURCE_DIR}/../samples/upstream/instant-machinist/LICENSE
+  DESTINATION ${coffeecnc_doc}/third-party/instant-machinist-sm-101)
+if(EXISTS /usr/share/doc/nlohmann-json3-dev/copyright)
+  install(FILES /usr/share/doc/nlohmann-json3-dev/copyright
+    DESTINATION ${coffeecnc_doc}/third-party/nlohmann-json)
+endif()
 
 # The package is for the Debian release and architecture it is built on. Nothing here is
 # looked up on a network: the LinuxCNC version is the installed package's.
@@ -37,7 +58,7 @@ set(series_floor "${epoch}${CMAKE_MATCH_3}.${CMAKE_MATCH_4}.${CMAKE_MATCH_5}")
 math(EXPR next_minor "${CMAKE_MATCH_4} + 1")
 set(series_ceiling "${epoch}${CMAKE_MATCH_3}.${next_minor}")
 
-set(COFFEECNC_PACKAGE_MAINTAINER "CoffeeCNC <coffeecnc@invalid>" CACHE STRING
+set(COFFEECNC_PACKAGE_MAINTAINER "tinic <tinic@users.noreply.github.com>" CACHE STRING
   "Maintainer field of the Debian package")
 set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_NAME coffeecnc)

@@ -57,9 +57,12 @@ done
 check package_depends $? "missing=$(echo "${missing:- none}" | tr ' ' '_')_depends=$(echo "$depends" | tr ' ' '_')"
 [ -n "$(field Maintainer)" ] && [ -n "$(field Description)" ]
 check package_maintainer_and_description $? "maintainer=$(field Maintainer | tr ' ' '_')"
-outside=$(awk '{print $6}' "$work/contents.txt" | grep -vE '^\./(usr/(bin/(coffeecnc(-preview)?)?|share/(coffeecnc/.*)?)?)?$' | head -5 | tr '\n' ',')
+outside=$(awk '{print $6}' "$work/contents.txt" | grep -vE '^\./(usr/(bin/(coffeecnc(-preview)?)?|share/((coffeecnc|doc|doc/coffeecnc)/.*|doc/?)?)?)?)?$' | head -5 | tr '\n' ',')
 [ -z "$outside" ]
 check package_files_only_in_usr_bin_and_share $? "${outside:--}"
+grep -q ' \./usr/share/doc/coffeecnc/copyright$' "$work/contents.txt" &&
+  grep -q ' \./usr/share/doc/coffeecnc/third-party/occt-import-js/LICENSE.md$' "$work/contents.txt"
+check package_license_notices $? "copyright_and_third_party"
 writable=$(grep -cE '^.....w|^........w' "$work/contents.txt")
 [ "$writable" = 0 ]
 check package_nothing_group_or_world_writable $? "entries=$writable"

@@ -9,7 +9,7 @@ Installation, the Debian package, and running a machine's own configuration in s
 | `bin/coffeecnc` | The DISPLAY program | `src/coffeecnc` |
 | `bin/coffeecnc-preview` | The preview helper | `src/linuxcnc/preview` |
 | `share/coffeecnc/ui/` | The built panel; an installation without it does not start | `ui/dist` |
-| `share/coffeecnc/hal/coffeecnc_postgui.hal` | The post-GUI fragment: watchdog, jog stop and jog inhibit, manual tool change | `tests/sim/coffeecnc_postgui.hal`, the file the tests run |
+| `share/coffeecnc/hal/coffeecnc_postgui.hal` | The post-GUI fragment: watchdog, jog stop and jog inhibit, manual tool change | `share/hal/coffeecnc_postgui.hal`, the file the tests run |
 | `share/coffeecnc/coffeecnc.ini.example` | The `[COFFEECNC]` section | `share/coffeecnc.ini.example` |
 
 ## Lookup
@@ -29,7 +29,7 @@ Installation, the Debian package, and running a machine's own configuration in s
 | File | `coffeecnc_<version>_<arch>.deb`, prefix `/usr` |
 | Version | `project(... VERSION ...)` in `CMakeLists.txt`, the only place |
 | Dependencies | Libraries by `dpkg-shlibdeps`; `linuxcnc-uspace` from the installed version up to the next minor series |
-| Maintainer | `COFFEECNC_PACKAGE_MAINTAINER`, a placeholder by default |
+| Maintainer | `COFFEECNC_PACKAGE_MAINTAINER`, default `tinic <tinic@users.noreply.github.com>` |
 | Check | `package_deb`: control fields, contents, `dpkg-deb -x` below the build directory; `strings` of both programs shows no path of the checkout, the build directory or the home directory |
 
 ## A machine's configuration in simulation
@@ -38,7 +38,7 @@ Installation, the Debian package, and running a machine's own configuration in s
 |---|---|---|
 | Command | `run.sh -m <machine INI> -s <simulated hardware HAL>` | `tests/sim/run.sh`, `tests/sim/assemble_machine.sh` |
 | INI | May differ from the machine's in `DISPLAY`, `PROGRAM_PREFIX` and one added `HALFILE`; anything else fails | |
-| HAL files | Lose only the lines matching the `#drop:` expressions of the hardware file | `tests/sim/coffeecnc_g0759_machine_hardware.hal` |
+| HAL files | Lose only the lines matching the `#drop:` expressions of the hardware file | `share/hal/coffeecnc_g0759_machine_hardware.hal` |
 | Post-GUI file, shutdown file, tool table | Byte copies; the post-GUI file must hold the shipped fragment's commands in order | |
 | Machine files | Not in this repository: `-DCOFFEECNC_MACHINES_DIRECTORY=<checkout of the machine configurations>` | |
 

@@ -2,7 +2,7 @@
 // the centre out to the wall, at most one stepover apart, counter-clockwise (G3, climb milling
 // inside the pocket). Plunging needs a centre-cutting end mill.
 
-import { Checks, Program, checkCommon, feedNumber, number, steps, type Common, type Generated } from './program'
+import { Checks, Program, checkCommon, feedNumber, number, steps, written, type Common, type Generated } from './program'
 
 interface Pocket extends Common {
   x: number
@@ -58,7 +58,7 @@ export function circularPocket(c: CircularPocket): Generated {
   checks.positive(c.diameter, 'Pocket diameter')
   const radius = (c.diameter - c.tool.diameter) / 2
   if (c.diameter > 0 && c.tool.diameter > 0)
-    checks.check(radius > 0, `The tool (diameter ${number(c.tool.diameter, c.unit)}) is too big for this pocket.`)
+    checks.check(written(radius, c.unit) > 0, `The tool (diameter ${number(c.tool.diameter, c.unit)}) is too big for this pocket.`)
   if (checks.errors.length) return { errors: checks.errors }
 
   const p = new Program(c)
@@ -71,6 +71,7 @@ export function circularPocket(c: CircularPocket): Generated {
   layers(p, c, () => {
     for (let ring = 1; ring <= rings; ring += 1) {
       const r = (radius * ring) / rings
+      if (written(r, c.unit) <= 0) continue
       p.cut(`G1 X${p.n(c.x + r)} Y${p.n(c.y)}`, c.feed)
       p.cut(`G3 X${p.n(c.x + r)} Y${p.n(c.y)} I${p.n(-r)} J0`, c.feed)
     }
@@ -80,10 +81,11 @@ export function circularPocket(c: CircularPocket): Generated {
 
 /**
  * One counter-clockwise loop around a rounded rectangle of half-sizes `a` `b` and corner radius
- * `r` about the centre, from and back to its point on +X. Lines of no length are left out, so a
- * loop with `b` zero is a line there and back.
+ * `corner` about the centre, from and back to its point on +X. Lines of no length are left out, so
+ * a loop with `b` zero is a line there and back. A corner radius written as 0 is a sharp corner.
  */
-function loop(p: Program, c: RectangularPocket, a: number, b: number, r: number): void {
+function loop(p: Program, c: RectangularPocket, a: number, b: number, corner: number): void {
+  const r = written(corner, c.unit) > 0 ? corner : 0
   let at: [number, number] = [a, 0]
   const same = (u: number, v: number): boolean => Math.abs(u - v) < 1e-9
   const line = (x: number, y: number): void => {

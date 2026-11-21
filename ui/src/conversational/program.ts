@@ -34,6 +34,14 @@ export function number(value: number, unit: Unit): string {
   return text === '-0' ? '0' : text
 }
 
+/**
+ * The value as written. An arc radius is checked as written: one that is more than zero but
+ * written as 0 makes `I0 J0`, which the interpreter refuses.
+ */
+export function written(value: number, unit: Unit): number {
+  return Number(number(value, unit))
+}
+
 /** A feed: one decimal in mm/min, two in in/min. */
 export function feedNumber(value: number, unit: Unit): string {
   return String(Number(value.toFixed(unit === 'inch' ? 2 : 1)))

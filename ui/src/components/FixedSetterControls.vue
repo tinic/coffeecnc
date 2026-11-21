@@ -98,8 +98,18 @@ function startBlock(action: 'touch_off' | 'check'): string | null {
   return machineReason.value ?? (pending.value ? 'Waiting for setter status' : localBlock.value) ?? operation ??
     (!teaching.value && !state.value?.calibration ? teachFirst.value : null)
 }
-const guide = shallowRef<ProbeGuideTarget | null>(null)
-watch([tool, teaching, (): unknown => panel.hello, (): string => panel.link], () => { guide.value = null })
+const guide = shallowRef<Extract<ProbeGuideTarget, { kind: 'teach' | 'measure' | 'check' }> | null>(null)
+// A slow render can delay status delivery. Keep the instructions visible and wait for
+// current controller and setter data before enabling confirmation.
+watch([tool, (): unknown => panel.hello], () => { guide.value = null })
+const guideBlocked = computed((): string | null => {
+  const target = guide.value
+  if (target === null) return null
+  const block = startBlock(target.kind === 'check' ? 'check' : 'touch_off')
+  if (block !== null) return block
+  return target.kind !== 'check' && (target.kind === 'teach') !== teaching.value
+    ? 'The setter setup changed. Reopen the guide.' : null
+})
 function openCheck(): void {
   error.value = null
   if (allow(startBlock('check'))) guide.value = { kind: 'check' }
@@ -109,12 +119,13 @@ function openTouchOff(): void {
   if (allow(startBlock('touch_off'))) guide.value = { kind: teaching.value ? 'teach' : 'measure' }
 }
 function startGuide(): void {
-  const action = guide.value?.kind === 'check' ? 'check' : 'touch_off'
-  guide.value = null
+  const target = guide.value
   const xyz = position.value
+  if (target === null || !allow(guideBlocked.value) || xyz === null) return
+  guide.value = null
   error.value = null
-  if (!allow(startBlock(action)) || xyz === null) return
-  request({ type: 'fixed_setter', action, tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
+  request({ type: 'fixed_setter', action: target.kind === 'check' ? 'check' : 'touch_off',
+    tool: tool.value, x: xyz[0], y: xyz[1], z: xyz[2] })
 }
 
 const removeListener = onResult((command, result) => {
@@ -152,7 +163,7 @@ onBeforeUnmount(() => {
   </div>
   <ProbeGuideDialog
     v-if="guide" :target="guide" :limits="limits" :tool="tool" :ruby="tool === panel.hello?.touch_probe_tool"
-    @start="startGuide" @close="guide = null"
+    :start-blocked="guideBlocked" @start="startGuide" @close="guide = null"
   />
 </template>
 

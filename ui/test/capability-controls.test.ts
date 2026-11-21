@@ -114,12 +114,15 @@ describe('capability-aware controls', () => {
     panel.hello = { ...hello, touch_probe_tool: 99, fixed_setter: {
       reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_travel_mm: 20,
     } }
-    wrapper = mount(WorkspaceControls)
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    wrapper = mount(WorkspaceControls, { global: { stubs: { Teleport: true, GuideCanvas: true } } })
     expect(wrapper.get('.machine-state').text()).toBe('Machine is off')
     expect(wrapper.get('.probe-card .setter-band p').text()).toBe('Load T99 to probe material.')
     expect(wrapper.get('.jog .setter-band p').text()).not.toContain('Load T99')
     vi.mocked(send).mockClear()
     await wrapper.get('.probe-actions button').trigger('click')
+    await wrapper.get('.start-probe').trigger('click')
+    vi.unstubAllGlobals()
     expect(wrapper.get('.probe-card .setter-band p').text()).toBe('Machine is off')
     expect(wrapper.get('.jog .setter-band p').text()).not.toContain('Machine is off')
     expect(send).not.toHaveBeenCalled()

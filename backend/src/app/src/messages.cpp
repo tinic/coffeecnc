@@ -263,6 +263,13 @@ auto encode_hello(const Hello& hello) -> Encoded {
         {"feed_mm_min", fields.real(setter->feed_mm_min, "fixed_setter.feed_mm_min")},
         {"xy_tolerance_mm", fields.real(setter->xy_tolerance_mm, "fixed_setter.xy_tolerance_mm")},
         {"clearance_mm", fields.real(setter->clearance_mm, "fixed_setter.clearance_mm")}};
+  if (hello.fixed_setter && hello.fixed_setter->latch_feed_mm_min > 0) {
+    const auto& setter = *hello.fixed_setter;
+    message["fixed_setter"]["latch_feed_mm_min"] =
+        fields.real(setter.latch_feed_mm_min, "fixed_setter.latch_feed_mm_min");
+    message["fixed_setter"]["latch_backoff_mm"] =
+        fields.real(setter.latch_backoff_mm, "fixed_setter.latch_backoff_mm");
+  }
   if (hello.fixed_setter && hello.touch_probe_tool && hello.fixed_setter->latch_feed_mm_min > 0 &&
       hello.fixed_setter->material_travel_mm / hello.fixed_setter->feed_mm_min * 60 <= 180)
     message["fixed_setter"]["material_travel_mm"] =

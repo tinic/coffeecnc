@@ -2,13 +2,15 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
+#   run.sh [-p sim|g0759|gantry] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
 #          [-d run-directory] [-n] <program> [arguments...]
 #   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-k] [-t ...] [-d ...] [-n] <program> ...
 #
 # Profiles (-p):
 #   sim    the test mill of coffeecnc_sim.ini.in, in millimetres or inches (-u); home switches
 #   g0759  a mill with the G0759's INI values, coffeecnc_g0759.ini.in; millimetres only
+#   gantry a router with two motors on Y (joints X Y Y Z), coffeecnc_gantry.ini.in; millimetres
+#          only; home switches
 # With -m, no profile: a machine's own INI file and HAL files with the hardware replaced by the
 # -s file; see assemble_machine.sh for exactly what differs from the machine's files. The INI
 # file in the run directory then has the machine file's name.
@@ -94,13 +96,13 @@ while getopts "p:u:t:d:nm:s:w:i:k" option; do
 done
 shift $((OPTIND - 1))
 if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
-  { [ "$profile" != sim ] && [ "$profile" != g0759 ]; } ||
-  { [ "$profile" = g0759 ] && [ "$units" != mm ]; } ||
+  { [ "$profile" != sim ] && [ "$profile" != g0759 ] && [ "$profile" != gantry ]; } ||
+  { [ "$profile" != sim ] && [ "$units" != mm ]; } ||
   { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; } ||
   { [ -n "$identity" ] && { [ "$profile" != sim ] || [ -n "$machine" ]; }; }; then
-  echo "usage: run.sh [-p sim|g0759] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
-    "[-d run-directory] [-n] <program> [arguments...]  (g0759 is millimetres only and has" \
-    "its own machine ID), or" \
+  echo "usage: run.sh [-p sim|g0759|gantry] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
+    "[-d run-directory] [-n] <program> [arguments...]  (g0759 and gantry are millimetres only;" \
+    "g0759 has its own machine ID), or" \
     "run.sh -m <machine INI file> -s <simulated hardware HAL file> ..." >&2
   exit 125
 fi
@@ -116,6 +118,9 @@ plain() {
 if [ "$profile" = sim ]; then
   flavour=$units
   fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_sim_home.hal"
+elif [ "$profile" = gantry ]; then
+  flavour=$profile
+  fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_gantry_sim.hal"
 else
   flavour=$profile
   fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_${profile}_postgui.hal coffeecnc_${profile}_sim.hal"

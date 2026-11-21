@@ -243,6 +243,12 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      # A gantry router: two motors on Y (COORDINATES X Y Y Z).
+      add_test(NAME linuxcnc_sim_gantry COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p gantry -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_gantry
+        $<TARGET_FILE:coffeecnc_sim_tests> gantry)
+      set_tests_properties(linuxcnc_sim_gantry PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 420)
       if(TARGET coffeecnc_preview)
         add_test(NAME linuxcnc_whole_job_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -p g0759 -t 310 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_whole_job_g0759

@@ -10,9 +10,11 @@
 #include <format>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <inifile.hh>
 
@@ -134,6 +136,84 @@ auto increment(std::string_view entry, double millimetres_per_unit) -> std::opti
   return *value * scale;
 }
 
+// The joints of X, Y and Z from [TRAJ] COORDINATES, [KINS] JOINTS and KINEMATICS, as trivkins
+// assigns them: joint n is the n-th letter of its coordinates= (default XYZABCUVW). A letter may
+// repeat: X Y Y Z is a gantry with joints 1 and 2 on Y. Only X, Y and Z are supported.
+auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 3>, std::string> {
+  const auto given = ini.text("TRAJ", "COORDINATES").value_or("");
+  const auto coordinates = upper(without_spaces(given));
+  constexpr std::string_view letters = "XYZ";
+  if (const auto other = coordinates.find_first_not_of(letters); other != std::string::npos)
+    return std::unexpected(std::format(
+        "[TRAJ] COORDINATES is \"{}\": axis {} is not supported. Only X, Y and Z are; a letter "
+        "may repeat for a gantry (X Y Y Z).",
+        given, coordinates[other]));
+  std::array<std::vector<int>, 3> joints{};
+  for (std::size_t joint = 0; joint < coordinates.size(); ++joint)
+    joints.at(letters.find(coordinates[joint])).push_back(static_cast<int>(joint));
+  if (std::ranges::any_of(joints, [](const auto& own) -> bool { return own.empty(); }))
+    return std::unexpected(std::format(
+        "[TRAJ] COORDINATES is \"{}\": X, Y and Z are all required.", given));
+  const auto count = ini.real("KINS", "JOINTS");
+  if (count != static_cast<double>(coordinates.size()))
+    return std::unexpected(std::format(
+        "[KINS] JOINTS is {}: set it to {}, one joint for each letter of [TRAJ] COORDINATES "
+        "\"{}\".",
+        ini.text("KINS", "JOINTS") ? std::format("\"{}\"", *ini.text("KINS", "JOINTS"))
+                                   : std::string("not set"),
+        coordinates.size(), given));
+
+  // trivkins takes coordinates= and kinstype=, each as one word.
+  const auto kinematics = ini.text("KINS", "KINEMATICS").value_or("");
+  std::vector<std::string> words;
+  for (std::size_t at = 0; at < kinematics.size();) {
+    const auto begin = kinematics.find_first_not_of(" \t", at);
+    if (begin == std::string::npos)
+      break;
+    const auto end = std::min(kinematics.find_first_of(" \t", begin), kinematics.size());
+    words.push_back(kinematics.substr(begin, end - begin));
+    at = end;
+  }
+  if (words.empty() || upper(words.front()) != "TRIVKINS")
+    return std::unexpected(std::format(
+        "[KINS] KINEMATICS is \"{}\": only trivkins (trivial kinematics) is supported.",
+        kinematics));
+  std::string own = std::string("XYZABCUVW").substr(0, coordinates.size());
+  bool named = false;
+  for (const auto& word : words | std::views::drop(1)) {
+    const auto equals = word.find('=');
+    const auto key = upper(word.substr(0, equals));
+    const auto value = equals == std::string::npos ? std::string() : word.substr(equals + 1);
+    if (key == "COORDINATES") {
+      own = upper(value);
+      named = true;
+    } else if (key == "KINSTYPE") {
+      // As trivkins reads it: by the first letter. With both, LinuxCNC refuses world mode until
+      // every joint is homed (seen on 2.9.4); CoffeeCNC jogs joints until then in any case.
+      const char type = static_cast<char>(std::toupper(static_cast<unsigned char>(
+          value.empty() ? '1' : value.front())));
+      if (type == 'F' || type == 'I')
+        return std::unexpected(std::format(
+            "[KINS] KINEMATICS has kinstype={}, which trivkins reads as {} kinematics: use "
+            "kinstype=both or leave kinstype out.",
+            value, type == 'F' ? "forward-only" : "inverse-only"));
+    } else {
+      return std::unexpected(std::format(
+          "[KINS] KINEMATICS has \"{}\": trivkins takes only coordinates= and kinstype=.",
+          word));
+    }
+  }
+  if (own != coordinates)
+    return std::unexpected(
+        named ? std::format("[KINS] KINEMATICS has coordinates={} but [TRAJ] COORDINATES is "
+                            "\"{}\": use the same letters in the same order.",
+                            own, given)
+              : std::format("[KINS] KINEMATICS has no coordinates=, so trivkins makes the joints "
+                            "{}: add coordinates={} to match [TRAJ] COORDINATES.",
+                            own, coordinates));
+  return joints;
+}
+
 } // namespace
 
 auto parse_jog_increments(std::string_view text, double millimetres_per_unit)
@@ -181,21 +261,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
         std::format("[TRAJ] LINEAR_UNITS is \"{}\": only mm and inch machines are supported.",
                     ini.text("TRAJ", "LINEAR_UNITS").value_or("")));
 
-  const auto coordinates = upper(without_spaces(ini.text("TRAJ", "COORDINATES").value_or("")));
-  if (coordinates != "XYZ")
-    return std::unexpected(
-        std::format("[TRAJ] COORDINATES is \"{}\": only an X Y Z mill is supported.", coordinates));
-  // Joint n must be axis n. trivkins is that only with its default or the same coordinates and
-  // without kinstype=both, which makes the kinematics non-identity for LinuxCNC.
-  const auto kinematics = upper(ini.text("KINS", "KINEMATICS").value_or(""));
-  const auto words = without_spaces(kinematics);
-  if (words != "TRIVKINS" && words != "TRIVKINSCOORDINATES=XYZ")
-    return std::unexpected(
-        std::format("[KINS] KINEMATICS is \"{}\": only trivkins with joints 0, 1, 2 as X, Y, Z is "
-                    "supported.",
-                    ini.text("KINS", "KINEMATICS").value_or("")));
-  if (ini.real("KINS", "JOINTS") != 3.0)
-    return std::unexpected(std::string("[KINS] JOINTS must be 3."));
+  auto joints = axis_joints(ini);
+  if (!joints)
+    return std::unexpected(std::move(joints.error()));
 
   std::array<Travel, 3> travel{};
   constexpr std::array<const char*, 3> sections{"AXIS_X", "AXIS_Y", "AXIS_Z"};
@@ -253,10 +321,29 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   const auto homing = homing_required(ini);
   if (!homing)
     return std::unexpected(homing.error());
-  constexpr std::array<const char*, 3> joints{"JOINT_0", "JOINT_1", "JOINT_2"};
-  const bool home_all = std::ranges::all_of(joints, [&](const char* joint) -> bool {
-    return ini.text(joint, "HOME_SEQUENCE").has_value();
-  });
+  // LinuxCNC reads HOME_SEQUENCE as an integer; anything else is no sequence.
+  std::size_t joint_count = 0;
+  for (const auto& own : *joints)
+    joint_count += own.size();
+  std::vector<std::optional<int>> sequences;
+  for (std::size_t joint = 0; joint < joint_count; ++joint) {
+    const auto value = ini.real(std::format("JOINT_{}", joint).c_str(), "HOME_SEQUENCE");
+    sequences.push_back(value && std::floor(*value) == *value && std::fabs(*value) < 1000
+                            ? std::optional<int>(static_cast<int>(*value))
+                            : std::nullopt);
+  }
+  const bool home_all = std::ranges::all_of(
+      sequences, [](const std::optional<int>& sequence) -> bool { return sequence.has_value(); });
+  std::array<bool, 3> home_axis{};
+  for (std::size_t i = 0; i < home_axis.size(); ++i) {
+    const auto& own = joints->at(i);
+    const auto first = sequences.at(static_cast<std::size_t>(own.front()));
+    home_axis[i] = own.size() == 1 || (first && *first < 0 &&
+                                       std::ranges::all_of(own, [&](int joint) -> bool {
+                                         return sequences.at(static_cast<std::size_t>(joint)) ==
+                                                first;
+                                       }));
+  }
   HalSignals signals;
   for (const auto& [key, wired] : {std::pair{"SPINDLE_RPM_SIGNAL", &signals.spindle_rpm},
                                    std::pair{"SPINDLE_AT_SPEED_SIGNAL", &signals.spindle_at_speed},
@@ -344,6 +431,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   if (!manual_tool_change)
     return std::unexpected(manual_tool_change.error());
 
+  Limits limits{jog_ceiling, axis_jog, feed, spindle_min, spindle_max, *rpm, *homing};
+  for (std::size_t i = 0; i < limits.axis_motors.size(); ++i)
+    limits.axis_motors[i] = static_cast<int>(joints->at(i).size());
+
   const auto path = [&](const char* section, const char* key) -> std::string {
     const auto value = ini.text(section, key);
     return value && !value->empty() ? absolute(directory, *value) : std::string();
@@ -360,8 +451,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .axes = {Axis::x, Axis::y, Axis::z},
       .travel = travel,
       .jog_increments = std::move(*increments),
-      .limits = Limits{jog_ceiling, axis_jog, feed, spindle_min, spindle_max, *rpm, *homing},
+      .limits = limits,
+      .axis_joints = std::move(*joints),
       .home_all_configured = home_all,
+      .home_axis_configured = home_axis,
       .signals = signals,
       .tool_table = path("EMCIO", "TOOL_TABLE"),
       .parameter_file = path("RS274NGC", "PARAMETER_FILE"),

@@ -36,8 +36,11 @@ struct MachineConfig {
   // [TRAJ] LINEAR_UNITS: the unit of every length in EMC_STAT and in jog commands.
   LengthUnit machine_units;
   double millimetres_per_unit;
-  // The only machine accepted: X, Y, Z, in the order of every per-axis array.
+  // The only axes accepted: X, Y, Z, in the order of every per-axis array.
   std::array<Axis, 3> axes;
+  // The joints of X, Y and Z, from [TRAJ] COORDINATES as trivkins assigns them: one each on a
+  // mill (X Y Z: 0, 1, 2), two on a gantry axis (X Y Y Z: X 0, Y 1 and 2, Z 3).
+  std::array<std::vector<int>, 3> axis_joints{{{0}, {1}, {2}}};
   // [AXIS_X], [AXIS_Y], [AXIS_Z] MIN_LIMIT and MAX_LIMIT.
   std::array<Travel, 3> travel;
   // [DISPLAY] INCREMENTS in millimetres, in the order given; empty when not configured.
@@ -52,6 +55,11 @@ struct MachineConfig {
   // Every joint has a [JOINT_n] HOME_SEQUENCE. LinuxCNC's "home all" homes only joints that have
   // one and reports nothing about the others, so without it axes are homed one by one.
   bool home_all_configured;
+  // Per axis: homing it alone is configured. Always for an axis with one joint. For an axis with
+  // more, only when they share one negative [JOINT_n] HOME_SEQUENCE: LinuxCNC then homes them
+  // all on a request for one, each to its own switch (which squares a gantry), and ends them
+  // together. Homing one joint of the axis alone would rack it.
+  std::array<bool, 3> home_axis_configured{true, true, true};
   // [COFFEECNC] SPINDLE_RPM_SIGNAL, SPINDLE_AT_SPEED_SIGNAL, PROBE_SIGNAL: `yes` where the
   // machine's HAL files connect that pin of the coffeecnc component. Absent means not connected.
   HalSignals signals;
@@ -81,8 +89,9 @@ struct MachineConfig {
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the
-// machine is not one this adapter drives: only a mill with [TRAJ] COORDINATES X Y Z, three joints
-// and trivial kinematics (joint n is axis n) is supported, in millimetres or inches.
+// machine is not one this adapter drives: only X, Y and Z axes with trivial kinematics (trivkins)
+// are supported, one joint per letter of [TRAJ] COORDINATES (a gantry repeats one: X Y Y Z), in
+// millimetres or inches.
 [[nodiscard]] auto load_machine_config(const std::string& ini_file)
     -> std::expected<MachineConfig, std::string>;
 

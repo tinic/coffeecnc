@@ -50,7 +50,7 @@ check missing_ini_is_reported $? "$(detail)"
 "$runner" -n -d "$work/sim" /bin/true >/dev/null || exit 125
 sed 's/^COORDINATES = X Y Z/COORDINATES = X Z/' "$work/sim/coffeecnc_sim.ini" >"$work/sim/lathe.ini"
 run -ini "$work/sim/lathe.ini"
-[ "$code" = 1 ] && said 'coffeecnc: \[TRAJ\] COORDINATES is "XZ": only an X Y Z mill is supported'
+[ "$code" = 1 ] && said 'coffeecnc: \[TRAJ\] COORDINATES is "X Z": X, Y and Z are all required'
 check unsupported_machine_is_refused $? "$(detail)"
 
 run -ini "$work/sim/coffeecnc_sim.ini" --ui "$work/no-panel"

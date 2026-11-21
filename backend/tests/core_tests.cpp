@@ -244,6 +244,24 @@ void jog_constraints() {
   require(!policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed,
           "other axis homing prevents manual jog");
 }
+void rotary_homing_gates() {
+  CommandPolicy policy{simulator_limits()};
+  auto s = ready();
+  auto& rotary = s.rotary_axes[1];
+  rotary.enabled = true;
+  const Jog jog{Axis::x, 1, 100, true};
+  require(!policy.evaluate(Mdi{"G0 X10"}, s).allowed &&
+              policy.evaluate(jog, s).jog_space == JogSpace::joint,
+          "an unhomed B axis blocks MDI and keeps XYZ jogs in joint space");
+  rotary.homing = true;
+  require(!policy.evaluate(jog, s).allowed, "B homing blocks an XYZ jog");
+  rotary.homing = false;
+  rotary.homed = true;
+  require(policy.evaluate(Mdi{"G0 X10"}, s).allowed &&
+              policy.evaluate(jog, s).jog_space == JogSpace::axis,
+          "homing B completes the homing requirements");
+}
+
 // Y driven by two motors, as on a gantry router: one joint alone would rack it.
 void gantry_jogs() {
   Limits limits{3000, 1.2, 0.5, 1.2, 24000};
@@ -452,6 +470,7 @@ auto main() -> int {
     axis_jog_ceilings();
     stops_survive_lost_state();
     jog_constraints();
+    rotary_homing_gates();
     gantry_jogs();
     hostile_values();
     independent_jog_leases();

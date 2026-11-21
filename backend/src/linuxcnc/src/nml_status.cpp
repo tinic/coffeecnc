@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <format>
 #include <iterator>
+#include <limits>
 #include <numbers>
 #include <thread>
 #include <utility>
@@ -43,6 +44,10 @@ constexpr double seconds_per_minute = 60;
 
 auto xyz(const EmcPose& pose) -> std::array<double, 3> {
   return {pose.tran.x, pose.tran.y, pose.tran.z};
+}
+
+auto abc(const EmcPose& pose) -> std::array<double, 3> {
+  return {pose.a, pose.b, pose.c};
 }
 
 } // namespace
@@ -95,13 +100,13 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     work[0] = x;
     work[1] = y;
   }
-  for (std::size_t i = 0; i < c.axes.size(); ++i) {
-    // Trivial kinematics, checked when the configuration was loaded. A gantry axis has more than
-    // one joint: it is homed when all of them are, and homing, on a limit or moving with any.
-    auto& axis = c.axes[i];
+  // Trivial kinematics: a grouped axis is homed when all of its joints are, and moving,
+  // homing or on a limit when any of its joints are.
+  const auto read_axis = [&](AxisState& axis, std::size_t index, std::span<const int> joints,
+                             double position, double scale) {
     axis.enabled = true;
     axis.homed = true;
-    for (const int number : config.axis_joints.at(i)) {
+    for (const int number : joints) {
       const auto& joint = motion.joint[number];
       axis.homed = axis.homed && joint.homed != 0;
       axis.homing = axis.homing || joint.homing != 0;
@@ -109,15 +114,41 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
           axis.on_hard_limit || joint.minHardLimit != 0 || joint.maxHardLimit != 0;
       moving = moving || joint.velocity != 0;
     }
-    axis.machine = machine[i] * mm;
-    axis.min_limit = motion.axis[i].minPositionLimit * mm;
-    axis.max_limit = motion.axis[i].maxPositionLimit * mm;
-    moving = moving || motion.axis[i].velocity != 0;
+    axis.machine = position * scale;
+    axis.min_limit = motion.axis[index].minPositionLimit * scale;
+    axis.max_limit = motion.axis[index].maxPositionLimit * scale;
+    moving = moving || motion.axis[index].velocity != 0;
+  };
+  for (std::size_t i = 0; i < c.axes.size(); ++i) {
+    read_axis(c.axes[i], i, config.axis_joints[i], machine[i], mm);
     out.work[i] = (work[i] - g92[i]) * mm;
     out.dtg[i] = dtg[i] * mm;
     out.g5x[i] = g5x[i] * mm;
     out.g92[i] = g92[i] * mm;
     out.tool_offset[i] = tool[i] * mm;
+  }
+  // NML's angular scale is machine units per degree, independent of G20/G21.
+  const double angular_units = motion.traj.angularUnits;
+  const double degrees = angular_units > 0 && std::isfinite(angular_units)
+                             ? 1 / angular_units
+                             : std::numeric_limits<double>::quiet_NaN();
+  const auto rotary_machine = abc(motion.traj.actualPosition);
+  const auto rotary_g5x = abc(task.g5x_offset);
+  const auto rotary_g92 = abc(task.g92_offset);
+  const auto rotary_tool = abc(task.toolOffset);
+  const auto rotary_dtg = abc(motion.traj.dtg);
+  for (std::size_t i = 0; i < c.rotary_axes.size(); ++i) {
+    if (config.rotary_joints[i].empty())
+      continue;
+    read_axis(c.rotary_axes[i], i + c.axes.size(), config.rotary_joints[i],
+              rotary_machine[i], degrees);
+    const double relative =
+        (rotary_machine[i] - rotary_tool[i] - rotary_g5x[i] - rotary_g92[i]) * degrees;
+    const double remaining = rotary_dtg[i] * degrees;
+    if (std::isfinite(relative))
+      out.rotary_work[i] = relative;
+    if (std::isfinite(remaining))
+      out.rotary_dtg[i] = remaining;
   }
   c.in_position = !moving;
   c.program_loaded = task.file[0] != '\0';
@@ -178,6 +209,13 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
         out.paused_z_still =
             out.paused_z_still && std::abs(motion.joint[joint].velocity * mm) < rest_mm_s;
     }
+    for (std::size_t i = 0; i < config.rotary_joints.size(); ++i) {
+      if (config.rotary_joints[i].empty())
+        continue;
+      out.paused_z_still = out.paused_z_still && motion.axis[i + c.axes.size()].velocity == 0;
+      for (const int joint : config.rotary_joints[i])
+        out.paused_z_still = out.paused_z_still && motion.joint[joint].velocity == 0;
+    }
     // LinuxCNC 2.9's NML motion status does not serialize the external-offset pose.
     // Read applied offset from HAL; the NML axis position independently checks the move.
     if (view && view->paused_z) {
@@ -195,8 +233,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       if (link != Link::live || c.machine != MachineState::on || !motion.traj.enabled ||
           c.mode != TaskMode::automatic || c.interp != InterpState::paused || !out.paused)
         return "Pause a running program before jogging Z.";
-      if (std::ranges::any_of(c.axes,
-                              [](const AxisState& axis) { return !axis.homed || axis.homing; }))
+      if (c.any_enabled_axis([](const AxisState& axis) { return !axis.homed || axis.homing; }))
         return "Home all axes before jogging Z while paused.";
       if (c.requested_tool)
         return "Finish the tool change before jogging Z.";
@@ -204,7 +241,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
           view->probe_cycle_active || (view->probe_input && *view->probe_input))
         return "The paused Z motion interlock is open.";
       if (feedback->limited || motion.on_soft_limit ||
-          std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
+          c.any_enabled_axis([](const AxisState& axis) { return axis.on_hard_limit; }))
         return "A travel limit blocks paused Z motion.";
       if (z_mm < -tolerance || z_mm > limits->lift_mm + tolerance)
         return "The active external offset is outside the paused Z range.";

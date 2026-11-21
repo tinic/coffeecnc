@@ -24,6 +24,7 @@
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/nml_status_reader.hpp>
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
@@ -5102,9 +5103,15 @@ void offset_history(Rig& rig) {
                         back ? change_text(*back) : "none", length, original.length));
     }
 
-    // codex's sequence on #185: a Restore of an X-only G92 entry while G92.2 suspends the shift
-    // must not lose the stored Y, so that G92.3 still brings it back. LinuxCNC refuses that
-    // restore; with the shift applied again, the same restore changes X only.
+    // An X-only restore must preserve omitted offsets. Cover Y on the XYZ mill and A on
+    // the rotary mill so an implementation watching only XYZ cannot pass both profiles.
+    const bool rotary = !rig.config.rotary_joints[0].empty();
+    const auto a_shift = [&]() -> double {
+      const auto reading = rig.status();
+      const auto work = reading.rotary_work[0];
+      return work ? reading.controller.rotary_axes[0].machine - *work
+                  : std::numeric_limits<double>::quiet_NaN();
+    };
     const auto g92_entry = [&](std::uint64_t after) -> std::optional<HistoryEntry> {
       std::optional<HistoryEntry> found;
       rig.pump_until(5s, [&]() -> bool {
@@ -5127,7 +5134,7 @@ void offset_history(Rig& rig) {
     };
     // Each line's own entry is awaited before the next line.
     const auto before_shift = last_id();
-    const auto shifted = mdi_line("G52 X2 Y9");
+    const auto shifted = mdi_line(rotary ? "G52 X2 A30" : "G52 X2 Y9");
     const auto shift = g92_entry(before_shift);
     const auto before_x_only = shift ? shift->id : last_id();
     const auto moved = mdi_line("G52 X4");
@@ -5149,16 +5156,19 @@ void offset_history(Rig& rig) {
     const auto resumed = mdi_line("G92.3");
     const auto resume = g92_entry(before_resume);
     const auto resumed_g92 = g92_text();
+    const double resumed_a = a_shift();
     check("history_g92_restore_keeps_a_suspended_shift",
           shifted == "accepted" && moved == "accepted" && suspended == "accepted" && x_only &&
               x_only->changes.size() == 1 && x_only->changes[0].field == HistoryField::x &&
               suspended_g92 == "0.0000,0.0000,0.0000" && refused_g92 == suspended_g92 &&
-              nothing_restored && resumed == "accepted" && resumed_g92 == "4.0000,9.0000,0.0000",
+              nothing_restored && resumed == "accepted" &&
+              resumed_g92 == (rotary ? "4.0000,0.0000,0.0000" : "4.0000,9.0000,0.0000") &&
+              (!rotary || near(resumed_a, 30)),
           std::format("{} {} {} entry={} suspended={} restore={} refused={} nothing={} {} "
-                      "resumed={}",
+                      "resumed={} a_shift={:.4f}",
                       shifted, moved, suspended, x_only ? change_text(*x_only) : "none",
                       suspended_g92, refused.first, refused_g92, nothing_restored, resumed,
-                      resumed_g92));
+                      resumed_g92, resumed_a));
     rig.pump(OffsetHistoryStore::grace + 500ms);
     const auto before_applied = resume ? resume->id : last_id();
     const auto applied = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
@@ -5169,9 +5179,11 @@ void offset_history(Rig& rig) {
     const auto applied_g92 = g92_text();
     check("history_g92_restore_changes_its_axes_only",
           applied.first == "accepted" && restored_x &&
-              restored_x->source == HistorySource::restore && applied_g92 == "2.0000,9.0000,0.0000",
-          std::format("{} {} g92={}", applied.first + " " + applied.second,
-                      restored_x ? change_text(*restored_x) : "none", applied_g92));
+              restored_x->source == HistorySource::restore &&
+              applied_g92 == (rotary ? "2.0000,0.0000,0.0000" : "2.0000,9.0000,0.0000") &&
+              (!rotary || near(a_shift(), 30)),
+          std::format("{} {} g92={} a_shift={:.4f}", applied.first + " " + applied.second,
+                      restored_x ? change_text(*restored_x) : "none", applied_g92, a_shift()));
     static_cast<void>(mdi_line("G92.1"));
     rig.pump(300ms);
     const auto shown = session.shown();
@@ -5189,10 +5201,46 @@ void offset_history(Rig& rig) {
   rig.start();
 }
 
+void rotary_readouts(Rig& rig) {
+  const auto all = rig.send(R"("type":"home","axis":"all")");
+  const bool homed = rig.pump_until(25s, [&] {
+    return all_homed(rig) &&
+           std::ranges::all_of(rig.snapshot().rotary_axes, [](const auto& axis) {
+             return axis.enabled && axis.homed && !axis.homing;
+           });
+  });
+  check("rotary_home_all", all.accepted() && homed, all.text());
+  if (!homed)
+    return;
+  rig.settle();
+  const auto offsets = rig.send(R"("type":"mdi","text":"G10 L2 P1 A10 B20 C-15")");
+  rig.settle();
+  const auto turn = rig.send(R"("type":"mdi","text":"G54 G90 G0 A30 B45 C60")");
+  const bool reached = rig.pump_until(15s, [&] {
+    const auto value = rig.status();
+    const auto& abc = value.controller.rotary_axes;
+    return value.controller.in_position && near(abc[0].machine, 40) &&
+           near(abc[1].machine, 65) && near(abc[2].machine, 45);
+  });
+  const auto status = to_panel_status(rig.status(), rig.config, {}, 0);
+  check("rotary_work_and_machine_readouts",
+        offsets.accepted() && turn.accepted() && reached && status.rotary_axes.size() == 3 &&
+            status.rotary_axes[0].axis == 'a' && near(status.rotary_axes[0].work.value_or(-999), 30) &&
+            status.rotary_axes[1].axis == 'b' && near(status.rotary_axes[1].work.value_or(-999), 45) &&
+            status.rotary_axes[2].axis == 'c' && near(status.rotary_axes[2].work.value_or(-999), 60),
+        offsets.text() + " " + turn.text());
+  rig.settle();
+  const auto jog = rig.send(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)");
+  const bool linear_jog = rig.pump_until(5s, [&] {
+    return near(rig.snapshot().axes[0].machine, 1) && rig.snapshot().in_position;
+  });
+  check("rotary_configuration_xyz_jog", jog.accepted() && linear_jog, jog.text());
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
-         bool gantry_only, bool history_only) -> int {
+         bool gantry_only, bool history_only, bool rotary_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5266,6 +5314,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (rotary_only) {
+    rotary_readouts(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (gantry_only) {
     gantry(rig);
     power_off(rig);
@@ -5407,6 +5460,7 @@ auto main(int argc, char** argv) -> int {
   bool whole_job_only = false;
   bool gantry_only = false;
   bool history_only = false;
+  bool rotary_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5426,6 +5480,7 @@ auto main(int argc, char** argv) -> int {
     // The scenario for run.sh -p gantry.
     gantry_only = gantry_only || std::string_view(argv[i]) == "gantry";
     history_only = history_only || std::string_view(argv[i]) == "offset-history";
+    rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5433,11 +5488,11 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|gantry|jog-contact|"
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|gantry|rotary|jog-contact|"
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only);
+               history_only, rotary_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

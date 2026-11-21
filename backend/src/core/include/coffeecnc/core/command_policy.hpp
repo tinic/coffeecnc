@@ -5,6 +5,7 @@
 #include <coffeecnc/core/operator_settings.hpp>
 #include <coffeecnc/core/tool_models.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -58,6 +59,11 @@ struct ControllerState {
   TaskMode mode{TaskMode::manual};
   InterpState interp{InterpState::idle};
   std::array<AxisState, 3> axes{};
+  std::array<AxisState, 3> rotary_axes{}; // A, B, C, in degrees.
+  [[nodiscard]] auto any_enabled_axis(const auto& matches) const -> bool {
+    const auto check = [&](const AxisState& axis) { return axis.enabled && matches(axis); };
+    return std::ranges::any_of(axes, check) || std::ranges::any_of(rotary_axes, check);
+  }
   bool in_position{true};
   bool program_loaded{};
   int tool_in_spindle{};

@@ -3,6 +3,8 @@
 // table and load counts the test fills, and files it writes. No LinuxCNC runs.
 //   coffeecnc_panel_mapping_tests <scratch directory>
 
+#include "nml_status.hpp"
+
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
@@ -911,6 +913,43 @@ void touched_off_marks() {
           "a deleted tool is not restored");
 }
 
+void rotary_readouts() {
+  auto config = machine();
+  config.millimetres_per_unit = 25.4;
+  config.rotary_joints = {{{4}, {}, {3, 5}}};
+  EMC_STAT raw{};
+  raw.motion.traj.angularUnits = 0.5;
+  raw.motion.traj.inpos = 1;
+  raw.motion.traj.actualPosition.a = 45;
+  raw.motion.traj.actualPosition.c = -15;
+  raw.motion.traj.dtg.a = 5;
+  raw.task.g5x_offset.a = 10;
+  raw.task.g92_offset.a = 2.5;
+  raw.task.toolOffset.a = 1;
+  raw.task.rotation_xy = 45;
+  raw.motion.joint[3].homed = 1;
+  raw.motion.joint[4].homed = 1;
+  raw.motion.joint[5].homing = 1;
+  raw.motion.joint[5].velocity = 1;
+  raw.motion.joint[5].maxHardLimit = 1;
+  const auto reading = to_status(raw, config, nullptr, Link::live);
+  const auto panel = to_panel_status(reading, config, {}, 0);
+  require(panel.rotary_axes.size() == 2, "only configured rotary axes appear");
+  const auto& a = panel.rotary_axes[0];
+  const auto& c = panel.rotary_axes[1];
+  require(a.axis == 'a' && a.homed && !a.homing && a.machine == 90 && a.work == 63 &&
+              a.dtg == 10,
+          "A reports work, machine and distance in degrees on an inch machine");
+  require(c.axis == 'c' && !c.homed && c.homing && c.machine == -30 && c.on_hard_limit,
+          "C groups its joints and reports homing and limit state");
+  require(!panel.motion.in_position, "rotary joint motion counts even with XYZ stationary");
+  raw.motion.traj.angularUnits = 0;
+  const auto invalid = to_panel_status(to_status(raw, config, nullptr, Link::live), config, {}, 0);
+  require(!invalid.rotary_axes[0].machine && !invalid.rotary_axes[0].work &&
+              !invalid.rotary_axes[0].dtg,
+          "unavailable angular scale produces no reading");
+}
+
 auto main(int argc, char** argv) -> int {
   try {
     if (argc != 2)
@@ -919,6 +958,7 @@ auto main(int argc, char** argv) -> int {
     std::filesystem::create_directories(scratch);
     hello_from_the_configuration();
     status_fields();
+    rotary_readouts();
     optional_signals();
     prepared_tool();
     waits();

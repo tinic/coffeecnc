@@ -3,8 +3,8 @@ import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, ref, watch } from 'vue'
 import { startDialog } from '../dialogs'
-import { axes, live, mdiBlock, panel, reported, send } from '../machine'
-import type { AxisLetter, AxisStatus } from '../protocol'
+import { axes, live, mdiBlock, panel, reported, rotaryAxes, send } from '../machine'
+import type { AxisLetter, AxisStatus, RotaryAxisStatus } from '../protocol'
 import { formatLength, fromDisplay, wcsName } from '../units'
 import AppIcon from './AppIcon.vue'
 import NumberDialog from './NumberDialog.vue'
@@ -51,10 +51,15 @@ function confirmQuick(): void {
   }
   quick.value = null
 }
-function marker(axis: AxisStatus): string {
+function marker(axis: AxisStatus | RotaryAxisStatus): string {
   if (axis.homing) return 'Homing'
   if (axis.on_hard_limit) return 'On limit'
   return axis.homed ? '' : 'Not homed'
+}
+function formatAngle(degrees: number | null): string {
+  if (degrees === null || !Number.isFinite(degrees)) return '—'
+  const value = degrees.toFixed(3)
+  return `${value === '-0.000' ? '0.000' : value}°`
 }
 function openTouchOff(axis: AxisStatus): void {
   if (touchBlock.value !== null || !Number.isFinite(axis.work)) return
@@ -84,7 +89,7 @@ watch([axes, touchBlock], () => {
 </script>
 
 <template>
-  <section class="dro" :class="{ distrust: !live }" aria-label="Coordinate readout">
+  <section class="dro" :class="{ distrust: !live, 'has-rotary': rotaryAxes.length > 0 }" aria-label="Coordinate readout">
     <div class="basis">
       <button v-tooltip="`Switch to ${nextBasisLabel} coordinates`" class="btn basis-toggle" type="button" :aria-label="`Coordinate view: ${basisLabel}. Switch to ${nextBasisLabel}`" @click="cycleBasis">
         <span>{{ basisLabel }}<small v-if="basis === 'work' && shifted" class="g92">G92/G52 active</small></span>
@@ -118,6 +123,13 @@ watch([axes, touchBlock], () => {
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
       <span class="tool-length">Length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
+    <div v-if="rotaryAxes.length" class="rotary" role="group" aria-label="Rotary position in degrees">
+      <div v-for="axis in rotaryAxes" :key="axis.axis" class="rotary-axis">
+        <span class="rotary-letter mono">{{ axis.axis.toUpperCase() }}</span>
+        <span class="rotary-angle mono">{{ formatAngle(axis[basis]) }}</span>
+        <span v-if="!live || marker(axis)" class="rotary-marker">{{ !live ? 'Last reported' : marker(axis) }}</span>
+      </div>
+    </div>
     <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
     <CoordinateConfirm v-if="quick && quickValues" :axis="quick.axis" :wcs="wcs" :current="quickValues.current" :target="quickValues.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />
   </section>
@@ -125,6 +137,14 @@ watch([axes, touchBlock], () => {
 
 <style scoped>
 .dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.dro.has-rotary { flex-wrap: wrap; }
+.rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+.rotary-axis { display: grid; grid-template-columns: 18px minmax(104px, auto) 62px; align-items: baseline; gap: 10px; padding: 0 12px; white-space: nowrap; }
+.rotary-axis + .rotary-axis { border-left: 1px solid var(--line); }
+.rotary-letter, .rotary-angle { font-size: 19px; font-weight: 500; }
+.rotary-angle { text-align: right; }
+.rotary-marker { color: var(--warn); font-size: 10px; }
+.distrust .rotary-angle { color: var(--text-faint); }
 .basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }
 .basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; border-color: var(--line-strong); font-size: 14px; font-weight: 500; white-space: nowrap; }
 .basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }

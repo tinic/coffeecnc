@@ -79,6 +79,17 @@ export interface Hello {
   max_spindle_override: number
 }
 
+export interface RotaryAxisStatus {
+  axis: 'a' | 'b' | 'c'
+  homed: boolean
+  homing: boolean
+  /** Degrees, independent of the length display unit. */
+  machine: number | null
+  work: number | null
+  dtg: number | null
+  on_hard_limit: boolean
+}
+
 export interface AxisStatus {
   axis: AxisLetter
   homed: boolean
@@ -171,6 +182,7 @@ export interface Status {
   mode: TaskMode
   interp: InterpState
   axes: AxisStatus[]
+  rotary_axes?: RotaryAxisStatus[]
   offsets: Offsets
   motion: MotionStatus
   spindle: SpindleStatus

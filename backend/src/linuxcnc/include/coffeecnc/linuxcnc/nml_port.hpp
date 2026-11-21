@@ -30,6 +30,8 @@ struct NmlStatus {
   Vec3 commanded_position{}; // trajectory's controlled point in machine coordinates, mm
   std::array<double, 3> work{}; // machine position less G5x, G92 and tool offset, rotated
   std::array<double, 3> dtg{};
+  std::array<std::optional<double>, 3> rotary_work{}; // degrees
+  std::array<std::optional<double>, 3> rotary_dtg{};
   std::array<double, 3> g5x{};
   std::array<double, 3> g92{};
   std::array<double, 3> tool_offset{};

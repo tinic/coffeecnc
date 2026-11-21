@@ -2194,8 +2194,10 @@ void offset_history() {
           "G92 shifts are in the history");
   rig.accepted(std::format(R"("type":"restore_offset","entry":{})", only_x.id));
   rig.accepted(std::format(R"("type":"restore_offset","entry":{})", both.id));
-  rig.acted({"mdi G52 X[2+0/[#5210+[1 AND [#5212 EQ 0] AND [#5213 EQ 0]]]]",
-             "mdi G52 X[0+0/[#5210+[1 AND [#5213 EQ 0]]]] Y0"},
+  rig.acted({"mdi G52 X[2+0/[#5210+[1 AND [#5212 EQ 0] AND [#5213 EQ 0]"
+             " AND [#5214 EQ 0] AND [#5215 EQ 0] AND [#5216 EQ 0]]]]",
+             "mdi G52 X[0+0/[#5210+[1 AND [#5213 EQ 0]"
+             " AND [#5214 EQ 0] AND [#5215 EQ 0] AND [#5216 EQ 0]]]] Y0"},
             "G52 names the restored axes; a suspended stored value elsewhere refuses it");
 
   // A work system that was never active: written, but with nothing to restore.

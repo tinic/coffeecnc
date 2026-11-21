@@ -48,6 +48,8 @@ struct MachineConfig {
   // The joints of X, Y and Z, from [TRAJ] COORDINATES as trivkins assigns them: one each on a
   // mill (X Y Z: 0, 1, 2), two on a gantry axis (X Y Y Z: X 0, Y 1 and 2, Z 3).
   std::array<std::vector<int>, 3> axis_joints{{{0}, {1}, {2}}};
+  // A, B and C in order. An empty group means the axis is absent.
+  std::array<std::vector<int>, 3> rotary_joints{};
   // [AXIS_X], [AXIS_Y], [AXIS_Z] MIN_LIMIT and MAX_LIMIT.
   std::array<Travel, 3> travel;
   // [DISPLAY] INCREMENTS in millimetres, in the order given; empty when not configured.

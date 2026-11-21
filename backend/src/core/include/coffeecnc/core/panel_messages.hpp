@@ -83,6 +83,17 @@ struct AxisStatus {
   friend auto operator==(const AxisStatus&, const AxisStatus&) -> bool = default;
 };
 
+struct RotaryAxisStatus {
+  char axis{'a'};
+  bool homed{};
+  bool homing{};
+  std::optional<double> machine; // degrees
+  std::optional<double> work;
+  std::optional<double> dtg;
+  bool on_hard_limit{};
+  friend auto operator==(const RotaryAxisStatus&, const RotaryAxisStatus&) -> bool = default;
+};
+
 struct Offsets {
   int wcs{1}; // 1 is G54 ... 9 is G59.3
   Vec3 g5x{};
@@ -179,6 +190,7 @@ struct Status {
   TaskMode mode{TaskMode::manual};
   InterpState interp{InterpState::idle};
   std::vector<AxisStatus> axes;
+  std::vector<RotaryAxisStatus> rotary_axes{};
   Offsets offsets;
   MotionStatus motion;
   SpindleStatus spindle;

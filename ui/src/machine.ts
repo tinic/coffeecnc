@@ -9,7 +9,7 @@ import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
 import { connectionBlock, machineBlock } from './machine-block'
 import { requiresHoming } from './machine-capabilities'
-import type { AxisStatus, CommandBody, Status, Tool } from './protocol'
+import type { AxisStatus, CommandBody, RotaryAxisStatus, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
 
 const instance = createPanel({ transport: createTransport() })
@@ -70,11 +70,13 @@ export const reported: ComputedRef<Status | null> = computed(() => (panel.link =
 
 export const axes: ComputedRef<AxisStatus[]> = computed(() => reported.value?.axes ?? [])
 
+export const rotaryAxes: ComputedRef<RotaryAxisStatus[]> = computed(() => reported.value?.rotary_axes ?? [])
+const configuredAxes = computed(() => [...axes.value, ...rotaryAxes.value])
 export const allHomed: ComputedRef<boolean> = computed(
-  () => axes.value.length > 0 && axes.value.every((axis) => axis.homed),
+  () => configuredAxes.value.length > 0 && configuredAxes.value.every((axis) => axis.homed && !axis.homing),
 )
 
-export const homingActive: ComputedRef<boolean> = computed(() => axes.value.some((axis) => axis.homing))
+export const homingActive: ComputedRef<boolean> = computed(() => configuredAxes.value.some((axis) => axis.homing))
 export const homingRequired: ComputedRef<boolean> = computed(() => requiresHoming(panel.hello))
 
 export function findTool(number: number): Tool | null {

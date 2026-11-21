@@ -1,6 +1,7 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <sstream>
@@ -95,6 +96,21 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
                            .min_limit = known ? axis.min_limit : config.travel.at(i).min,
                            .max_limit = known ? axis.max_limit : config.travel.at(i).max,
                            .on_hard_limit = axis.on_hard_limit});
+  }
+  constexpr std::string_view rotary_letters = "abc";
+  for (std::size_t i = 0; i < config.rotary_joints.size(); ++i) {
+    if (config.rotary_joints[i].empty())
+      continue;
+    const auto& axis = controller.rotary_axes[i];
+    status.rotary_axes.push_back({
+        .axis = rotary_letters[i],
+        .homed = axis.homed,
+        .homing = axis.homing,
+        .machine = known && std::isfinite(axis.machine) ? std::optional{axis.machine} : std::nullopt,
+        .work = known ? reading.rotary_work[i] : std::nullopt,
+        .dtg = known ? reading.rotary_dtg[i] : std::nullopt,
+        .on_hard_limit = axis.on_hard_limit,
+    });
   }
   status.offsets = {.wcs = known ? reading.wcs : 1,
                     .g5x = reading.g5x,

@@ -524,10 +524,11 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
   const std::scoped_lock lock{mutex_};
   if (state.link != Link::live || state.machine != MachineState::on ||
       (have_status_ && now - status_at_ > status_max_age) ||
-      std::ranges::any_of(state.axes, [](const auto& axis) { return axis.homing; }) ||
+      state.any_enabled_axis([](const auto& axis) { return axis.homing; }) ||
       (have_status_ &&
-       !std::ranges::equal(state.axes, status_.axes,
-                           [](const auto& a, const auto& b) { return a.homed == b.homed; })))
+       (!std::ranges::equal(state.axes, status_.axes, {}, &AxisState::homed, &AxisState::homed) ||
+        !std::ranges::equal(state.rotary_axes, status_.rotary_axes, {},
+                            &AxisState::homed, &AxisState::homed))))
     ++setter_datum_;
   if (state.tool_in_spindle != status_.tool_in_spindle ||
       state.tool_request != status_.tool_request)
@@ -1451,17 +1452,13 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
     block = "G10 L2 P" + std::to_string(entry->number) + words;
     break;
   case HistoryTarget::g92: {
-    // G52 sets the G92 offsets themselves; G92 would set them from the present position.
-    // G52 gives an axis it does not name the offset in effect and stores that in #5211-#5213.
-    // While G92.2 suspends the shift that offset is 0: the stored value of an axis the entry
-    // does not restore would be lost, and G92.3 could not bring it back. LinuxCNC is made to
-    // refuse the whole block then: suspended (#5210 0) and such an axis stores a value, so the
-    // divisor is 0. A cleared shift stores 0; with the shift applied the offset in effect is the
-    // stored one.
-    std::string unstored; // 1 when no axis the entry leaves out stores a value
-    for (std::size_t i = 0; i < 3; ++i)
-      if (!values.at(i))
-        unstored += " AND [#521" + std::to_string(i + 1) + " EQ 0]";
+    // G52 rewrites omitted offsets with their current value. While G92.2 suspends them,
+    // that value is zero, erasing the saved shift used by G92.3. Guard omitted XYZ and
+    // all three rotary axes, which the history entry never writes.
+    std::string unstored;
+    for (std::size_t i = 0; i < 6; ++i)
+      if (i >= 3 || !values.at(i))
+        unstored += std::format(" AND [#{} EQ 0]", 5211 + i);
     block = "G52";
     for (std::size_t i = 0; i < 3; ++i) {
       if (!values.at(i))

@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include <emcmotcfg.h>
 #include <inifile.hh>
 
 namespace coffeecnc {
@@ -181,22 +182,26 @@ auto increment(std::string_view entry, double millimetres_per_unit) -> std::opti
   return *value * scale;
 }
 
-// The joints of X, Y and Z from [TRAJ] COORDINATES, [KINS] JOINTS and KINEMATICS, as trivkins
+// The joints of XYZABC from [TRAJ] COORDINATES, [KINS] JOINTS and KINEMATICS, as trivkins
 // assigns them: joint n is the n-th letter of its coordinates= (default XYZABCUVW). A letter may
-// repeat: X Y Y Z is a gantry with joints 1 and 2 on Y. Only X, Y and Z are supported.
-auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 3>, std::string> {
+// repeat: X Y Y Z is a gantry with joints 1 and 2 on Y.
+auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 6>, std::string> {
   const auto given = ini.text("TRAJ", "COORDINATES").value_or("");
   const auto coordinates = upper(without_spaces(given));
-  constexpr std::string_view letters = "XYZ";
+  constexpr std::string_view letters = "XYZABC";
   if (const auto other = coordinates.find_first_not_of(letters); other != std::string::npos)
     return std::unexpected(std::format(
-        "[TRAJ] COORDINATES is \"{}\": axis {} is not supported. Only X, Y and Z are; a letter "
+        "[TRAJ] COORDINATES is \"{}\": axis {} is not supported. Only XYZABC are; a letter "
         "may repeat for a gantry (X Y Y Z).",
         given, coordinates[other]));
-  std::array<std::vector<int>, 3> joints{};
+  if (coordinates.size() > EMCMOT_MAX_JOINTS)
+    return std::unexpected(std::format(
+        "[TRAJ] COORDINATES has more than {} joints.", EMCMOT_MAX_JOINTS));
+  std::array<std::vector<int>, 6> joints{};
   for (std::size_t joint = 0; joint < coordinates.size(); ++joint)
     joints.at(letters.find(coordinates[joint])).push_back(static_cast<int>(joint));
-  if (std::ranges::any_of(joints, [](const auto& own) -> bool { return own.empty(); }))
+  if (std::ranges::any_of(joints | std::views::take(3),
+                          [](const auto& own) -> bool { return own.empty(); }))
     return std::unexpected(std::format(
         "[TRAJ] COORDINATES is \"{}\": X, Y and Z are all required.", given));
   const auto count = ini.real("KINS", "JOINTS");
@@ -538,7 +543,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .machine_units = scale == 1 ? LengthUnit::mm : LengthUnit::inch,
       .millimetres_per_unit = scale,
       .axes = {Axis::x, Axis::y, Axis::z},
-      .axis_joints = *joints,
+      .axis_joints = {std::move(joints->at(0)), std::move(joints->at(1)),
+                      std::move(joints->at(2))},
+      .rotary_joints = {std::move(joints->at(3)), std::move(joints->at(4)),
+                        std::move(joints->at(5))},
       .travel = travel,
       .jog_increments = std::move(*increments),
       .limits = limits,

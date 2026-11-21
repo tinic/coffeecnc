@@ -155,6 +155,9 @@ if(BUILD_TESTING)
       add_executable(coffeecnc_panel_mapping_tests tests/panel_mapping_tests.cpp)
       target_link_libraries(coffeecnc_panel_mapping_tests PRIVATE coffeecnc_linuxcnc
         coffeecnc_project_options)
+      target_include_directories(coffeecnc_panel_mapping_tests PRIVATE src/linuxcnc/src)
+      target_include_directories(coffeecnc_panel_mapping_tests SYSTEM PRIVATE
+        ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       coffeecnc_enable_analyzers(coffeecnc_panel_mapping_tests)
       add_test(NAME panel_mapping COMMAND coffeecnc_panel_mapping_tests ${PROJECT_BINARY_DIR})
       # The tool change handshake between the control thread and the others. No HAL runs.
@@ -260,6 +263,18 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
       set_tests_properties(linuxcnc_sim_g0759 PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 700)
+      foreach(units mm inch)
+        add_test(NAME linuxcnc_sim_rotary_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p rotary -u ${units} -t 50 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_rotary_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> rotary)
+        set_tests_properties(linuxcnc_sim_rotary_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 380)
+      endforeach()
+      add_test(NAME linuxcnc_offset_history_rotary COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p rotary -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_history_rotary
+        $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
+      set_tests_properties(linuxcnc_offset_history_rotary PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
       # A gantry router: two motors on Y (COORDINATES X Y Y Z).
       add_test(NAME linuxcnc_sim_gantry COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p gantry -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_gantry

@@ -13,7 +13,7 @@ vi.mock('../src/machine', async () => {
   const { computed, reactive, ref } = await import('vue')
   const panel = reactive({ hello: null, unit: 'mm', tab: 'manual', status: null, link: 'live' }) as typeof import('../src/machine').panel
   return { panel, reported: computed(() => panel.status), axes: computed(() => panel.status?.axes ?? []),
-    live: computed(() => panel.link === 'live'), mdiBlock: ref(null), send: vi.fn() }
+    rotaryAxes: computed(() => panel.status?.rotary_axes ?? []), live: computed(() => panel.link === 'live'), mdiBlock: ref(null), send: vi.fn() }
 })
 const fixture = defineComponent({
   components: { DroPanel, NumericEntryDialog },
@@ -63,6 +63,27 @@ describe('touching the coordinate readout', () => {
     await nextTick()
     expect(view.text()).toBe('Work · G55')
     expect(view.attributes('aria-label')).toContain('Switch to Machine')
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('shows only configured rotary axes in degrees in every coordinate basis', async () => {
+    expect(wrapper.find('.rotary').exists()).toBe(false)
+    if (!panel.status) throw new Error('Missing status')
+    panel.status.rotary_axes = [
+      { axis: 'a', homed: true, homing: false, work: 32.5, machine: 90, dtg: -2, on_hard_limit: false },
+      { axis: 'c', homed: false, homing: true, work: null, machine: null, dtg: null, on_hard_limit: false },
+    ]
+    await nextTick()
+    expect(wrapper.findAll('.rotary-letter').map((label) => label.text())).toEqual(['A', 'C'])
+    expect(wrapper.findAll('.rotary-angle').map((value) => value.text())).toEqual(['32.500°', '—'])
+    expect(wrapper.get('.rotary-marker').text()).toBe('Homing')
+    expect(wrapper.find('.rotary button').exists()).toBe(false)
+    await wrapper.get('.units button:last-child').trigger('click')
+    expect(wrapper.get('.rotary-angle').text()).toBe('32.500°')
+    await wrapper.get('.basis-toggle').trigger('click')
+    expect(wrapper.get('.rotary-angle').text()).toBe('90.000°')
+    await wrapper.get('.basis-toggle').trigger('click')
+    expect(wrapper.get('.rotary-angle').text()).toBe('-2.000°')
     expect(send).not.toHaveBeenCalled()
   })
 

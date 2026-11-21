@@ -102,8 +102,8 @@ auto read_check(std::string_view line, std::optional<HelperOutput::ProgramFacts>
     if (range)
       return false;
     auto& value = range.emplace();
-    if (!finite_number(line, value.min) || !finite_number(line, value.max) ||
-        value.min < 0 || value.min > value.max)
+    if (!finite_number(line, value.min) || !finite_number(line, value.max) || value.min < 0 ||
+        value.min > value.max)
       return false;
   } else {
     return false;
@@ -271,8 +271,8 @@ auto write_check(const HelperOutput::ProgramFacts& facts) -> std::string {
   for (const int tool : facts.tools)
     out += std::format("check tool {}\n", tool);
   for (const auto& frame : facts.frames)
-    out += frame.bounds ? std::format("check wcs {} 1 {} {}\n", frame.wcs,
-                                     vec(frame.bounds->min), vec(frame.bounds->max))
+    out += frame.bounds ? std::format("check wcs {} 1 {} {}\n", frame.wcs, vec(frame.bounds->min),
+                                      vec(frame.bounds->max))
                         : std::format("check wcs {} 0\n", frame.wcs);
   if (const auto& machine = facts.machine)
     out += std::format("check machine {} {}\n", vec(machine->min), vec(machine->max));

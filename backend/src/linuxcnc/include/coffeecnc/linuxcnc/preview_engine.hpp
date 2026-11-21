@@ -78,7 +78,7 @@ struct PreviewSettings {
 //             plane, distance modes, feed mode, retract mode, motion mode G0 or G1; any other
 //             motion mode is named to the helper, which ends the preview at a block that
 //             would move by it). The tool table is the one of the inputs: this class reads
-//             none.
+//             none for interpretation. Program check reads the saved touch-off marks.
 //   private   a directory per computation with the program in `program/`, the subroutine
 //             copies in `subroutines/`, which is the only PROGRAM_PREFIX and SUBROUTINE_PATH
 //             of the private INI file, and `empty/`, the helper's working directory (the

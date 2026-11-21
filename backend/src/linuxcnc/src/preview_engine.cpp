@@ -585,8 +585,23 @@ auto unavailable(std::string text) -> PreviewOutcome {
 // only whole, valid records count, within the limits the helper was given. `ready` needs
 // both a whole result that ends `ok` and the helper's own exit with status 0: a result that
 // says it is finished is not the process having ended well.
+struct CheckToolFiles {
+  std::optional<std::string> table;
+  std::optional<std::string> touched;
+  friend auto operator==(const CheckToolFiles&, const CheckToolFiles&) -> bool = default;
+};
+
+auto check_tool_files(const std::string& table, bool fixed_setter) -> CheckToolFiles {
+  if (table.empty())
+    return {};
+  const auto sidecar = fs::path(table).parent_path() / "coffeecnc-touched-off.txt";
+  return {read_file(table, max_tool_table_bytes),
+          fixed_setter ? read_file(sidecar.string(), max_tool_table_bytes) : std::nullopt};
+}
+
 auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
-                   const HelperOutput& output, const PreviewOutcome& outcome) -> ProgramCheck {
+                   const HelperOutput& output, const PreviewOutcome& outcome,
+                   const CheckToolFiles& files) -> ProgramCheck {
   ProgramCheck check;
   const auto& facts = output.check;
   const bool complete = outcome.state == PreviewState::ready && facts.has_value();
@@ -602,13 +617,9 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
     return check;
 
   std::map<int, double> touched;
-  if (settings.reference_tool && !settings.tool_table.empty()) {
-    const auto sidecar = fs::path(settings.tool_table).parent_path() / "coffeecnc-touched-off.txt";
-    const auto saved = read_file(sidecar.string(), max_tool_table_bytes);
-    const auto table = read_file(settings.tool_table, max_tool_table_bytes);
-    if (saved && table)
-      touched = restored_touched_off(*table, *settings.reference_tool, parse_touched_off(*saved));
-  }
+  if (settings.reference_tool && files.table && files.touched)
+    touched = restored_touched_off(*files.table, *settings.reference_tool,
+                                   parse_touched_off(*files.touched));
   for (const int tool : facts->tools) {
     const auto raw = std::ranges::find_if(inputs.raw_tools, [=](const PreviewTool& row) {
       return row.index != 0 && row.number == tool;
@@ -628,10 +639,10 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   check.frames = facts->frames;
   for (const auto& frame : check.frames)
     if (!frame.available) {
-      static constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59",
-                                         "G59.1", "G59.2", "G59.3"};
+      static constexpr std::array names{"G54", "G55",   "G56",   "G57",  "G58",
+                                        "G59", "G59.1", "G59.2", "G59.3"};
       check.errors.push_back(std::format("The {} work origin could not be verified.",
-                                          names.at(static_cast<std::size_t>(frame.wcs - 1))));
+                                         names.at(static_cast<std::size_t>(frame.wcs - 1))));
     }
   check.feed = facts->feed;
   check.spindle = facts->spindle;
@@ -646,7 +657,7 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   if (facts->spindle && settings.max_spindle_rpm > 0 &&
       facts->spindle->max > settings.max_spindle_rpm)
     check.errors.push_back(std::format("The program requests {} rpm. The spindle limit is {} rpm.",
-                                      facts->spindle->max, settings.max_spindle_rpm));
+                                       facts->spindle->max, settings.max_spindle_rpm));
 
   const auto fits = [&](const std::optional<Bounds>& travel) {
     if (!facts->machine || !travel)
@@ -669,8 +680,7 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
 }
 
 auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, HelperRun& run,
-                int program_lines)
-    -> PreviewOutcome {
+                int program_lines, const CheckToolFiles& files) -> PreviewOutcome {
   if (run.how == HelperExit::not_started)
     return unavailable("The preview program could not be started.");
   auto output = parse_output(run.result, {settings.max_points + 2, program_lines});
@@ -733,7 +743,7 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
   else
     outcome.error = PreviewError{0, ending()};
   if (!inputs.restart_line)
-    outcome.check = program_check(settings, inputs, output, outcome);
+    outcome.check = program_check(settings, inputs, output, outcome, files);
   return outcome;
 }
 
@@ -876,15 +886,15 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
   request.codes = start->codes;
+  for (const auto& code : inputs.start.active_codes)
+    if (code == "G61" || code == "G61.1" || code == "G96")
+      request.codes.push_back(code);
+  if (inputs.start.spindle_speed > 0)
+    request.codes.push_back(std::format("S{:.8f}", inputs.start.spindle_speed));
+  if (inputs.start.spindle_direction != SpindleDirection::stopped)
+    request.codes.push_back(inputs.start.spindle_direction == SpindleDirection::forward ? "M3"
+                                                                                        : "M4");
   if (inputs.restart_line) {
-    for (const auto& code : inputs.start.active_codes)
-      if (code == "G61" || code == "G61.1" || code == "G96")
-        request.codes.push_back(code);
-    if (inputs.start.spindle_speed > 0)
-      request.codes.push_back(std::format("S{:.8f}", inputs.start.spindle_speed));
-    if (inputs.start.spindle_direction != SpindleDirection::stopped)
-      request.codes.push_back(inputs.start.spindle_direction == SpindleDirection::forward ? "M3"
-                                                                                          : "M4");
     if (inputs.start.flood)
       request.codes.emplace_back("M8");
     if (inputs.start.mist)
@@ -894,14 +904,21 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.tools = to_helper_tools(inputs.raw_tools);
   request.restart_line = inputs.restart_line;
 
-  const auto watch = [lookups = lookups_, search_path = settings_.search_path](
-                         std::shared_ptr<const Manifest> manifest) -> PreviewComputation::Watch {
-    return [manifest = std::move(manifest), lookups, search_path](
-               const std::function<bool()>& given_up) -> bool {
-      return files_differ(*manifest, search_path, given_up, lookups);
+  const std::string check_table = inputs.restart_line ? std::string{} : settings_.tool_table;
+  const bool fixed_setter = settings_.reference_tool.has_value();
+  const auto watch =
+      [lookups = lookups_, search_path = settings_.search_path, check_table,
+       fixed_setter](std::shared_ptr<const Manifest> manifest,
+                     std::shared_ptr<const CheckToolFiles> tools) -> PreviewComputation::Watch {
+    return [manifest = std::move(manifest), lookups, search_path, check_table, fixed_setter,
+            tools = std::move(tools)](const std::function<bool()>& given_up) -> bool {
+      return files_differ(*manifest, search_path, given_up, lookups) ||
+             (tools && !is_cancelled(given_up) &&
+              *tools != check_tool_files(check_table, fixed_setter));
     };
   };
   std::shared_ptr<const Manifest> last;
+  std::shared_ptr<const CheckToolFiles> last_tools;
   for (int attempt = 1; attempt <= settings_.attempts; ++attempt) {
     auto taken = take_snapshot(settings_, *inputs.program_file, cancelled, lookups_);
     if (!taken && taken.error().cancelled)
@@ -910,6 +927,8 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {failed(taken.error().error.line, taken.error().error.text), false, {}};
     const auto manifest = std::make_shared<const Manifest>(std::move(*taken));
     last = manifest;
+    last_tools =
+        std::make_shared<const CheckToolFiles>(check_tool_files(check_table, fixed_setter));
     // The program in a directory of its own, the subroutine files in another, which is the
     // only place the helper's interpreter looks for one, and an empty one to run in.
     const PrivateDirectory directory{settings_.work_directory};
@@ -949,8 +968,9 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {{}, true, {}};
     const auto& text = manifest->program.bytes;
     auto outcome = outcome_of(
-        settings_, inputs, run, static_cast<int>(std::min<std::ptrdiff_t>(
-                            std::ranges::count(text, '\n') + 1, 2000000000)));
+        settings_, inputs, run,
+        static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000)),
+        *last_tools);
     if (outcome.restart && outcome.restart->tool != inputs.start.tool_in_spindle &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||
          settings_.tool_change_quill_up)) {
@@ -958,17 +978,17 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       outcome.restart_blocked = "The configured tool change moves the machine independently.";
     }
     // The result stands only for files that are still what was read.
-    if (files_differ(*manifest, settings_.search_path, cancelled, lookups_))
+    auto changed = watch(manifest, last_tools);
+    if (changed(cancelled))
       continue;
     if (is_cancelled(cancelled))
       return {{}, true, {}};
-    return {std::move(outcome), false, watch(manifest),
-            {manifest, &manifest->program.bytes}};
+    return {std::move(outcome), false, std::move(changed), {manifest, &manifest->program.bytes}};
   }
   return {failed(0, std::format("The program or one of its subroutine files changed on disk "
                                 "during each of {} computations: no preview.",
                                 settings_.attempts)),
-          false, watch(last)};
+          false, watch(last, last_tools)};
 }
 
 } // namespace coffeecnc

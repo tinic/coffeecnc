@@ -8,7 +8,7 @@
 //   block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
 
-import type { LengthUnit, Preview, PreviewSegment, SpindleDirection, Tool, Vec3 } from '../protocol'
+import type { LengthUnit, Preview, PreviewSegment, ProgramCheck, SpindleDirection, Tool, Vec3 } from '../protocol'
 
 export type AxisIndex = 0 | 1 | 2
 export const axisIndices: readonly AxisIndex[] = [0, 1, 2]
@@ -750,7 +750,8 @@ function motion(
  * Dry run of a whole program over a copy of `modal`. Points are tool tip positions: the
  * controlled point less the tool offset in effect, so paths cut with different tools line up.
  */
-export function previewProgram(modal: Modal, lines: string[], blockDelete: boolean, context: number): Preview {
+export function previewProgram(modal: Modal, lines: string[], blockDelete: boolean, context: number,
+  checks?: { travel: { min: Vec3; max: Vec3 }; spindleLimit: number | undefined }): Preview {
   const m = cloneModal(modal)
   const segments: PreviewSegment[] = []
   const min: Vec3 = [Infinity, Infinity, Infinity]
@@ -758,14 +759,54 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
   let feeds = false
   let error: Preview['error'] = null
   let ended = false
+  const report: ProgramCheck = {
+    tools: [], frames: [], feed: null, spindle: null, units: [],
+    travel: 'unknown', errors: [], warnings: [],
+  }
+  const usedTools = new Set<number>()
+  const numberRange = (value: number, previous: ProgramCheck['feed']): NonNullable<ProgramCheck['feed']> =>
+    ({ min: Math.min(previous?.min ?? value, value), max: Math.max(previous?.max ?? value, value) })
   for (let index = 0; index < lines.length && !ended && error === null; index += 1) {
     try {
-      for (const op of interpretLine(m, lines[index] ?? '', index + 1, blockDelete).ops) {
+      const speed = m.speed
+      const spindle = m.spindle
+      const units = m.units
+      const result = interpretLine(m, lines[index] ?? '', index + 1, blockDelete)
+      if (checks && m.speed > 0 && (m.speed !== speed || m.spindle !== spindle)) {
+        report.spindle = numberRange(m.speed, report.spindle)
+      }
+      if (checks && m.units !== units && !report.units.includes(m.units)) report.units.push(m.units)
+      for (const op of result.ops) {
         if (op.kind === 'end') {
           ended = true
+        } else if (checks && op.kind === 'tool_change' && op.tool > 0) {
+          usedTools.add(op.tool)
         } else if (op.kind === 'move') {
           const points: number[] = []
+          if (checks && !report.units.includes(m.units)) report.units.push(m.units)
+          if (checks && op.motion === 'feed') {
+            if (op.tool > 0) usedTools.add(op.tool)
+            report.feed = numberRange(op.feed, report.feed)
+            if (m.spindle !== 'stopped' && m.speed > 0) report.spindle = numberRange(m.speed, report.spindle)
+          }
           for (const p of op.points) {
+            if (checks) {
+              const work = toWork(m, p)
+              let frame = report.frames.find((item) => item.wcs === m.wcs)
+              if (!frame) {
+                frame = { wcs: m.wcs, available: true, bounds: { min: [...work], max: [...work] } }
+                report.frames.push(frame)
+              }
+              for (const axis of axisIndices) {
+                if (frame.bounds) {
+                  frame.bounds.min[axis] = Math.min(frame.bounds.min[axis], work[axis])
+                  frame.bounds.max[axis] = Math.max(frame.bounds.max[axis], work[axis])
+                }
+                if (p[axis] < checks.travel.min[axis] - 1e-6 || p[axis] > checks.travel.max[axis] + 1e-6)
+                  report.travel = 'outside'
+              }
+              if (report.travel === 'unknown') report.travel = 'fits'
+            }
             for (const axis of axisIndices) {
               const v = p[axis] - op.toolOffset[axis]
               points.push(v)
@@ -790,6 +831,19 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
     const last = Math.max(1, lines.length)
     error = { line: last, text: `line ${String(last)}: file ended with no percent sign or program end (M2 or M30)` }
   }
+  if (checks) {
+    for (const tool of usedTools) {
+      const value = modal.tools.find((row) => row.number === tool)?.length
+      const hasLength = value !== undefined && Number.isFinite(value) && value !== 0
+      report.tools.push({ tool, length: hasLength ? 'table' : 'missing' })
+      if (!hasLength) report.errors.push(`T${String(tool)} has no verified length in the tool table.`)
+    }
+    if (error) report.errors.push(error.text)
+    if (report.travel === 'outside') report.errors.push('The program exceeds configured machine travel.')
+    if (report.spindle && checks.spindleLimit !== undefined && report.spindle.max > checks.spindleLimit) {
+      report.errors.push(`The program requests ${String(report.spindle.max)} rpm. The spindle limit is ${String(checks.spindleLimit)} rpm.`)
+    }
+  }
   return {
     type: 'preview',
     context,
@@ -797,5 +851,6 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
     error,
     segments,
     bounds: feeds ? { min, max } : null,
+    ...(checks ? { check: report } : {}),
   }
 }

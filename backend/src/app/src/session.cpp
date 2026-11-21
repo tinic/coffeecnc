@@ -871,8 +871,10 @@ auto Session::check_program_start(const Queued& request, const Run& command,
   const auto& report = check.preview->check;
   if (report && !report->errors.empty())
     return report->errors.front();
-  const bool units_mismatch = report && command.display_units &&
-      std::ranges::any_of(report->units, [&](LengthUnit unit) { return unit != *command.display_units; });
+  const bool units_mismatch =
+      report && command.display_units && std::ranges::any_of(report->units, [&](LengthUnit unit) {
+        return unit != *command.display_units;
+      });
   if ((!report || !report->warnings.empty() || units_mismatch) && !command.confirmed)
     return "Review the program check warnings before starting.";
   if (check.files_changed && check.files_changed([&] { return !wanted(request); }))

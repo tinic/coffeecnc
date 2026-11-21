@@ -497,7 +497,8 @@ export class SimMachine {
       const start = cloneModal(m)
       start.pos = this.reported()
       start.tool = this.toolInSpindle
-      this.preview = previewProgram(start, this.program.lines, this.blockDelete, this.previewContext)
+      this.preview = previewProgram(start, this.program.lines, this.blockDelete, this.previewContext,
+        { travel, spindleLimit: this.configuration.max_spindle_rpm })
       this.emit(this.preview)
     }
   }
@@ -869,8 +870,18 @@ export class SimMachine {
       }
       case 'open_program':
         return this.open(command.path)
-      case 'run':
+      case 'run': {
+        if (command.preview_context !== undefined) {
+          if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
+            return reject('The program check changed. Review the current results.')
+          const check = this.preview.check
+          if (check?.errors[0]) return reject(check.errors[0])
+          const warnings = !check || check.warnings.length > 0 ||
+            check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
+          if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
+        }
         return this.run(false)
+      }
       case 'step':
         return this.step()
       case 'pause':

@@ -336,7 +336,7 @@ private:
   void drop_requests();
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto check_program_start(const Queued& request, const Run& command,
-                                        const ControllerState& state) const -> std::string;
+                                         const ControllerState& state) const -> std::string;
   [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
   [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
                                   const ControllerState& state) -> Stage;

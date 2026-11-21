@@ -138,9 +138,8 @@ auto axis(const Json& object) -> Axis {
 auto command(const Json& object) -> Command {
   const auto type = string(object, "type");
   // Commands with no body still reject stray fields (for example an unsupported run-from-line).
-  if (type == "ready" || type == "jog_stop_all" || type == "pause" ||
-      type == "resume" || type == "step" || type == "abort" || type == "tool_changed" ||
-      type == "quit") {
+  if (type == "ready" || type == "jog_stop_all" || type == "pause" || type == "resume" ||
+      type == "step" || type == "abort" || type == "tool_changed" || type == "quit") {
     fields(object, {"id", "type"});
     if (type == "ready")
       return Ready{};
@@ -201,8 +200,8 @@ auto command(const Json& object) -> Command {
     if (object.contains("preview_context"))
       run.preview_context = positive_id(object, "preview_context");
     if (object.contains("display_units"))
-      run.display_units = choice<LengthUnit>(
-          object, "display_units", {{"mm", LengthUnit::mm}, {"inch", LengthUnit::inch}});
+      run.display_units = choice<LengthUnit>(object, "display_units",
+                                             {{"mm", LengthUnit::mm}, {"inch", LengthUnit::inch}});
     if (object.contains("confirmed"))
       run.confirmed = boolean(object, "confirmed");
     if (run.confirmed && (!run.preview_context || !run.display_units))

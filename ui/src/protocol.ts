@@ -239,6 +239,17 @@ export interface PreviewSegment {
   points: number[]
 }
 
+export interface ProgramCheck {
+  tools: { tool: number; length: 'missing' | 'table' | 'touched_off' }[]
+  frames: { wcs: number; available: boolean; bounds: { min: Vec3; max: Vec3 } | null }[]
+  feed: { min: number; max: number } | null
+  spindle: { min: number; max: number } | null
+  units: LengthUnit[]
+  travel: 'unknown' | 'fits' | 'outside'
+  errors: string[]
+  warnings: string[]
+}
+
 /**
  * The path the loaded program would take. Everything it depends on (program, work offsets, G92,
  * rotation, tool table, block delete and interpreter start state) has one revision,
@@ -258,6 +269,7 @@ export interface Preview {
   segments: PreviewSegment[]
   /** Extent of the feed moves (tool tip, machine coordinates), or null without any. */
   bounds: { min: Vec3; max: Vec3 } | null
+  check?: ProgramCheck
 }
 
 /** All nine work coordinate systems, sent after `ready` and whenever values or availability change. */
@@ -450,6 +462,9 @@ export interface OpenProgram extends CommandBase {
 /** Runs the loaded program from its first line. */
 export interface Run extends CommandBase {
   type: 'run'
+  preview_context?: number
+  display_units?: LengthUnit
+  confirmed?: boolean
 }
 export interface Pause extends CommandBase {
   type: 'pause'

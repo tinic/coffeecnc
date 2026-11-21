@@ -261,7 +261,7 @@ enum class TravelCheck : std::uint8_t { unknown, fits, outside };
 struct ProgramCheck {
   std::vector<ProgramToolCheck> tools;
   std::vector<ProgramFrameCheck> frames;
-  std::optional<ProgramRange> feed; // mm/min
+  std::optional<ProgramRange> feed;    // mm/min
   std::optional<ProgramRange> spindle; // rpm
   std::vector<LengthUnit> units;
   TravelCheck travel{TravelCheck::unknown};

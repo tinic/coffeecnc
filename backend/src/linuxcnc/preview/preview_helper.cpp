@@ -67,8 +67,8 @@
 #include <linuxcnc.h>
 #include <tooldata.hh>
 
-using coffeecnc::HelperRequest;
 using coffeecnc::Bounds;
+using coffeecnc::HelperRequest;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
 using coffeecnc::RestartPoint;
@@ -284,7 +284,8 @@ void move(bool feed, const Vec3& to) {
   const Vec3 from = std::exchange(canon.end, to);
   if (!canon.recording)
     return;
-  record_move(feed, from, to);
+  if (!canon.request.restart_line)
+    record_move(feed, from, to);
   const Vec3 a = tip(from);
   const Vec3 b = tip(to);
   if (const auto target = canon.request.restart_line) {

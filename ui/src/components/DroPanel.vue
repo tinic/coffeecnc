@@ -139,10 +139,10 @@ watch([axes, touchBlock], () => {
 .dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .dro.has-rotary { flex-wrap: wrap; }
 .rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
-.rotary-axis { display: flex; min-width: 154px; align-items: baseline; gap: 10px; padding: 0 12px; white-space: nowrap; }
+.rotary-axis { display: grid; grid-template-columns: 18px minmax(104px, auto) 62px; align-items: baseline; gap: 10px; padding: 0 12px; white-space: nowrap; }
 .rotary-axis + .rotary-axis { border-left: 1px solid var(--line); }
 .rotary-letter, .rotary-angle { font-size: 19px; font-weight: 500; }
-.rotary-angle { margin-left: auto; }
+.rotary-angle { text-align: right; }
 .rotary-marker { color: var(--warn); font-size: 10px; }
 .distrust .rotary-angle { color: var(--text-faint); }
 .basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }

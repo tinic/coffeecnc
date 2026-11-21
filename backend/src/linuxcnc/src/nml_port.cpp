@@ -3054,6 +3054,10 @@ auto NmlPort::abort() -> ActionResult {
   return impl_->run(message, from);
 }
 
+// Task applies an override as soon as it reads it, but while a program runs its status is the
+// program's (RCS_EXEC), so waiting for the command to finish timed out after 3 s and dropped every
+// slider move meanwhile (turo: "feed override does not work", dragging to 200% errored). Like a
+// jog, it is only passed on: echoed, and refused only by an operator error.
 auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
@@ -3063,12 +3067,12 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
   case Override::feed: {
     EMC_TRAJ_SET_SCALE message;
     message.scale = value;
-    return impl_->run(message, from);
+    return impl_->pass(message, from);
   }
   case Override::rapid: {
     EMC_TRAJ_SET_RAPID_SCALE message;
     message.scale = value;
-    return impl_->run(message, from);
+    return impl_->pass(message, from);
   }
   case Override::spindle:
     break;
@@ -3076,7 +3080,7 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
   EMC_TRAJ_SET_SPINDLE_SCALE message;
   message.spindle = 0;
   message.scale = value;
-  return impl_->run(message, from);
+  return impl_->pass(message, from);
 }
 
 auto NmlPort::set_spindle(SpindleDirection direction, double rpm, const Wanted& wanted)

@@ -40,6 +40,15 @@ struct AxisState {
 // The unit the interpreter reads length words in (G21 / G20).
 enum class LengthUnit : std::uint8_t { mm, inch };
 
+struct PausedZStatus {
+  double offset{}; // applied Z offset, mm
+  double max_lift{};
+  bool displaced{};
+  bool feedback_available{};
+  std::string reason;
+  friend auto operator==(const PausedZStatus&, const PausedZStatus&) -> bool = default;
+};
+
 struct ControllerState {
   Link link{Link::down};
   MachineState machine{MachineState::estop};
@@ -61,6 +70,7 @@ struct ControllerState {
   bool air_offset_owned{};
   bool air_offset_recovery{};
   bool breakpoint_program{};
+  std::optional<PausedZStatus> paused_z{};
 };
 
 struct Limits {
@@ -112,6 +122,9 @@ struct JogStep {
   double velocity;
 };
 struct JogStopAll {};
+struct JogPausedZ {
+  double distance; // mm
+};
 struct Mdi {
   std::string text;
 };
@@ -208,7 +221,7 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, SetAirCut>;
+                 EditProgram, SetAirCut, JogPausedZ>;
 
 struct Decision {
   bool allowed{};

@@ -134,6 +134,7 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
   status.active_codes = reading.active_codes;
   status.program_units = controller.program_units;
   status.probe_input = reading.probe_input;
+  status.paused_z = reading.controller.paused_z;
   return status;
 }
 

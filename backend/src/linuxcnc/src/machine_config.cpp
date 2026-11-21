@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -265,6 +266,22 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       return std::unexpected(value.error());
     *wired = *value;
   }
+  std::optional<PausedZLimits> paused_z;
+  if (const auto text = ini.text("COFFEECNC", "PAUSED_Z_MAX_MM")) {
+    const auto lift = number(*text);
+    const auto ratio = ini.real("AXIS_Z", "OFFSET_AV_RATIO");
+    const auto velocity = ini.real("AXIS_Z", "MAX_VELOCITY");
+    const auto acceleration = ini.real("AXIS_Z", "MAX_ACCELERATION");
+    const double count = 0.001 * scale; // HAL eoffset-scale, in native machine units per count.
+    if (!lift || *lift < count || *lift / count > std::numeric_limits<std::int32_t>::max() ||
+        *lift >= travel[2].max - travel[2].min || !ratio || *ratio <= 0 || *ratio > 0.9 ||
+        !velocity || *velocity <= 0 || !acceleration || *acceleration <= 0 || !signals.spindle_rpm)
+      return std::unexpected("Invalid PAUSED_Z_MAX_MM. Check the Z travel, external offset ratio, "
+                             "Z velocity and acceleration, and spindle RPM signal.");
+    paused_z =
+        PausedZLimits{*lift, *ratio * *velocity * scale, *ratio * *acceleration * scale, count};
+    signals.paused_z = true;
+  }
   const double feed = ini.real("DISPLAY", "MAX_FEED_OVERRIDE").value_or(1.0);
   const double spindle_min = ini.real("DISPLAY", "MIN_SPINDLE_OVERRIDE").value_or(0.5);
   const double spindle_max = ini.real("DISPLAY", "MAX_SPINDLE_OVERRIDE").value_or(1.0);
@@ -353,6 +370,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .touch_probe_tool = probe_tool,
       .remember_spindle_tool = ini.real("EMCIO", "RANDOM_TOOLCHANGER").value_or(0) == 0 &&
                                ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
+      .paused_z = paused_z,
   };
 }
 

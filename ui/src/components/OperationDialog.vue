@@ -135,7 +135,7 @@ const fieldGroups = computed(() => [
         <p v-if="operation.note" class="operation-note">{{ operation.note }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
-          <div class="fields">
+          <div class="fields" :class="{ cutting: group.includesTool }">
             <label v-if="group.includesTool" class="entry tool-entry">
               <span class="label">Tool</span>
               <select v-model.number="toolNumber" class="field" aria-label="Tool" :disabled="saving">
@@ -203,6 +203,7 @@ const fieldGroups = computed(() => [
 .form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }
 .fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
+.fields.cutting { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .tool-entry { grid-column: span 2; }
 .number-field { position: relative; min-width: 0; }
 .number-field:has(.field-unit) input { padding-right: 62px; }
@@ -217,5 +218,5 @@ p.errors { padding: 0; }
 .file strong, .where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file strong { font-size: 13px; font-weight: 500; }
 .where { margin-top: 2px; color: var(--text-dim); }
-@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

@@ -118,7 +118,7 @@ describe('new operation dialog', () => {
     await open()
     button('Helical bore').click()
     await nextTick()
-    expect(input('Bore diameter, in').dataset.numericUnit).toBe('in')
+    expect(input('Bore diameter, in').getAttribute('data-numeric-unit')).toBe('in')
     button('Create and open').click()
     const save = sent().at(-1)
     if (save?.type !== 'save_program') throw new Error('No save')

@@ -4621,6 +4621,8 @@ void whole_job(Rig& rig, NmlLoads& loads) {
       return latest && latest->state == PreviewState::ready && latest->check &&
              latest->check->errors.empty() && status.contains("preview_context") &&
              latest->context == status.at("preview_context").get<std::uint64_t>() &&
+             status.value("interp", "") == "idle" &&
+             !status.at("program").value("air_offset_owned", false) &&
              near(status.at("program").value("air_z", 0.0), air_z);
     });
   };
@@ -4773,9 +4775,11 @@ void whole_job(Rig& rig, NmlLoads& loads) {
     if (!require("job_air_cut_uses_same_file_at_raised_z", entered_air, panel.dump()))
       return;
     const bool dry_completed = rig.pump_until(110s, [&] {
-      static_cast<void>(read_panel());
+      const auto& program = read_panel().at("program");
       return rig.idle() && !loads.air_offset_owned && !std::filesystem::exists(air_marker) &&
-             near(rig.status().g92[2], 0) && near(rig.machine(2), 23.975, 0.03);
+             near(rig.status().g92[2], 0) && near(rig.machine(2), 23.975, 0.03) &&
+             !program.value("air_offset_owned", false) && !program.contains("air_z") &&
+             program.value("cycle", "") == "idle";
     });
     if (!require("job_air_cut_m30_clears_only_the_offset", dry_completed) ||
         !require("job_starts_second_air_cut", enter_air()))

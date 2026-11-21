@@ -1504,10 +1504,11 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
                                result.at("size").get<std::string>().find("20") != std::string::npos,
         result.at("size").dump());
   // (b) Overlay rendering: with a current toolpath preview (part.ngc is loaded and previewed)
-  // the panel attaches the model and waits for its placement to be confirmed. No check here
-  // sees a part drawn.
-  check("step_overlay_waits_for_placement",
-        result.at("summary").get<std::string>().find("Placement unconfirmed") != std::string::npos,
+  // the panel attaches the model at the work origin with no placement warning (turo: "why do
+  // we need this?"). No check here sees a part drawn.
+  check("step_overlay_attached_without_warning",
+        !result.at("summary").get<std::string>().empty() &&
+            result.at("summary").get<std::string>().find("unconfirmed") == std::string::npos,
         result.at("summary").dump());
   // Cancelling the chooser leaves the attachment alone; choosing the same file again works.
   const auto cancelled = import({}, 1s);

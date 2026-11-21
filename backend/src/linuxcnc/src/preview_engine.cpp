@@ -692,8 +692,9 @@ auto air_cut_source_error(const Manifest& manifest, bool independent_tool_change
         if (word != 'g' && word != 'm')
           continue;
         double value{};
+        const auto first = i + (block[i + 1] == '+' ? 2U : 1U);
         const auto [parsed, error] =
-            std::from_chars(block.data() + i + 1, block.data() + block.size(), value);
+            std::from_chars(block.data() + first, block.data() + block.size(), value);
         if (error != std::errc{} || !std::isfinite(value) || value < 0 || value > 1000)
           continue;
         i = static_cast<std::size_t>(parsed - block.data()) - 1;
@@ -730,15 +731,16 @@ auto air_cut_matches(const PreviewOutcome& original, const PreviewOutcome& raise
     if (base.kind != air.kind || base.tool != air.tool || base.line != air.line ||
         base.points.size() != air.points.size())
       return false;
-    for (std::size_t j = 0; j + 2 < air.points.size(); j += 3) {
+    for (std::size_t j = 0; j < air.points.size(); ++j) {
+      const auto& point = air.points[j];
+      const auto& expected = base.points[j];
       // The first point is the tool's actual position. Only a vertical rapid can join it
       // to the translated path without traversing at the unraised cutting height.
       const bool initial = i == 0 && j == 0 && air.kind == MoveKind::rapid &&
-                           air.points.size() >= 6 && near(air.points[0], air.points[3]) &&
-                           near(air.points[1], air.points[4]) &&
-                           near(air.points[2], base.points[2]);
-      if (!near(base.points[j], air.points[j]) || !near(base.points[j + 1], air.points[j + 1]) ||
-          (!initial && !near(base.points[j + 2] + lift, air.points[j + 2])))
+                           air.points.size() >= 2 && near(point[0], air.points[1][0]) &&
+                           near(point[1], air.points[1][1]);
+      if (!near(expected[0], point[0]) || !near(expected[1], point[1]) ||
+          !near(expected[2] + (initial ? 0 : lift), point[2]))
         return false;
     }
   }

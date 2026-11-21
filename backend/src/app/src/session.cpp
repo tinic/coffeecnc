@@ -881,6 +881,8 @@ auto Session::check_program_start(const Queued& request, const Run& command,
                                              : "Air cut needs a complete raised preview.";
   if (report && !report->errors.empty())
     return report->errors.front();
+  if (command.air_z != 0 && !command.confirmed)
+    return "Review the raised preview before starting the air cut.";
   const bool units_mismatch =
       report && command.display_units && std::ranges::any_of(report->units, [&](LengthUnit unit) {
         return unit != *command.display_units;

@@ -245,6 +245,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 program-preflight)
         set_tests_properties(linuxcnc_program_preflight_g0759 PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 385)
+        add_test(NAME linuxcnc_raised_run_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 75 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_raised_run_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 raised-run)
+        set_tests_properties(linuxcnc_raised_run_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 405)
       endif()
       add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759

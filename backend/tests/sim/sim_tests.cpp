@@ -4411,6 +4411,38 @@ void paused_z_jog(Rig& rig) {
         off.accepted() && on.accepted() && rig.pump_until(3s, [&] { return offset_at(0); }) &&
             near(rig.machine(2), held),
         std::format("{} {} held={:.4f} z={:.4f}", off.text(), on.text(), held, rig.machine(2)));
+
+  // Feed hold leaves the interrupted move in the queue even after the axes have stopped.
+  std::ofstream{file} << "G21 G90 G54 G49 G94 G97 M5\nG53 G0 X0 Y0 Z-10\n"
+                         "G53 G1 X30 F600\nM30\n";
+  const auto opened = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  const auto started = rig.send(R"("type":"run")");
+  const bool traversing = rig.pump_until(6s, [&] { return rig.machine(0) > 2; });
+  const auto hold = rig.send(R"("type":"pause")");
+  const bool at_rest = rig.pump_until(4s, [&] {
+    const auto status = rig.status();
+    return status.paused && status.paused_z_still;
+  });
+  const double x = rig.machine(0);
+  const auto fed_lift = rig.send(lift);
+  check("paused_z_after_feed_hold",
+        opened.accepted() && started.accepted() && traversing && hold.accepted() && at_rest &&
+            fed_lift.accepted() && offset_at(3) && near(rig.machine(0), x) && x < 25,
+        hold.text() + " " + fed_lift.text());
+  if (!fed_lift.accepted())
+    return;
+  const auto returning = rig.post(resume);
+  const bool moving_down = rig.pump_until(3s, [&] {
+    return rig.status().paused && rig.machine(2) < base + 2.7 && rig.machine(2) > base + 1;
+  });
+  const auto estop = rig.send(R"("type":"set_machine","state":"estop")");
+  const auto interrupted = rig.await(returning);
+  rig.pump(250ms);
+  check("paused_z_estop_prevents_resume",
+        moving_down && estop.accepted() && !interrupted.accepted() &&
+            rig.snapshot().machine == MachineState::estop && rig.machine(2) > base + 0.5 &&
+            near(rig.machine(0), x),
+        estop.text() + " " + interrupted.text());
 }
 
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,

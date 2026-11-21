@@ -44,6 +44,7 @@ struct PausedZStatus {
   double offset{}; // applied Z offset, mm
   double max_lift{};
   bool displaced{};
+  bool feedback_available{};
   std::string reason;
   friend auto operator==(const PausedZStatus&, const PausedZStatus&) -> bool = default;
 };

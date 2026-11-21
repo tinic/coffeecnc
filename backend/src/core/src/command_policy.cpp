@@ -119,6 +119,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
 
+        if (s.paused_z && !s.paused_z->feedback_available && !std::is_same_v<T, SetMachine> &&
+            !std::is_same_v<T, Quit> && !std::is_same_v<T, OpenProgram>)
+          return reject("Wait for paused Z feedback before commanding machine motion.");
         if (s.paused_z && s.paused_z->displaced && s.interp != InterpState::paused &&
             !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit>)
           return reject(

@@ -97,6 +97,9 @@ public:
   // fsync of the temporary file, which is then closed.
   [[nodiscard]] virtual auto sync() -> Done = 0;
   [[nodiscard]] virtual auto rename(const std::string& from, const std::string& to) -> Done = 0;
+  // A second name `to` for the file `from` (a hard link). Fails when something has that name,
+  // also a symbolic link: two writers never take the same name.
+  [[nodiscard]] virtual auto link(const std::string& from, const std::string& to) -> Done = 0;
   // fsync of the directory: a rename in it, or an entry made in it, is on the disk.
   [[nodiscard]] virtual auto sync_directory(const std::string& directory) -> Done = 0;
   // Closes the temporary file if it is open and removes it. Failure is not reported.
@@ -127,6 +130,7 @@ public:
   [[nodiscard]] auto write(std::string_view bytes) -> Done override;
   [[nodiscard]] auto sync() -> Done override;
   [[nodiscard]] auto rename(const std::string& from, const std::string& to) -> Done override;
+  [[nodiscard]] auto link(const std::string& from, const std::string& to) -> Done override;
   [[nodiscard]] auto sync_directory(const std::string& directory) -> Done override;
   void discard(const std::string& path) override;
 

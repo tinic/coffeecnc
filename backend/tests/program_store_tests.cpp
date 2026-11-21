@@ -317,6 +317,47 @@ void open_rules() {
           "A file too long to open is still listed; opening it says why it cannot be");
 }
 
+void new_program_rules() {
+  const auto files = shop();
+  // Natively the root is / and the program directory is where listings start.
+  const ProgramStore store{files, "/", root};
+  const auto fresh = store.resolve_new_program("facing-60x40mm.ngc");
+  require(fresh && fresh->path == in_root("facing-60x40mm.ngc") && !fresh->exists,
+          "A bare name is a new file in the program directory");
+  const auto absolute = store.resolve_new_program(in_root("cherry/bore.ngc"));
+  require(absolute && absolute->path == in_root("cherry/bore.ngc") && !absolute->exists,
+          "An absolute path below the program directory");
+  const auto through = store.resolve_new_program("inside-dir/new.ngc");
+  require(through && through->path == in_root("cherry/new.ngc"),
+          "A linked folder inside the program directory is named by its target");
+  const auto taken = store.resolve_new_program("part.ngc");
+  require(taken && taken->exists, "An existing program is reported as existing");
+  const auto linked = store.resolve_new_program("escape-file");
+  require(linked && linked->path == in_root("escape-file") && linked->exists,
+          "A link is the name itself, never the file it leads to");
+  const std::vector<std::pair<std::string, std::string>> rows{
+      {"/home/cnc/new.ngc", "New programs go in the program directory."},
+      {"../new.ngc", "New programs go in the program directory."},
+      {"/etc/new.ngc", "New programs go in the program directory."},
+      {"escape-dir/new.ngc", "New programs go in the program directory."},
+      {"missing/new.ngc", "Path is not available: No such file or directory"},
+      {"part.ngc/new.ngc", "Path is not available: Not a directory"},
+      {".hidden-new.ngc", "Use a file name without control characters that does not start with a dot."},
+      {"two\nlines.ngc", "Use a file name without control characters that does not start with a dot."},
+      {"cherry/", "Name the program file."},
+      {"", "Name the program file."},
+      {std::string("a\0b.ngc", 7), "Path contains a NUL byte."},
+      {std::string(300, 'n'), "Program path is longer than 254 bytes."},
+  };
+  for (const auto& [path, reason] : rows) {
+    const auto refused = store.resolve_new_program(path);
+    require(!refused && refused.error_or("") == reason,
+            std::format("Saving \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
+                        refused ? refused->path : refused.error()));
+  }
+  require(!ProgramStore{files, ""}.resolve_new_program("x.ngc"), "No program directory, no saving");
+}
+
 void program_text() {
   FakeFileSystem files;
   const ProgramStore store{files, root};
@@ -543,6 +584,7 @@ auto main(int argc, char** argv) -> int {
     roots();
     listing_caps();
     open_rules();
+    new_program_rules();
     program_text();
     if (argc > 1)
       on_the_host(argv[1]);

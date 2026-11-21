@@ -164,6 +164,15 @@ struct EditProgram {
   std::string before;
   std::string after;
 };
+// Writes a new program file below the program directory ([DISPLAY] PROGRAM_PREFIX). An existing
+// file is replaced only when `replace` is set, and never the loaded program.
+struct SaveProgram {
+  std::string path;
+  std::string text;
+  bool replace{};
+};
+// The longest program text `save_program` writes.
+inline constexpr std::size_t max_saved_program_bytes = std::size_t{512} * 1024;
 struct Pause {};
 struct Resume {};
 struct Step {};
@@ -222,7 +231,7 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, JogPausedZ>;
+                 EditProgram, JogPausedZ, SaveProgram>;
 
 struct Decision {
   bool allowed{};

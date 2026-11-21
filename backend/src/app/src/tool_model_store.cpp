@@ -239,6 +239,12 @@ auto LocalToolModelFiles::rename(const std::string& from, const std::string& to)
   return {};
 }
 
+auto LocalToolModelFiles::link(const std::string& from, const std::string& to) -> Done {
+  if (::link(from.c_str(), to.c_str()) != 0)
+    return failure("the file cannot be made");
+  return {};
+}
+
 auto LocalToolModelFiles::sync_directory(const std::string& directory) -> Done {
   int opened = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
   if (opened < 0)

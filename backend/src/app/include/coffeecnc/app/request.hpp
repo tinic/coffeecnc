@@ -16,6 +16,10 @@ namespace coffeecnc {
 using RequestId = std::int64_t;
 inline constexpr RequestId max_request_id = 9007199254740991; // JavaScript MAX_SAFE_INTEGER
 inline constexpr std::size_t max_request_bytes = 16384;
+// Only `save_program` may be longer, up to this: its text (max_saved_program_bytes) with every
+// line end escaped, and the other fields.
+inline constexpr std::size_t max_save_program_request_bytes =
+    2 * max_saved_program_bytes + max_request_bytes;
 inline constexpr int max_request_depth = 8;
 
 struct Request {

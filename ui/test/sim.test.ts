@@ -804,13 +804,15 @@ describe('preview context', () => {
   it('does not change while a program moves the machine', () => {
     const r = rig()
     r.home()
-    r.load('T1 M6\nG43\nG55\nG0 X1\nG4 P1\nM2')
+    r.load('T1 M6\nG43\nG10 L2 P2 X160\nG55\nG0 X1\nG4 P1\nM2')
     const context = r.status().preview_context
     r.send({ type: 'run' })
     r.sim.advance(100)
     r.send({ type: 'tool_changed' })
     r.sim.advance(500)
     expect(r.status().offsets.wcs).toBe(2)
+    expect(r.status().offsets.g5x[0]).toBe(160)
+    expect(r.preview()).toMatchObject({ state: 'ready', context })
     expect(r.status().preview_context).toBe(context)
   })
 

@@ -38,21 +38,47 @@ afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); vi.unstubAllGlobals(
 describe('preview messages', () => {
   it('only calls a pending preview current when its context matches', async () => {
     wrapper = shallowMount(PathView)
-    expect(wrapper.get('.banners').text()).toContain('Computing preview')
+    expect(wrapper.get('.preview-banner').text()).toContain('Computing preview')
     if (panel.status === null) throw new Error('Missing fixture')
     panel.status.preview_context += 1
     await nextTick()
-    expect(wrapper.get('.banners').text()).toContain('Preview out of date')
-    expect(wrapper.get('.banners').text()).not.toContain('Computing preview')
+    expect(wrapper.get('.preview-banner').text()).toContain('Preview out of date')
+    expect(wrapper.get('.preview-banner').text()).not.toContain('Computing preview')
+  })
+
+  it('keeps the drawn path until the next preview for the same file', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    const context = panel.status.preview_context
+    panel.preview = { type: 'preview', context, state: 'ready',
+      error: null, bounds: null, segments: [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0] }] }
+    wrapper = shallowMount(PathView)
+    expect(wrapper.classes()).not.toContain('outdated')
+
+    panel.status.preview_context += 1
+    panel.preview = { type: 'preview', context: context + 1, state: 'unavailable',
+      error: { line: 0, text: 'The preview updates when the run ends.' }, bounds: null, segments: [] }
+    await nextTick()
+    expect(wrapper.classes()).toContain('outdated')
+    expect(wrapper.get('.preview-banner').text()).toContain('The preview updates when the run ends.')
+
+    panel.preview = { ...panel.preview, state: 'pending', error: null }
+    await nextTick()
+    expect(wrapper.classes()).toContain('outdated')
+    expect(wrapper.get('.preview-banner').text()).toContain('Computing preview')
+    expect(wrapper.find('.banners .preview-banner').exists()).toBe(false)
+
+    panel.status.program.revision += 1
+    await nextTick()
+    expect(wrapper.classes()).not.toContain('outdated')
   })
 
   it('does not invent line zero or claim an empty failed preview contains a path', () => {
     if (panel.preview === null) throw new Error('Missing fixture')
     panel.preview.state = 'failed'; panel.preview.error = { line: 0, text: 'Timed out.' }
     wrapper = shallowMount(PathView)
-    expect(wrapper.get('.banners').text()).toContain('Preview stopped: no path available')
-    expect(wrapper.get('.banners').text()).not.toContain('line 0')
-    expect(wrapper.get('.banners').text()).not.toContain('path shown')
+    expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped: no path available')
+    expect(wrapper.get('.preview-banner').text()).not.toContain('line 0')
+    expect(wrapper.get('.preview-banner').text()).not.toContain('path shown')
   })
 
   it('identifies an incomplete path at a known source line', () => {
@@ -60,19 +86,19 @@ describe('preview messages', () => {
     panel.preview.state = 'failed'; panel.preview.error = { line: 3, text: 'Unsupported operation.' }
     panel.preview.segments = [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0] }]
     wrapper = shallowMount(PathView)
-    expect(wrapper.get('.banners').text()).toContain('Preview stopped at line 3: partial path shown')
+    expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped at line 3: partial path shown')
   })
 
   it('distinguishes an unavailable preview, no loaded program and an obsolete context', async () => {
     if (panel.preview === null || panel.status === null) throw new Error('Missing fixture')
     panel.preview.state = 'unavailable'
     wrapper = shallowMount(PathView)
-    expect(wrapper.get('.banners').text()).toContain('Preview unavailable')
+    expect(wrapper.get('.preview-banner').text()).toContain('Preview unavailable')
     panel.status.program.file = null
     await nextTick()
-    expect(wrapper.get('.banners').text()).toContain('No program loaded')
+    expect(wrapper.get('.preview-banner').text()).toContain('No program loaded')
     panel.status.preview_context += 1
     await nextTick()
-    expect(wrapper.get('.banners').text()).toContain('Preview out of date')
+    expect(wrapper.get('.preview-banner').text()).toContain('Preview out of date')
   })
 })

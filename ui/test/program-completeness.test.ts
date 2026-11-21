@@ -175,6 +175,7 @@ describe('preview diagnostics', () => {
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'unavailable',
       error: { line: 0, text: 'The preview helper is not installed.' }, segments: [], bounds: null }
     wrapper = shallowMount(ProgramTab)
+    expect(wrapper.find('.views > .preview-diagnostic').exists()).toBe(true)
     expect(wrapper.getComponent(SetterStatusBand).props('line')).toEqual({ text: 'The preview helper is not installed.', level: 'blocked' })
     expect(wrapper.find('.failure button').exists()).toBe(false)
     expect(wrapper.getComponent(NcText).props('errorLine')).toBe(0)
@@ -185,7 +186,7 @@ describe('preview diagnostics', () => {
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'failed',
       error: { line, text: 'Preview stopped before an unsupported operation.' }, segments: [], bounds: null }
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.failure').text()).toContain('Preview stopped before an unsupported operation.')
+    expect(wrapper.get('.preview-diagnostic').text()).toContain('Preview stopped before an unsupported operation.')
     expect(wrapper.find('.failure button').exists()).toBe(false)
     expect(wrapper.getComponent(NcText).props('errorLine')).toBe(0)
   })

@@ -38,6 +38,8 @@ struct PanelReading {
   // accepted: the machine's state is then not one coherent set, and no preview input is taken
   // from it.
   bool tools_settled{true};
+  // The controller can finish interpreting while there are still commands to execute.
+  bool task_executing{};
   // What the source itself has to tell the operator (a file it cannot read), each once.
   std::vector<ControllerMessage> messages;
 };

@@ -23,7 +23,8 @@ import {
   type Screen,
   type ViewName,
 } from '../pathview'
-import type { Preview, Vec3 } from '../protocol'
+import { useDrawnPreview } from '../drawn-preview'
+import type { Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
@@ -51,31 +52,9 @@ const view = ref<ViewName | null>('iso')
 const autoFit = ref<boolean>(true)
 const showMachine = ref(false)
 
-/** The last preview that had a path, kept so an outdated path can be shown as outdated. */
-const drawn = shallowRef<Preview | null>(null)
+const drawn = useDrawnPreview(panel)
 
-watch(
-  () => panel.preview,
-  (preview) => {
-    if (preview === null || preview.state === 'unavailable') {
-      drawn.value = null
-    } else if (preview.state !== 'pending') {
-      drawn.value = preview
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  () => panel.program?.revision,
-  () => {
-    // Another program: its predecessor's path says nothing about it.
-    if (drawn.value !== null && drawn.value.context !== panel.preview?.context) {
-      drawn.value = null
-    }
-    autoFit.value = true
-  },
-)
+watch(() => panel.program?.revision, () => { autoFit.value = true })
 
 const current = computed(
   () => drawn.value !== null && panel.status !== null && drawn.value.context === panel.status.preview_context,
@@ -90,7 +69,10 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     return { text: 'Preview out of date', tone: 'warn' }
   }
   if (preview.state === 'unavailable') {
-    return { text: panel.status.program.file === null ? 'No program loaded' : 'Preview unavailable', tone: '' }
+    return {
+      text: panel.status.program.file === null ? 'No program loaded' : preview.error?.text ?? 'Preview unavailable',
+      tone: drawn.value === null ? '' : 'warn',
+    }
   }
   if (preview.state === 'pending') {
     return { text: 'Computing preview', tone: 'warn' }
@@ -102,8 +84,9 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     const line = preview.error?.line ?? 0
     const location = Number.isSafeInteger(line) && line > 0 ? ` at line ${String(line)}` : ''
     const path = preview.segments.some((segment) => segment.points.length >= 6) ? 'partial path shown' : 'no path available'
+    const detail = preview.error?.text
     return {
-      text: `Preview stopped${location}: ${path}`,
+      text: `Preview stopped${location}: ${path}${detail ? ` · ${detail}` : ''}`,
       tone: 'stop',
     }
   }
@@ -456,8 +439,7 @@ onBeforeUnmount(() => {
     <div class="viewport">
       <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
       <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-      <div v-if="banner.text || !live || toolTip === null || part.attachment || visibleTool || modelError" class="banners">
-        <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
+      <div v-if="!live || toolTip === null || part.attachment || visibleTool || modelError" class="banners">
         <span v-if="!live" class="stop">Tool position not live</span>
         <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
         <span v-if="modelError || (part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
@@ -465,6 +447,7 @@ onBeforeUnmount(() => {
         <span v-if="visibleTool">T{{ visibleTool.number }} envelope{{ visibleTool.model.nominalDiameter ? ' · nominal diameter' : '' }}{{ visibleTool.model.holder ? ` · ${holderLabel(visibleTool.model.holder)}` : '' }}</span>
         <span v-if="showPart && part.attachment?.note" class="warn">Sample model · not paired with this program</span>
       </div>
+      <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
       <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
@@ -487,6 +470,9 @@ onBeforeUnmount(() => {
 .legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
 .legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
-.banners { position: absolute; top: 12px; left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); }.banners span { padding: 5px 8px; border-radius: 6px; background: var(--panel); }.banners .stop { color: var(--stop); }.banners .warn { color: var(--warn); }
-.banners { pointer-events: none; max-width: calc(100% - 36px); align-items: flex-start; font-size: 11px; }
+.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: 11px; color: var(--text-dim); }
+.banners { top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.preview-banner { bottom: 12px; }
+.banners span, .preview-banner { padding: 5px 8px; border-radius: 6px; background: var(--panel); }
+.stop { color: var(--stop); }.warn { color: var(--warn); }
 </style>

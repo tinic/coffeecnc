@@ -2,7 +2,6 @@
 #define COFFEECNC_APP_SESSION_HPP
 
 #include <coffeecnc/app/preview.hpp>
-#include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
@@ -24,6 +23,8 @@
 #include <vector>
 
 namespace coffeecnc {
+class ProgramWriter;
+
 
 // One page load in the native shell. Never on the wire. A default token matches no page.
 struct PageToken {

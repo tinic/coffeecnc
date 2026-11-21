@@ -1,4 +1,5 @@
 #include <coffeecnc/app/session.hpp>
+#include <coffeecnc/app/program_edit.hpp>
 
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/core/jog_stop_report.hpp>

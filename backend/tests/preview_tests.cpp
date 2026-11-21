@@ -767,6 +767,18 @@ void worker_revalidates_on_its_own_thread() {
           "Changed: a new generation instead of the old result");
 }
 
+void worker_retires_a_check_without_replacement_inputs() {
+  FakeEngine engine;
+  PreviewWorker worker{engine, 2ms};
+  worker.submit(1, inputs(1));
+  require(wait_for([&] { return worker.checked_preview().preview != nullptr; }),
+          "The first context has a checked preview");
+  worker.advance_context(2);
+  require(worker.latest() && worker.latest()->context == 1 && !worker.checked_preview().preview &&
+              !worker.restart_source(1).inputs,
+          "An older drawing remains visible as stale and cannot authorize the new context");
+}
+
 void worker_ends_a_computation_when_destroyed() {
   FakeEngine engine;
   engine.hold = true;
@@ -812,6 +824,7 @@ auto main() -> int {
     worker_watches_the_files();
     worker_revalidates_on_its_own_thread();
     worker_ends_a_computation_when_destroyed();
+    worker_retires_a_check_without_replacement_inputs();
     bounds_are_of_the_feed_moves();
     std::cout << checks << " preview checks passed\n";
     return 0;

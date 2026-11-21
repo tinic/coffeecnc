@@ -19,7 +19,6 @@ inline constexpr int tool_model_version = 1;
 // The saved file and the `tool_models` message, each as encoded.
 inline constexpr std::size_t max_tool_model_bytes = 1048576;
 inline constexpr std::size_t max_tool_model_assignments = 1001;
-inline constexpr std::size_t max_tool_comment_bytes = 255;
 inline constexpr std::uint64_t max_tool_model_revision = 9007199254740991; // 2^53 - 1
 
 [[nodiscard]] auto tool_family_name(ToolFamily family) -> std::string_view;

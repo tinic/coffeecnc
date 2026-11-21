@@ -49,6 +49,9 @@ void edits_only_feed_or_speed_numbers() {
   require(!feed_or_speed_edit("(F600) G1 X1", "(F500) G1 X1"), "A number in a comment");
   require(!feed_or_speed_edit("G1 X1 ; F600", "G1 X1 ; F500"), "A number after a semicolon");
   require(!feed_or_speed_edit("G1 X1 F#1", "G1 X1 F#2"), "A parameter");
+  require(!feed_or_speed_edit("G1 Z#<pos1> F500", "G1 Z#<pos2> F500"), "A named parameter");
+  require(!feed_or_speed_edit("O<pass1> call", "O<pass2> call"), "A subroutine name");
+  require(feed_or_speed_edit("G1 Z#<pos1> F500", "G1 Z#<pos1> F250"), "A real F word after a name");
 }
 
 void replaces_one_line_durably(const fs::path& base) {
@@ -111,12 +114,12 @@ void creates_new_programs(const fs::path& base) {
   require(!writer.create((base / "outside.ngc").string(), text, false) &&
               !fs::exists(base / "outside.ngc"),
           "Outside the program directory nothing is written");
-  // A name taken by a link that leads nowhere: link(2) refuses it, nothing is written through.
+  // A dangling link already occupies this name.
   fs::create_symlink(root / "nowhere" / "target.ngc", root / "dangling.ngc");
   const auto through = writer.create("dangling.ngc", text, false);
-  require(!through && through.error().starts_with("The program could not be saved") &&
-              !fs::exists(root / "nowhere"),
-          "A dangling link is not written through");
+  require(!through && through.error().find("exists already") != std::string::npos &&
+              fs::is_symlink(root / "dangling.ngc") && !fs::exists(root / "nowhere"),
+          "A dangling link blocks non-replacing saves at the existence check");
   require(!fs::exists(root / ".dangling.ngc.coffeecnc-new"), "Nor is a temporary file left");
   fs::remove_all(root);
 }

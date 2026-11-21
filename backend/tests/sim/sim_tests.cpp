@@ -386,7 +386,7 @@ void tool_table_text() {
   check("tool_table_replace_keeps_other_words",
         with_tool(table, tool, 25.4) ==
             "T1 P1 Z50 D6 ;6 mm end mill\nT2 P5 Z1 D0.5 I30 ;half inch\n",
-        with_tool(table, tool, 25.4));
+        with_tool(table, tool, 25.4).value_or("tool row rejected"));
   tool.number = 7;
   check("tool_table_add", with_tool(table, tool, 1) == table + "T7 P5 Z25.4 D12.7 ;half inch\n");
   check("tool_table_remove", without_tool(table, 1) == "T2 P2 Z40 D3 I30 ;drill\n" &&

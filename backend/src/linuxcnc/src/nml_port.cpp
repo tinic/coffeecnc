@@ -1243,8 +1243,14 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
   };
   const auto& c = before.controller;
-  const auto search_start = move.approach.value_or(move.start);
   const auto line = probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
+  const bool rotated = material && line.axis != 2 && before.rotation_xy != 0;
+  auto search_start = move.approach.value_or(move.start);
+  if (rotated && !move.approach) {
+    // Hold the commanded transverse position, as the trajectory planner will.
+    search_start[0] = before.commanded_position[0];
+    search_start[1] = before.commanded_position[1];
+  }
   const auto endpoint = line.advance(search_start, move.travel_mm);
   const auto coordinate = [&](const auto& point) { return line.distance(search_start, point); };
   const auto in_travel = [&](const std::array<double, 3>& point) {
@@ -1284,7 +1290,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   const bool restore_incremental = std::ranges::contains(before.active_codes, "G91");
   const double program_scale = c.program_units == LengthUnit::inch ? 25.4 : 1.0;
   const double machine_scale = impl_->config.millimetres_per_unit;
-  auto line_origin = move.start;
+  auto line_origin = move.approach ? move.start : search_start;
   const auto on_line = [&](const std::array<double, 3>& point,
                            const std::array<double, 3>& origin) {
     // A linear encoder can lag on reversal. The machine defines the acceptable deviation.
@@ -1519,11 +1525,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     const auto timeout = std::chrono::milliseconds{
         static_cast<int>((travel / feed * seconds_per_minute + 3) * 1000)};
     std::string code;
-    if (material && line.axis != 2 && before.rotation_xy != 0) {
-      // Supply both coordinates in a rotated frame. LinuxCNC can carry an unintended
-      // coordinate on the omitted axis of an incremental probe after a rotation change.
-      auto target = before.work;
-      target[line.axis] += line.sign * (begin_at + travel);
+    if (rotated) {
+      // Supply both coordinates in the rotated frame from one commanded machine target.
+      const auto target = work_position(line.advance(search_start, begin_at + travel), before.g5x,
+                                        before.g92, before.tool_offset, before.rotation_xy);
       code = std::format("G90 G38.3 X{:.8f} Y{:.8f} F{:.8f}", target[0] / program_scale,
                          target[1] / program_scale, feed / program_scale);
     } else {
@@ -1583,8 +1588,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       }));
       raw = live_cycle();
       const auto released = interlock();
-      if (raw == nullptr || !released || !released_at_backoff(*raw, *released))
+      if (raw == nullptr || !released || !released_at_backoff(*raw, *released)) {
+        if (material && backoff < 0 && raw != nullptr && released && *released->probe_input)
+          return interrupt("The probe did not release at the confirmed start. Start farther from "
+                           "the workpiece before trying again.");
         return interrupt("The setter did not release before the latch pass.");
+      }
 
       const double latch_travel = std::min(2 * limits->latch_backoff_mm, move.travel_mm - retreat);
       contact = search(retreat, latch_travel, limits->latch_feed_mm_min);
@@ -3111,7 +3120,19 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
         "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
   std::this_thread::sleep_for(gate_settle);
   const auto now = status();
-  return safe(now) && arrived(now) ? ActionResult{} : stopped;
+  if (!safe(now) || !arrived(now))
+    return stopped;
+  if (clear) {
+    // LinuxCNC samples count deltas with the gate closed but does not apply them. Leave the
+    // gate closed for a full control interval on either side of resetting the baseline.
+    if (!hal->rebase_paused_z_counts())
+      return stopped;
+    std::this_thread::sleep_for(gate_settle);
+    const auto rebased = status();
+    if (!safe(rebased) || !arrived(rebased))
+      return stopped;
+  }
+  return {};
 }
 
 auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) -> ActionResult {
@@ -3394,7 +3415,8 @@ auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
   const auto table = impl_->read_tool_table();
   if (!table)
     return failed(table.error());
-  return impl_->load_tool_table(with_tool(*table, tool, impl_->config.millimetres_per_unit));
+  const auto edited = with_tool(*table, tool, impl_->config.millimetres_per_unit);
+  return edited ? impl_->load_tool_table(*edited) : failed(edited.error());
 }
 
 auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {

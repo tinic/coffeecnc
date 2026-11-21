@@ -276,6 +276,12 @@ void tool_comments() {
           "Comments by tool number: without the white space around them, the first row of a "
           "tool, none for an empty comment or a line without a T word");
   require(comments_of("").empty(), "An empty table has no comments");
+  require(tool_z("T+7 P7 Z12.5 ;gage pin\n", 7) == 12.5, "LinuxCNC accepts a positive T word");
+  Tool replacement{7, 7, 12.5, 2, "gage pin"};
+  const auto edited = with_tool("T+7 P7 Z12.5 X1\n", replacement, 1);
+  require(edited == "T7 P7 Z12.5 D2 X1 ;gage pin\n", "Replace the existing positive T row");
+  replacement.comment = std::string(255, 'c');
+  require(!with_tool("", replacement, 1), "A long formatted row never reaches the tool table");
 }
 
 // The source on a mailbox, a loaded table and load counts of the test's own.
@@ -318,6 +324,17 @@ struct Rig {
     return s;
   }
 };
+
+void source_observes_task_abort() {
+  Rig rig;
+  const auto before = rig.step().program_aborts;
+  auto status = rig.status();
+  status.task_abort = true;
+  status.echo_serial = 7;
+  require(rig.step(status).program_aborts == before + 1,
+          "A task abort from another controller client is visible to program progress");
+  require(rig.step(status).program_aborts == before + 1, "An unchanged abort is counted once");
+}
 
 void source_status_and_age() {
   Rig rig;
@@ -974,6 +991,7 @@ auto main(int argc, char** argv) -> int {
     tool_comments();
     touched_off_marks();
     source_status_and_age();
+    source_observes_task_abort();
     source_ages_the_status_after_its_reads();
     source_program_loads();
     source_lines_belong_to_the_revision();

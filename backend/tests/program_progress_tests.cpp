@@ -68,11 +68,14 @@ void stops_and_reloads(const fs::path& directory) {
           "A cutting cycle is running before a restart hint exists.");
   moves_on_line(sample, 4);
   progress.observe(sample, now + 200ms);
+  // A subroutine can move on an earlier source line after the caller's first motion.
+  moves_on_line(sample, 2);
+  progress.observe(sample, now + 225ms);
   ++sample.program_aborts;
   progress.observe(sample, now + 250ms);
   at_rest(sample);
   progress.observe(sample, now + 300ms);
-  require(sample.status.program.restart_hint == RestartHint{4, 98} &&
+  require(sample.status.program.restart_hint == RestartHint{2, 98} &&
               sample.status.program.cycle == ProgramCycle::idle,
           "Stop saves the block in motion, ignoring interpreter lookahead.");
 
@@ -80,11 +83,11 @@ void stops_and_reloads(const fs::path& directory) {
   ProgramProgress reloaded{reloaded_files, directory.string()};
   auto reopened = reading(part);
   reloaded.observe(reopened, now + 350ms);
-  require(reopened.status.program.restart_hint == RestartHint{4, 98},
+  require(reopened.status.program.restart_hint == RestartHint{2, 98},
           "A new session restores the stopped line for the same file.");
   const auto status = encode_status(reopened.status, 1);
   require(status && nlohmann::json::parse(*status).at("program").at("restart_hint") ==
-                        nlohmann::json{{"line", 4}, {"tool", 98}},
+                        nlohmann::json{{"line", 2}, {"tool", 98}},
           "The status publishes both fields expected by the restart button.");
   auto other = reading(directory / "different.ngc");
   std::ofstream(other.program->file) << "G21\nM30\n";

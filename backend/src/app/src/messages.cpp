@@ -264,24 +264,27 @@ auto encode_hello(const Hello& hello) -> Encoded {
         {"xy_tolerance_mm", fields.real(setter->xy_tolerance_mm, "fixed_setter.xy_tolerance_mm")},
         {"clearance_mm", fields.real(setter->clearance_mm, "fixed_setter.clearance_mm")},
         {"check_tolerance_mm", fields.real(setter->check_tolerance_mm, "fixed_setter.check_tolerance_mm")}};
-  if (hello.fixed_setter && hello.fixed_setter->latch_feed_mm_min > 0) {
+  if (hello.fixed_setter) {
     const auto& setter = *hello.fixed_setter;
-    message["fixed_setter"]["latch_feed_mm_min"] =
-        fields.real(setter.latch_feed_mm_min, "fixed_setter.latch_feed_mm_min");
-    message["fixed_setter"]["latch_backoff_mm"] =
-        fields.real(setter.latch_backoff_mm, "fixed_setter.latch_backoff_mm");
-  }
-  if (hello.fixed_setter && hello.touch_probe_tool && hello.fixed_setter->latch_feed_mm_min > 0 &&
-      hello.fixed_setter->material_travel_mm / hello.fixed_setter->feed_mm_min * 60 <= 180) {
-    message["fixed_setter"]["material_travel_mm"] =
-        fields.real(hello.fixed_setter->material_travel_mm, "fixed_setter.material_travel_mm");
-    const auto& geometry = hello.fixed_setter->material_geometry;
-    message["fixed_setter"]["material_features"] = true;
-    message["fixed_setter"]["material_geometry"] = {
+    const auto latch_feed = fields.real(setter.latch_feed_mm_min, "fixed_setter.latch_feed_mm_min");
+    const auto latch_backoff = fields.real(setter.latch_backoff_mm, "fixed_setter.latch_backoff_mm");
+    const auto travel = fields.real(setter.material_travel_mm, "fixed_setter.material_travel_mm");
+    const auto& geometry = setter.material_geometry;
+    const Json material_geometry{
         {"reach_mm", fields.real(geometry.reach_mm, "fixed_setter.material_geometry.reach_mm")},
         {"margin_mm", fields.real(geometry.margin_mm, "fixed_setter.material_geometry.margin_mm")},
         {"clearance_mm", fields.real(geometry.clearance_mm, "fixed_setter.material_geometry.clearance_mm")},
         {"depth_mm", fields.real(geometry.depth_mm, "fixed_setter.material_geometry.depth_mm")}};
+    if (latch_feed > 0) {
+      message["fixed_setter"]["latch_feed_mm_min"] = latch_feed;
+      message["fixed_setter"]["latch_backoff_mm"] = latch_backoff;
+    }
+    if (hello.touch_probe_tool && latch_feed > 0 && setter.feed_mm_min > 0 &&
+        travel <= 3 * setter.feed_mm_min) {
+      message["fixed_setter"]["material_travel_mm"] = travel;
+      message["fixed_setter"]["material_features"] = true;
+      message["fixed_setter"]["material_geometry"] = material_geometry;
+    }
   }
   return fields.finish(std::move(message));
 }

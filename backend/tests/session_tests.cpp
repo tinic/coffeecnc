@@ -393,6 +393,24 @@ void stale_pages_are_dropped() {
           "The current page is unaffected by the stale page's IDs");
 }
 
+void panel_watchdog_uses_a_monotonic_page_clock() {
+  Rig rig{false};
+  auto& session = rig.session;
+  const auto page = session.begin_page(true, at(0ms));
+  require(session.submit(page, R"({"id":1,"type":"ready"})", at(0ms)).send_snapshots,
+          "Ready before the first frame");
+  session.panel_frame(page, at(80ms).unix_time, at(80ms));
+  session.panel_frame(page, at(160ms).unix_time, {at(160ms).monotonic, at(160ms).unix_time - 1h});
+  require(!session.control({at(161ms).monotonic, at(161ms).unix_time - 1h}, {}),
+          "A backward correction does not put a fresh document on hold");
+  const auto queued = session.submit(page, R"({"id":2,"type":"mdi","text":"G55"})",
+                                     {at(180ms).monotonic, at(180ms).unix_time + 1h}, at(160ms).unix_time);
+  require(results(queued).empty(), "A forward correction does not make fresh commands stale");
+  session.panel_frame(page, at(300ms).unix_time, {at(690ms).monotonic, at(690ms).unix_time + 1h});
+  require(session.control({at(690ms).monotonic, at(690ms).unix_time + 1h}, {}),
+          "A delayed animation frame remains stale after a wall-clock correction");
+}
+
 void panel_watchdog_cancels_waiting_work() {
   Rig rig{false};
   auto& session = rig.session;
@@ -1176,11 +1194,21 @@ void jog_presses_and_refreshes() {
   }
   rig.acted({}, "Refreshes are answered without a controller action");
 
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)");
-  rig.acted({"start_jog x -1 600 axis"}, "A changed direction is a new press");
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)");
-  rig.acted({"start_jog x -1 900 axis"}, "A changed velocity is a new press");
-  rig.accepted(R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)");
+  constexpr auto opposite = R"("type":"jog","axis":"x","direction":-1,"velocity":600,"held":true)";
+  constexpr auto faster = R"("type":"jog","axis":"x","direction":-1,"velocity":900,"held":true)";
+  rig.expect(opposite, "rejected", release_reason);
+  rig.acted({"stop_jog x"}, "A change in direction stops an active press");
+  rig.expect(opposite, "rejected", release_reason);
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "The original control was released");
+  rig.accepted(opposite);
+  rig.acted({"start_jog x -1 600 axis"}, "A new press can move in the other direction");
+  rig.expect(faster, "rejected", release_reason);
+  rig.acted({"stop_jog x"}, "A change in velocity also stops the active press");
+  rig.accepted(release_x);
+  rig.acted({"stop_jog x"}, "Release clears the latch");
+  rig.accepted(faster);
+  rig.acted({"start_jog x -1 900 axis"}, "A new press picks up the new speed");
   rig.accepted(hold_y);
   rig.acted({"start_jog y -1 600 axis"}, "Axes are held independently");
 
@@ -2451,6 +2479,7 @@ auto main(int argc, char** argv) -> int {
   try {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
+    panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();

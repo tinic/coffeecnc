@@ -1918,8 +1918,13 @@ void restored_probe_spindle_guard(const Rig& rig) {
     const forward = __t.find('button', 'Forward');
     const reverse = __t.find('button', 'Reverse');
     return forward?.disabled && reverse?.disabled;
-  })())"));
+  })())"),
+        rig.js("return [document.querySelector('nav.em-nav [aria-current]')?.textContent, "
+               "__t.all('button').filter((b) => /Forward|Reverse/.test(__t.text(b))).map((b) => "
+               "[__t.text(b), b.disabled, b.getAttribute('aria-disabled')])];")
+            .dump());
   auto id = rig.js("return Math.max(...__t.sent.map((m) => m?.id || 0));").get<int>();
+  std::string last_result;
   const auto dispatch = [&](Json body, std::string_view expected) {
     body["id"] = ++id;
     rig.js(std::format("window.webkit.messageHandlers.coffeecnc.postMessage({}); return true;",
@@ -1928,6 +1933,7 @@ void restored_probe_spindle_guard(const Rig& rig) {
     if (!rig.wait_js(find, 10s))
       return false;
     const auto result = rig.js("return " + find + ";");
+    last_result = result.dump();
     return result.at("outcome") == expected &&
            (expected != "rejected" || result.at("reason") == "A touch probe is loaded");
   };
@@ -1937,12 +1943,12 @@ void restored_probe_spindle_guard(const Rig& rig) {
   write(program, "G21 G90\nS200 M04\nM2\n");
   check("touch_probe_open_spindle_program",
         dispatch({{"type", "open_program"}, {"path", program.string()}}, "accepted"));
-  check("touch_probe_native_cycle_start_refusal", dispatch({{"type", "run"}}, "rejected"));
+  check("touch_probe_native_cycle_start_refusal", dispatch({{"type", "run"}}, "rejected"), last_result);
   check("touch_probe_spindle_remains_off", !rig.status().controller.spindle_active);
   const auto replacement = program.parent_path() / "probe-spindle-check-new.ngc";
   write(replacement, "G21 G90 G94 S200\nG4 P0.2\nM2\n");
   std::filesystem::rename(replacement, program);
-  check("touch_probe_spindle_off_program_runs", dispatch({{"type", "run"}}, "accepted"));
+  check("touch_probe_spindle_off_program_runs", dispatch({{"type", "run"}}, "accepted"), last_result);
   check("touch_probe_spindle_off_program_completes", rig.wait_js("__t.last.status.interp === 'idle'"));
 }
 

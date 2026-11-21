@@ -155,12 +155,12 @@ auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 3>, std
     return std::unexpected(std::format(
         "[TRAJ] COORDINATES is \"{}\": X, Y and Z are all required.", given));
   const auto count = ini.real("KINS", "JOINTS");
+  const auto count_text = ini.text("KINS", "JOINTS");
   if (count != static_cast<double>(coordinates.size()))
     return std::unexpected(std::format(
         "[KINS] JOINTS is {}: set it to {}, one joint for each letter of [TRAJ] COORDINATES "
         "\"{}\".",
-        ini.text("KINS", "JOINTS") ? std::format("\"{}\"", *ini.text("KINS", "JOINTS"))
-                                   : std::string("not set"),
+        count_text ? std::format("\"{}\"", *count_text) : std::string("not set"),
         coordinates.size(), given));
 
   // trivkins takes coordinates= and kinstype=, each as one word.

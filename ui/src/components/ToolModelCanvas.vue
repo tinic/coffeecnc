@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { AmbientLight, DirectionalLight, OrthographicCamera, Scene, WebGLRenderer } from 'three'
+import { OrthographicCamera, Scene, WebGLRenderer } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
+import { lightPreview } from '../preview-lighting'
 import { toolEnvelope, type ToolModel } from '../tool-model'
 import { ToolMesh } from '../tool-mesh'
 import { holderLabel } from '../tool-holder'
@@ -54,11 +55,8 @@ onMounted(() => {
   if (canvas.value === null) return
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
-    renderer.setClearColor(0, 0)
-    scene.add(toolMesh.group, new AmbientLight(0xffffff, 1.1))
-    const key = new DirectionalLight(0xffffff, 2.1)
-    key.position.set(-80, -120, 180)
-    scene.add(key)
+    lightPreview(scene, renderer)
+    scene.add(toolMesh.group)
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
     resize = new ResizeObserver(draw)

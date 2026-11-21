@@ -34,6 +34,15 @@ auto tool_change_pin(const char* command) -> std::string {
 constexpr const char* script = R"js((() => {
   let receiver;
   let phase = 'reset';
+  let firstFrame;
+  let drawing = false;
+  function waitForDrawing(now) {
+    firstFrame ??= now;
+    // Deliver the simulated operator's first press after the panel has drawn steadily.
+    drawing = now - firstFrame >= 250;
+    if (!drawing) requestAnimationFrame(waitForDrawing);
+  }
+  requestAnimationFrame(waitForDrawing);
   const post = (m) => window.webkit.messageHandlers.coffeecnc.postMessage(JSON.stringify(m));
   const mark = (s) => window.webkit.messageHandlers.quitEvidence.postMessage(s);
   Object.defineProperty(window, 'coffeecncReceive', {
@@ -43,9 +52,10 @@ constexpr const char* script = R"js((() => {
       fn(m);
       if (m.type === 'hello' && m.quit_supported) mark('supported');
       if (m.type === 'hello') mark('coolant:' + JSON.stringify(m.coolant ?? null));
-      if (m.type === 'result' && m.id >= 1000000 && m.outcome !== 'accepted') mark('failed');
+      if (m.type === 'result' && m.id >= 1000000 && m.outcome !== 'accepted')
+        mark('failed:' + m.id + ':' + m.reason);
       if (m.type === 'result' && [1000002, 1000006].includes(m.id) && m.outcome === 'accepted') mark('accepted');
-      if (m.type !== 'status' || m.link !== 'live') return;
+      if (!drawing || m.type !== 'status' || m.link !== 'live') return;
       if (phase === 'reset' && m.machine === 'estop') {
         phase = 'on'; post({type:'set_machine',state:'off',id:1000000});
       } else if (phase === 'on' && m.machine === 'off') {
@@ -143,7 +153,10 @@ auto main(int argc, char** argv) -> int {
           const std::string_view value{text};
           if (value == "supported") state.supported = true;
           if (value == "accepted") state.accepted = true;
-          if (value == "failed") state.failed = true;
+          if (value.starts_with("failed:")) {
+            state.failed = true;
+            std::cout << "fact=quit_request_" << value << '\n';
+          }
           if (value == "tool-prompt") state.tool_prompt = true;
           if (value == "tool-loaded") state.tool_loaded = true;
           if (value.starts_with("coolant:")) state.coolant = value.substr(8) == state.expected_coolant;

@@ -80,11 +80,53 @@ void replaces_one_line_durably(const fs::path& base) {
   fs::remove_all(root);
 }
 
+void creates_new_programs(const fs::path& base) {
+  const fs::path root = base / "program_create_root";
+  fs::remove_all(root);
+  fs::create_directories(root / "sub");
+  { std::ofstream(root / "part.ngc", std::ios::binary) << "M2\n"; }
+  const LocalFileSystem files;
+  const ProgramStore programs{files, "/", root.string()};
+  LocalToolModelFiles writes;
+  ProgramWriter writer{programs, writes};
+  const std::string text = "(Facing)\nG21\nM2\n";
+
+  const auto made = writer.create("facing.ngc", text, false);
+  require(made && *made == fs::canonical(root).string() + "/facing.ngc",
+          "A new program is written in the program directory: " + made.error_or(""));
+  require(read(root / "facing.ngc") == text, "The text is written exactly");
+  require(!fs::exists(root / ".facing.ngc.coffeecnc-new"), "No temporary file is left");
+  require((fs::status(root / "facing.ngc").permissions() & fs::perms::others_all) == fs::perms::none,
+          "Only its owner can read it");
+
+  const auto again = writer.create("facing.ngc", "M2\n", false);
+  require(!again && again.error() == "A program named facing.ngc exists already.",
+          "An existing program is not written over");
+  require(read(root / "facing.ngc") == text, "It keeps its text");
+  require(writer.create("facing.ngc", "M30\n", true).has_value() && read(root / "facing.ngc") == "M30\n",
+          "Asked to, it is replaced");
+  require(writer.create((root / "sub" / "deep.ngc").string(), text, false).has_value() &&
+              read(root / "sub" / "deep.ngc") == text,
+          "Below the program directory");
+  require(!writer.create((base / "outside.ngc").string(), text, false) &&
+              !fs::exists(base / "outside.ngc"),
+          "Outside the program directory nothing is written");
+  // A name taken by a link that leads nowhere: link(2) refuses it, nothing is written through.
+  fs::create_symlink(root / "nowhere" / "target.ngc", root / "dangling.ngc");
+  const auto through = writer.create("dangling.ngc", text, false);
+  require(!through && through.error().starts_with("The program could not be saved") &&
+              !fs::exists(root / "nowhere"),
+          "A dangling link is not written through");
+  require(!fs::exists(root / ".dangling.ngc.coffeecnc-new"), "Nor is a temporary file left");
+  fs::remove_all(root);
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
   edits_only_feed_or_speed_numbers();
   replaces_one_line_durably(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
+  creates_new_programs(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   if (failures != 0)
     return EXIT_FAILURE;
   std::cout << "program_edit: all passed\n";

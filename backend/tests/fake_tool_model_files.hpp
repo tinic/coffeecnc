@@ -37,7 +37,7 @@ public:
 
   FakeDisk& disk;
   // Steps that fail, each as often as its count: make_directory, lock, read, open_temporary,
-  // write, sync, rename, sync_directory; or one call of a step, as `<step> <path>`.
+  // write, sync, rename, link, sync_directory; or one call of a step, as `<step> <path>`.
   std::map<std::string, int> failures;
   // Every call, as `<step> <path>`.
   std::vector<std::string> calls;
@@ -103,6 +103,14 @@ public:
       return std::unexpected(std::string("the file cannot be replaced: Read-only file system"));
     auto node = disk.files.extract(from);
     disk.files.insert_or_assign(to, std::move(node.mapped()));
+    return {};
+  }
+  auto link(const std::string& from, const std::string& to) -> Done override {
+    if (begin("link", from + " " + to))
+      return std::unexpected(std::string("the file cannot be made: Read-only file system"));
+    if (disk.files.contains(to) || disk.directories.contains(to))
+      return std::unexpected(std::string("the file cannot be made: File exists"));
+    disk.files[to] = disk.files[from];
     return {};
   }
   auto sync_directory(const std::string& directory) -> Done override {

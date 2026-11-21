@@ -10,7 +10,7 @@ import { baseName, formatLength } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
-const emit = defineEmits<{ log: []; open: []; quit: []; settings: [] }>()
+const emit = defineEmits<{ log: []; open: []; create: []; quit: []; settings: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
 function openAppDialog(dialog: 'quit' | 'settings'): void {
@@ -124,7 +124,7 @@ const subtitle = computed(() => {
   </header>
   <section class="jobbar">
     <div class="job">
-      <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
+      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button></template></div>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">
@@ -182,7 +182,7 @@ const subtitle = computed(() => {
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-weight: 550; }
 .subtitle { margin: 5px 0 0; font-size: 12px; color: var(--text-dim); }
-.open { display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.open { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -6px -4px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
 .open:disabled { opacity: .4; }
 .state-menu { position: relative; flex: none; }
 .app-menu-toggle { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); }

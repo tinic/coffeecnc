@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { basis, boxCorners, boxEdges, fit, orbit, pan, project, views, zoom, type Camera } from '../src/pathview'
+import { drawPreviewGrid } from '../src/preview-grid'
 import type { Vec3 } from '../src/protocol'
 
 const width = 800
@@ -13,6 +14,42 @@ function camera(view: keyof typeof views): Camera {
 function rounded(p: [number, number]): number[] {
   return p.map((v) => Math.round(v * 1000) / 1000 + 0)
 }
+
+describe('work grid', () => {
+  function capture(cam: Camera, origin: Vec3 = [0, 0, 0], angle = 0): { start: [number, number]; end: [number, number] }[] {
+    const moveTo = vi.fn<(x: number, y: number) => void>()
+    const lineTo = vi.fn<(x: number, y: number) => void>()
+    const context = { moveTo, lineTo, beginPath: vi.fn(), stroke: vi.fn() }
+    drawPreviewGrid(context as unknown as CanvasRenderingContext2D, cam, origin, angle, width, height, false)
+    return moveTo.mock.calls.flatMap((start, i) => {
+      const end = lineTo.mock.calls[i]
+      return end === undefined ? [] : [{ start, end }]
+    })
+  }
+
+  it('passes through the projected work origin with the work axes rotated', () => {
+    const cam = camera('iso')
+    const origin: Vec3 = [32, -45, 17]
+    const angle = 0.91
+    const at = project(cam, origin, width, height)
+    const xStep = project(cam, [origin[0] + Math.cos(angle), origin[1] + Math.sin(angle), origin[2]], width, height)
+    const lines = capture(cam, origin, angle)
+    expect(lines.some(({ start, end }) => {
+      const dx = end[0] - start[0], dy = end[1] - start[1]
+      return Math.abs(dx * (at[1] - start[1]) - dy * (at[0] - start[0])) < 1e-6
+        && Math.abs(dx * (xStep[1] - at[1]) - dy * (xStep[0] - at[0])) < 1e-6
+    })).toBe(true)
+  })
+
+  it('draws a bounded number of lines over a wide range of scales and skips an edge-on plane', () => {
+    for (const scale of [0.05, 0.2, 7, 400]) {
+      const lines = capture({ ...camera('iso'), scale, centre: [3200, -1500, 0] })
+      expect(lines.length).toBeGreaterThan(10)
+      expect(lines.length).toBeLessThan(100)
+    }
+    expect(capture(camera('front'))).toEqual([])
+  })
+})
 
 describe('projection', () => {
   it('top view: X to the right, Y up, Z towards the viewer', () => {

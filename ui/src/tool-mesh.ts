@@ -120,11 +120,11 @@ export class ToolMesh {
     if (showShank) cylinder(d.shankDiameter, d.shankDiameter, bodyEnd, this.shank)
   }
 
-  light(renderer: WebGLRenderer): void {
-    if (this.lightingReady) return
+  light(renderer: WebGLRenderer): WebGLCubeRenderTarget['texture'] | null {
+    if (this.lightingReady) return this.reflections?.texture ?? null
     this.lightingReady = true
     // Direct scene lighting still works when the GPU can't render a half-float reflection map.
-    if (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float')) return
+    if (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float')) return null
     const generator = new PMREMGenerator(renderer)
     const room = new RoomEnvironment()
     try {
@@ -137,6 +137,7 @@ export class ToolMesh {
       room.dispose()
       generator.dispose()
     }
+    return this.reflections.texture
   }
 
   resetLighting(): void {

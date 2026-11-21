@@ -3,6 +3,7 @@
 
 #include <coffeecnc/app/session.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -30,8 +31,10 @@ struct PanelEvents {
   // The document of this page is gone: replaced, its load failed, its web process ended, or the
   // window closed. Runtime::end_page.
   std::function<void(PageToken)> end_page;
-  // One message the page posted, as text.
-  std::function<void(PageToken, std::string_view)> message;
+  // One message the page posted, with the timestamp of the frame visible when it was sent.
+  std::function<void(PageToken, std::string_view, std::chrono::milliseconds)> message;
+  // The current document's animation-frame heartbeat. It is outside the command stream.
+  std::function<void(PageToken, std::chrono::milliseconds)> frame;
 };
 
 // Opens the display. False when there is none.

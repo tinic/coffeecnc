@@ -625,6 +625,84 @@ void jog_by_held_press(const Rig& rig) {
   check("no_console_errors_after_jog", rig.js("return __t.errors.length;") == 0, rig.errors());
 }
 
+// Stall rendering while the mouse stays down and the page's 50 ms jog refreshes still run.
+void panel_frames_stop_mid_jog(const Rig& rig) {
+  const auto jog = press_jog(rig, "frame_watchdog");
+  if (!jog)
+    return;
+  const auto before = rig.js(R"(
+      const schedule = window.requestAnimationFrame.bind(window);
+      const waiting = [];
+      window.requestAnimationFrame = callback => { waiting.push(callback); return 0; };
+      __t.resumeFrames = () => {
+        window.requestAnimationFrame = schedule;
+        for (const callback of waiting) schedule(callback);
+      };
+      return { seq: __t.lastSeq, sent: __t.sent.length, stamp: Date.now() };)");
+  const auto pin = [](const char* name) -> std::string {
+    return output_of(std::format("halcmd getp {}", name));
+  };
+  check("frame_watchdog_trips_hal", rig.wait(1500ms, [&]() -> bool {
+    return pin("motion.jog-stop") == "TRUE" && pin("motion.jog-inhibit") == "TRUE";
+  }));
+  check("frame_watchdog_stops_jog", stopped(rig, 2s).has_value());
+  const double halted_at = rig.hal_position(0);
+  const auto refreshes =
+      std::format("__t.sent.slice({}).filter((m) => m?.type === 'jog' && m.held).length",
+                  before.at("sent").get<int>());
+  check("frame_watchdog_native_and_js_still_live",
+        pin("coffeecnc.watchdog-ok") == "TRUE" && pin("motion.jog-inhibit") == "TRUE" &&
+            rig.js(std::format("return __t.lastSeq > {} && {} >= 3;", before.at("seq").get<int>(),
+                               refreshes)) == true);
+  check("frame_watchdog_reports_cause",
+        rig.wait_js("__t.received.some((m) => m.text?.includes('Panel stopped drawing'))"));
+
+  const auto submit_mdi = [&](bool delay) -> Json {
+    return rig.js(std::string("const delay = ") + (delay ? "true;" : "false;") + R"(
+      const input = __t.find('input[aria-label="MDI command"]');
+      input.value = 'G55';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 50));
+      const bridge = window.webkit.messageHandlers.coffeecnc;
+      const post = bridge.postMessage;
+      let request;
+      bridge.postMessage = (text) => {
+        const body = JSON.parse(text);
+        if (body.type === 'mdi') {
+          request = body;
+          if (delay) return;
+        }
+        post(text);
+      };
+      try { __t.click('section.mdi button[type="submit"]'); }
+      finally { bridge.postMessage = post; }
+      return request || null;)");
+  };
+  const auto refused = [&](const Json& request) -> bool {
+    return request.is_object() &&
+           rig.wait_js(std::format("__t.received.some((m) => m.id === {} && "
+                                   "m.outcome === 'rejected' && m.reason.includes('fresh frames'))",
+                                   request.at("id").get<int>()));
+  };
+  check("frame_watchdog_refuses_operator_input_while_stale", refused(submit_mdi(false)));
+  rig.js("__t.resumeFrames(); return true;");
+  check("frame_watchdog_recovers",
+        rig.wait(2s, [&]() -> bool { return pin("motion.jog-inhibit") == "FALSE"; }));
+  const auto delayed = submit_mdi(true);
+  if (delayed.is_object())
+    rig.hooks.deliver_from_page(std::format("{}:{}:{}", rig.hooks.state().identity,
+                                            before.at("stamp").get<std::int64_t>(),
+                                            delayed.dump()));
+  check("frame_watchdog_refuses_buffered_input_after_recovery", refused(delayed));
+  check("frame_watchdog_needs_fresh_press",
+        halted_at == rig.hal_position(0) && rig.panel_status().at("offsets").at("wcs") == 1);
+  rig.hooks.mouse_release(jog->at.first, jog->at.second);
+  const auto fresh = press_jog(rig, "frame_watchdog_fresh_press");
+  if (fresh)
+    rig.hooks.mouse_release(fresh->at.first, fresh->at.second);
+  check("frame_watchdog_fresh_press_stops_on_release", fresh && stopped(rig, 2s).has_value());
+}
+
 // A reload while the control is held: the dead-man stops the axis, the next page starts clean,
 // and nothing of the old page reaches it.
 void reload_mid_jog(const Rig& rig) {
@@ -2037,6 +2115,8 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     status_gaps(rig, "positions_in_mm");
     jog_by_held_press(rig);
     status_gaps(rig, "jog_by_held_press");
+    panel_frames_stop_mid_jog(rig);
+    status_gaps(rig, "panel_frames_stop_mid_jog");
     reload_mid_jog(rig);
     status_gaps(rig, "reload_mid_jog");
     web_process_killed_mid_jog(rig);

@@ -93,6 +93,16 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           return allow();
         if constexpr (std::is_same_v<T, Abort> || std::is_same_v<T, JogStopAll>)
           return allow();
+        // A new file: nothing of the machine's state decides about it. Replacing the loaded
+        // program is refused by the app, which resolves the path.
+        if constexpr (std::is_same_v<T, SaveProgram>) {
+          if (!valid_text(c.path, 254))
+            return reject("Program path is empty, too long or contains control characters.");
+          if (c.text.empty() || c.text.size() > max_saved_program_bytes ||
+              c.text.find('\0') != std::string::npos)
+            return reject("The program text is empty, longer than 512 KiB or contains a NUL byte.");
+          return allow();
+        }
         // Visual preferences of the panel: nothing of the machine's state decides about them,
         // and nothing of them reaches the controller.
         if constexpr (std::is_same_v<T, SetToolModelDefaults> ||

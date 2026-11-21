@@ -56,6 +56,17 @@ public:
   [[nodiscard]] auto resolve_program(std::string_view path) const
       -> std::expected<std::string, std::string>;
 
+  // Where `save_program` may write a program named by `path`: absolute, or relative to the
+  // program directory (`start`, the root without one). Its directory must resolve to the
+  // program directory or below it; the name must be one a listing shows and the whole path at
+  // most max_program_path_bytes long. `exists` when something has that name already.
+  struct NewProgram {
+    std::string path;
+    bool exists{};
+  };
+  [[nodiscard]] auto resolve_new_program(std::string_view path) const
+      -> std::expected<NewProgram, std::string>;
+
   // The text of a program under the same rules, for the `program` message. Lines end at `\n`,
   // `\r\n` or `\r`; a line end at the end of the file does not start another line. Every byte
   // that is not part of a well-formed UTF-8 sequence becomes one U+FFFD.

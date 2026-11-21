@@ -25,6 +25,7 @@ import {
   type ViewName,
 } from '../pathview'
 import { useDrawnPreview } from '../drawn-preview'
+import { drawPreviewGrid } from '../preview-grid'
 import type { Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
@@ -46,6 +47,7 @@ const modelPoints = computed((): Vec3[] => {
 })
 
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
+const grid = useTemplateRef<HTMLCanvasElement>('grid')
 const size = ref<{ width: number; height: number }>({ width: 0, height: 0 })
 const camera = shallowRef<Camera>({ ...views.iso, scale: 1, centre: [200, 125, -100] })
 const view = ref<ViewName | null>('iso')
@@ -137,6 +139,15 @@ const toolBody = computed(() => loadedToolPreview(panel.status, live.value, pane
 const showTool = ref(true)
 const visibleTool = computed(() => showTool.value ? toolBody.value : null)
 const probeFixture = computed(() => hasDemoProbeFixture(panel.simulated, panel.hello))
+const workFrame = computed(() => {
+  if (panel.status === null) return null
+  const { g5x, g92, rotation_xy: degrees } = panel.status.offsets
+  const angle = degrees * Math.PI / 180
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const origin: Vec3 = [g5x[0] + g92[0] * cos - g92[1] * sin,
+    g5x[1] + g92[0] * sin + g92[1] * cos, g5x[2] + g92[2]]
+  return { origin, angle, cos, sin }
+})
 
 const tools = computed((): number[] => {
   const seen: number[] = []
@@ -264,13 +275,34 @@ function wheel(event: WheelEvent): void {
 // ---- drawing ------------------------------------------------------------------------------------
 
 const colours = {
-  travel: '#80909d',
-  rapid: '#7b8794',
-  executed: '#377ef2',
-  marker: '#f0b64a',
-  outdated: '#66707c',
-  axes: ['#d97b7b', '#7fbf8a', '#7b9fe0'],
+  light: { travel: '#778a9a', rapid: '#667989', executed: '#064fc4', marker: '#a35910', outdated: '#687782',
+    axes: ['#a34040', '#2e7651', '#375eb0'] },
+  dark: { travel: '#7f95a7', rapid: '#8b9dae', executed: '#84bbff', marker: '#ffbd61', outdated: '#8996a3',
+    axes: ['#f28c87', '#83cea4', '#91b8ff'] },
 } as const
+
+function drawGrid(): void {
+  const element = grid.value
+  const context = element?.getContext('2d')
+  const { width, height } = size.value
+  if (element === null || !context || width <= 0 || height <= 0) return
+  const ratio = Math.min(window.devicePixelRatio, 2)
+  const pixelsWide = Math.round(width * ratio), pixelsHigh = Math.round(height * ratio)
+  if (element.width !== pixelsWide || element.height !== pixelsHigh) {
+    element.width = pixelsWide
+    element.height = pixelsHigh
+  }
+  context.setTransform(ratio, 0, 0, ratio, 0, 0)
+  context.clearRect(0, 0, width, height)
+  const frame = workFrame.value
+  if (frame === null) return
+  const plane: Vec3 = [frame.origin[0], frame.origin[1], probeFixture.value
+    ? demoFixture.top - demoFixture.stockHeight : frame.origin[2]]
+  drawPreviewGrid(context, camera.value, plane, frame.angle, width, height, theme.value === 'dark')
+}
+watch([camera, size, theme, probeFixture, (): number | undefined => workFrame.value?.angle,
+  (): number | undefined => workFrame.value?.origin[0], (): number | undefined => workFrame.value?.origin[1],
+  (): number | undefined => workFrame.value?.origin[2]], drawGrid)
 
 function draw(): void {
   const element = canvas.value
@@ -291,6 +323,7 @@ function draw(): void {
   const cam = camera.value
   const at = (p: Vec3): Screen => project(cam, p, width, height)
   const status = panel.status
+  const palette = colours[theme.value]
 
   if (probeFixture.value) {
     const [x, y] = at(demoFixture.setter)
@@ -298,13 +331,13 @@ function draw(): void {
     context.font = '600 12px system-ui, sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    context.fillText('Tool setter', x, y + 24)
+    context.fillText('Tool setter', x, y + 30)
   }
 
   const box = travelBox.value
   if (box !== null && showMachine.value) {
     const corners = boxCorners(box.min, box.max).map(at)
-    context.strokeStyle = colours.travel
+    context.strokeStyle = palette.travel
     context.lineWidth = 1
     context.setLineDash([])
     context.beginPath()
@@ -343,22 +376,22 @@ function draw(): void {
             context.lineTo(x, y)
           }
         }
-        const colour = fresh ? toolColour(tools.value.indexOf(segment.tool)) : colours.outdated
+        const colour = fresh ? toolColour(tools.value.indexOf(segment.tool), theme.value === 'dark') : palette.outdated
         if (kind === 'rapid') {
-          context.setLineDash([3, 5])
-          context.strokeStyle = fresh ? colours.rapid : colours.outdated
-          context.globalAlpha = done ? 0.9 : 0.5
+          context.setLineDash([2, 5])
+          context.strokeStyle = fresh ? palette.rapid : palette.outdated
+          context.globalAlpha = done ? 0.8 : 0.56
           context.lineWidth = 1
         } else if (kind === 'done') {
           context.setLineDash([])
-          context.strokeStyle = segment.line === motionLine ? colours.executed : colour
+          context.strokeStyle = segment.line === motionLine ? palette.executed : colour
           context.globalAlpha = 1
           context.lineWidth = 2.6
         } else {
           context.setLineDash([])
           context.strokeStyle = colour
           context.globalAlpha = fresh ? (running ? 0.45 : 0.9) : 0.5
-          context.lineWidth = 1.3
+          context.lineWidth = 1.55
         }
         context.stroke()
       }
@@ -367,18 +400,12 @@ function draw(): void {
     context.setLineDash([])
   }
 
-  if (status !== null) {
-    // The active work origin: where the work coordinates are zero.
-    const { g5x, g92, rotation_xy: degrees } = status.offsets
-    const a = (degrees * Math.PI) / 180
-    const origin: Vec3 = [
-      g5x[0] + g92[0] * Math.cos(a) - g92[1] * Math.sin(a),
-      g5x[1] + g92[0] * Math.sin(a) + g92[1] * Math.cos(a),
-      g5x[2] + g92[2],
-    ]
+  const work = workFrame.value
+  if (work !== null) {
+    const { origin, cos, sin } = work
     const directions: Vec3[] = [
-      [Math.cos(a), Math.sin(a), 0],
-      [-Math.sin(a), Math.cos(a), 0],
+      [cos, sin, 0],
+      [-sin, cos, 0],
       [0, 0, 1],
     ]
     const o = at(origin)
@@ -395,7 +422,7 @@ function draw(): void {
       }
       const reach = (34 * (length / cam.scale)) / length
       const end: Screen = [o[0] + (tip[0] - o[0]) * reach, o[1] + (tip[1] - o[1]) * reach]
-      const colour = colours.axes[index] ?? colours.rapid
+      const colour = palette.axes[index] ?? palette.rapid
       context.strokeStyle = colour
       context.fillStyle = colour
       context.globalAlpha = live.value ? 1 : 0.4
@@ -413,10 +440,11 @@ function draw(): void {
     const [x, y] = at(tip)
     const top = at([tip[0], tip[1], tip[2] + 1])
     const length = Math.hypot(top[0] - x, top[1] - y)
-    const colour = live.value ? colours.marker : colours.outdated
+    const modelVisible = visibleTool.value !== null && modelError.value === ''
+    const colour = live.value ? palette.marker : palette.outdated
     context.strokeStyle = colour
     context.fillStyle = colour
-    if (length > 0.01) {
+    if (!modelVisible && length > 0.01) {
       // The tool's axis: a fixed length on screen, pointing up the machine's Z.
       context.lineWidth = 3
       context.beginPath()
@@ -426,11 +454,13 @@ function draw(): void {
     }
     context.lineWidth = 2
     context.beginPath()
-    context.arc(x, y, 6, 0, 2 * Math.PI)
+    context.arc(x, y, modelVisible ? 4 : 6, 0, 2 * Math.PI)
     context.stroke()
     context.beginPath()
-    context.arc(x, y, 2, 0, 2 * Math.PI)
-    context.fill()
+    if (!modelVisible) {
+      context.arc(x, y, 2, 0, 2 * Math.PI)
+      context.fill()
+    }
   }
 }
 
@@ -445,7 +475,8 @@ function schedule(): void {
   }
 }
 
-watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link, tools, theme, showMachine, probeFixture], schedule)
+watch([camera, size, drawn, current, (): unknown => panel.status, (): unknown => panel.link,
+  tools, theme, showMachine, probeFixture, visibleTool, modelError], schedule)
 
 let observer: ResizeObserver | null = null
 
@@ -474,6 +505,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="pathview" :class="{ outdated: drawn !== null && !current }">
     <div class="viewport">
+      <canvas ref="grid" class="work-grid" aria-hidden="true"></canvas>
       <SceneCanvas
         v-if="part.attachment || visibleTool || probeFixture"
         :camera="camera" :width="size.width" :height="size.height"
@@ -507,7 +539,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.viewport { position: relative; height: calc(100% - 42px); }
+.viewport { position: relative; height: calc(100% - 42px); background: radial-gradient(ellipse at 50% 45%, var(--panel-raised), var(--bg-sunken) 80%); }
+.work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 22%, transparent 74%); }
 .toolpath-canvas { position: relative; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }
 .legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }

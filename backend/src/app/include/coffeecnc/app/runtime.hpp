@@ -73,10 +73,12 @@ public:
   Runtime(const Runtime&) = delete;
   auto operator=(const Runtime&) -> Runtime& = delete;
 
-  [[nodiscard]] auto begin_page() -> PageToken;
+  [[nodiscard]] auto begin_page(bool watch_frames = false) -> PageToken;
   void end_page(PageToken page);
+  void panel_frame(PageToken page, std::chrono::milliseconds rendered_at);
   // What is answered at once; see Session::submit.
-  [[nodiscard]] auto submit(PageToken page, std::string_view json) -> Outcome;
+  [[nodiscard]] auto submit(PageToken page, std::string_view json,
+                            std::chrono::milliseconds rendered_at = {}) -> Outcome;
 
   // Since the start or the last call of reset_timing.
   [[nodiscard]] auto timing() const -> Timing;

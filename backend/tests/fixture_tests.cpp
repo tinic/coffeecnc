@@ -69,7 +69,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "plan_restart",
     "start_restart",
     "edit_program",
-    "jog_paused_z"};
+    "jog_paused_z",
+    "save_program"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};

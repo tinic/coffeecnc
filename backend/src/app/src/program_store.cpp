@@ -191,6 +191,37 @@ auto ProgramStore::resolve_program(std::string_view path) const
   return std::move(where->path);
 }
 
+auto ProgramStore::resolve_new_program(std::string_view path) const
+    -> std::expected<NewProgram, std::string> {
+  if (path.empty() || path.ends_with('/'))
+    return std::unexpected(std::string("Name the program file."));
+  if (path.find('\0') != std::string_view::npos)
+    return std::unexpected(std::string("Path contains a NUL byte."));
+  const auto programs = resolve(start_.empty() ? root_ : start_);
+  if (!programs)
+    return std::unexpected(programs.error());
+  const auto absolute = path.front() == '/' ? std::string(path) : child(programs->path, path);
+  const auto slash = absolute.rfind('/');
+  const auto name = std::string_view{absolute}.substr(slash + 1);
+  if (!listable(name) || name == "..")
+    return std::unexpected(
+        std::string("Use a file name without control characters that does not start with a dot."));
+  const auto directory = resolve(slash == 0 ? std::string("/") : absolute.substr(0, slash));
+  if (!directory)
+    return std::unexpected(directory.error());
+  if (!inside(programs->path, directory->path))
+    return std::unexpected(std::string("New programs go in the program directory."));
+  const auto info = files_.info(directory->path);
+  if (!info || info->kind != FileKind::directory)
+    return std::unexpected(std::string("The folder of the new program is not a directory."));
+  NewProgram created{child(directory->path, name), false};
+  if (created.path.size() > max_program_path_bytes)
+    return std::unexpected(std::string("Program path is longer than 254 bytes."));
+  // A link of that name counts, also one that leads nowhere: it is never written through.
+  created.exists = files_.info(created.path).has_value() || files_.canonical(created.path).has_value();
+  return created;
+}
+
 auto ProgramStore::read_program(std::string_view path, std::uint64_t revision) const
     -> std::expected<ProgramText, std::string> {
   auto file = resolve_program(path);

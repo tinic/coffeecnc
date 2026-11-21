@@ -49,10 +49,16 @@ Runtime::~Runtime() {
   control_.join();
 }
 
-auto Runtime::begin_page() -> PageToken { return session_.begin_page(); }
+auto Runtime::begin_page(bool watch_frames) -> PageToken {
+  return session_.begin_page(watch_frames);
+}
 void Runtime::end_page(PageToken page) { session_.end_page(page); }
-auto Runtime::submit(PageToken page, std::string_view json) -> Outcome {
-  return session_.submit(page, json, now());
+void Runtime::panel_frame(PageToken page, std::chrono::milliseconds rendered_at) {
+  session_.panel_frame(page, rendered_at, now());
+}
+auto Runtime::submit(PageToken page, std::string_view json, std::chrono::milliseconds rendered_at)
+    -> Outcome {
+  return session_.submit(page, json, now(), rendered_at);
 }
 
 auto Runtime::timing() const -> Timing {

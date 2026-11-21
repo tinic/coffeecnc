@@ -3,8 +3,11 @@
 #include <coffeecnc/app/panel_assets.hpp>
 
 #include <algorithm>
+#include <charconv>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <string_view>
 
@@ -34,7 +37,7 @@ constexpr const char* content_security_policy =
 // Runs first in every document of the top frame, before any script of the page. The document
 // gives itself an identity that scripts of the page cannot change and tells the shell. Then it
 // puts its own function in the place of the `coffeecnc` handler's postMessage: every message
-// the page posts leaves as `<identity>:<text>`, so the shell knows which document sent it.
+// the page posts carries its document identity and the time of its last animation frame.
 // The handler object itself is WebKit's and was there before this ran; the page's check that
 // `window.webkit.messageHandlers.coffeecnc.postMessage` is a function sees the same object with
 // a function in it. The last character tells the shell whether that is in place.
@@ -48,11 +51,24 @@ constexpr const char* document_start_script = R"js((() => {
   let bridge = false;
   if (native && typeof native.postMessage === 'function') {
     const post = native.postMessage.bind(native);
-    const marked = (text) => post(identity + ':' + String(text));
+    let frameTime = 0;
+    let lastPost = -Infinity;
+    const frame = (time) => {
+      // Account for frames whose callback had to wait. A stale frame queued in the bridge
+      // must not extend the deadline when it eventually arrives.
+      frameTime = Math.round(Date.now() - (performance.now() - time));
+      if (time - lastPost >= 80) {
+        lastPost = time;
+        post(identity + ':' + frameTime + ':');
+      }
+      requestAnimationFrame(frame);
+    };
+    const marked = (text) => post(identity + ':' + frameTime + ':' + String(text));
     try {
       Object.defineProperty(native, 'postMessage', { value: marked, writable: true, configurable: true });
     } catch (error) { /* reported below */ }
     bridge = native.postMessage === marked;
+    if (bridge) requestAnimationFrame(frame);
   }
   if (handlers && handlers.coffeecncPage) handlers.coffeecncPage.postMessage(identity + (bridge ? ':1' : ':0'));
 })();)js";
@@ -285,15 +301,33 @@ void wake() { g_idle_add_full(G_PRIORITY_DEFAULT, on_wake, nullptr, nullptr); }
 } // namespace
 
 void PanelWindow::Impl::receive(std::string_view raw) {
-  // `<identity>:<text>`, and the identity must be that of the document that shows: a message
+  // The identity must be that of the document that shows: a message
   // of a document that has been replaced is not the present page's, whenever it arrives.
   if (!page || identity.empty() || raw.size() <= identity_digits || raw[identity_digits] != ':' ||
       raw.substr(0, identity_digits) != identity) {
     ++rejected;
     return;
   }
+  const auto body = raw.substr(identity_digits + 1);
+  const auto separator = body.find(':');
+  std::int64_t milliseconds = 0;
+  if (separator != std::string_view::npos) {
+    const auto* end = body.data() + separator;
+    const auto stamp = std::from_chars(body.data(), end, milliseconds);
+    if (stamp.ec == std::errc{} && stamp.ptr == end && milliseconds >= 0) {
+      const auto frame = std::chrono::milliseconds{milliseconds};
+      const auto text = body.substr(separator + 1);
+      if (text.empty() && events.frame)
+        events.frame(*page, frame);
+      else if (!text.empty() && events.message)
+        events.message(*page, text, frame);
+      return;
+    }
+  }
+  // Identity is still checked for a message without a frame. Session only accepts
+  // bootstrap, read-only status and stop requests without a current frame.
   if (events.message)
-    events.message(*page, raw.substr(identity_digits + 1));
+    events.message(*page, body, {});
 }
 
 void PanelWindow::Impl::drain() {

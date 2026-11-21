@@ -302,7 +302,7 @@ describe('what the interpreter does not support', () => {
     const m = modal()
     expect(error(m, 'G41 D1')).toBe('line 12: D word is not supported by the simulator')
     expect(error(m, 'G41')).toBe('line 12: G41 is not supported by the simulator')
-    expect(error(m, 'G81 R.1 Z-.5')).toBe('line 12: G81 is not supported by the simulator')
+    expect(error(m, 'G82 R.1 Z-.5 P1')).toBe('line 12: G82 is not supported by the simulator')
     expect(error(m, 'G38.2 Z-1')).toBe('line 12: G38.2 is not supported by the simulator')
     expect(error(m, 'G93')).toBe('line 12: G93 is not supported by the simulator')
     expect(error(m, 'G95')).toBe('line 12: G95 is not supported by the simulator')

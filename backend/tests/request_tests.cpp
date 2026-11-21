@@ -330,6 +330,46 @@ void tool_model_commands() {
           "The nesting limit of 8 holds inside a tool-model command");
 }
 
+void save_program_requests() {
+  const auto save = body<SaveProgram>(
+      R"({"id":42,"type":"save_program","path":"facing.ngc","text":"(Facing)\nG21\nM2\n"})");
+  require(save.path == "facing.ngc" && save.text == "(Facing)\nG21\nM2\n" && !save.replace,
+          "A program to save keeps its path and text; nothing is replaced unasked");
+  require(body<SaveProgram>(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","replace":true})")
+              .replace,
+          "Replacing is asked for explicitly");
+  rejected(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","replace":1})", 42);
+  rejected(R"({"id":42,"type":"save_program","path":"a.ngc"})", 42);
+  rejected(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","open":true})", 42);
+
+  // Above 16 KiB only a program: one of 200 KiB decodes, anything else of that size does not.
+  const auto wire = [](std::string_view type, std::size_t bytes) -> std::string {
+    return std::format(R"({{"id":42,"type":"{}","path":"big.ngc","text":"{}"}})", type,
+                       std::string(bytes, 'G'));
+  };
+  require(body<SaveProgram>(wire("save_program", std::size_t{200} * 1024)).text.size() ==
+              std::size_t{200} * 1024,
+          "A long program decodes");
+  require(rejected(wire("mdi", std::size_t{200} * 1024), std::nullopt).find("16 KiB") !=
+              std::string::npos,
+          "Another long command is refused for its size");
+  require(rejected(wire("save_program", max_saved_program_bytes + 1), 42).find("512 KiB") !=
+              std::string::npos,
+          "A program above 512 KiB is refused");
+  require(rejected(wire("save_program", max_save_program_request_bytes), std::nullopt)
+                  .find("16 KiB") != std::string::npos,
+          "A request above the program limit is not parsed");
+
+  CommandPolicy policy{Limits{3000, 1.2, 0.5, 1.2, 24000}};
+  const ControllerState disconnected;
+  require(policy.evaluate(save, disconnected).allowed,
+          "Saving a new file needs no connection: nothing of the machine changes");
+  require(!policy.evaluate(SaveProgram{"", "M2", false}, disconnected).allowed &&
+              !policy.evaluate(SaveProgram{"a.ngc", "", false}, disconnected).allowed &&
+              !policy.evaluate(SaveProgram{"a\nb.ngc", "M2", false}, disconnected).allowed,
+          "An empty path or text, or a path with a line end, is refused");
+}
+
 void policy_still_required() {
   CommandPolicy policy{Limits{3000, 1.2, 0.5, 1.2, 24000}};
   const ControllerState disconnected;
@@ -358,6 +398,7 @@ auto main() -> int {
   try {
     protocol_forms();
     malformed_and_ambiguous();
+    save_program_requests();
     strict_shapes();
     identity_and_limits();
     tool_model_commands();

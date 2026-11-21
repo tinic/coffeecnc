@@ -23,7 +23,8 @@ import {
   type Screen,
   type ViewName,
 } from '../pathview'
-import type { Preview, Vec3 } from '../protocol'
+import { useDrawnPreview } from '../drawn-preview'
+import type { Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
@@ -51,31 +52,9 @@ const view = ref<ViewName | null>('iso')
 const autoFit = ref<boolean>(true)
 const showMachine = ref(false)
 
-/** The last preview that had a path, kept so an outdated path can be shown as outdated. */
-const drawn = shallowRef<Preview | null>(null)
+const drawn = useDrawnPreview(panel)
 
-watch(
-  () => panel.preview,
-  (preview) => {
-    if (preview === null || preview.state === 'unavailable') {
-      drawn.value = null
-    } else if (preview.state !== 'pending') {
-      drawn.value = preview
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  () => panel.program?.revision,
-  () => {
-    // Another program: its predecessor's path says nothing about it.
-    if (drawn.value !== null && drawn.value.context !== panel.preview?.context) {
-      drawn.value = null
-    }
-    autoFit.value = true
-  },
-)
+watch(() => panel.program?.revision, () => { autoFit.value = true })
 
 const current = computed(
   () => drawn.value !== null && panel.status !== null && drawn.value.context === panel.status.preview_context,
@@ -90,7 +69,10 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     return { text: 'Preview out of date', tone: 'warn' }
   }
   if (preview.state === 'unavailable') {
-    return { text: panel.status.program.file === null ? 'No program loaded' : 'Preview unavailable', tone: '' }
+    return {
+      text: panel.status.program.file === null ? 'No program loaded' : preview.error?.text ?? 'Preview unavailable',
+      tone: drawn.value === null ? '' : 'warn',
+    }
   }
   if (preview.state === 'pending') {
     return { text: 'Computing preview', tone: 'warn' }
@@ -102,8 +84,9 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     const line = preview.error?.line ?? 0
     const location = Number.isSafeInteger(line) && line > 0 ? ` at line ${String(line)}` : ''
     const path = preview.segments.some((segment) => segment.points.length >= 6) ? 'partial path shown' : 'no path available'
+    const detail = preview.error?.text
     return {
-      text: `Preview stopped${location}: ${path}`,
+      text: `Preview stopped${location}: ${path}${detail ? ` · ${detail}` : ''}`,
       tone: 'stop',
     }
   }

@@ -174,7 +174,8 @@ export class SimMachine {
   private offsetsKey = ''
   private offsetsRevision = 0
   private previewKey = ''
-  private startKey = ''
+  private previewBlockDelete = false
+  private previewPlanBroken = false
   private previewContext = 0
   private previewDue: number | null = null
   private preview: Preview = {
@@ -423,13 +424,30 @@ export class SimMachine {
   private checkPreview(): void {
     const m = this.modal
     const programRunning = this.exec?.source === 'program'
-    if (!programRunning) {
-      // What a run would start from. Changes a running program makes to it are not a new context.
-      this.startKey = JSON.stringify([
-        this.reported(), m.wcs, m.units, m.absolute, m.motion,
-        this.toolInSpindle, m.prepared, m.toolOffset, m.feed,
-      ])
+    if (programRunning) {
+      if (!this.previewPlanBroken && this.blockDelete !== this.previewBlockDelete) {
+        this.previewPlanBroken = true
+        this.preview = {
+          type: 'preview',
+          context: ++this.previewContext,
+          state: 'unavailable',
+          error: { line: 0, text: 'Block delete changed during the run. The preview updates when it ends.' },
+          segments: [],
+          bounds: null,
+        }
+        this.emit(this.preview)
+      }
+      return
     }
+    if (this.previewPlanBroken) {
+      this.previewPlanBroken = false
+      this.previewKey = ''
+    }
+    this.previewBlockDelete = this.blockDelete
+    const start = [
+      this.reported(), m.wcs, m.units, m.absolute, m.motion,
+      this.toolInSpindle, m.prepared, m.toolOffset, m.feed,
+    ]
     const key = JSON.stringify([
       this.program?.revision ?? 0,
       this.blockDelete,
@@ -437,7 +455,7 @@ export class SimMachine {
       m.rotations,
       m.g92,
       m.tools,
-      this.startKey,
+      start,
     ])
     if (key !== this.previewKey) {
       this.previewKey = key
@@ -453,7 +471,7 @@ export class SimMachine {
       }
       this.emit(this.preview)
     }
-    if (this.previewDue !== null && this.now >= this.previewDue && !programRunning && this.program !== null) {
+    if (this.previewDue !== null && this.now >= this.previewDue && this.program !== null) {
       this.previewDue = null
       // From where the machine is, not from where an MDI command in progress will end.
       const start = cloneModal(m)

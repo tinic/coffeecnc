@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { findTool, live, panel, reported } from '../machine'
+import { useDrawnPreview } from '../drawn-preview'
 import { machineBlock } from '../machine-block'
 import type { ProgramLayout } from '../store'
 import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
@@ -20,13 +21,13 @@ const textCurrent = computed(() => program.value !== null && status.value !== nu
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
 const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value ? panel.preview.error?.text : undefined)
+const drawn = useDrawnPreview(panel)
 const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?.line ?? 0) : 0)
 const layouts: readonly [ProgramLayout, string][] = [['path', 'Preview'], ['text', 'Code'], ['split', 'Split']]
 // These are tool sections reported by the interpreter, not inferred CAM operations.
 const sections = computed(() => {
   const rows: { tool: number; first: number; last: number }[] = []
-  if (!previewCurrent.value) return rows
-  for (const segment of panel.preview?.segments ?? []) {
+  for (const segment of drawn.value?.segments ?? []) {
     const last = rows.at(-1)
     if (last?.tool === segment.tool) last.last = Math.max(last.last, segment.line)
     else rows.push({ tool: segment.tool, first: segment.line, last: segment.line })
@@ -88,8 +89,6 @@ async function showFailure(): Promise<void> {
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
           <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="panel.programLayout = layout">{{ label }}</button></div>
         </header>
-        <div v-if="failure" class="failure" role="status"><AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span><button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button></div>
-        <SetterStatusBand v-else-if="unavailableReason" class="preview-status" :line="{ text: unavailableReason, level: 'blocked' }" />
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
@@ -97,6 +96,11 @@ async function showFailure(): Promise<void> {
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
+          <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
+            <AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span>
+            <button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button>
+          </div>
+          <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
         </div>
       </section>
       <aside class="inspector">
@@ -131,7 +135,7 @@ async function showFailure(): Promise<void> {
 .scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
 .view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
-.views { flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
+.views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
 .inspector { display: flex; flex-direction: column; min-height: 0; padding: 20px; border-left: 1px solid var(--line); overflow-y: auto; }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }.kicker { font-size: 10px; letter-spacing: .8px; color: var(--text-dim); text-transform: uppercase; }
@@ -145,7 +149,9 @@ async function showFailure(): Promise<void> {
 .status-row { flex: none; min-height: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto 24ch; align-items: center; gap: 12px; font-size: 12px; }.status-row > .mono { font-size: 10px; color: var(--text-dim); }.line-count { min-width: 24ch; text-align: right; white-space: nowrap; }.warning { color: var(--stop); }
 .status-row .program-feedback { margin: 0; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.preview-status { margin-inline: 18px; }
+.preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }
+.failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }
+.preview-diagnostic button { pointer-events: auto; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }

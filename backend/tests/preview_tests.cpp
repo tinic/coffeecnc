@@ -174,6 +174,40 @@ void composer_pending_then_the_result() {
   require(!compose(composer, r).preview, "And not again");
 }
 
+void composer_waits_for_automatic_motion_to_finish() {
+  FakeService service;
+  PanelComposer composer{hello(), &service};
+  auto r = reading();
+  const auto start = compose(composer, r).context();
+  service.finish(start);
+  static_cast<void>(compose(composer, r));
+
+  r.status.mode = TaskMode::automatic;
+  r.status.interp = InterpState::reading;
+  r.status.active_codes = {"G0", "G54", "M5"};
+  r.status.motion.in_position = false;
+  r.status.axes.at(2).machine = 30;
+  require(compose(composer, r).context() == start, "The run keeps its starting preview");
+  r.status.interp = InterpState::idle;
+  require(compose(composer, r).context() == start && service.submitted.size() == 1,
+          "The interpreter finishing cannot replace the preview during motion");
+  r.status.motion.in_position = true;
+  r.task_executing = true;
+  require(compose(composer, r).context() == start && service.submitted.size() == 1,
+          "Motion settling cannot replace the preview while task still has work");
+  r.task_executing = false;
+  r.status.wait = WaitDwell{0.1};
+  require(compose(composer, r).context() == start && service.submitted.size() == 1,
+          "An outstanding AUTO wait also keeps the starting preview");
+
+  r.status.wait = WaitNone{};
+  const auto finished = compose(composer, r);
+  require(service.submitted.size() == 2 && finished.preview &&
+              finished.preview->at("state") == "pending" &&
+              service.submitted.back().inputs.start.position[2] == 30,
+          "After all the work finishes one new preview is requested from the resting point");
+}
+
 void composer_stale_and_recomputed() {
   FakeService service;
   PanelComposer composer{hello(), &service};
@@ -763,6 +797,7 @@ auto main() -> int {
     composer_without_a_program();
     composer_pending_then_the_result();
     composer_stale_and_recomputed();
+    composer_waits_for_automatic_motion_to_finish();
     composer_files_generation_is_an_input();
     composer_tools_are_inputs();
     composer_plan_of_before_the_run();

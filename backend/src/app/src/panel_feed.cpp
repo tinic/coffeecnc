@@ -52,7 +52,11 @@ void PanelComposer::count(const PanelReading& reading) {
     seen_at_rest_.reset();
     return;
   }
-  const bool running = status.interp != InterpState::idle;
+  // The interpreter can already be idle while AUTO still has motion or a wait outstanding.
+  const bool automatic = status.mode == TaskMode::automatic && status.program.file.has_value();
+  const bool running = status.interp != InterpState::idle ||
+      (automatic && (reading.task_executing || !status.motion.in_position ||
+                     !std::holds_alternative<WaitNone>(status.wait)));
   if (!running && status.motion.in_position)
     for (const auto& axis : status.axes)
       if (const auto index = axis_index(axis.axis))

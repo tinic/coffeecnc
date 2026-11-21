@@ -46,6 +46,31 @@ describe('preview messages', () => {
     expect(wrapper.get('.banners').text()).not.toContain('Computing preview')
   })
 
+  it('keeps the drawn path until the next preview for the same file', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    const context = panel.status.preview_context
+    panel.preview = { type: 'preview', context, state: 'ready',
+      error: null, bounds: null, segments: [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0] }] }
+    wrapper = shallowMount(PathView)
+    expect(wrapper.classes()).not.toContain('outdated')
+
+    panel.status.preview_context += 1
+    panel.preview = { type: 'preview', context: context + 1, state: 'unavailable',
+      error: { line: 0, text: 'The preview updates when the run ends.' }, bounds: null, segments: [] }
+    await nextTick()
+    expect(wrapper.classes()).toContain('outdated')
+    expect(wrapper.get('.banners').text()).toContain('The preview updates when the run ends.')
+
+    panel.preview = { ...panel.preview, state: 'pending', error: null }
+    await nextTick()
+    expect(wrapper.classes()).toContain('outdated')
+    expect(wrapper.get('.banners').text()).toContain('Computing preview')
+
+    panel.status.program.revision += 1
+    await nextTick()
+    expect(wrapper.classes()).not.toContain('outdated')
+  })
+
   it('does not invent line zero or claim an empty failed preview contains a path', () => {
     if (panel.preview === null) throw new Error('Missing fixture')
     panel.preview.state = 'failed'; panel.preview.error = { line: 0, text: 'Timed out.' }

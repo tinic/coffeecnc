@@ -8,6 +8,7 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <utility>
 #include <string>
 #include <string_view>
 
@@ -40,6 +41,48 @@ auto recent_path(std::string_view path) -> bool {
 }
 auto recent_json_path(const Json& path) -> bool {
   return path.is_string() && recent_path(std::string_view{path.get_ref<const std::string&>()});
+}
+constexpr std::size_t max_saved_positions = 16;
+constexpr std::size_t max_position_name_bytes = 64;
+auto position_name(std::string_view name) -> bool {
+  return name.size() <= max_position_name_bytes &&
+         name.find_first_not_of(' ') != std::string_view::npos &&
+         std::ranges::none_of(name, [](char c) -> bool {
+           const auto byte = static_cast<unsigned char>(c);
+           return byte < 0x20 || byte == 0x7f;
+         });
+}
+auto saved_position(const SavedPosition& saved) -> bool {
+  return position_name(saved.name) &&
+         std::ranges::all_of(saved.position, [](double value) -> bool {
+           return std::isfinite(value) && std::abs(value) <= 1e6;
+         });
+}
+// A damaged entry drops the whole list, never the other settings.
+auto read_positions(const Json& list) -> std::vector<SavedPosition> {
+  std::vector<SavedPosition> positions;
+  if (!list.is_array() || list.size() > max_saved_positions)
+    return {};
+  for (const auto& entry : list) {
+    if (!entry.is_object() || entry.size() != 2 || !entry.contains("name") ||
+        !entry.contains("position") || !entry.at("name").is_string() ||
+        !entry.at("position").is_array() || entry.at("position").size() != 3 ||
+        !std::ranges::all_of(entry.at("position"), [](const Json& axis) -> bool { return axis.is_number(); }))
+      return {};
+    SavedPosition saved{entry.at("name").get<std::string>(), {}};
+    for (std::size_t axis = 0; axis < 3; ++axis)
+      saved.position.at(axis) = entry.at("position").at(axis).get<double>();
+    if (!saved_position(saved))
+      return {};
+    positions.push_back(std::move(saved));
+  }
+  return positions;
+}
+auto positions_json(const std::vector<SavedPosition>& positions) -> Json {
+  auto list = Json::array();
+  for (const auto& saved : positions)
+    list.push_back({{"name", saved.name}, {"position", saved.position}});
+  return list;
 }
 auto theme_name(PanelTheme value) -> std::string_view {
   switch (value) {
@@ -81,7 +124,7 @@ auto parse(std::string_view text) -> Json {
 auto read_document(const Json& value) -> OperatorPreferences {
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
-        {"tool_reference_height", "program_layout", "theme", "recent_programs"});
+        {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -129,6 +172,8 @@ auto read_document(const Json& value) -> OperatorPreferences {
       std::ranges::all_of(*recent, [](const Json& path) -> bool { return recent_json_path(path); }))
     for (const auto& path : *recent)
       document.recent_programs.push_back(path.get<std::string>());
+  if (const auto positions = value.find("saved_positions"); positions != value.end())
+    document.saved_positions = read_positions(*positions);
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -142,7 +187,8 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"tool_reference_height", document.tool_reference_height},
           {"program_layout", layout_name(document.program_layout)},
           {"theme", theme_name(document.theme)},
-          {"recent_programs", document.recent_programs}};
+          {"recent_programs", document.recent_programs},
+          {"saved_positions", positions_json(document.saved_positions)}};
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -162,6 +208,9 @@ auto operator_preferences_error(const OperatorPreferences& document) -> std::str
       !std::ranges::all_of(document.recent_programs,
                            [](const std::string& path) -> bool { return recent_path(path); }))
     return "Recent programs must be at most eight absolute paths.";
+  if (document.saved_positions.size() > max_saved_positions ||
+      !std::ranges::all_of(document.saved_positions, saved_position))
+    return "Saved positions must be at most sixteen named, finite machine positions.";
   if (units(document.startup_units).empty())
     return "Invalid startup units.";
   if (document.enabled_wcs.empty() || document.enabled_wcs.size() > 9 ||

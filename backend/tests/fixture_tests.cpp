@@ -323,7 +323,8 @@ auto encoded_messages() -> std::vector<Encoded> {
       encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
                                 OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600, 6.35,
                                                     ProgramLayout::split, PanelTheme::dark,
-                                                    {"/home/cnc/nc_files/air/03-pocket.ngc"}}}));
+                                                    {"/home/cnc/nc_files/air/03-pocket.ngc"},
+                                                    {{"Vise jaw", {-120.5, 33.25, -10}}}}}));
   messages.push_back(encode_operator_settings(
       {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(encode_operator_settings(

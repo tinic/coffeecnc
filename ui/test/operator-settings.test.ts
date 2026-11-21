@@ -125,6 +125,35 @@ describe('operator settings', () => {
     expect(rig(true, saved).panel.preferences.recent_programs).toEqual(['/nc/a.ngc', '/nc/b.ngc'])
     expect(r.sent).toEqual([])
   })
+  it('keeps saved positions in the browser demo across a restart', async () => {
+    const r = rig(true, custom()); r.connect()
+    const positions = [{ name: 'Vise jaw', position: [-120.5, 33.25, -10] as [number, number, number] }]
+    expect(await r.settings.save({ ...r.panel.preferences, saved_positions: positions }, r.settings.context())).toEqual({ saved: true, reason: '' })
+    const saved = JSON.parse(r.storage.setItem.mock.lastCall?.[1] ?? 'null') as OperatorPreferences
+    expect(saved.saved_positions).toEqual(positions)
+    expect(rig(true, saved).panel.preferences).toEqual({ ...custom(), saved_positions: positions })
+    expect(r.sent).toEqual([])
+  })
+  it('saves positions per machine through the native settings and refuses a damaged list instead of dropping it', async () => {
+    const r = rig(); r.connect(); r.snapshot(2, custom())
+    const positions = [{ name: 'Position 1', position: [1, 2, 3] as [number, number, number] }]
+    const saving = r.settings.save({ ...r.panel.preferences, saved_positions: positions }, r.settings.context())
+    expect(r.sent[0]).toMatchObject({ type: 'set_operator_settings', machine_id: 'G0759', base_revision: 2,
+      document: { ...custom(), saved_positions: positions } })
+    r.snapshot(3, { ...custom(), saved_positions: positions }); r.reply()
+    expect(await saving).toEqual({ saved: true, reason: '' })
+    expect(r.panel.preferences.saved_positions).toEqual(positions)
+    for (const bad of [[{ name: ' ', position: [1, 2, 3] }], [{ name: 'A', position: [1, 2, NaN] }], [{ name: 'a'.repeat(65), position: [1, 2, 3] }]]) {
+      const refused = await r.settings.save({ ...r.panel.preferences, saved_positions: bad as typeof positions }, r.settings.context())
+      expect(refused).toEqual({ saved: false, reason: 'Check the saved position names and coordinates.' })
+    }
+    expect(r.sent).toHaveLength(1)
+    const many = Array.from({ length: 17 }, () => ({ name: 'P', position: [0, 0, 0] }))
+    for (const bad of [many, [{ name: 'A\n', position: [1, 2, 3] }], [{ name: 'A', position: [1, 2] }], 'x']) {
+      const decoded = decodeOperatorPreferences({ ...custom(), saved_positions: bad })
+      expect([decoded?.saved_positions, decoded?.default_spindle_rpm]).toEqual([[], 1800])
+    }
+  })
   it('keeps at most eight recent programs and drops a damaged list without losing other settings', () => {
     const nine = Array.from({ length: 9 }, (_, index) => `/nc/${String(index)}.ngc`)
     expect(nine.reduce<string[]>((list, path) => withRecentProgram(list, path), [])).toEqual(nine.slice(1).reverse())

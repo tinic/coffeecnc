@@ -144,6 +144,10 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (reason !== null) return Promise.resolve(fail(reason))
     const document = decodeOperatorPreferences(value)
     if (document === null) return Promise.resolve(fail('Check the units, work systems and speeds.'))
+    // The decoder drops a damaged list; a save must never drop the operator's positions that way.
+    if (document.saved_positions.length !== value.saved_positions.length) {
+      return Promise.resolve(fail('Check the saved position names and coordinates.'))
+    }
     if (document.default_jog_velocity > (panel.hello?.max_jog_velocity ?? Infinity) ||
       document.default_spindle_rpm > (panel.hello?.max_spindle_rpm ?? Infinity)) {
       return Promise.resolve(fail('A default speed exceeds the configured machine limit.'))

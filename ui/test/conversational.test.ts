@@ -206,7 +206,7 @@ M2
 (Tool: T1, diameter 10, End mill 4 flute)
 (Diameter 30 at X0 Y0)
 (2 rings 5 apart, stepover 50 %, G3 climb milling)
-(Depth 2 in 2 layers of 1, plunge at the centre at 200)
+(Depth 2 in 2 layers of 1, plunge straight down at the centre at 200: centre-cutting end mill)
 (Feed 600, spindle 8000 rpm, clearance Z5)
 
 G17 G21 G40 G80 G90 G94
@@ -239,7 +239,7 @@ M2
 (Tool: T2, diameter 0.25)
 (Diameter 0.75 at X0.5 Y-0.5)
 (2 rings 0.125 apart, stepover 50 %, G3 climb milling)
-(Depth 0.05 in 1 layer of 0.05, plunge at the centre at 8)
+(Depth 0.05 in 1 layer of 0.05, plunge straight down at the centre at 8: centre-cutting end mill)
 (Feed 24, spindle 6000 rpm, clearance Z0.2)
 
 G17 G20 G40 G80 G90 G94
@@ -265,7 +265,7 @@ M2
 (Tool: T1, diameter 10, End mill 4 flute)
 (Size X 40 by Y 30, corner radius 8, centre X0 Y0)
 (3 loops 5 apart, stepover 50 %, G3 climb milling)
-(Depth 1 in 1 layer of 1, plunge at the centre at 200)
+(Depth 1 in 1 layer of 1, plunge straight down at the centre at 200: centre-cutting end mill)
 (Feed 600, spindle 8000 rpm, clearance Z5)
 
 G17 G21 G40 G80 G90 G94
@@ -306,7 +306,7 @@ M2
 (Tool: T2, diameter 0.25)
 (Size X 0.75 by Y 0.5, corner radius 0.125, centre X0 Y0)
 (2 loops 0.125 apart, stepover 100 %, G3 climb milling)
-(Depth 0.05 in 1 layer of 0.05, plunge at the centre at 8)
+(Depth 0.05 in 1 layer of 0.05, plunge straight down at the centre at 8: centre-cutting end mill)
 (Feed 24, spindle 6000 rpm, clearance Z0.2)
 
 G17 G20 G40 G80 G90 G94

@@ -28,6 +28,8 @@ export type Field =
 export interface Operation {
   id: OperationId
   title: string
+  /** Shown above the fields: what the operation needs from the tool or the setup. */
+  note?: string
   fields: readonly Field[]
   defaults: (unit: Unit) => Values
   /** The generator's input from the parsed values and the common entries. */
@@ -153,6 +155,7 @@ export const operations: readonly Operation[] = [
   {
     id: 'circular-pocket',
     title: 'Circular pocket',
+    note: 'Plunges straight down at the centre: use an end mill that cuts at its centre.',
     fields: [
       num('x', 'Centre X', 'coordinate'), num('y', 'Centre Y', 'coordinate'),
       num('diameter', 'Pocket diameter', 'length'), num('stepover', 'Stepover', 'percent'),
@@ -169,6 +172,7 @@ export const operations: readonly Operation[] = [
   {
     id: 'rectangular-pocket',
     title: 'Rectangular pocket',
+    note: 'Plunges straight down at the centre: use an end mill that cuts at its centre.',
     fields: [
       num('x', 'Centre X', 'coordinate'), num('y', 'Centre Y', 'coordinate'),
       num('width', 'Size X', 'length'), num('height', 'Size Y', 'length'),

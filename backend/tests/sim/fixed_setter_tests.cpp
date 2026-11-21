@@ -380,11 +380,13 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   pocket_window('y', -7, 7);
   halcmd("net sim-pocket-inx sim-pocket-x.out sim-pocket-out.in-00");
   halcmd("net sim-pocket-iny sim-pocket-y.out sim-pocket-out.in-01");
-  halcmd("unlinkp sim-ruby-release.in");
-  halcmd("net sim-pocket-trip sim-pocket-out.nand sim-ruby-release.in");
+  // Into the pocket before its walls exist: outside them the probe input is tripped, and a
+  // tripped probe stops any move that is not a probe.
   start_at();
   mdi("G21");
   mdi("G90 G53 G0 X2 Y1");
+  halcmd("unlinkp sim-ruby-release.in");
+  halcmd("net sim-pocket-trip sim-pocket-out.nand sim-ruby-release.in");
   const auto bore = port->fixed_setter({SetterAction::bore, 99, position()}, epoch, {});
   const auto bore_after = port->status();
   require(bore && bore->center_diameter && std::abs(*bore->center_diameter - 16) < 0.03 &&

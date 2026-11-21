@@ -10,6 +10,7 @@ import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
 import { formatLength, formatVelocity, fromDisplay, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
+import { vTooltip } from '../tooltip'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
@@ -250,8 +251,8 @@ async function showFailure(): Promise<void> {
               {{ airLabel }}
             </button>
             <button
-              v-if="status?.program.file" type="button" class="btn program-check"
-              :title="checkLabel" :aria-label="`Program check · ${checkLabel}`"
+              v-if="status?.program.file" v-tooltip="checkLabel" type="button"
+              class="btn program-check" :aria-label="`Program check · ${checkLabel}`"
               :class="{ blocked: check?.errors.length, review: check?.warnings.length }"
               @click="checkOpen = true"
             >
@@ -322,7 +323,7 @@ async function showFailure(): Promise<void> {
       effect="Raise Z for the next run. Enter 0 to turn air cut off." action="Apply lift" :error="airError"
       @confirm="selectAirCut" @close="airEditor = null"
     />
-    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeLabel ? `${timeLabel} · ${timeNote}` : undefined">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
+    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span v-tooltip="timeLabel ? `${timeLabel} · ${timeNote}` : undefined" class="run-time mono">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 

@@ -7,6 +7,7 @@ import { machineBlock } from '../machine-block'
 import type { CommandBody, RestartPlan } from '../protocol'
 import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '../units'
 import AppIcon from './AppIcon.vue'
+import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 
 const props = defineProps<{ line: number; section: string }>()
@@ -73,8 +74,8 @@ onBeforeUnmount(removeListener)
 const startBlock = computed((): string | null => {
   const shared = machineBlock(panel)
   if (shared !== null) return shared
-  if (request.value !== null) return request.value.type === 'plan_restart' ? 'Planning the restart' : 'Starting the restart'
-  if (plan.value === null) return failure.value || 'Planning the restart'
+  if (request.value !== null) return request.value.type === 'plan_restart' ? 'Planning…' : 'Starting…'
+  if (plan.value === null) return failure.value || 'Planning…'
   return null
 })
 
@@ -148,7 +149,7 @@ const steps = computed((): string[] => {
     <template #footer>
       <button class="btn" type="button" @click="close">Cancel</button>
       <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
-      <button class="btn primary" type="button" :disabled="startBlock !== null" :title="startBlock ?? 'Run the approach, then the program'" @click="start"><AppIcon name="play" />Cycle start</button>
+      <button v-tooltip="startBlock ?? 'Run the approach, then the program'" class="btn primary" type="button" :disabled="startBlock !== null" @click="start"><AppIcon name="play" />Cycle start</button>
     </template>
   </ModalDialog>
 </template>

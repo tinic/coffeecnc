@@ -3,6 +3,8 @@
 // scrolls; from then on the view stays where it was put, and a button offers to follow again.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
+import { tokenizeGcodeLine } from '../gcode-syntax'
+
 const props = defineProps<{
   lines: string[]
   /** Line whose motion is in progress, 1-based; 0 for none. */
@@ -32,13 +34,11 @@ const last = computed(() =>
   Math.min(props.lines.length, Math.ceil((scrollTop.value + viewHeight.value) / rowHeight) + overscan),
 )
 const rows = computed(() =>
-  props.lines.slice(first.value, last.value).map((text, index) => ({ number: first.value + index + 1, text })),
+  props.lines.slice(first.value, last.value).map((text, index) => ({
+    number: first.value + index + 1,
+    tokens: tokenizeGcodeLine(text),
+  })),
 )
-
-function isComment(text: string): boolean {
-  const trimmed = text.trimStart()
-  return trimmed.startsWith('(') || trimmed.startsWith(';')
-}
 
 // Measure the loaded text once per program or font change. Using only the rendered window
 // introduces a horizontal scrollbar whenever a long line comes into view.
@@ -180,11 +180,14 @@ onBeforeUnmount(() => {
               motion: row.number === motionLine,
               current: row.number === currentLine && row.number !== motionLine,
               error: row.number === errorLine,
-              comment: isComment(row.text),
             }"
           >
             <span class="number">{{ row.number }}</span>
-            <span class="text">{{ row.text }}</span>
+            <span class="text"><span
+              v-for="(token, index) in row.tokens"
+              :key="index"
+              :data-tone="token.tone ?? undefined"
+            >{{ token.text }}</span></span>
           </div>
         </div>
       </div>
@@ -246,9 +249,22 @@ onBeforeUnmount(() => {
   padding-right: var(--code-padding);
 }
 
-.row.comment .text {
-  color: var(--text-dim);
-}
+[data-tone='rapid'] { color: var(--gcode-rapid); }
+[data-tone='cut'] { color: var(--gcode-cut); }
+[data-tone='modal'] { color: var(--gcode-modal); }
+[data-tone='x'] { color: var(--gcode-x); }
+[data-tone='y'] { color: var(--gcode-y); }
+[data-tone='z'] { color: var(--gcode-z); }
+[data-tone='argument'] { color: var(--gcode-argument); }
+[data-tone='rate'] { color: var(--gcode-rate); }
+[data-tone='tool'] { color: var(--gcode-tool); }
+[data-tone='spindle'] { color: var(--gcode-spindle); }
+[data-tone='stop'] { color: var(--gcode-stop); font-weight: 700; }
+[data-tone='comment'] { color: var(--gcode-comment); font-style: italic; }
+[data-tone='message'] { color: var(--gcode-message); font-style: italic; font-weight: 500; }
+[data-tone='flow'] { color: var(--gcode-flow); }
+[data-tone='parameter'] { color: var(--gcode-parameter); }
+[data-tone='expression'] { color: var(--gcode-expression); }
 
 .row.current {
   background: var(--control);

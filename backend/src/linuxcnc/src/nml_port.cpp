@@ -1311,7 +1311,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   bool positioning = false;
   bool traversing_xy = false;
-  bool at_search_xy = false;
+  std::optional<std::array<double, 3>> vertical_at;
   bool lifting = false;
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
@@ -1325,8 +1325,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
             : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
                                near(s.controller.axes[1].machine, move.start[1])
-            : at_search_xy ? near(s.controller.axes[0].machine, search_start[0]) &&
-                               near(s.controller.axes[1].machine, search_start[1])
+            : vertical_at ? near(s.controller.axes[0].machine, (*vertical_at)[0]) &&
+                                near(s.controller.axes[1].machine, (*vertical_at)[1])
                           : on_line({s.controller.axes[0].machine, s.controller.axes[1].machine,
                                      s.controller.axes[2].machine},
                                     line_origin));
@@ -1487,12 +1487,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
-      at_search_xy = true;
+      vertical_at = search_start;
       if (!block(std::format("G90 G53 G1 Z{:.8f}{}", search_start[2] / program_scale, feed_word),
                  positioning_timeout, false, true))
         return interrupt("Could not lower the probe to the search height; check that the way down "
                          "is clear.");
-      at_search_xy = false;
+      vertical_at.reset();
     }
     line_origin = search_start;
     positioning = false;
@@ -1646,7 +1646,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
 
   if (move.return_to_clearance && descends) {
     positioning = true;
-    at_search_xy = true;
+    // Hold the verified encoder position across the lift. Retraction can leave the measured
+    // axis one backlash allowance from its commanded location.
+    vertical_at = machine_position(raw->motion.traj.actualPosition);
     if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
                std::chrono::seconds{30}, false, true))
       return interrupt(std::format("Could not lift the probe above the ridge ({}).", block_failure));
@@ -1656,7 +1658,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
           impl_->config.motion_tolerances.probe_backlash_mm))
       return interrupt("The probe did not reach the clearance height above the ridge.");
     line_origin[2] = lift_z;
-    at_search_xy = false;
+    vertical_at.reset();
     positioning = false;
   }
 

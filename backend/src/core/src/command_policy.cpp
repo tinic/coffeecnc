@@ -86,7 +86,8 @@ CommandPolicy::CommandPolicy(const Limits& limits) : limits_(limits) {
     throw std::invalid_argument("Invalid machine command limits");
 }
 
-auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) const -> Decision {
+auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
+                             bool increment_in_progress) const -> Decision {
   return std::visit(
       [&](const auto& c) -> Decision {
         using T = std::decay_t<decltype(c)>;
@@ -208,8 +209,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
                 !std::isfinite(a->max_limit) || a->min_limit >= a->max_limit)
               return reject("Axis position or limits are invalid.");
             if constexpr (std::is_same_v<T, Jog>) {
-              if ((c.direction < 0 && a->machine <= a->min_limit) ||
-                  (c.direction > 0 && a->machine >= a->max_limit))
+              const double limit = c.direction < 0 ? a->min_limit : a->max_limit;
+              if ((a->machine - limit) * c.direction > 0 ||
+                  (!increment_in_progress && a->machine == limit))
                 return reject("Jog points beyond the configured travel.");
             } else {
               if (!between(a->machine + c.distance, a->min_limit, a->max_limit))

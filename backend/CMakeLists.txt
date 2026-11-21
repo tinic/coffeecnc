@@ -248,6 +248,11 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_restore_spindle_tool_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
       endforeach()
+      add_test(NAME linuxcnc_probe_tool_interlock COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -u mm -t 60 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_tool_interlock
+        $<TARGET_FILE:coffeecnc_sim_tests> probe-interlock)
+      set_tests_properties(linuxcnc_probe_tool_interlock PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
       add_test(NAME linuxcnc_edge_rotation_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

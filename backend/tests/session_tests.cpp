@@ -486,7 +486,12 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   constexpr auto reason = "A touch probe is loaded";
   for (const auto* body : {R"("type":"set_spindle","direction":"forward","rpm":200)",
                            R"("type":"set_spindle","direction":"reverse","rpm":200)",
-                           R"("type":"mdi","text":"S200 m +0 3")"}) {
+                           R"("type":"mdi","text":"S200 m +0 3")",
+                           R"("type":"mdi","text":"M61 Q1")",
+                           R"("type":"mdi","text":"G33 Z-1 K1")",
+                           R"("type":"mdi","text":"G76 P1 Z-1 I-1 J1 K1")",
+                           R"("type":"mdi","text":"G84.2 Z-1")",
+                           R"("type":"mdi","text":"G84.3 Z-1")"}) {
     rig.expect(body, "rejected", reason);
     rig.acted({}, "A probe rejects spindle starts before mode change or dispatch");
   }
@@ -527,6 +532,45 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   rig.expect(R"("type":"resume")", "rejected",
              "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
   rig.acted({}, "Editing the source cannot certify a paused run that started without a probe");
+}
+
+void pending_probe_tool_changes() {
+  FakeToolModels models;
+  models.probe = 99;
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, &models};
+  auto& state = rig.port.state;
+  state.tool_in_spindle = 1;
+  rig.expect(R"("type":"mdi","text":"M61 Q99 S200 M3")", "rejected",
+             "Separate M61 from tool changes and spindle commands.");
+  rig.acted({}, "An identity change cannot share an MDI block with spindle actuation");
+  rig.accepted(R"("type":"mdi","text":"M61 Q1 G43 H1")");
+  rig.acted({"set_task_mode mdi", "mdi M61 Q1 G43 H1"}, "Ordinary spindle-off identification still works");
+
+  state.requested_tool = 99;
+  state.tool_request = 10;
+  state.active_mdi = "T99 M6 S200 M3";
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Press Stop, then load the touch probe with a separate tool change.");
+  rig.acted({}, "A pending MDI exchange cannot acknowledge a probe before a spindle command");
+  state.active_mdi = "T99 M6 G43 H99";
+  state.mdi_queued = true;
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Press Stop, then load the touch probe with a separate tool change.");
+  rig.acted({}, "Pending MDI cannot be certified when blocks are queued behind it");
+  state.mdi_queued = false;
+  rig.accepted(R"("type":"tool_changed")");
+  rig.acted({"tool_changed tool 99 request 10"}, "A stand-alone tool change can mount the probe");
+
+  state.mode = TaskMode::automatic;
+  state.active_mdi.clear();
+  state.requested_tool = 99;
+  state.tool_request = 11;
+  rig.expect(R"("type":"tool_changed")", "rejected",
+             "Stop the program and load the touch probe from Tools before running.");
+  rig.acted({}, "A program started with a cutting tool cannot mount a probe without a safe plan");
+  state.requested_tool = 2;
+  rig.accepted(R"("type":"tool_changed")");
+  rig.acted({"tool_changed tool 2 request 11"}, "Ordinary AUTO tool changes remain available");
 }
 
 constexpr auto remove_model =
@@ -1760,6 +1804,25 @@ void port_is_told_when_a_request_goes_stale() {
 
 // An increment is motion nobody holds. From the moment it is sent it counts as moving, so a stop
 // decision raises the jog-stop level for it, until the controller was seen at rest again.
+void home_after_increment() {
+  Rig rig;
+  rig.port.state.axes[0].machine = rig.port.state.axes[0].max_limit - 1;
+  rig.accepted(R"("type":"jog_step","axis":"x","distance":1,"velocity":300)");
+  rig.acted({"jog_increment x 1 300 axis"}, "An increment may end at the configured limit");
+  rig.port.state.axes[0].machine = rig.port.state.axes[0].max_limit;
+  rig.clock = 10ms;
+  static_cast<void>(rig.tick(at(rig.clock)));
+  require(!rig.driver.level, "A completed step at the limit does not assert jog stop");
+  rig.acted({}, "The limit endpoint does not schedule a jog stop");
+  rig.accepted(R"("type":"home","axis":"x")");
+  rig.acted({"stop_jog x", "home x"}, "Homing fences an old increment before sending Home");
+  rig.port.state.axes[0].homing = true;
+  rig.clock = 20ms;
+  static_cast<void>(rig.tick(at(rig.clock)));
+  require(!rig.driver.level, "Old increment tracking leaves homing alone");
+  rig.acted({}, "No stop is sent after homing started");
+}
+
 void increments_are_tracked() {
   constexpr auto long_step = R"("type":"jog_step","axis":"x","distance":100,"velocity":600)";
   struct Row {
@@ -2383,6 +2446,7 @@ auto main(int argc, char** argv) -> int {
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
+    pending_probe_tool_changes();
     operator_settings_go_to_storage();
     ids_strictly_increase();
     decode_errors();
@@ -2411,6 +2475,7 @@ auto main(int argc, char** argv) -> int {
     stale_requests_send_nothing();
     port_is_told_when_a_request_goes_stale();
     increments_are_tracked();
+    home_after_increment();
     close_holds_the_level();
     end_of_page();
     exactly_one_result(seed);

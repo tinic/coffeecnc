@@ -152,6 +152,9 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   }
   c.in_position = !moving;
   c.program_loaded = task.file[0] != '\0';
+  if (c.mode == TaskMode::mdi)
+    c.active_mdi = text_of(task.command);
+  c.mdi_queued = task.queuedMDIcommands != 0;
   c.tool_in_spindle = s.io.tool.toolInSpindle;
   // As the control thread read the pins last; nothing of it while that thread has stalled.
   const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt;

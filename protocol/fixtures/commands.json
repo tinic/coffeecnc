@@ -235,7 +235,10 @@
       "default_jog_velocity": 600,
       "tool_reference_height": 6.35,
       "program_layout": "text",
-      "theme": "dark"
+      "theme": "dark",
+      "recent_programs": [
+        "/home/cnc/nc_files/part.ngc"
+      ]
     }
   },
   { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },

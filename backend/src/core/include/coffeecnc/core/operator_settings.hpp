@@ -18,6 +18,8 @@ struct OperatorPreferences {
   double tool_reference_height{}; // mm above work Z zero; touch-off dialog preset
   ProgramLayout program_layout{ProgramLayout::path};
   PanelTheme theme{PanelTheme::light};
+  // Programs opened most recently first, absolute paths on the machine; at most eight.
+  std::vector<std::string> recent_programs;
   friend auto operator==(const OperatorPreferences&, const OperatorPreferences&) -> bool = default;
 };
 

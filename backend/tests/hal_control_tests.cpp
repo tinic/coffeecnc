@@ -137,6 +137,7 @@ void probe_cycle_needs_a_live_lease() {
 
   inputs.probe_setter_selected = true;
   inputs.probe_motion_permitted = true;
+  inputs.probe_cycle_active = true;
   static_cast<void>(shared.exchange(inputs, at(90ms)));
   const auto armed = view(shared, 90ms);
   require(armed.probe_setter_selected && armed.probe_motion_permitted, "Worker can read the physical acknowledgement pins");
@@ -149,6 +150,9 @@ void probe_cycle_needs_a_live_lease() {
 
   shared.finish_probe_cycle();
   require(!shared.probe_cycle_outputs(at(192ms)).active, "A finished probe releases the hardware guard");
+  require(!shared.begin_probe_cycle(at(192ms)), "A finished cycle cannot supply the next cycle's permit");
+  inputs.probe_cycle_active = false;
+  static_cast<void>(shared.exchange(inputs, at(192ms)));
   require(shared.begin_probe_cycle(at(193ms)), "A fresh operation can arm");
   shared.stop_probe_cycle();
   outputs = shared.probe_cycle_outputs(at(194ms));

@@ -78,7 +78,8 @@ auto HalShared::jog_stop_history() const -> JogStopHistory {
 
 auto HalShared::begin_probe_cycle(Clock::time_point now, bool setter) -> bool {
   const std::scoped_lock lock{mutex_};
-  if (probe_deadline_ || !have_inputs_ || now - read_at_ > max_age || !inputs_.watchdog_ok)
+  if (probe_deadline_ || !have_inputs_ || now - read_at_ > max_age || !inputs_.watchdog_ok ||
+      inputs_.probe_cycle_active)
     return false;
   probe_deadline_ = now + max_age;
   probe_setter_ = setter;

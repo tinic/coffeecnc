@@ -309,6 +309,7 @@ auto command(const Json& object) -> Command {
     const auto action = choice<SetterAction>(object, "action",
                                              {{"status", SetterAction::status},
                                               {"touch_off", SetterAction::touch_off},
+                                              {"check", SetterAction::check},
                                               {"material", SetterAction::material},
                                               {"corner", SetterAction::corner},
                                               {"ball", SetterAction::ball},

@@ -7,6 +7,7 @@ export const demoProbe = 99
 export const demoSetter: FixedSetterLimits = {
   reference_tool: 98, travel_mm: 30, feed_mm_min: 900, latch_feed_mm_min: 300, latch_backoff_mm: 1,
   xy_tolerance_mm: 0.5, clearance_mm: 12, material_travel_mm: 35,
+  check_tolerance_mm: 0.1,
 }
 export const demoProbeTools: readonly Tool[] = [
   { number: 98, pocket: 98, length: 52, diameter: 6, comment: 'Setter reference' },

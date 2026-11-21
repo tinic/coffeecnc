@@ -471,6 +471,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     setter =
         FixedSetterLimits{*distance,     *speed,      static_cast<int>(*tool), *xy,
                           *clearance_mm, *latch_feed, *latch_backoff,          *material_travel};
+    if (const auto parsed = positive_settings(
+            ini, {{"SETTER_CHECK_TOLERANCE_MM", &setter->check_tolerance_mm}}); !parsed)
+      return std::unexpected(parsed.error());
     auto& geometry = setter->material_geometry;
     if (const auto parsed = positive_settings(ini,
             {{"TOUCH_PROBE_CORNER_REACH_MM", &geometry.reach_mm},

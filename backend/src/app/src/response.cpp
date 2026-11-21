@@ -32,13 +32,16 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
   Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
   if (setter) {
     auto measurement = Json(nullptr);
-    if (const auto& r = setter->measurement)
+    if (const auto& r = setter->measurement) {
       measurement = {{"calibration", r->calibration},
                      {"tool", r->tool},
                      {"contact", r->contact},
                      {"value", r->value},
                      {"previous_length", r->previous_length},
                      {"stopping_distance", r->stopping_distance}};
+      if (r->check_tolerance_mm)
+        measurement["check_tolerance_mm"] = *r->check_tolerance_mm;
+    }
     message["setter"] = {
         {"calibration", setter->calibration ? Json(*setter->calibration) : Json(nullptr)},
         {"measurement", std::move(measurement)},

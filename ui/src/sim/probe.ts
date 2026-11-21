@@ -7,7 +7,7 @@ type Lateral = Exclude<ProbeDirection, 'z_top'>
 type Cycle = Exclude<FixedSetter, { action: 'status' }>
 type Axis = 'X' | 'Y' | 'Z' | 'XY'
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
-export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState }
+export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string }
 
 const { stock, slanted, gauge, bore, boss, setter, top, boreRadius, bossRadius, stockHeight } = demoFixture
 const rubyRadius = 2.02
@@ -186,10 +186,14 @@ export class SimProbe {
       })
     }
     this.angle = null
-    if (command.action === 'touch_off') {
-      const teaching = tool.number === demoSetter.reference_tool ||
-        (!state.calibration && state.measured_tools?.includes(tool.number))
+    if (command.action === 'touch_off' || command.action === 'check') {
+      const checking = command.action === 'check'
+      if (checking && tool.number === demoProbe) return 'Load a cutting tool before checking its length.'
+      const teaching = !checking && (tool.number === demoSetter.reference_tool ||
+        (!state.calibration && state.measured_tools?.includes(tool.number)))
       if (!teaching && !state.calibration) return 'Teach the setter with T98 or a touched-off tool first.'
+      if (checking && tool.length === 0 && !state.measured_tools?.includes(tool.number))
+        return 'Set the loaded tool’s length before checking it.'
       if (radiusFrom(start, [setter[0], setter[1]]) > demoSetter.xy_tolerance_mm)
         return 'Jog directly over the centre of the simulated setter.'
       const contact: Vec3 = [start[0], start[1], setter[2] + length]
@@ -197,9 +201,25 @@ export class SimProbe {
       path.touch(start, contact)
       path.moves.pop()
       path.move([start[0], start[1], contact[2] + (demoSetter.clearance_mm ?? 0)])
+      const previous = tool.length
+      const value = teaching ? contact[2] - previous : contact[2] - (state.calibration?.[2] ?? setter[2])
+      const measurement = {
+        calibration: Boolean(teaching), tool: tool.number, contact, value, previous_length: previous, stopping_distance: 0.02,
+      }
+      if (checking) {
+        const tolerance = demoSetter.check_tolerance_mm ?? 0.1
+        const difference = value - previous
+        if (Math.abs(difference) > tolerance) {
+          const direction = difference < 0 ? 'shorter' : 'longer'
+          return {
+            ...result(() => ({})),
+            failure: `T${String(tool.number)} check failed. Tool is ${Math.abs(difference).toFixed(4)} mm ${direction} ` +
+              `(measured ${value.toFixed(4)} mm, table ${previous.toFixed(4)} mm, tolerance ${String(tolerance)} mm). Inspect the tool.`,
+          }
+        }
+        return result(() => ({ measurement: { ...measurement, check_tolerance_mm: tolerance } }))
+      }
       return result(() => {
-        const previous = tool.length
-        const value = teaching ? contact[2] - previous : contact[2] - (state.calibration?.[2] ?? setter[2])
         if (teaching) {
           this.calibration = [contact[0], contact[1], value]
           this.teacher = tool.number
@@ -208,9 +228,7 @@ export class SimProbe {
           modal.toolOffset = [0, 0, value]
         }
         this.measured.set(tool.number, tool.length)
-        return { calibration: this.calibration, measurement: {
-          calibration: Boolean(teaching), tool: tool.number, contact, value, previous_length: previous, stopping_distance: 0.02,
-        } }
+        return { calibration: this.calibration, measurement }
       })
     }
     if (tool.number !== demoProbe) return 'Load T99 to probe material.'

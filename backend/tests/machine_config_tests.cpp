@@ -569,8 +569,17 @@ void fixed_setter_is_explicit_and_bounded() {
                             "SETTER_XY_TOLERANCE_MM = 0.5\n");
   const auto setter = load(enabled);
   require(setter && setter->fixed_setter && near(setter->fixed_setter->travel_mm, 4) &&
-              near(setter->fixed_setter->feed_mm_min, 30),
+              near(setter->fixed_setter->feed_mm_min, 30) &&
+              near(setter->fixed_setter->check_tolerance_mm, 0.1),
           "the configured fixed setter carries canonical travel and feed ceilings");
+  const auto check = load(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
+                               "SETTER_MAX_TRAVEL_MM = 4\nSETTER_CHECK_TOLERANCE_MM = 0.04"));
+  require(check && check->fixed_setter && near(check->fixed_setter->check_tolerance_mm, 0.04),
+          "the tool check tolerance is configurable in millimetres");
+  require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
+                          "SETTER_MAX_TRAVEL_MM = 4\nSETTER_CHECK_TOLERANCE_MM = 0")),
+              "SETTER_CHECK_TOLERANCE_MM"),
+          "a tool check requires a positive tolerance");
   require(has(error(with(enabled, "PROBE_SIGNAL = yes", "PROBE_SIGNAL = no")), "FIXED_SETTER"),
           "the fixed setter requires probe feedback");
   require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4", "SETTER_MAX_TRAVEL_MM = 0")),

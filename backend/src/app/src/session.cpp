@@ -1096,9 +1096,11 @@ auto Session::resume_restart(Queued& request, const ControllerState& state) -> S
 auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
   const auto* spindle = std::get_if<SetSpindle>(&command);
   const auto* mdi = std::get_if<Mdi>(&command);
+  const auto* setter = std::get_if<FixedSetterRequest>(&command);
+  const bool check_tool = setter && setter->action == SetterAction::check;
   const bool program = std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command) ||
                        std::holds_alternative<Resume>(command);
-  if (tool_models_ == nullptr || (!program && mdi == nullptr &&
+  if (tool_models_ == nullptr || (!check_tool && !program && mdi == nullptr &&
                                  (spindle == nullptr || spindle->direction == SpindleDirection::stopped)))
     return {};
   const auto loaded = tool_models_->touch_probe_loaded(state.tool_in_spindle);
@@ -1106,6 +1108,8 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
     return "Cannot verify the loaded tool type. Check tool model storage.";
   if (!*loaded)
     return {};
+  if (check_tool)
+    return "Load a cutting tool before checking its length.";
   if (mdi != nullptr)
     return std::string(probe_code_block(mdi->text));
   if (spindle != nullptr || state.spindle_active)

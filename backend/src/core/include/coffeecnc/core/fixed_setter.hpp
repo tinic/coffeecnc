@@ -26,12 +26,14 @@ struct FixedSetterLimits {
   double latch_backoff_mm{};
   double material_travel_mm{20};
   MaterialProbeGeometry material_geometry{};
+  double check_tolerance_mm{0.1};
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
 enum class SetterAction : std::uint8_t {
   status,
   touch_off,
+  check,
   material,
   corner,
   ball,
@@ -71,6 +73,7 @@ struct SetterMeasurement {
   double value; // calibration plane or measured tool length in mm
   double previous_length;
   double stopping_distance; // downward travel from the latch to settled machine Z in mm
+  std::optional<double> check_tolerance_mm{}; // present for a successful read-only check
 };
 
 struct SetterState {

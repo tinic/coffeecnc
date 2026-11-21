@@ -21,7 +21,7 @@ import type {
 } from '../protocol'
 import { protocolVersion } from '../protocol'
 import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
-import { defaultFiles, listDirectory, splitLines } from './files'
+import { defaultFiles, listDirectory, newProgramPath, splitLines } from './files'
 import { feedOrSpeedEdit } from '../program-edit'
 import {
   InterpError,
@@ -121,6 +121,9 @@ interface Rejection {
   outcome: 'rejected' | 'failed'
   reason: string
 }
+
+/** The longest program text `save_program` writes, as natively. */
+const maxSavedProgramBytes = 512 * 1024
 
 function reject(reason: string): Rejection {
   return { outcome: 'rejected', reason }
@@ -1043,6 +1046,8 @@ export class SimMachine {
       }
       case 'edit_program':
         return this.editProgram(command.path, command.line, command.old_text, command.new_text)
+      case 'save_program':
+        return this.saveProgram(command.path, command.text, command.replace === true)
       case 'plan_restart':
         return this.planRestart(command.line, command.preview_context)
       case 'start_restart':
@@ -1292,6 +1297,20 @@ export class SimMachine {
     lines[line - 1] = after
     this.files.set(path, lines.join('\n') + '\n')
     return this.open(path)
+  }
+
+  /** Writes a new program in the program directory, as the native program writer does. */
+  private saveProgram(path: string, text: string, replace: boolean): Rejection | null {
+    if (text === '' || new TextEncoder().encode(text).length > maxSavedProgramBytes || text.includes('\0'))
+      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.')
+    const target = newProgramPath(this.files, path)
+    if (typeof target !== 'string') return fail(target.error)
+    if (this.files.has(target)) {
+      if (!replace) return fail(`A program named ${target.slice(target.lastIndexOf('/') + 1)} exists already.`)
+      if (target === this.program?.file) return reject('The loaded program is not replaced. Choose another name.')
+    }
+    this.files.set(target, text)
+    return null
   }
 
   /** Interprets the program up to `line` without motion and plans how to resume there. */

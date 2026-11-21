@@ -341,7 +341,7 @@ void new_program_rules() {
       {"/etc/new.ngc", "New programs go in the program directory."},
       {"escape-dir/new.ngc", "New programs go in the program directory."},
       {"missing/new.ngc", "Path is not available: No such file or directory"},
-      {"part.ngc/new.ngc", "Path is not available: Not a directory"},
+      {"part.ngc/new.ngc", "The folder of the new program is not a directory."},
       {".hidden-new.ngc", "Use a file name without control characters that does not start with a dot."},
       {"two\nlines.ngc", "Use a file name without control characters that does not start with a dot."},
       {"cherry/", "Name the program file."},

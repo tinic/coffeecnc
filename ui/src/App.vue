@@ -9,6 +9,7 @@ import StatusBar from './components/StatusBar.vue'
 import ToolChangePrompt from './components/ToolChangePrompt.vue'
 import ToolsTab from './components/ToolsTab.vue'
 import FileBrowser from './components/FileBrowser.vue'
+import OperationDialog from './components/OperationDialog.vue'
 import NumericEntryDialog from './components/NumericEntryDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import QuitDialog from './components/QuitDialog.vue'
@@ -17,6 +18,7 @@ import { operatorSettings, panel } from './machine'
 
 const logOpen = ref<boolean>(startDialog === 'log')
 const browsing = ref<boolean>(startDialog === 'open')
+const creating = ref<boolean>(startDialog === 'operation')
 const quitOpen = ref(false)
 const settingsOpen = ref(false)
 const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null)
@@ -24,7 +26,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
 
 <template>
   <div class="app">
-    <StatusBar @log="logOpen = true" @open="browsing = true" @quit="quitOpen = true" @settings="settingsOpen = true" />
+    <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @quit="quitOpen = true" @settings="settingsOpen = true" />
     <div class="workspace">
       <DroPanel />
       <main class="middle">
@@ -36,6 +38,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
         <div id="dialogs"></div>
         <LogDialog v-if="logOpen" @close="logOpen = false" />
         <FileBrowser v-if="browsing" @close="browsing = false" />
+        <OperationDialog v-if="creating" @close="creating = false" />
         <SettingsDialog v-if="settingsOpen" :settings="operatorSettings" @close="settingsOpen = false" />
         <QuitDialog v-if="quitOpen" @close="quitOpen = false" />
       </main>

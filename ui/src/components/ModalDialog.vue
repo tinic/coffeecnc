@@ -8,7 +8,7 @@ import { openDialogs } from '../dialogs'
 import { vFreshGesture } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ title: string; size: 'small' | 'medium' | 'large'; contained?: boolean; expanded?: boolean; freshGesture?: boolean }>()
+defineProps<{ title: string; size: 'small' | 'medium' | 'large' | 'wide'; contained?: boolean; expanded?: boolean; freshGesture?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 onMounted(() => {
@@ -74,6 +74,11 @@ onBeforeUnmount(() => {
 
 .dialog.large {
   width: 860px;
+  height: 100%;
+}
+
+.dialog.wide {
+  width: 1180px;
   height: 100%;
 }
 

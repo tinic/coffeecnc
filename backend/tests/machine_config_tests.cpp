@@ -552,8 +552,9 @@ void simulation_profiles() {
               gantry->home_all_configured &&
               gantry->home_axis_configured == std::array<bool, 3>{true, true, true} &&
               gantry->limits.homing_required && near(gantry->limits.max_jog_velocity, 1800) &&
-              near(gantry->travel[2].min, -50) && !gantry->machine_id,
-          "the gantry simulation INI: Y on joints 1 and 2, homed together");
+              near(gantry->travel[2].min, -50) && gantry->machine_id.has_value(),
+          "the gantry simulation INI: Y on joints 1 and 2, homed together, and a machine ID "
+          "derived from [EMC] MACHINE (#158)");
   const auto inch = std::format("'{}' -n -p gantry -u inch -d '{}' /bin/true 2>/dev/null", runner,
                                 (scratch / "refused").string());
   require(std::system(inch.c_str()) != 0, "the gantry profile is millimetres only");

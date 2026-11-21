@@ -15,10 +15,13 @@ const props = defineProps<{
 
 const rowHeight = 24
 const overscan = 8
+const tabColumns = 8
 
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const scrollTop = ref<number>(0)
 const viewHeight = ref<number>(0)
+const codeWidth = ref<number>(0)
+let measureContext: CanvasRenderingContext2D | null = null
 const follow = ref<boolean>(true)
 
 /** The line to keep in view: where motion is, or else where the interpreter is. */
@@ -37,11 +40,42 @@ function isComment(text: string): boolean {
   return trimmed.startsWith('(') || trimmed.startsWith(';')
 }
 
+// Measure the loaded text once per program or font change. Using only the rendered window
+// introduces a horizontal scrollbar whenever a long line comes into view.
+function measureCodeWidth(): void {
+  if (scroller.value === null || measureContext === null) return
+  const context = measureContext
+  const style = getComputedStyle(scroller.value)
+  context.font = `${style.fontSize} ${style.fontFamily}`
+  context.fontKerning = 'none'
+  const columnWidth = context.measureText('0').width
+  const tabWidth = context.measureText(' ').width * tabColumns
+  let widest = 0
+  for (const line of props.lines) {
+    if (/^[ -~]*$/.test(line)) {
+      widest = Math.max(widest, line.length * columnWidth)
+      continue
+    }
+    // Canvas treats tabs as spaces; the code pane displays them at the next tab stop.
+    let width = 0
+    const chunks = line.split('\t')
+    for (const [index, chunk] of chunks.entries()) {
+      if (index > 0) width = (Math.floor(width / tabWidth + 1e-8) + 1) * tabWidth
+      width += context.measureText(chunk).width
+    }
+    widest = Math.max(widest, width)
+  }
+  codeWidth.value = Math.ceil(widest)
+}
+
 function show(line: number): void {
   const element = scroller.value
-  if (element !== null && line > 0) {
-    element.scrollTop = Math.max(0, (line - 0.5) * rowHeight - element.clientHeight / 2)
-  }
+  if (element === null || line <= 0) return
+  const center = Math.round((line - 0.5) * rowHeight - element.clientHeight / 2)
+  const max = Math.max(0, element.scrollHeight - element.clientHeight)
+  const target = Math.min(max, Math.max(0, center))
+  if (element.scrollTop !== target) element.scrollTop = target
+  scrollTop.value = element.scrollTop
 }
 
 /** Scrolls to `line`; this is the operator's choice, so following stops. */
@@ -82,14 +116,24 @@ watch(
   () => props.lines,
   () => {
     follow.value = true
+    measureCodeWidth()
     void nextTick(() => {
       if (scroller.value !== null) {
         scroller.value.scrollTop = 0
-        show(active.value)
+        onScroll()
+        updateViewport()
       }
     })
   },
 )
+
+function updateViewport(): void {
+  if (scroller.value === null) return
+  viewHeight.value = scroller.value.clientHeight
+  if (follow.value) show(active.value)
+}
+
+watch(codeWidth, updateViewport, { flush: 'post' })
 
 let observer: ResizeObserver | null = null
 
@@ -98,15 +142,12 @@ onMounted(() => {
   if (element === null) {
     return
   }
-  viewHeight.value = element.clientHeight
-  observer = new ResizeObserver(() => {
-    viewHeight.value = element.clientHeight
-    if (follow.value) {
-      show(active.value)
-    }
-  })
+  measureContext = document.createElement('canvas').getContext('2d')
+  measureCodeWidth()
+  void document.fonts.ready.then(measureCodeWidth)
+  observer = new ResizeObserver(updateViewport)
   observer.observe(element)
-  show(active.value)
+  updateViewport()
 })
 
 onBeforeUnmount(() => {
@@ -126,7 +167,10 @@ onBeforeUnmount(() => {
       @pointerdown="operatorScrolled"
       @keydown="operatorScrolled"
     >
-      <div class="spacer" :style="{ height: `${String(lines.length * rowHeight)}px` }">
+      <div
+        class="spacer"
+        :style="{ height: `${String(lines.length * rowHeight)}px`, '--code-width': `${String(codeWidth)}px` }"
+      >
         <div class="rows" :style="{ transform: `translateY(${String(first * rowHeight)}px)` }">
           <div
             v-for="row in rows"
@@ -166,17 +210,22 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow: auto;
   outline: none;
+  overflow-anchor: none;
+  --number-width: 54px;
+  --code-padding: 12px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-kerning: none;
+  tab-size: 8;
 }
 
 .spacer {
-  min-width: max-content;
+  min-width: calc(var(--number-width) + var(--code-width) + var(--code-padding));
 }
 
 .row {
   display: flex;
   height: 24px;
-  font-family: var(--mono);
-  font-size: 14px;
   line-height: 24px;
   white-space: pre;
   user-select: text;
@@ -185,7 +234,7 @@ onBeforeUnmount(() => {
 
 .number {
   flex: none;
-  width: 54px;
+  width: var(--number-width);
   padding-right: 10px;
   color: var(--text-faint);
   text-align: right;
@@ -194,7 +243,7 @@ onBeforeUnmount(() => {
 }
 
 .text {
-  padding-right: 12px;
+  padding-right: var(--code-padding);
 }
 
 .row.comment .text {

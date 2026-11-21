@@ -39,6 +39,7 @@ struct PreviewSettings {
   double max_spindle_rpm{};
   std::string tool_table;
   std::optional<int> reference_tool{};
+  std::string touched_off_file{};
 
   std::chrono::milliseconds timeout{20000};
   // How long the helper may take to exit after it has closed its result.

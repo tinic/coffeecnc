@@ -86,6 +86,9 @@ struct MachineConfig {
   bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
   std::optional<PausedZLimits> paused_z{};
   MotionTolerances motion_tolerances{};
+  // Resolved and prepared by the application before connecting to LinuxCNC.
+  std::string runtime_directory{};
+  [[nodiscard]] auto touched_off_file() const -> std::string;
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

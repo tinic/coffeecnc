@@ -435,4 +435,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   };
 }
 
+auto MachineConfig::touched_off_file() const -> std::string {
+  const auto directory = runtime_directory.empty() ? std::filesystem::path(tool_table).parent_path()
+                                                   : std::filesystem::path(runtime_directory);
+  return (directory / "coffeecnc-touched-off.txt").string();
+}
+
 } // namespace coffeecnc

@@ -2113,6 +2113,17 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error("usage: coffeecnc_shell_tests -ini <file> (see tests/sim/run.sh)");
+    constexpr std::string_view legacy_marks = "legacy touched-off marks\n";
+    if (scenario == Scenario::tool_models_first_run) {
+      const auto config = load_machine_config(ini_file);
+      if (!config)
+        throw std::runtime_error(config.error());
+      std::ofstream legacy(config->touched_off_file());
+      legacy << legacy_marks;
+      legacy.close();
+      if (!legacy)
+        throw std::runtime_error("could not seed the legacy touched-off file");
+    }
     configure_environment();
     std::unique_ptr<ShellTestHooks> hooks;
     std::thread driver;
@@ -2121,6 +2132,19 @@ auto main(int argc, char** argv) -> int {
     options.ui_directory = COFFEECNC_SOURCE_UI_DIRECTORY;
     const int result = run_application(
         options, {.before_load = [&](PanelWindow& window, const MachineConfig& config) -> void {
+          if (scenario == Scenario::tool_models_first_run) {
+            const auto marks = config.touched_off_file();
+            check("legacy_marks_copied_into_data_directory",
+                  std::filesystem::path(marks).parent_path() == config.runtime_directory &&
+                      read_text_file(marks, 128) == legacy_marks);
+            std::filesystem::remove(marks);
+          } else if (scenario == Scenario::tool_models_second_run) {
+            auto legacy = config;
+            legacy.runtime_directory.clear();
+            check("removed_marks_do_not_return_on_restart",
+                  read_text_file(legacy.touched_off_file(), 128) == legacy_marks &&
+                      !std::filesystem::exists(config.touched_off_file()));
+          }
           hooks = ShellTestHooks::install(window, std::string(instrumentation));
           driver = std::thread(
               [&hooks, config, scenario]() -> void { drive(*hooks, config, scenario); });

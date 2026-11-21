@@ -135,6 +135,9 @@ private:
   int temporary_{-1};
 };
 
+[[nodiscard]] auto prepare_data_directory(ToolModelFiles& files, const std::string& directory)
+    -> std::expected<ToolModelFiles::Directory, std::string>;
+
 // What a command came to: the messages for its page, in the order they are sent.
 struct ToolModelReply {
   CommandOutcome outcome{CommandOutcome::accepted};

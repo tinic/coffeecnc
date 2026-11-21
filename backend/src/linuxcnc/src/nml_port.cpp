@@ -46,12 +46,8 @@
 namespace coffeecnc {
 namespace {
 
-// Touched-off lengths beside the tool table (tool_table.hpp: TouchedOff).
-auto touched_path(const std::string& tool_table) -> std::filesystem::path {
-  return std::filesystem::path(tool_table).parent_path() / "coffeecnc-touched-off.txt";
-}
-auto load_touched(const std::string& tool_table) -> std::optional<TouchedOff> {
-  std::ifstream in(touched_path(tool_table));
+auto load_touched(const std::string& file) -> std::optional<TouchedOff> {
+  std::ifstream in(file);
   std::string text;
   for (std::string line; std::getline(in, line);)
     text += line + '\n';
@@ -71,8 +67,8 @@ auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> 
   std::filesystem::rename(temporary, path, error);
   return !error;
 }
-void save_touched(const std::string& tool_table, const TouchedOff& touched) {
-  static_cast<void>(write_sidecar(touched_path(tool_table), format_touched_off(touched)));
+void save_touched(const std::string& file, const TouchedOff& touched) {
+  static_cast<void>(write_sidecar(file, format_touched_off(touched)));
 }
 
 auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> {
@@ -354,16 +350,19 @@ struct NmlPort::Impl {
       : config(std::move(machine)),
         command(emcFormat, "emcCommand", "xemc", config.nml_file.c_str()), status(config.nml_file),
         errors(emcFormat, "emcError", "xemc", config.nml_file.c_str()) {
+    const auto runtime = std::filesystem::path(
+        config.runtime_directory.empty() ? config.directory : config.runtime_directory);
     if (config.remember_spindle_tool && !config.tool_table.empty()) {
-      spindle_tool_file =
-          std::filesystem::path(config.tool_table).parent_path() / "coffeecnc-spindle-tool.txt";
+      const auto tools = config.runtime_directory.empty()
+                            ? std::filesystem::path(config.tool_table).parent_path() : runtime;
+      spindle_tool_file = tools / "coffeecnc-spindle-tool.txt";
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
-    breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
-    breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
+    breakpoint_copy = runtime / ".coffeecnc-breakpoint.ngc";
+    breakpoint_record = runtime / ".coffeecnc-breakpoint.txt";
     breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
     breakpoint_recovered = bool(breakpoint);
-    spindle_hold_marker = std::filesystem::path(config.directory) / ".coffeecnc-spindle-hold";
+    spindle_hold_marker = runtime / ".coffeecnc-spindle-hold";
     // An interrupted older build may have left G52 active or suspended.
     // Require recovery with that build before starting a program again.
     const auto legacy_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
@@ -1615,7 +1614,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   // Saved marks hold without a taught setter while the table still matches the file: tool
   // lengths are relative to the reference, not to the setter (turo: no T98 after a restart).
   const auto saved_marks = [&](std::string_view table) -> std::map<int, double> {
-    const auto saved = load_touched(impl_->config.tool_table);
+    const auto saved = load_touched(impl_->config.touched_off_file());
     const auto reference = tool_z(table, limits->reference_tool);
     if (!saved || !reference || std::abs(saved->reference - *reference) > 0.001)
       return {};
@@ -1632,7 +1631,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     calibration.reset();
     current_marks.clear();
     std::error_code error;
-    std::filesystem::remove(touched_path(impl_->config.tool_table), error);
+    std::filesystem::remove(impl_->config.touched_off_file(), error);
   } else if (calibration && table && !std::ranges::contains(current_marks, calibration->teacher)) {
     // The plane came from the teacher's length: it is gone, the saved marks still hold.
     calibration.reset();
@@ -1643,7 +1642,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                        std::move(current_marks)};
 
   const auto remember = [&]() {
-    save_touched(impl_->config.tool_table,
+    save_touched(impl_->config.touched_off_file(),
                  {calibration->measured.at(limits->reference_tool), calibration->measured});
   };
 
@@ -2260,7 +2259,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         epoch.datum,
         {request.start[0], request.start[1], value},
         limits->clearance_mm > 0 ? contact->machine[2] + limits->clearance_mm : request.start[2],
-        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.tool_table)),
+        restored_touched_off(*table, limits->reference_tool, load_touched(impl_->config.touched_off_file())),
         tool};
     remember();
     return SetterState{calibration->plane, measurement, marks(*table)};

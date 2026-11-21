@@ -3428,12 +3428,13 @@ void power_off(Rig& rig) {
 }
 
 void sim_config(const MachineConfig& config) {
-  // No machine identity: tool models are session-only, and nothing is opened for them.
+  // An unnamed INI override uses the configured machine name and the isolated XDG data root.
   const auto models = tool_model_location(config);
-  check("config_no_machine_id",
-        !config.machine_id && models.availability == ToolModelAvailability::session_only &&
-            models.directory.empty(),
-        models.reason);
+  check("config_default_machine_id",
+        config.machine_id == "CoffeeCNC-sim" &&
+            models.availability == ToolModelAvailability::available &&
+            models.directory.ends_with("/coffeecnc/CoffeeCNC-sim"),
+        models.directory);
   check("config_limits", near(config.limits.max_jog_velocity, 1800, 0.01) &&
                              near(config.limits.max_axis_jog_velocity[2], 1800, 0.01) &&
                              near(config.limits.max_feed_override, 1.5) &&

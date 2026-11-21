@@ -290,31 +290,36 @@ void ToolModelArchive::show(ToolModels models) {
   snapshot_ = encoded.value_or(std::string());
 }
 
-auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
-  constexpr unsigned others = 077;
-  const auto& directory = location_.directory;
+auto prepare_data_directory(ToolModelFiles& files, const std::string& directory)
+    -> std::expected<ToolModelFiles::Directory, std::string> {
   // Outermost first. What exists is left as it is; what is made is made durable in its
   // parent before anything is made inside it.
   for (auto end = directory.find('/', 1);; end = directory.find('/', end + 1)) {
     const auto part = directory.substr(0, end);
-    const auto made = files_.make_directory(part);
+    const auto made = files.make_directory(part);
     if (!made)
       return std::unexpected(made.error());
     if (made->created) {
       const auto slash = part.rfind('/');
       const auto parent =
           slash == 0 || slash == std::string::npos ? std::string("/") : part.substr(0, slash);
-      if (const auto durable = files_.sync_directory(parent); !durable)
+      if (const auto durable = files.sync_directory(parent); !durable)
         return std::unexpected(
             std::format("the new directory {} cannot be made durable: {}", part, durable.error()));
     }
-    if (end == std::string::npos) {
-      if ((made->mode & others) != 0)
-        note_ = std::format("The directory {} can be entered by other users (mode {:o}).",
-                            directory, made->mode);
-      return {};
-    }
+    if (end == std::string::npos)
+      return *made;
   }
+}
+
+auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
+  const auto made = prepare_data_directory(files_, location_.directory);
+  if (!made)
+    return std::unexpected(made.error());
+  if ((made->mode & 077) != 0)
+    note_ = std::format("The directory {} can be entered by other users (mode {:o}).",
+                        location_.directory, made->mode);
+  return {};
 }
 
 void ToolModelArchive::open() {

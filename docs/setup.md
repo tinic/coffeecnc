@@ -41,6 +41,7 @@ Open the INI file of your machine. Make these changes:
 
    - `MAX_SPINDLE_RPM`: the highest spindle speed the panel accepts. If you leave it out, CoffeeCNC uses `[SPINDLE_0] MAX_FORWARD_VELOCITY`.
    - `MACHINE_ID` names the machine’s data folder. If omitted, CoffeeCNC derives it from `[EMC] MACHINE`. Give each machine an explicit, stable ID if the names would produce the same folder.
+   - `DATA_DIRECTORY` overrides the data root with an absolute path. By default CoffeeCNC uses `$XDG_DATA_HOME/coffeecnc` or `~/.local/share/coffeecnc`. The machine's `runtime` folder holds touched-off marks, the remembered spindle tool, and breakpoint and spindle recovery files. The first launch imports those records from their old locations.
    - `MANUAL_TOOLCHANGE = yes`: CoffeeCNC shows the tool change prompt and confirms the change to LinuxCNC. Remove `hal_manualtoolchange` or other tool change wiring from your HAL files first: CoffeeCNC connects only free pins, and does not start if another program owns them. With an automatic tool changer, or a tool change routine of your own, set `MANUAL_TOOLCHANGE = no`.
 
 3. In `[HAL]`, set `POSTGUI_HALFILE = coffeecnc_postgui.hal`. A post-GUI file of another display connects pins of that display and does not load with CoffeeCNC.

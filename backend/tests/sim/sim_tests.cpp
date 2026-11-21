@@ -4691,9 +4691,179 @@ void whole_job(Rig& rig) {
   rig.start();
 }
 
+// The gantry profile (run.sh -p gantry): X on joint 0, Y on joints 1 and 2 with their own home
+// switches 1 mm apart and one negative HOME_SEQUENCE, Z on joint 3.
+void gantry_config(const MachineConfig& config) {
+  check("config_gantry",
+        config.axis_joints == std::array<std::vector<int>, 3>{{{0}, {1, 2}, {3}}} &&
+            config.limits.axis_motors == std::array<int, 3>{1, 2, 1} &&
+            config.home_all_configured &&
+            config.home_axis_configured == std::array<bool, 3>{true, true, true},
+        config.machine_name);
+}
+
+// Joint n in joint coordinates, machine units, as motion reports it to HAL.
+auto joint_position(int joint) -> double {
+  return hal_number(std::format("joint.{}.pos-fb", joint));
+}
+auto joint_homed(int joint) -> bool {
+  return hal_pin(std::format("joint.{}.homed", joint)) == "TRUE";
+}
+auto joint_positions() -> std::string {
+  return std::format("j0={:.3f} j1={:.3f} j2={:.3f} j3={:.3f}", joint_position(0),
+                     joint_position(1), joint_position(2), joint_position(3));
+}
+
+// Unhomes one joint as another display can; CoffeeCNC itself never does.
+auto unhome_joint(int joint) -> bool {
+  const auto command = std::format(
+      "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MANUAL); "
+      "c.wait_complete(); c.teleop_enable(0); c.wait_complete(); c.unhome({}); "
+      "c.wait_complete()'",
+      joint);
+  return std::system(command.c_str()) == 0;
+}
+
+auto all_homed(Rig& rig) -> bool {
+  return std::ranges::all_of(rig.snapshot().axes,
+                             [](const auto& axis) -> bool { return axis.homed && !axis.homing; });
+}
+
+void gantry(Rig& rig) {
+  const std::string y_refusal = "Home the machine before jogging Y: two motors drive it.";
+  // Before homing every jog is a joint jog. One Y motor alone would rack the gantry.
+  const auto before = joint_positions();
+  const auto held = rig.send(hold_y);
+  rig.pump(200ms);
+  const auto step = rig.send(R"("type":"jog_step","axis":"y","distance":1,"velocity":600)");
+  rig.pump(200ms);
+  static_cast<void>(rig.send(release_y));
+  check("gantry_y_joint_jog_refused",
+        held.outcome == "rejected" && held.reason == y_refusal && step.outcome == "rejected" &&
+            step.reason == y_refusal && joint_positions() == before,
+        std::format("{} {} {}", held.text(), step.text(), joint_positions()));
+  rig.direct([&]() -> void {
+    const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::joint, always());
+    rig.direct_pump(200ms);
+    check("gantry_port_refuses_y_joint_jog",
+          forced.status == ActionStatus::failed && forced.reason == y_refusal &&
+              joint_positions() == before,
+          std::format("{}:{} {}", static_cast<int>(forced.status), forced.reason,
+                      joint_positions()));
+  });
+
+  // X and Z jog their own joints: Z is joint 3, not joint 2 (the second Y motor).
+  const double x0 = joint_position(0);
+  const auto pressed = rig.send(hold_x);
+  rig.hold(hold_x, 300ms);
+  const auto released = rig.send(release_x);
+  rig.pump(150ms);
+  const double x1 = joint_position(0);
+  rig.settle();
+  const double z0 = joint_position(3);
+  const double y2 = joint_position(2);
+  const auto z_step = rig.send(R"("type":"jog_step","axis":"z","distance":-0.5,"velocity":600)");
+  rig.pump(500ms);
+  check("gantry_x_and_z_jog_unhomed",
+        pressed.accepted() && released.accepted() && z_step.accepted() && !rig.status().teleop &&
+            x1 - x0 > 1.5 && near(joint_position(3) - z0, -0.5, 0.001) &&
+            near(joint_position(2), y2, 0.0001),
+        std::format("{} {} x_moved={:.3f} z_moved={:.4f} y2_moved={:.4f}", pressed.text(),
+                    z_step.text(), x1 - x0, joint_position(3) - z0, joint_position(2) - y2));
+  rig.settle();
+
+  // Home Y: LinuxCNC homes both joints of the synchronized group, each to its own switch. Y
+  // counts as homed only once both are; X and Z stay unhomed.
+  const auto home_y = rig.send(R"("type":"home","axis":"y")");
+  bool split = false;
+  bool early = false;
+  const bool y_homed = rig.pump_until(30s, [&]() -> bool {
+    const bool one = joint_homed(1);
+    const bool two = joint_homed(2);
+    const auto axis = rig.snapshot().axes[1];
+    split = split || one != two;
+    early = early || (axis.homed && !(one && two));
+    return axis.homed && !axis.homing && one && two;
+  });
+  const auto axes = rig.snapshot().axes;
+  // The motors stopped at switches 1 mm apart: their offsets differ by that, the joints agree.
+  const double squared = hal_number("joint.2.motor-offset") - hal_number("joint.1.motor-offset");
+  check("gantry_home_y_homes_both_motors",
+        home_y.accepted() && y_homed && !early && !axes[0].homed && !axes[2].homed &&
+            near(squared, 1, 0.05) && near(joint_position(1), joint_position(2), 0.001),
+        std::format("{} homed={} early={} split_seen={} x={} z={} offset_difference={:.4f}",
+                    home_y.text(), y_homed, early, split, axes[0].homed, axes[2].homed, squared));
+
+  const auto all = rig.send(R"("type":"home","axis":"all")");
+  const bool homed = rig.pump_until(60s, [&]() -> bool { return all_homed(rig); });
+  rig.pump(300ms);
+  check("gantry_home_all",
+        all.accepted() && homed && joint_homed(0) && joint_homed(1) && joint_homed(2) &&
+            joint_homed(3) && near(joint_position(1), joint_position(2), 0.001),
+        std::format("{} {}", all.text(), joint_positions()));
+
+  // Homed, Y jogs in world mode: both motors move together.
+  const double y1_start = joint_position(1);
+  const double y2_start = joint_position(2);
+  const auto world = rig.send(hold_y);
+  rig.hold(hold_y, 300ms);
+  static_cast<void>(rig.send(release_y));
+  rig.settle();
+  const double moved1 = joint_position(1) - y1_start;
+  const double moved2 = joint_position(2) - y2_start;
+  const auto world_step =
+      rig.send(R"("type":"jog_step","axis":"y","distance":0.5,"velocity":600)");
+  rig.pump(500ms);
+  check("gantry_world_jog_moves_both_y_motors",
+        world.accepted() && world_step.accepted() && rig.status().teleop && moved1 < -1.5 &&
+            near(moved1, moved2, 0.001) &&
+            near(joint_position(1) - y1_start, moved1 + 0.5, 0.001) &&
+            near(joint_position(2), joint_position(1), 0.001),
+        std::format("{} {} y1={:.4f} y2={:.4f} {}", world.text(), world_step.text(), moved1,
+                    moved2, joint_positions()));
+  rig.settle();
+
+  // One Y motor unhomed: Y is not homed, X and Z are, and Y does not jog until it is homed again.
+  const bool unhomed = unhome_joint(2);
+  rig.pump_until(2s, [&]() -> bool { return !rig.snapshot().axes[1].homed; });
+  const auto partly = rig.snapshot().axes;
+  const auto refused = rig.send(hold_y);
+  static_cast<void>(rig.send(release_y));
+  check("gantry_y_homed_only_with_both_motors",
+        unhomed && !partly[1].homed && partly[0].homed && partly[2].homed && joint_homed(1) &&
+            !joint_homed(2) && refused.outcome == "rejected" && refused.reason == y_refusal,
+        std::format("unhome={} x={} y={} z={} {}", unhomed, partly[0].homed, partly[1].homed,
+                    partly[2].homed, refused.text()));
+  const auto again = rig.send(R"("type":"home","axis":"y")");
+  const bool rehomed = rig.pump_until(30s, [&]() -> bool { return all_homed(rig); });
+  check("gantry_home_y_again", again.accepted() && rehomed && joint_homed(2), again.text());
+
+  // A program: every motor follows its axis.
+  const std::string file = rig.config.program_prefix + "/coffeecnc_gantry.ngc";
+  {
+    std::ofstream out{file};
+    out << "G21 G90 G54\nG0 X10 Y20 Z-5\nG1 X-12 Y-8 Z2 F1500\nM2\n";
+  }
+  const auto open = rig.send(std::format(R"("type":"open_program","path":"{}")", file));
+  const auto run = rig.send(R"("type":"run")");
+  const bool started = rig.pump_until(5s, [&]() -> bool { return !rig.idle(); });
+  const bool finished = rig.pump_until(30s, [&]() -> bool { return rig.idle(); });
+  rig.pump(200ms);
+  const auto status = rig.status();
+  check("gantry_program_runs",
+        open.accepted() && run.accepted() && started && finished &&
+            near(status.controller.axes[0].machine, -12) &&
+            near(status.controller.axes[1].machine, -8) &&
+            near(status.controller.axes[2].machine, 2) && near(joint_position(0), -12) &&
+            near(joint_position(1), -8) && near(joint_position(2), -8) &&
+            near(joint_position(3), 2),
+        std::format("{} {} {}", open.text(), run.text(), joint_positions()));
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
-         bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only) -> int {
+         bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
+         bool gantry_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4707,6 +4877,8 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
                              config->limits.max_spindle_override, config->limits.max_spindle_rpm));
   if (g0759)
     g0759_config(*config);
+  else if (gantry_only)
+    gantry_config(*config);
   else
     sim_config(*config);
 
@@ -4765,6 +4937,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (gantry_only) {
+    gantry(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (whole_job_only) {
     whole_job(rig);
     power_off(rig);
@@ -4893,6 +5070,7 @@ auto main(int argc, char** argv) -> int {
   bool paused_z_only = false;
   bool paused_spindle_only = false;
   bool whole_job_only = false;
+  bool gantry_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -4909,6 +5087,8 @@ auto main(int argc, char** argv) -> int {
     paused_z_only = paused_z_only || std::string_view(argv[i]) == "paused-z";
     breakpoint_only = breakpoint_only || std::string_view(argv[i]) == "program-breakpoint";
     whole_job_only = whole_job_only || std::string_view(argv[i]) == "whole-job";
+    // The scenario for run.sh -p gantry.
+    gantry_only = gantry_only || std::string_view(argv[i]) == "gantry";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -4916,9 +5096,10 @@ auto main(int argc, char** argv) -> int {
   try {
     if (ini_file.empty())
       throw std::runtime_error(
-          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
+          "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|gantry|jog-contact|"
+          "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only);
+               breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

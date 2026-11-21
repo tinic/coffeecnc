@@ -4,6 +4,7 @@
 #include <cmath>
 #include <format>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -193,6 +194,10 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
                 return reject("Incremental jog exceeds configured travel.");
             }
           }
+          if (const int motors = limits_.axis_motors.at(axis_index(c.axis).value_or(0));
+              !homed(s) && motors > 1)
+            return reject(std::format("Home the machine before jogging {}: {} motors drive it.",
+                                      letter(c.axis), motors == 2 ? "two" : std::to_string(motors)));
           return allow(TaskMode::manual, homed(s) ? JogSpace::axis : JogSpace::joint);
         } else if constexpr (std::is_same_v<T, Mdi>) {
           if (!valid_text(c.text, 254))

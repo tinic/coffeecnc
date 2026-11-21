@@ -101,6 +101,9 @@ struct Limits {
   // configured to accept them ([TRAJ] NO_FORCE_HOMING): MDI, run, single block, work coordinate
   // selection and touch-off are then allowed unhomed. Jog rules do not depend on it.
   bool homing_required;
+  // Joints (motors) that drive X, Y, Z: 2 for the Y of a gantry. Before homing jogs move joints,
+  // and an axis with more than one is not jogged then: one motor alone would rack it.
+  std::array<int, 3> axis_motors{1, 1, 1};
 };
 
 // Typed bodies of protocol v1 requests. Wire parsing and request IDs belong to the app layer.

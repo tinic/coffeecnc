@@ -13,11 +13,13 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <initializer_list>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace coffeecnc;
@@ -303,6 +305,94 @@ void increments_and_signals() {
   }
 }
 
+// Axes and joints: X, Y and Z only, one joint per letter of [TRAJ] COORDINATES as trivkins
+// assigns them; a repeated letter is a gantry axis with more than one motor.
+void axes_and_joints() {
+  const auto mill = load(g0759).value();
+  require(mill.axis_joints == std::array<std::vector<int>, 3>{{{0}, {1}, {2}}} &&
+              mill.limits.axis_motors == std::array<int, 3>{1, 1, 1} &&
+              mill.home_axis_configured == std::array<bool, 3>{true, true, true},
+          "a mill: joint n is axis n, each axis homes alone");
+  auto gantry = with(std::string(g0759), "JOINTS = 3\nKINEMATICS = trivkins coordinates=XYZ",
+                     "JOINTS = 4\nKINEMATICS = trivkins coordinates=XYYZ kinstype=BOTH");
+  gantry = with(gantry, "COORDINATES =  XYZ", "COORDINATES = X Y Y Z");
+  gantry = with(gantry, "[SPINDLE_0]\n", "[JOINT_3]\nHOME = 0.0\n\n[SPINDLE_0]\n");
+  const auto two = load(gantry);
+  require(two.has_value(), two ? "" : two.error());
+  require(two->axis_joints == std::array<std::vector<int>, 3>{{{0}, {1, 2}, {3}}} &&
+              two->limits.axis_motors == std::array<int, 3>{1, 2, 1} &&
+              two->axes == std::array<Axis, 3>{Axis::x, Axis::y, Axis::z},
+          "pncconf's gantry (kinstype=BOTH): Y is joints 1 and 2, Z joint 3");
+  require(!two->home_all_configured &&
+              two->home_axis_configured == std::array<bool, 3>{true, false, true},
+          "without HOME_SEQUENCE neither home all nor Y alone is configured");
+  const auto sequence = [&](std::string_view y1, std::string_view y2) -> std::string {
+    auto text = with(gantry, "[JOINT_0]\n", "[JOINT_0]\nHOME_SEQUENCE = 1\n");
+    text = with(text, "[JOINT_1]\n", std::format("[JOINT_1]\nHOME_SEQUENCE = {}\n", y1));
+    text = with(text, "[JOINT_2]\n", std::format("[JOINT_2]\nHOME_SEQUENCE = {}\n", y2));
+    return with(text, "[JOINT_3]\n", "[JOINT_3]\nHOME_SEQUENCE = 0\n");
+  };
+  const auto synchronized = load(sequence("-2", "-2")).value();
+  require(synchronized.home_all_configured &&
+              synchronized.home_axis_configured == std::array<bool, 3>{true, true, true},
+          "one negative HOME_SEQUENCE on both Y joints: Y homes alone, both motors together");
+  for (const auto& [y1, y2] : {std::pair{"2", "2"}, std::pair{"-1", "-2"}, std::pair{"-1", "1"}})
+    require(!load(sequence(y1, y2)).value().home_axis_configured[1],
+            std::format("Y joints with HOME_SEQUENCE {} and {} do not home alone", y1, y2));
+  // What LinuxCNC accepts the same way: case, spaces, kinstype by its first letter, identity.
+  for (const auto& [coordinates, kinematics] :
+       {std::pair{"XYYZ", "trivkins coordinates=xyyz"},
+        std::pair{"x y y z", "TRIVKINS  coordinates=XYYZ\tkinstype=b"},
+        std::pair{"X Y Y Z", "trivkins coordinates=XYYZ kinstype=1"}}) {
+    auto text = with(gantry, "COORDINATES = X Y Y Z", std::format("COORDINATES = {}", coordinates));
+    text = with(text, "KINEMATICS = trivkins coordinates=XYYZ kinstype=BOTH",
+                std::format("KINEMATICS = {}", kinematics));
+    const auto loaded = load(text);
+    require(loaded && loaded->limits.axis_motors == std::array<int, 3>{1, 2, 1},
+            std::format("{} / {} is the gantry: {}", coordinates, kinematics,
+                        loaded ? "" : loaded.error()));
+  }
+  auto late = with(gantry, "COORDINATES = X Y Y Z", "COORDINATES = X Y Z Y");
+  late = with(late, "coordinates=XYYZ", "coordinates=XYZY");
+  require(load(late).value().axis_joints == std::array<std::vector<int>, 3>{{{0}, {1, 3}, {2}}},
+          "LinuxCNC's own gantry sample (XYZY): Y is joints 1 and 3, Z joint 2");
+  require(load(with(std::string(g0759), "coordinates=XYZ", "coordinates=XYZ kinstype=both"))
+              .has_value() &&
+              load(with(std::string(g0759), " coordinates=XYZ", "")).has_value(),
+          "a mill with kinstype=both or without coordinates= loads");
+
+  const auto refused = [&](std::string_view old, std::string_view replacement,
+                           std::initializer_list<std::string_view> parts,
+                           std::string_view what) -> void {
+    const auto message = error(with(gantry, old, replacement));
+    require(!message.empty() && std::ranges::all_of(parts, [&](std::string_view part) -> bool {
+              return has(message, part);
+            }),
+            std::format("{}: {}", what, message));
+  };
+  refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Z A",
+          {"[TRAJ] COORDINATES", "axis A is not supported", "X Y Y Z"}, "a rotary axis");
+  refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Y U", {"axis U is not supported"},
+          "a U axis");
+  refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Y", {"X, Y and Z are all required"},
+          "no Z");
+  refused("JOINTS = 4", "JOINTS = 3", {"[KINS] JOINTS is \"3\"", "set it to 4"},
+          "fewer joints than letters");
+  refused("JOINTS = 4\n", "", {"[KINS] JOINTS", "set it to 4"}, "no JOINTS");
+  refused(" coordinates=XYYZ", "", {"no coordinates=", "add coordinates=XYYZ"},
+          "trivkins's default letters (XYZA) are not the gantry's");
+  refused("coordinates=XYYZ", "coordinates=XYZY",
+          {"coordinates=XYZY", "X Y Y Z", "same letters in the same order"},
+          "coordinates= in another order than COORDINATES");
+  refused("kinstype=BOTH", "kinstype=inverse", {"kinstype=inverse", "inverse-only", "both"},
+          "inverse-only kinematics");
+  refused("kinstype=BOTH", "kinstype=forward", {"forward-only"}, "forward-only kinematics");
+  refused("trivkins coordinates=XYYZ kinstype=BOTH", "gantrykins coordinates=XYYZ",
+          {"[KINS] KINEMATICS", "only trivkins"}, "other kinematics");
+  refused("kinstype=BOTH", "kinstype=BOTH sparse=1", {"\"sparse=1\"", "coordinates= and kinstype="},
+          "a word trivkins does not take");
+}
+
 // [COFFEECNC] MACHINE_ID and DATA_DIRECTORY are handed on as written: judging them is the app
 // layer's, and a wrong one must not keep the panel from starting.
 void tool_model_settings() {
@@ -456,6 +546,18 @@ void simulation_profiles() {
   const auto refused = std::format("'{}' -n -p g0759 -u inch -d '{}' /bin/true 2>/dev/null", runner,
                                    (scratch / "refused").string());
   require(std::system(refused.c_str()) != 0, "the G0759 profile is millimetres only");
+  const auto gantry = assembled("-p gantry", "gantry");
+  require(gantry.has_value(), gantry ? "" : gantry.error());
+  require(gantry->axis_joints == std::array<std::vector<int>, 3>{{{0}, {1, 2}, {3}}} &&
+              gantry->home_all_configured &&
+              gantry->home_axis_configured == std::array<bool, 3>{true, true, true} &&
+              gantry->limits.homing_required && near(gantry->limits.max_jog_velocity, 1800) &&
+              near(gantry->travel[2].min, -50) && gantry->machine_id.has_value(),
+          "the gantry simulation INI: Y on joints 1 and 2, homed together, and a machine ID "
+          "derived from [EMC] MACHINE (#158)");
+  const auto inch = std::format("'{}' -n -p gantry -u inch -d '{}' /bin/true 2>/dev/null", runner,
+                                (scratch / "refused").string());
+  require(std::system(inch.c_str()) != 0, "the gantry profile is millimetres only");
 }
 
 void fixed_setter_is_explicit_and_bounded() {
@@ -554,6 +656,7 @@ auto main(int argc, char** argv) -> int {
     g0759_shape();
     spindle_ceiling();
     homing();
+    axes_and_joints();
     axis_ceilings();
     increments_and_signals();
     tool_model_settings();

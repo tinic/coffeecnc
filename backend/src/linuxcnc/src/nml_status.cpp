@@ -96,17 +96,23 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     work[1] = y;
   }
   for (std::size_t i = 0; i < c.axes.size(); ++i) {
-    // Trivial kinematics, checked when the configuration was loaded: joint i is axis i.
-    const auto& joint = motion.joint[i];
+    // Trivial kinematics, checked when the configuration was loaded. A gantry axis has more than
+    // one joint: it is homed when all of them are, and homing, on a limit or moving with any.
     auto& axis = c.axes[i];
     axis.enabled = true;
-    axis.homed = joint.homed != 0;
-    axis.homing = joint.homing != 0;
-    axis.on_hard_limit = joint.minHardLimit != 0 || joint.maxHardLimit != 0;
+    axis.homed = true;
+    for (const int number : config.axis_joints.at(i)) {
+      const auto& joint = motion.joint[number];
+      axis.homed = axis.homed && joint.homed != 0;
+      axis.homing = axis.homing || joint.homing != 0;
+      axis.on_hard_limit =
+          axis.on_hard_limit || joint.minHardLimit != 0 || joint.maxHardLimit != 0;
+      moving = moving || joint.velocity != 0;
+    }
     axis.machine = machine[i] * mm;
     axis.min_limit = motion.axis[i].minPositionLimit * mm;
     axis.max_limit = motion.axis[i].maxPositionLimit * mm;
-    moving = moving || motion.axis[i].velocity != 0 || joint.velocity != 0;
+    moving = moving || motion.axis[i].velocity != 0;
     out.work[i] = (work[i] - g92[i]) * mm;
     out.dtg[i] = dtg[i] * mm;
     out.g5x[i] = g5x[i] * mm;
@@ -165,10 +171,13 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     // A feed-held path can retain queued motion and clear traj.inpos even at rest.
     constexpr double rest_mm_s = 0.0001;
     out.paused_z_still = std::abs(motion.traj.current_vel * mm) < rest_mm_s;
-    for (std::size_t i = 0; i < c.axes.size(); ++i)
-      out.paused_z_still = out.paused_z_still &&
-                           std::abs(motion.joint[i].velocity * mm) < rest_mm_s &&
-                           std::abs(motion.axis[i].velocity * mm) < rest_mm_s;
+    for (std::size_t i = 0; i < c.axes.size(); ++i) {
+      out.paused_z_still =
+          out.paused_z_still && std::abs(motion.axis[i].velocity * mm) < rest_mm_s;
+      for (const int joint : config.axis_joints.at(i))
+        out.paused_z_still =
+            out.paused_z_still && std::abs(motion.joint[joint].velocity * mm) < rest_mm_s;
+    }
     // LinuxCNC 2.9's NML motion status does not serialize the external-offset pose.
     // Read applied offset from HAL; the NML axis position independently checks the move.
     if (view && view->paused_z) {

@@ -1,0 +1,42 @@
+# Simulated motion for CoffeeCNC's gantry router: LinuxCNC's core_sim.hal for four joints
+# (X, Y, Y2, Z) and a home switch per joint, as in LinuxCNC's simulated-xyyz-home.hal. The
+# commanded position is the feedback. A switch is closed while its joint is beyond the switch
+# position.
+
+loadrt [KINS]KINEMATICS
+loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
+addf motion-command-handler servo-thread
+addf motion-controller servo-thread
+
+# The names of core_sim.hal: Xpos is joint 0, Zpos the Z joint. Y2pos is the second Y motor.
+net Xpos joint.0.motor-pos-cmd => joint.0.motor-pos-fb
+net Ypos joint.1.motor-pos-cmd => joint.1.motor-pos-fb
+net Y2pos joint.2.motor-pos-cmd => joint.2.motor-pos-fb
+net Zpos joint.3.motor-pos-cmd => joint.3.motor-pos-fb
+
+net estop-loop iocontrol.0.user-enable-out iocontrol.0.emc-enable-in
+net tool-prep-loop iocontrol.0.tool-prepare iocontrol.0.tool-prepared
+
+loadrt comp names=coffeecnc-home-x,coffeecnc-home-y,coffeecnc-home-y2,coffeecnc-home-z
+addf coffeecnc-home-x servo-thread
+addf coffeecnc-home-y servo-thread
+addf coffeecnc-home-y2 servo-thread
+addf coffeecnc-home-z servo-thread
+
+setp coffeecnc-home-x.in0 [COFFEECNC_SIM]HOME_SWITCH_X
+setp coffeecnc-home-y.in0 [COFFEECNC_SIM]HOME_SWITCH_Y
+setp coffeecnc-home-y2.in0 [COFFEECNC_SIM]HOME_SWITCH_Y2
+setp coffeecnc-home-z.in0 [COFFEECNC_SIM]HOME_SWITCH_Z
+setp coffeecnc-home-x.hyst [COFFEECNC_SIM]HOME_SWITCH_HYSTERESIS
+setp coffeecnc-home-y.hyst [COFFEECNC_SIM]HOME_SWITCH_HYSTERESIS
+setp coffeecnc-home-y2.hyst [COFFEECNC_SIM]HOME_SWITCH_HYSTERESIS
+setp coffeecnc-home-z.hyst [COFFEECNC_SIM]HOME_SWITCH_HYSTERESIS
+
+net Xpos => coffeecnc-home-x.in1
+net Ypos => coffeecnc-home-y.in1
+net Y2pos => coffeecnc-home-y2.in1
+net Zpos => coffeecnc-home-z.in1
+net coffeecnc-home-x coffeecnc-home-x.out => joint.0.home-sw-in
+net coffeecnc-home-y coffeecnc-home-y.out => joint.1.home-sw-in
+net coffeecnc-home-y2 coffeecnc-home-y2.out => joint.2.home-sw-in
+net coffeecnc-home-z coffeecnc-home-z.out => joint.3.home-sw-in

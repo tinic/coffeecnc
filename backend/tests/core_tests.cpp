@@ -244,6 +244,30 @@ void jog_constraints() {
   require(!policy.evaluate(Jog{Axis::x, 1, 100, true}, s).allowed,
           "other axis homing prevents manual jog");
 }
+// Y driven by two motors, as on a gantry router: one joint alone would rack it.
+void gantry_jogs() {
+  Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  limits.axis_motors = {1, 2, 1};
+  CommandPolicy policy{limits};
+  auto s = ready();
+  for (auto& a : s.axes)
+    a.homed = false;
+  const auto y = policy.evaluate(Jog{Axis::y, 1, 100, true}, s);
+  require(!y.allowed && y.reason == "Home the machine before jogging Y: two motors drive it.",
+          "an unhomed two-motor axis does not jog in joint space: " + y.reason);
+  require(policy.evaluate(JogStep{Axis::y, 1, 100}, s).reason == y.reason,
+          "nor does it step");
+  require(policy.evaluate(Jog{Axis::y, 1, 0, false}, s).allowed, "its release is never refused");
+  require(policy.evaluate(Jog{Axis::x, 1, 100, true}, s).jog_space == JogSpace::joint &&
+              policy.evaluate(JogStep{Axis::z, 1, 100}, s).jog_space == JogSpace::joint,
+          "the one-motor axes jog their joints before homing");
+  s.axes[1].homed = true;
+  require(!policy.evaluate(Jog{Axis::y, 1, 100, true}, s).allowed,
+          "Y homed with another axis unhomed is still joint space: refused");
+  s = ready();
+  require(policy.evaluate(Jog{Axis::y, 1, 100, true}, s).jog_space == JogSpace::axis,
+          "homed, the axis jogs in world space and moves both motors");
+}
 void hostile_values() {
   CommandPolicy policy{simulator_limits()};
   const auto s = ready();
@@ -428,6 +452,7 @@ auto main() -> int {
     axis_jog_ceilings();
     stops_survive_lost_state();
     jog_constraints();
+    gantry_jogs();
     hostile_values();
     independent_jog_leases();
     task_heartbeat();

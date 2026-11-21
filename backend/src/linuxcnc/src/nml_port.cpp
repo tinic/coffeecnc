@@ -28,6 +28,7 @@
 #include <optional>
 #include <span>
 #include <sstream>
+#include <string>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -207,6 +208,21 @@ auto put(std::span<char> field, std::string_view text) -> bool {
 
 auto index_of(Axis axis) -> int { return static_cast<int>(axis_index(axis).value_or(0)); }
 
+// The joint a joint-space command for the axis addresses: its first; on a gantry axis the others
+// follow it (homing) or the command is refused (jogging).
+auto joint_of(const MachineConfig& config, Axis axis) -> int {
+  return config.axis_joints.at(static_cast<std::size_t>(index_of(axis))).front();
+}
+
+// A joint jog moves one motor: on an axis with more than one that racks it.
+auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> std::optional<std::string> {
+  const auto motors = config.axis_joints.at(static_cast<std::size_t>(index_of(axis))).size();
+  if (motors < 2)
+    return {};
+  return std::format("Home the machine before jogging {}: {} motors drive it.",
+                     "XYZ"[index_of(axis)], motors == 2 ? "two" : std::to_string(motors));
+}
+
 struct ProbeLine {
   std::size_t axis;
   double sign;
@@ -292,8 +308,9 @@ struct NmlPort::Impl {
   // Every write, for other threads to read.
   std::mutex trace_mutex;
   std::vector<Written> trace;
-  // The joint or axis of the jog stop that is the last command written, until task echoes it.
-  std::optional<int> unanswered_stop;
+  // The joint or axis and the jjogmode of the jog stop that is the last command written, until
+  // task echoes it.
+  std::optional<std::pair<int, int>> unanswered_stop;
   std::vector<ControllerMessage> messages;
   // A jog-stop text read in the present collect(), not yet attributed.
   struct JogStopText {
@@ -1081,6 +1098,18 @@ auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResu
   if (!axis && !impl_->config.home_all_configured)
     return failed("Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home "
                   "each axis.");
+  // A request for one joint of a synchronized group (a shared negative HOME_SEQUENCE) homes the
+  // whole group, each joint to its own switch (seen on 2.9.4). Without one it homes that joint.
+  if (axis && !impl_->config.home_axis_configured.at(static_cast<std::size_t>(index_of(*axis)))) {
+    const auto& joints = impl_->config.axis_joints.at(static_cast<std::size_t>(index_of(*axis)));
+    std::string sections;
+    for (const int joint : joints)
+      sections += std::format("{}[JOINT_{}]", sections.empty() ? "" : " and ", joint);
+    return failed(std::format(
+        "Homing {} alone would home one of its motors and rack it: give {} the same negative "
+        "HOME_SEQUENCE (for example -1), or use Home all.",
+        "XYZ"[index_of(*axis)], sections));
+  }
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1089,12 +1118,15 @@ auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResu
   if (auto joint_mode = impl_->teleop(false, from); !accepted(joint_mode))
     return joint_mode;
   EMC_JOINT_HOME message;
-  message.joint = axis ? index_of(*axis) : -1; // -1 homes all joints in their configured sequence
+  // -1 homes all joints in their configured sequence.
+  message.joint = axis ? joint_of(impl_->config, *axis) : -1;
   return impl_->pass(message, from);
 }
 
 auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace space,
                         const Wanted& wanted) -> ActionResult {
+  if (auto refusal = joint_jog_refusal(impl_->config, axis); space == JogSpace::joint && refusal)
+    return failed(*refusal);
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1102,7 +1134,8 @@ auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace spac
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
   EMC_JOG_CONT message;
-  message.joint_or_axis = index_of(axis);
+  // World mode jogs the axis, joint mode its joint.
+  message.joint_or_axis = space == JogSpace::axis ? index_of(axis) : joint_of(impl_->config, axis);
   message.vel = impl_->units_per_second(direction < 0 ? -velocity : velocity);
   message.jjogmode = space == JogSpace::joint ? 1 : 0;
   return impl_->pass(message, from);
@@ -1119,22 +1152,26 @@ auto NmlPort::stop_jog(Axis axis) -> ActionResult {
   if (s != nullptr && answered &&
       (s->task.state != EMC_TASK_STATE_ON || s->task.mode != EMC_TASK_MODE_MANUAL))
     return {};
+  EMC_JOG_STOP message;
+  // A jog runs in the space motion is in: axis jogs need world mode, joint jogs joint mode. The
+  // stop addresses what the jog did: the axis, or the axis's joint.
+  message.jjogmode = s != nullptr && s->motion.traj.mode == EMC_TRAJ_MODE_TELEOP ? 0 : 1;
+  message.joint_or_axis = message.jjogmode == 0 ? index_of(axis) : joint_of(impl_->config, axis);
   // The stop for this axis is in the command queue already: task will execute it after
   // everything written before it. Writing it again would only fill the queue.
-  if (!answered && impl_->unanswered_stop == index_of(axis))
+  const std::pair stop{message.joint_or_axis, message.jjogmode};
+  if (!answered && impl_->unanswered_stop == stop)
     return impl_->finished(from);
-  EMC_JOG_STOP message;
-  message.joint_or_axis = index_of(axis);
-  // A jog runs in the space motion is in: axis jogs need world mode, joint jogs joint mode.
-  message.jjogmode = s != nullptr && s->motion.traj.mode == EMC_TRAJ_MODE_TELEOP ? 0 : 1;
   if (auto wrote = impl_->write(message); !accepted(wrote))
     return wrote;
-  impl_->unanswered_stop = message.joint_or_axis;
+  impl_->unanswered_stop = stop;
   return impl_->finished(from);
 }
 
 auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space,
                             const Wanted& wanted) -> ActionResult {
+  if (auto refusal = joint_jog_refusal(impl_->config, axis); space == JogSpace::joint && refusal)
+    return failed(*refusal);
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1142,7 +1179,7 @@ auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpac
   if (auto mode = impl_->teleop(space == JogSpace::axis, from); !accepted(mode))
     return mode;
   EMC_JOG_INCR message;
-  message.joint_or_axis = index_of(axis);
+  message.joint_or_axis = space == JogSpace::axis ? index_of(axis) : joint_of(impl_->config, axis);
   // The sign of the velocity is the direction; the increment is a magnitude.
   message.incr = std::fabs(distance) / impl_->config.millimetres_per_unit;
   message.vel = impl_->units_per_second(distance < 0 ? -velocity : velocity);

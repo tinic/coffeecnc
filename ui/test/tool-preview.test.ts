@@ -85,7 +85,12 @@ describe('loaded tool preview', () => {
   it('matches axes by name and rejects missing, homing or nonfinite coordinates', () => {
     const s = status(); s.axes.reverse()
     expect(reportedToolTip(s)).toEqual([100, 200, 273])
-    s.axes.forEach((axis) => { axis.homing = true })
+    s.axes.forEach((axis) => { axis.homed = false })
+    // Not homed: unknown only where homing is required (the G0759 runs without it).
+    expect(reportedToolTip(s)).toBeNull()
+    expect(reportedToolTip(s, false)).toEqual([100, 200, 273])
+    s.axes.forEach((axis) => { axis.homed = true; axis.homing = true })
+    expect(reportedToolTip(s, false)).toBeNull()
     expect(reportedToolTip(s)).toBeNull()
     s.axes.pop()
     expect(reportedToolTip(s)).toBeNull()

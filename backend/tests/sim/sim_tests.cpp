@@ -5103,9 +5103,15 @@ void offset_history(Rig& rig) {
                         back ? change_text(*back) : "none", length, original.length));
     }
 
-    // codex's sequence on #185: a Restore of an X-only G92 entry while G92.2 suspends the shift
-    // must not lose the stored Y, so that G92.3 still brings it back. LinuxCNC refuses that
-    // restore; with the shift applied again, the same restore changes X only.
+    // An X-only restore must preserve omitted offsets. Cover Y on the XYZ mill and A on
+    // the rotary mill so an implementation watching only XYZ cannot pass both profiles.
+    const bool rotary = !rig.config.rotary_joints[0].empty();
+    const auto a_shift = [&]() -> double {
+      const auto reading = rig.status();
+      const auto work = reading.rotary_work[0];
+      return work ? reading.controller.rotary_axes[0].machine - *work
+                  : std::numeric_limits<double>::quiet_NaN();
+    };
     const auto g92_entry = [&](std::uint64_t after) -> std::optional<HistoryEntry> {
       std::optional<HistoryEntry> found;
       rig.pump_until(5s, [&]() -> bool {
@@ -5128,7 +5134,7 @@ void offset_history(Rig& rig) {
     };
     // Each line's own entry is awaited before the next line.
     const auto before_shift = last_id();
-    const auto shifted = mdi_line("G52 X2 Y9");
+    const auto shifted = mdi_line(rotary ? "G52 X2 A30" : "G52 X2 Y9");
     const auto shift = g92_entry(before_shift);
     const auto before_x_only = shift ? shift->id : last_id();
     const auto moved = mdi_line("G52 X4");
@@ -5150,16 +5156,19 @@ void offset_history(Rig& rig) {
     const auto resumed = mdi_line("G92.3");
     const auto resume = g92_entry(before_resume);
     const auto resumed_g92 = g92_text();
+    const double resumed_a = a_shift();
     check("history_g92_restore_keeps_a_suspended_shift",
           shifted == "accepted" && moved == "accepted" && suspended == "accepted" && x_only &&
               x_only->changes.size() == 1 && x_only->changes[0].field == HistoryField::x &&
               suspended_g92 == "0.0000,0.0000,0.0000" && refused_g92 == suspended_g92 &&
-              nothing_restored && resumed == "accepted" && resumed_g92 == "4.0000,9.0000,0.0000",
+              nothing_restored && resumed == "accepted" &&
+              resumed_g92 == (rotary ? "4.0000,0.0000,0.0000" : "4.0000,9.0000,0.0000") &&
+              (!rotary || near(resumed_a, 30)),
           std::format("{} {} {} entry={} suspended={} restore={} refused={} nothing={} {} "
-                      "resumed={}",
+                      "resumed={} a_shift={:.4f}",
                       shifted, moved, suspended, x_only ? change_text(*x_only) : "none",
                       suspended_g92, refused.first, refused_g92, nothing_restored, resumed,
-                      resumed_g92));
+                      resumed_g92, resumed_a));
     rig.pump(OffsetHistoryStore::grace + 500ms);
     const auto before_applied = resume ? resume->id : last_id();
     const auto applied = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
@@ -5170,9 +5179,11 @@ void offset_history(Rig& rig) {
     const auto applied_g92 = g92_text();
     check("history_g92_restore_changes_its_axes_only",
           applied.first == "accepted" && restored_x &&
-              restored_x->source == HistorySource::restore && applied_g92 == "2.0000,9.0000,0.0000",
-          std::format("{} {} g92={}", applied.first + " " + applied.second,
-                      restored_x ? change_text(*restored_x) : "none", applied_g92));
+              restored_x->source == HistorySource::restore &&
+              applied_g92 == (rotary ? "2.0000,0.0000,0.0000" : "2.0000,9.0000,0.0000") &&
+              (!rotary || near(a_shift(), 30)),
+          std::format("{} {} g92={} a_shift={:.4f}", applied.first + " " + applied.second,
+                      restored_x ? change_text(*restored_x) : "none", applied_g92, a_shift()));
     static_cast<void>(mdi_line("G92.1"));
     rig.pump(300ms);
     const auto shown = session.shown();

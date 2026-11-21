@@ -270,6 +270,11 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_sim_rotary_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 380)
       endforeach()
+      add_test(NAME linuxcnc_offset_history_rotary COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p rotary -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_history_rotary
+        $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
+      set_tests_properties(linuxcnc_offset_history_rotary PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
       # A gantry router: two motors on Y (COORDINATES X Y Y Z).
       add_test(NAME linuxcnc_sim_gantry COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p gantry -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_gantry

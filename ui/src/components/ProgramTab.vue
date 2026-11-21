@@ -3,7 +3,7 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { findTool, live, panel, reported } from '../machine'
 import { machineBlock } from '../machine-block'
 import type { ProgramLayout } from '../store'
-import { formatLength, formatVelocity, velocityUnit } from '../units'
+import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
@@ -35,6 +35,13 @@ const sections = computed(() => {
 })
 const currentTool = computed(() => selected.value ?? status.value?.tool.in_spindle ?? 0)
 const tool = computed(() => findTool(currentTool.value))
+const toolTitle = computed(() => {
+  if (currentTool.value === 0) return 'No tool loaded'
+  const label = toolLabel(currentTool.value)
+  if (tool.value === null) return `${label} · Tool not in table`
+  const comment = tool.value.comment.trim()
+  return comment ? `${label} · ${comment}` : label
+})
 // LinuxCNC can retain counters after a run, through MDI, or across a new file load.
 // Only present them as current program progress in a fresh AUTO execution context.
 const programExecuting = computed(() => {
@@ -104,7 +111,7 @@ async function showFailure(): Promise<void> {
           </div>
           <div class="tool">
             <div class="kicker">{{ currentTool === status?.tool.in_spindle ? 'Tool in spindle' : 'Inspected tool' }}</div>
-            <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ currentTool === 0 ? 'No tool loaded' : `T${String(currentTool)} · ${tool?.comment || 'Tool not in table'}` }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
+            <div class="tool-title"><span class="tool-glyph"><AppIcon name="target" /></span><div><strong>{{ toolTitle }}</strong><small v-if="tool">Ø{{ formatLength(tool.diameter, panel.unit) }} {{ panel.unit }}</small></div></div>
             <div v-if="tool" class="kv"><span>Table Z offset</span><strong class="mono">{{ formatLength(tool.length, panel.unit) }} {{ panel.unit }}</strong></div>
             <div class="kv"><span>Spindle command</span><strong class="mono">{{ status?.spindle.direction === 'stopped' ? 'Stopped' : `${String(Math.round((status?.spindle.commanded_rpm ?? 0) * (status?.spindle.override ?? 1)))} rpm` }}</strong></div>
             <div class="kv"><span>Current feed</span><strong class="mono">{{ status ? formatVelocity(status.motion.velocity, panel.unit) : '—' }} {{ velocityUnit(panel.unit) }}</strong></div>

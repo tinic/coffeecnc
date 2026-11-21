@@ -62,15 +62,15 @@ Start LinuxCNC from a terminal with your INI file. If CoffeeCNC refuses a value 
 
 ## Optional functions
 
-Each function stays off until you set its keys. The comments in `coffeecnc.ini.example` give every key and its unit.
+Each function stays off until you set its keys. The comments in `coffeecnc.ini.example` give every key and its unit. Copy an example HAL file beside your INI file, replace the signal names marked `MACHINE`, and `source` it after `coffeecnc_postgui.hal` from your post-GUI file.
 
 | Function | Keys | HAL |
 |---|---|---|
 | Measured spindle speed and at-speed | `SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL` | Connect your signals to `coffeecnc.spindle-rpm` and `coffeecnc.spindle-at-speed` |
 | Probe input display | `PROBE_SIGNAL` | Connect your probe signal to `coffeecnc.probe-input` |
 | Touch probe in the spindle | `TOUCH_PROBE_TOOL` | Route the probe to `motion.probe-input` when this tool is loaded |
-| Fixed tool setter | `FIXED_SETTER` and the `SETTER_*` keys | The setter selector and motion permit; see [tool length probing](design/tool-length-probing.md) |
-| Z jog during a pause | `PAUSED_Z_MAX_MM` | External offsets on Z (`[AXIS_Z] OFFSET_AV_RATIO`); see [the G0759 example](machines/g0759.md) |
+| Fixed tool setter | `FIXED_SETTER` and the `SETTER_*` keys | `/usr/share/coffeecnc/hal/examples/fixed_setter.hal`: probe input, setter selection and the probe-cycle permit; see [tool length probing](design/tool-length-probing.md) |
+| Z jog during a pause | `PAUSED_Z_MAX_MM` | `/usr/share/coffeecnc/hal/examples/paused_z.hal`: external offsets on Z, with `[AXIS_Z] OFFSET_AV_RATIO` in the INI file |
 | Travel check in Program check | `TRAVEL_MIN_MM`, `TRAVEL_MAX_MM` | None |
 
 ## Units

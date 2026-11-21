@@ -1,0 +1,37 @@
+# Example: fixed tool setter on a machine with ONE probe input ([COFFEECNC] FIXED_SETTER).
+# Source it after coffeecnc_postgui.hal from your post-GUI file. Read
+# docs/design/tool-length-probing.md and commission the setter before FIXED_SETTER = yes.
+#
+# This file needs two more lut5 instances. LinuxCNC loads lut5 only once, so add
+#   coffeecnc-probe-permit,coffeecnc-probe-estop
+# to the names= list of the `loadrt lut5` line in your copy of coffeecnc_postgui.hal.
+# Replace the two signal names marked MACHINE below with the signals of your own HAL files.
+
+# Probe input. MACHINE: the signal of your probe input, TRUE on contact. It also goes to
+# motion.probe-input in your own HAL files.
+net probe-in => coffeecnc.probe-input
+
+# Setter selection. With one probe input the setter is always the input in use, so the request
+# is read back as it is. A machine that switches between a touch probe and the setter reports
+# the selector it actually uses (see docs/machines/g0759.md).
+net coffeecnc-probe-setter-select coffeecnc.probe-setter-select => coffeecnc.probe-setter-selected
+
+# Probe-cycle permit: TRUE while no probe cycle is active, or while the cycle's lease and the
+# CoffeeCNC watchdog are both TRUE (in-0 active, in-1 lease, in-2 watchdog ok: 0xD5). If
+# CoffeeCNC stops while it probes, the permit drops: motion is disabled and the machine leaves
+# its on state.
+addf coffeecnc-probe-permit servo-thread
+setp coffeecnc-probe-permit.function 0xD5
+net coffeecnc-probe-cycle-active coffeecnc.probe-cycle-active => coffeecnc-probe-permit.in-0
+net coffeecnc-probe-cycle-lease coffeecnc.probe-cycle-lease => coffeecnc-probe-permit.in-1
+net coffeecnc-watchdog-ok => coffeecnc-probe-permit.in-2
+net coffeecnc-probe-permitted coffeecnc-probe-permit.out => motion.enable coffeecnc.probe-motion-permitted
+
+# The permit joins the E-stop chain: iocontrol.0.emc-enable-in = E-stop ok AND permit (0x8).
+# MACHINE: estop-ok is the signal your HAL files connect to iocontrol.0.emc-enable-in today.
+addf coffeecnc-probe-estop servo-thread
+setp coffeecnc-probe-estop.function 0x8
+unlinkp iocontrol.0.emc-enable-in
+net estop-ok => coffeecnc-probe-estop.in-0
+net coffeecnc-probe-permitted => coffeecnc-probe-estop.in-1
+net coffeecnc-estop-gated coffeecnc-probe-estop.out => iocontrol.0.emc-enable-in

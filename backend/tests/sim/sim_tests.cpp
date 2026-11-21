@@ -2616,6 +2616,20 @@ void tools(Rig& rig) {
                     hal_pin("iocontrol.0.tool-change")));
   const auto resume = rig.send(R"("type":"resume")");
   check("no_resume_during_tool_change", resume.outcome == "rejected", resume.text());
+
+  for (const auto* body : {R"("type":"set_spindle","direction":"forward","rpm":500)",
+                           R"("type":"jog_step","axis":"x","distance":1,"velocity":100)",
+                           R"("type":"home","axis":"all")",
+                           R"("type":"mdi","text":"G0 X1")"}) {
+    const auto blocked = rig.send(body);
+    const auto state = rig.snapshot();
+    check("no_motion_during_tool_change",
+          blocked.outcome == "rejected" &&
+              blocked.reason == "Confirm the pending tool change or press Stop first." &&
+              state.requested_tool == 1 && !state.spindle_active &&
+              near(state.axes[0].machine, waiting.controller.axes[0].machine),
+          std::format("{} {}", body, blocked.text()));
+  }
   // A confirmation that is withdrawn when the port is about to hand it to the control thread
   // is not handed over: tool-changed stays low. Port and pins alone.
   rig.direct([&]() -> void {

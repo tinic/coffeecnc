@@ -30,7 +30,11 @@ auto valid_text(const std::string& text, std::size_t max_size) -> bool {
          text.find_first_of("\r\n") == std::string::npos && text.find('\0') == std::string::npos &&
          text.find_first_not_of(" \t") != std::string::npos;
 }
+constexpr auto pending_tool_reason = "Confirm the pending tool change or press Stop first.";
+
 auto idle(const ControllerState& s, TaskMode mode, bool require_homed = false) -> Decision {
+  if (s.requested_tool)
+    return reject(pending_tool_reason);
   if (s.machine != MachineState::on)
     return reject("Machine power is off or E-stop is active.");
   if (s.interp != InterpState::idle || !s.in_position || homing(s))
@@ -128,6 +132,15 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         }
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
+        // Tool I/O can be waiting at M6 even when the interpreter and trajectory are idle.
+        if constexpr (std::is_same_v<T, Quit> || std::is_same_v<T, SetSpindle> ||
+                      std::is_same_v<T, Jog> || std::is_same_v<T, JogStep> ||
+                      std::is_same_v<T, JogPausedZ> || std::is_same_v<T, OpenProgram> ||
+                      std::is_same_v<T, EditProgram>) {
+          if (s.requested_tool)
+            return reject(pending_tool_reason);
+        }
+
         if (s.paused_z && s.paused_z->spindle == PausedSpindle::recover &&
             !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
             !std::is_same_v<T, OpenProgram>)
@@ -347,7 +360,13 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           if (s.spindle_active || s.requested_tool || s.tool_in_spindle <= 0 ||
               c.tool != s.tool_in_spindle)
             return reject("Fixed setter requires the confirmed tool and a stopped spindle.");
-          return idle(s, TaskMode::mdi, !is_material_probe(c.action) && limits_.homing_required);
+          if (!std::ranges::all_of(c.start, [](double value) { return std::isfinite(value); }) ||
+              !std::isfinite(c.gauge_width_mm))
+            return reject("Probe positions and dimensions must be finite.");
+          if (!std::ranges::all_of(s.axes, &AxisState::enabled) ||
+              s.any_enabled_axis([](const auto& axis) { return axis.on_hard_limit; }))
+            return reject("The probe requires configured axes and no active hard limit.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
           if (s.interp != InterpState::idle || !s.in_position || s.requested_tool || homing(s))
             return reject("Stop execution and finish tool changes before editing tools.");

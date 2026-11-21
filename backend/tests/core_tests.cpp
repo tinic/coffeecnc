@@ -67,6 +67,55 @@ void execution_gates() {
   s.requested_tool = 0;
   require(policy.evaluate(ToolChanged{}, s).allowed, "tool zero is a valid unload request");
 }
+void pending_manual_tool_change() {
+  CommandPolicy policy{simulator_limits()};
+  auto s = ready();
+  s.tool_in_spindle = 1;
+  s.requested_tool = 2;
+  // LinuxCNC can report a settled trajectory and an idle interpreter while I/O waits at M6.
+  for (const Command& command : {
+           Command{SetSpindle{SpindleDirection::forward, 500}}, Command{Home{}},
+           Command{Jog{Axis::x, 1, 100, true}}, Command{JogStep{Axis::x, 1, 100}},
+           Command{Mdi{"G0 X10"}}, Command{Run{}}, Command{Step{}},
+           Command{OpenProgram{"part.ngc"}}, Command{EditProgram{"part.ngc", 1, "G0", "G1"}},
+           Command{PlanRestart{1, 1}}, Command{StartRestart{1}},
+           Command{SelectWcs{2}}, Command{TouchOff{Axis::x, 0}}, Command{ToolTouchOff{0}},
+           Command{Quit{}}})
+    require(!policy.evaluate(command, s).allowed, "pending manual tool change blocks motion or program changes");
+  for (const Command& command : {Command{ToolChanged{}}, Command{Abort{}},
+           Command{SetMachine{MachineState::off}}, Command{SetMachine{MachineState::estop}},
+           Command{SetSpindle{SpindleDirection::stopped, 0}}, Command{Jog{Axis::x, 1, 100, false}}})
+    require(policy.evaluate(command, s).allowed, "pending change leaves confirmation and stop actions available");
+}
+
+void fixed_setter_homing() {
+  CommandPolicy homing{simulator_limits()};
+  CommandPolicy no_homing{Limits{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false}};
+  auto s = ready();
+  s.tool_in_spindle = 99;
+  s.axes[0].homed = false;
+  for (const auto action : {SetterAction::touch_off, SetterAction::check, SetterAction::material,
+                           SetterAction::bore, SetterAction::apply_angle}) {
+    const FixedSetterRequest request{.action = action, .tool = 99};
+    require(homing.evaluate(request, s).reason == "Home all configured axes first.",
+            "all setter and material actions honor configured homing");
+    require(no_homing.evaluate(request, s).allowed, "NO_FORCE_HOMING is honored for the setter");
+  }
+  require(homing.evaluate(FixedSetterRequest{.action = SetterAction::status}, s).allowed,
+          "read-only setter status is available before homing");
+  s.axes[0].homed = true;
+  const auto nan = std::numeric_limits<double>::quiet_NaN();
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::bore,
+                                              .tool = 99, .start = {nan, 1, 2}}, s).allowed,
+          "a probe request has finite XYZ");
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::boss,
+                                              .tool = 99, .gauge_width_mm = nan}, s).allowed,
+          "a probe gauge width is finite");
+  s.axes[1].on_hard_limit = true;
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::material, .tool = 99}, s).allowed,
+          "a hard limit blocks a probe cycle");
+}
+
 void work_origin_gates() {
   CommandPolicy policy{simulator_limits()};
   const SetWorkOffset command{2, {25.4, -50.8, 0}};
@@ -465,6 +514,8 @@ void jog_stop_attribution() {
 auto main() -> int {
   try {
     execution_gates();
+    pending_manual_tool_change();
+    fixed_setter_homing();
     work_origin_gates();
     homing_capability();
     axis_jog_ceilings();

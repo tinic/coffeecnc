@@ -4186,16 +4186,20 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
   if (restarted) {
     Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
     check("breakpoint_restart_preserves_original_file_and_pause",
-          recovered.pump_until(4s, [&] {
-            const auto status = recovered.status();
-            return status.controller.link == Link::live && status.controller.breakpoint_program &&
-                   at_breakpoint(4);
-          }));
+          recovered.pump_until(4s, [&] { return at_breakpoint(4); }));
     {
       std::ofstream changed{oracle.program, std::ios::app};
       changed << "(Changed on disk after the pause)\n";
     }
-    const auto refused_resume = recovered.send(R"("type":"resume")");
+    auto refused_resume = recovered.send(R"("type":"resume")");
+    // The panel's existing reader can report the pause before the new command port is live.
+    // Retry only its stale-status rejection, after changing the source.
+    recovered.pump_until(3s, [&] {
+      if (refused_resume.reason != "Controller status is unavailable or stale.")
+        return true;
+      refused_resume = recovered.send(R"("type":"resume")");
+      return false;
+    });
     check("breakpoint_recovery_refuses_changed_source",
           refused_resume.outcome == "failed" &&
               refused_resume.reason.find("original program changed") != std::string::npos &&

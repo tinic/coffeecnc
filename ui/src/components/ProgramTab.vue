@@ -87,6 +87,8 @@ function restartLine(line: number): void {
   sections.value.forEach((section, candidate) => { if (section.first <= line) index = candidate })
   restartAt.value = { line, section: index < 0 ? 'Before the first tool section' : sectionName(index) }
 }
+// Where the program stopped before its end; offered only while a restart is possible.
+const stoppedAt = computed(() => canRestart.value ? status.value?.program.restart_hint ?? null : null)
 function restartSection(index: number): void {
   const section = sections.value[index]
   if (section !== undefined) restartAt.value = { line: section.first, section: sectionName(index) }
@@ -119,6 +121,10 @@ async function showFailure(): Promise<void> {
             <button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button>
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
+          <div v-if="stoppedAt" class="stopped-at" role="status">
+            <span>Stopped at line <strong class="mono">{{ stoppedAt.line }}</strong> · {{ toolLabel(stoppedAt.tool) }}</span>
+            <button class="btn primary" type="button" @click="restartLine(stoppedAt.line)">Restart there</button>
+          </div>
         </div>
       </section>
       <aside class="inspector">
@@ -175,6 +181,9 @@ async function showFailure(): Promise<void> {
 .preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }
 .failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }
 .preview-diagnostic button { pointer-events: auto; }
+/* Over the views, bottom left, so it never moves the code or the preview. */
+.stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.stopped-at .btn { height: 36px; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.tool-title { margin-block: 8px; }.kv { margin-block: 7px; }.context-note { margin-top: 10px; }.tool { padding-top: 12px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }

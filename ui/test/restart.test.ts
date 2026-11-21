@@ -110,6 +110,45 @@ describe('restart in the simulator', () => {
   })
 })
 
+describe('where the program stopped', () => {
+  it('remembers the line and tool of an aborted run, plans a restart there and forgets on completion', () => {
+    const r = ready()
+    r.send({ type: 'run' })
+    // Run into the T2 section and stop while line 16 is cutting.
+    for (let n = 0; n < 200_000 && r.status().program.motion_line !== 16; n += 1) {
+      if (r.status().wait.kind === 'tool_change') r.send({ type: 'tool_changed' })
+      r.sim.tick()
+    }
+    expect(r.status().program.restart_hint).toBeUndefined()
+    r.send({ type: 'abort' })
+    r.sim.advance(200)
+    expect(r.status().program.restart_hint).toEqual({ line: 16, tool: 2 })
+
+    const plan = r.send({ type: 'plan_restart', line: 16, preview_context: r.status().preview_context }).restart
+    if (plan === undefined) throw new Error('no restart plan')
+    expect(plan).toMatchObject({ line: 16, tool: 2, needs_tool_change: false, spindle_rpm: 2000 })
+    expect(r.send({ type: 'start_restart', plan_id: plan.plan_id }).outcome).toBe('accepted')
+    r.finish()
+    r.sim.advance(200)
+    expect(r.errors()).toEqual([])
+    expect(r.status().program.restart_hint).toBeUndefined()
+    expect(work(r.status())).toEqual([16, 12, 30])
+  })
+
+  it('applies to the program it was recorded for', () => {
+    const r = ready()
+    r.send({ type: 'run' })
+    for (let n = 0; n < 200_000 && r.status().program.motion_line !== 8; n += 1) {
+      if (r.status().wait.kind === 'tool_change') r.send({ type: 'tool_changed' })
+      r.sim.tick()
+    }
+    r.send({ type: 'abort' })
+    expect(r.status().program.restart_hint).toEqual({ line: 8, tool: 1 })
+    r.load(program)
+    expect(r.status().program.restart_hint).toBeUndefined()
+  })
+})
+
 describe('restart from the code list', () => {
   let wrapper: VueWrapper | null = null
   afterEach(() => {

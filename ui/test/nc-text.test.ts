@@ -56,3 +56,28 @@ it('keeps the full code width and bottom scroll position while following virtual
   expect(scroller.element.scrollTop).toBe(bottom)
   expect(setTop).not.toHaveBeenCalled()
 })
+
+it('scrolls the last picked row above the line actions', async () => {
+  const lines = [...Array<string>(39).fill('G1 X5 F500'), 'M30']
+  const contentHeight = lines.length * 24
+  const clientHeight = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(245)
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(contentHeight)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } })
+  vi.stubGlobal('ResizeObserver', class {
+    observe(): void { /* The viewport size is supplied by the test. */ }
+    disconnect(): void { /* No observer was scheduled. */ }
+  })
+
+  const pane = mount(NcText, { props: { lines, motionLine: 0, currentLine: 0, errorLine: 0, restartable: true } })
+  wrapper = pane
+  const scroller = pane.get<HTMLElement>('.scroller')
+  scroller.element.scrollTop = contentHeight - 245
+  await scroller.trigger('scroll')
+
+  clientHeight.mockReturnValue(185)
+  await pane.get('.row:last-child .number').trigger('click')
+  expect(pane.get('.row.picked .text').text()).toBe('M30')
+  expect(pane.get('.line-actions').text()).toContain('Restart from line 40')
+  expect(scroller.element.scrollTop + scroller.element.clientHeight).toBe(contentHeight)
+})

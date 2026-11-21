@@ -30,7 +30,7 @@ function range(min: number, max: number, format: (value: number) => string): str
     <template v-else>
       <p v-if="airZ" class="air-notice"><strong>Air cut</strong> · Z {{ airLiftLabel(airZ, unit) }}</p>
       <p v-if="breakpointLine" class="air-notice">Pause before line {{ breakpointLine }}</p>
-      <div v-if="check.errors.length || check.warnings.length" class="issues" :class="{ blocked: check.errors.length }">
+      <div v-if="check.errors.length || check.warnings.length" class="issues" :class="check.errors.length ? 'blocked' : 'review'">
         <AppIcon name="warning" />
         <div>
           <strong>{{ check.errors.length ? 'Cycle start blocked' : 'Review before starting' }}</strong>
@@ -80,6 +80,8 @@ function range(min: number, max: number, format: (value: number) => string): str
 <style scoped>
 .issues { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); font-size: 13px; }
 .air-notice { margin: 0; font-size: 13px; color: var(--warn); }
+.issues.review { border-color: var(--warn); background: var(--warn-soft); }
+.issues.review > .icon { color: var(--warn); }
 .issues.blocked { border-color: var(--stop); background: var(--stop-soft); }
 .issues.blocked > .icon, .unverified { color: var(--stop); }
 .issues ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 17px; }

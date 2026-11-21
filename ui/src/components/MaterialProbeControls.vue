@@ -140,7 +140,7 @@ function probe(direction: ProbeDirection, corner?: Corner, feature?: Feature): v
   const surface = surfaces.find((entry) => entry.travel === direction)
   line.value = { text: feature?.kind === 'angle' ? `Probing the ${angleFace.value.name.toLowerCase()} edge at two points…`
     : feature?.kind === 'bore' ? 'Probing the bore walls…'
-    : feature?.kind === 'boss' ? 'Probing round the boss…'
+    : feature?.kind === 'boss' ? 'Probing the boss sides…'
     : gauge !== undefined ? 'Probing both sides of the gauge…'
     : `Probing ${corner === undefined ? surface?.surface ?? 'surface' : `the ${corner.name}`}…`, level: 'busy' }
   send(request)
@@ -198,7 +198,7 @@ const removeListener = onResult((command, result) => {
       return
     }
     if (result.setter) setterState.value = result.setter
-    line.value = { text: `T${String(props.tool)} ball measured ${measured.toFixed(3)} mm and saved to the tool table.`, level: 'done' }
+      line.value = { text: `T${String(props.tool)} ball Ø${measured.toFixed(3)} mm saved to the tool table.`, level: 'done' }
     return
   }
   const material = result.setter?.material
@@ -292,7 +292,7 @@ onBeforeUnmount(() => {
     <NumberDialog
       v-if="askingAngle"
       title="Measure edge angle"
-      :effect="`Jog beside the ${angleFace.name.toLowerCase()} edge. The probe touches here and again along ${angleFace.along}.`"
+      :effect="`Jog beside the ${angleFace.name.toLowerCase()} edge. Enter the distance to the second touch along ${angleFace.along}.`"
       :label="`Distance along ${angleFace.along}`" unit="mm" initial="50" action="Probe" @confirm="measureAngle" @close="askingAngle = false"
     >
       <template #options>
@@ -317,13 +317,13 @@ onBeforeUnmount(() => {
     <NumberDialog
       v-if="askingBoss"
       title="Centre on a boss"
-      effect="Probes the four sides of the boss from outside, below Z0, and sets X0 Y0 at its centre."
+      effect="Probe Z top on the boss and jog over its centre. The cycle probes four sides below Z0 and sets X0 Y0."
       label="Approximate diameter" unit="mm" initial="" action="Probe" @confirm="centreBoss" @close="askingBoss = false"
     />
     <NumberDialog
       v-if="askingGauge"
       title="Calibrate the probe ball"
-      :effect="`Probes both X sides of the gauge from beside it and writes the effective diameter of T${String(tool)} (now ${(findTool(tool)?.diameter ?? 0).toFixed(3)} mm) to the tool table.`"
+      :effect="`Probe Z top on the gauge and jog over its centre. The cycle measures both X faces and saves the T${String(tool)} ball diameter (now ${(findTool(tool)?.diameter ?? 0).toFixed(3)} mm).`"
       label="Gauge width" unit="mm" initial="" action="Calibrate" @confirm="calibrate" @close="askingGauge = false"
     />
   </section>

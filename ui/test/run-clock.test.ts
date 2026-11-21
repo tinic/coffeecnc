@@ -52,4 +52,3 @@ it('counts the restarted cut once and preserves its time through an air cut', as
   expect(runClock.parts).toBe(1)
   expect(runClock.lastSeconds).toBe(8)
 })
-

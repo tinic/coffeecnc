@@ -9,6 +9,7 @@ defineProps<{ line: SetterStatusLine }>()
   <div class="setter-band" :class="line.level" role="status" aria-live="polite">
     <span class="setter-label" aria-hidden="true">{{ line.level === 'blocked' ? '!' : line.level === 'done' ? '✓' : 'i' }}</span>
     <p v-tooltip="line.text">{{ line.text }}</p>
+    <slot name="actions" />
   </div>
 </template>
 

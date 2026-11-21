@@ -112,6 +112,46 @@ describe('edge angle', () => {
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: -0.1 } })
     expect(fixture.get('.setter-band.done p').text()).toBe('Front edge turns −0.100° (0.087 mm over 50 mm).')
   })
+  it('selects the left edge and applies the recorded rotation only after confirmation', async () => {
+    if (!panel.status) throw new Error('Missing machine status')
+    panel.status.offsets.wcs = 2
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global: { stubs: { Teleport: true } } })
+    const fixture = await probe('Edge angle…')
+    await probe('Left · X−')
+    expect(fixture.get('.entry .label').text()).toBe('Distance along Y')
+    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
+    await nextTick()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'angle', direction: 'x_plus',
+      spacing: 50, tool: 99, x: 0, y: 0, z: 0 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      edge_angle: 2.862, edge_rotation: { wcs: 2, measurement_id: 8 } } })
+    expect(fixture.get('.setter-band.done p').text()).toContain('Left edge turns +2.862°')
+    await probe('Apply rotation…')
+    expect(fixture.get('[role="dialog"]').text()).toContain('G55 XY axes +2.862°')
+    expect(send).toHaveBeenCalledTimes(1)
+    await probe('Apply rotation')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'apply_angle', tool: 99, measurement_id: 8 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: 2.862 } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Work rotation set to +2.862°.')
+  })
+
+  it('withdraws the confirmation when the measured work system changes', async () => {
+    if (!panel.status) throw new Error('Missing machine status')
+    panel.status.offsets.wcs = 2
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global: { stubs: { Teleport: true } } })
+    const fixture = await probe('Edge angle…')
+    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
+    await nextTick()
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      edge_angle: -0.1, edge_rotation: { wcs: 2, measurement_id: 8 } } })
+    await probe('Apply rotation…')
+    panel.status.offsets.g5x[0] += 1
+    await nextTick()
+    expect(fixture.find('[role="dialog"]').exists()).toBe(false)
+    expect(fixture.find('.rotation-action').exists()).toBe(false)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
 })
 
 describe('ball calibration', () => {

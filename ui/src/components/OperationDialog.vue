@@ -130,6 +130,7 @@ function label(field: Field): string {
         </button>
       </nav>
       <div class="form">
+        <p v-if="operation.note" class="operation-note">{{ operation.note }}</p>
         <div class="fields">
           <label class="entry tool-entry">
             <span class="label">Tool</span>
@@ -188,6 +189,7 @@ function label(field: Field): string {
 .fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; align-content: start; }
 .tool-entry { grid-column: span 2; }
 .entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.operation-note { margin: 0; font-size: 13px; color: var(--warn); }
 .entry .field { width: 100%; min-width: 0; min-height: 44px; }
 .segmented { display: flex; }.segmented .btn { flex: 1; min-width: 0; padding: 0 8px; }
 .errors { margin: 0; padding: 0 0 0 18px; color: var(--warn); font-size: 12px; line-height: 1.5; }

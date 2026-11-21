@@ -105,6 +105,14 @@ describe('new operation dialog', () => {
     expect(sent().map((command) => command.type)).toEqual(['list_directory'])
   })
 
+  it('says that pockets plunge at the centre, and nothing for facing', async () => {
+    await open()
+    expect(document.body.textContent).not.toContain('cuts at its centre')
+    button('Rectangular pocket').click()
+    await nextTick()
+    expect(document.body.textContent).toContain('use an end mill that cuts at its centre')
+  })
+
   it('writes an inch program when the panel shows inches', async () => {
     panel.unit = 'inch'
     await open()

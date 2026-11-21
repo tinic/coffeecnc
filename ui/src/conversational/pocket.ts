@@ -49,7 +49,7 @@ function layers(p: Program, c: Pocket, rings: (p: Program) => void): void {
 
 function depthLine(p: Program, c: Pocket): string {
   const count = steps(c.depth, c.depthPerPass)
-  return `Depth ${p.n(c.depth)} in ${String(count)} ${count === 1 ? 'layer' : 'layers'} of ${p.n(c.depth / count)}, plunge at the centre at ${feedNumber(c.plungeFeed, c.unit)}`
+  return `Depth ${p.n(c.depth)} in ${String(count)} ${count === 1 ? 'layer' : 'layers'} of ${p.n(c.depth / count)}, plunge straight down at the centre at ${feedNumber(c.plungeFeed, c.unit)}: centre-cutting end mill`
 }
 
 export function circularPocket(c: CircularPocket): Generated {

@@ -142,13 +142,35 @@ describe('browser probe scene', () => {
     expect(sim.status().offsets.tool[2]).toBeCloseTo(62.43)
   })
 
+  it('teaches with T98 and then measures the 6 mm end mill', () => {
+    const p = scene('setter')
+    function loadAtSetter(tool: number): void {
+      p.send({ type: 'mdi', text: `T${String(tool)} M6` })
+      expect(p.sim.advanceUntil(status => status.wait.kind === 'tool_change', 1000)).toBe(true)
+      p.send({ type: 'tool_changed' })
+      p.sim.advance(100)
+      p.send({ type: 'mdi', text: 'G43' })
+      p.sim.advance(100)
+      p.send({ type: 'mdi', text: 'G53 G0 X55 Y55 Z-90' })
+      expect(p.sim.advanceUntil(status => status.interp === 'idle', 3000)).toBe(true)
+    }
+    loadAtSetter(98)
+    expect(p.cycle({ action: 'touch_off' }).setter?.measurement)
+      .toMatchObject({ tool: 98, calibration: true, value: -150 })
+    loadAtSetter(2)
+    const result = p.cycle({ action: 'touch_off' }).setter
+    expect(result?.measurement).toMatchObject({ tool: 2, calibration: false })
+    expect(result?.measurement?.value).toBeCloseTo(48.2)
+    expect(result?.measured_tools).toEqual([2, 98, 99])
+  })
+
   it('rejects a miss and cancels an in-flight cycle without changing offsets', () => {
     const wrong = scene('left')
     expect(wrong.result(wrong.submit({ action: 'material', direction: 'z_top' }))?.outcome).toBe('failed')
     const p = scene()
     const before = p.sim.status().offsets
     const id = p.submit({ action: 'material', direction: 'z_top' })
-    p.sim.advance(200)
+    expect(p.sim.advanceUntil(status => status.probe_input === true, 5000)).toBe(true)
     p.send({ type: 'abort' })
     p.sim.advance(4000)
     expect(p.result(id)).toMatchObject({ outcome: 'failed', reason: 'Probing was stopped.' })

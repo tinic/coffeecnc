@@ -237,16 +237,20 @@ auto refused_block(std::string_view line) -> std::optional<std::string> {
   for (std::size_t i = 0; i + 1 < text.size(); ++i) {
     if (text[i] != 'g')
       continue;
-    const char next = text[i + 1];
+    const auto start = i + 1 + static_cast<std::size_t>(text[i + 1] == '+');
+    if (start == text.size())
+      continue;
+    const char next = text[start];
     if (next == '[')
       return std::string("a computed G word: which code runs is not known before it does");
     if (!digit(next) && next != '.')
       continue;
     double code = 0;
-    std::size_t end = i + 1;
-    while (end < text.size() && (digit(text[end]) || text[end] == '.'))
-      ++end;
-    std::from_chars(text.data() + i + 1, text.data() + end, code);
+    const auto [parsed, error] =
+        std::from_chars(text.data() + start, text.data() + text.size(), code, std::chars_format::fixed);
+    if (error != std::errc{} || code > 999)
+      continue;
+    const auto end = static_cast<std::size_t>(parsed - text.data());
     const auto tenths = std::lround(code * 10);
     if (tenths == 280 || tenths == 300)
       return std::format("G{} moves by a position saved in the parameter file, which is not "
@@ -282,12 +286,14 @@ auto motion_use(std::string_view line) -> MotionUse {
       --depth;
     if (depth > 0)
       continue;
-    if (c == 'g' && i + 1 < text.size() && (digit(text[i + 1]) || text[i + 1] == '.')) {
+    if (c == 'g' && i + 1 < text.size()) {
+      const auto start = i + 1 + static_cast<std::size_t>(text[i + 1] == '+');
       double code = 0;
-      std::size_t end = i + 1;
-      while (end < text.size() && (digit(text[end]) || text[end] == '.'))
-        ++end;
-      std::from_chars(text.data() + i + 1, text.data() + end, code);
+      const auto [parsed, error] =
+          std::from_chars(text.data() + start, text.data() + text.size(), code, std::chars_format::fixed);
+      if (error != std::errc{} || !(code >= 0 && code <= 999))
+        continue;
+      const auto end = static_cast<std::size_t>(parsed - text.data());
       const auto tenths = std::lround(code * 10);
       if (tenths == 0 || tenths == 10 || tenths == 20 || tenths == 30 ||
           (tenths >= 50 && tenths <= 53) || tenths == 330 || tenths == 331 ||

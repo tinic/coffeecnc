@@ -654,6 +654,13 @@ void source_preview_tools() {
   require(r.tool_table.revision == 1 && r.preview_tools == accepted && !r.tools_settled,
           "A pass that differs only in an X offset is not accepted at once: the accepted "
           "table stays the preview's");
+  const auto shown_tools = rig.loaded;
+  rig.loaded.reset();
+  require(rig.step().preview_tools == accepted, "A failed read keeps the accepted raw table");
+  rig.loaded = shown_tools;
+  r = rig.step();
+  require(r.preview_tools == accepted && !r.tools_settled,
+          "A failed read interrupts the pair of matching raw passes");
   raw[1].offset[0] = 0.7; // another value: caught while it changes
   r = rig.step();
   require(r.preview_tools == accepted && !r.tools_settled, "Nor one that differs again");

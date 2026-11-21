@@ -920,7 +920,10 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
     recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {
     finish_breakpoint(wanted);
-    return;
+    if (impl_->breakpoint)
+      return;
+    // An orphaned wrapper stays blocked for program commands until the operator opens
+    // a new file, but does not prevent restoring the already recorded spindle tool.
   }
   if (impl_->startup_tool.value_or(0) <= 0)
     return;
@@ -2611,6 +2614,14 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return closed;
   if (auto opened = impl_->run(open, from); !accepted(opened))
     return opened;
+  // The public status maps the temporary wrapper to its original. Check the exact file
+  // reported by Task before revalidating the inputs or sending PLAN_RUN.
+  if (auto settled = impl_->settled(from, "LinuxCNC did not open the checked program.",
+                                   [&](const EMC_STAT& now) -> bool {
+                                     return text_of(now.task.file) == open.file;
+                                   });
+      !accepted(settled))
+    return settled;
   if (!current())
     return failed(stale);
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
@@ -2640,7 +2651,10 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   }
   if (impl_->loads)
     impl_->loads->breakpoint.store(impl_->breakpoint);
-  return start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+  auto started = start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+  if (!accepted(started))
+    finish_breakpoint(wanted);
+  return started;
 }
 
 void NmlPort::finish_breakpoint(const Wanted& wanted) {

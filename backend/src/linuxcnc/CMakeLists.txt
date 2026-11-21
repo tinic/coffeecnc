@@ -85,6 +85,7 @@ if(COFFEECNC_LINUXCNC_RS274)
   target_compile_definitions(coffeecnc_preview PRIVATE ULAPI)
   target_link_libraries(coffeecnc_preview PRIVATE coffeecnc_core coffeecnc_project_options
     ${COFFEECNC_LINUXCNC_RS274})
+  coffeecnc_enable_analyzers(coffeecnc_preview)
   include(GNUInstallDirs)
   install(TARGETS coffeecnc_preview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 else()

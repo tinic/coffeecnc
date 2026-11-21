@@ -151,6 +151,7 @@ struct NmlPanelSource::Impl {
                  std::vector<ControllerMessage>& messages) {
     if (!pass) {
       pending.reset();
+      pending_raw.reset();
       if (!std::exchange(tools_failed, true))
         messages.push_back({true, "LinuxCNC's tool table cannot be read."});
       return;

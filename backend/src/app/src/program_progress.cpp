@@ -29,7 +29,12 @@ auto ProgramProgress::stamp(const std::string& path) -> std::optional<Stamp> {
   const auto bytes = std::filesystem::file_size(path, error);
   if (error)
     return {};
-  return Stamp{time.time_since_epoch().count(), bytes};
+  // Keep the native file-clock epoch and tick size used by existing saved records.
+  using FileTicks = std::chrono::duration<std::int64_t, std::filesystem::file_time_type::period>;
+  const auto ticks = time.time_since_epoch();
+  if (ticks < FileTicks::min() || ticks > FileTicks::max())
+    return {};
+  return Stamp{std::chrono::duration_cast<FileTicks>(ticks).count(), bytes};
 }
 
 void ProgramProgress::load() {

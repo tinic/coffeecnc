@@ -69,6 +69,15 @@ constexpr auto touch_off_reason = "The tool length was set, but a stop request c
 constexpr auto stopped_reason = "The jog was stopped before it started.";
 constexpr auto release_reason = "Release the jog control before jogging again.";
 constexpr auto hold_reason = "A jog stop is in progress.";
+constexpr auto panel_frame_reason =
+    "Panel display is waiting for fresh frames. Try again when it updates.";
+constexpr auto panel_frame_stop =
+    "Panel stopped drawing. Jogging is locked until the display recovers.";
+// The page posts at most every 80 ms. Require two distinct, recent frames across a real
+// interval after a gap so buffered copies cannot release the hold together.
+constexpr auto panel_frame_max_transit = std::chrono::milliseconds{200};
+constexpr auto panel_frame_min_spacing = std::chrono::milliseconds{40};
+constexpr auto panel_clock_slop = std::chrono::milliseconds{20};
 // How old the last control period may be for the watchdog reading it made to count as current:
 // ten 10 ms control periods, below the 300 ms timeout of the HAL watchdog in the post-GUI file.
 constexpr auto control_fresh = std::chrono::milliseconds{100};
@@ -184,6 +193,15 @@ auto only_stops(const Command& command) -> bool {
   return cancels_requests(command) || std::holds_alternative<JogStopAll>(command);
 }
 
+auto needs_panel_frame(const Command& command) -> bool {
+  // Protocol "off" can reset an asserted E-stop. It needs a current view of the machine.
+  if (const auto* machine = std::get_if<SetMachine>(&command))
+    return machine->state != MachineState::estop;
+  if (const auto* setter = std::get_if<FixedSetterRequest>(&command))
+    return setter->action != SetterAction::status;
+  return !only_stops(command) && !std::holds_alternative<Pause>(command);
+}
+
 // A held jog or an increment: motion that the jog-stop level stops.
 auto starts_jog(const Command& command) -> bool {
   if (const auto* jog = std::get_if<Jog>(&command))
@@ -229,7 +247,7 @@ auto Session::staged(ActionResult result) -> Stage {
   return answer(reply(std::move(result)));
 }
 
-auto Session::begin_page() -> PageToken {
+auto Session::begin_page(bool watch_frames) -> PageToken {
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
@@ -238,6 +256,9 @@ auto Session::begin_page() -> PageToken {
     axis.latched = false;
   drop_requests();
   ready_ = false;
+  watch_frames_ = watch_frames;
+  last_panel_frame_.reset();
+  panel_recovered_at_.reset();
   last_id_.reset();
   page_open_ = !closing_;
   if (tool_models_ != nullptr)
@@ -253,6 +274,8 @@ void Session::end_page(PageToken page) {
   stop_jogs();
   drop_requests();
   ready_ = false;
+  last_panel_frame_.reset();
+  panel_recovered_at_.reset();
   last_id_.reset();
   page_open_ = false;
   if (tool_models_ != nullptr)
@@ -271,7 +294,41 @@ void Session::close() {
   wake();
 }
 
-auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outcome {
+void Session::expire_panel_frame(JogLease::Time now) {
+  if (!last_panel_frame_ || now - last_panel_frame_->monotonic < panel_frame_timeout)
+    return;
+  last_panel_frame_.reset();
+  if (!panel_recovered_at_)
+    return;
+  panel_recovered_at_.reset();
+  stop_jogs();
+  // Withdraw queued and in-flight work through the same cancellation checks used by Abort.
+  ++cancels_;
+  if (ready_)
+    problems_.emplace_back(panel_frame_stop);
+}
+
+void Session::panel_frame(PageToken page, std::chrono::milliseconds rendered_at, Instant now) {
+  const std::scoped_lock lock{mutex_};
+  if (!watch_frames_ || !page_open_ || page != PageToken{pages_})
+    return;
+  expire_panel_frame(now.monotonic);
+  const auto age = now.unix_time - rendered_at;
+  if (rendered_at.count() <= 0 || age < -panel_clock_slop || age > panel_frame_max_transit ||
+      (last_panel_frame_ && rendered_at <= last_panel_frame_->unix_time))
+    return;
+  const Instant frame{now.monotonic - std::max(age, std::chrono::milliseconds::zero()),
+                      rendered_at};
+  if (!panel_recovered_at_ && last_panel_frame_ &&
+      frame.monotonic - last_panel_frame_->monotonic >= panel_frame_min_spacing &&
+      now.monotonic - last_panel_frame_received_ >= panel_frame_min_spacing)
+    panel_recovered_at_ = rendered_at;
+  last_panel_frame_ = frame;
+  last_panel_frame_received_ = now.monotonic;
+}
+
+auto Session::submit(PageToken page, std::string_view json, Instant now,
+                     std::chrono::milliseconds rendered_at) -> Outcome {
   Outcome outcome;
   outcome.page = page;
   auto decoded = decode_request(json);
@@ -302,6 +359,15 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
   }
   if (!ready_) {
     result(CommandOutcome::rejected, "Panel has not finished loading.");
+    return outcome;
+  }
+  expire_panel_frame(now.monotonic);
+  const bool requires_frame = watch_frames_ && needs_panel_frame(request.command);
+  if (requires_frame &&
+      (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
+       now.unix_time - rendered_at >= panel_frame_timeout ||
+       rendered_at - now.unix_time > panel_clock_slop)) {
+    result(CommandOutcome::rejected, panel_frame_reason);
     return outcome;
   }
 
@@ -336,7 +402,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
   // one of those that go first.
   if ((setter_busy_ || restart_busy_) && std::holds_alternative<Pause>(request.command))
     request.command = Abort{};
-  const bool stops = only_stops(request.command);
+  const bool stops = only_stops(request.command) && !requires_frame;
   if (setter_busy_ && !stops) {
     result(CommandOutcome::rejected, "A fixed setter operation is in progress.");
     return outcome;
@@ -438,6 +504,7 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
 
 auto Session::control(Instant now, const ControlInput& input) -> bool {
   const std::scoped_lock lock{mutex_};
+  expire_panel_frame(now.monotonic);
   jog_stop_high_ = input.jog_stop_high;
   control_at_ = now.monotonic;
   low_periods_ = jog_stop_high_ ? 0 : std::min(low_periods_ + 1, settled_periods);
@@ -489,10 +556,11 @@ auto Session::control(Instant now, const ControlInput& input) -> bool {
   } else if (!hold_ && low_periods_ == settled_periods && !requests_.empty()) {
     wake(); // a start may have waited for the level to fall
   }
-  // From close on the level is high for good, whatever was reconciled.
-  if (hold_ || closing_)
+  // Startup, a stale panel, and shutdown hold the level even after the stops were reconciled.
+  const bool hold = hold_ || closing_ || (watch_frames_ && (!ready_ || !panel_recovered_at_));
+  if (hold)
     level_epoch_ = epoch_;
-  return hold_ || closing_;
+  return hold;
 }
 
 void Session::wait_for_work(std::chrono::milliseconds timeout) {
@@ -716,8 +784,8 @@ void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
   problems_.clear();
 }
 
-// The request is still to be carried out: its page shows and no abort, E-stop or power off was
-// asked since. A stop request always is. Asked after every call that can block and before every
+// The request is still to be carried out: its page shows and no cancellation happened since.
+// A stop request always is. Asked after every call that can block and before every
 // command sent: a request that went stale while the worker waited sends nothing more.
 auto Session::wanted(const Queued& request) const -> bool {
   const std::scoped_lock lock{mutex_};

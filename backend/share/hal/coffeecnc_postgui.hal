@@ -4,8 +4,8 @@
 # Jog stop without the NML command channel. motion.jog-stop is a level: while it is high every
 # jog in motion is aborted. motion.jog-inhibit refuses a jog before it starts. Both are high
 # while either of these holds:
-#   coffeecnc.jog-stop    the executable has decided to stop jogs and holds the level until
-#                         LinuxCNC's task has confirmed the stop
+#   coffeecnc.jog-stop    the executable holds jogs for an unresponsive panel or until LinuxCNC's
+#                         task has confirmed a requested stop
 #   watchdog tripped      the executable died or stalled: coffeecnc.heartbeat stopped toggling
 #
 # A realtime module loads once per LinuxCNC: a second `loadrt` of a module the machine's own

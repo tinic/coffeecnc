@@ -110,9 +110,13 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
   auto& status = reading.status;
   auto& program = status.program;
   program.restart_hint.reset();
+  program.cycle = ProgramCycle::idle;
+  const bool dry_run = program.air_offset_owned || program.air_z > 0;
+  if (dry_run || (completed_revision_ && *completed_revision_ != program.revision))
+    completed_revision_.reset();
   const auto& source = reading.program;
-  const bool loaded = source && !source->truncated && source->file == program.file &&
-                      source->revision == program.revision;
+  const bool loaded = source && source->file == program.file && source->revision == program.revision;
+  const bool complete_text = loaded && !source->truncated;
   const auto identity = loaded ? stamp(source->file) : std::nullopt;
   const bool active = status.mode == TaskMode::automatic &&
                       (status.interp != InterpState::idle ||
@@ -124,9 +128,10 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
     const auto& run = *running_;
     const bool same = loaded && run.progress.path == source->file &&
                       run.revision == program.revision && run.progress.stamp == identity;
-    if (!same || !healthy || run.aborts != reading.program_aborts || !active) {
-      if (same && healthy && run.aborts == reading.program_aborts &&
+    if (!same || !healthy || run.aborts != reading.program_aborts || !active || dry_run) {
+      if (same && healthy && !dry_run && run.aborts == reading.program_aborts &&
           status.mode == TaskMode::automatic && !active) {
+        completed_revision_ = program.revision;
         dirty_ = std::erase_if(
                      records_,
                      [&](const Record& entry) { return entry.path == run.progress.path; }) > 0 ||
@@ -139,23 +144,28 @@ void ProgramProgress::observe(PanelReading& reading, Clock::time_point now) {
   }
   if (!active)
     interrupted_ = false;
-  if (active && healthy && identity && !interrupted_) {
+  if (active && healthy && identity && !interrupted_ && !dry_run) {
+    completed_revision_.reset();
+    program.cycle = ProgramCycle::running;
     if (!running_)
       running_ = Run{{source->file, *identity, {}, 0}, program.revision, reading.program_aborts};
     auto& progress = running_->progress;
     // Motion line 0 means no observed program motion yet, for example while M6 waits.
-    if (program.motion_line > progress.next.line &&
+    if (complete_text && program.motion_line > progress.next.line &&
         static_cast<std::size_t>(program.motion_line) <= source->lines.size()) {
       progress.completed_line = progress.next.line;
       progress.next = {program.motion_line, status.tool.in_spindle};
       record(progress);
     }
   }
+  if (!active && healthy && completed_revision_)
+    program.cycle = ProgramCycle::completed;
   if (dirty_ && (flush || now >= write_after_)) {
     save(reading);
     write_after_ = now + write_period;
   }
-  if (!active && identity && status.link == Link::live && status.motion.in_position) {
+  if (!active && !dry_run && complete_text && identity && status.link == Link::live &&
+      status.motion.in_position) {
     const auto found = std::ranges::find_if(records_, [&](const Record& entry) {
       return entry.path == source->file && entry.stamp == *identity &&
              static_cast<std::size_t>(entry.next.line) <= source->lines.size();

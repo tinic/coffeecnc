@@ -49,6 +49,7 @@ private:
   std::string directory_;
   std::vector<Record> records_;
   std::optional<Run> running_;
+  std::optional<std::uint64_t> completed_revision_;
   Clock::time_point write_after_{};
   std::string save_error_;
   bool dirty_{};

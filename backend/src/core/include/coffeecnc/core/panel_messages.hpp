@@ -129,6 +129,8 @@ struct ProgramBreakpoint {
   friend auto operator==(const ProgramBreakpoint&, const ProgramBreakpoint&) -> bool = default;
 };
 
+enum class ProgramCycle { idle, running, completed };
+
 struct ProgramStatus {
   std::optional<std::string> file; // path of the loaded program
   // Changes whenever a program is loaded or reloaded; matches ProgramText::revision.
@@ -141,6 +143,7 @@ struct ProgramStatus {
   double air_z{};
   bool air_offset_owned{};
   std::optional<ProgramBreakpoint> breakpoint{};
+  std::optional<ProgramCycle> cycle{};
   friend auto operator==(const ProgramStatus&, const ProgramStatus&) -> bool = default;
 };
 

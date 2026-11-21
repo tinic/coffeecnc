@@ -25,10 +25,12 @@ export const views: Readonly<Record<ViewName, { azimuth: number; elevation: numb
 }
 
 /** Feed colours by order of appearance of the tools in the program. */
-export const toolColours: readonly string[] = ['#6d93ca', '#377ef2', '#8374b0', '#4f9c95', '#b58b4c', '#b87979']
+const lightToolColours: readonly string[] = ['#215db7', '#007e82', '#7152ab', '#34724e', '#a16418', '#ae5260']
+const darkToolColours: readonly string[] = ['#69a9fa', '#50c4c7', '#b19af2', '#83caa0', '#e6b572', '#ee939f']
 
-export function toolColour(index: number): string {
-  return toolColours[index % toolColours.length] ?? '#58b8ae'
+export function toolColour(index: number, dark: boolean): string {
+  const palette = dark ? darkToolColours : lightToolColours
+  return palette[index % palette.length] ?? (dark ? '#69a9fa' : '#215db7')
 }
 
 /** The world directions that point right and up on the screen. */

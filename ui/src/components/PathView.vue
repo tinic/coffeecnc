@@ -439,8 +439,7 @@ onBeforeUnmount(() => {
     <div class="viewport">
       <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
       <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-      <div v-if="banner.text || !live || toolTip === null || part.attachment || visibleTool || modelError" class="banners">
-        <span v-if="banner.text" :class="banner.tone">{{ banner.text }}</span>
+      <div v-if="!live || toolTip === null || part.attachment || visibleTool || modelError" class="banners">
         <span v-if="!live" class="stop">Tool position not live</span>
         <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
         <span v-if="modelError || (part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
@@ -448,6 +447,7 @@ onBeforeUnmount(() => {
         <span v-if="visibleTool">T{{ visibleTool.number }} envelope{{ visibleTool.model.nominalDiameter ? ' · nominal diameter' : '' }}{{ visibleTool.model.holder ? ` · ${holderLabel(visibleTool.model.holder)}` : '' }}</span>
         <span v-if="showPart && part.attachment?.note" class="warn">Sample model · not paired with this program</span>
       </div>
+      <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
       <div class="legend"><span><i class="feed"></i>Cut</span><span><i class="rapid"></i>Rapid</span><label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label><label v-if="part.attachment"><input v-model="part.visible" type="checkbox" />Part</label></div>
@@ -470,6 +470,9 @@ onBeforeUnmount(() => {
 .legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
 .legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
-.banners { position: absolute; top: 12px; left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); }.banners span { padding: 5px 8px; border-radius: 6px; background: var(--panel); }.banners .stop { color: var(--stop); }.banners .warn { color: var(--warn); }
-.banners { pointer-events: none; max-width: calc(100% - 36px); align-items: flex-start; font-size: 11px; }
+.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: 11px; color: var(--text-dim); }
+.banners { top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.preview-banner { bottom: 12px; }
+.banners span, .preview-banner { padding: 5px 8px; border-radius: 6px; background: var(--panel); }
+.stop { color: var(--stop); }.warn { color: var(--warn); }
 </style>

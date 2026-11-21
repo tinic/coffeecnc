@@ -65,6 +65,110 @@ run --check "$work/sim/lathe.ini"
 [ "$code" = 1 ] && said 'CoffeeCNC does not start with this file' && said 'COORDINATES'
 check check_reports_why_a_file_is_refused $? "$(detail)"
 
+run --write-ini -ini "$work/sim/coffeecnc_sim.ini"
+[ "$code" = 1 ] && said 'requires --check'
+check write_requires_check $? "$(detail)"
+run --check "$work/sim/coffeecnc_sim.ini" --write-ini -ini "$work/sim/lathe.ini"
+[ "$code" = 1 ] && said 'Specify one INI file'
+check write_refuses_two_ini_paths $? "$(detail)"
+
+repair="$work/sim/repair.ini"
+before="$work/sim/repair.before"
+mkdir -p "$work/sim/checker" || exit 125
+cat >"$work/sim/checker-base.hal" <<'EOF'
+source "checker/encoder setup.hal"
+EOF
+cat >"$work/sim/checker/encoder setup.hal" <<'EOF'
+net measured-rpm encoder.scaled-velocity
+EOF
+cat >"$work/sim/checker-postgui.hal" <<'EOF'
+    source "checker/nested post.hal" # quoted path
+EOF
+cat >"$work/sim/checker/nested post.hal" <<'EOF'
+source coffeecnc_postgui.hal
+net measured-rpm => \
+    coffeecnc.spindle-rpm
+net at-speed spindle.0.at-speed => coffeecnc.spindle-at-speed
+net ruby ruby.out => coffeecnc.probe-input
+unlinkp coffeecnc.probe-input
+# net ruby ruby.out => coffeecnc.probe-input
+# net fake iocontrol.0.tool-change => coffeecnc.tool-change
+EOF
+# The checker must never execute any directive in either HAL phase.
+echo "loadusr /usr/bin/touch $work/would-have-run" >>"$work/sim/checker/nested post.hal"
+sed -e '/^DISPLAY *=/d' \
+    -e '/^HALFILE *=.*coffeecnc_sim_home.hal$/a HALFILE = checker-base.hal' \
+    -e 's/^POSTGUI_HALFILE *=.*/POSTGUI_HALFILE = checker-postgui.hal/' \
+    "$work/sim/coffeecnc_sim.ini" >"$repair"
+printf '\n[COFFEECNC]\n# Keep this explicit opt-out.\nSPINDLE_AT_SPEED_SIGNAL = no\n' >>"$repair"
+chmod 640 "$repair" && cp "$repair" "$before" || exit 125
+rm -f "$repair.bak" "$repair.bak.1" "$work/would-have-run"
+
+run --check "$repair"
+[ "$code" = 0 ] && cmp -s "$repair" "$before" && [ ! -e "$repair.bak" ] &&
+  said '\[DISPLAY\] DISPLAY = coffeecnc' &&
+  said '^  \[COFFEECNC\] SPINDLE_RPM_SIGNAL = yes$' &&
+  said 'CoffeeCNC HAL .*coffeecnc_postgui.hal' &&
+  said 'Manual tool change prompt *off' && [ ! -e "$work/would-have-run" ]
+check check_traces_nested_hal_without_running_it $? "$(detail)"
+
+run --check "$repair" --write-ini
+[ "$code" = 0 ] && cmp -s "$before" "$repair.bak" && [ "$(stat -c %a "$repair")" = 640 ] &&
+  grep -q '^DISPLAY = coffeecnc$' "$repair" &&
+  grep -q '^SPINDLE_RPM_SIGNAL = yes$' "$repair" &&
+  grep -q '^SPINDLE_AT_SPEED_SIGNAL = no$' "$repair" &&
+  grep -q '^# Keep this explicit opt-out\.$' "$repair" &&
+  ! grep -q '^PROBE_SIGNAL *=' "$repair" && [ ! -e "$work/would-have-run" ] &&
+  said 'Measured spindle speed *on'
+check write_adds_only_missing_settings_with_backup $? "$(detail)"
+
+cp "$repair" "$work/sim/repair.after" || exit 125
+run --write-ini --check "$repair"
+[ "$code" = 0 ] && said 'No INI settings to add' &&
+  cmp -s "$repair" "$work/sim/repair.after" && cmp -s "$repair.bak" "$before" && [ ! -e "$repair.bak.1" ]
+check repeated_write_is_a_noop $? "$(detail)"
+
+cp "$before" "$repair" || exit 125
+printf 'Do not replace this older backup.\n' >"$repair.bak"
+run --check "$repair" --write-ini
+[ "$code" = 0 ] && grep -qx 'Do not replace this older backup.' "$repair.bak" &&
+  cmp -s "$repair.bak.1" "$before"
+check write_preserves_earlier_backups $? "$(detail)"
+
+cycle="$work/sim/check-cycle.ini"
+sed 's/POSTGUI_HALFILE = checker-postgui.hal/POSTGUI_HALFILE = checker-cycle.hal/' "$before" >"$cycle"
+printf 'source checker-cycle.hal\n' >"$work/sim/checker-cycle.hal"
+run --check "$cycle"
+[ "$code" = 1 ] && said 'HAL source cycle' && ! said '^  \[COFFEECNC\] SPINDLE_RPM_SIGNAL = yes$'
+check check_reports_source_cycles $? "$(detail)"
+
+missing="$work/sim/missing-postgui.ini"
+sed 's/POSTGUI_HALFILE = checker-postgui.hal/POSTGUI_HALFILE = absent.hal/' "$before" >"$missing"
+cp "$missing" "$work/sim/missing-postgui.before" && rm -f "$missing.bak" || exit 125
+run --check "$missing" --write-ini
+[ "$code" = 1 ] && said 'post-GUI HAL sources could not be loaded' && said 'Cannot read HAL file .*absent.hal' &&
+  cmp -s "$missing" "$work/sim/missing-postgui.before" && [ ! -e "$missing.bak" ]
+check missing_postgui_blocks_the_write $? "$(detail)"
+
+invalid="$work/sim/check-invalid.ini"
+sed 's/^COORDINATES = X Y Z/COORDINATES = X Z/' "$before" >"$invalid"
+cp "$invalid" "$work/sim/check-invalid.before" && rm -f "$invalid.bak" || exit 125
+run --check "$invalid" --write-ini
+[ "$code" = 1 ] && said 'Could not repair the INI: .*COORDINATES' &&
+  cmp -s "$invalid" "$work/sim/check-invalid.before" && [ ! -e "$invalid.bak" ]
+check invalid_ini_blocks_the_write $? "$(detail)"
+
+locked="$work/sim/check-lock.ini"
+cp "$before" "$locked" && rm -f "$locked.bak" || exit 125
+exec 9<"$locked"
+flock -n 9 || exit 125
+run --check "$locked" --write-ini
+flock -u 9
+exec 9<&-
+[ "$code" = 1 ] && said 'could not be locked' &&
+  cmp -s "$locked" "$before" && [ ! -e "$locked.bak" ]
+check concurrent_ini_write_is_refused $? "$(detail)"
+
 run -ini "$work/sim/coffeecnc_sim.ini" --ui "$work/no-panel"
 [ "$code" = 1 ] && said 'coffeecnc: No panel in .*index.html is missing'
 check missing_panel_is_reported $? "$(detail)"

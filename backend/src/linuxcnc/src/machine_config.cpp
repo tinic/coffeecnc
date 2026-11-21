@@ -53,8 +53,8 @@ class Ini {
 public:
   explicit Ini(const std::string& file) { open_ = file_.Open(file.c_str()); }
   [[nodiscard]] auto open() const -> bool { return open_; }
-  auto text(const char* section, const char* key) -> std::optional<std::string> {
-    const char* value = file_.Find(key, section);
+  auto text(const char* section, const char* key, int occurrence = 1) -> std::optional<std::string> {
+    const char* value = file_.Find(key, section, occurrence);
     if (value == nullptr)
       return {};
     return std::string(value);
@@ -260,6 +260,28 @@ auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 3>, std
 }
 
 } // namespace
+
+auto inspect_machine_ini(const std::string& ini_file)
+    -> std::expected<MachineIniInspection, std::string> {
+  std::error_code error;
+  const auto file = std::filesystem::absolute(ini_file, error);
+  if (error)
+    return std::unexpected(std::format("Cannot resolve INI file {}.", ini_file));
+  if (!std::filesystem::is_regular_file(file, error))
+    return std::unexpected(std::format("Cannot read INI file {}.", file.string()));
+  Ini ini{file.string()};
+  if (!ini.open())
+    return std::unexpected(std::format("Cannot read INI file {}.", file.string()));
+  MachineIniInspection result{.path = file.string(),
+                              .display = ini.text("DISPLAY", "DISPLAY"),
+                              .postgui = ini.text("HAL", "POSTGUI_HALFILE"),
+                              .halfiles = {}};
+  for (std::size_t i = 0; i < coffeecnc_signal_keys.size(); ++i)
+    result.signal_configured[i] = ini.text("COFFEECNC", coffeecnc_signal_keys[i]).has_value();
+  for (int i = 1; const auto name = ini.text("HAL", "HALFILE", i); ++i)
+    result.halfiles.push_back(*name);
+  return result;
+}
 
 auto parse_jog_increments(std::string_view text, double millimetres_per_unit)
     -> std::expected<std::vector<double>, std::string> {

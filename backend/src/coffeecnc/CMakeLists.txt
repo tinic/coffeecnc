@@ -5,7 +5,7 @@ if(NOT TARGET coffeecnc_shell OR NOT TARGET coffeecnc_linuxcnc)
   return()
 endif()
 
-add_library(coffeecnc_application application.cpp)
+add_library(coffeecnc_application application.cpp config_check.cpp)
 target_include_directories(coffeecnc_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(coffeecnc_application PUBLIC cxx_std_23)
 # Where a development build finds the panel when none is installed beside it.

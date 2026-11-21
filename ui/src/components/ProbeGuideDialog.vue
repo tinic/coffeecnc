@@ -26,7 +26,7 @@ const valid = computed(() => {
   const length = field.signed ? Math.abs(value.value) : value.value
   return length >= field.min && length <= field.max
 })
-const material = computed(() => props.target.kind !== 'teach' && props.target.kind !== 'measure')
+const material = computed(() => !['teach', 'measure', 'check'].includes(props.target.kind))
 const outside = computed(() => ['corner', 'boss', 'ball'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -93,6 +93,7 @@ function start(): void {
           </template>
           <template v-if="!material && limits"><dt>Setter XY tolerance</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
           <template v-if="!material && limits?.clearance_mm"><dt>Retract clearance</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
+          <template v-if="target.kind === 'check' && limits?.check_tolerance_mm"><dt>Length tolerance</dt><dd>±{{ limits.check_tolerance_mm }} mm</dd></template>
           <template v-if="outside"><dt>Traverse clearance</dt><dd>{{ limits?.material_geometry?.clearance_mm ?? 5 }} mm above top min</dd></template>
           <template v-if="outside"><dt>Ball centre at contact</dt><dd>{{ limits?.material_geometry?.depth_mm ?? 2 }} mm below top</dd></template>
         </dl>
@@ -101,7 +102,7 @@ function start(): void {
     </div>
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
-      <button class="btn primary start-probe" type="button" :disabled="!valid" @click="start">Start probe</button>
+      <button class="btn primary start-probe" type="button" :disabled="!valid" @click="start">{{ target.kind === 'check' ? 'Start check' : 'Start probe' }}</button>
     </template>
   </ModalDialog>
 </template>

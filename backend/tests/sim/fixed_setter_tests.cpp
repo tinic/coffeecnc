@@ -691,6 +691,10 @@ void run(const std::string& ini, std::string_view scenario) {
     return text;
   };
   const auto old_table = read_table();
+  const auto premature = port->fixed_setter(
+      {.action = SetterAction::check, .tool = reference_tool, .start = move.start}, epoch, {});
+  require(!premature && premature.error().contains("Teach the setter") && old_table == read_table(),
+          "checking requires a taught plane even with the reference tool loaded");
   const auto taught = setter(
       {.action = SetterAction::touch_off, .tool = reference_tool, .start = move.start});
   require(taught.measurement && taught.measurement->calibration && taught.calibration &&
@@ -735,6 +739,29 @@ void run(const std::string& ini, std::string_view scenario) {
   auto repeat = touch_off;
   repeat.start = {after.controller.axes[0].machine, after.controller.axes[1].machine,
                   after.controller.axes[2].machine};
+  auto check = repeat;
+  check.action = SetterAction::check;
+  const auto intact = [&] {
+    const auto observed = port->status();
+    return read_table() == saved_table && observed.tool_offset == after.tool_offset &&
+           std::abs(observed.controller.axes[2].machine - repeat.start[2]) < 0.03;
+  };
+  halcmd(std::format("setp sim-tool-setter.max {}", 11.94 / scale));
+  const auto passed = setter(check);
+  require(passed.measurement && passed.measurement->check_tolerance_mm == 0.1 &&
+              std::abs(passed.measurement->value - (tool_length - 0.06)) < 0.03 &&
+              passed.measured_tools == measured.measured_tools && intact(),
+          "a check passes within tolerance and retracts with the old table and offset");
+  for (const auto& [height, direction] :
+       {std::pair{11.7, "shorter"}, std::pair{12.3, "longer"}}) {
+    halcmd(std::format("setp sim-tool-setter.max {}", height / scale));
+    const auto failed = port->fixed_setter(check, epoch, {});
+    require(!failed && failed.error().contains(direction) && failed.error().contains("tolerance") &&
+                intact(),
+            std::format("a {} tool fails after retract and keeps its table and offset ({})",
+                        direction, failed ? "unexpected pass" : failed.error()));
+  }
+  halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto unstable = port->fixed_setter(repeat, epoch, [&]() {
     const auto pins = shared.view(HalShared::Clock::now());
     if (pins && pins->probe_cycle_active && pins->probe_input) {

@@ -1386,11 +1386,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   std::string block_failure; // why the last block() did not complete, for the operator
   const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
                          bool watch_probe = false, bool moves = false) -> bool {
-    if (live_cycle() == nullptr || !interlock())
+    if (live_cycle() == nullptr) {
+      block_failure = cycle_failure;
       return false;
+    }
+    if (!interlock()) {
+      block_failure = "probe interlock lost";
+      return false;
+    }
     EMC_TASK_PLAN_EXECUTE command;
-    if (!put(command.command, code) || !accepted(impl_->write(command)))
+    if (!put(command.command, code) || !accepted(impl_->write(command))) {
+      block_failure = "LinuxCNC did not take the block";
       return false;
+    }
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
@@ -1438,7 +1446,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
 
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
-    return interrupt("Could not prepare the probing feed.");
+    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
   if (raw == nullptr || !probe_pin || *probe_pin->probe_input || raw->motion.traj.probeval != 0 ||
@@ -1474,8 +1482,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (!block(std::format("G90 G53 G0 X{:.8f} Y{:.8f}", search_start[0] / program_scale,
                            search_start[1] / program_scale),
                positioning_timeout, false, true))
-      return interrupt(material ? "Could not position XY for the probe."
-                                : "Could not position XY above the setter.");
+      return interrupt(std::format("Could not position XY for {} ({}).",
+                                   material ? "the probe" : "the setter", block_failure));
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
@@ -1647,6 +1655,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
   hal->finish_probe_cycle();
+  // A subsequent cycle must see its own permit. Wait for the control thread to publish and
+  // sample the low level before the next request can mistake the previous cycle for its own.
+  if (!until(settle_timeout, [&] {
+        const auto pins = hal->view(Clock::now());
+        return pins && !pins->probe_cycle_active;
+      }))
+    return std::unexpected("The probe retracted, but the interlock did not return to idle.");
   if (missed)
     return std::unexpected("No probe contact within the search travel. Returned to the start.");
   if (unstable_spread)
@@ -1730,6 +1745,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!ready(*raw, before))
     return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
   const int tool = before.controller.tool_in_spindle;
+  const bool checking = request.action == SetterAction::check;
   const bool corner = request.action == SetterAction::corner;
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
@@ -1745,6 +1761,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         std::format("Load T{} to probe material.", *impl_->config.touch_probe_tool));
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
+  if (checking && tool == impl_->config.touch_probe_tool)
+    return std::unexpected("Load a cutting tool before checking its length.");
 
   const double position_tolerance = impl_->config.motion_tolerances.probe_position_mm;
   const auto near = [position_tolerance](double actual, double expected) {
@@ -1817,8 +1835,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   // Before the setter is taught, any tool with a valid saved length teaches it like the
   // reference (turo: T99 can act like T98).
-  const bool teaching = tool == limits->reference_tool ||
-                        (!calibration && std::ranges::contains(current_marks, tool));
+  const bool teaching = !checking && (tool == limits->reference_tool ||
+                        (!calibration && std::ranges::contains(current_marks, tool)));
   if (!material && !teaching && !calibration)
     return std::unexpected(std::format("Teach the setter with T{} or a touched-off tool first.",
                                        limits->reference_tool));
@@ -1828,6 +1846,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (!previous || !std::isfinite(*previous * machine_scale))
     return std::unexpected("Could not read the loaded tool's length from the tool table.");
   const double previous_length = *previous * machine_scale;
+  if (checking && previous_length == 0 && !std::ranges::contains(current_marks, tool))
+    return std::unexpected("Set the loaded tool's length before checking it.");
   // Sets X0 and Y0 of the active work system at machine `origin` (XY), applied at the commanded
   // position and verified against the encoder lag; then optionally lifts to machine Z `lift_to`.
   const auto set_xy_origin = [&](std::array<double, 2> origin, std::optional<double> lift_to)
@@ -2302,7 +2322,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   }
   const auto contact = probe_fixed_setter(move, wanted);
   if (!contact)
-    return std::unexpected(contact.error());
+    return std::unexpected(checking ? std::format("T{} check failed. {}", tool, contact.error())
+                                    : contact.error());
   if (wanted && !wanted())
     return std::unexpected("The fixed setter result was cancelled.");
   const double value = contact->machine[2] - (teaching ? previous_length : calibration->plane[2]);
@@ -2313,7 +2334,18 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("The tool table changed during the setter cycle.");
 
   const SetterMeasurement measurement{
-      teaching, tool, contact->machine, value, previous_length, contact->stopping_distance};
+      teaching, tool, contact->machine, value, previous_length, contact->stopping_distance,
+      checking ? std::optional{limits->check_tolerance_mm} : std::nullopt};
+  if (checking) {
+    const double difference = value - previous_length;
+    if (std::abs(difference) > limits->check_tolerance_mm)
+      return std::unexpected(std::format(
+          "T{} check failed. Tool is {:.4f} mm {} (measured {:.4f} mm, table {:.4f} mm, "
+          "tolerance {} mm). Inspect the tool.",
+          tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value,
+          previous_length, limits->check_tolerance_mm));
+    return SetterState{calibration->plane, measurement, std::move(current_marks)};
+  }
   if (teaching) {
     calibration = Impl::Calibration{
         epoch.datum,

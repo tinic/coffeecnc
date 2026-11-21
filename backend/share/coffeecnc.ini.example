@@ -34,6 +34,7 @@ MANUAL_TOOLCHANGE = no
 # Set SETTER_MAX_TRAVEL_MM, SETTER_SEARCH_FEED_MM_MIN and SETTER_XY_TOLERANCE_MM to the machine's
 # commissioned limits. SETTER_REFERENCE_TOOL defaults to 98.
 # SETTER_CLEARANCE_MM lifts to tool-change height relative to the reference latch.
+# SETTER_CHECK_TOLERANCE_MM is the maximum allowed length difference for Check length (default 0.1).
 # SETTER_LATCH_FEED_MM_MIN enables a second pass after backing off by SETTER_LATCH_BACKOFF_MM (1 mm by default).
 FIXED_SETTER = no
 # The tool number HAL routes to a spindle touch probe. It is treated as a touch probe (no

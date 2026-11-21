@@ -48,6 +48,9 @@ describe('parametric tool geometry', () => {
       if (!(geometry instanceof BufferGeometry)) throw new Error('Missing cutter geometry')
       const positions: unknown = geometry.getAttribute('position')
       if (!(positions instanceof BufferAttribute)) throw new Error('Missing cutter positions')
+      const colours: unknown = geometry.getAttribute('color')
+      if (!(colours instanceof BufferAttribute)) throw new Error('Missing cutter finishes')
+      expect(colours.count).toBe(positions.count)
       const radii = Array.from({ length: positions.count }, (_, i) =>
         Math.hypot(positions.getX(i), positions.getY(i)))
       expect(Math.max(...radii)).toBeCloseTo(tool.diameter / 2)
@@ -66,6 +69,8 @@ describe('parametric tool geometry', () => {
         expect(edges).toHaveLength(flutes)
         const [edge] = edges
         if (!edge) throw new Error('Missing cutting edge')
+        expect(colours.getX(edge.i)).toBeCloseTo(1)
+        expect(Math.min(...ring.map(({ i }) => colours.getX(i)))).toBeLessThan(0.85)
         return Math.atan2(positions.getY(edge.i), positions.getX(edge.i))
       }
       expect(Math.abs(angleAt(0.74) - angleAt(0.52))).toBeGreaterThan(0.035)

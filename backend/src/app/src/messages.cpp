@@ -262,7 +262,8 @@ auto encode_hello(const Hello& hello) -> Encoded {
         {"travel_mm", fields.real(setter->travel_mm, "fixed_setter.travel_mm")},
         {"feed_mm_min", fields.real(setter->feed_mm_min, "fixed_setter.feed_mm_min")},
         {"xy_tolerance_mm", fields.real(setter->xy_tolerance_mm, "fixed_setter.xy_tolerance_mm")},
-        {"clearance_mm", fields.real(setter->clearance_mm, "fixed_setter.clearance_mm")}};
+        {"clearance_mm", fields.real(setter->clearance_mm, "fixed_setter.clearance_mm")},
+        {"check_tolerance_mm", fields.real(setter->check_tolerance_mm, "fixed_setter.check_tolerance_mm")}};
   if (hello.fixed_setter && hello.fixed_setter->latch_feed_mm_min > 0) {
     const auto& setter = *hello.fixed_setter;
     message["fixed_setter"]["latch_feed_mm_min"] =

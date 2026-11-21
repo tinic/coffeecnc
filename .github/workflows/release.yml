@@ -37,8 +37,11 @@ jobs:
       # process the helper left behind and wait for it to be gone.
       options: --init
     steps:
+      # First: checkout cleans the workspace, which holds the LinuxCNC package cache below.
+      - uses: actions/checkout@v4
+
       - name: Configure the LinuxCNC APT repository
-        run: &linuxcnc-apt |
+        run: |
           set -eu
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates gnupg
@@ -48,18 +51,54 @@ jobs:
           gpg --batch --export 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927 > /usr/share/keyrings/linuxcnc.gpg
           echo "deb [signed-by=/usr/share/keyrings/linuxcnc.gpg] https://www.linuxcnc.org/ trixie base 2.9-uspace" \
             > /etc/apt/sources.list.d/linuxcnc.list
-          apt-get update
+          # linuxcnc.org refuses a connection now and then; apt-get update then succeeds without
+          # its index and Debian's own, older linuxcnc-uspace is taken (a package built against it,
+          # or an install that cannot be satisfied). Retry until its index is really there.
+          # Some runners cannot reach linuxcnc.org over IPv6 at all (every attempt fails there):
+          # use IPv4.
+          echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+          # A runner that cannot reach it at all builds from the cached packages below.
+          reachable=0
+          for attempt in 1 2 3 4; do
+            apt-get update
+            if apt-cache policy linuxcnc-uspace | grep -q 'linuxcnc.org trixie'; then
+              reachable=1
+              break
+            fi
+            sleep $((attempt * 10))
+          done
+          echo "LINUXCNC_ORG=$reachable" >> "$GITHUB_ENV"
+          [ "$reachable" = 1 ] || echo "linuxcnc.org trixie index not loaded: using the cached packages"
+
+      # The LinuxCNC packages of the last build that reached linuxcnc.org, per architecture.
+      - uses: actions/cache/restore@v4
+        with:
+          path: linuxcnc-cache
+          key: linuxcnc-trixie-${{ matrix.arch }}-v1-${{ github.run_id }}
+          restore-keys: linuxcnc-trixie-${{ matrix.arch }}-v1-
 
       - name: Build tools and LinuxCNC
         run: |
           set -eu
-          apt-get install -y --no-install-recommends \
-            curl git build-essential cmake ninja-build pkg-config dpkg-dev file \
-            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev \
-            linuxcnc-uspace-dev
+          tools="curl git build-essential cmake ninja-build pkg-config dpkg-dev file
+            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev"
+          if [ "$LINUXCNC_ORG" = 1 ]; then
+            apt-get install -y --no-install-recommends $tools linuxcnc-uspace-dev
+            rm -rf linuxcnc-cache && mkdir linuxcnc-cache
+            (cd linuxcnc-cache &&
+              apt-get download "linuxcnc-uspace=$(dpkg-query -W -f='${Version}' linuxcnc-uspace)" \
+                "linuxcnc-uspace-dev=$(dpkg-query -W -f='${Version}' linuxcnc-uspace-dev)")
+          else
+            ls linuxcnc-cache/linuxcnc-uspace_*.deb linuxcnc-cache/linuxcnc-uspace-dev_*.deb
+            apt-get install -y --no-install-recommends $tools ./linuxcnc-cache/*.deb
+          fi
           dpkg-query -W -f='linuxcnc-uspace ${Version}\n' linuxcnc-uspace
 
-      - uses: actions/checkout@v4
+      - if: env.LINUXCNC_ORG == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: linuxcnc-cache
+          key: linuxcnc-trixie-${{ matrix.arch }}-v1-${{ github.run_id }}
 
       - uses: actions/setup-node@v4
         with:
@@ -95,6 +134,22 @@ jobs:
           path: backend/build/package/*.deb
           if-no-files-found: error
 
+      # The exact LinuxCNC package this build ran against, for the install check: some runners
+      # cannot reach linuxcnc.org at all, and the check must not depend on which one it gets.
+      - name: Keep the LinuxCNC package
+        run: |
+          set -eu
+          mkdir -p linuxcnc-debs
+          cp linuxcnc-cache/linuxcnc-uspace_*.deb linuxcnc-debs/
+          cd linuxcnc-debs
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linuxcnc-${{ matrix.arch }}
+          path: linuxcnc-debs/*.deb
+          if-no-files-found: error
+
   deb_install:
     name: Install and purge (${{ matrix.arch }})
     needs: deb
@@ -108,13 +163,20 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
       PACKAGE_ARCH: ${{ matrix.arch }}
     steps:
-      - name: Configure the LinuxCNC APT repository
-        run: *linuxcnc-apt
+      # Debian's own repositories only: linuxcnc-uspace comes from the build job (the version
+      # the package was built against), so this check does not need linuxcnc.org.
+      - name: Debian package lists
+        run: apt-get update
 
       - uses: actions/download-artifact@v4
         with:
           name: coffeecnc-${{ matrix.arch }}
           path: package
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linuxcnc-${{ matrix.arch }}
+          path: linuxcnc
 
       - name: Install the release artifact with APT
         run: |
@@ -131,7 +193,8 @@ jobs:
               exit 1
             fi
           done
-          apt-get install -y --no-install-recommends "$1"
+          set -- "$1" ./linuxcnc/linuxcnc-uspace_*.deb
+          apt-get install -y --no-install-recommends "$@"
           for package in coffeecnc linuxcnc-uspace; do
             test "$(dpkg-query -W -f='${db:Status-Status}' "$package")" = installed
             dpkg-query -W "$package"

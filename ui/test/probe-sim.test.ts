@@ -142,6 +142,27 @@ describe('browser probe scene', () => {
     expect(sim.status().offsets.tool[2]).toBeCloseTo(62.43)
   })
 
+  it('checks a cutter without changing the table or tool compensation', () => {
+    const { sim, cycle, submit, result } = scene('measure')
+    const row = sim.modal.tools.find(tool => tool.number === 1)
+    if (!row) throw new Error('Missing demo cutter')
+    const before = sim.status().offsets.tool
+    const passed = cycle({ action: 'check' })
+    expect(passed.setter?.measurement).toMatchObject({ tool: 1, previous_length: 62.5, check_tolerance_mm: 0.1 })
+    expect(passed.setter?.measurement?.value).toBeCloseTo(62.43)
+    expect(passed.setter?.measured_tools).toEqual([98, 99])
+    expect(row.length).toBe(62.5)
+    row.length = 62.83
+    const id = submit({ action: 'check' })
+    expect(result(id)).toBeUndefined()
+    expect(sim.advanceUntil(() => result(id) !== undefined, 30_000)).toBe(true)
+    expect(result(id)?.outcome).toBe('failed')
+    expect(result(id)?.reason).toContain('0.4000 mm shorter')
+    expect(sim.status()).toMatchObject({ interp: 'idle', probe_input: false })
+    expect(row.length).toBe(62.83)
+    expect(sim.status().offsets.tool).toEqual(before)
+  })
+
   it('teaches with T98 and then measures the 6 mm end mill', () => {
     const p = scene('setter')
     function loadAtSetter(tool: number): void {

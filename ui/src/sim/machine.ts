@@ -786,13 +786,16 @@ export class SimMachine {
           this.probeContact = false
           this.velocity = 0
           this.syncModal()
-          const setter = pending.plan.finish()
+          const failure = pending.plan.failure
+          const result = failure === undefined
+            ? { outcome: 'accepted' as const, reason: '', setter: pending.plan.finish() }
+            : fail(failure)
           this.historySource = { source: pending.source, restores: null }
           this.checkTools()
           this.checkOffsets()
           this.historySource = null
           this.sendStatus()
-          this.emit({ type: 'result', id: pending.id, outcome: 'accepted', reason: '', setter })
+          this.emit({ type: 'result', id: pending.id, ...result })
         }
         return
       }

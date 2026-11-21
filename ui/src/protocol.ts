@@ -419,6 +419,7 @@ export interface FixedSetterLimits {
   material_travel_mm?: number
   latch_feed_mm_min?: number
   latch_backoff_mm?: number
+  check_tolerance_mm?: number
 }
 
 export interface SetterMeasurement {
@@ -430,6 +431,8 @@ export interface SetterMeasurement {
   previous_length: number
   /** Downward travel in mm from the latched contact to the settled position before retract. */
   stopping_distance?: number
+  /** Present on a successful read-only comparison against previous_length. */
+  check_tolerance_mm?: number
 }
 
 export interface SetterState {
@@ -662,6 +665,7 @@ export type ProbeDirection = 'z_top' | 'x_minus' | 'x_plus' | 'y_minus' | 'y_plu
 export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
   | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
+  | { action: 'check'; tool: number; x: number; y: number; z: number }
   | { action: 'material'; direction: ProbeDirection; tool: number; x: number; y: number; z: number }
   /**
    * A corner: the X face, then the Y face, probed from beside the work below its top (Z0 of the

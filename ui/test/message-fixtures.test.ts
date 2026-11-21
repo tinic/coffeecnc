@@ -1164,7 +1164,10 @@ const examples = [
       "default_jog_velocity": 600,
       "tool_reference_height": 6.35,
       "program_layout": "split",
-      "theme": "dark"
+      "theme": "dark",
+      "recent_programs": [
+        "/home/cnc/nc_files/air/03-pocket.ngc"
+      ]
     }
   },
   {

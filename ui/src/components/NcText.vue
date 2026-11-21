@@ -16,7 +16,12 @@ const props = defineProps<{
   /** Line numbers can be tapped to restart the program there. */
   restartable?: boolean
 }>()
-const emit = defineEmits<{ restart: [line: number] }>()
+const emit = defineEmits<{ restart: [line: number]; editRate: [line: number, offset: number] }>()
+
+/** Where each token starts in its line, so a tapped F or S word can be found again. */
+function offsetOf(tokens: readonly { text: string }[], index: number): number {
+  return tokens.slice(0, index).reduce((sum, token) => sum + token.text.length, 0)
+}
 
 /** The line the operator tapped to restart from; 0 for none. */
 const picked = ref<number>(0)
@@ -199,6 +204,8 @@ onBeforeUnmount(() => {
               v-for="(token, index) in row.tokens"
               :key="index"
               :data-tone="token.tone ?? undefined"
+              :class="{ editable: restartable && token.tone === 'rate' }"
+              @click="restartable && token.tone === 'rate' && emit('editRate', row.number, offsetOf(row.tokens, index))"
             >{{ token.text }}</span></span>
           </div>
         </div>
@@ -292,6 +299,12 @@ onBeforeUnmount(() => {
 
 .row.motion .number {
   color: var(--text);
+}
+
+.text .editable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
 .number.pickable {

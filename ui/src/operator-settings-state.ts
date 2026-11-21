@@ -1,7 +1,7 @@
 import { reactive, ref, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
-import { decodeOperatorPreferences, defaultOperatorPreferences, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
+import { decodeOperatorPreferences, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
@@ -23,7 +23,7 @@ interface StartupPresentation {
   themeOverride?: PanelTheme | null
 }
 
-type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme'>>
+type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'recent_programs'>>
 
 export interface OperatorSettingsController {
   state: SettingsState
@@ -31,6 +31,7 @@ export interface OperatorSettingsController {
   block: (edit: SettingsContext) => string | null
   save: (value: OperatorPreferences, edit: SettingsContext) => Promise<SettingsResult>
   chooseProgramLayout: (layout: ProgramLayout) => void
+  rememberProgram: (path: string) => void
   chooseTheme: (theme: PanelTheme) => void
   dispose: () => void
 }
@@ -170,8 +171,9 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     const patch = queuedPresentation
     queuedPresentation = {}
     if (state.storage === 'unavailable') return
-    const { program_layout: layout, theme: storedTheme } = panel.preferences
-    if ((patch.program_layout ?? layout) === layout && (patch.theme ?? storedTheme) === storedTheme) return
+    const { program_layout: layout, theme: storedTheme, recent_programs: recent } = panel.preferences
+    if ((patch.program_layout ?? layout) === layout && (patch.theme ?? storedTheme) === storedTheme &&
+        (patch.recent_programs ?? recent).join('\n') === recent.join('\n')) return
     // Merge into the latest confirmed document so a queued choice cannot undo another save.
     void save({ ...panel.preferences, ...patch }, context())
   }
@@ -179,6 +181,11 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     layoutChosen = true
     panel.programLayout = layout
     queuedPresentation.program_layout = layout
+    flushPresentation()
+  }
+  /** Puts the program the machine has loaded first in the recent list. */
+  function rememberProgram(path: string): void {
+    queuedPresentation.recent_programs = withRecentProgram(queuedPresentation.recent_programs ?? panel.preferences.recent_programs, path)
     flushPresentation()
   }
   function chooseTheme(value: PanelTheme): void {
@@ -193,7 +200,11 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     (): boolean => state.uncertain,
   ], flushPresentation, { flush: 'post' }))
 
-  return { state, context, block, save, chooseProgramLayout, chooseTheme, dispose: (): void => {
+  stops.push(watch(() => panel.status?.program.file ?? null, (file) => {
+    if (file !== null && file !== panel.preferences.recent_programs[0]) rememberProgram(file)
+  }))
+
+  return { state, context, block, save, chooseProgramLayout, chooseTheme, rememberProgram, dispose: (): void => {
     for (const stop of stops) stop()
     if (pending !== null) finish(fail('CoffeeCNC closed before save confirmation.'))
   } }

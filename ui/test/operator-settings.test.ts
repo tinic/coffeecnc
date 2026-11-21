@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'
 import type { Listener } from '../src/bridge'
 import type { FromMachine, ToMachine } from '../src/protocol'
-import { hello } from '../src/sim/machine'
+import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, type PanelState } from '../src/store'
-import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, type OperatorPreferences, type ProgramLayout, type PanelTheme } from '../src/operator-settings'
+import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, withRecentProgram, type OperatorPreferences, type ProgramLayout, type PanelTheme } from '../src/operator-settings'
 import { createOperatorSettingsState, type OperatorSettingsController } from '../src/operator-settings-state'
 
 const disposals: (() => void)[] = []
@@ -112,6 +112,26 @@ describe('operator settings', () => {
     expect(restarted.storage.setItem).not.toHaveBeenCalled()
     expect(overridden.storage.setItem).not.toHaveBeenCalled()
     expect(restarted.panel.preferences).toEqual({ ...custom(), program_layout: 'text', theme: 'dark' })
+  })
+  it('remembers the programs the machine loads, newest first, and keeps them for the next start', async () => {
+    const r = rig(true, custom()); r.connect()
+    const base = new SimMachine({ emit: (): void => undefined, clock: (): number => 0 }).status()
+    const load = async (file: string): Promise<void> => {
+      r.receive({ ...base, program: { ...base.program, file } }); await nextTick()
+    }
+    await load('/nc/a.ngc'); await load('/nc/b.ngc'); await load('/nc/a.ngc')
+    const saved = JSON.parse(r.storage.setItem.mock.lastCall?.[1] ?? 'null') as OperatorPreferences
+    expect(saved.recent_programs).toEqual(['/nc/a.ngc', '/nc/b.ngc'])
+    expect(rig(true, saved).panel.preferences.recent_programs).toEqual(['/nc/a.ngc', '/nc/b.ngc'])
+    expect(r.sent).toEqual([])
+  })
+  it('keeps at most eight recent programs and drops a damaged list without losing other settings', () => {
+    const nine = Array.from({ length: 9 }, (_, index) => `/nc/${String(index)}.ngc`)
+    expect(nine.reduce<string[]>((list, path) => withRecentProgram(list, path), [])).toEqual(nine.slice(1).reverse())
+    for (const bad of [nine, ['relative.ngc'], [3], 'x']) {
+      const decoded = decodeOperatorPreferences({ ...custom(), recent_programs: bad })
+      expect([decoded?.recent_programs, decoded?.default_spindle_rpm]).toEqual([[], 1800])
+    }
   })
   it('falls back from invalid stored presentation values without resetting other defaults', () => {
     const invalid = rig(true, { ...custom(), program_layout: 'both', theme: null })

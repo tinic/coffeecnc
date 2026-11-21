@@ -105,6 +105,11 @@ if(BUILD_TESTING)
       coffeecnc_project_options)
     coffeecnc_enable_analyzers(coffeecnc_preview_wire_tests)
     add_test(NAME preview_wire COMMAND coffeecnc_preview_wire_tests)
+    add_executable(coffeecnc_program_edit_tests tests/program_edit_tests.cpp)
+    target_link_libraries(coffeecnc_program_edit_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options)
+    coffeecnc_enable_analyzers(coffeecnc_program_edit_tests)
+    add_test(NAME program_edit COMMAND coffeecnc_program_edit_tests ${PROJECT_BINARY_DIR})
     add_executable(coffeecnc_program_store_tests tests/program_store_tests.cpp)
     target_link_libraries(coffeecnc_program_store_tests PRIVATE coffeecnc_app
       coffeecnc_project_options)

@@ -22,6 +22,7 @@ import type {
 import { protocolVersion } from '../protocol'
 import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
 import { defaultFiles, listDirectory, splitLines } from './files'
+import { feedOrSpeedEdit } from '../program-edit'
 import {
   InterpError,
   activeCodes,
@@ -1009,6 +1010,8 @@ export class SimMachine {
         }
         return null
       }
+      case 'edit_program':
+        return this.editProgram(command.path, command.line, command.old_text, command.new_text)
       case 'plan_restart':
         return this.planRestart(command.line, command.preview_context)
       case 'start_restart':
@@ -1240,6 +1243,22 @@ export class SimMachine {
     const plan = this.plannedResult
     this.plannedResult = null
     return plan
+  }
+
+  /** Changes one F or S number of the loaded program's text and opens it again. */
+  private editProgram(path: string, line: number, before: string, after: string): Rejection | null {
+    const program = this.program
+    if (program === null) return reject('Load a program first.')
+    if (this.exec !== null) return reject('Stop execution before editing the program.')
+    if (path !== program.file) return reject('Only the loaded program can be edited.')
+    if (!feedOrSpeedEdit(before, after)) return reject('Only the number of one F or S word can be changed.')
+    if (program.lines[line - 1] !== before) return fail('The program changed since it was shown. Open it again.')
+    const text = this.files.get(path)
+    if (text === undefined) return fail('The program no longer exists.')
+    const lines = splitLines(text)
+    lines[line - 1] = after
+    this.files.set(path, lines.join('\n') + '\n')
+    return this.open(path)
   }
 
   /** Interprets the program up to `line` without motion and plans how to resume there. */

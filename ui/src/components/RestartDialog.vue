@@ -82,6 +82,11 @@ const toolName = (tool: number): string => {
   const comment = findTool(tool)?.comment.trim()
   return comment ? `${toolLabel(tool)} · ${comment}` : toolLabel(tool)
 }
+const loaded = computed(() => {
+  const tool = status.value?.tool.in_spindle ?? 0
+  return tool === 0 ? 'The spindle is empty. You load the tool at the tool change prompt.'
+    : `${toolName(tool)} is loaded. You change it at the tool change prompt.`
+})
 const spindle = computed(() => {
   const p = plan.value
   if (p === null || p.spindle_direction === 'stopped') return 'Stopped'
@@ -116,25 +121,27 @@ const steps = computed((): string[] => {
 </script>
 
 <template>
-  <ModalDialog :title="`Restart at line ${String(line)}`" size="medium" fresh-gesture @close="emit('close')">
+  <ModalDialog :title="`Restart at line ${String(line)}`" size="large" fresh-gesture @close="emit('close')">
     <p class="context"><span>{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
     <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ failure }}</p>
     <p v-else-if="plan === null" class="note" role="status">Planning the restart…</p>
-    <template v-if="plan">
+    <div v-if="plan" class="plan">
       <dl class="state">
-        <dt>Tool</dt><dd>{{ toolName(plan.tool) }}<small v-if="plan.needs_tool_change">Now {{ toolName(status?.tool.in_spindle ?? 0) }}; you will be asked to change it.</small></dd>
+        <dt>Tool</dt><dd>{{ toolName(plan.tool) }}<small v-if="plan.needs_tool_change">{{ loaded }}</small></dd>
         <dt>Work system</dt><dd>{{ wcsName(plan.wcs) }} · {{ plan.h > 0 ? `G43 H${String(plan.h)}` : 'No length offset (G49)' }}</dd>
         <dt>Spindle</dt><dd>{{ spindle }}</dd>
         <dt>Coolant</dt><dd>{{ coolant }}</dd>
         <dt>Feed</dt><dd>{{ plan.feed > 0 ? `${formatVelocity(plan.feed, unit)} ${velocityUnit(unit)}` : 'Not set' }}</dd>
         <dt>Modes</dt><dd>{{ modes }}</dd>
       </dl>
-      <h3>Approach</h3>
-      <ol class="steps">
-        <li v-for="step in steps" :key="step">{{ step }}</li>
-      </ol>
-      <p class="note">Make sure the way to the start point is clear. Stop halts the restart at any step.</p>
-    </template>
+      <section>
+        <h3>Approach</h3>
+        <ol class="steps">
+          <li v-for="step in steps" :key="step">{{ step }}</li>
+        </ol>
+        <p class="note">Make sure the way to the start point is clear. Stop halts the restart at any step.</p>
+      </section>
+    </div>
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">Cancel</button>
       <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
@@ -146,7 +153,8 @@ const steps = computed((): string[] => {
 <style scoped>
 .context { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 0 14px; color: var(--text-dim); font-size: 13px; }
 .context code { padding: 2px 8px; border-radius: 6px; background: var(--bg-sunken); color: var(--text); font-size: 13px; }
-.state { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0 0 16px; font-size: 13px; }
+.plan { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.state { display: grid; grid-template-columns: max-content 1fr; align-content: start; gap: 8px 18px; margin: 0; font-size: 13px; }
 .state dt { color: var(--text-dim); }
 .state dd { margin: 0; }
 .state small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 12px; }

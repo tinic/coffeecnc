@@ -40,6 +40,7 @@ async function press(text: string): Promise<void> {
   await button.trigger('click')
 }
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
   setterState.value = null
   panel.hello = { ...hello }; panel.simulated = true; panel.link = 'live'; panel.unit = 'mm'
   panel.preferences = { ...defaultOperatorPreferences(), tool_reference_height: 6.35 }
@@ -52,10 +53,11 @@ beforeEach(() => {
   panel.workOffsets = null; vi.mocked(send).mockReset()
 })
 afterEach(() => {
+  vi.unstubAllGlobals()
   const element = wrapper?.element as HTMLElement | undefined; wrapper?.unmount(); element?.remove(); wrapper = null
   dispose?.(); dispose = null
 })
-function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body }) }
+function mountTools(): void { wrapper = mount(fixture, { attachTo: document.body, global: { stubs: { GuideCanvas: true } } }) }
 
 describe('fixed setter workflow', () => {
   it('explains a blocked setter press in place while the machine is off', async () => {
@@ -72,6 +74,7 @@ describe('fixed setter workflow', () => {
     expect(getWrapper().get('.setter-action button').attributes('disabled')).toBeUndefined()
     vi.mocked(send).mockClear()
     await press('Touch off')
+    await press('Start probe')
     expect(getWrapper().get('.setter-band p').text()).toBe('Machine is off')
     expect(send).not.toHaveBeenCalled()
   })
@@ -99,12 +102,14 @@ describe('fixed setter workflow', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
     await answer({ calibration: null, measurement: null })
     await press('Touch off')
+    await press('Start probe')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 98, x: 0, y: 0, z: 0 })
     await answer({ ...state, measurement: { calibration: true, tool: 98, contact: [0, 0, -13], value: -40, previous_length: 27, stopping_distance: 0.03 } })
     expect(getWrapper().get('.setter-band p').text()).toBe('Setter taught')
     status.tool.in_spindle = 1
     await nextTick()
     await press('Touch off')
+    await press('Start probe')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
     await answer({ ...state, measurement: { calibration: false, tool: 1, contact: [0, 0, -13], value: 27, previous_length: 25.4, stopping_distance: 0.03 }, measured_tools: [98, 1] })
     expect(getWrapper().get('.setter-band p').text()).toBe('T01 measured')
@@ -134,8 +139,9 @@ describe('fixed setter workflow', () => {
     // Restarted: no taught setter, but the saved marks still match the tool table.
     await answer({ calibration: null, measurement: null, measured_tools: [1, 98] })
     expect(getWrapper().findAll('.tool-row').filter((row) => row.find('.touched').exists()).map((row) => row.find('.tool-number').text())).toContain('T01')
-    expect(getWrapper().get('.setter-band p').text()).toBe('Jog T01 over the setter, then Touch off.')
     await press('Touch off')
+    expect(getWrapper().get('[role=dialog]').attributes('aria-label')).toBe('Teach the tool setter')
+    await press('Start probe')
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'touch_off', tool: 1, x: 0, y: 0, z: 0 })
     await answer({ calibration: [0, 0, -40], measurement: { calibration: true, tool: 1, contact: [0, 0, -13], value: -40, previous_length: 25.4, stopping_distance: 0.03 }, measured_tools: [1, 98] })
     expect(getWrapper().get('.setter-band p').text()).toBe('Setter taught')

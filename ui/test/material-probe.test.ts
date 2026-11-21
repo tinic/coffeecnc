@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MaterialProbeControls from '../src/components/MaterialProbeControls.vue'
-import NumberDialog from '../src/components/NumberDialog.vue'
+import ProbeGuideDialog from '../src/components/ProbeGuideDialog.vue'
 import { panel, send } from '../src/machine'
 import type { CommandResult, ProbeDirection } from '../src/protocol'
 import { setterState } from '../src/setter-state'
@@ -22,8 +22,10 @@ vi.mock('../src/machine', async () => {
     } }
 })
 
+const global = { stubs: { Teleport: true, GuideCanvas: true } }
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true }))
   vi.mocked(send).mockReset()
   const status = new SimMachine({ emit: (): void => undefined }).status()
   status.machine = 'on'; status.link = 'live'; status.tool.in_spindle = 99
@@ -33,14 +35,20 @@ beforeEach(() => {
   panel.link = 'live'
   setterState.value = { calibration: [0, 0, -10], measurement: null, measured_tools: [98, 99] }
 })
-afterEach(() => { wrapper?.unmount(); wrapper = undefined })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.unstubAllGlobals() })
 
 async function probe(label: string): Promise<VueWrapper> {
-  const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 } })
+  const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 }, global })
   const button = fixture.findAll('button').find((entry) => entry.text() === label)
   if (!button) throw new Error(`Missing ${label}`)
   expect(button.attributes('disabled')).toBeUndefined()
+  const wasOpen = fixture.findComponent(ProbeGuideDialog).exists()
+  const before = vi.mocked(send).mock.calls.length
   await button.trigger('click')
+  if (!wasOpen && fixture.findComponent(ProbeGuideDialog).exists()) {
+    expect(send).toHaveBeenCalledTimes(before)
+    if (!fixture.find('.dimension input').exists()) await fixture.get('.start-probe').trigger('click')
+  }
   return fixture
 }
 async function answer(result: Omit<CommandResult, 'id' | 'type'>): Promise<void> {
@@ -63,6 +71,21 @@ const cornerCases: [string, 'x_minus' | 'x_plus', 'y_minus' | 'y_plus', string][
   ['X− Y+', 'x_plus', 'y_minus', 'back-left corner'],
   ['X+ Y+', 'x_minus', 'y_minus', 'back-right corner'],
 ]
+
+describe('probe setup guides', () => {
+  it.each([...faces.map(([label]) => label), ...cornerCases.map(([label]) => label),
+    'Bore centre', 'Boss centre…', 'Edge angle…', 'Calibrate ball…'])('opens and closes %s without any motion', async (label) => {
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    const button = wrapper.findAll('button').find(entry => entry.text() === label)
+    if (!button) throw new Error(`Missing ${label}`)
+    await button.trigger('click')
+    expect(wrapper.get('[role="dialog"] .instruction').text()).toContain('Jog here first')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] header button[aria-label="Close"]').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+})
 
 describe('corner probe workflow', () => {
   it.each(cornerCases)('probes the %s corner from over the part and sets X0 and Y0', async (label, x, y, name) => {
@@ -95,8 +118,8 @@ describe('bore and boss centres', () => {
   it('asks for the approximate boss diameter, then centres on it', async () => {
     const fixture = await probe('Boss centre…')
     expect(send).not.toHaveBeenCalled()
-    fixture.findComponent(NumberDialog).vm.$emit('confirm', 30, '30')
-    await nextTick()
+    await fixture.get('.dimension input').setValue('30mm')
+    await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss', diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Probing the boss sides…')
   })
@@ -105,8 +128,7 @@ describe('bore and boss centres', () => {
 describe('edge angle', () => {
   it('probes the front edge at two points and reports the turn', async () => {
     const fixture = await probe('Edge angle…')
-    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
-    await nextTick()
+    await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'angle', direction: 'y_plus', spacing: 50,
       tool: 99, x: 0, y: 0, z: 0 })
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: -0.1 } })
@@ -115,12 +137,11 @@ describe('edge angle', () => {
   it('selects the left edge and applies the recorded rotation only after confirmation', async () => {
     if (!panel.status) throw new Error('Missing machine status')
     panel.status.offsets.wcs = 2
-    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global: { stubs: { Teleport: true } } })
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
     const fixture = await probe('Edge angle…')
     await probe('Left · X−')
-    expect(fixture.get('.entry .label').text()).toBe('Distance along Y')
-    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
-    await nextTick()
+    expect(fixture.get('.instruction p').text()).toContain('along Y')
+    await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'angle', direction: 'x_plus',
       spacing: 50, tool: 99, x: 0, y: 0, z: 0 })
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
@@ -138,10 +159,9 @@ describe('edge angle', () => {
   it('withdraws the confirmation when the measured work system changes', async () => {
     if (!panel.status) throw new Error('Missing machine status')
     panel.status.offsets.wcs = 2
-    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global: { stubs: { Teleport: true } } })
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
     const fixture = await probe('Edge angle…')
-    fixture.findComponent(NumberDialog).vm.$emit('confirm', 50, '50')
-    await nextTick()
+    await fixture.get('.start-probe').trigger('click')
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
       edge_angle: -0.1, edge_rotation: { wcs: 2, measurement_id: 8 } } })
     await probe('Apply rotation…')
@@ -156,12 +176,11 @@ describe('edge angle', () => {
 
 describe('ball calibration', () => {
   it('asks for the gauge width, probes both sides and reports the saved diameter', async () => {
-    const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 } })
+    const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 }, global })
     await fixture.get('button.calibrate').trigger('click')
-    const dialog = fixture.findComponent(NumberDialog)
-    expect(dialog.exists()).toBe(true)
-    dialog.vm.$emit('confirm', 20.1, '20.1')
-    await nextTick()
+    expect(fixture.findComponent(ProbeGuideDialog).exists()).toBe(true)
+    await fixture.get('.dimension input').setValue('40.2mm/2')
+    await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'ball', gauge_width: 20.1,
       tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Probing both sides of the gauge…')
@@ -213,7 +232,7 @@ describe('material probe workflow', () => {
     panel.hello = { ...hello, fixed_setter: {
       reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_travel_mm: 20,
     } }
-    wrapper = mount(MaterialProbeControls, { props: { tool: 99 } })
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
     await answer({ outcome: 'accepted', reason: '', setter: {
       calibration: [0, 0, -10], measurement: null, measured_tools: [98, 99],

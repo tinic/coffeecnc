@@ -960,6 +960,34 @@ const examples = [
     "reason": "LinuxCNC did not answer."
   },
   {
+    "type": "result",
+    "id": 45,
+    "outcome": "accepted",
+    "reason": "",
+    "restart": {
+      "plan_id": 3,
+      "line": 25,
+      "tool": 98,
+      "needs_tool_change": true,
+      "wcs": 1,
+      "h": 98,
+      "spindle_direction": "stopped",
+      "spindle_rpm": 0,
+      "flood": false,
+      "mist": false,
+      "feed": 600,
+      "units": "mm",
+      "plane": "XY",
+      "distance_mode": "absolute",
+      "clearance_z": 30,
+      "start": [
+        -16,
+        12,
+        30
+      ]
+    }
+  },
+  {
     "type": "directory",
     "path": "/home/cnc/nc_files",
     "parent": null,

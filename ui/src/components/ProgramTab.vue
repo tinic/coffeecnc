@@ -9,6 +9,7 @@ import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
 import PartModel from './PartModel.vue'
+import RestartDialog from './RestartDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
 
@@ -73,6 +74,23 @@ const runState = computed(() => {
   if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
 })
+// A restart is planned from an idle, loaded program whose text is the one the machine has.
+const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
+  sections.value.length > 0)
+const restartAt = ref<{ line: number; section: string } | null>(null)
+function sectionName(index: number): string {
+  const section = sections.value[index]
+  return section === undefined ? '' : `Section ${String(index + 1)} · ${toolLabel(section.tool)}`
+}
+function restartLine(line: number): void {
+  let index = -1
+  sections.value.forEach((section, candidate) => { if (section.first <= line) index = candidate })
+  restartAt.value = { line, section: index < 0 ? 'Before the first tool section' : sectionName(index) }
+}
+function restartSection(index: number): void {
+  const section = sections.value[index]
+  if (section !== undefined) restartAt.value = { line: section.first, section: sectionName(index) }
+}
 async function showFailure(): Promise<void> {
   if (failureLine.value === 0) return
   panel.programLayout = 'text'
@@ -92,7 +110,7 @@ async function showFailure(): Promise<void> {
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
-            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" />
+            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart" @restart="restartLine" />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
@@ -107,10 +125,13 @@ async function showFailure(): Promise<void> {
         <div class="inspector-body">
           <div class="panel-head"><h2>Tool sequence</h2><span class="kicker">{{ sections.length }} sections</span></div>
           <div class="sections">
-            <button v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
-              <span class="section-number mono">{{ index + 1 }}</span>
-              <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}</small></span>
-            </button>
+            <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
+              <button class="section" type="button" :aria-pressed="currentTool === section.tool" @click="selected = section.tool">
+                <span class="section-number mono">{{ index + 1 }}</span>
+                <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}</small></span>
+              </button>
+              <button v-if="canRestart" class="btn section-restart" type="button" :aria-label="`Restart ${sectionName(index)}`" @click="restartSection(index)">Restart</button>
+            </div>
             <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
           </div>
           <div class="tool">
@@ -124,6 +145,7 @@ async function showFailure(): Promise<void> {
         <PartModel />
       </aside>
     </div>
+    <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
     <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
@@ -140,6 +162,7 @@ async function showFailure(): Promise<void> {
 .inspector { display: flex; flex-direction: column; min-height: 0; padding: 20px; border-left: 1px solid var(--line); overflow-y: auto; }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }.kicker { font-size: 10px; letter-spacing: .8px; color: var(--text-dim); text-transform: uppercase; }
 .sections { display: flex; flex-direction: column; gap: 5px; margin: 0 -8px 14px; }
+.section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; height: 36px; padding: 0 10px; font-size: 12px; }
 .section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
 .section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-dim); font-size: 11px; flex: none; }
 .section[aria-pressed=true] .section-number { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 4px; }.section-text strong { font-weight: 500; font-size: 13px; }.section-text small { font-size: 11px; color: var(--text-dim); }

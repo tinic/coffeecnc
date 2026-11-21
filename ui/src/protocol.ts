@@ -291,6 +291,33 @@ export interface CommandResult {
   /** Reason for anything but `accepted`, in words for the operator. */
   reason: string
   setter?: SetterState
+  /** The plan of an accepted `plan_restart`. */
+  restart?: RestartPlan
+}
+
+/**
+ * The machine state a restart at `line` sets up before running from it. Lengths are mm and feed
+ * mm/min. `clearance_z` and `start` are work coordinates of `wcs`, at the tool tip.
+ */
+export interface RestartPlan {
+  plan_id: number
+  line: number
+  tool: number
+  needs_tool_change: boolean
+  /** 1 is G54 … 9 is G59.3. */
+  wcs: number
+  /** Tool length offset register applied with G43; 0 for G49. */
+  h: number
+  spindle_direction: SpindleDirection
+  spindle_rpm: number
+  flood: boolean
+  mist: boolean
+  feed: number
+  units: LengthUnit
+  plane: 'XY' | 'XZ' | 'YZ'
+  distance_mode: 'absolute' | 'incremental'
+  clearance_z: number
+  start: Vec3
 }
 
 export interface FixedSetterLimits {
@@ -441,6 +468,17 @@ export interface SetSpindle extends CommandBase {
   /** Ignored for `stopped`. */
   rpm: number
 }
+/** Plans a restart at program `line` for the preview of `preview_context`; nothing moves. */
+export interface PlanRestart extends CommandBase {
+  type: 'plan_restart'
+  line: number
+  preview_context: number
+}
+/** Runs the plan: tool change if needed, the approach, then the program from its line. */
+export interface StartRestart extends CommandBase {
+  type: 'start_restart'
+  plan_id: number
+}
 export interface SetCoolant extends CommandBase {
   type: 'set_coolant'
   flood: boolean
@@ -552,6 +590,8 @@ export type ToMachine =
   | SetToolModelAssignment
   | SetOperatorSettings
   | SetWorkOffset
+  | PlanRestart
+  | StartRestart
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

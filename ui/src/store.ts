@@ -172,6 +172,10 @@ export function describeCommand(command: CommandBody): string {
       return `Select ${wcsName(command.wcs)}`
     case 'set_work_offset':
       return `Set ${wcsName(command.wcs)} XYZ origins`
+    case 'plan_restart':
+      return `Plan restart at line ${String(command.line)}`
+    case 'start_restart':
+      return 'Restart program'
     case 'touch_off':
       return `Touch off ${command.axis.toUpperCase()}`
     case 'tool_touch_off':
@@ -305,10 +309,11 @@ export function createPanel(options: PanelOptions): Panel {
     }
     if (message.outcome !== 'accepted') {
       const reason = message.reason === '' ? outcomeWords(message.outcome) : message.reason
-      const localSetterResult = command.type === 'fixed_setter' &&
+      // These results are shown where the operator asked; the log still keeps them.
+      const localResult = command.type === 'plan_restart' || command.type === 'fixed_setter' &&
         (command.action === 'material' && state.tab === 'probe' ||
          command.action === 'touch_off' && state.tab === 'tools')
-      log('error', reason, describeCommand(command), now(), !localSetterResult)
+      log('error', reason, describeCommand(command), now(), !localResult)
     }
     for (const listener of resultListeners) {
       listener(command, message)

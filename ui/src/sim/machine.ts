@@ -11,6 +11,7 @@ import type {
   InterpState,
   MachineState,
   Preview,
+  RestartPlan,
   Status,
   TaskMode,
   ToMachine,
@@ -44,6 +45,8 @@ export const previewDelayMs = 150
 /** Soft limits, which are also the physical travel of the simulated machine. */
 export const travel: { readonly min: Vec3; readonly max: Vec3 } = { min: [0, 0, -200], max: [400, 250, 0] }
 export const rapidVelocity = 6000
+/** Feed for the last approach move of a restart, mm/min. */
+export const restartPlungeFeed = 300
 const homeVelocity = 4800
 const minHomeSeconds = 1.5
 const homePosition: Vec3 = [0, 0, 0]
@@ -96,6 +99,16 @@ interface Exec {
   stepping: boolean
   /** A line with content has been interpreted and not yet completed. */
   ranLine: boolean
+  /** Blocks a restart runs before `nextLine`, as MDI would. */
+  preamble?: string[]
+}
+
+interface PlannedRestart {
+  plan: RestartPlan
+  context: number
+  revision: number
+  /** G0 to G3 in effect at the line, which the line may rely on. */
+  motion: number
 }
 
 type JogState =
@@ -177,6 +190,9 @@ export class SimMachine {
   private previewBlockDelete = false
   private previewPlanBroken = false
   private previewContext = 0
+  private restarts = new Map<number, PlannedRestart>()
+  private restartId = 0
+  private plannedResult: RestartPlan | null = null
   private previewDue: number | null = null
   private preview: Preview = {
     type: 'preview',
@@ -690,6 +706,19 @@ export class SimMachine {
           return
         }
       }
+      if (exec.preamble !== undefined && exec.preamble.length > 0) {
+        const block = exec.preamble.shift() ?? ''
+        try {
+          exec.queue = interpretLine(this.modal, block, exec.currentLine, false).ops.filter((op) => op.kind !== 'end')
+        } catch (caught) {
+          if (!(caught instanceof InterpError)) {
+            throw caught
+          }
+          this.execError(caught.message)
+          return
+        }
+        continue
+      }
       if (exec.source === 'mdi' || this.program === null) {
         this.exec = null
         return
@@ -731,10 +760,12 @@ export class SimMachine {
     if (this.fault === 'silent') {
       return
     }
+    this.plannedResult = null
     const rejection = this.execute(command)
+    const restart = this.takePlannedResult()
     const result: CommandResult =
       rejection === null
-        ? { type: 'result', id: command.id, outcome: 'accepted', reason: '' }
+        ? { type: 'result', id: command.id, outcome: 'accepted', reason: '', ...(restart === null ? {} : { restart }) }
         : { type: 'result', id: command.id, ...rejection }
     this.checkTools()
     this.checkOffsets()
@@ -954,6 +985,10 @@ export class SimMachine {
         }
         return null
       }
+      case 'plan_restart':
+        return this.planRestart(command.line, command.preview_context)
+      case 'start_restart':
+        return this.startRestart(command.plan_id)
       case 'tool_changed': {
         const exec = this.exec
         if (exec?.active?.kind !== 'tool_change') {
@@ -1173,6 +1208,119 @@ export class SimMachine {
       stepping,
       ranLine: false,
     }
+    return null
+  }
+
+  private takePlannedResult(): RestartPlan | null {
+    const plan = this.plannedResult
+    this.plannedResult = null
+    return plan
+  }
+
+  /** Interprets the program up to `line` without motion and plans how to resume there. */
+  private planRestart(line: number, context: number): Rejection | null {
+    const blocked = this.notOn('restart a program') ?? this.busy('restart a program')
+    if (blocked !== null) {
+      return blocked
+    }
+    if (requiresHoming(this.configuration) && !this.allHomed()) {
+      return reject("Can't restart a program when not homed")
+    }
+    const program = this.program
+    if (program === null) {
+      return reject('No program is loaded')
+    }
+    if (context !== this.previewContext || this.preview.context !== context || this.preview.state !== 'ready') {
+      return reject('Wait for the preview of this program')
+    }
+    if (!Number.isInteger(line) || line < 1 || line > program.lines.length) {
+      return reject(`Line ${String(line)} is not in the program`)
+    }
+    this.syncModal()
+    const m = cloneModal(this.modal)
+    m.pos = this.reported()
+    m.tool = this.toolInSpindle
+    let clearance = toWork(this.modal, this.reported())[2]
+    try {
+      for (let index = 0; index < line - 1; index += 1) {
+        for (const op of interpretLine(m, program.lines[index] ?? '', index + 1, this.blockDelete).ops) {
+          if (op.kind === 'end') {
+            return reject(`The program ends before line ${String(line)}`)
+          }
+          if (op.kind === 'move') {
+            for (const point of op.points) clearance = Math.max(clearance, toWork(m, point)[2])
+          }
+        }
+      }
+    } catch (caught) {
+      if (!(caught instanceof InterpError)) {
+        throw caught
+      }
+      return fail(caught.message)
+    }
+    const start = toWork(m, m.pos)
+    // The approach comes down to the start, never up to it.
+    clearance = Math.max(clearance, start[2])
+    this.restartId += 1
+    const plan: RestartPlan = {
+      plan_id: this.restartId,
+      line,
+      tool: m.tool,
+      needs_tool_change: m.tool !== this.toolInSpindle,
+      wcs: m.wcs,
+      h: m.toolOffset[2] !== 0 ? m.tool : 0,
+      spindle_direction: m.spindle,
+      spindle_rpm: m.spindle === 'stopped' ? 0 : m.speed,
+      flood: m.flood,
+      mist: m.mist,
+      feed: m.feed,
+      units: m.units,
+      plane: 'XY',
+      distance_mode: m.absolute ? 'absolute' : 'incremental',
+      clearance_z: clearance,
+      start,
+    }
+    this.restarts.clear()
+    this.restarts.set(plan.plan_id, { plan, context, revision: program.revision, motion: m.motion })
+    this.plannedResult = plan
+    return null
+  }
+
+  /** Runs a plan: the tool change and approach as blocks, then the program from its line. */
+  private startRestart(id: number): Rejection | null {
+    const planned = this.restarts.get(id)
+    if (planned === undefined) {
+      return reject('This restart plan is no longer valid. Plan it again.')
+    }
+    if (planned.context !== this.previewContext || planned.revision !== this.program?.revision) {
+      this.restarts.clear()
+      return reject('The program or machine changed since the restart was planned. Plan it again.')
+    }
+    const started = this.run(false)
+    if (started !== null || this.exec === null) {
+      return started
+    }
+    this.restarts.clear()
+    const { plan } = planned
+    const number = (value: number): string => value.toFixed(4)
+    const [x, y, z] = plan.start
+    const spindle = plan.spindle_direction === 'forward' ? `S${number(plan.spindle_rpm)} M3`
+      : plan.spindle_direction === 'reverse' ? `S${number(plan.spindle_rpm)} M4` : 'M5'
+    const coolant = plan.flood || plan.mist ? [plan.mist ? 'M7' : '', plan.flood ? 'M8' : ''].join(' ').trim() : 'M9'
+    this.exec.preamble = [
+      `G21 G90 G17 ${wcsNames[plan.wcs - 1] ?? 'G54'}`,
+      ...(plan.needs_tool_change ? [`T${String(plan.tool)} M6`] : []),
+      plan.h > 0 ? `G43 H${String(plan.h)}` : 'G49',
+      spindle,
+      coolant,
+      `G0 Z${number(plan.clearance_z)}`,
+      `G0 X${number(x)} Y${number(y)}`,
+      `G1 Z${number(z)} F${number(Math.min(plan.feed > 0 ? plan.feed : restartPlungeFeed, restartPlungeFeed))}`,
+      [planned.motion <= 1 ? `G${String(planned.motion)}` : '', plan.units === 'inch' ? 'G20' : '', plan.distance_mode === 'incremental' ? 'G91' : '',
+        plan.feed > 0 ? `F${number(plan.units === 'inch' ? plan.feed / 25.4 : plan.feed)}` : ''].join(' ').trim(),
+    ].filter((block) => block !== '')
+    this.exec.nextLine = plan.line - 1
+    this.exec.currentLine = plan.line
     return null
   }
 

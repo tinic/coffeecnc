@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { allHomed, chooseProgramLayout, findTool, homingRequired, live, onResult, panel, reported, send } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
-import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
+import { cycleTime, formatDuration, progressAt, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
 import { currentProgramPreview, describeProgramCheck } from '../program-check'
@@ -43,11 +43,11 @@ const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?
 const layouts: readonly [ProgramLayout, string][] = [['path', 'Preview'], ['text', 'Code'], ['split', 'Split']]
 // These are tool sections reported by the interpreter, not inferred CAM operations.
 const sections = computed(() => {
-  const rows: { tool: number; first: number; last: number }[] = []
-  for (const segment of drawn.value?.segments ?? []) {
+  const rows: { tool: number; first: number; last: number; start: number }[] = []
+  for (const [index, segment] of (drawn.value?.segments ?? []).entries()) {
     const last = rows.at(-1)
     if (last?.tool === segment.tool) last.last = Math.max(last.last, segment.line)
-    else rows.push({ tool: segment.tool, first: segment.line, last: segment.line })
+    else rows.push({ tool: segment.tool, first: segment.line, last: segment.line, start: index })
   }
   return rows
 })
@@ -115,14 +115,19 @@ const time = computed(() => {
   return preview !== null && limits !== null && preview.state === 'ready' ? cycleTime(preview, limits) : null
 })
 const sectionTimes = computed(() => time.value === null ? [] : sectionSeconds(time.value, sections.value))
+const progressLine = computed(() => programExecuting.value ? motionLine.value || currentLine.value : 0)
+// Where the run is in the timeline, followed forward: a subroutine or loop repeats its lines.
+const progress = ref(-1)
+watch([time, progressLine], ([estimate, line], [before]) => {
+  progress.value = estimate === null || line === 0 ? -1 : progressAt(estimate, line, estimate === before ? progress.value : 0)
+}, { immediate: true, flush: 'sync' })
 const timeLabel = computed(() => {
   const estimate = time.value
   const elapsed = elapsedSeconds.value
   if (elapsed !== null && programExecuting.value) {
-    const line = motionLine.value > 0 ? motionLine.value : currentLine.value
     // Feeds scale with the override; rapids do not, so this stays an estimate.
     const override = Math.max(status.value?.motion.feed_override ?? 1, 0.05)
-    const left = estimate !== null && line > 0 ? remainingFrom(estimate, line) / override : null
+    const left = estimate !== null && progressLine.value > 0 ? remainingFrom(estimate, progress.value) / override : null
     return `${formatDuration(elapsed)} elapsed${left === null ? '' : ` · ${formatDuration(left)} left`}`
   }
   if (estimate === null) return ''

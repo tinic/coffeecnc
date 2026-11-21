@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits, type VelocityLimits } from '../src/cycle-time'
+import { cycleTime, formatDuration, progressAt, remainingFrom, sectionSeconds, velocityLimits, type VelocityLimits } from '../src/cycle-time'
 import type { Hello, Preview, PreviewSegment } from '../src/protocol'
 import { rig } from './harness'
 
@@ -42,10 +42,24 @@ describe('cycle time', () => {
     expect(time.timeline.map((entry) => [entry.line, entry.seconds])).toEqual([[1, 1], [3, 2], [5, 1]])
     expect(time.total).toBe(4)
     expect(time.toolChanges).toBe(1)
-    expect(remainingFrom(time, 3)).toBe(3)
-    expect(remainingFrom(time, 5)).toBe(1)
-    expect(remainingFrom(time, 6)).toBe(0)
-    expect(sectionSeconds(time, [{ first: 1, last: 3 }, { first: 5, last: 5 }])).toEqual([3, 1])
+    expect(remainingFrom(time, progressAt(time, 3))).toBe(3)
+    expect(remainingFrom(time, progressAt(time, 5))).toBe(1)
+    expect(remainingFrom(time, progressAt(time, 6))).toBe(0)
+    expect(sectionSeconds(time, [{ start: 0 }, { start: 1 }])).toEqual([3, 1])
+  })
+
+  it('follows a subroutine called twice and counts it in the section that calls it', () => {
+    // Lines 20 to 21 are a subroutine at the end of the file: T1 calls it from line 3, T2 from
+    // line 7. Each move takes 1 s.
+    const move = (line: number, tool: number): PreviewSegment => ({ ...segment(line, 'feed', 600, 0, 0, 0, 10, 0, 0), tool })
+    const time = cycleTime(preview([move(2, 1), move(20, 1), move(21, 1), move(6, 2), move(20, 2), move(21, 2), move(8, 2)]), g0759)
+    expect(sectionSeconds(time, [{ start: 0 }, { start: 3 }])).toEqual([3, 4])
+    // In the second call the machine reports line 20 again: 3 s are left, not the 6 s from the first call.
+    const first = progressAt(time, 20)
+    expect(remainingFrom(time, first)).toBe(6)
+    const second = progressAt(time, 20, progressAt(time, 6, first))
+    expect(remainingFrom(time, second)).toBe(3)
+    expect(remainingFrom(time, progressAt(time, 21, second))).toBe(2)
   })
 
   it('says when a feed was not per minute and counts it at full speed', () => {

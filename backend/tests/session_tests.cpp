@@ -1,6 +1,8 @@
+#include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/session.hpp>
 
 #include "fake_file_system.hpp"
+#include "fake_tool_model_files.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -314,8 +316,9 @@ struct Rig {
   std::chrono::milliseconds clock{};
 
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
-               ToolModelService* models = nullptr)
-      : session(port, limits, programs, models), page(driver.begin_page()) {
+               ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr)
+      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history),
+        page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
     files.directory("/home/cnc/nc_files/fixtures", 1700000000000);
@@ -2099,6 +2102,127 @@ void new_page() {
 
 // Whatever arrives, and whatever the controller answers: a request with a new ID on the current,
 // ready or not, page gets exactly one result with that ID, and every other request gets none.
+// The history learns which panel command changed what, from the readings taken while it runs;
+// Restore writes the earlier value back with the block of its kind and is refused where an
+// edit would be.
+void offset_history() {
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  OffsetHistoryStore history{files, ""};
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, &history};
+  const auto machine = [](Vec3 g54, std::vector<Tool> tools) -> PanelReading {
+    PanelReading reading;
+    reading.status.link = Link::live;
+    reading.status.offsets.wcs = 1;
+    reading.status.offsets.g5x = g54;
+    reading.tool_table = {1, std::move(tools)};
+    return reading;
+  };
+  const auto observe = [&](PanelReading reading) -> void {
+    const auto now = at(rig.clock);
+    history.observe(reading, now.unix_time, now.monotonic);
+  };
+  const auto newest = [&]() -> HistoryEntry { return history.snapshot()->entries.front(); };
+  const auto end_mill = [](double length, double diameter) -> std::vector<Tool> {
+    return {{3, 3, length, diameter, "End mill"}};
+  };
+  observe(machine({10, 20, -30}, end_mill(48.2, 12.7)));
+  // The controller applies each block while the worker waits for it.
+  const auto applies = [&](const std::string& action, const PanelReading& reading) -> void {
+    rig.port.during[action] = [&observe, reading]() -> void { observe(reading); };
+  };
+
+  applies("mdi", machine({0, 20, -30}, end_mill(48.2, 12.7)));
+  rig.accepted(R"("type":"touch_off","axis":"x","value":0,"origin":"zero")");
+  rig.acted({"set_task_mode mdi", "mdi G10 L20 P0 X0"}, "Zero is a touch-off");
+  const auto zero = newest();
+  require(zero.source == HistorySource::zero && zero.number == 1 && zero.changes.size() == 1 &&
+              zero.changes[0].before == 10 && zero.changes[0].after == 0,
+          "Zero is named in the history");
+  applies("mdi", machine({0, 10, -30}, end_mill(48.2, 12.7)));
+  rig.accepted(R"("type":"touch_off","axis":"y","value":10,"origin":"half")");
+  require(newest().source == HistorySource::half, "Half is named");
+  applies("mdi", machine({0, 10, -25}, end_mill(48.2, 12.7)));
+  rig.accepted(R"("type":"touch_off","axis":"z","value":5)");
+  require(newest().source == HistorySource::touch_off, "A typed touch-off is named");
+  applies("mdi", machine({0, 10, -20}, end_mill(48.2, 12.7)));
+  rig.accepted(R"("type":"mdi","text":"G10 L2 P1 Z-20")");
+  require(newest().source == HistorySource::mdi, "The panel's MDI line is named");
+  rig.acted({"mdi G10 L20 P0 Y10", "mdi G10 L20 P0 Z5", "mdi G10 L2 P1 Z-20"},
+            "The origin of a touch-off changes nothing that is sent");
+  applies("set_tool", machine({0, 10, -20}, end_mill(50, 6)));
+  rig.accepted(
+      R"("type":"set_tool","tool":{"number":3,"pocket":3,"length":50,"diameter":6,"comment":"End mill"})");
+  const auto edited = newest();
+  require(edited.source == HistorySource::tool_table && edited.target == HistoryTarget::tool &&
+              edited.number == 3 && edited.changes.size() == 2,
+          "A tool table edit is named");
+  rig.acted({"set_tool 3 3 50 6 End mill"}, "The edit itself");
+  // Long after the last command, a change none of the panel's.
+  rig.clock += 10s;
+  observe(machine({0, 10, -21}, end_mill(50, 6)));
+  require(newest().source == HistorySource::outside, "Anything else is outside the panel");
+
+  applies("mdi", machine({10, 10, -21}, end_mill(50, 6)));
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", zero.id));
+  rig.acted({"mdi G10 L2 P1 X10"}, "A work offset is restored with G10 L2, its fields only");
+  const auto restored = newest();
+  require(restored.source == HistorySource::restore && restored.restores == zero.id &&
+              restored.changes[0].before == 0 && restored.changes[0].after == 10,
+          "A restore is itself in the history, with the entry it restored");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", edited.id));
+  rig.acted({"mdi G10 L1 P3 Z1.8976377952755907 R0.25"},
+            "A tool is restored with G10 L1: length, and the radius of the diameter, in inches");
+  rig.port.state.program_units = LengthUnit::mm;
+
+  // A G92 shift is restored with G52, its fields only. G52 stores the offset in effect for an
+  // axis it does not name, 0 while G92.2 suspends the shift: LinuxCNC is made to refuse the
+  // block (a divisor of 0) when the shift is suspended and such an axis stores a value.
+  auto shifted = machine({10, 10, -21}, end_mill(50, 6));
+  shifted.status.offsets.g92 = {2, 9, 0};
+  rig.clock += 10s;
+  observe(shifted);
+  const auto both = newest();
+  shifted.status.offsets.g92 = {4, 9, 0};
+  rig.clock += 10s;
+  observe(shifted);
+  const auto only_x = newest();
+  require(both.target == HistoryTarget::g92 && both.changes.size() == 2 &&
+              only_x.target == HistoryTarget::g92 && only_x.changes.size() == 1 &&
+              only_x.changes[0].field == HistoryField::x,
+          "G92 shifts are in the history");
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", only_x.id));
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", both.id));
+  rig.acted({"mdi G52 X[2+0/[#5210+[1 AND [#5212 EQ 0] AND [#5213 EQ 0]]]]",
+             "mdi G52 X[0+0/[#5210+[1 AND [#5213 EQ 0]]]] Y0"},
+            "G52 names the restored axes; a suspended stored value elsewhere refuses it");
+
+  // A work system that was never active: written, but with nothing to restore.
+  rig.accepted(R"("type":"set_work_offset","wcs":2,"offset":[25.4,-50.8,0])");
+  const auto inactive = newest();
+  require(inactive.source == HistorySource::work_offset_table && inactive.number == 2 &&
+              inactive.changes.size() == 3 && !inactive.changes[0].before,
+          "An edit of an inactive system is recorded when it is written");
+  rig.acted({"mdi G10 L2 P2 X25.4 Y-50.8 Z0"}, "The edit itself");
+  rig.expect(std::format(R"("type":"restore_offset","entry":{})", inactive.id), "rejected",
+             "This entry has no earlier value to restore.");
+  rig.expect(R"("type":"restore_offset","entry":999)", "rejected",
+             "That history entry is no longer kept.");
+  rig.port.state.machine = MachineState::off;
+  rig.expect(std::format(R"("type":"restore_offset","entry":{})", zero.id), "rejected",
+             "Machine power is off or E-stop is active.");
+  rig.port.state.machine = MachineState::on;
+  rig.port.state.interp = InterpState::reading;
+  rig.expect(std::format(R"("type":"restore_offset","entry":{})", zero.id), "rejected",
+             "Wait for the interpreter and motion to become idle.");
+  rig.acted({}, "A refused restore sends nothing");
+
+  Rig plain;
+  plain.expect(R"("type":"restore_offset","entry":1)", "rejected",
+               "This CoffeeCNC keeps no offset history.");
+}
+
 void exactly_one_result(std::uint32_t seed) {
   constexpr std::array<std::string_view, 30> bodies{
       R"("type":"ready")",
@@ -2268,6 +2392,7 @@ auto main(int argc, char** argv) -> int {
     directory_listing();
     program_paths();
     composed_mdi();
+    offset_history();
     jog_presses_and_refreshes();
     jog_failures();
     late_jog_starts();

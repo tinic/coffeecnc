@@ -85,7 +85,18 @@ void protocol_forms() {
   require(origin.wcs == 2 && origin.offset == std::array<double, 3>{25.4, -50.8, 0},
           "Explicit system and XYZ machine origins in millimetres");
   const auto touch = body<TouchOff>(R"({"id":42,"type":"touch_off","axis":"z","value":-2.5})");
-  require(touch.axis == Axis::z && touch.value == -2.5, "Touch-off value");
+  require(touch.axis == Axis::z && touch.value == -2.5 && touch.origin == TouchOrigin::typed,
+          "Touch-off value");
+  require(body<TouchOff>(R"({"id":42,"type":"touch_off","axis":"x","value":0,"origin":"zero"})")
+                  .origin == TouchOrigin::zero &&
+              body<TouchOff>(R"({"id":42,"type":"touch_off","axis":"x","value":5,"origin":"half"})")
+                      .origin == TouchOrigin::half,
+          "A quick action names itself for the offset history");
+  rejected(R"({"id":42,"type":"touch_off","axis":"x","value":0,"origin":"typed"})", 42);
+  require(body<RestoreOffset>(R"({"id":42,"type":"restore_offset","entry":7})").entry == 7,
+          "A restore names its history entry");
+  rejected(R"({"id":42,"type":"restore_offset","entry":0})", 42);
+  rejected(R"({"id":42,"type":"restore_offset","entry":7,"wcs":1})", 42);
   require(body<ToolTouchOff>(R"({"id":42,"type":"tool_touch_off","value":25.4})").value == 25.4,
           "Tool touch-off millimetres");
   const auto inside = body<FixedSetterRequest>(

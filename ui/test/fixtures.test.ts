@@ -135,6 +135,7 @@ const examples: Examples = {
   edit_program: { id: 33, type: 'edit_program', path: '/home/cnc/nc_files/part.ngc', line: 12, old_text: 'G1 X10 F600', new_text: 'G1 X10 F450' },
   jog_paused_z: { id: 35, type: 'jog_paused_z', distance: 1 },
   save_program: { id: 36, type: 'save_program', path: '/home/cnc/nc_files/facing-60x40mm.ngc', text: '(Facing)\nG21\nM2\n' },
+  restore_offset: { id: 37, type: 'restore_offset', entry: 10 },
 }
 
 describe('protocol/fixtures/commands.json', () => {

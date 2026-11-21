@@ -23,6 +23,7 @@
 #include <vector>
 
 namespace coffeecnc {
+class OffsetHistoryStore;
 class ProgramWriter;
 
 
@@ -194,6 +195,10 @@ struct Work {
 // the controller only with a path the store resolved: a regular file inside the program
 // directory; anything else is `rejected`.
 //
+// `restore_offset` writes back the `before` values of an offset history entry through MDI:
+// G10 L2 for a work system, G52 for G92/G52, G10 L1 for a tool's length and radius. Refused for
+// an entry the history no longer holds or one with an unknown or removed value.
+//
 // `set_tool_model_defaults` and `set_tool_model_assignment` are answered by the tool-model
 // service, whatever the machine and the link are doing: they pass the page, ready and ID checks
 // in `submit` and are handed over there. They never wait in the request queues, so the worker
@@ -213,10 +218,12 @@ public:
   static constexpr auto panel_frame_timeout = std::chrono::milliseconds{500};
 
   // The port, the store and the tool-model service (may be null) must outlive the session.
-  // Throws std::invalid_argument for invalid limits.
+  // The offset history (may be null) is told which panel command may change offsets while it
+  // runs, and serves `restore_offset`. Throws std::invalid_argument for invalid limits.
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
-          PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr);
+          PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
+          OffsetHistoryStore* history = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -365,6 +372,8 @@ private:
   [[nodiscard]] auto stop_all() -> ActionResult;
   [[nodiscard]] auto tracked_stop(std::size_t index) -> ActionResult;
   [[nodiscard]] auto mdi(const Queued& request, const std::string& text) const -> Stage;
+  [[nodiscard]] auto restore_offset(const Queued& request, const RestoreOffset& command,
+                                    const ControllerState& state, const Clock& clock) -> Stage;
   [[nodiscard]] auto list_directory(const ListDirectory& request, Stage& step) -> Reply;
   void flush_stops();
   void cancel_jogs(Queued* keep_press);
@@ -378,6 +387,7 @@ private:
   PreviewWorker* preview_;
   PreviewEngine* restart_engine_;
   ProgramWriter* program_writer_;
+  OffsetHistoryStore* history_;
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.

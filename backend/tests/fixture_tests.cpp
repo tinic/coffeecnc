@@ -70,7 +70,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "start_restart",
     "edit_program",
     "jog_paused_z",
-    "save_program"};
+    "save_program",
+    "restore_offset"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};
@@ -329,6 +330,28 @@ auto encoded_messages() -> std::vector<Encoded> {
       {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(encode_operator_settings(
       {"G0759", 0, ToolModelAvailability::unavailable, "Operator settings file is corrupt", {}}));
+
+  OffsetHistory history{4, true, "", {}};
+  const auto change = [](HistoryField field, std::optional<double> before,
+                         std::optional<double> after) -> HistoryChange {
+    return {field, before, after};
+  };
+  history.entries = {
+      {12, 1700000003000, HistorySource::restore, HistoryTarget::wcs, 1,
+       {change(HistoryField::x, 0, 112.5)}, 10},
+      {11, 1700000002000, HistorySource::tool_table, HistoryTarget::tool, 3,
+       {change(HistoryField::length, 48.2, 50), change(HistoryField::diameter, 6, 6.35)}, {}},
+      {10, 1700000001000, HistorySource::zero, HistoryTarget::wcs, 1,
+       {change(HistoryField::x, 112.5, 0)}, {}},
+      {9, 1700000000500, HistorySource::outside, HistoryTarget::g92, 0,
+       {change(HistoryField::z, 0, 2)}, {}},
+      {8, 1700000000250, HistorySource::probe, HistoryTarget::wcs, 2,
+       {change(HistoryField::rotation_xy, {}, 15)}, {}},
+      {7, 1700000000000, HistorySource::tool_table, HistoryTarget::tool, 4,
+       {change(HistoryField::length, 61.75, {}), change(HistoryField::diameter, 3.175, {})}, {}}};
+  messages.push_back(encode_offset_history(history));
+  messages.push_back(
+      encode_offset_history({1, false, "No machine identity configured", {}}));
   return messages;
 }
 
@@ -391,6 +414,17 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("level", message.at("level").get<std::string>());
   } else if (type == "result") {
     add("outcome", message.at("outcome").get<std::string>());
+  } else if (type == "offset_history") {
+    add("storage", message.at("storage").get<std::string>());
+    add("entries", message.at("entries").empty() ? "empty" : "some");
+    for (const auto& entry : message.at("entries")) {
+      add("target", entry.at("target").get<std::string>());
+      add("restores", entry.at("restores").is_null() ? "null" : "given");
+      for (const auto& change : entry.at("changes")) {
+        add("before", change.at("before").is_null() ? "null" : "given");
+        add("after", change.at("after").is_null() ? "null" : "given");
+      }
+    }
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
     add("truncated", message.at("truncated").get<bool>() ? "true" : "false");
@@ -501,6 +535,20 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "directory entries some",
     "directory kind directory",
     "directory kind file",
+    "offset_history",
+    "offset_history storage saved",
+    "offset_history storage session_only",
+    "offset_history entries empty",
+    "offset_history entries some",
+    "offset_history target wcs",
+    "offset_history target g92",
+    "offset_history target tool",
+    "offset_history restores null",
+    "offset_history restores given",
+    "offset_history before null",
+    "offset_history before given",
+    "offset_history after null",
+    "offset_history after given",
 });
 
 void every_machine_message_encodes() {

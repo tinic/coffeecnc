@@ -1908,11 +1908,13 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
 auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& start = inputs.start;
+  if (s.controller.link == Link::live && s.active_codes != start.active_codes)
+    return "The interpreter modes changed. Review a fresh program check.";
   if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
       s.controller.tool_in_spindle != start.tool_in_spindle ||
-      s.controller.program_units != start.program_units || s.active_codes != start.active_codes ||
+      s.controller.program_units != start.program_units ||
       s.spindle_direction != start.spindle_direction ||
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position) ||

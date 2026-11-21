@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import {
-  AmbientLight, BufferAttribute, BufferGeometry, Color, DirectionalLight, EdgesGeometry, Group,
+  BufferAttribute, BufferGeometry, Color, EdgesGeometry, Group,
   LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshStandardMaterial, OrthographicCamera, Scene, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { boxCorners, type Camera } from '../pathview'
+import { lightPreview } from '../preview-lighting'
 import { part, showPart } from '../step'
 import { modelToMachine } from '../step-model'
 import { ToolMesh } from '../tool-mesh'
 import { toolPreviewBounds, type ToolPreview } from '../tool-preview'
+import { probeFixtureBounds } from '../sim/probe-fixture'
+import { buildProbeFixture } from '../sim/probe-mesh'
 
-const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null }>()
+const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null; probeFixture: boolean }>()
 const emit = defineEmits<{ error: [message: string] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const scene = new Scene()
@@ -24,6 +27,17 @@ const surfaces: MeshStandardMaterial[] = []
 const lines: LineBasicMaterial[] = []
 let renderer: WebGLRenderer | null = null
 let contextLost = false
+let fixture: ReturnType<typeof buildProbeFixture> | null = null
+
+function buildFixture(): void {
+  if (fixture) {
+    scene.remove(fixture.group)
+    fixture.dispose()
+  }
+  fixture = props.probeFixture ? buildProbeFixture() : null
+  if (fixture) scene.add(fixture.group)
+  draw()
+}
 
 function clear(): void {
   group.clear()
@@ -43,7 +57,7 @@ function build(): void {
     geometries.push(geometry)
     const material = new MeshStandardMaterial({
       color: mesh.color === null ? new Color('#a5b5be') : new Color(...mesh.color),
-      metalness: 0.12, roughness: 0.65, transparent: true, opacity: part.opacity,
+      metalness: 0.36, roughness: 0.42, transparent: true, opacity: part.opacity,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
     })
     surfaces.push(material)
@@ -51,7 +65,7 @@ function build(): void {
     // Edge extraction is a display convenience; avoid expensive work for large tessellations.
     if ((part.attachment?.geometry.triangles ?? Infinity) <= 50_000) {
       const edges = new EdgesGeometry(geometry, 30)
-      const outline = new LineBasicMaterial({ color: '#526574', transparent: true, opacity: 0.5 })
+      const outline = new LineBasicMaterial({ color: '#526574', transparent: true, opacity: 0.5, toneMapped: false })
       geometries.push(edges)
       lines.push(outline)
       group.add(new LineSegments(edges, outline))
@@ -70,6 +84,10 @@ function draw(): void {
   if (renderer === null || contextLost || props.width <= 0 || props.height <= 0) return
   const attachment = part.attachment
   const corners: [number, number, number][] = []
+  if (fixture) {
+    const { min, max } = probeFixtureBounds()
+    corners.push(...boxCorners(min, max))
+  }
   group.visible = showPart.value && attachment !== null
   if (attachment !== null && group.visible) {
     const toWorld = (p: [number, number, number]): [number, number, number] => modelToMachine(p, part.placement, attachment.binding.frame)
@@ -82,7 +100,6 @@ function draw(): void {
   }
   toolMesh.group.visible = props.tool !== null
   if (props.tool !== null) {
-    toolMesh.light(renderer)
     toolMesh.group.position.set(...props.tool.tip)
     toolMesh.setTheme(theme.value === 'dark')
     const bounds = toolPreviewBounds(props.tool)
@@ -91,15 +108,30 @@ function draw(): void {
   const extent = Math.max(0, ...corners.map((p) => Math.hypot(p[0] - props.camera.centre[0], p[1] - props.camera.centre[1], p[2] - props.camera.centre[2])))
   syncModelCamera(modelCamera, props.camera, props.width, props.height, extent)
   surfaces.forEach((material) => { material.opacity = part.opacity })
-  lines.forEach((material) => { material.color.set(theme.value === 'dark' ? '#a2b8c8' : '#526574'); material.opacity = part.opacity * 0.75 })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.setSize(props.width, props.height, false)
+  lines.forEach((material) => {
+    material.color.set(theme.value === 'dark' ? '#a3b4bf' : '#4c6474')
+    material.opacity = part.opacity * 0.65
+  })
+  const ratio = Math.min(window.devicePixelRatio, 2)
+  const surface = renderer.domElement
+  if (renderer.getPixelRatio() !== ratio || surface.width !== Math.floor(props.width * ratio)
+    || surface.height !== Math.floor(props.height * ratio)) {
+    renderer.setPixelRatio(ratio)
+    renderer.setSize(props.width, props.height, false)
+  }
   renderer.render(scene, modelCamera)
 }
 
 function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
-function restored(): void { contextLost = false; toolMesh.resetLighting(); emit('error', ''); draw() }
+function restored(): void {
+  contextLost = false
+  toolMesh.resetLighting()
+  if (renderer !== null) scene.environment = toolMesh.light(renderer)
+  emit('error', '')
+  draw()
+}
 watch(() => part.attachment?.geometry, build)
+watch(() => props.probeFixture, buildFixture)
 // Status changes move the existing mesh; only changed dimensions rebuild it.
 watch(() => JSON.stringify(props.tool?.model ?? null), buildTool)
 watch([(): unknown => props.camera, (): unknown => props.width, (): unknown => props.height, (): unknown => part.placement, (): unknown => part.attachment?.binding,
@@ -109,14 +141,13 @@ onMounted(() => {
   if (canvas.value === null) return
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
-    renderer.setClearColor(0, 0)
-    scene.add(group, toolMesh.group, new AmbientLight(0xffffff, 1.6))
-    const key = new DirectionalLight(0xffffff, 2.4)
-    key.position.set(-100, -200, 350)
-    scene.add(key)
+    lightPreview(scene, renderer)
+    scene.environment = toolMesh.light(renderer)
+    scene.add(group, toolMesh.group)
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
     emit('error', '')
+    buildFixture()
     build()
     buildTool()
   } catch {
@@ -127,6 +158,7 @@ onBeforeUnmount(() => {
   canvas.value?.removeEventListener('webglcontextlost', lost)
   canvas.value?.removeEventListener('webglcontextrestored', restored)
   clear()
+  fixture?.dispose()
   toolMesh.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()

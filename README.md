@@ -80,7 +80,7 @@ The G0759 screenshots come from the controller. The Machine screenshots come fro
 
 ## Try it in the browser
 
-[Open the CoffeeCNC demo](https://tinic.github.io/coffeecnc/?scene=running&tab=program&theme=light): the full panel against a simulated machine, running in your browser. Nothing on the page talks to a real machine. Jog, home, open and run the sample programs, change overrides, restart from a line. The simulator has no tool setter or touch probe.
+[Open the CoffeeCNC demo](https://tinic.github.io/coffeecnc/?scene=running&tab=program&theme=light): the full panel against a simulated machine, running in your browser. Nothing on the page talks to a real machine. Jog, home, open and run the sample programs, change overrides, restart from a line. [Touch off in the demo](https://tinic.github.io/coffeecnc/?scene=probe&tab=probe) has a touch probe (T99), a tool setter with its reference tool (T98), end mills and test parts: try the probe guides, corners, bore and boss, and measure tool lengths on the setter.
 
 To run it locally:
 

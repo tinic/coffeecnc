@@ -1054,6 +1054,21 @@ void program_with_tool_change(const Rig& rig, const std::filesystem::path& progr
         rig.wait_js("__t.last.status.interp === 'idle' && !__t.find('button.main-action').disabled") &&
             rig.click("button.main-action", "") == "ok",
         rig.js("const b = __t.find('button.main-action'); return [__t.text(b), b.title];").dump());
+  if (rig.config.machine_units == LengthUnit::inch) {
+    const bool warned = rig.wait_js(
+        "!!__t.find('[role=\"dialog\"] .issues li', 'Program units differ from the inch display.')");
+    check("inch_panel_warns_about_metric_program", warned);
+    check("program_check_metrics_are_readable", warned && rig.wait_js(R"((() => {
+      const metrics = document.querySelector('[role="dialog"] .metrics');
+      if (!metrics) return false;
+      const bottom = metrics.getBoundingClientRect().bottom;
+      return [...metrics.querySelectorAll('dt, dd')].every(cell =>
+        cell.getBoundingClientRect().bottom <= bottom + 1);
+    })())"));
+    rig.snapshot("program-check");
+    check("panel_confirms_metric_program_on_inch_display",
+          warned && rig.click("[role=\"dialog\"] footer .btn.primary", "Run program") == "ok");
+  }
   check("program_runs", rig.wait_js("__t.last.status.mode === 'auto' && "
                                     "__t.last.status.interp !== 'idle' && "
                                     "__t.last.status.program.motion_line >= 3", 10s),

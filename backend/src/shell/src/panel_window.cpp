@@ -108,8 +108,26 @@ void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
     refuse(request, method_not_allowed, "Only GET.");
     return;
   }
-  const auto asset =
-      resolve_asset(self->options.ui_directory, webkit_uri_scheme_request_get_uri(request));
+  const std::string_view uri = webkit_uri_scheme_request_get_uri(request);
+  // The STEP model beside the loaded program, outside the panel directory by design.
+  if (const auto part = resolve_program_part(uri)) {
+    GFile* file = g_file_new_for_path(part->c_str());
+    GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
+                                        G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+    GFileInputStream* stream = info != nullptr ? g_file_read(file, nullptr, nullptr) : nullptr;
+    if (stream == nullptr)
+      refuse(request, not_found, "No model beside the program.");
+    else {
+      respond(request, ok, "application/octet-stream", G_INPUT_STREAM(stream),
+              static_cast<gint64>(g_file_info_get_size(info)));
+      g_object_unref(stream);
+    }
+    if (info != nullptr)
+      g_object_unref(info);
+    g_object_unref(file);
+    return;
+  }
+  const auto asset = resolve_asset(self->options.ui_directory, uri);
   if (!asset) {
     refuse(request, asset.error(), "Not a file of the panel.");
     return;

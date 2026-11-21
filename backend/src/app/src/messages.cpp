@@ -248,6 +248,12 @@ auto encode_hello(const Hello& hello) -> Encoded {
   }
   if (hello.touch_probe_tool)
     message["touch_probe_tool"] = *hello.touch_probe_tool;
+  if (!hello.program_places.empty()) {
+    auto places = Json::array();
+    for (const auto& place : hello.program_places)
+      places.push_back({{"name", place.name}, {"path", place.path}});
+    message["program_places"] = std::move(places);
+  }
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
   if (const auto& setter = hello.fixed_setter)

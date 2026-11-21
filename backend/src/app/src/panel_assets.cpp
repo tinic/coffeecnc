@@ -95,6 +95,34 @@ auto content_type_of(std::string_view file) -> std::string_view {
 
 auto is_panel_url(std::string_view url) -> bool { return path_of(url).has_value(); }
 
+auto resolve_program_part(std::string_view url) -> std::optional<std::string> {
+  if (path_of(url) != program_part_path)
+    return {};
+  const auto query = url.find('?');
+  if (query == std::string_view::npos)
+    return {};
+  auto parameters = url.substr(query + 1);
+  parameters = parameters.substr(0, parameters.find('#'));
+  constexpr std::string_view key = "program=";
+  if (!parameters.starts_with(key) || parameters.find('&') != std::string_view::npos)
+    return {};
+  const auto program = unescaped(parameters.substr(key.size()));
+  if (!program || program->empty() || program->front() != '/' ||
+      program->find('\0') != std::string::npos)
+    return {};
+  std::error_code error;
+  const std::filesystem::path path{*program};
+  if (!std::filesystem::is_regular_file(path, error))
+    return {};
+  for (const auto* extension : {".step", ".stp", ".STEP", ".STP"}) {
+    auto candidate = path;
+    candidate.replace_extension(extension);
+    if (std::filesystem::is_regular_file(candidate, error))
+      return std::filesystem::canonical(candidate, error).string();
+  }
+  return {};
+}
+
 auto resolve_asset(const std::string& root, std::string_view url) -> std::expected<Asset, int> {
   const auto escaped = path_of(url);
   if (!escaped)

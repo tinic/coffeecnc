@@ -38,7 +38,31 @@ watch([(): unknown => panel.status?.program.file, (): unknown => panel.status?.p
     removePart()
     part.error = 'Part model removed because the program changed'
   }
+  void loadProgramPart()
 })
+
+/** Where the native panel serves the STEP model beside a program (same folder and base name). */
+export function programPartUrl(file: string): string {
+  return `coffeecnc://panel/program-part?program=${encodeURIComponent(file)}`
+}
+
+/** Loads the model beside the loaded program, when there is one (turo: load it with the .nc). */
+export async function loadProgramPart(fetcher: typeof fetch = fetch): Promise<void> {
+  const file = panel.status?.program.file
+  const revision = panel.status?.program.revision
+  if (!file || panel.simulated || !live.value) return
+  let bytes: ArrayBuffer
+  try {
+    const response = await fetcher(programPartUrl(file))
+    if (!response.ok) return
+    bytes = await response.arrayBuffer()
+  } catch { return }
+  // Only for the program it was asked for, and never over a model the operator attached since.
+  if (panel.status?.program.file !== file || panel.status.program.revision !== revision ||
+    part.attachment !== null || part.loading) return
+  const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '')
+  await importPart(new File([bytes], `${base}.step`), 'Loaded with the program')
+}
 
 export async function importPart(file: File, note = ''): Promise<void> {
   cancelImport()

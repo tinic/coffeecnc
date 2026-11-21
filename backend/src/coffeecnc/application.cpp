@@ -300,6 +300,20 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(config.error());
     return 1;
   }
+  // Programs come from anywhere the operator can reach (turo: not only nc_files): the browser
+  // starts in the program directory and offers it, the home folder and USB media as shortcuts.
+  {
+    std::error_code error;
+    const auto add = [&](std::string name, const std::optional<std::string>& path) {
+      if (path && !path->empty() && path->front() == '/' &&
+          std::filesystem::is_directory(*path, error))
+        config->program_places.push_back({std::move(name), *path});
+    };
+    add("Programs", config->program_prefix);
+    add("Home", environment("HOME"));
+    if (const auto user = environment("USER"))
+      add("USB", "/media/" + *user);
+  }
   const auto ui = panel_directory(options);
   if (!ui) {
     say(ui.error());
@@ -353,7 +367,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   HalControl control{*hal, shared};
   const LocalFileSystem files;
-  const ProgramStore programs{files, config->program_prefix};
+  const ProgramStore programs{files, "/", config->program_prefix};
   // LinuxCNC's io process made the tool table memory when it started.
   const auto tools = LoadedToolTable::attach(config->millimetres_per_unit);
   if (!tools) {

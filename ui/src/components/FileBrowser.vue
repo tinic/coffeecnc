@@ -12,6 +12,8 @@ import ModalDialog from './ModalDialog.vue'
 const emit = defineEmits<{ close: [] }>()
 
 const directory = computed(() => panel.directory)
+// Shortcuts the machine offers: its program directory, the home folder, USB media.
+const places = computed(() => panel.hello?.program_places ?? [])
 
 function list(path: string | null): void {
   send({ type: 'list_directory', path })
@@ -72,6 +74,14 @@ onMounted(() => {
           </button>
           <span class="mono where">{{ directory?.path ?? 'Reading directory' }}</span>
         </div>
+        <div v-if="places.length > 0" class="places" aria-label="Places">
+          <button
+            v-for="place in places" :key="place.path" class="btn" type="button"
+            :class="{ on: directory?.path === place.path }" @click="list(place.path)"
+          >
+            {{ place.name }}
+          </button>
+        </div>
         <div class="entries">
           <button v-for="entry in directory?.entries ?? []" :key="entry.name" class="entry" type="button" @click="choose(entry)">
             <AppIcon :name="entry.kind === 'directory' ? 'folder' : 'file'" />
@@ -89,6 +99,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.places { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.places .btn { min-height: 36px; font-size: 12px; }
 .browser { display: grid; flex: 1; min-height: 0; min-width: 0; }
 .has-recent { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; }
 .directory, .recent { display: flex; flex-direction: column; min-height: 0; min-width: 0; }

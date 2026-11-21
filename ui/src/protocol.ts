@@ -57,6 +57,8 @@ export interface Hello {
   fixed_setter?: FixedSetterLimits
   /** The tool HAL routes to the spindle touch probe. */
   touch_probe_tool?: number
+  /** Program browser shortcuts (program directory, home, USB media); absent on older peers. */
+  program_places?: { name: string; path: string }[]
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]

@@ -7,12 +7,13 @@ import SetterStatusBand from '../src/components/SetterStatusBand.vue'
 import NcText from '../src/components/NcText.vue'
 import { panel } from '../src/machine'
 import { SimMachine } from '../src/sim/machine'
+import type { Tool } from '../src/protocol'
 import type { PanelState } from '../src/store'
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel
-  return { panel, send: vi.fn(), findTool: (): undefined => undefined,
+  return { panel, send: vi.fn(), findTool: (number: number): Tool | null => panel.toolTable?.tools.find((tool) => tool.number === number) ?? null,
     onResult: (): (() => void) => () => undefined,
     live: computed(() => panel.link === 'live'), reported: computed(() => panel.link === 'down' ? null : panel.status) }
 })
@@ -25,7 +26,7 @@ beforeEach(() => {
   panel.status.program = { ...panel.status.program, file: '/parts/a.ngc', revision: 3, current_line: 200 }
   panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['G0 X1', 'G0 Y2'], truncated: true }
   panel.directory = { type: 'directory', path: '/parts', parent: null, entries: [], truncated: true }
-  panel.preview = null; panel.programLayout = 'text'; panel.unit = 'mm'
+  panel.toolTable = null; panel.preview = null; panel.programLayout = 'text'; panel.unit = 'mm'
 })
 afterEach(() => { wrapper?.unmount() })
 
@@ -149,6 +150,22 @@ describe('program execution context', () => {
     await nextTick()
     expect(wrapper.get('.status-row').text()).toContain('Machine moving')
     expect(wrapper.get('.status-row').text()).not.toContain('idle')
+  })
+})
+
+describe('tool inspector', () => {
+  it.each([
+    [null, 'T01 · Tool not in table'],
+    ['', 'T01'],
+    ['   ', 'T01'],
+    ['Carbide end mill', 'T01 · Carbide end mill'],
+  ])('labels the loaded tool with table description %j', (comment, title) => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.tool.in_spindle = 1
+    const row = { number: 1, pocket: 1, length: 18.975, diameter: 6.35, comment: comment ?? '' }
+    panel.toolTable = { type: 'tool_table', revision: 1, tools: comment === null ? [] : [row] }
+    wrapper = shallowMount(ProgramTab)
+    expect(wrapper.get('.tool-title strong').text()).toBe(title)
   })
 })
 

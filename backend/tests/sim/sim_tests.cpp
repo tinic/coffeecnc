@@ -5125,11 +5125,16 @@ void offset_history(Rig& rig) {
       const auto g92 = rig.status().g92;
       return std::format("{:.4f},{:.4f},{:.4f}", g92[0], g92[1], g92[2]);
     };
+    // Each line's own entry is awaited before the next line.
+    const auto before_shift = last_id();
     const auto shifted = mdi_line("G52 X2 Y9");
-    const auto before_x_only = last_id();
+    const auto shift = g92_entry(before_shift);
+    const auto before_x_only = shift ? shift->id : last_id();
     const auto moved = mdi_line("G52 X4");
     const auto x_only = g92_entry(before_x_only);
+    const auto before_suspend = x_only ? x_only->id : last_id();
     const auto suspended = mdi_line("G92.2");
+    static_cast<void>(g92_entry(before_suspend));
     const auto suspended_g92 = g92_text();
     rig.pump(OffsetHistoryStore::grace + 500ms);
     const auto before_refused = last_id();
@@ -5140,7 +5145,9 @@ void offset_history(Rig& rig) {
     rig.pump(500ms);
     const auto refused_g92 = g92_text();
     const bool nothing_restored = !g92_entry(before_refused);
+    const auto before_resume = last_id();
     const auto resumed = mdi_line("G92.3");
+    const auto resume = g92_entry(before_resume);
     const auto resumed_g92 = g92_text();
     check("history_g92_restore_keeps_a_suspended_shift",
           shifted == "accepted" && moved == "accepted" && suspended == "accepted" && x_only &&
@@ -5153,7 +5160,7 @@ void offset_history(Rig& rig) {
                       suspended_g92, refused.first, refused_g92, nothing_restored, resumed,
                       resumed_g92));
     rig.pump(OffsetHistoryStore::grace + 500ms);
-    const auto before_applied = last_id();
+    const auto before_applied = resume ? resume->id : last_id();
     const auto applied = x_only ? session.send(std::format(R"("type":"restore_offset","entry":{})",
                                                            x_only->id))
                                 : std::pair<std::string, std::string>{"no_entry", ""};

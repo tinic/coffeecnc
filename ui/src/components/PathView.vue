@@ -74,15 +74,16 @@ watch(
 
 const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
   const preview = panel.preview
+  if (!panel.status?.program.file) return { text: '', tone: '' }
   if (preview === null) {
-    return { text: (panel.status?.program.file ?? null) === null ? 'No program loaded' : 'No preview available', tone: '' }
+    return { text: 'No preview available', tone: '' }
   }
-  if (preview.context !== panel.status?.preview_context) {
+  if (preview.context !== panel.status.preview_context) {
     return { text: 'Preview out of date', tone: 'warn' }
   }
   if (preview.state === 'unavailable') {
     return {
-      text: panel.status.program.file === null ? 'No program loaded' : preview.error?.text ?? 'Preview unavailable',
+      text: preview.error?.text ?? 'Preview unavailable',
       tone: drawn.value === null ? '' : 'warn',
     }
   }
@@ -453,10 +454,9 @@ onBeforeUnmount(() => {
     <div class="viewport">
       <SceneCanvas v-if="part.attachment || visibleTool" :camera="camera" :width="size.width" :height="size.height" :tool="visibleTool" @error="modelError = $event" />
       <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
-      <div v-if="!live || toolTip === null || modelError || (part.attachment && partBlock)" class="banners">
-        <span v-if="!live" class="stop">Tool position not live</span>
-        <span v-else-if="toolTip === null" class="warn">Tool position unknown: not homed</span>
-        <span v-if="modelError || (part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
+      <div v-if="(live && (toolTip === null || (part.attachment && partBlock))) || modelError" class="banners">
+        <span v-if="live && toolTip === null" class="warn">Home the axes to show the tool position</span>
+        <span v-if="modelError || (live && part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
       </div>
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>

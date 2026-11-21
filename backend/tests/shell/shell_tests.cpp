@@ -1622,11 +1622,12 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("panel_closes_combined_editor", rig.wait_js("!document.querySelector('.tool-fields')"));
   rig.snapshot("tools-tab");
   // The work offset table of the Tools tab: only the active system has numbers.
-  const auto offsets_text = rig.js("return __t.text(document.querySelector('main.middle'));");
   check("tools_tab_shows_unavailable_work_systems",
-        offsets_text.get<std::string>().find("Unavailable") != std::string::npos ||
-            offsets_text.get<std::string>().find("unavailable") != std::string::npos,
-        offsets_text.get<std::string>().substr(0, 600));
+        rig.js(R"(
+          const rows = Array.from(document.querySelectorAll('.offset-row'));
+          return rows.some(row => String(row.firstElementChild?.getAttribute('aria-label')).endsWith('offsets unavailable') &&
+            Array.from(row.querySelectorAll('td.num')).slice(0, 3).every(cell => __t.text(cell) === '—'));
+        )") == true);
   check("no_console_errors_in_tools_tab", rig.js("return __t.errors.length;") == 0, rig.errors());
 
   // Another program: the attachment goes with the one it was bound to.

@@ -105,14 +105,15 @@ describe('preview messages', () => {
     expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped at line 3: partial path shown')
   })
 
-  it('distinguishes an unavailable preview, no loaded program and an obsolete context', async () => {
+  it('reports preview failures and obsolete contexts when a program is loaded', async () => {
     if (panel.preview === null || panel.status === null) throw new Error('Missing fixture')
     panel.preview.state = 'unavailable'
     wrapper = shallowMount(PathView)
     expect(wrapper.get('.preview-banner').text()).toContain('Preview unavailable')
     panel.status.program.file = null
     await nextTick()
-    expect(wrapper.get('.preview-banner').text()).toContain('No program loaded')
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+    panel.status.program.file = '/parts/a.ngc'
     panel.status.preview_context += 1
     await nextTick()
     expect(wrapper.get('.preview-banner').text()).toContain('Preview out of date')

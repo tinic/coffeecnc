@@ -149,7 +149,12 @@ const steps = computed((): string[] => {
     <template #footer>
       <button class="btn" type="button" @click="close">Cancel</button>
       <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
-      <button v-tooltip="startBlock ?? 'Run the approach, then the program'" class="btn primary" type="button" :disabled="startBlock !== null" @click="start"><AppIcon name="play" />Cycle start</button>
+      <button
+        v-tooltip="request ? undefined : startBlock ?? 'Run the approach, then the program'"
+        class="btn primary" type="button" :disabled="startBlock !== null" @click="start"
+      >
+        <AppIcon name="play" />{{ request?.type === 'start_restart' ? 'Starting…' : 'Cycle start' }}
+      </button>
     </template>
   </ModalDialog>
 </template>

@@ -44,6 +44,7 @@ beforeEach(() => {
   panel.status.machine = 'on'; panel.status.program.file = '/sim/test.ngc'
   panel.link = 'live'; panel.unit = 'mm'; panel.tab = 'manual'; touchInput.value = false
   panel.workOffsets = null
+  panel.program = null
   panel.preview = null
   panel.startupSpindleRpm = 0;
   panel.jogVelocity = 1500; panel.jogIncrement = 1
@@ -76,11 +77,11 @@ describe('capability-aware controls', () => {
     wrapper = mount(WorkspaceControls, { attachTo: document.body })
     expect(wrapper.get('.message-band .machine-state').text()).toBe('Machine is off')
     expect(wrapper.findAll('.setter-band p').map((band) => band.text())).toEqual([
-      'Axis limits: Z 750 mm/min', 'Enter a G-code command.', 'Set a speed, then Forward or Reverse.',
+      'Axis limits: Z 750 mm/min',
     ])
     await wrapper.get('.jogbtn').trigger('click')
     expect(wrapper.get('.jog .setter-band p').text()).toBe('Machine is off')
-    expect(wrapper.get('.mdi .setter-band p').text()).toBe('Enter a G-code command.')
+    expect(wrapper.get('.mdi .setter-band').text()).toBe('')
     await wrapper.get('input[aria-label="MDI command"]').setValue('G0 X1')
     wrapper.get<HTMLButtonElement>('.mdi button[type="submit"]').element.click()
     await nextTick()
@@ -94,16 +95,16 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.mdi .setter-band p').text()).toBe('Axes are not homed')
     expect(wrapper.get('.jog .setter-band p').text()).toBe('Axis limits: Z 750 mm/min')
   })
-  it('turns the passive spindle hint into a refusal only on press and clears it once ready', async () => {
+  it('shows a spindle refusal only on press and clears it once ready', async () => {
     wrapper = mount(ManualTab)
-    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
+    expect(wrapper.get('.spindle-status.info').text()).toBe('')
     const forward = wrapper.findAll('button').find(button => button.text() === 'Forward')
     if (!forward) throw new Error('Missing Forward button')
     await forward.trigger('click')
     expect(wrapper.get('.spindle-status.blocked p').text()).toBe('Enter a spindle speed above zero')
     expect(send).not.toHaveBeenCalled()
     await wrapper.get('input[aria-label="Spindle speed, rpm"]').setValue('1200')
-    expect(wrapper.get('.spindle-status.info p').text()).toBe('Set a speed, then Forward or Reverse.')
+    expect(wrapper.get('.spindle-status.info').text()).toBe('')
   })
   it('keeps probe-specific guidance in the Touch off card', async () => {
     if (panel.status === null) throw new Error('Missing status')
@@ -122,6 +123,27 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.probe-card .setter-band p').text()).toBe('Machine is off')
     expect(wrapper.get('.jog .setter-band p').text()).not.toContain('Machine is off')
     expect(send).not.toHaveBeenCalled()
+  })
+  it('leaves AUTO progress to the Machine footer and preserves paused Z instructions', async () => {
+    const s = panel.status
+    if (!s?.program.file) throw new Error('Missing program')
+    panel.tab = 'program'
+    s.mode = 'auto'
+    s.interp = 'reading'
+    wrapper = mount(StatusBar)
+    expect(wrapper.get('.machine-state').text()).toBe('Program running')
+    panel.program = { type: 'program', file: s.program.file, revision: s.program.revision, lines: ['M30'], truncated: false }
+    await nextTick()
+    expect(wrapper.find('.message-band .machine-state').exists()).toBe(false)
+    expect(wrapper.get('.state-pill').text()).toBe('Program running')
+    s.interp = 'paused'
+    s.wait = { kind: 'paused' }
+    s.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Stop the spindle before jogging Z.', spindle: 'can_stop' }
+    await nextTick()
+    expect(wrapper.get('.machine-state').text()).toBe('Stop the spindle before jogging Z.')
+    panel.tab = 'manual'
+    await nextTick()
+    expect(wrapper.get('.machine-state').text()).toBe('Program paused')
   })
   it('shows reported active WCS offsets, converts units and preserves unknown values', async () => {
     if (!panel.status) throw new Error('Missing status')

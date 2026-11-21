@@ -279,7 +279,7 @@ async function showFailure(): Promise<void> {
               {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />
             </button>
           </div>
-          <div class="panel-head"><h2>Tool sequence</h2><span class="kicker">{{ sections.length }} sections</span></div>
+          <div class="panel-head"><h2>Tool sequence</h2></div>
           <div class="sections">
             <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
               <button class="section" type="button" :aria-pressed="selectedSection === index" @click="selected = index">
@@ -331,7 +331,7 @@ async function showFailure(): Promise<void> {
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
 .inspector { display: flex; flex-direction: column; min-height: 0; padding: 20px; border-left: 1px solid var(--line); overflow-y: auto; }
-.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }.kicker { font-size: 10px; letter-spacing: .8px; color: var(--text-dim); text-transform: uppercase; }
+.panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
 .sections { display: flex; flex-direction: column; gap: 5px; margin: 0 -8px 14px; }
 .section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; height: 36px; padding: 0 10px; font-size: 12px; }
 .section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }

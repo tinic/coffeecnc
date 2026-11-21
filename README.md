@@ -80,7 +80,9 @@ The G0759 screenshots come from the controller. The Machine screenshots come fro
 
 ## Try it in the browser
 
-The browser simulator runs the full interface against a simulated machine. You do not need LinuxCNC.
+[Open the CoffeeCNC demo](https://tinic.github.io/coffeecnc/?scene=running&tab=program&theme=light): the full panel against a simulated machine, running in your browser. Nothing on the page talks to a real machine. Jog, home, open and run the sample programs, change overrides, restart from a line. The simulator has no tool setter or touch probe.
+
+To run it locally:
 
 ```sh
 cd ui
@@ -88,7 +90,7 @@ npm ci
 npm run dev
 ```
 
-Open [the simulated Machine workspace](http://127.0.0.1:5174/?scene=running&tab=program&theme=light). The simulator does not include the tool setter or the touch probe. See [UI development and checks](ui/README.md).
+See [UI development and checks](ui/README.md).
 
 ## Build from source
 

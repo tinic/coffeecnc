@@ -1,0 +1,48 @@
+# Publishes the panel with its built-in simulated machine to GitHub Pages:
+# https://tinic.github.io/coffeecnc/ . In a plain browser the panel has no native controller, so
+# it runs the simulator (ui/src/bridge.ts); nothing on the page talks to a real machine.
+name: Demo
+
+on:
+  push:
+    branches: [main]
+    paths: ['ui/**', 'samples/**', '.github/workflows/demo.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Panel
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

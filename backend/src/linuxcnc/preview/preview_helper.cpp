@@ -911,10 +911,15 @@ auto run(const HelperRequest& request) -> int {
     if (error)
       return give_up("the directory of the subroutine files cannot be read");
     for (const auto& file : files) {
+      // A file that is not scanned is not given to the interpreter: one that cannot be read
+      // here ends the preview, whatever the reason.
       const auto text = coffeecnc::read_text_file(file.string(), max_file_bytes);
-      if (!text && text.error() == coffeecnc::TextFileError::too_large)
-        return give_up("a file of the program is larger than the preview reads");
-      const auto found = text ? coffeecnc::first_forbidden_line(*text) : std::nullopt;
+      if (!text)
+        return give_up(text.error() == coffeecnc::TextFileError::too_large
+                           ? "a file of the program is larger than the preview reads"
+                           : std::format("{} cannot be read for the preview",
+                                         file.filename().string()));
+      const auto found = coffeecnc::first_forbidden_line(*text);
       if (!found)
         continue;
       if (file == request.program)

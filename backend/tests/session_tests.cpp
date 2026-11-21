@@ -1001,6 +1001,15 @@ void directory_listing() {
 
 void program_paths() {
   Rig rig;
+  require(rig.session.loaded_program().empty(),
+          "No program is loaded while LinuxCNC has none open");
+  rig.port.state.program_file = "/srv/jobs/bracket.ngc";
+  rig.session.observe(rig.port.state, rig.driver.now.monotonic);
+  require(rig.session.loaded_program() == "/srv/jobs/bracket.ngc",
+          "The loaded program is LinuxCNC's, wherever it is");
+  rig.port.state.program_file.clear();
+  rig.session.observe(rig.port.state, rig.driver.now.monotonic);
+  require(rig.session.loaded_program().empty(), "None once LinuxCNC has none open");
   for (const auto* path : {"part.ngc", "/home/cnc/nc_files/part.ngc", "fixtures/../part.ngc",
                            "/home/cnc/nc_files/./fixtures/../part.ngc"}) {
     rig.accepted(std::format(R"("type":"open_program","path":"{}")", path));

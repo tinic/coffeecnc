@@ -628,6 +628,22 @@ void manual_tool_change_is_opt_in() {
           "an invalid tool-change setting is diagnosed");
 }
 
+// LinuxCNC's integer switches as its interpreter and task read them (boost::lexical_cast<int>).
+void linuxcnc_switches() {
+  for (const auto* on : {"1", "2", "-1", "+1", "007"})
+    require(linuxcnc_switch(on), std::format("\"{}\" is a nonzero integer: on", on));
+  for (const auto* off : {"", "0", "-0", "+", "+-1", "YES", "TRUE", "ON", "yes", "1.5", "1x", " 1"})
+    require(!linuxcnc_switch(off), std::format("\"{}\" is no integer to LinuxCNC: off", off));
+  const auto changer = [](std::string_view value) {
+    return load(with(std::string(g0759), "TOOL_TABLE = tool.tbl\n",
+                     std::format("TOOL_TABLE = tool.tbl\nRANDOM_TOOLCHANGER = {}\n", value)));
+  };
+  require(changer("0")->remember_spindle_tool, "a nonrandom changer remembers its spindle tool");
+  require(!changer("-1")->remember_spindle_tool, "-1 is a random changer to LinuxCNC");
+  require(changer("YES")->remember_spindle_tool && changer("1.5")->remember_spindle_tool,
+          "YES and 1.5 leave LinuxCNC's changer nonrandom");
+}
+
 void motion_settings() {
   constexpr std::string_view rpm = "MAX_SPINDLE_RPM = 1500\n";
   const auto defaulted = load(g0759);
@@ -684,6 +700,7 @@ auto main(int argc, char** argv) -> int {
     simulation_profiles();
     fixed_setter_is_explicit_and_bounded();
     motion_settings();
+    linuxcnc_switches();
     manual_tool_change_is_opt_in();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;

@@ -80,6 +80,9 @@ public:
   [[nodiscard]] auto submit(PageToken page, std::string_view json,
                             std::chrono::milliseconds rendered_at = {}) -> Outcome;
 
+  // Session::loaded_program.
+  [[nodiscard]] auto loaded_program() const -> std::string;
+
   // Since the start or the last call of reset_timing.
   [[nodiscard]] auto timing() const -> Timing;
   void reset_timing();

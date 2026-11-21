@@ -244,6 +244,10 @@ public:
   // The controller state as just read.
   void observe(const ControllerState& state, JogLease::Time now);
 
+  // The program LinuxCNC has open, as last observed; empty before the first state or with none.
+  // Any thread; does not wait for the controller.
+  [[nodiscard]] auto loaded_program() const -> std::string;
+
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
   [[nodiscard]] auto control(Instant now, const ControlInput& input) -> bool;

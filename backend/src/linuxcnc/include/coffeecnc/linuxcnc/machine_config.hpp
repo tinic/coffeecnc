@@ -122,6 +122,13 @@ inline constexpr std::array coffeecnc_signal_keys{"SPINDLE_RPM_SIGNAL", "SPINDLE
 [[nodiscard]] auto inspect_machine_ini(const std::string& ini_file)
     -> std::expected<MachineIniInspection, std::string>;
 
+// An integer switch of LinuxCNC's own ([EMCIO] RANDOM_TOOLCHANGER, TOOL_CHANGE_AT_G30,
+// TOOL_CHANGE_QUILL_UP), as its interpreter and task read it (IniFile::Find into an int, which
+// is boost::lexical_cast<int>; LinuxCNC 2.9.4 rs274ngc_pre.cc:869, taskclass.cc:445): on for a
+// whole integer other than 0, with an optional sign. Anything else, YES and TRUE among it, is a
+// conversion error there that leaves the switch off.
+[[nodiscard]] auto linuxcnc_switch(std::string_view value) -> bool;
+
 // [DISPLAY] INCREMENTS as millimetres. Entries are separated by commas or, without any comma, by
 // white space. An entry is a number or a fraction (`1/16`) in machine units, or with one of the
 // suffixes mm, cm, um, in, inch, mil. The word `continuous` is skipped. Fails naming the first

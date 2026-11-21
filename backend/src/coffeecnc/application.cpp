@@ -545,6 +545,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                       },
                       .frame = [&](PageToken page, std::chrono::milliseconds rendered_at) -> void {
                         runtime->panel_frame(page, rendered_at);
+                      },
+                      .loaded_program = [&]() -> std::string {
+                        return runtime ? runtime->loaded_program() : std::string{};
                       }}};
   int code = 0;
   try {

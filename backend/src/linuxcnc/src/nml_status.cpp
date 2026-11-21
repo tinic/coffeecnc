@@ -113,6 +113,7 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.echo_serial = s.echo_serial_number;
   out.command_done = s.status == RCS_DONE;
   out.task_executing = task.execState != EMC_TASK_EXEC_DONE || s.status == RCS_EXEC;
+  out.task_failed = task.execState == EMC_TASK_EXEC_ERROR || s.status == RCS_ERROR;
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
   out.commanded_position = xyz(motion.traj.position);
   for (auto& coordinate : out.commanded_position)

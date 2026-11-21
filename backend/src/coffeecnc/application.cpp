@@ -3,6 +3,7 @@
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
+#include <coffeecnc/app/program_progress.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/app/tool_model_store.hpp>
@@ -387,6 +388,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   // The tool models: saved by a thread of their own, which outlives the runtime that hands it
   // commands and the publisher that asks it for snapshots.
   LocalToolModelFiles model_files;
+  LocalToolModelFiles progress_files;
+  std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
@@ -407,14 +410,16 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                       }}};
   int code = 0;
   try {
-    models = std::make_unique<ToolModelStore>(
-        model_files,
+    const auto location =
         resolve_tool_model_location({config->machine_id, config->data_directory,
-                                     environment("XDG_DATA_HOME"), environment("HOME")}),
+                                     environment("XDG_DATA_HOME"), environment("HOME")});
+    models = std::make_unique<ToolModelStore>(
+        model_files, location,
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
         config->limits);
+    progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
@@ -427,7 +432,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
-        &preview, [&models](PageToken page) -> void { models->send_snapshot(page); });
+        &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
+        progress.get());
     if (hooks.before_load)
       hooks.before_load(window, *config);
     window.run();

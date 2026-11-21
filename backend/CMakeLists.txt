@@ -83,6 +83,12 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_panel_feed_tests)
     add_test(NAME panel_feed COMMAND coffeecnc_panel_feed_tests)
+    add_executable(coffeecnc_program_progress_tests tests/program_progress_tests.cpp)
+    target_link_libraries(coffeecnc_program_progress_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_program_progress_tests)
+    add_test(NAME program_progress COMMAND coffeecnc_program_progress_tests
+      ${PROJECT_BINARY_DIR}/program_progress_tests)
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)

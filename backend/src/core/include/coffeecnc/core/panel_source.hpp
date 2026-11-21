@@ -44,6 +44,9 @@ struct PanelReading {
   std::vector<ControllerMessage> messages;
   // The point task plans from when the axes are at rest, independent of encoder backlash.
   std::optional<Vec3> commanded_position{};
+  // Explicit operator aborts and controller execution errors distinguish a stop from completion.
+  std::uint64_t program_aborts{};
+  bool program_failed{};
 };
 
 // The text of a program for the `program` message: ProgramStore::read_program, handed to an

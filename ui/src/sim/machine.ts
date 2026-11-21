@@ -171,6 +171,8 @@ export class SimMachine {
   private velocity = 0
   private readonly overrides = { feed: 1, rapid: 1, spindle: 1 }
   private program: { file: string; lines: string[]; revision: number } | null = null
+  /** Where the program last stopped before its end, for that program revision. */
+  private stoppedAt: { revision: number; line: number; tool: number } | null = null
   private programRevision = 0
   private optionalStop = false
   private blockDelete = false
@@ -363,6 +365,8 @@ export class SimMachine {
         motion_line: exec?.source === 'program' && move !== null ? move.line : 0,
         optional_stop: this.optionalStop,
         block_delete: this.blockDelete,
+        ...(exec === null && this.stoppedAt !== null && this.stoppedAt.revision === this.program?.revision
+          ? { restart_hint: { line: this.stoppedAt.line, tool: this.stoppedAt.tool } } : {}),
       },
       preview_context: this.previewContext,
       wait: this.wait(),
@@ -663,6 +667,7 @@ export class SimMachine {
         break
       case 'end':
         this.exec = null
+        this.stoppedAt = null
         break
     }
   }
@@ -746,6 +751,11 @@ export class SimMachine {
 
   /** Stops program, MDI, jogs, homing and the spindle. */
   private abort(): void {
+    const exec = this.exec
+    if (exec?.source === 'program' && this.program !== null && exec.currentLine > 0) {
+      const line = exec.active?.kind === 'move' ? exec.active.op.line : exec.currentLine
+      this.stoppedAt = { revision: this.program.revision, line, tool: this.toolInSpindle }
+    }
     this.exec = null
     this.stopJogs()
     this.homeQueue = []
@@ -1197,6 +1207,7 @@ export class SimMachine {
     }
     this.stopJogs()
     this.syncModal()
+    this.stoppedAt = null
     this.mode = 'auto'
     this.exec = {
       source: 'program',

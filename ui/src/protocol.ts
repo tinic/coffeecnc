@@ -139,6 +139,12 @@ export interface ProgramStatus {
   motion_line: number
   optional_stop: boolean
   block_delete: boolean
+  /**
+   * Where the loaded program stopped before it finished (Stop, E-stop, an error or a restart of
+   * CoffeeCNC): the line whose motion was in progress and the tool in the spindle. Present only
+   * while idle and for the same program file.
+   */
+  restart_hint?: { line: number; tool: number }
 }
 
 /** Why a running program is not moving. The panel shows this instead of guessing. */

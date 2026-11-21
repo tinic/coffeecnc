@@ -308,6 +308,8 @@ auto NmlPanelSource::read() -> PanelReading {
   reading.tools_settled = !impl_->pending_raw.has_value();
   reading.task_executing = status.task_executing;
   reading.commanded_position = status.commanded_position;
+  reading.program_aborts = impl_->loads ? impl_->loads->aborts.load() : 0;
+  reading.program_failed = status.task_failed;
   reading.work_systems = to_work_systems(status);
   reading.program = loaded ? impl_->program : nullptr;
   return reading;

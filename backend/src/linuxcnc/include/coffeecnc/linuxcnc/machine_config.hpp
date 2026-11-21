@@ -19,6 +19,13 @@ struct Travel {
   double max; // mm
 };
 
+struct PausedZLimits {
+  double lift_mm;
+  double velocity_mm_s;
+  double acceleration_mm_s2;
+  double count_mm;
+};
+
 // What the adapter needs from the machine's INI file. Lengths are already millimetres, velocities
 // mm/min. Together with `limits` this is everything a protocol `hello` carries.
 struct MachineConfig {
@@ -66,6 +73,7 @@ struct MachineConfig {
   // touch probe whatever its saved tool model says (spindle lockout, default name).
   std::optional<int> touch_probe_tool{};
   bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
+  std::optional<PausedZLimits> paused_z{};
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

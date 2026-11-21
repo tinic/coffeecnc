@@ -119,6 +119,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         if (s.link != Link::live)
           return reject("Controller status is unavailable or stale.");
 
+        if (s.paused_z && s.paused_z->displaced && s.interp != InterpState::paused &&
+            !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit>)
+          return reject(
+              "Z is still lifted. Turn machine power off and on to clear the offset here.");
+
         // A controller that requires homing may refuse the MDI cleanup until it is homed.
         if (s.air_offset_recovery && !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
             !(std::is_same_v<T, Home> && limits_.homing_required && !homed(s)))
@@ -234,12 +239,23 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
               (s.interp != InterpState::reading && s.interp != InterpState::waiting))
             return reject("There is no executing program or MDI command to pause.");
           return allow();
+        } else if constexpr (std::is_same_v<T, JogPausedZ>) {
+          if (!s.paused_z)
+            return reject("Paused Z jog is unavailable on this machine.");
+          if (!s.paused_z->reason.empty())
+            return reject(s.paused_z->reason);
+          if (!std::isfinite(c.distance) || c.distance == 0 ||
+              std::abs(c.distance) > s.paused_z->max_lift)
+            return reject("The paused Z jog distance is out of range.");
+          return allow();
         } else if constexpr (std::is_same_v<T, Resume>) {
           if (s.machine != MachineState::on || s.interp != InterpState::paused ||
               s.mode == TaskMode::manual || s.requested_tool)
             return reject("There is no paused execution ready to resume.");
           return allow();
         } else if constexpr (std::is_same_v<T, Step>) {
+          if (s.paused_z && s.paused_z->displaced)
+            return reject("Use Resume to return Z before continuing.");
           if (s.breakpoint_program)
             return reject("Use Resume to continue the breakpoint run.");
           if (s.air_z > 0 || s.air_offset_owned)

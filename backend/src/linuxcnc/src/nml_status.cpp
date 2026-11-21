@@ -117,7 +117,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   c.program_loaded = task.file[0] != '\0';
   c.tool_in_spindle = s.io.tool.toolInSpindle;
   // As the control thread read the pins last; nothing of it while that thread has stalled.
-  if (const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt) {
+  const auto view = hal != nullptr ? hal->view(HalShared::Clock::now()) : std::nullopt;
+  if (view) {
     if (view->tool_change_request) {
       c.requested_tool = view->tool_change_request->tool;
       c.tool_request = view->tool_change_request->generation;
@@ -160,6 +161,45 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.optional_stop = task.optional_stop_state;
   out.block_delete = task.block_delete_state;
   out.paused = task.task_paused != 0;
+  if (const auto& limits = config.paused_z) {
+    const auto& offset = motion.eoffset_pose;
+    const double z_mm = offset.tran.z * mm;
+    if (view && view->paused_z) {
+      out.paused_z_feedback = view->paused_z;
+      out.paused_z_feedback->offset *= mm;
+    }
+    const auto& feedback = out.paused_z_feedback;
+    const bool displaced = motion.external_offsets_applied || z_mm != 0 ||
+                           (feedback && (feedback->active || feedback->offset != 0));
+    const auto blocked = [&]() -> std::string {
+      if (link != Link::live || c.machine != MachineState::on || !motion.traj.enabled ||
+          c.mode != TaskMode::automatic || c.interp != InterpState::paused || !out.paused)
+        return "Pause a running program before jogging Z.";
+      if (std::ranges::any_of(c.axes,
+                              [](const AxisState& axis) { return !axis.homed || axis.homing; }))
+        return "Home all axes before jogging Z while paused.";
+      if (c.requested_tool)
+        return "Finish the tool change before jogging Z.";
+      if (!view || !feedback || !view->watchdog_ok || view->jog_stop_high ||
+          view->probe_cycle_active || (view->probe_input && *view->probe_input))
+        return "The paused Z motion interlock is open.";
+      if (!out.spindle_actual_rpm || c.spindle_active || task.activeMCodes[2] != 5)
+        return "Paused Z jog requires a program spindle stop (M5) and zero spindle speed.";
+      if (feedback->limited || motion.on_soft_limit ||
+          std::ranges::any_of(c.axes, [](const AxisState& axis) { return axis.on_hard_limit; }))
+        return "A travel limit blocks paused Z motion.";
+      if (!std::isfinite(z_mm) || !std::isfinite(feedback->offset) ||
+          z_mm < -limits->count_mm / 2 || z_mm > limits->lift_mm + limits->count_mm / 2 ||
+          offset.tran.x != 0 || offset.tran.y != 0)
+        return "The active external offset is outside the paused Z range.";
+      return {};
+    };
+    out.paused_z_interlock = blocked();
+    c.paused_z = PausedZStatus{std::isfinite(z_mm) ? z_mm : 0, limits->lift_mm, displaced,
+                               out.paused_z_interlock};
+    if (c.paused_z->reason.empty() && !c.in_position)
+      c.paused_z->reason = "Wait for the axes to stop.";
+  }
   out.dwell_seconds_left = task.delayLeft;
   out.queued_mdi = task.queuedMDIcommands;
   // Element 0 of each array is the line number the codes were read at; -1 marks an empty

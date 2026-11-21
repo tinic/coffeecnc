@@ -15,7 +15,7 @@
 #   watchdog  has no names= and is always the one instance `watchdog`
 #   lut5      two named instances; the logic that `not` and `or2` would otherwise do
 loadrt watchdog num_inputs=1
-loadrt lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit
+loadrt lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit,coffeecnc-eoffset-gate
 addf watchdog.process servo-thread
 addf watchdog.set-timeouts servo-thread
 addf coffeecnc-jog-stop servo-thread

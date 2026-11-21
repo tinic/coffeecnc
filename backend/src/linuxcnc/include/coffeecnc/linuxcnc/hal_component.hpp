@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_HAL_COMPONENT_HPP
 
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
@@ -14,6 +15,19 @@ struct HalSignals {
   bool spindle_rpm{};      // [COFFEECNC] SPINDLE_RPM_SIGNAL
   bool spindle_at_speed{}; // [COFFEECNC] SPINDLE_AT_SPEED_SIGNAL
   bool probe{};            // [COFFEECNC] PROBE_SIGNAL
+  bool paused_z{};         // [COFFEECNC] PAUSED_Z_MAX_MM
+};
+
+struct PausedZInputs {
+  double offset{}; // LinuxCNC machine units
+  bool active{};
+  bool limited{};
+};
+
+struct PausedZOutputs {
+  bool enable{};
+  std::int32_t counts{};
+  bool clear{};
 };
 
 struct ProbeCycleOutputs {
@@ -102,6 +116,8 @@ public:
   [[nodiscard]] auto probe_motion_permitted() const -> bool;
   [[nodiscard]] auto probe_cycle_active() const -> bool;
   void set_probe_cycle(ProbeCycleOutputs outputs);
+  [[nodiscard]] auto paused_z() const -> std::optional<PausedZInputs>;
+  void set_paused_z(PausedZOutputs outputs);
 
 private:
   struct Pins;

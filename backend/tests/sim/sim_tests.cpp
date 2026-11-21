@@ -29,6 +29,7 @@
 
 #include "hal_probe.hpp"
 
+#include <inifile.hh>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -2717,7 +2718,9 @@ auto spindle_feedback(double rpm, bool at_speed) -> bool {
 void g0759_signals(Rig& rig) {
   // Drive a simulated switch before the machine's selector when that circuit is present.
   const std::string probe =
-      machine_hal && !hal_signal("setter-tripped").empty() ? "setter-tripped" : "probe-in";
+      machine_hal && !output_of("halcmd -s show sig setter-tripped").empty()
+          ? "setter-tripped"
+          : "probe-in";
   auto status = rig.status();
   check("signals_at_rest",
         status.spindle_actual_rpm == 0.0 && status.spindle_at_speed == true &&
@@ -2852,13 +2855,17 @@ void g0759_jogs(Rig& rig) {
 }
 
 void g0759_limits(Rig& rig) {
-  const auto over = rig.send(R"("type":"set_spindle","direction":"forward","rpm":1501)");
+  const double ceiling = rig.config.limits.max_spindle_rpm;
+  const auto speed = [](double rpm) -> std::string {
+    return std::format(R"("type":"set_spindle","direction":"forward","rpm":{})", rpm);
+  };
+  const auto over = rig.send(speed(ceiling + 1));
   check("spindle_above_ceiling_rejected", over.outcome == "rejected", over.text());
-  const auto top = rig.send(R"("type":"set_spindle","direction":"forward","rpm":1500)");
+  const auto top = rig.send(speed(ceiling));
   rig.pump(100ms);
   auto status = rig.status();
   const bool runs =
-      status.spindle_direction == SpindleDirection::forward && near(status.spindle_rpm, 1500);
+      status.spindle_direction == SpindleDirection::forward && near(status.spindle_rpm, ceiling);
   const auto stop = rig.send(R"("type":"set_spindle","direction":"stopped","rpm":0)");
   rig.pump(100ms);
   check("spindle_at_ceiling",
@@ -3660,6 +3667,12 @@ void g0759_estop(Rig& rig) {
 
 void g0759_config(const MachineConfig& config) {
   const std::vector<double> increments{5, 1, 0.5, 0.1, 0.05, 0.01, 0.005};
+  double expected_spindle = 1500;
+  if (machine_hal) {
+    IniFile ini;
+    const char* value = ini.Open(config.ini_file.c_str()) ? ini.Find("MAX_SPINDLE_RPM", "COFFEECNC") : nullptr;
+    expected_spindle = value ? std::atof(value) : 0;
+  }
   // The machine's own INI file names the machine and no data directory; the profile has both.
   check("config_machine_id",
         machine_hal ? config.machine_id == "g0759" && !config.data_directory
@@ -3673,7 +3686,8 @@ void g0759_config(const MachineConfig& config) {
             near(config.limits.max_feed_override, 2.0) &&
             near(config.limits.min_spindle_override, 0.5) &&
             near(config.limits.max_spindle_override, 1.0) &&
-            near(config.limits.max_spindle_rpm, 1500) && !config.limits.homing_required &&
+            expected_spindle > 0 && near(config.limits.max_spindle_rpm, expected_spindle) &&
+            !config.limits.homing_required &&
             near(config.travel[0].min, -1000) && near(config.travel[2].max, 1000) &&
             config.jog_increments == increments && config.signals.spindle_rpm &&
             config.signals.spindle_at_speed && config.signals.probe);

@@ -71,7 +71,7 @@ describe('tapping a feed in the code list', () => {
     const feed = pane.get('.editable')
     expect(feed.text()).toContain('600')
     await feed.trigger('click')
-    const [[line, offset]] = pane.emitted<[number, number]>('editRate') ?? [[0, 0]]
+    const [line, offset] = pane.emitted<[number, number]>('editRate')?.[0] ?? [0, 0]
     expect(line).toBe(2)
     expect(rateWords('G1 X10 F600').find((word) => word.end > offset)?.value).toBe(600)
   })

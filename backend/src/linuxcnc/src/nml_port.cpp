@@ -989,8 +989,8 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
 }
 
 auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {
-  // E-stop and power off are never withdrawn.
-  const auto from = impl_->begin(state == MachineState::on ? &wanted : nullptr);
+  // Asserting E-stop is never withdrawn. Protocol off can also reset E-stop.
+  const auto from = impl_->begin(state == MachineState::estop ? nullptr : &wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
     return withdrawn();

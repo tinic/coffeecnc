@@ -20,6 +20,7 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -608,17 +609,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   PanelWindow window{{.ui_directory = *ui,
                       .windowed = options.windowed,
                       .developer_tools = options.developer_tools},
-                     {.begin_page = [&]() -> PageToken { return runtime->begin_page(); },
+                     {.begin_page = [&]() -> PageToken { return runtime->begin_page(true); },
                       .end_page = [&](PageToken page) -> void {
                         feed->page_ended(page);
                         runtime->end_page(page);
                       },
-                      .message = [&](PageToken page, std::string_view json) -> void {
-                        auto outcome = runtime->submit(page, json);
+                      .message = [&](PageToken page, std::string_view json,
+                                     std::chrono::milliseconds rendered_at) -> void {
+                        auto outcome = runtime->submit(page, json, rendered_at);
                         const bool ready = outcome.send_snapshots;
                         window.post(outcome.page, std::move(outcome.messages));
                         if (ready)
                           feed->page_ready(page);
+                      },
+                      .frame = [&](PageToken page, std::chrono::milliseconds rendered_at) -> void {
+                        runtime->panel_frame(page, rendered_at);
                       }}};
   int code = 0;
   try {

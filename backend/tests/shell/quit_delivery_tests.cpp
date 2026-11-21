@@ -1,6 +1,7 @@
 // WebKit completion is asynchronous: a queued quit must not destroy its receiver early.
 #include "panel_window_impl.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,13 +28,14 @@ auto scenario(const std::filesystem::path& directory, bool broken, bool wrong_pa
   PanelWindow window({.ui_directory = directory.string(), .windowed = true}, {
     .begin_page = []() -> PageToken { return {1}; },
     .end_page = {},
-    .message = [&](PageToken page, std::string_view text) -> void {
+    .message = [&](PageToken page, std::string_view text, std::chrono::milliseconds) -> void {
       if (text == "received") received = true;
       if (text == "ready") {
         active->post(page, {R"({"type":"result","id":27,"outcome":"accepted","reason":""})"});
         active->close_after_posts(wrong_page ? PageToken{2} : page);
       }
     },
+    .frame = {},
   });
   active = &window;
   struct Timeout { PanelWindow& window; bool& expired; } timeout{window, timed_out};

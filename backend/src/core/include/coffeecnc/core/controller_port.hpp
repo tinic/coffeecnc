@@ -81,8 +81,8 @@ struct ControllerMessage {
 // nothing further is written; the result is `cancelled` when nothing was written at all and
 // `failed`, saying what was sent, when the action was withdrawn half way. The actions that only
 // ever stop something take none and cannot be withdrawn: stop_jog and abort; and the stopping
-// values of the others are carried out whatever the answer: E-stop and power off, spindle stop,
-// both coolants off.
+// values of the others are carried out whatever the answer: assert E-stop, spindle stop and
+// both coolants off. The protocol's SetMachine off also serves as E-stop reset and checks Wanted.
 //
 // What the checks cannot do. The answer can change between the last question and the write:
 // the session does not keep its state locked while a port writes, and its control thread is

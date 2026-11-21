@@ -150,6 +150,9 @@ if(BUILD_TESTING)
       add_executable(coffeecnc_panel_mapping_tests tests/panel_mapping_tests.cpp)
       target_link_libraries(coffeecnc_panel_mapping_tests PRIVATE coffeecnc_linuxcnc
         coffeecnc_project_options)
+      target_include_directories(coffeecnc_panel_mapping_tests PRIVATE src/linuxcnc/src)
+      target_include_directories(coffeecnc_panel_mapping_tests SYSTEM PRIVATE
+        ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       coffeecnc_enable_analyzers(coffeecnc_panel_mapping_tests)
       add_test(NAME panel_mapping COMMAND coffeecnc_panel_mapping_tests ${PROJECT_BINARY_DIR})
       # The tool change handshake between the control thread and the others. No HAL runs.

@@ -770,6 +770,10 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     settings.reference_tool = config.fixed_setter->reference_tool;
     settings.touched_off_file = config.touched_off_file();
   }
+  if (std::ranges::any_of(config.rotary_joints, [](const auto& joints) { return !joints.empty(); })) {
+    settings.refusal = "Program preview and line restart are unavailable on rotary configurations.";
+    return settings;
+  }
   auto& soft = settings.soft_travel.emplace();
   for (std::size_t i = 0; i < config.travel.size(); ++i) {
     soft.min[i] = config.travel[i].min;

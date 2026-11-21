@@ -420,6 +420,12 @@ auto check_configuration(const Options& options) -> int {
                      ? std::format(" (joint {})", joints.front())
                      : std::format(" (joints {} and {})", joints.front(), joints.back());
   }
+  constexpr std::string_view rotary_letters = "ABC";
+  for (std::size_t i = 0; i < rotary_letters.size(); ++i) {
+    const auto& joints = config->rotary_joints[i];
+    if (!joints.empty())
+      axis_list += std::format(", {} (read-only)", rotary_letters[i]);
+  }
   std::cout << (hal.postgui_error ? "\nCoffeeCNC does not start with this file: post-GUI HAL "
                                     "sources could not be loaded.\n"
                                   : "\nCoffeeCNC starts with this file.\n")

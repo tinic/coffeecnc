@@ -489,10 +489,11 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
   const std::scoped_lock lock{mutex_};
   if (state.link != Link::live || state.machine != MachineState::on ||
       (have_status_ && now - status_at_ > status_max_age) ||
-      std::ranges::any_of(state.axes, [](const auto& axis) { return axis.homing; }) ||
+      state.any_enabled_axis([](const auto& axis) { return axis.homing; }) ||
       (have_status_ &&
-       !std::ranges::equal(state.axes, status_.axes,
-                           [](const auto& a, const auto& b) { return a.homed == b.homed; })))
+       (!std::ranges::equal(state.axes, status_.axes, {}, &AxisState::homed, &AxisState::homed) ||
+        !std::ranges::equal(state.rotary_axes, status_.rotary_axes, {},
+                            &AxisState::homed, &AxisState::homed))))
     ++setter_datum_;
   if (state.tool_in_spindle != status_.tool_in_spindle ||
       state.tool_request != status_.tool_request)

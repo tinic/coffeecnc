@@ -358,6 +358,22 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
       {"active_codes", status.active_codes},
       {"program_units", name(status.program_units)},
       {"probe_input", nullable(status.probe_input)}};
+  if (!status.rotary_axes.empty()) {
+    auto rotary = Json::array();
+    for (const auto& axis : status.rotary_axes) {
+      const auto angle = [&](const std::optional<double>& value, std::string_view field) -> Json {
+        return value ? Json(fields.real(*value, field)) : Json(nullptr);
+      };
+      rotary.push_back({{"axis", std::string(1, axis.axis)},
+                        {"homed", axis.homed},
+                        {"homing", axis.homing},
+                        {"machine", angle(axis.machine, "rotary_axes.machine")},
+                        {"work", angle(axis.work, "rotary_axes.work")},
+                        {"dtg", angle(axis.dtg, "rotary_axes.dtg")},
+                        {"on_hard_limit", axis.on_hard_limit}});
+    }
+    message["rotary_axes"] = std::move(rotary);
+  }
   if (const auto& z = status.paused_z) {
     message["paused_z"] = {{"offset", fields.real(z->offset, "paused_z.offset")},
                            {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},

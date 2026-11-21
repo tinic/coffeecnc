@@ -941,9 +941,9 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
            state.mode != TaskMode::automatic && state.interp == InterpState::idle &&
            state.in_position && state.tool_in_spindle == 0 && !state.requested_tool &&
            !state.spindle_active && !status.paused && !status.task_executing && status.queued_mdi == 0 &&
-           std::ranges::all_of(state.axes, [&](const auto& axis) {
-             return !axis.homing && !axis.on_hard_limit &&
-                    (!axis.enabled || !impl_->config.limits.homing_required || axis.homed);
+           !state.any_enabled_axis([&](const auto& axis) {
+             return axis.homing || axis.on_hard_limit ||
+                    (impl_->config.limits.homing_required && !axis.homed);
            });
   };
   const auto before = status();
@@ -1095,9 +1095,13 @@ auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult
 auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResult {
   // Motion homes only joints with a HOME_SEQUENCE on "home all" and says nothing about the rest:
   // without one the command would be accepted and do nothing.
-  if (!axis && !impl_->config.home_all_configured)
+  if (!axis && !impl_->config.home_all_configured) {
+    if (std::ranges::any_of(impl_->config.rotary_joints,
+                            [](const auto& joints) { return !joints.empty(); }))
+      return failed("Configure [JOINT_n] HOME_SEQUENCE for every joint to use Home all.");
     return failed("Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home "
                   "each axis.");
+  }
   // A request for one joint of a synchronized group (a shared negative HOME_SEQUENCE) homes the
   // whole group, each joint to its own switch (seen on 2.9.4). Without one it homes that joint.
   if (axis && !impl_->config.home_axis_configured.at(static_cast<std::size_t>(index_of(*axis)))) {
@@ -1233,8 +1237,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return c.machine == MachineState::on && c.mode == TaskMode::mdi && !status.paused &&
            !c.requested_tool && !c.spindle_active && status.spindle_actual_rpm &&
            *status.spindle_actual_rpm < 1.0 &&
-           std::ranges::all_of(
-               c.axes, [](const auto& axis) { return !axis.homing && !axis.on_hard_limit; });
+           !c.any_enabled_axis([](const auto& axis) { return axis.homing || axis.on_hard_limit; });
   };
   const auto near = [](double a, double b) {
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
@@ -1757,8 +1760,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
            !c.spindle_active && s.spindle_actual_rpm && std::abs(*s.spindle_actual_rpm) < 1.0 &&
            status.motion.traj.enabled && status.motion.traj.current_vel == 0 &&
            !status.motion.external_offsets_applied && !status.motion.on_soft_limit &&
-           std::ranges::all_of(
-               c.axes, [](const auto& axis) { return !axis.homing && !axis.on_hard_limit; });
+           !c.any_enabled_axis([](const auto& axis) { return axis.homing || axis.on_hard_limit; });
   };
   // Homing is not required: machine coordinates are continuous within a session, and a homing
   // or a restart forgets the taught setter (Session::observe).
@@ -2727,9 +2729,9 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
   const auto& s = status.controller;
   return s.interp == InterpState::idle && s.in_position && !s.requested_tool &&
          !status.paused && !status.task_executing && status.queued_mdi == 0 &&
-         std::ranges::all_of(s.axes, [&](const auto& a) {
-           return a.enabled && !a.homing && !a.on_hard_limit &&
-                  (!config.limits.homing_required || a.homed);
+         std::ranges::all_of(s.axes, &AxisState::enabled) &&
+         !s.any_enabled_axis([&](const auto& a) {
+           return a.homing || a.on_hard_limit || (config.limits.homing_required && !a.homed);
          });
 }
 

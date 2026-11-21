@@ -19,12 +19,11 @@ auto between(double value, double low, double high) -> bool {
   return std::isfinite(value) && value >= low && value <= high;
 }
 auto homed(const ControllerState& s) -> bool {
-  return std::ranges::any_of(s.axes, [](const auto& a) -> auto { return a.enabled; }) &&
-         std::ranges::all_of(
-             s.axes, [](const auto& a) -> auto { return !a.enabled || (a.homed && !a.homing); });
+  return s.any_enabled_axis([](const auto&) { return true; }) &&
+         !s.any_enabled_axis([](const auto& a) { return !a.homed || a.homing; });
 }
 auto homing(const ControllerState& s) -> bool {
-  return std::ranges::any_of(s.axes, [](const auto& a) -> auto { return a.enabled && a.homing; });
+  return s.any_enabled_axis([](const auto& a) { return a.homing; });
 }
 auto valid_text(const std::string& text, std::size_t max_size) -> bool {
   return !text.empty() && text.size() <= max_size &&

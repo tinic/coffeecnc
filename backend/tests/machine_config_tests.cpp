@@ -370,8 +370,19 @@ void axes_and_joints() {
             }),
             std::format("{}: {}", what, message));
   };
-  refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Z A",
-          {"[TRAJ] COORDINATES", "axis A is not supported", "X Y Y Z"}, "a rotary axis");
+  auto rotary = with(gantry, "COORDINATES = X Y Y Z", "COORDINATES = X Y Z A");
+  rotary = with(rotary, "coordinates=XYYZ", "coordinates=XYZA");
+  const auto fourth = load(rotary);
+  require(fourth && fourth->rotary_joints == std::array<std::vector<int>, 3>{{{3}, {}, {}}},
+          "A is joint 3");
+  auto six = with(rotary, "COORDINATES = X Y Z A", "COORDINATES = X C Y A Z B");
+  six = with(six, "coordinates=XYZA", "coordinates=XCYAZB");
+  six = with(six, "JOINTS = 4", "JOINTS = 6");
+  const auto reordered = load(six);
+  require(reordered && reordered->axis_joints == std::array<std::vector<int>, 3>{{{0}, {2}, {4}}} &&
+              reordered->rotary_joints == std::array<std::vector<int>, 3>{{{3}, {5}, {1}}} &&
+              !reordered->home_all_configured,
+          "rotary joints follow trivkins order and all need a configured home sequence");
   refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Y U", {"axis U is not supported"},
           "a U axis");
   refused("COORDINATES = X Y Y Z", "COORDINATES = X Y Y", {"X, Y and Z are all required"},

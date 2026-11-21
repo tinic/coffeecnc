@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import {
-  BufferAttribute, BufferGeometry, Color, DirectionalLight, EdgesGeometry, Group, HemisphereLight,
-  LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshStandardMaterial, NeutralToneMapping, OrthographicCamera, Scene, WebGLRenderer,
+  BufferAttribute, BufferGeometry, Color, EdgesGeometry, Group,
+  LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshStandardMaterial, OrthographicCamera, Scene, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { boxCorners, type Camera } from '../pathview'
+import { lightPreview } from '../preview-lighting'
 import { part, showPart } from '../step'
 import { modelToMachine } from '../step-model'
 import { ToolMesh } from '../tool-mesh'
@@ -140,17 +141,9 @@ onMounted(() => {
   if (canvas.value === null) return
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
-    renderer.setClearColor(0, 0)
-    renderer.toneMapping = NeutralToneMapping
-    renderer.toneMappingExposure = 0.95
+    lightPreview(scene, renderer)
     scene.environment = toolMesh.light(renderer)
-    scene.environmentIntensity = 0.68
-    const fill = new HemisphereLight(0xeaf3ff, 0x8b8180, 1.2)
-    const key = new DirectionalLight(0xfff3e3, 2.55)
-    key.position.set(-240, -140, 330)
-    const rim = new DirectionalLight(0xd1eaff, 0.95)
-    rim.position.set(160, 220, 105)
-    scene.add(group, toolMesh.group, fill, key, rim)
+    scene.add(group, toolMesh.group)
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
     emit('error', '')

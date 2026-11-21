@@ -1,5 +1,6 @@
 import { BufferGeometry, CylinderGeometry, DataTexture, ExtrudeGeometry, Group, LinearFilter, Mesh,
   MeshBasicMaterial, MeshStandardMaterial, Path, PlaneGeometry, Shape } from 'three'
+import { brushedFinish } from '../brushed-finish'
 import type { Vec3 } from '../protocol'
 import { demoFixture, type ProbeBlock } from './probe-fixture'
 
@@ -24,7 +25,10 @@ function contactShadow(round: boolean): DataTexture {
 export function buildProbeFixture(): { group: Group; dispose: () => void } {
   const group = new Group()
   const geometries: BufferGeometry[] = []
-  const aluminium = new MeshStandardMaterial({ color: '#b9c2c7', metalness: 0.62, roughness: 0.34 })
+  const finish = brushedFinish()
+  const aluminium = new MeshStandardMaterial({ color: '#aab4bd', metalness: 0.66, roughness: 0.35 })
+  const milledTop = aluminium.clone()
+  milledTop.map = finish
   const milledSides = new MeshStandardMaterial({ color: '#a4afb8', metalness: 0.63, roughness: 0.47 })
   const gaugeSteel = new MeshStandardMaterial({ color: '#b5bdc5', metalness: 0.79, roughness: 0.27 })
   const black = new MeshStandardMaterial({ color: '#394047', metalness: 0.45, roughness: 0.39 })
@@ -56,8 +60,8 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
     add(new CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2), material, centre)
   }
 
-  block(stock, [aluminium, milledSides], true)
-  block(slanted, [aluminium, milledSides])
+  block(stock, [milledTop, milledSides], true)
+  block(slanted, [milledTop, milledSides])
   block(gauge, [gaugeSteel, gaugeSteel])
   cylinder(bossRadius, stockHeight, [boss[0], boss[1], top - stockHeight / 2], aluminium)
   shadow(bossRadius, bossRadius, [boss[0], boss[1], top - stockHeight], 0, true)
@@ -68,7 +72,8 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
   return { group, dispose: (): void => {
     group.clear()
     for (const geometry of geometries) geometry.dispose()
-    for (const material of [aluminium, milledSides, gaugeSteel, black, gold]) material.dispose()
+    finish.dispose()
+    for (const material of [aluminium, milledTop, milledSides, gaugeSteel, black, gold]) material.dispose()
     for (const material of shadows) {
       material.map?.dispose()
       material.dispose()

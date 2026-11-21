@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import {
-  Box3, BufferGeometry, DataTexture, DirectionalLight, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
-  HemisphereLight, LatheGeometry, Line, LineBasicMaterial, LinearFilter, LinearMipmapLinearFilter, Mesh,
+  Box3, BufferGeometry, DirectionalLight, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
+  HemisphereLight, LatheGeometry, Line, LineBasicMaterial, Mesh,
   MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, OrthographicCamera, Path, PCFShadowMap,
-  PlaneGeometry, RepeatWrapping, RingGeometry, Scene, ShadowMaterial, Shape, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
+  PlaneGeometry, RingGeometry, Scene, ShadowMaterial, Shape, Vector2, Vector3, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
+import { brushedFinish } from '../brushed-finish'
 import { syncModelCamera } from '../model-camera'
 import { basis, orbit, type Camera } from '../pathview'
 import type { ProbeGuidePlan, ProbeGuideStep } from '../probe-guide'
@@ -30,25 +31,6 @@ const walls = new MeshStandardMaterial({ color: 0x8098aa, metalness: 0.43, rough
 const baseMaterial = new MeshStandardMaterial({ color: 0x394653, metalness: 0.5, roughness: 0.42 })
 const plunger = new MeshStandardMaterial({ color: 0xedb160, metalness: 0.55, roughness: 0.32 })
 const key = new DirectionalLight(0xfff5e9, 2.7)
-
-function brushedFinish(): DataTexture {
-  const size = 64
-  const pixels = new Uint8Array(size * size * 4)
-  for (let y = 0; y < size; y++) {
-    const phase = 2 * Math.PI * y / size
-    const shade = Math.round(242 + 7 * Math.cos(12 * phase) + 3 * Math.cos(19 * phase))
-    for (let x = 0; x < size; x++) pixels.set([shade, shade, shade, 255], 4 * (y * size + x))
-  }
-  const texture = new DataTexture(pixels, size, size)
-  texture.colorSpace = SRGBColorSpace
-  texture.wrapS = texture.wrapT = RepeatWrapping
-  texture.repeat.set(1 / 48, 1 / 36)
-  texture.magFilter = LinearFilter
-  texture.minFilter = LinearMipmapLinearFilter
-  texture.generateMipmaps = true
-  texture.needsUpdate = true
-  return texture
-}
 
 const finish = brushedFinish()
 machinedTop.map = finish

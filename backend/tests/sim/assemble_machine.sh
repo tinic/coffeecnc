@@ -17,7 +17,9 @@
 #                  line of the simulated hardware file (the drivers and every line that names
 #                  one of their pins or parameters); all other lines unchanged, in place.
 #                  The dropped lines are listed in dropped-lines.txt.
-#   the simulated hardware HAL file, loaded last: what stands in for the dropped lines
+#   the simulated hardware HAL file, loaded last: what stands in for the dropped lines.
+#       '#sim-input: signal pin value' preserves the software side of a dropped input net
+#       with a test-driven signal in place of the named hardware pin.
 #   [HAL] POSTGUI_HALFILE, [HAL] SHUTDOWN, [EMCIO] TOOL_TABLE   byte for byte copies
 #   [RS274NGC] PARAMETER_FILE   not copied: the interpreter starts without saved offsets
 #
@@ -105,6 +107,28 @@ for file in $(values HAL HALFILE); do
   grep -nE -f "$patterns" "$source/$file" | sed "s|^|$file:|" >>"$directory/dropped-lines.txt"
   echo "machine=hal file=$file lines=$(wc -l <"$source/$file") dropped=$(grep -cE -f "$patterns" "$source/$file")"
 done
+
+perl -e '
+  open(my $layer, "<", shift) or exit 2;
+  open(my $dropped, "<", shift) or exit 2;
+  my %inputs;
+  for (<$layer>) {
+    $inputs{$1}{$2} = $3 if /^#sim-input: (\S+) (\S+) (TRUE|FALSE)\s*$/;
+  }
+  for (<$dropped>) {
+    s/#.*//;
+    next unless /^.+?:\d+:\s*net\s+(\S+)\s+(.*)$/;
+    my ($signal, $members) = ($1, $2);
+    next unless exists $inputs{$signal};
+    my @pins = grep { !/^[<=>]+$/ } split /\s+/, $members;
+    my @hardware = grep { exists $inputs{$signal}{$_} } @pins;
+    next unless @hardware;
+    my @consumers = grep { !exists $inputs{$signal}{$_} } @pins;
+    print @consumers ? "net $signal @consumers\n" : "newsig $signal bit\n";
+    print "sets $signal $inputs{$signal}{$hardware[0]}\n";
+  }
+' "$layer" "$directory/dropped-lines.txt" >>"$directory/$(basename "$layer")" ||
+  fail "replace-hardware-inputs"
 
 for key in "HAL POSTGUI_HALFILE" "HAL SHUTDOWN" "EMCIO TOOL_TABLE"; do
   # shellcheck disable=SC2086  # section and key: two words on purpose.

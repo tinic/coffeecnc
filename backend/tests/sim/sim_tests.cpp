@@ -413,8 +413,7 @@ void power(Rig& rig) {
     check("port_on_in_estop_fails", forced.status == ActionStatus::failed, forced.reason);
   });
 
-  // The G0759's files: the E-stop state is the external chain's input (estop-ext) and nothing
-  // else. The operator releases the button.
+  // On the external configuration the operator releases the wired E-stop button.
   if (machine_hal) {
     // Reset only once task has seen the input closed (io reports it once per 100 ms): a reset
     // sent before that is undone by task, which then drops user-enable-out again.
@@ -2716,13 +2715,16 @@ auto spindle_feedback(double rpm, bool at_speed) -> bool {
 // G0759 profile: the three signals are declared in the INI file and connected by its post-GUI
 // file to the machine's signal names.
 void g0759_signals(Rig& rig) {
+  // Drive a simulated switch before the machine's selector when that circuit is present.
+  const std::string probe =
+      machine_hal && !hal_signal("setter-tripped").empty() ? "setter-tripped" : "probe-in";
   auto status = rig.status();
   check("signals_at_rest",
         status.spindle_actual_rpm == 0.0 && status.spindle_at_speed == true &&
             status.probe_input == false,
         std::format("rpm={} at_speed={} probe={}", status.spindle_actual_rpm.value_or(-1),
                     status.spindle_at_speed.value_or(false), status.probe_input.value_or(true)));
-  const bool set = spindle_feedback(1234.5, false) && halcmd("sets probe-in 1");
+  const bool set = spindle_feedback(1234.5, false) && halcmd("sets " + probe + " 1");
   rig.pump(50ms);
   status = rig.status();
   check("signals_report_values",
@@ -2736,7 +2738,7 @@ void g0759_signals(Rig& rig) {
   check("spindle_rpm_is_a_magnitude",
         negative && status.spindle_actual_rpm && near(*status.spindle_actual_rpm, 600, 1e-6),
         std::format("rpm={}", status.spindle_actual_rpm.value_or(-1)));
-  const bool reset = spindle_feedback(0, true) && halcmd("sets probe-in 0");
+  const bool reset = spindle_feedback(0, true) && halcmd("sets " + probe + " 0");
   rig.pump(50ms);
   status = rig.status();
   check("signals_reset",
@@ -3512,11 +3514,8 @@ auto watch_stop(Rig& rig, Clock::time_point from, const char* refresh) -> StopSe
 constexpr std::string_view estop_not_confirmed_off =
     "failed:LinuxCNC reports machine off; E-stop was not confirmed.";
 
-// The G0759's E-stop wiring, observed in simulation: G0759.hal connects
-// iocontrol.0.emc-enable-in to the external input (estop-ext) only, and
-// iocontrol.0.user-enable-out to the signal estop-out, which nothing reads. Two causes, a
-// display program's E-stop request and the external input opening, each with the machine on
-// and idle, during a held jog, and during a program with the spindle on.
+// Exercise a display program's E-stop request and the wired E-stop button opening. Both are
+// tested with the machine on and idle, during a held jog, and during a program with the spindle on.
 void g0759_estop(Rig& rig) {
   // The way an operator gets there: the chain closed, E-stop reset, machine on. A protocol
   // `off` sent while the machine is on is a power-off (EMC_TASK_STATE_OFF); sent while it is

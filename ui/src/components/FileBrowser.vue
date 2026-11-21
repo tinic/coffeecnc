@@ -48,10 +48,10 @@ onMounted(() => {
 
 <template>
   <ModalDialog title="Open program" :size="recent.length ? 'large' : 'medium'" :contained="recent.length > 0" @close="emit('close')">
-    <div class="browser" :class="{ 'has-recent': recent.length }">
+    <div class="browser" :class="{ 'has-recent': recent.length > 0 }">
       <section v-if="recent.length > 0" class="recent" aria-label="Recent programs">
         <h3>Recent</h3>
-        <button v-for="path in recent" :key="path" class="entry" type="button" v-tooltip="path" @click="open(path)">
+        <button v-for="path in recent" :key="path" v-tooltip="path" class="entry" type="button" @click="open(path)">
           <AppIcon name="file" />
           <span class="recent-path">
             <span class="name">{{ baseName(path) }}</span>
@@ -82,7 +82,7 @@ onMounted(() => {
           <p v-if="directory !== null && directory.entries.length === 0" class="hint">{{ directory.truncated ? 'No entries shown in this partial listing.' : 'This directory is empty.' }}</p>
         </div>
         <p v-if="directory?.truncated" class="hint" role="status">Partial directory listing · Some entries are not shown.</p>
-        <p v-if="panel.status?.interp !== 'idle'" class="blocked">Stop the current program before opening another.</p>
+        <p v-if="panel.status && panel.status.interp !== 'idle'" class="blocked">Stop the current program before opening another.</p>
       </section>
     </div>
   </ModalDialog>

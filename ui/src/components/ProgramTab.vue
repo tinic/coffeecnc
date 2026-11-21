@@ -310,8 +310,8 @@ async function showFailure(): Promise<void> {
     </div>
     <NumberDialog
       v-if="editing" :key="`${String(editing.line)}-${String(editing.word.begin)}`"
-      :title="`Change ${editing.word.letter} on line ${String(editing.line)}`"
-      effect="Saves the program file with the new number and opens it again. Nothing else in the line changes."
+      :title="`Edit ${editing.word.letter === 'F' ? 'feed' : 'spindle speed'} (${editing.word.letter}) · line ${String(editing.line)}`"
+      effect="Change this value, then save and reopen the program."
       :label="editing.word.letter === 'F' ? 'Feed' : 'Spindle speed'" :unit="rateUnit" :initial="String(editing.word.value)"
       action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
     />
@@ -322,7 +322,7 @@ async function showFailure(): Promise<void> {
       effect="Raise Z for the next run. Enter 0 to turn air cut off." action="Apply lift" :error="airError"
       @confirm="selectAirCut" @close="airEditor = null"
     />
-    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
+    <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeLabel ? `${timeLabel} · ${timeNote}` : undefined">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
 
@@ -339,7 +339,7 @@ async function showFailure(): Promise<void> {
 .air-cut.selected { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); opacity: 1; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-check.blocked { color: var(--stop); }
-.program-check.review:not(.blocked) { color: var(--accent); }
+.program-check.review:not(.blocked) { color: var(--warn); }
 .view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
@@ -359,7 +359,7 @@ async function showFailure(): Promise<void> {
 .preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }
 .failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }
 .preview-diagnostic button { pointer-events: auto; }
-/* Over the views, bottom left, so it never moves the code or the preview. */
+/* The stop hint shares the bottom of the view with transient code actions. */
 .stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
 .stopped-at .btn { height: 36px; }

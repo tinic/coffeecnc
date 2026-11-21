@@ -114,8 +114,8 @@ const steps = computed((): string[] => {
     `Rapid Z up to ${length(p.clearance_z)}`,
     ...(p.needs_tool_change ? [`Change to ${toolName(p.tool)}, then rapid Z to ${length(p.clearance_z)} with its length`] : []),
     `Rapid to X ${length(x)} Y ${length(y)}`,
-    ...(p.spindle_direction === 'stopped' ? [] : [`Start the spindle: ${spindle.value}`]),
-    ...(p.flood || p.mist ? [`Coolant on: ${coolant.value}`] : []),
+    ...(p.spindle_direction === 'stopped' ? [] : [`Start the spindle at ${spindle.value}`]),
+    ...(p.flood || p.mist ? [`Turn on ${coolant.value.toLowerCase()} coolant`] : []),
     ...(Math.abs(p.clearance_z - z) > 1e-6
       ? [`Feed Z down to ${length(z)} at ${formatVelocity(p.approach_feed, unit.value)} ${velocityUnit(unit.value)}`] : []),
     `Run the program from line ${String(p.line)}`,

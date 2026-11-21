@@ -254,7 +254,9 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: 6px; font-size: 12px; color: var(--text-dim); }
 .paused-z-reading strong { color: var(--text); white-space: nowrap; }
 .paused-z .btn { min-width: 47px; height: 48px; padding: 0 8px; border-radius: 9px; }
-.stop-button { color: var(--stop); min-width: 88px; }.main-action { width: 212px; }
+.stop-button { color: var(--stop); min-width: 88px; }
+/* Keep Stop and the Z buttons stationary when the primary caption changes. */
+.main-action { width: 212px; }
 .more { position: relative; }.more-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; color: var(--text-dim); }
 .popover { bottom: calc(100% + 16px); right: -100px; }
 </style>

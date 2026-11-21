@@ -98,7 +98,7 @@ describe('bore and boss centres', () => {
     fixture.findComponent(NumberDialog).vm.$emit('confirm', 30, '30')
     await nextTick()
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss', diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
-    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing round the boss…')
+    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing the boss sides…')
   })
 })
 
@@ -166,7 +166,7 @@ describe('ball calibration', () => {
       tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Probing both sides of the gauge…')
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, ball_diameter: 2.1 } })
-    expect(fixture.get('.setter-band.done p').text()).toBe('T99 ball measured 2.100 mm and saved to the tool table.')
+    expect(fixture.get('.setter-band.done p').text()).toBe('T99 ball Ø2.100 mm saved to the tool table.')
   })
 })
 

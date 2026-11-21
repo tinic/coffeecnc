@@ -100,6 +100,13 @@ auto request_id(const Json& object) -> RequestId {
   return static_cast<RequestId>(value);
 }
 
+auto positive_id(const Json& object, std::string_view name) -> std::uint64_t {
+  const auto value = number(object, name);
+  if (std::trunc(value) != value || value < 1 || value > static_cast<double>(max_request_id))
+    throw InvalidRequest("Expected a positive JavaScript safe integer: " + std::string(name) + '.');
+  return static_cast<std::uint64_t>(value);
+}
+
 auto boolean(const Json& object, std::string_view name) -> bool {
   const auto& value = field(object, name);
   if (!value.is_boolean())
@@ -189,6 +196,17 @@ auto command(const Json& object) -> Command {
   if (type == "open_program") {
     fields(object, {"id", "type", "path"});
     return OpenProgram{string(object, "path")};
+  }
+  if (type == "plan_restart") {
+    fields(object, {"id", "type", "line", "preview_context"});
+    const int line = integer(object, "line");
+    if (line < 1)
+      throw InvalidRequest("Restart requires a positive program line.");
+    return PlanRestart{line, positive_id(object, "preview_context")};
+  }
+  if (type == "start_restart") {
+    fields(object, {"id", "type", "plan_id"});
+    return StartRestart{positive_id(object, "plan_id")};
   }
   if (type == "set_override") {
     fields(object, {"id", "type", "which", "value"});

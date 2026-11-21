@@ -65,7 +65,9 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "quit",
     "set_operator_settings",
     "set_work_offset",
-    "fixed_setter"};
+    "fixed_setter",
+    "plan_restart",
+    "start_restart"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};
@@ -270,6 +272,15 @@ auto encoded_messages() -> std::vector<Encoded> {
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
+  const RestartPoint restart{.line = 25,
+                             .tool = 98,
+                             .h = 98,
+                             .feed = 600,
+                             .clearance_z = 30,
+                             .approach_feed = 300,
+                             .start = {-16, 12, 30}};
+  messages.emplace_back(encode_result(45, CommandOutcome::accepted, "", {},
+                                      RestartPlan{3, true, restart}));
 
   Directory top;
   top.path = "/home/cnc/nc_files";

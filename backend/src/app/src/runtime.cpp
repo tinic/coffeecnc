@@ -30,9 +30,11 @@ void status_step(Session& session, StatusSource& source) {
 
 Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outputs,
                  const Limits& limits, const ProgramStore& programs, Sink sink,
-                 ToolModelService* tool_models, Quit quit)
+                 ToolModelService* tool_models, Quit quit, PreviewWorker* preview,
+                 PreviewEngine* restart_engine)
     : status_(status), outputs_(outputs), sink_(std::move(sink)), quit_(std::move(quit)),
-      session_(port, limits, programs, tool_models), control_([this]() -> void { control_loop(); }),
+      session_(port, limits, programs, tool_models, preview, restart_engine),
+      control_([this]() -> void { control_loop(); }),
       status_thread_([this]() -> void { status_loop(); }),
       worker_([this]() -> void { work_loop(); }) {}
 

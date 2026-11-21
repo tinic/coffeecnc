@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,6 +31,9 @@ struct InterpreterStart {
   double spindle_speed{};
   // Identity of the interpreter's parameter file contents (numbered and named parameters).
   std::uint64_t parameters_revision{};
+  SpindleDirection spindle_direction{SpindleDirection::stopped};
+  bool flood{};
+  bool mist{};
   friend auto operator==(const InterpreterStart&, const InterpreterStart&) -> bool = default;
 };
 
@@ -68,6 +72,36 @@ struct PreviewInputs {
   // which blocks the rest of the program runs.
   bool block_delete{};
   InterpreterStart start;
+  std::optional<int> restart_line;
+};
+
+// Interpreter state immediately before a selected motion block. Linear values use mm.
+struct RestartPoint {
+  int line{};
+  int tool{};
+  int wcs{1};
+  int h{};
+  SpindleDirection spindle_direction{SpindleDirection::stopped};
+  double spindle_rpm{};
+  bool flood{};
+  bool mist{};
+  double feed{};
+  LengthUnit units{LengthUnit::mm};
+  int plane{17};
+  bool incremental{};
+  bool absolute_arc{};
+  int motion{800};
+  int path_control{640};
+  double path_tolerance{};
+  double naivecam_tolerance{};
+  double clearance_z{};
+  double approach_feed{}; // mm/min, filled by the controller when it validates clearance
+  Vec3 start{};
+  Vec3 g5x{};
+  Vec3 g92{};
+  Vec3 tool_offset{};
+  double rotation{};
+  friend auto operator==(const RestartPoint&, const RestartPoint&) -> bool = default;
 };
 
 // What a computation found: Preview without its context.
@@ -76,6 +110,8 @@ struct PreviewOutcome {
   std::optional<PreviewError> error;
   std::vector<PreviewSegment> segments;
   std::optional<Bounds> bounds;
+  std::optional<RestartPoint> restart;
+  std::string restart_blocked;
   friend auto operator==(const PreviewOutcome&, const PreviewOutcome&) -> bool = default;
 };
 
@@ -107,6 +143,8 @@ struct PreviewComputation {
   // `cancelled` is asked as in compute; given up, the answer is false.
   using Watch = std::function<bool(const std::function<bool()>& cancelled)>;
   Watch files_changed;
+  // Aliases the exact program bytes captured by the helper engine's file snapshot.
+  std::shared_ptr<const std::string> program_snapshot{};
 };
 
 // Computes the path of a program for one set of inputs. Blocking, for a thread of its own;

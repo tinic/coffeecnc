@@ -33,6 +33,15 @@ auto vector(std::string_view& text, Vec3& value) -> bool {
   return number(text, value[0]) && number(text, value[1]) && number(text, value[2]);
 }
 
+auto finite_number(std::string_view& text, double& value) -> bool {
+  return number(text, value) && std::isfinite(value);
+}
+
+auto finite_vector(std::string_view& text, Vec3& value) -> bool {
+  return finite_number(text, value[0]) && finite_number(text, value[1]) &&
+         finite_number(text, value[2]);
+}
+
 auto flag(std::string_view& text, bool& value) -> bool {
   int given = 0;
   if (!number(text, given) || (given != 0 && given != 1))
@@ -48,6 +57,35 @@ auto rest(std::string_view text) -> std::string {
   return std::string(text);
 }
 
+auto vec(const Vec3& v) -> std::string { return std::format("{} {} {}", v[0], v[1], v[2]); }
+
+auto parse_restart(std::string_view line, const OutputLimits& limits, RestartPoint& p) -> bool {
+  int spindle = 0;
+  bool inch = false;
+  if (!number(line, p.line) || p.line < 1 || p.line > limits.max_line || !number(line, p.tool) ||
+      p.tool < 0 || p.tool > OutputLimits::max_tool || !number(line, p.wcs) || p.wcs < 1 ||
+      p.wcs > 9 || !number(line, p.h) || (p.h != 0 && p.h != p.tool) || !number(line, spindle) ||
+      spindle < -1 || spindle > 1 || !finite_number(line, p.spindle_rpm) || p.spindle_rpm < 0 ||
+      !flag(line, p.flood) || !flag(line, p.mist) || !finite_number(line, p.feed) || p.feed < 0 ||
+      !flag(line, inch) || !number(line, p.plane) || p.plane < 17 || p.plane > 19 ||
+      !flag(line, p.incremental) || !flag(line, p.absolute_arc) || !number(line, p.motion) ||
+      (p.motion != 0 && p.motion != 10 && p.motion != 20 && p.motion != 30 && p.motion != 800) ||
+      !number(line, p.path_control) ||
+      (p.path_control != 610 && p.path_control != 611 && p.path_control != 640) ||
+      !finite_number(line, p.path_tolerance) || p.path_tolerance < 0 ||
+      !finite_number(line, p.naivecam_tolerance) || p.naivecam_tolerance < 0 ||
+      !finite_number(line, p.clearance_z) || !finite_vector(line, p.start) ||
+      p.clearance_z < p.start[2] || !finite_vector(line, p.g5x) || !finite_vector(line, p.g92) ||
+      !finite_vector(line, p.tool_offset) || !finite_number(line, p.rotation) ||
+      !word(line).empty())
+    return false;
+  p.units = inch ? LengthUnit::inch : LengthUnit::mm;
+  p.spindle_direction = spindle == 1    ? SpindleDirection::forward
+                        : spindle == -1 ? SpindleDirection::reverse
+                                        : SpindleDirection::stopped;
+  return true;
+}
+
 } // namespace
 
 auto write_request(const HelperRequest& request) -> std::string {
@@ -58,9 +96,6 @@ auto write_request(const HelperRequest& request) -> std::string {
     out += ' ';
     out += value;
     out += '\n';
-  };
-  const auto vec = [](const Vec3& v) -> std::string {
-    return std::format("{} {} {}", v[0], v[1], v[2]);
   };
   line("program", request.program);
   if (!request.subroutines.empty())
@@ -79,6 +114,8 @@ auto write_request(const HelperRequest& request) -> std::string {
     line("tool_change_position", vec(*request.tool_change_position));
   line("max_points", std::format("{}", request.max_points));
   line("chord_tolerance", std::format("{}", request.chord_tolerance));
+  if (request.restart_line)
+    line("restart_line", std::format("{}", *request.restart_line));
   for (const auto& code : request.codes)
     line("code", code);
   if (!request.inherited_motion.empty())
@@ -138,7 +175,11 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
       good = number(line, request.max_points);
     else if (key == "chord_tolerance")
       good = number(line, request.chord_tolerance) && request.chord_tolerance > 0;
-    else if (key == "code")
+    else if (key == "restart_line") {
+      int target = 0;
+      good = !request.restart_line && number(line, target) && target > 0 && word(line).empty();
+      request.restart_line = target;
+    } else if (key == "code")
       request.codes.push_back(rest(line));
     else if (key == "inherited_motion")
       request.inherited_motion = rest(line);
@@ -158,6 +199,18 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
   if (first || request.program.empty() || request.parameters.empty())
     return std::unexpected(std::string("the request names no program or no parameter file"));
   return request;
+}
+
+auto write_restart(const RestartPoint& p) -> std::string {
+  const int spindle = p.spindle_direction == SpindleDirection::forward    ? 1
+                      : p.spindle_direction == SpindleDirection::reverse ? -1
+                                                                         : 0;
+  return std::format(
+      "restart {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", p.line,
+      p.tool, p.wcs, p.h, spindle, p.spindle_rpm, int{p.flood}, int{p.mist}, p.feed,
+      int{p.units == LengthUnit::inch}, p.plane, int{p.incremental}, int{p.absolute_arc}, p.motion,
+      p.path_control, p.path_tolerance, p.naivecam_tolerance, p.clearance_z, vec(p.start),
+      vec(p.g5x), vec(p.g92), vec(p.tool_offset), p.rotation);
 }
 
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
@@ -217,6 +270,19 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       problem.text = rest(line);
       output.problem = std::move(problem);
       problem_kind = key;
+    } else if (key == "restart" || key == "restart_blocked") {
+      if (output.problem || output.restart || !output.restart_blocked.empty())
+        return defect("a duplicate or misplaced restart record");
+      if (key == "restart") {
+        RestartPoint point;
+        if (!parse_restart(line, limits, point))
+          return defect("a malformed restart point");
+        output.restart = point;
+      } else {
+        output.restart_blocked = rest(line);
+        if (output.restart_blocked.empty())
+          return defect("a restart rejection without a reason");
+      }
     } else if (key == "end") {
       const auto how = word(line);
       if (!word(line).empty() || !text.empty())

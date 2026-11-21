@@ -13,7 +13,18 @@ const props = defineProps<{
   currentLine: number
   /** Line of the preview's interpreter error; 0 for none. */
   errorLine: number
+  /** Line numbers can be tapped to restart the program there. */
+  restartable?: boolean
 }>()
+const emit = defineEmits<{ restart: [line: number] }>()
+
+/** The line the operator tapped to restart from; 0 for none. */
+const picked = ref<number>(0)
+watch(() => [props.restartable, props.lines] as const, () => { picked.value = 0 })
+function pick(line: number): void {
+  if (!props.restartable) return
+  picked.value = picked.value === line ? 0 : line
+}
 
 const rowHeight = 24
 const overscan = 8
@@ -180,9 +191,10 @@ onBeforeUnmount(() => {
               motion: row.number === motionLine,
               current: row.number === currentLine && row.number !== motionLine,
               error: row.number === errorLine,
+              picked: row.number === picked,
             }"
           >
-            <span class="number">{{ row.number }}</span>
+            <span class="number" :class="{ pickable: restartable }" @click="pick(row.number)">{{ row.number }}</span>
             <span class="text"><span
               v-for="(token, index) in row.tokens"
               :key="index"
@@ -192,6 +204,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    <button v-if="restartable && picked > 0" class="btn primary restart" type="button" @click="emit('restart', picked)">
+      Restart from line <span class="follow-count mono">{{ picked }}</span>
+    </button>
     <button v-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
       Follow line <span class="follow-count mono">{{ active }}</span>
     </button>
@@ -279,9 +294,24 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 
+.number.pickable {
+  cursor: pointer;
+}
+
+.row.picked {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .row.error {
   background: var(--stop-soft);
   box-shadow: inset 3px 0 0 var(--stop);
+}
+
+.restart {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
 }
 
 .follow {

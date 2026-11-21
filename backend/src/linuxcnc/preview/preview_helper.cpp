@@ -68,6 +68,7 @@
 #include <tooldata.hh>
 
 using coffeecnc::HelperRequest;
+using coffeecnc::RestartPoint;
 using coffeecnc::Vec3;
 
 // Defined below for the interpreter; LinuxCNC's tooldata.hh declares it where it is installed.
@@ -91,6 +92,13 @@ struct Canon {
   int tool_in_spindle{};
   int selected_index{-1};
   double feed{}; // mm/min
+  double spindle_rpm{};
+  CANON_DIRECTION spindle{CANON_STOPPED};
+  bool flood{};
+  bool mist{};
+  CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
+  double path_tolerance{}; // mm
+  double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
   int last_index{};
 
@@ -108,6 +116,11 @@ struct Canon {
   int open_tool{};
   std::vector<Vec3> points;
   std::size_t written{};
+  std::optional<double> highest_tip_z;
+  bool moved_on_restart_line{};
+  bool subroutine{};
+  bool changed_tool_table{};
+  bool used_output{};
 
   Halt halt{Halt::none};
 };
@@ -200,6 +213,12 @@ void move(bool feed, const Vec3& to) {
     return;
   const Vec3 a = tip(from);
   const Vec3 b = tip(to);
+  if (const auto target = canon.request.restart_line) {
+    if (canon.line == *target)
+      canon.moved_on_restart_line = true;
+    else if (canon.line < *target)
+      canon.highest_tip_z = std::max(canon.highest_tip_z.value_or(b[2]), b[2]);
+  }
   if (canon.open && (canon.open_line != canon.line || canon.open_feed != feed ||
                      canon.open_tool != canon.tool_in_spindle || canon.points.back() != a))
     flush_run();
@@ -434,6 +453,8 @@ void CHANGE_TOOL_NUMBER(int index) {
 }
 void SET_TOOL_TABLE_ENTRY(int index, int number, EmcPose given, double diameter,
                           double front_angle, double back_angle, int orientation) {
+  if (canon.request.restart_line && canon.line <= *canon.request.restart_line)
+    canon.changed_tool_table = true;
   if (!valid_index(index))
     return;
   auto& entry = canon.tools.at(static_cast<std::size_t>(index));
@@ -495,13 +516,15 @@ CANON_UNITS GET_EXTERNAL_LENGTH_UNIT_TYPE() { return canon.length_units; }
 CANON_PLANE GET_EXTERNAL_PLANE() { return canon.plane; }
 double GET_EXTERNAL_FEED_RATE() { return canon.feed / program_unit(); }
 double GET_EXTERNAL_TRAVERSE_RATE() { return 0; }
-double GET_EXTERNAL_SPEED(int) { return 0; }
-CANON_DIRECTION GET_EXTERNAL_SPINDLE(int) { return CANON_STOPPED; }
-int GET_EXTERNAL_FLOOD() { return 0; }
-int GET_EXTERNAL_MIST() { return 0; }
-CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return CANON_CONTINUOUS; }
-double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return 0; }
-double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() { return 0; }
+double GET_EXTERNAL_SPEED(int) { return canon.spindle_rpm; }
+CANON_DIRECTION GET_EXTERNAL_SPINDLE(int) { return canon.spindle; }
+int GET_EXTERNAL_FLOOD() { return canon.flood; }
+int GET_EXTERNAL_MIST() { return canon.mist; }
+CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return canon.path_control; }
+double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return canon.path_tolerance / program_unit(); }
+double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() {
+  return canon.naivecam_tolerance / program_unit();
+}
 int GET_EXTERNAL_QUEUE_EMPTY() { return 1; }
 int GET_EXTERNAL_AXIS_MASK() { return 7; } // X, Y, Z
 int GET_EXTERNAL_FEED_OVERRIDE_ENABLE() { return 1; }
@@ -529,8 +552,11 @@ void SET_FEED_RATE(double rate) { canon.feed = rate * program_unit(); }
 void SET_TRAVERSE_RATE(double) {}
 void SET_FEED_REFERENCE(CANON_FEED_REFERENCE) {}
 void SET_FEED_MODE(int, int) {}
-void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE, double) {}
-void SET_NAIVECAM_TOLERANCE(double) {}
+void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE mode, double tolerance) {
+  canon.path_control = mode;
+  canon.path_tolerance = tolerance * program_unit();
+}
+void SET_NAIVECAM_TOLERANCE(double tolerance) { canon.naivecam_tolerance = tolerance * program_unit(); }
 void SET_CUTTER_RADIUS_COMPENSATION(double) {}
 void START_CUTTER_RADIUS_COMPENSATION(int) {}
 void STOP_CUTTER_RADIUS_COMPENSATION() {}
@@ -538,10 +564,22 @@ void START_SPEED_FEED_SYNCH(int, double, bool) {}
 void STOP_SPEED_FEED_SYNCH() {}
 void DWELL(double) {}
 void SET_SPINDLE_MODE(int, double) {}
-void SET_SPINDLE_SPEED(int, double) {}
-void START_SPINDLE_CLOCKWISE(int, int) {}
-void START_SPINDLE_COUNTERCLOCKWISE(int, int) {}
-void STOP_SPINDLE_TURNING(int) {}
+void SET_SPINDLE_SPEED(int spindle, double speed) {
+  if (spindle == 0)
+    canon.spindle_rpm = speed;
+}
+void START_SPINDLE_CLOCKWISE(int spindle, int) {
+  if (spindle == 0)
+    canon.spindle = CANON_CLOCKWISE;
+}
+void START_SPINDLE_COUNTERCLOCKWISE(int spindle, int) {
+  if (spindle == 0)
+    canon.spindle = CANON_COUNTERCLOCKWISE;
+}
+void STOP_SPINDLE_TURNING(int spindle) {
+  if (spindle == 0)
+    canon.spindle = CANON_STOPPED;
+}
 void SPINDLE_RETRACT() {}
 void SPINDLE_RETRACT_TRAVERSE() {}
 void ORIENT_SPINDLE(int, double, int) {}
@@ -562,22 +600,26 @@ void DISABLE_SPEED_OVERRIDE(int) {}
 void ENABLE_SPEED_OVERRIDE(int) {}
 void DISABLE_FEED_HOLD() {}
 void ENABLE_FEED_HOLD() {}
-void FLOOD_OFF() {}
-void FLOOD_ON() {}
-void MIST_OFF() {}
-void MIST_ON() {}
+void FLOOD_OFF() { canon.flood = false; }
+void FLOOD_ON() { canon.flood = true; }
+void MIST_OFF() { canon.mist = false; }
+void MIST_ON() { canon.mist = true; }
 void PALLET_SHUTTLE() {}
 void TURN_PROBE_OFF() {}
 void TURN_PROBE_ON() {}
 void OPTIONAL_PROGRAM_STOP() {}
 void PROGRAM_END() {}
 void PROGRAM_STOP() {}
-void SET_MOTION_OUTPUT_BIT(int) {}
-void CLEAR_MOTION_OUTPUT_BIT(int) {}
-void SET_AUX_OUTPUT_BIT(int) {}
-void CLEAR_AUX_OUTPUT_BIT(int) {}
-void SET_MOTION_OUTPUT_VALUE(int, double) {}
-void SET_AUX_OUTPUT_VALUE(int, double) {}
+void mark_output() {
+  if (canon.request.restart_line && canon.line <= *canon.request.restart_line)
+    canon.used_output = true;
+}
+void SET_MOTION_OUTPUT_BIT(int) { mark_output(); }
+void CLEAR_MOTION_OUTPUT_BIT(int) { mark_output(); }
+void SET_AUX_OUTPUT_BIT(int) { mark_output(); }
+void CLEAR_AUX_OUTPUT_BIT(int) { mark_output(); }
+void SET_MOTION_OUTPUT_VALUE(int, double) { mark_output(); }
+void SET_AUX_OUTPUT_VALUE(int, double) { mark_output(); }
 int UNLOCK_ROTARY(int, int) { return 0; }
 int LOCK_ROTARY(int, int) { return 0; }
 void PLUGIN_CALL(int, const char*) {}
@@ -603,6 +645,93 @@ auto error_text(InterpBase& interp, int code) -> std::string {
 }
 
 auto is_error(int code) -> bool { return code > INTERP_MIN_ERROR; }
+
+using GCodes = std::array<int, ACTIVE_G_CODES>;
+
+auto modal_g_codes(InterpBase& interp) -> GCodes {
+  GCodes codes{};
+  interp.active_g_codes(codes.data());
+  return codes;
+}
+
+auto capture_restart(InterpBase& interp, const GCodes& codes) -> RestartPoint {
+  std::array<double, ACTIVE_SETTINGS> settings{};
+  interp.active_settings(settings.data());
+  auto start = to_program(canon.end);
+  for (auto& coordinate : start)
+    coordinate *= program_unit();
+  const auto direction = canon.spindle == CANON_CLOCKWISE          ? coffeecnc::SpindleDirection::forward
+                         : canon.spindle == CANON_COUNTERCLOCKWISE ? coffeecnc::SpindleDirection::reverse
+                                                                  : coffeecnc::SpindleDirection::stopped;
+  const double peak = canon.highest_tip_z.value_or(tip(canon.end)[2]);
+  return {.line = canon.line,
+          .tool = canon.tool_in_spindle,
+          .wcs = canon.g5x_index,
+          .h = canon.tool_offset == Vec3{} ? 0 : canon.tool_in_spindle,
+          .spindle_direction = direction,
+          .spindle_rpm = canon.spindle_rpm,
+          .flood = canon.flood,
+          .mist = canon.mist,
+          .feed = canon.feed,
+          .units = canon.length_units == CANON_UNITS_INCHES ? coffeecnc::LengthUnit::inch
+                                                            : coffeecnc::LengthUnit::mm,
+          .plane = codes[3] / 10,
+          .incremental = codes[6] == 910,
+          .absolute_arc = codes[14] == 901,
+          .motion = codes[1],
+          .path_control = codes[11],
+          .path_tolerance = std::max(0.0, settings[3]) * program_unit(),
+          .naivecam_tolerance = std::max(0.0, settings[4]) * program_unit(),
+          .clearance_z = std::max(start[2], peak - canon.g5x[2] - canon.g92[2]),
+          .start = start,
+          .g5x = canon.g5x,
+          .g92 = canon.g92,
+          .tool_offset = canon.tool_offset,
+          .rotation = canon.rotation};
+}
+
+auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCodes& after,
+                     std::string_view block) -> std::string {
+  const auto canned = [](int code) { return code == 730 || code == 760 ||
+                                           (code >= 810 && code <= 890); };
+  if (before[4] != 400 || after[4] != 400)
+    return "Cutter compensation is active at this line.";
+  if (canned(before[1]) || canned(after[1]))
+    return "This line is inside a canned cycle.";
+  if (before[7] != 940 || after[7] != 940 || before[13] != 970 || after[13] != 970)
+    return "This line requires a feed or spindle mode that cannot be restored for restart.";
+  if (!canon.moved_on_restart_line)
+    return "Choose a line that moves the tool.";
+  if (after[1] != 0 && after[1] != 10 && after[1] != 20 && after[1] != 30)
+    return "Choose a rapid, feed, or arc move for restart.";
+  if (before[1] != 0 && before[1] != 10 && before[1] != 20 && before[1] != 30 && before[1] != 800)
+    return "The prior motion mode cannot be restored for restart.";
+  if ((after[1] == 20 || after[1] == 30) &&
+      coffeecnc::motion_use(block) != coffeecnc::MotionUse::sets)
+    return "Choose an arc block with an explicit G2 or G3.";
+  if (canon.changed_tool_table || canon.used_output)
+    return "The skipped blocks change tool data or machine outputs.";
+  if (point.wcs != canon.g5x_index || point.g5x != canon.g5x || point.g92 != canon.g92 ||
+      point.rotation != canon.rotation || point.tool != canon.tool_in_spindle ||
+      point.tool_offset != canon.tool_offset)
+    return "This line changes the coordinate frame or tool before moving.";
+  if (point.plane < 17 || point.plane > 19 ||
+      (point.spindle_direction != coffeecnc::SpindleDirection::stopped &&
+       point.spindle_rpm <= 0))
+    return "The spindle or motion plane at this line is incomplete.";
+  if (point.tool == 0 && point.tool_offset == Vec3{})
+    return {};
+  const int index = find_index(point.tool);
+  if (index < 0 || point.h <= 0)
+    return "The required tool length is not active at this line.";
+  const auto& offset = canon.tools.at(static_cast<std::size_t>(index)).offset.tran;
+  const double unit = canon.request.units_per_mm;
+  if (std::abs(point.tool_offset[0] - offset.x / unit) > 1e-6 ||
+      std::abs(point.tool_offset[1] - offset.y / unit) > 1e-6 ||
+      std::abs(point.tool_offset[2] - offset.z / unit) > 1e-6 || point.tool_offset[2] == 0)
+    return "The tool length at this line does not match the loaded tool table.";
+  return {};
+}
 
 auto inherited_reason(const std::string& mode) -> std::string {
   return std::format("moves by the motion mode {} that was active before the program, which "
@@ -710,6 +839,8 @@ auto run(const HelperRequest& request) -> int {
   constexpr auto flush_period = std::chrono::milliseconds{50};
   auto flushed = std::chrono::steady_clock::now();
   bool ended = false;
+  std::optional<RestartPoint> restart;
+  std::string restart_blocked;
   while (canon.halt == Halt::none && !ended) {
     // What is finished goes out, so that it is there if the helper is ended.
     if (const auto now = std::chrono::steady_clock::now(); now - flushed > flush_period) {
@@ -756,6 +887,8 @@ auto run(const HelperRequest& request) -> int {
     text.fill(0);
     interp->line_text(text.data(), text.size() - 1);
     after_o_word = coffeecnc::bare_block(text.data()).starts_with('o');
+    if (request.restart_line && coffeecnc::o_word_name(text.data()))
+      canon.subroutine = true;
     if (const auto reason = coffeecnc::refused_block(text.data())) {
       halt(Halt::stop, *reason);
       break;
@@ -771,6 +904,12 @@ auto run(const HelperRequest& request) -> int {
       if (use == coffeecnc::MotionUse::sets)
         inherited.clear();
     }
+    const bool target = request.restart_line == canon.line && canon.elsewhere.empty();
+    GCodes before{};
+    if (target) {
+      before = modal_g_codes(*interp);
+      restart = capture_restart(*interp, before);
+    }
     result = interp->execute();
     if (canon.halt != Halt::none)
       break;
@@ -778,6 +917,8 @@ auto run(const HelperRequest& request) -> int {
       halt(Halt::error, error_text(*interp, result));
       break;
     }
+    if (target)
+      restart_blocked = restart_refusal(*restart, before, modal_g_codes(*interp), text.data());
     if (result == INTERP_EXIT)
       ended = true;
     else if (result == INTERP_EXECUTE_FINISH)
@@ -785,6 +926,16 @@ auto run(const HelperRequest& request) -> int {
       interp->synch();
   }
   flush_run();
+  if (request.restart_line && canon.halt == Halt::none) {
+    if (canon.subroutine)
+      restart_blocked = "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.";
+    else if (!restart)
+      restart_blocked = "The selected line is not executed in this program.";
+    if (!restart_blocked.empty())
+      put(std::format("restart_blocked {}\n", restart_blocked));
+    else if (restart)
+      put(coffeecnc::write_restart(*restart));
+  }
   put(canon.halt == Halt::none    ? "end ok\n"
       : canon.halt == Halt::error ? "end error\n"
       : canon.halt == Halt::stop  ? "end stop\n"

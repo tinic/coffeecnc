@@ -27,7 +27,8 @@ auto text(const Json& message) -> std::string {
 } // namespace
 
 auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
-                   const std::optional<SetterState>& setter) -> std::string {
+                   const std::optional<SetterState>& setter,
+                   const std::optional<RestartPlan>& restart) -> std::string {
   Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
   if (setter) {
     auto measurement = Json(nullptr);
@@ -45,6 +46,31 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
                                        {"axis", std::string(1, material->axis)}};
+  }
+  if (restart) {
+    const auto& p = restart->point;
+    const auto direction = p.spindle_direction == SpindleDirection::forward   ? "forward"
+                           : p.spindle_direction == SpindleDirection::reverse ? "reverse"
+                                                                             : "stopped";
+    message["restart"] = {{"plan_id", restart->plan_id},
+                          {"line", p.line},
+                          {"tool", p.tool},
+                          {"needs_tool_change", restart->needs_tool_change},
+                          {"wcs", p.wcs},
+                          {"h", p.h},
+                          {"spindle_direction", direction},
+                          {"spindle_rpm", p.spindle_rpm},
+                          {"flood", p.flood},
+                          {"mist", p.mist},
+                          {"feed", p.feed},
+                          {"units", p.units == LengthUnit::mm ? "mm" : "inch"},
+                          {"plane", p.plane == 17   ? "XY"
+                                    : p.plane == 18 ? "XZ"
+                                                    : "YZ"},
+                          {"distance_mode", p.incremental ? "incremental" : "absolute"},
+                          {"clearance_z", p.clearance_z},
+                          {"approach_feed", p.approach_feed},
+                          {"start", p.start}};
   }
   return text(message);
 }

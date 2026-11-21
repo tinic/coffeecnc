@@ -189,6 +189,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           if (!s.program_loaded)
             return reject("Load a program first.");
           return idle(s, TaskMode::automatic, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, PlanRestart> || std::is_same_v<T, StartRestart>) {
+          if (!s.program_loaded)
+            return reject("Load a program first.");
+          const auto decision = idle(s, TaskMode::mdi, limits_.homing_required);
+          return decision.allowed ? allow() : decision;
         } else if constexpr (std::is_same_v<T, Pause>) {
           if (s.machine != MachineState::on || s.mode == TaskMode::manual ||
               (s.interp != InterpState::reading && s.interp != InterpState::waiting))

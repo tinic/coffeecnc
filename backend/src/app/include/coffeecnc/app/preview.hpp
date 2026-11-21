@@ -16,6 +16,11 @@
 
 namespace coffeecnc {
 
+struct RestartSource {
+  std::shared_ptr<const PreviewInputs> inputs;
+  std::shared_ptr<const std::string> program_snapshot;
+};
+
 // Where the composer gets previews from. It hands over the inputs of every new context and
 // takes whatever is finished; it never waits. Thread-safe.
 class PreviewService {
@@ -83,11 +88,13 @@ public:
   [[nodiscard]] auto latest() const -> std::shared_ptr<const Preview> override;
   void revalidate(std::uint64_t context) override;
   [[nodiscard]] auto files_generation() const -> std::uint64_t override;
+  // The exact input and source of a ready preview, copied without blocking on file I/O.
+  [[nodiscard]] auto restart_source(std::uint64_t context) const -> RestartSource;
 
 private:
   struct Request {
     std::uint64_t context{};
-    PreviewInputs inputs;
+    std::shared_ptr<const PreviewInputs> inputs;
   };
   void loop();
 
@@ -97,6 +104,7 @@ private:
   std::condition_variable wake_;
   std::optional<Request> wanted_;
   std::shared_ptr<const Preview> latest_;
+  RestartSource latest_source_;
   // The latest preview while its files are compared again: not finished for anyone meanwhile.
   std::shared_ptr<const Preview> unchecked_;
   // The context submitted last: a computation for another one is of no use.

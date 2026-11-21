@@ -379,7 +379,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   // The preview: an engine that starts the helper, and the thread that computes with it. Both
   // outlive the publisher, which hands contexts over and takes results.
   const WorkDirectory work;
-  HelperPreviewEngine helper_engine{load_preview_settings(*config, helper, work.path())};
+  const auto preview_settings = load_preview_settings(*config, helper, work.path());
+  HelperPreviewEngine helper_engine{preview_settings};
+  HelperPreviewEngine restart_engine{preview_settings};
   ReportingEngine engine{helper_engine};
   PreviewWorker preview{engine};
   // The tool models: saved by a thread of their own, which outlives the runtime that hands it
@@ -417,7 +419,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
-        models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); });
+        models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
+        &preview, &restart_engine);
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source,

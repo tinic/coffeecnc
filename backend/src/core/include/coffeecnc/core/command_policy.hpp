@@ -118,6 +118,13 @@ struct OpenProgram {
   std::string path;
 };
 struct Run {};
+struct PlanRestart {
+  int line{};
+  std::uint64_t preview_context{};
+};
+struct StartRestart {
+  std::uint64_t plan_id{};
+};
 struct Pause {};
 struct Resume {};
 struct Step {};
@@ -175,7 +182,7 @@ using Command =
                  Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle, SetCoolant,
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
-                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest>;
+                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart>;
 
 struct Decision {
   bool allowed{};

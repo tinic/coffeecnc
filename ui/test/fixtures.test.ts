@@ -129,6 +129,8 @@ const examples: Examples = {
     document: { version: 1, startup_units: 'inch', enabled_wcs: [1, 2, 3], default_spindle_rpm: 1200, default_jog_velocity: 600, tool_reference_height: 6.35, program_layout: 'text', theme: 'dark' } },
   set_work_offset: { id: 29, type: 'set_work_offset', wcs: 2, offset: [25.4, -50.8, 0] },
   fixed_setter: { id: 30, type: 'fixed_setter', action: 'touch_off', tool: 98, x: 4, y: 6.35, z: -85.3 },
+  plan_restart: { id: 31, type: 'plan_restart', line: 25, preview_context: 7 },
+  start_restart: { id: 32, type: 'start_restart', plan_id: 3 },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -276,7 +276,10 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
     halcmd(std::format("addf {} servo-thread", component));
   const auto corner_window = [&](char axis, double low, double high) {
     const auto name = std::format("sim-corner-{}", axis);
-    halcmd(std::format("net sim-corner-p{} axis.{}.pos-cmd {}.in1", axis, axis, name));
+    // The edge cycles above left each axis's commanded position on a signal of its own.
+    halcmd(std::format("net {} {}.in1", axis == 'z' ? std::string("sim-setter-z")
+                                                    : std::format("sim-contact-{}", axis),
+                       name));
     halcmd(std::format("setp {}.in2 {}", name, (low + high) / 2 / scale));
     halcmd(std::format("setp {}.difference {}", name, (high - low) / 2 / scale));
     halcmd(std::format("setp {}.scale 1", name));

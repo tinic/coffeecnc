@@ -12,6 +12,10 @@
   --accent: #377ef2; --accent-soft: #edf3fe;
   --go: #187957; --go-soft: #e8f5ef; --warn: #966518; --warn-soft: #fff5df;
   --stop: #ba393d; --stop-soft: #fff0f0;
+  --gcode-rapid: #495b6a; --gcode-cut: #1e5ca7; --gcode-modal: #555e66; --gcode-x: #8f3d4c;
+  --gcode-y: #28644a; --gcode-z: #365791; --gcode-argument: #57646e; --gcode-rate: #6c527e;
+  --gcode-tool: #7a5130; --gcode-spindle: #32686b; --gcode-stop: #9a2637; --gcode-comment: #596671;
+  --gcode-message: #495561; --gcode-flow: #504c83; --gcode-parameter: #515d75; --gcode-expression: #6a5470;
   --radius: 12px; --gap: 12px; --touch: 44px;
   --sans: 'DM Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', monospace;
   font-family: var(--sans); font-size: 14px; line-height: 1.4;
@@ -25,6 +29,10 @@
   --line: #343a40; --line-strong: #3d444b;
   --text: #edf0f2; --text-dim: #a0aab3; --text-faint: #7d8993;
   --accent-soft: #28374f; --go: #78d7b3; --go-soft: #233c34;
+  --gcode-rapid: #b2bcc6; --gcode-cut: #9ec6ff; --gcode-modal: #b5bec8; --gcode-x: #edabb1;
+  --gcode-y: #a5d8bb; --gcode-z: #9ab9e5; --gcode-argument: #a9bacb; --gcode-rate: #cab4e8;
+  --gcode-tool: #dfbf9a; --gcode-spindle: #98d2d1; --gcode-stop: #ff9a9f; --gcode-comment: #abb6c1;
+  --gcode-message: #bbc6ce; --gcode-flow: #bdbdec; --gcode-parameter: #b4bed7; --gcode-expression: #cfb6d3;
   --warn: #e4b466; --warn-soft: #3b3222; --stop: #f28d8d; --stop-soft: #412b2e;
 }
 

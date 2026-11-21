@@ -1568,7 +1568,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   // of the window where the canvas is, read from a snapshot, that are not background.
   check("panel_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
   check("panel_opens_tool_row", rig.wait_js("!!document.querySelector('.tool-row')") &&
-                                   rig.click(".tool-row", "") == "ok");
+                                   rig.click("button.edit-tool", "") == "ok");
   check("panel_opens_tool_model", rig.wait_js("!!document.querySelector('.tool-editor .preview')"));
   const bool canvas_shown = rig.wait_js(
       "!!document.querySelector('.model-canvas canvas') && "
@@ -1811,7 +1811,7 @@ void tool_models_saved(const Rig& rig) {
   // A model for T1, as the tool table shows that row.
   check("tool_models_close_settings", rig.click("section.dialog button", "Cancel") == "ok");
   check("tool_models_assignment_editor",
-        click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok" &&
+        click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok" &&
             rig.wait_js("__t.find('section.dialog select')", 10s));
   const auto chosen = rig.js(R"(
     const select = __t.find('section.dialog select');
@@ -1845,7 +1845,7 @@ void tool_models_saved(const Rig& rig) {
                 Json::array({{{"tool", binding}, {"family", "touch-probe"}, {"overrides", order.at(3).at("overrides")}}}) &&
             on_disk.at("document").at("defaults").at("end-mill").at("stickout") == 36.5,
         word(on_disk.is_object() ? on_disk.at("document").at("assignments").dump() : "unreadable"));
-  check("tool_models_reopen_assignment", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
+  check("tool_models_reopen_assignment", click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok");
   check("tool_models_assignment_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 5s),
         rig.js("return __t.find('.type-entry select').value;").dump());
@@ -1882,12 +1882,12 @@ void tool_models_restored(const Rig& rig) {
                 0,
         word(snapshot.dump().substr(0, 300)));
   check("tool_models_tools_tab", rig.click("nav.em-nav button", "Tools") == "ok");
-  check("tool_models_restored_tool_row", click_when_ready(rig, ".tool-row", "Edit tool 1:") == "ok");
+  check("tool_models_restored_tool_row", click_when_ready(rig, "button.edit-tool", "Edit tool 1") == "ok");
   check("tool_models_restored_assignment_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'touch-probe'", 10s),
         rig.js("return __t.find('.type-entry select').value;").dump());
   check("tool_models_close_first_row", rig.click("section.dialog button", "Cancel") == "ok");
-  check("tool_models_restored_second_row", click_when_ready(rig, ".tool-row", "Edit tool 2:") == "ok");
+  check("tool_models_restored_second_row", click_when_ready(rig, "button.edit-tool", "Edit tool 2") == "ok");
   check("tool_models_unassigned_row_shown",
         rig.wait_js("__t.find('.type-entry select').value === 'end-mill'", 5s));
   check("tool_models_close_second_row", rig.click("section.dialog button", "Cancel") == "ok");

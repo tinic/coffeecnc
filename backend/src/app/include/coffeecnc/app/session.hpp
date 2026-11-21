@@ -209,6 +209,7 @@ public:
   // Control periods the jog-stop level must have been found low before a jog is sent: the first
   // may be the one in which the pin fell.
   static constexpr int settled_periods = 2;
+  static constexpr auto panel_frame_timeout = std::chrono::milliseconds{500};
 
   // The port, the store and the tool-model service (may be null) must outlive the session.
   // Throws std::invalid_argument for invalid limits.
@@ -218,15 +219,19 @@ public:
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
-  [[nodiscard]] auto begin_page() -> PageToken;
+  [[nodiscard]] auto begin_page(bool watch_frames = false) -> PageToken;
 
   // Call when the page unloads or the window closes without a replacement. A stop decision;
   // every message is dropped until the next begin_page. Ignored for a token that is not current.
   void end_page(PageToken page);
 
+  // A painted-frame timestamp from the current document. A heartbeat can never carry a command.
+  void panel_frame(PageToken page, std::chrono::milliseconds rendered_at, Instant now);
+
   // A request from the page. The outcome holds what is answered at once; the results of queued
   // requests come out of `work`.
-  [[nodiscard]] auto submit(PageToken page, std::string_view json, Instant now) -> Outcome;
+  [[nodiscard]] auto submit(PageToken page, std::string_view json, Instant now,
+                            std::chrono::milliseconds rendered_at = {}) -> Outcome;
 
   // The controller state as just read.
   void observe(const ControllerState& state, JogLease::Time now);
@@ -336,6 +341,7 @@ private:
                          const std::function<ActionResult(const Wanted&)>& send) const -> Stage;
   [[nodiscard]] static auto staged(ActionResult result) -> Stage;
   void drop_requests();
+  void expire_panel_frame(JogLease::Time now);
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto check_program_start(const Queued& request, const Run& command,
                                          const ControllerState& state,
@@ -380,7 +386,7 @@ private:
   JogLease::Time status_at_{};
   // Goes up with every stop decision.
   std::uint64_t epoch_{};
-  // Goes up with every abort, E-stop and power off.
+  // Goes up with every abort, E-stop, power off and panel watchdog trip.
   std::uint64_t cancels_{};
   std::uint64_t setter_datum_{};
   std::uint64_t setter_tool_{};
@@ -391,6 +397,9 @@ private:
   std::uint64_t level_epoch_{};
   // When the last control period ran.
   JogLease::Time control_at_{};
+  JogLease::Time last_panel_frame_received_{};
+  std::optional<Instant> last_panel_frame_;
+  std::optional<std::chrono::milliseconds> panel_recovered_at_;
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
   std::vector<std::string> problems_;
@@ -408,6 +417,7 @@ private:
   bool closing_{};
   bool page_open_{};
   bool ready_{};
+  bool watch_frames_{};
   bool setter_busy_{};
   bool restart_busy_{};
   bool have_status_{};

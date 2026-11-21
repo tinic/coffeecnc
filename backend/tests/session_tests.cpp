@@ -390,6 +390,52 @@ void stale_pages_are_dropped() {
           "The current page is unaffected by the stale page's IDs");
 }
 
+void panel_watchdog_cancels_waiting_work() {
+  Rig rig{false};
+  auto& session = rig.session;
+  const auto page = session.begin_page(true);
+  const auto control = [&](std::chrono::milliseconds elapsed) -> bool {
+    return session.control(at(elapsed), {});
+  };
+  const auto frame = [&](PageToken from, std::chrono::milliseconds drawn,
+                         std::chrono::milliseconds elapsed) -> void {
+    session.panel_frame(from, at(drawn).unix_time, at(elapsed));
+  };
+  require(session.submit(page, R"({"id":1,"type":"ready"})", at(0ms)).send_snapshots,
+          "Bootstrap is allowed before any frames have been drawn");
+  require(control(0ms), "Without frames the HAL jog stop remains high");
+  frame(rig.page, 0ms, 0ms);
+  frame(page, 80ms, 80ms);
+  require(control(80ms), "A frame from the previous page cannot help re-arm jogging");
+  frame(page, 160ms, 160ms);
+  require(!control(160ms), "Two fresh frames of the current page release the hold");
+  const auto queued =
+      session.submit(page, R"({"id":2,"type":"mdi","text":"G55"})", at(165ms), at(160ms).unix_time);
+  require(results(queued).empty(), "Operator work is admitted while the frame stream is healthy");
+  require(control(660ms), "The jog-stop level goes high after a missing frame");
+  frame(page, 580ms, 740ms);
+  frame(page, 660ms, 741ms);
+  require(control(741ms), "Two buffered frames arriving together cannot re-arm jogging");
+  frame(page, 820ms, 820ms);
+  require(!control(820ms), "Uninterrupted new frames re-arm jogging");
+  const auto work = session.work([]() -> Instant { return at(820ms); });
+  const auto cancelled = results(work.outcome);
+  require(cancelled.size() == 1 && cancelled.front().at("outcome") == "rejected" &&
+              rig.port.calls.empty(),
+          "Work queued before the frame stall never runs after re-arming");
+  const auto old =
+      session.submit(page, R"({"id":3,"type":"mdi","text":"G55"})", at(830ms), at(660ms).unix_time);
+  require(results(old).at(0).at("outcome") == "rejected",
+          "A command for a frame that predates recovery is refused at the bridge");
+  require(control(1320ms), "The frame watchdog releases no stop on its own");
+  rig.driver.now = at(1330ms);
+  const auto stop = session.submit(page, R"({"id":4,"type":"abort"})", rig.driver.now);
+  require(results(stop).empty(), "Abort is admitted with no fresh frame");
+  const auto aborted = session.work([&]() -> Instant { return rig.driver.now; });
+  require(results(aborted.outcome).at(0).at("outcome") == "accepted" && !rig.port.calls.empty(),
+          "Abort reaches LinuxCNC while the frame watchdog holds the jog-stop pin");
+}
+
 // Records what the session hands over and answers as told.
 class FakeToolModels final : public ToolModelService {
 public:
@@ -2202,6 +2248,7 @@ auto main(int argc, char** argv) -> int {
   try {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
+    panel_watchdog_cancels_waiting_work();
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();

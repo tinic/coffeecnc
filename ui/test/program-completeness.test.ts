@@ -158,8 +158,7 @@ describe('program execution context', () => {
 })
 
 describe('status row', () => {
-  // turo: the Tool in spindle block was redundant; the spindle and feed live in the status row.
-  it('has no tool block, and shows the spindle and feed only while they run', async () => {
+  it('shows spindle and feed in the status row during motion', async () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.mode = 'manual'; panel.status.interp = 'idle'
     panel.status.spindle.direction = 'stopped'
@@ -174,6 +173,39 @@ describe('status row', () => {
     await nextTick()
     expect(wrapper.get('.status-row .spindle').text()).toContain('Spindle')
     expect(wrapper.get('.status-row .feed').text()).toBe('Feed 600 mm/min')
+  })
+
+  it('keeps measured coast visible until the spindle stops', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.mode = 'manual'; panel.status.interp = 'idle'
+    panel.status.spindle = { direction: 'stopped', commanded_rpm: 0, override: 1, actual_rpm: 735, at_speed: false }
+    wrapper = shallowMount(ProgramTab)
+    expect(wrapper.get('.status-row .spindle').text()).toBe('Spindle 735 rpm')
+    panel.status.spindle.actual_rpm = 0
+    await nextTick()
+    expect(wrapper.find('.status-row .spindle').exists()).toBe(false)
+  })
+
+  it('hides telemetry while status is stale and restores it from live data', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.spindle = { direction: 'forward', commanded_rpm: 1500, override: 0.8, actual_rpm: null }
+    panel.status.motion.velocity = 360
+    wrapper = shallowMount(ProgramTab)
+    expect(wrapper.get('.status-row .spindle').text()).toBe('Spindle 1200 rpm commanded')
+    expect(wrapper.get('.status-row .feed').text()).toBe('Feed 360 mm/min')
+    panel.link = 'stale'
+    await nextTick()
+    expect(wrapper.find('.status-row .spindle, .status-row .feed').exists()).toBe(false)
+    panel.link = 'live'
+    panel.status.link = 'stale'
+    await nextTick()
+    expect(wrapper.find('.status-row .spindle, .status-row .feed').exists()).toBe(false)
+    panel.status.link = 'live'
+    panel.status.spindle.actual_rpm = 1200
+    panel.status.spindle.at_speed = true
+    await nextTick()
+    expect(wrapper.get('.status-row .spindle').text()).toBe('Spindle 1200 rpm · at speed')
+    expect(wrapper.get('.status-row .feed').text()).toBe('Feed 360 mm/min')
   })
 })
 

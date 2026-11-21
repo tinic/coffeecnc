@@ -53,20 +53,19 @@ const sections = computed(() => {
 })
 const spindleTool = computed(() => status.value?.tool.in_spindle ?? 0)
 const selectedSection = computed(() => selected.value ?? sections.value.findIndex(section => section.tool === spindleTool.value))
-const spindleReading = computed(() => {
-  const s = status.value
-  if (!s) return '—'
+const liveTelemetry = computed(() => live.value && status.value?.link === 'live' ? status.value : null)
+const spindleText = computed(() => {
+  const s = liveTelemetry.value
+  if (!s) return ''
   const { rpm, atSpeed } = machineFeedback(s, panel.link)
-  const speed = rpm.known ? rpm.text : s.spindle.direction === 'stopped'
-    ? 'Stopped' : `${String(Math.round(s.spindle.commanded_rpm * s.spindle.override))} rpm commanded`
-  if (s.spindle.direction === 'stopped' || !atSpeed.known || atSpeed.stale) return speed
-  return `${speed} · ${s.spindle.at_speed ? 'at speed' : 'below speed'}`
+  if (s.spindle.direction === 'stopped')
+    return rpm.known && (s.spindle.actual_rpm ?? 0) >= 1 ? `Spindle ${rpm.text}` : ''
+  const speed = rpm.known ? rpm.text : `${String(Math.round(s.spindle.commanded_rpm * s.spindle.override))} rpm commanded`
+  const target = atSpeed.known ? ` · ${s.spindle.at_speed ? 'at speed' : 'below speed'}` : ''
+  return `Spindle ${speed}${target}`
 })
-// The spindle and feed join the status row (turo: the Tool in spindle block was redundant); only
-// while there is something to read.
-const spindleText = computed(() => status.value && status.value.spindle.direction !== 'stopped' ? `Spindle ${spindleReading.value}` : '')
 const feedText = computed(() => {
-  const s = status.value
+  const s = liveTelemetry.value
   if (!s || (!programExecuting.value && s.motion.velocity === 0)) return ''
   return `Feed ${formatVelocity(s.motion.velocity, panel.unit)} ${velocityUnit(panel.unit)}`
 })

@@ -352,13 +352,15 @@ void shipped_example() {
       keys.push_back(line.substr(0, line.find_first_of(" =")));
   }
   const std::vector<std::string> known{"MAX_SPINDLE_RPM", "SPINDLE_RPM_SIGNAL",
-                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL", "FIXED_SETTER"};
+                                       "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL",
+                                       "MANUAL_TOOLCHANGE", "FIXED_SETTER"};
   require(keys == known, std::format("example keys: {} of {}", keys.size(), known.size()));
   const auto config =
       load(with(std::string(g0759), "[COFFEECNC]\nMAX_SPINDLE_RPM = 1500\n", section));
   require(config.has_value(), config ? "" : config.error());
   require(near(config->limits.max_spindle_rpm, 1500) && !config->signals.spindle_rpm &&
-              !config->signals.spindle_at_speed && !config->signals.probe && !config->fixed_setter,
+              !config->signals.spindle_at_speed && !config->signals.probe &&
+              !config->manual_tool_change && !config->fixed_setter,
           "the example's values");
   // Every signal the example names can be switched on by the word it documents.
   auto yes = section;
@@ -477,6 +479,17 @@ void fixed_setter_is_explicit_and_bounded() {
           "the setter rejects a search too short to reach below the reference latch");
 }
 
+void manual_tool_change_is_opt_in() {
+  require(!load(g0759)->manual_tool_change, "custom HAL keeps its existing tool changer by default");
+  const auto in = with(std::string(g0759), "[COFFEECNC]\n", "[COFFEECNC]\nMANUAL_TOOLCHANGE = yes\n");
+  require(load(in)->manual_tool_change, "the application can wire manual tool changes explicitly");
+  require(!load(with(in, "MANUAL_TOOLCHANGE = yes", "MANUAL_TOOLCHANGE = no"))->manual_tool_change,
+          "no leaves tool-change wiring alone");
+  require(has(error(with(in, "MANUAL_TOOLCHANGE = yes", "MANUAL_TOOLCHANGE = maybe")),
+              "MANUAL_TOOLCHANGE"),
+          "an invalid tool-change setting is diagnosed");
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -498,6 +511,7 @@ auto main(int argc, char** argv) -> int {
     shipped_example();
     simulation_profiles();
     fixed_setter_is_explicit_and_bounded();
+    manual_tool_change_is_opt_in();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

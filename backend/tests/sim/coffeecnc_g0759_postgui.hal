@@ -5,7 +5,7 @@
 #   gmoccapy.toolchange-change   -> coffeecnc.tool-change
 #   gmoccapy.toolchange-number   -> coffeecnc.tool-number
 #   gmoccapy.toolchange-changed  -> coffeecnc.tool-changed
-source coffeecnc_postgui.hal
+source coffeecnc_sim_postgui.hal
 
 # Kept from the machine's file: a prepared tool needs no action.
 net tool-prep-loop iocontrol.0.tool-prepare => iocontrol.0.tool-prepared

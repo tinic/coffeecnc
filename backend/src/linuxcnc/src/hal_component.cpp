@@ -54,7 +54,7 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
   const int id = hal_init(name.c_str());
   if (id < 0)
     return std::unexpected(std::format("hal_init(\"{}\") failed: {}", name, id));
-  HalComponent component{id, static_cast<Pins*>(hal_malloc(sizeof(Pins))), wired};
+  HalComponent component{id, static_cast<Pins*>(hal_malloc(sizeof(Pins))), wired, name};
   auto* pins = component.pins_;
   if (pins == nullptr)
     return std::unexpected(std::string("hal_malloc failed"));
@@ -89,21 +89,26 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
   return component;
 }
 
-HalComponent::HalComponent(int id, Pins* pins, const HalSignals& wired)
-    : id_(id), pins_(pins), wired_(wired) {}
+HalComponent::HalComponent(int id, Pins* pins, const HalSignals& wired, std::string name)
+    : id_(id), pins_(pins), wired_(wired), name_(std::move(name)) {}
 
 HalComponent::HalComponent(HalComponent&& other) noexcept
     : id_(std::exchange(other.id_, -1)), pins_(std::exchange(other.pins_, nullptr)),
-      wired_(other.wired_), hold_(other.hold_), stop_raised_(other.stop_raised_),
+      wired_(other.wired_), name_(std::move(other.name_)),
+      manual_change_signals_(std::exchange(other.manual_change_signals_, {})),
+      hold_(other.hold_), stop_raised_(other.stop_raised_),
       enable_changed_(other.enable_changed_) {}
 
 auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
   if (this != &other) {
+    disconnect_manual_tool_change();
     if (id_ >= 0)
       hal_exit(id_);
     id_ = std::exchange(other.id_, -1);
     pins_ = std::exchange(other.pins_, nullptr);
     wired_ = other.wired_;
+    name_ = std::move(other.name_);
+    manual_change_signals_ = std::exchange(other.manual_change_signals_, {});
     hold_ = other.hold_;
     stop_raised_ = other.stop_raised_;
     enable_changed_ = other.enable_changed_;
@@ -112,8 +117,54 @@ auto HalComponent::operator=(HalComponent&& other) noexcept -> HalComponent& {
 }
 
 HalComponent::~HalComponent() {
+  disconnect_manual_tool_change();
   if (id_ >= 0)
     hal_exit(id_);
+}
+
+auto HalComponent::connect_manual_tool_change() -> std::expected<void, std::string> {
+  if (!manual_change_signals_.back().empty())
+    return {};
+
+  struct Connection {
+    const char* panel_pin;
+    const char* controller_pin;
+    hal_type_t type;
+  };
+  constexpr std::array connections{
+      Connection{"tool-change", "iocontrol.0.tool-change", HAL_BIT},
+      Connection{"tool-number", "iocontrol.0.tool-prep-number", HAL_S32},
+      Connection{"tool-changed", "iocontrol.0.tool-changed", HAL_BIT},
+  };
+  for (std::size_t i = 0; i < connections.size(); ++i) {
+    const auto& connection = connections[i];
+    const auto panel_pin = std::format("{}.{}", name_, connection.panel_pin);
+    auto signal = std::format("{}-manual-{}", name_, connection.panel_pin);
+    if (hal_signal_new(signal.c_str(), connection.type) != 0) {
+      disconnect_manual_tool_change();
+      return std::unexpected(std::format("Cannot create HAL signal {}.", signal));
+    }
+    auto& created = manual_change_signals_[i];
+    created = std::move(signal);
+    // HAL refuses a pin already linked to another signal. Roll back only signals we created.
+    if (hal_link(connection.controller_pin, created.c_str()) != 0 ||
+        hal_link(panel_pin.c_str(), created.c_str()) != 0) {
+      disconnect_manual_tool_change();
+      return std::unexpected(std::format(
+          "Cannot wire {} to {}. Leave MANUAL_TOOLCHANGE off for an existing HAL tool changer.",
+          connection.controller_pin, panel_pin));
+    }
+  }
+  return {};
+}
+
+void HalComponent::disconnect_manual_tool_change() noexcept {
+  for (auto& signal : manual_change_signals_) {
+    if (!signal.empty()) {
+      hal_signal_delete(signal.c_str());
+      signal.clear();
+    }
+  }
 }
 
 void HalComponent::hold_jog_stop(bool on) {

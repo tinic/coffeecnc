@@ -40,7 +40,7 @@ TOOL_TABLE = tool.tbl
 HALFILE = LIB:core_sim.hal
 HALFILE = coffeecnc_sim_home.hal
 # Run by the DISPLAY program once its HAL component exists.
-POSTGUI_HALFILE = coffeecnc_postgui.hal
+POSTGUI_HALFILE = coffeecnc_sim_postgui.hal
 
 [TRAJ]
 COORDINATES = X Y Z

@@ -40,7 +40,7 @@ const localBlock = computed(() => {
 })
 // One line the operator reads before pressing: what Touch off does with this tool, or why it can't.
 const hint = computed(() => {
-  if (!teaching.value) return 'Measures this tool at the setter.'
+  if (!teaching.value) return ''
   return `Jog ${toolLabel(tool.value)} over the setter, then Touch off.`
 })
 const { line: feedback, allow } = useCardFeedback(

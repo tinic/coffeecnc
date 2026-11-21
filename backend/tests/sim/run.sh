@@ -115,10 +115,10 @@ plain() {
 }
 if [ "$profile" = sim ]; then
   flavour=$units
-  fragments="coffeecnc_postgui.hal coffeecnc_sim_home.hal"
+  fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_sim_home.hal"
 else
   flavour=$profile
-  fragments="coffeecnc_postgui.hal coffeecnc_${profile}_postgui.hal coffeecnc_${profile}_sim.hal"
+  fragments="coffeecnc_postgui.hal coffeecnc_sim_postgui.hal coffeecnc_${profile}_postgui.hal coffeecnc_${profile}_sim.hal"
 fi
 ini=coffeecnc_$profile.ini
 if [ -n "$machine" ]; then

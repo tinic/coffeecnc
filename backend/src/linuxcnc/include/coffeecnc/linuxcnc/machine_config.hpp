@@ -60,6 +60,8 @@ struct MachineConfig {
   // work coordinate systems in it.
   std::string parameter_file;
   std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
+  // [COFFEECNC] MANUAL_TOOLCHANGE opts into connecting otherwise unlinked changer pins.
+  bool manual_tool_change{};
   std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
   // Program browser shortcuts; filled by the application from PROGRAM_PREFIX and the session.
   std::vector<ProgramPlace> program_places{};

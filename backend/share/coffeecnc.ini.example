@@ -27,6 +27,9 @@ MAX_SPINDLE_RPM = 1500
 SPINDLE_RPM_SIGNAL = no
 SPINDLE_AT_SPEED_SIGNAL = no
 PROBE_SIGNAL = no
+# Opt into CoffeeCNC's manual tool-change prompt once LinuxCNC's tool-change,
+# tool-changed and tool-prep-number pins are free. Leave off for an existing changer.
+MANUAL_TOOLCHANGE = no
 # Enable only after commissioning the configured fixed-setter HAL selector and motion permit.
 # Set SETTER_MAX_TRAVEL_MM, SETTER_SEARCH_FEED_MM_MIN and SETTER_XY_TOLERANCE_MM to the machine's
 # commissioned limits. SETTER_REFERENCE_TOOL defaults to 98.
@@ -54,4 +57,8 @@ FIXED_SETTER = no
 # /usr/share/coffeecnc/hal/coffeecnc_postgui.hal: copy that file beside the INI file, or
 # `source` it from a file of the machine. Post-GUI files of another display program connect
 # that program's pins and cannot be loaded.
+# If lut5 is already loaded, include the named CoffeeCNC instances in its existing loadrt line.
+# watchdog is a single shared component. Integrate the CoffeeCNC heartbeat and interlocks in
+# the machine's watchdog wiring when it already uses watchdog. Omit duplicate loads and
+# scheduling commands for components that are already set up by the machine.
 POSTGUI_HALFILE = coffeecnc_postgui.hal

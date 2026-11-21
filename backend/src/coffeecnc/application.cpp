@@ -343,6 +343,13 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
       return 1;
     }
   }
+  if (config->manual_tool_change) {
+    const auto wired = hal->connect_manual_tool_change();
+    if (!wired) {
+      say(std::format("[COFFEECNC] MANUAL_TOOLCHANGE: {}", wired.error()));
+      return 1;
+    }
+  }
   const auto flood = drives_output("iocontrol.0.coolant-flood");
   const auto mist = drives_output("iocontrol.0.coolant-mist");
   if (flood && mist) {

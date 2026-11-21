@@ -404,6 +404,14 @@ if(BUILD_TESTING)
             set_tests_properties(linuxcnc_coolant_${coolant_mode} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
               RESOURCE_LOCK linuxcnc TIMEOUT 400 FIXTURES_REQUIRED panel)
           endforeach()
+          foreach(change_mode external manual conflict)
+            add_test(NAME linuxcnc_tool_change_${change_mode} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+              -u mm -t 40 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_tool_change_${change_mode}
+              ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh
+              $<TARGET_FILE:coffeecnc_quit_application_tests> --tool-change=${change_mode})
+            set_tests_properties(linuxcnc_tool_change_${change_mode} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+              RESOURCE_LOCK linuxcnc TIMEOUT 400 FIXTURES_REQUIRED panel)
+          endforeach()
           foreach(units mm inch)
             add_test(NAME linuxcnc_shell_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
               -u ${units} -t 500 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_shell_${units}

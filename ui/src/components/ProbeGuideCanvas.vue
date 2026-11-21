@@ -20,6 +20,7 @@ const tool = new Group()
 const camera = new OrthographicCamera()
 const view: Camera = { azimuth: -0.88, elevation: 0.47, scale: 1, centre: [0, 0, 7] }
 const grid = new GridHelper(108, 18, 0x687787, 0x47535f)
+const axes = new AxesHelper(10)
 const stockMaterial = new MeshStandardMaterial({ color: 0x8195a5, metalness: 0.22, roughness: 0.62 })
 const steel = new MeshStandardMaterial({ color: 0xb5c3ce, metalness: 0.57, roughness: 0.33 })
 const rubyMaterial = new MeshStandardMaterial({ color: 0xcf173d, metalness: 0.16, roughness: 0.25 })
@@ -196,7 +197,6 @@ onMounted(() => {
     rim.position.set(50, 44, 25)
     grid.rotation.x = Math.PI / 2
     grid.position.z = -14.1
-    const axes = new AxesHelper(10)
     axes.position.set(-30, -23, -13.9)
     if (props.ruby) {
       tool.add(new Mesh(new SphereGeometry(2, 24, 18), rubyMaterial), cylinder(0.8, 9, steel, 6.5),
@@ -222,6 +222,7 @@ onBeforeUnmount(() => {
   resize?.disconnect()
   canvas.value?.removeEventListener('webglcontextlost', lost)
   scene.traverse(node => {
+    if (node === grid || node === axes) return
     if (node instanceof Mesh || node instanceof Line) {
       const geometry: unknown = node.geometry
       if (geometry instanceof BufferGeometry) geometry.dispose()
@@ -229,7 +230,9 @@ onBeforeUnmount(() => {
   })
   for (const material of [stockMaterial, steel, rubyMaterial, gold, contactMaterial, datumMaterial, trace.material]) material.dispose()
   grid.dispose()
+  axes.dispose()
   renderer?.dispose()
+  renderer?.forceContextLoss()
 })
 </script>
 

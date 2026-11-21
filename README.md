@@ -38,7 +38,7 @@ CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine 
 - With the touch probe (T99) loaded, probe the **Z top** or one workpiece edge: **X−** (left), **X+** (right), **Y−** (front) or **Y+** (back). The diagram shows which face each button probes.
 - **Corners** (X− Y−, X+ Y−, X− Y+, X+ Y+): probe Z top first, then jog the ball over the part within 10 mm of both edges. CoffeeCNC goes down beside each face and sets X0 and Y0 together.
 - **Bore centre** and **Boss centre** set X0 and Y0 at the centre and show the diameter.
-- **Edge angle** probes the front edge at two points and shows how far it turns, to square a vise.
+- **Edge angle** probes the front or left edge at two points and measures its angle.
 - **Calibrate ball** measures the effective ball diameter on a gauge of known width and saves it to the tool table.
 - Each probe mode opens a 3D guide with the jog position, cycle limits, and expected result. Play or step through the moves, then tap **Start probe** once the tool is in position. [Corner guide](ui/screenshots/probe-guide-corner-light.png) · [Edge-angle guide](ui/screenshots/probe-guide-angle-dark.png)
 - Every move between contacts runs with the probe active, so an unexpected contact stops the machine. Nothing is written unless every contact succeeds.

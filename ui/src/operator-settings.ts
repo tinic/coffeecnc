@@ -1,6 +1,17 @@
 import type { LengthUnit } from './protocol'
 import { validMachineId } from './tool-model-settings'
 
+export type ProgramLayout = 'path' | 'text' | 'split'
+export type PanelTheme = 'light' | 'dark'
+
+export function decodeProgramLayout(value: unknown): ProgramLayout | null {
+  return value === 'path' || value === 'text' || value === 'split' ? value : null
+}
+
+export function decodeTheme(value: unknown): PanelTheme | null {
+  return value === 'light' || value === 'dark' ? value : null
+}
+
 export interface OperatorPreferences {
   version: 1
   startup_units: 'machine' | LengthUnit
@@ -11,6 +22,8 @@ export interface OperatorPreferences {
   default_jog_velocity: number
   /** mm above work Z zero at contact; offered by the tool length touch-off dialog. */
   tool_reference_height: number
+  program_layout: ProgramLayout
+  theme: PanelTheme
 }
 
 export type OperatorSettings = {
@@ -23,14 +36,14 @@ export type OperatorSettings = {
 
 export function defaultOperatorPreferences(): OperatorPreferences {
   return { version: 1, startup_units: 'machine', enabled_wcs: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0 }
+    default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0, program_layout: 'path', theme: 'light' }
 }
 
 export function decodeOperatorPreferences(value: unknown): OperatorPreferences | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const keys = ['version', 'startup_units', 'enabled_wcs', 'default_spindle_rpm', 'default_jog_velocity']
-  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height'].includes(key)) ||
+  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme'].includes(key)) ||
       v['version'] !== 1 || !['machine', 'mm', 'inch'].includes(String(v['startup_units']))) return null
   const systems = v['enabled_wcs']
   if (!Array.isArray(systems) || systems.length < 1 || systems.length > 9 ||
@@ -44,7 +57,8 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
       typeof reference !== 'number' || !Number.isFinite(reference) || reference < 0 || reference > 1e9) return null
   return { version: 1, startup_units: v['startup_units'] as OperatorPreferences['startup_units'],
     enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog,
-    tool_reference_height: reference }
+    tool_reference_height: reference, program_layout: decodeProgramLayout(v['program_layout']) ?? 'path',
+    theme: decodeTheme(v['theme']) ?? 'light' }
 }
 
 export function decodeOperatorSettings(value: unknown): OperatorSettings | null {

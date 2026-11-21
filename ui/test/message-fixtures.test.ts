@@ -1121,7 +1121,9 @@ const examples = [
       ],
       "default_spindle_rpm": 1800,
       "default_jog_velocity": 600,
-      "tool_reference_height": 6.35
+      "tool_reference_height": 6.35,
+      "program_layout": "split",
+      "theme": "dark"
     }
   },
   {

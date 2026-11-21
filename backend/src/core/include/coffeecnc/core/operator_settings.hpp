@@ -6,6 +6,8 @@
 namespace coffeecnc {
 
 enum class StartupUnits : std::uint8_t { machine, mm, inch };
+enum class ProgramLayout : std::uint8_t { path, text, split };
+enum class PanelTheme : std::uint8_t { light, dark };
 
 // Presentation and startup presets only. Never sent to the controller.
 struct OperatorPreferences {
@@ -14,6 +16,8 @@ struct OperatorPreferences {
   double default_spindle_rpm{};
   double default_jog_velocity{600}; // mm/min
   double tool_reference_height{}; // mm above work Z zero; touch-off dialog preset
+  ProgramLayout program_layout{ProgramLayout::path};
+  PanelTheme theme{PanelTheme::light};
   friend auto operator==(const OperatorPreferences&, const OperatorPreferences&) -> bool = default;
 };
 

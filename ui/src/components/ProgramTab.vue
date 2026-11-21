@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { findTool, live, panel, reported } from '../machine'
+import { chooseProgramLayout, findTool, live, panel, reported } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
 import { machineBlock } from '../machine-block'
 import type { ProgramLayout } from '../store'
@@ -87,7 +87,7 @@ async function showFailure(): Promise<void> {
       <section class="scene">
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
-          <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="panel.programLayout = layout">{{ label }}</button></div>
+          <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ label }}</button></div>
         </header>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">

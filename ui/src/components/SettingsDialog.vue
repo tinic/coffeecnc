@@ -58,7 +58,7 @@ const storageLabel = computed(() => {
 })
 async function save(): Promise<void> {
   if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null || referenceHeight.value === null) return
-  const result = await props.settings.save({ version: 1, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
+  const result = await props.settings.save({ ...panel.preferences, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
     default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value, tool_reference_height: referenceHeight.value }, context)
   if (result.saved && !closed) emit('close')
 }

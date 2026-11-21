@@ -113,7 +113,7 @@ watch([axes, touchBlock], () => {
         <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
       </div>
     </div>
-    <div v-if="panel.tab === 'manual' || panel.tab === 'probe'" class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
+    <div class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
       <span class="tool-heading">{{ !live ? 'Last reported tool' : tool === 0 ? 'No tool loaded' : 'Active tool' }}</span>
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
       <span class="tool-length">Length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
@@ -129,16 +129,19 @@ watch([axes, touchBlock], () => {
 .basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; border-color: var(--line-strong); font-size: 14px; font-weight: 500; white-space: nowrap; }
 .basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
 .g92 { display: block; font-size: 9px; line-height: 10px; color: var(--warn); }
-.axis-group { display: flex; align-items: center; flex: 1 1 250px; min-width: 0; border-left: 1px solid var(--line); }
-.axis { display: flex; flex: 1; height: 56px; align-items: center; gap: 10px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.axis-group { display: flex; align-items: center; flex: none; min-width: 0; border-left: 1px solid var(--line); }
+.axis { display: flex; flex: none; height: 56px; align-items: center; gap: 12px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
 .axis:disabled { cursor: default; }.axis:hover:not(:disabled) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-.letter { flex: none; width: 20px; color: var(--text); }.reading { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; text-align: right; }
+.letter { flex: none; width: 20px; color: var(--text); }/* Coordinates sit next to their letter, grouped on the left with the units; digits right-aligned
+   in a fixed column (nine 27 px monospace characters: -9999.999 or -999.9999) so they do not move
+   as they change. */
+.reading { position: relative; display: flex; flex: none; flex-direction: column; width: 152px; text-align: right; }
 .number, .letter { font-size: 27px; line-height: 1.3; letter-spacing: -1px; font-weight: 500; white-space: nowrap; }.marker { position: absolute; top: 100%; left: 0; height: 15px; line-height: 15px; white-space: nowrap; font-size: 10px; color: var(--warn); }
 .touch { display: flex; align-self: center; padding: 2px; color: var(--text-dim); }.axis:disabled .touch { opacity: .3; }
 .touch.hidden { visibility: hidden; }
 .units { display: flex; flex: none; gap: 3px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
-.display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; }
+.display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }
 .units button { width: 44px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }

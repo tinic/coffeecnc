@@ -4186,7 +4186,11 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
   if (restarted) {
     Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
     check("breakpoint_restart_preserves_original_file_and_pause",
-          recovered.pump_until(4s, [&] { return at_breakpoint(4); }));
+          recovered.pump_until(4s, [&] {
+            const auto status = recovered.status();
+            return status.controller.link == Link::live && status.controller.breakpoint_program &&
+                   at_breakpoint(4);
+          }));
     {
       std::ofstream changed{oracle.program, std::ios::app};
       changed << "(Changed on disk after the pause)\n";

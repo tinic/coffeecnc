@@ -272,7 +272,7 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   // wcomp and and2 are loaded already, and a realtime module loads once.
   // The pocket instances are loaded here too: a realtime module loads once.
   halcmd("loadrt near names=sim-corner-x,sim-corner-y,sim-corner-z,sim-pocket-x,sim-pocket-y");
-  halcmd("loadrt logic names=sim-corner-in,sim-pocket-out personality=0x103,0x402");
+  halcmd("loadrt logic names=sim-corner-in,sim-pocket-out personality=0x103,0x802");
   for (const auto* component : {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-in",
                                 "sim-pocket-x", "sim-pocket-y", "sim-pocket-out"})
     halcmd(std::format("addf {} servo-thread", component));

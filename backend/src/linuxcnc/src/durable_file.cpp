@@ -29,7 +29,8 @@ auto directory_of(const std::string& path) -> std::string {
 auto write_synced(const std::string& path, std::string_view bytes)
     -> std::expected<void, std::string> {
   constexpr mode_t mode = 0666;
-  const int file = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, mode);
+  const int file =
+      ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, mode);
   if (file < 0)
     return failure("Cannot make", path);
   while (!bytes.empty()) {

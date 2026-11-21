@@ -45,7 +45,8 @@ if(BUILD_TESTING)
   # so that it runs wherever the core does.
   add_executable(coffeecnc_durable_file_tests tests/durable_file_tests.cpp
     src/linuxcnc/src/durable_file.cpp)
-  target_link_libraries(coffeecnc_durable_file_tests PRIVATE coffeecnc_core coffeecnc_project_options)
+  target_link_libraries(coffeecnc_durable_file_tests PRIVATE coffeecnc_core
+    coffeecnc_project_options)
   coffeecnc_enable_analyzers(coffeecnc_durable_file_tests)
   add_test(NAME durable_file COMMAND coffeecnc_durable_file_tests ${PROJECT_BINARY_DIR})
   if(COFFEECNC_BUILD_APP)

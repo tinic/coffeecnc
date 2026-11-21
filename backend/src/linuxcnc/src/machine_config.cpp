@@ -293,7 +293,8 @@ auto linuxcnc_switch(std::string_view value) -> bool {
     value.remove_prefix(1);
   int number{};
   const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
-  return !value.empty() && error == std::errc{} && end == value.data() + value.size() && number != 0;
+  return !value.empty() && error == std::errc{} && end == value.data() + value.size() &&
+         number != 0;
 }
 
 auto parse_jog_increments(std::string_view text, double millimetres_per_unit)
@@ -571,8 +572,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
       .touch_probe_tool = probe_tool,
-      .remember_spindle_tool = !linuxcnc_switch(ini.text("EMCIO", "RANDOM_TOOLCHANGER").value_or("")) &&
-                               ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
+      .remember_spindle_tool =
+          !linuxcnc_switch(ini.text("EMCIO", "RANDOM_TOOLCHANGER").value_or("")) &&
+          ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
       .paused_z = paused_z,
       .motion_tolerances = tolerances,
   };

@@ -1,0 +1,7 @@
+# Test fixture for legacy manual tool-change wiring. The sim runner owns the tool-change loop.
+source coffeecnc_postgui.hal
+unlinkp iocontrol.0.tool-change
+unlinkp iocontrol.0.tool-changed
+net coffeecnc-tool-change iocontrol.0.tool-change => coffeecnc.tool-change
+net coffeecnc-tool-number iocontrol.0.tool-prep-number => coffeecnc.tool-number
+net coffeecnc-tool-changed coffeecnc.tool-changed => iocontrol.0.tool-changed

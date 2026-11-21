@@ -3,6 +3,8 @@
 #include "application.hpp"
 #include "panel_window_impl.hpp"
 
+#include <array>
+#include <cstdio>
 #include <iostream>
 #include <cstdlib>
 #include <filesystem>
@@ -15,8 +17,20 @@ using namespace coffeecnc;
 namespace {
 struct Evidence {
   bool supported{}; bool accepted{}; bool failed{}; bool timed_out{}; bool coolant{};
+  bool tool_prompt{}; bool tool_loaded{};
   std::string expected_coolant;
 };
+auto tool_change_pin(const char* command) -> std::string {
+  std::string output;
+  if (auto* pipe = popen(command, "r")) {
+    std::array<char, 512> line{};
+    while (fgets(line.data(), static_cast<int>(line.size()), pipe))
+      output += line.data();
+    if (pclose(pipe) != 0)
+      return {};
+  }
+  return output;
+}
 constexpr const char* script = R"js((() => {
   let receiver;
   let phase = 'reset';
@@ -30,14 +44,26 @@ constexpr const char* script = R"js((() => {
       if (m.type === 'hello' && m.quit_supported) mark('supported');
       if (m.type === 'hello') mark('coolant:' + JSON.stringify(m.coolant ?? null));
       if (m.type === 'result' && m.id >= 1000000 && m.outcome !== 'accepted') mark('failed');
-      if (m.type === 'result' && m.id === 1000002 && m.outcome === 'accepted') mark('accepted');
+      if (m.type === 'result' && [1000002, 1000006].includes(m.id) && m.outcome === 'accepted') mark('accepted');
       if (m.type !== 'status' || m.link !== 'live') return;
       if (phase === 'reset' && m.machine === 'estop') {
         phase = 'on'; post({type:'set_machine',state:'off',id:1000000});
       } else if (phase === 'on' && m.machine === 'off') {
         phase = 'quit'; post({type:'set_machine',state:'on',id:1000001});
       } else if (phase === 'quit' && m.machine === 'on' && m.interp === 'idle') {
-        phase = 'done'; post({type:'quit',id:1000002});
+        if (window.toolChangeCase) {
+          phase = 'home'; post({type:'home',axis:'all',id:1000003});
+        } else {
+          phase = 'done'; post({type:'quit',id:1000002});
+        }
+      } else if (phase === 'home' && m.axes.every(axis => axis.homed && !axis.homing)) {
+        phase = 'change'; post({type:'mdi',text:'T1 M6',id:1000004});
+      } else if (phase === 'change' && m.wait.kind === 'tool_change' && m.wait.tool === 1) {
+        mark('tool-prompt');
+        phase = 'confirmed'; post({type:'tool_changed',id:1000005});
+      } else if ((phase === 'change' || phase === 'confirmed') && m.tool.in_spindle === 1 && m.interp === 'idle') {
+        mark('tool-loaded');
+        phase = 'done'; post({type:'quit',id:1000006});
       }
     }; }
   });
@@ -51,13 +77,31 @@ auto main(int argc, char** argv) -> int {
     if (std::string_view(argv[i]) == "-ini") options.ini_file = argv[i + 1];
   if (options.ini_file.empty()) return 1;
   std::string coolant_mode = "unwired";
-  for (int i = 1; i < argc; ++i)
+  std::string tool_change_mode;
+  for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]).starts_with("--coolant=")) coolant_mode = std::string(argv[i]).substr(10);
+    if (std::string_view(argv[i]).starts_with("--tool-change=")) tool_change_mode = std::string(argv[i]).substr(14);
+  }
   if (coolant_mode != "unwired" && coolant_mode != "wired" &&
       coolant_mode != "fail-pin" && coolant_mode != "fail-signal") return 1;
   const auto config = load_machine_config(options.ini_file);
   // These mutations belong only to the runner's disposable loopback simulation.
   if (!config || config->machine_name != "CoffeeCNC-sim") return 1;
+  if (!tool_change_mode.empty()) {
+    if (tool_change_mode != "external" && tool_change_mode != "manual" &&
+        tool_change_mode != "conflict") return 1;
+    std::ofstream ini(options.ini_file, std::ios::app);
+    ini << "\n[COFFEECNC]\nMANUAL_TOOLCHANGE = " << (tool_change_mode == "external" ? "no" : "yes") << '\n';
+    std::ofstream postgui(config->postgui_halfile);
+    postgui << "source coffeecnc_postgui.hal\n";
+    // Keep LinuxCNC's own changer loop for the external case. In the conflict case leave
+    // the acknowledgement pin owned so the app must roll back its earlier links.
+    if (tool_change_mode != "external")
+      postgui << "unlinkp iocontrol.0.tool-change\n";
+    if (tool_change_mode == "manual")
+      postgui << "unlinkp iocontrol.0.tool-changed\n";
+    if (!ini || !postgui) return 1;
+  }
   if (coolant_mode != "unwired") {
     std::ofstream postgui(config->postgui_halfile, std::ios::app);
     postgui << "\nunlinkp iocontrol.0.coolant-flood\n"
@@ -100,11 +144,14 @@ auto main(int argc, char** argv) -> int {
           if (value == "supported") state.supported = true;
           if (value == "accepted") state.accepted = true;
           if (value == "failed") state.failed = true;
+          if (value == "tool-prompt") state.tool_prompt = true;
+          if (value == "tool-loaded") state.tool_loaded = true;
           if (value.starts_with("coolant:")) state.coolant = value.substr(8) == state.expected_coolant;
         }
         g_free(text);
       }), &evidence);
-      auto* injected = webkit_user_script_new(script, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+      const std::string panel_script = std::string(tool_change_mode.empty() ? "" : "window.toolChangeCase = true;") + script;
+      auto* injected = webkit_user_script_new(panel_script.c_str(), WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
           WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, nullptr, nullptr);
       webkit_user_content_manager_add_script(manager, injected);
       webkit_user_script_unref(injected);
@@ -120,8 +167,24 @@ auto main(int argc, char** argv) -> int {
     },
   });
   if (timer != 0 && !evidence.timed_out) g_source_remove(timer);
-  const bool passed = code == 0 && evidence.supported && evidence.accepted && evidence.coolant &&
-                      !evidence.failed && !evidence.timed_out;
+  bool passed = code == 0 && evidence.supported && evidence.accepted && evidence.coolant &&
+                !evidence.failed && !evidence.timed_out;
+  if (!tool_change_mode.empty()) {
+    const auto changed = tool_change_pin("halcmd -s show pin iocontrol.0.tool-changed");
+    const auto signals = tool_change_pin("halcmd -s show sig coffeecnc-manual");
+    if (tool_change_mode == "conflict") {
+      passed = code == 1 && timer == 0 && changed.find("tool-change-loop") != std::string::npos &&
+               signals.find("coffeecnc-manual-") == std::string::npos;
+    } else {
+      passed = passed && evidence.tool_loaded &&
+               evidence.tool_prompt == (tool_change_mode == "manual") &&
+               (tool_change_mode != "external" || changed.find("tool-change-loop") != std::string::npos);
+    }
+    std::cout << "check=tool_change_case result=" << (passed ? "pass" : "fail")
+              << " mode=" << tool_change_mode << " prompt=" << evidence.tool_prompt
+              << " loaded=" << evidence.tool_loaded << " app_code=" << code
+              << " existing=" << (changed.find("tool-change-loop") != std::string::npos) << '\n';
+  }
   std::cout << "check=native_quit_application result=" << (passed ? "pass" : "fail")
             << " supported=" << evidence.supported << " accepted_before_close=" << evidence.accepted
             << " failed=" << evidence.failed << " timeout=" << evidence.timed_out

@@ -1239,19 +1239,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         !block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale), positioning_timeout,
                false, true))
       return interrupt("Could not raise Z to setter clearance.");
-    lifting = false;
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
           probe_backlash_allowance_mm))
       return interrupt(
           raw == nullptr
-              ? std::string{"The machine did not reach the clearance height (no status)."}
+              ? std::format("The machine did not reach the clearance height ({}).", cycle_failure)
               : std::format("The machine did not reach the clearance height (commanded Z {:.3f}, "
                             "measured {:.3f}, wanted {:.3f} mm).",
                             raw->motion.traj.position.tran.z * machine_scale,
                             raw->motion.traj.actualPosition.tran.z * machine_scale, lift_z));
     traversing_xy = true;
+    lifting = false;
     if (!block(std::format("G90 G53 G0 X{:.8f} Y{:.8f}", search_start[0] / program_scale,
                            search_start[1] / program_scale),
                positioning_timeout, false, true))

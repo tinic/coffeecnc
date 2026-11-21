@@ -9,9 +9,6 @@ import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
-/** Feed of the last approach move, mm/min; the machine uses the lower of this and the program feed. */
-const plungeFeed = 300
-
 const props = defineProps<{ line: number; section: string }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -33,6 +30,12 @@ function planRestart(): void {
   const command: CommandBody = { type: 'plan_restart', line: props.line, preview_context: context }
   request.value = command
   send(command)
+}
+
+/** Closing while the start is unconfirmed stops whatever the machine already began. */
+function close(): void {
+  if (request.value?.type === 'start_restart') send({ type: 'abort' })
+  emit('close')
 }
 
 function start(): void {
@@ -107,21 +110,21 @@ const steps = computed((): string[] => {
   const p = plan.value
   if (p === null) return []
   const [x, y, z] = p.start
-  const feed = Math.min(p.feed > 0 ? p.feed : plungeFeed, plungeFeed)
   return [
-    ...(p.needs_tool_change ? [`Change to ${toolName(p.tool)}`] : []),
-    ...(p.spindle_direction === 'stopped' ? [] : [`Start the spindle: ${spindle.value}`]),
-    `Rapid Z to ${length(p.clearance_z)}`,
+    `Rapid Z up to ${length(p.clearance_z)}`,
+    ...(p.needs_tool_change ? [`Change to ${toolName(p.tool)}, then rapid Z to ${length(p.clearance_z)} with its length`] : []),
     `Rapid to X ${length(x)} Y ${length(y)}`,
+    ...(p.spindle_direction === 'stopped' ? [] : [`Start the spindle: ${spindle.value}`]),
+    ...(p.flood || p.mist ? [`Coolant on: ${coolant.value}`] : []),
     ...(Math.abs(p.clearance_z - z) > 1e-6
-      ? [`Feed Z down to ${length(z)} at ${formatVelocity(feed, unit.value)} ${velocityUnit(unit.value)}`] : []),
+      ? [`Feed Z down to ${length(z)} at ${formatVelocity(p.approach_feed, unit.value)} ${velocityUnit(unit.value)}`] : []),
     `Run the program from line ${String(p.line)}`,
   ]
 })
 </script>
 
 <template>
-  <ModalDialog :title="`Restart at line ${String(line)}`" size="large" fresh-gesture @close="emit('close')">
+  <ModalDialog :title="`Restart at line ${String(line)}`" size="large" fresh-gesture @close="close">
     <p class="context"><span>{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
     <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ failure }}</p>
     <p v-else-if="plan === null" class="note" role="status">Planning the restart…</p>
@@ -143,7 +146,7 @@ const steps = computed((): string[] => {
       </section>
     </div>
     <template #footer>
-      <button class="btn" type="button" @click="emit('close')">Cancel</button>
+      <button class="btn" type="button" @click="close">Cancel</button>
       <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
       <button class="btn primary" type="button" :disabled="startBlock !== null" :title="startBlock ?? 'Run the approach, then the program'" @click="start"><AppIcon name="play" />Cycle start</button>
     </template>

@@ -65,7 +65,7 @@ describe('restart in the simulator', () => {
     expect(plan).toMatchObject({
       line: 14, tool: 2, needs_tool_change: true, wcs: 1, h: 2,
       spindle_direction: 'forward', spindle_rpm: 2000, flood: true, mist: false, feed: 480,
-      units: 'mm', plane: 'XY', distance_mode: 'absolute', clearance_z: 44.3, start: [16, -12, 44.3],
+      units: 'mm', plane: 'XY', distance_mode: 'absolute', clearance_z: 44.3, start: [16, -12, 44.3], approach_feed: 300,
     })
     r.sim.advance(200)
     expect(work(r.status())).toEqual(from)
@@ -73,7 +73,10 @@ describe('restart in the simulator', () => {
     expect(r.send({ type: 'start_restart', plan_id: plan.plan_id }).outcome).toBe('accepted')
     r.sim.advanceUntil((status) => status.wait.kind === 'tool_change', 10_000)
     expect(r.status().wait).toMatchObject({ kind: 'tool_change', tool: 2 })
+    // Lifted to clearance with the old tool before the change; nothing turns yet.
+    expect(work(r.status())[2]).toBeCloseTo(44.3, 3)
     expect(r.status().spindle.direction).toBe('stopped')
+    expect(r.status().coolant.flood).toBe(false)
     let lowest = Infinity
     for (let n = 0; n < 200_000 && r.status().interp !== 'idle'; n += 1) {
       const status = r.status()

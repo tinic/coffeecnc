@@ -1279,6 +1279,7 @@ export class SimMachine {
       distance_mode: m.absolute ? 'absolute' : 'incremental',
       clearance_z: clearance,
       start,
+      approach_feed: Math.min(m.feed > 0 ? m.feed : restartPlungeFeed, restartPlungeFeed),
     }
     this.restarts.clear()
     this.restarts.set(plan.plan_id, { plan, context, revision: program.revision, motion: m.motion })
@@ -1307,15 +1308,18 @@ export class SimMachine {
     const spindle = plan.spindle_direction === 'forward' ? `S${number(plan.spindle_rpm)} M3`
       : plan.spindle_direction === 'reverse' ? `S${number(plan.spindle_rpm)} M4` : 'M5'
     const coolant = plan.flood || plan.mist ? [plan.mist ? 'M7' : '', plan.flood ? 'M8' : ''].join(' ').trim() : 'M9'
+    // Lift first, change the tool, lift again for its length, then XY; the spindle and coolant
+    // start just before the feed down to the start.
     this.exec.preamble = [
       `G21 G90 G17 ${wcsNames[plan.wcs - 1] ?? 'G54'}`,
+      `G0 Z${number(plan.clearance_z)}`,
       ...(plan.needs_tool_change ? [`T${String(plan.tool)} M6`] : []),
       plan.h > 0 ? `G43 H${String(plan.h)}` : 'G49',
-      spindle,
-      coolant,
       `G0 Z${number(plan.clearance_z)}`,
       `G0 X${number(x)} Y${number(y)}`,
-      `G1 Z${number(z)} F${number(Math.min(plan.feed > 0 ? plan.feed : restartPlungeFeed, restartPlungeFeed))}`,
+      spindle,
+      coolant,
+      `G1 Z${number(z)} F${number(plan.approach_feed)}`,
       [planned.motion <= 1 ? `G${String(planned.motion)}` : '', plan.units === 'inch' ? 'G20' : '', plan.distance_mode === 'incremental' ? 'G91' : '',
         plan.feed > 0 ? `F${number(plan.units === 'inch' ? plan.feed / 25.4 : plan.feed)}` : ''].join(' ').trim(),
     ].filter((block) => block !== '')

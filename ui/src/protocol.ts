@@ -318,6 +318,8 @@ export interface RestartPlan {
   distance_mode: 'absolute' | 'incremental'
   clearance_z: number
   start: Vec3
+  /** Feed of the last approach move down to `start`, mm/min. */
+  approach_feed: number
 }
 
 export interface FixedSetterLimits {

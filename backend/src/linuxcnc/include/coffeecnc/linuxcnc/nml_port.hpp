@@ -274,6 +274,7 @@ private:
   struct Impl;
   [[nodiscard]] auto start_checked(const PreviewInputs&, const Wanted&, const Wanted&)
       -> ActionResult;
+  [[nodiscard]] auto check_air_registers(const Wanted& wanted) -> ActionResult;
   [[nodiscard]] auto write_air_offset(double lift, const Wanted& wanted) -> ActionResult;
   void recover_air_offset(const Wanted& wanted);
   explicit NmlPort(std::unique_ptr<Impl> impl);

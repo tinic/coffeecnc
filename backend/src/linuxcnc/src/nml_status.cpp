@@ -147,6 +147,10 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   // Element 0 of each array is the line number the codes were read at; -1 marks an empty
   // group. G codes are stored times ten: 540 is G54, 591 is G59.1.
   for (std::size_t i = 1; i < std::size(task.activeGCodes); ++i) {
+    // Index 2 is the last nonmodal group-zero word. Its effect is reflected by the offsets,
+    // position and other state already reported here, and the word itself cannot carry over.
+    if (i == 2)
+      continue;
     const int code = task.activeGCodes[i];
     if (code < 0)
       continue;

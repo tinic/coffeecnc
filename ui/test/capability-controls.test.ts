@@ -343,4 +343,22 @@ describe('capability-aware controls', () => {
     expect(wrapper.find('[role="dialog"] button.primary').exists()).toBe(false)
     expect(send).not.toHaveBeenCalled()
   })
+
+  it('requires a separate confirmation with the exact reviewed air-cut lift', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.status.program.air_z = 25
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    expect(wrapper.get('.main-action').text()).toContain('Start air cut')
+    await wrapper.get('.main-action').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('+25.000 mm')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button.primary').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
+      display_units: 'mm', confirmed: true, air_z: 25 })
+  })
 })

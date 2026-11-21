@@ -12,9 +12,6 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <limits>
-#include <optional>
-#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -22,14 +19,18 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <numbers>
 #include <numeric>
+#include <optional>
 #include <span>
+#include <sstream>
 #include <system_error>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <cmd_msg.hh>
 #include <cms.hh>
@@ -1791,6 +1792,12 @@ auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, co
     return failed(reason);
   if (inputs.g92 != Vec3{})
     return failed("Clear the active G52 or G92 offset before an air cut.");
+  if (auto registers = check_air_registers(wanted); !accepted(registers))
+    return registers;
+  if (!current())
+    return failed("The program or tool data changed. Review the new program check.");
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
   if (!write_sidecar(impl_->air_marker, std::format("{:.17g}\n", inputs.air_z)))
     return failed("Could not save the air-cut recovery record.");
   impl_->air_offset = inputs.air_z;
@@ -1921,6 +1928,43 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
 auto NmlPort::set_air_cut(double lift) -> ActionResult {
   impl_->air_z = lift;
   impl_->publish_air();
+  return {};
+}
+
+auto NmlPort::check_air_registers(const Wanted& wanted) -> ActionResult {
+  if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
+    return mode;
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  constexpr std::string_view tag = "CoffeeCNC air registers ";
+  EMC_TASK_PLAN_EXECUTE message;
+  const auto block =
+      std::format("(DEBUG,{}%.9f#5211 #5212 #5213 #5214 #5215 #5216 #5217 #5218 #5219)", tag);
+  if (!put(message.command, block))
+    return failed("Could not read the G52/G92 registers.");
+  if (auto done = impl_->run(message, from); !accepted(done))
+    return done;
+  const auto reply = [&] {
+    return std::find_if(impl_->messages.begin() + static_cast<std::ptrdiff_t>(from),
+                        impl_->messages.end(), [&](const ControllerMessage& entry) {
+                          return !entry.error && entry.text.starts_with(tag);
+                        });
+  };
+  static_cast<void>(until(error_text_time, [&] {
+    impl_->collect();
+    return reply() != impl_->messages.end() || !wanted();
+  }));
+  const auto at = reply();
+  if (at == impl_->messages.end())
+    return failed("LinuxCNC did not report the G52/G92 registers.");
+  std::istringstream values{at->text.substr(tag.size())};
+  impl_->messages.erase(at);
+  std::array<double, 9> offsets{};
+  for (double& value : offsets)
+    if (!(values >> value))
+      return failed("LinuxCNC did not report all G52/G92 registers.");
+  if (std::ranges::any_of(offsets, [](double value) { return value != 0; }))
+    return failed("Clear the stored G52 or G92 offset before an air cut.");
   return {};
 }
 

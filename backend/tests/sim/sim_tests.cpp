@@ -4130,6 +4130,38 @@ void raised_run(Rig& rig, NmlLoads& loads) {
                                                         !initial_xy->check->errors.empty() &&
                                                         initial_xy->state == PreviewState::failed);
 
+  const auto beyond_limit = load("G0 Z990\nG1 Z980 F2400\n");
+  const auto travel_denied = start(true);
+  check("air_cut_checks_travel_of_raised_path",
+        beyond_limit && beyond_limit->check &&
+            beyond_limit->check->travel == TravelCheck::outside &&
+            travel_denied.outcome == "rejected" && !std::filesystem::exists(marker),
+        travel_denied.text());
+
+  const auto offset = rig.send(R"("type":"mdi","text":"G52 Z7")");
+  const bool offset_set =
+      rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 7); });
+  const auto suspended = rig.send(R"("type":"mdi","text":"G92.2")");
+  const bool suspended_ok =
+      rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); });
+  const auto with_stored = load("G0 Z15\nM0\n");
+  const auto stored_denied = start(true);
+  check("air_cut_preserves_suspended_g92",
+        offset.accepted() && offset_set && suspended.accepted() && suspended_ok && with_stored &&
+            stored_denied.reason.find("stored G52 or G92") != std::string::npos &&
+            !std::filesystem::exists(marker),
+        stored_denied.text());
+  const auto restore = rig.send(R"("type":"mdi","text":"G92.3")");
+  check("air_cut_stored_offset_unchanged",
+        restore.accepted() &&
+            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 7); }),
+        restore.text());
+  const auto reset = rig.send(R"("type":"mdi","text":"G92.1")");
+  check("air_cut_reset_test_offset",
+        reset.accepted() &&
+            rig.pump_until(3s, [&] { return rig.idle() && near(rig.status().g92[2], 0); }),
+        reset.text());
+
   const auto power_after = load("G0 Z15\nM0\n");
   const auto during_power = start(true);
   const bool ready_to_cut_power =

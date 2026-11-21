@@ -131,6 +131,7 @@ const examples: Examples = {
   fixed_setter: { id: 30, type: 'fixed_setter', action: 'touch_off', tool: 98, x: 4, y: 6.35, z: -85.3 },
   plan_restart: { id: 31, type: 'plan_restart', line: 25, preview_context: 7 },
   start_restart: { id: 32, type: 'start_restart', plan_id: 3 },
+  set_air_cut: { id: 33, type: 'set_air_cut', air_z: 25 },
 }
 
 describe('protocol/fixtures/commands.json', () => {

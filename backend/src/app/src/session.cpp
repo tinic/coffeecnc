@@ -520,6 +520,11 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   return outcome;
 }
 
+auto Session::loaded_program() const -> std::string {
+  const std::scoped_lock lock{mutex_};
+  return have_status_ ? status_.program_file : std::string{};
+}
+
 void Session::observe(const ControllerState& state, JogLease::Time now) {
   const std::scoped_lock lock{mutex_};
   if (state.link != Link::live || state.machine != MachineState::on ||

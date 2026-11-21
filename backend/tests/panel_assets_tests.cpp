@@ -129,18 +129,39 @@ void run(const std::filesystem::path& scratch) {
       url += c == ' ' ? std::string{"%20"} : std::string(1, c);
     return url;
   };
-  const auto plate = resolve_program_part(part_url(programs / "plate.ngc"));
+  // Each program as the one LinuxCNC has loaded.
+  const auto loaded = [&](const std::filesystem::path& program) {
+    return resolve_program_part(part_url(program), program.string());
+  };
+  const auto plate = loaded(programs / "plate.ngc");
   require(plate && std::filesystem::path(*plate).filename() == "plate.STEP",
           "A program's model is found beside it, whatever the extension's case");
-  require(!resolve_program_part(part_url(programs / "lone.ngc")),
-          "A program without a model of its name has none");
-  require(!resolve_program_part(part_url(programs / "missing.ngc")),
-          "A program that does not exist has no model");
-  require(!resolve_program_part("coffeecnc://panel/program-part?program=plate.ngc") &&
-              !resolve_program_part("coffeecnc://panel/program-part") &&
-              !resolve_program_part("coffeecnc://panel/index.html?program=" +
-                                    (programs / "plate.ngc").string()),
+  require(!loaded(programs / "lone.ngc"), "A program without a model of its name has none");
+  require(!loaded(programs / "missing.ngc"), "A program that does not exist has no model");
+  const auto plate_ngc = (programs / "plate.ngc").string();
+  require(!resolve_program_part("coffeecnc://panel/program-part?program=plate.ngc", "plate.ngc") &&
+              !resolve_program_part("coffeecnc://panel/program-part", plate_ngc) &&
+              !resolve_program_part("coffeecnc://panel/index.html?program=" + plate_ngc,
+                                    plate_ngc),
           "Only an absolute program path on the program-part URL names a model");
+  // Only the loaded program's model: the URL cannot name the model beside any other file.
+  write(programs / "secret.ngc");
+  write(programs / "secret.step");
+  require(!resolve_program_part(part_url(programs / "secret.ngc"), plate_ngc) &&
+              !resolve_program_part(part_url(programs / "plate.ngc"), "") &&
+              !resolve_program_part(part_url(programs / "plate.ngc"),
+                                    (programs / "other.ngc").string()),
+          "A program that is not the loaded one has no model, nor has any while none is loaded");
+  // A model linked from elsewhere, beside the loaded program, is the operator's: its target.
+  const auto elsewhere = base / "cad";
+  write(elsewhere / "bracket-rev4.step");
+  write(programs / "bracket.ngc");
+  std::filesystem::create_symlink(elsewhere / "bracket-rev4.step", programs / "bracket.stp");
+  const auto linked = loaded(programs / "bracket.ngc");
+  require(linked && *linked == std::filesystem::canonical(elsewhere / "bracket-rev4.step").string(),
+          "A linked model beside the loaded program is served from its target");
+  std::filesystem::create_symlink(elsewhere / "gone.step", programs / "lone.stp");
+  require(!loaded(programs / "lone.ngc"), "A dangling link is no model");
 }
 
 } // namespace

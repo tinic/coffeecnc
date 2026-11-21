@@ -95,7 +95,8 @@ auto content_type_of(std::string_view file) -> std::string_view {
 
 auto is_panel_url(std::string_view url) -> bool { return path_of(url).has_value(); }
 
-auto resolve_program_part(std::string_view url) -> std::optional<std::string> {
+auto resolve_program_part(std::string_view url, std::string_view loaded)
+    -> std::optional<std::string> {
   if (path_of(url) != program_part_path)
     return {};
   const auto query = url.find('?');
@@ -108,7 +109,7 @@ auto resolve_program_part(std::string_view url) -> std::optional<std::string> {
     return {};
   const auto program = unescaped(parameters.substr(key.size()));
   if (!program || program->empty() || program->front() != '/' ||
-      program->find('\0') != std::string::npos)
+      program->find('\0') != std::string::npos || *program != loaded)
     return {};
   std::error_code error;
   const std::filesystem::path path{*program};
@@ -117,8 +118,12 @@ auto resolve_program_part(std::string_view url) -> std::optional<std::string> {
   for (const auto* extension : {".step", ".stp", ".STEP", ".STP"}) {
     auto candidate = path;
     candidate.replace_extension(extension);
-    if (std::filesystem::is_regular_file(candidate, error))
-      return std::filesystem::canonical(candidate, error).string();
+    if (!std::filesystem::is_regular_file(candidate, error))
+      continue;
+    auto canonical = std::filesystem::canonical(candidate, error);
+    if (error)
+      return {};
+    return canonical.string();
   }
   return {};
 }

@@ -92,6 +92,18 @@ describe('program options', () => {
   })
 })
 
+describe('program lines', () => {
+  it('keeps the motion line of the last motion during a dwell, as the native status does', () => {
+    const r = rig()
+    r.home()
+    r.load('G91 G1 X1 F600\nG4 P5\nG1 X1\nM2\n')
+    expect(r.send({ type: 'run' }).outcome).toBe('accepted')
+    r.sim.advanceUntil((status) => status.program.current_line === 2, 10_000)
+    r.sim.advance(1000)
+    expect(r.status().program).toMatchObject({ current_line: 2, motion_line: 1 })
+  })
+})
+
 describe('tool length offset codes', () => {
   it('reports G43 for an active offset of zero length', () => {
     const r = rig()

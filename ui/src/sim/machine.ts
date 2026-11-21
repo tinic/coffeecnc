@@ -103,6 +103,8 @@ interface Exec {
   nextLine: number
   /** 1-based line being executed. */
   currentLine: number
+  /** Line of the last motion started; it stays between motions, as in the native status. */
+  motionLine?: number
   paused: boolean
   stepping: boolean
   /** A line with content has been interpreted and not yet completed. */
@@ -393,7 +395,7 @@ export class SimMachine {
         file: this.program?.file ?? null,
         revision: this.program?.revision ?? 0,
         current_line: exec?.source === 'program' ? exec.currentLine : 0,
-        motion_line: exec?.source === 'program' && move !== null ? move.line : 0,
+        motion_line: exec?.source === 'program' ? exec.motionLine ?? 0 : 0,
         optional_stop: this.optionalStop,
         block_delete: this.blockDelete,
         cycle: exec?.source === 'program' ? 'running' : this.cutCompleted ? 'completed' : 'idle',
@@ -696,6 +698,7 @@ export class SimMachine {
         if (error === null) {
           if (this.pendingProbe) this.probeContact = false
           exec.active = { kind: 'move', op, index: 1 }
+          if (op.line > 0) exec.motionLine = op.line
         } else {
           this.execError(error)
         }

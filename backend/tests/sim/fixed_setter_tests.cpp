@@ -265,6 +265,60 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   mdi("G54");
   require(port->status().g5x == g54, "probing G55 left G54 unchanged");
   mdi("G55");
+
+  // A corner of a block: X and Y faces at machine -5 mm, its top at 12 mm (controlled point,
+  // the ruby's length applied). The probe starts 5 mm inside both faces, 8 mm above the top.
+  // Each axis inside its window (near: |in1 - in2| <= difference), all three at once (logic AND).
+  // wcomp and and2 are loaded already, and a realtime module loads once.
+  halcmd("loadrt near names=sim-corner-x,sim-corner-y,sim-corner-z");
+  halcmd("loadrt logic names=sim-corner-in personality=0x103");
+  for (const auto* component : {"sim-corner-x", "sim-corner-y", "sim-corner-z", "sim-corner-in"})
+    halcmd(std::format("addf {} servo-thread", component));
+  const auto corner_window = [&](char axis, double low, double high) {
+    const auto name = std::format("sim-corner-{}", axis);
+    // The edge cycles above left each axis's commanded position on a signal of its own.
+    halcmd(std::format("net {} {}.in1", axis == 'z' ? std::string("sim-setter-z")
+                                                    : std::format("sim-contact-{}", axis),
+                       name));
+    halcmd(std::format("setp {}.in2 {}", name, (low + high) / 2 / scale));
+    halcmd(std::format("setp {}.difference {}", name, (high - low) / 2 / scale));
+    halcmd(std::format("setp {}.scale 1", name));
+  };
+  corner_window('x', -5, 100);
+  corner_window('y', -5, 100);
+  corner_window('z', -100, 12);
+  halcmd("net sim-corner-inx sim-corner-x.out sim-corner-in.in-00");
+  halcmd("net sim-corner-iny sim-corner-y.out sim-corner-in.in-01");
+  halcmd("net sim-corner-inz sim-corner-z.out sim-corner-in.in-02");
+  halcmd("unlinkp sim-ruby-release.in");
+  halcmd("net sim-corner-trip sim-corner-in.and sim-ruby-release.in");
+  start_at();
+  mdi("G21");
+  mdi("G10 L20 P0 Z8");
+  const auto corner_before = port->status();
+  const auto corner = port->fixed_setter(
+      {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
+      {});
+  require(corner.has_value(), corner ? "corner probe completed" : corner.error());
+  const auto corner_after = port->status();
+  // Faces at -5 mm plus the 1 mm ball radius; the probe ends lifted above the Y approach point.
+  require(corner && corner->material && corner->material->corner && corner->material->wcs == 2 &&
+              corner_after.wcs == 2 && std::abs(corner_after.work[0] - 4) < 0.03 &&
+              std::abs(corner_after.work[1] + 10) < 0.03 &&
+              std::abs(corner_after.work[2] - corner_before.work[2]) < 0.03 &&
+              std::abs(position()[2] - 20) < 0.2,
+          std::format("the corner set G55 X0 Y0 at both faces and lifted (work {:.3f} {:.3f}, z {:.3f})",
+                      corner_after.work[0], corner_after.work[1], position()[2]));
+  start_at();
+  mdi("G21");
+  mdi("G10 L20 P0 Z-10");
+  const auto low = port->fixed_setter(
+      {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
+      {});
+  require(!low && low.error().contains("above the top"), low ? "expected a refusal" : low.error());
+  halcmd("unlinkp sim-ruby-release.in");
+  halcmd("net sim-setter-trip sim-ruby-release.in");
+
   start_at();
   mdi("G10 L2 P2 R90");
   window('y', 6, 100);

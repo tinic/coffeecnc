@@ -112,6 +112,9 @@ struct FixedSetterMove {
   double travel_mm;
   double feed_mm_min;
   std::optional<std::array<double, 3>> approach{}; // traverse at or above the taught clearance
+  // With an approach: lift to this machine Z first, traverse XY there, then feed down to the
+  // approach (which may lie below the start), the probe interlock active throughout.
+  std::optional<double> clearance_z{};
   std::optional<double> retract_z{};
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};

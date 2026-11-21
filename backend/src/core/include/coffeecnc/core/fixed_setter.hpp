@@ -20,14 +20,17 @@ struct FixedSetterLimits {
   friend auto operator==(const FixedSetterLimits&, const FixedSetterLimits&) -> bool = default;
 };
 
-enum class SetterAction : std::uint8_t { status, touch_off, material };
+enum class SetterAction : std::uint8_t { status, touch_off, material, corner };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
 struct FixedSetterRequest {
   SetterAction action;
   int tool{};
   std::array<double, 3> start{};
+  // The travel of a material probe; for a corner, the X travel (x_minus or x_plus).
   ProbeDirection direction{ProbeDirection::z_top};
+  // For a corner, the Y travel (y_minus or y_plus).
+  ProbeDirection y_direction{ProbeDirection::y_plus};
 };
 
 struct SetterEpoch {
@@ -56,6 +59,7 @@ struct SetterState {
   struct Material {
     int wcs;
     char axis;
+    bool corner{}; // X and Y were both set
   };
   std::optional<Material> material{};
 };

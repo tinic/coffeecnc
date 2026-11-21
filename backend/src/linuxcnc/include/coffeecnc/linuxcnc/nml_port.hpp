@@ -18,6 +18,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -56,6 +57,7 @@ struct NmlStatus {
   int wcs{}; // 1 is G54 ... 9 is G59.3
   int current_line{};
   int motion_line{};
+  std::optional<ProgramBreakpoint> breakpoint{};
   int queued_mdi{};
   SpindleDirection spindle_direction{SpindleDirection::stopped};
   // The serial number of the last command task has taken up, and whether task reports that
@@ -79,6 +81,18 @@ struct NmlStatus {
 
 // What LinuxCNC has loaded at this port's request, counted at the moment LinuxCNC accepted it.
 // The publisher reads the counts: a load of the same file again is a load. Thread-safe.
+struct BreakpointSource {
+  BreakpointSource(std::string original_file, std::string temporary_file, int source_line,
+                   std::string receipt_id, bool received = false)
+      : original(std::move(original_file)), temporary(std::move(temporary_file)), line(source_line),
+        receipt(std::move(receipt_id)), marker_seen(received) {}
+  std::string original;
+  std::string temporary;
+  int line{};
+  std::string receipt;
+  mutable std::atomic<bool> marker_seen{};
+};
+
 struct NmlLoads {
   std::atomic<std::uint64_t> programs{};    // open_program accepted
   // An MDI block accepted (mdi, select_wcs, touch_off, tool_touch_off): task's line counters
@@ -89,6 +103,7 @@ struct NmlLoads {
   std::atomic<std::uint64_t> aborts{};
   std::atomic<double> air_z{};
   std::atomic<bool> air_offset_owned{};
+  std::atomic<std::shared_ptr<const BreakpointSource>> breakpoint{};
 };
 
 struct FixedSetterMove {
@@ -236,6 +251,9 @@ public:
   [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs) -> std::string override;
   [[nodiscard]] auto run_checked(const PreviewInputs& inputs, const Wanted& current,
                                  const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto run_to_breakpoint(const PreviewInputs& inputs, std::string_view program,
+                                       int line, const Wanted& current, const Wanted& wanted)
+      -> ActionResult override;
   [[nodiscard]] auto validate_restart(RestartPoint& point, const PreviewInputs& inputs)
       -> std::string override;
   [[nodiscard]] auto start_restart(const RestartPoint& point, const PreviewInputs& inputs,
@@ -272,12 +290,16 @@ public:
 
 private:
   struct Impl;
-  [[nodiscard]] auto start_checked(const PreviewInputs&, const Wanted&, const Wanted&)
+  [[nodiscard]] auto open_program_file(std::string_view path, const Wanted& wanted,
+                                       bool publish_load = false) -> ActionResult;
+  [[nodiscard]] auto start_checked(const PreviewInputs&, const Wanted&, const Wanted&,
+                                   std::optional<std::string_view> execution_path = {})
       -> ActionResult;
   [[nodiscard]] auto read_air_registers(const Wanted& wanted)
       -> std::expected<std::array<double, 9>, ActionResult>;
   [[nodiscard]] auto write_air_offset(double lift, const Wanted& wanted) -> ActionResult;
   void recover_air_offset(const Wanted& wanted);
+  void finish_breakpoint(const Wanted& wanted);
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

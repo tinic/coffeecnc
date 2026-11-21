@@ -786,6 +786,9 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
         decision = {false, {}, std::move(reason), {}};
       }
     }
+  } else if (decision.allowed) {
+    if (const auto* run = std::get_if<Run>(&command); run && run->breakpoint)
+      decision = {false, {}, "A breakpoint needs a complete program check.", {}};
   }
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
@@ -882,6 +885,27 @@ auto Session::check_program_start(const Queued& request, const Run& command,
                                              : "Air cut needs a complete raised preview.";
   if (report && !report->errors.empty())
     return report->errors.front();
+  if (command.breakpoint) {
+    if (!check.source.program_snapshot || !check.files_changed || !report ||
+        check.preview->state != PreviewState::ready)
+      return "A breakpoint needs a complete program check.";
+    if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
+          return segment.line == command.breakpoint->line;
+        }))
+      return "Choose a motion line in the current program preview.";
+    // Bind the operator's picked text to the checked bytes, including when a program on disk
+    // was replaced after the panel loaded its text.
+    std::string_view remaining = *check.source.program_snapshot;
+    for (int line = 1; line < command.breakpoint->line && !remaining.empty(); ++line) {
+      const auto end = remaining.find('\n');
+      remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+    }
+    auto selected = remaining.substr(0, remaining.find('\n'));
+    if (selected.ends_with('\r'))
+      selected.remove_suffix(1);
+    if (selected.empty() || selected != command.breakpoint->text)
+      return "The selected program line changed. Reopen the program and choose the line again.";
+  }
   if (command.air_z != 0 && !command.confirmed)
     return "Review the raised preview before starting the air cut.";
   const bool units_mismatch =
@@ -1138,6 +1162,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
                           : probe_block(request.command, port_.snapshot()).empty()) &&
                      preview_->checked_preview().preview == verified->preview;
             };
+            if (c.breakpoint)
+              return port_.run_to_breakpoint(*verified->source.inputs,
+                                             *verified->source.program_snapshot, c.breakpoint->line,
+                                             current, still);
             return port_.run_checked(*verified->source.inputs, current, still);
           });
         } else if constexpr (std::is_same_v<T, SetAirCut>) {

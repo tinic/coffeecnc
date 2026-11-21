@@ -60,6 +60,7 @@ struct ControllerState {
   double air_z{}; // selected lift, millimetres
   bool air_offset_owned{};
   bool air_offset_recovery{};
+  bool breakpoint_program{};
 };
 
 struct Limits {
@@ -120,11 +121,17 @@ struct ListDirectory {
 struct OpenProgram {
   std::string path;
 };
+struct BreakpointRequest {
+  int line{};
+  std::string text;
+};
+
 struct Run {
   std::optional<std::uint64_t> preview_context{};
   std::optional<LengthUnit> display_units{};
   bool confirmed{};
   double air_z{};
+  std::optional<BreakpointRequest> breakpoint{};
 };
 struct SetAirCut {
   double air_z{}; // zero selects a normal run

@@ -288,6 +288,8 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     program_fields["air_z"] = fields.real(program.air_z, "program.air_z");
   if (program.air_offset_owned)
     program_fields["air_offset_owned"] = true;
+  if (const auto breakpoint = program.breakpoint)
+    program_fields["breakpoint"] = {{"line", breakpoint->line}, {"reached", breakpoint->reached}};
   return fields.finish(
       {{"type", "status"},
        {"seq", fields.count(seq, "seq")},

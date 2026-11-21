@@ -195,7 +195,8 @@ auto command(const Json& object) -> Command {
     return OpenProgram{string(object, "path")};
   }
   if (type == "run") {
-    fields(object, {"id", "type"}, {"preview_context", "display_units", "confirmed", "air_z"});
+    fields(object, {"id", "type"},
+           {"preview_context", "display_units", "confirmed", "air_z", "breakpoint"});
     Run run;
     if (object.contains("preview_context"))
       run.preview_context = positive_id(object, "preview_context");
@@ -206,7 +207,16 @@ auto command(const Json& object) -> Command {
       run.confirmed = boolean(object, "confirmed");
     if (object.contains("air_z"))
       run.air_z = number(object, "air_z");
-    if ((run.confirmed || run.air_z != 0) && (!run.preview_context || !run.display_units))
+    if (object.contains("breakpoint")) {
+      const auto& breakpoint = field(object, "breakpoint");
+      fields(breakpoint, {"line", "text"});
+      const auto line = integer(breakpoint, "line");
+      if (line < 1)
+        throw InvalidRequest("A breakpoint requires a positive program line.");
+      run.breakpoint = BreakpointRequest{line, string(breakpoint, "text")};
+    }
+    if ((run.confirmed || run.air_z != 0 || run.breakpoint) &&
+        (!run.preview_context || !run.display_units))
       throw InvalidRequest("Confirmation needs the reviewed preview and display units.");
     return run;
   }

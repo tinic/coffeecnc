@@ -4204,8 +4204,120 @@ void raised_run(Rig& rig, NmlLoads& loads) {
   rig.start();
 }
 
+void program_breakpoint(Rig& rig, NmlLoads& loads) {
+  const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("breakpoint_loaded_tool_table", table.has_value());
+  if (!table)
+    return;
+  PreviewOracle oracle{rig, *table};
+  PreviewWorker preview{oracle.engine};
+  rig.stop();
+  rig.restart_preview = &preview;
+  rig.start();
+  const auto copy = std::filesystem::path(rig.config.directory) / ".coffeecnc-breakpoint.ngc";
+  const auto record = std::filesystem::path(rig.config.directory) / ".coffeecnc-breakpoint.txt";
+  const auto restored = [&] {
+    return rig.idle() && rig.status().program_file == oracle.program &&
+           !std::filesystem::exists(copy) && !std::filesystem::exists(record);
+  };
+  std::uint64_t context{};
+  const auto load = [&](std::string_view blocks) {
+    const std::string text =
+        "G21 G90 G17 G54 G40 G49 G80 G94 G97 G64\n" + std::string(blocks) + "M30\n";
+    const auto [inputs, outcome] = oracle.preview(text);
+    preview.submit(++context, inputs);
+    check("breakpoint_preview_ready",
+          outcome.state == PreviewState::ready &&
+              rig.pump_until(5s,
+                             [&] {
+                               const auto shown = preview.checked_preview().preview;
+                               return shown && shown->context == context &&
+                                      shown->state == PreviewState::ready;
+                             }),
+          outcome.error ? outcome.error->text : "");
+    return text;
+  };
+  const auto start = [&](int line, std::uint64_t reviewed, std::string_view expected) {
+    return rig.send(std::format(
+        R"("type":"run","preview_context":{},"display_units":"mm","breakpoint":{{"line":{},"text":{}}})",
+        reviewed, line, Json(expected).dump()));
+  };
+  const auto at_breakpoint = [&](int line) {
+    const auto status = oracle.source.read().status;
+    return status.program.file == oracle.program && status.program.breakpoint &&
+           status.program.breakpoint->line == line && status.program.breakpoint->reached;
+  };
+
+  const auto contents = load("S650 M3\nG0 Z20\nG0 X8 Y4\nG1 Z2 F900\nG1 X11 F1200\n");
+  const auto revision = oracle.source.read().status.program.revision;
+  const auto stale = start(5, context + 1, "G1 Z2 F900");
+  const auto nonmotion = start(2, context, "S650 M3");
+  const auto wrong_text = start(5, context, "G1 Z3 F900");
+  check("breakpoint_rejects_stale_and_nonmotion_lines",
+        stale.outcome == "rejected" && nonmotion.outcome == "rejected" &&
+            wrong_text.outcome == "rejected" && !std::filesystem::exists(copy),
+        stale.text() + " " + nonmotion.text() + " " + wrong_text.text());
+  const auto started = start(5, context, "G1 Z2 F900");
+  const bool reached = rig.pump_until(5s, [&] { return at_breakpoint(5); });
+  const auto raw = rig.status();
+  const auto panel = oracle.source.read().status;
+  check("breakpoint_pauses_before_plunge_with_spindle_running",
+        started.accepted() && reached && raw.controller.in_position &&
+            raw.controller.spindle_active && near(raw.commanded_position[2], 20, 0.02) &&
+            near(raw.commanded_position[0], 8, 0.02) && panel.program.revision == revision &&
+            std::filesystem::exists(copy),
+        started.text() + " raw line " + std::to_string(raw.current_line));
+  const auto resumed = rig.send(R"("type":"resume")");
+  const bool mapped =
+      rig.pump_until(3s, [&] { return oracle.source.read().status.program.motion_line == 5; });
+  check("breakpoint_resume_maps_source_line_after_pause", resumed.accepted() && mapped,
+        resumed.text());
+  check("breakpoint_completion_reopens_untouched_source", rig.pump_until(5s, [&] {
+    return restored() && near(rig.status().commanded_position[2], 2, 0.02) &&
+           near(rig.status().commanded_position[0], 11, 0.02);
+  }) && read_text_file(oracle.program, 4096).value_or("") == contents);
+
+  static_cast<void>(load("M0\nG0 Z15\nG1 Z4 F900\n"));
+  const auto second = start(4, context, "G1 Z4 F900");
+  const bool earlier = rig.pump_until(4s, [&] {
+    const auto s = oracle.source.read().status;
+    return s.interp == InterpState::paused && s.program.breakpoint &&
+           !s.program.breakpoint->reached;
+  });
+  check("breakpoint_does_not_claim_an_original_m0", second.accepted() && earlier, second.text());
+  const auto continue_to_breakpoint = rig.send(R"("type":"resume")");
+  check("breakpoint_reached_after_existing_m0",
+        continue_to_breakpoint.accepted() && rig.pump_until(4s, [&] { return at_breakpoint(4); }),
+        continue_to_breakpoint.text());
+  rig.stop();
+  auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads);
+  check("breakpoint_restart_connect", restarted.has_value());
+  if (restarted) {
+    Rig recovered{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
+    check("breakpoint_restart_preserves_original_file_and_pause",
+          recovered.pump_until(4s, [&] { return at_breakpoint(4); }));
+    {
+      std::ofstream changed{oracle.program, std::ios::app};
+      changed << "(Changed on disk after the pause)\n";
+    }
+    const auto refused_resume = recovered.send(R"("type":"resume")");
+    check("breakpoint_recovery_refuses_changed_source",
+          refused_resume.outcome == "failed" &&
+              refused_resume.reason.find("original program changed") != std::string::npos &&
+              at_breakpoint(4),
+          refused_resume.text());
+    const auto stopped = recovered.send(R"("type":"abort")");
+    check("breakpoint_stop_reopens_original_after_restart",
+          stopped.accepted() && recovered.pump_until(5s, restored), stopped.text());
+    recovered.stop();
+  }
+  rig.restart_preview = nullptr;
+  rig.start();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
-         bool air_only, bool restart_only, bool preflight_only, bool raised_only) -> int {
+         bool air_only, bool restart_only, bool preflight_only, bool raised_only,
+         bool breakpoint_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4277,6 +4389,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (breakpoint_only) {
+    program_breakpoint(rig, loads);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (raised_only) {
     raised_run(rig, loads);
     power_off(rig);
@@ -4387,6 +4504,7 @@ auto main(int argc, char** argv) -> int {
   bool restart_only = false;
   bool preflight_only = false;
   bool raised_only = false;
+  bool breakpoint_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -4400,6 +4518,7 @@ auto main(int argc, char** argv) -> int {
     restart_only = restart_only || std::string_view(argv[i]) == "restart-cuts";
     preflight_only = preflight_only || std::string_view(argv[i]) == "program-preflight";
     raised_only = raised_only || std::string_view(argv[i]) == "raised-run";
+    breakpoint_only = breakpoint_only || std::string_view(argv[i]) == "program-breakpoint";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -4409,7 +4528,7 @@ auto main(int argc, char** argv) -> int {
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
-               raised_only);
+               raised_only, breakpoint_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

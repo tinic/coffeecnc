@@ -19,6 +19,24 @@
 #include <stat_msg.hh>
 
 namespace coffeecnc {
+
+void map_breakpoint(NmlStatus& status, const BreakpointSource* source) {
+  if (source == nullptr || status.program_file != source->temporary)
+    return;
+  status.program_file = source->original;
+  status.controller.program_file = source->original;
+  status.controller.breakpoint_program = true;
+  const bool reached = status.controller.interp == InterpState::paused && status.paused &&
+                       source->marker_seen.load() && status.current_line <= source->line &&
+                       !status.controller.requested_tool;
+  status.breakpoint = ProgramBreakpoint{source->line, reached};
+  if (reached)
+    status.current_line = source->line;
+  else if (status.current_line > source->line)
+    --status.current_line;
+  if (status.motion_line > source->line)
+    --status.motion_line;
+}
 namespace {
 
 constexpr double seconds_per_minute = 60;

@@ -8,7 +8,7 @@ import { startDialog } from '../dialogs'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
 import type { Tool } from '../protocol'
 import { formatLength, fromDisplay, toDisplay, toolLabel, wcsName } from '../units'
-import { workOffsetRows } from '../work-offsets'
+import { workOffsetRows, type WorkOffsetRow } from '../work-offsets'
 import AppIcon from './AppIcon.vue'
 import FixedSetterControls from './FixedSetterControls.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
@@ -42,7 +42,6 @@ const loaded = computed(() => status.value?.tool.in_spindle ?? 0)
 const loadedTool = computed(() => findTool(loaded.value))
 const wcs = computed(() => wcsName(status.value?.offsets.wcs ?? 1))
 const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
-const compensation = computed(() => status.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
 /** Why the tool table cannot be edited, or null. */
 const editBlock = computed((): string | null => {
   if (linkBlock.value !== null || status.value === null) {
@@ -108,6 +107,11 @@ function loadTool(): void {
 watch([(): unknown => panel.hello, loaded, mdiBlock], () => { loading.value = null }, { flush: 'sync' })
 
 const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, panel.link))
+function offsetHint(system: WorkOffsetRow): string | undefined {
+  if (system.offset === null) return `${wcsName(system.wcs)} offsets unavailable`
+  if (system.stale) return `${wcsName(system.wcs)} last reported offsets`
+  return undefined
+}
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
 const offsetEditor = ref<number | null>(null)
 function editOffset(wcs: number): void {
@@ -120,11 +124,7 @@ function editOffset(wcs: number): void {
     <section class="card table">
       <div class="heading">
         <h2>Tool table</h2>
-        <span class="hint">{{ unit }}</span>
-        <span class="spindle-line" :class="{ stale: panel.link !== 'live' }">
-          <template v-if="loaded !== 0"><strong class="mono">{{ toolLabel(loaded) }}</strong> in spindle · Length <span class="mono">{{ formatLength(applied, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }} · {{ compensation }}</template>
-          <template v-else>No tool in spindle</template>
-        </span>
+        <span class="hint spacer">{{ unit }}</span>
         <button v-if="!panel.hello?.fixed_setter" v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
         <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" />
         <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
@@ -175,6 +175,7 @@ function editOffset(wcs: number): void {
       <div class="heading">
         <h2>Work offsets</h2>
         <span class="hint">{{ unit }} · origins, in machine coordinates</span>
+        <span v-if="systems.some(system => system.stale)" class="offset-history">Last reported</span>
       </div>
       <div class="scroll">
         <table>
@@ -190,7 +191,7 @@ function editOffset(wcs: number): void {
           </thead>
           <tbody>
             <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="`Edit ${wcsName(system.wcs)} work origins`" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
-              <td class="mono">{{ wcsName(system.wcs) }}<small v-if="system.offset === null" class="offset-note">Unavailable</small><small v-else-if="system.stale" class="offset-note stale">Stale</small></td>
+              <td v-tooltip="offsetHint(system)" class="mono" :aria-label="offsetHint(system)">{{ wcsName(system.wcs) }}</td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
               <td class="actions">
@@ -275,12 +276,10 @@ function editOffset(wcs: number): void {
   flex: 1;
 }
 
-.spindle-line { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
-.spindle-line strong { color: var(--text); font-size: 14px; }
-.spindle-line.stale strong { color: var(--text-faint); }
 .heading > .btn { min-height: 44px; white-space: nowrap; padding-inline: 10px; }
 .table .heading { gap: 8px; }
 .table .heading h2 { display: none; }
+.offset-history { margin-left: auto; color: var(--warn); font-size: 12px; }
 .table table { table-layout: fixed; }
 .tool-column { width: 52px; }th.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }
@@ -364,8 +363,6 @@ tr.loaded td {
 
 .offsets th, .offsets td { padding-left: 4px; padding-right: 4px; }
 
-.offset-note { display: block; font: 10px var(--sans); font-weight: 400; color: var(--text-dim); }
-.offset-note.stale { color: var(--warn); }
 
 .entry {
   display: flex;

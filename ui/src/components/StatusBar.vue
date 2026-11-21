@@ -6,7 +6,7 @@ import { theme } from '../appearance'
 import { machineBlock } from '../machine-block'
 import { dismissNotice, live, onResult, panel, reported, send, toggleTheme } from '../machine'
 import type { CommandBody, Hello, Status } from '../protocol'
-import { baseName, formatLength, wcsName } from '../units'
+import { baseName, formatLength } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
@@ -69,21 +69,28 @@ const linkLabel = computed(() => {
 })
 const liftedAfterStop = computed(() => live.value && status.value?.machine === 'on' &&
   status.value.interp === 'idle' && status.value.paused_z?.displaced === true)
+const machineReason = computed(() => machineBlock(panel))
 const machineMessage = computed(() => {
   const z = status.value?.paused_z
   if (liftedAfterStop.value && z) {
     const lift = `${formatLength(z.offset, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
     return `Z is still lifted ${lift}. Switch machine power off and on to clear the offset at this height.`
   }
-  const reason = machineBlock(panel)
+  const reason = machineReason.value
+  const s = status.value
+  const program = panel.program
+  // With matching program text the Machine footer already describes AUTO execution.
+  const inFooter = panel.tab === 'program' && s?.mode === 'auto' &&
+    program?.file === s.program.file && program.revision === s.program.revision
   if (reason === 'Program paused' && panel.tab === 'program' && z?.reason)
-    return `${reason} · ${z.reason}`
+    return inFooter ? z.reason : `${reason} · ${z.reason}`
+  if (inFooter && (reason === 'Program paused' || reason === 'Program running')) return null
   return reason
 })
 const notice = computed(() => panel.notice?.text === machineMessage.value ? null : panel.notice)
 const state = computed(() => ({
-  label: machineMessage.value ?? 'Machine idle',
-  tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineMessage.value ? 'warn' : 'go',
+  label: machineReason.value ?? 'Machine idle',
+  tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineReason.value ? 'warn' : 'go',
 }))
 const title = computed(() => {
   if (panel.tab === 'manual') return 'Manual setup'
@@ -95,11 +102,9 @@ const title = computed(() => {
   return name.charAt(0).toUpperCase() + name.slice(1)
 })
 const subtitle = computed(() => {
-  if (panel.tab === 'manual') return 'Jog · Home · MDI'
-  if (panel.tab === 'tools') return 'Tool table and work coordinate systems'
-  if (panel.tab === 'probe') return 'Set the active work origin with the touch probe'
+  if (panel.tab !== 'program') return ''
   const s = status.value
-  return s?.program.file ? `${baseName(s.program.file)}   /   ${wcsName(s.offsets.wcs)}   /   Program in ${s.program_units}` : 'Open an NC program to inspect its toolpath'
+  return s?.program.file ? `${baseName(s.program.file)} · Program in ${s.program_units}` : ''
 })
 </script>
 
@@ -108,20 +113,19 @@ const subtitle = computed(() => {
     <div class="em-brand">
       <img v-show="theme === 'light'" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
       <img v-show="theme === 'dark'" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
-      <small>/ MILL</small>
     </div>
     <nav class="em-nav" aria-label="Workspace">
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
-      <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
+      <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
       <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme()">◐</button>
     </div>
   </header>
   <section class="jobbar">
     <div class="job">
       <div class="title-row"><h1>{{ title }}</h1><button v-if="panel.tab === 'program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button></div>
-      <p class="subtitle">{{ subtitle }}</p>
+      <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">
       <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />E-STOP</button>
@@ -135,10 +139,6 @@ const subtitle = computed(() => {
           <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
           <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
           <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
-          <p v-if="panel.notice" class="notice">{{ panel.notice.text }}</p>
-          <div class="actions">
-            <button class="btn menu-log" type="button" @click="emit('log')"><AppIcon name="list" />Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
-          </div>
           <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
           <div class="application-actions">
             <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />Settings</button>
@@ -150,12 +150,11 @@ const subtitle = computed(() => {
   </section>
   <section class="message-area" aria-label="Machine messages">
     <div class="message-band" :class="notice?.level ?? (liftedAfterStop ? 'lift-warning' : machineMessage ? 'machine-message' : 'empty')">
-      <span class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
+      <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
         <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ notice.context }} · </strong>{{ notice.text }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
         <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ notice.text }}</template></p>
-        <p v-if="!machineMessage && !notice" class="no-message">No new messages</p>
       </div>
       <button class="message-log" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
       <button v-if="notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
@@ -167,7 +166,6 @@ const subtitle = computed(() => {
 .em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 10px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
-.em-brand small { font-size: 11px; font-weight: 400; letter-spacing: 1px; color: var(--text-dim); }
 .em-nav { display: flex; padding: 4px; gap: 3px; border-radius: 10px; background: var(--bg); }
 .em-nav button { min-width: 94px; min-height: 36px; padding: 8px 19px; border: 0; border-radius: 7px; background: none; font-weight: 500; color: var(--text-dim); cursor: pointer; }
 .em-nav button[aria-current] { background: var(--panel); box-shadow: 0 1px 4px #00000010; color: var(--text); }
@@ -194,7 +192,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
 .application-actions { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.quit, .menu-log, .settings { width: 100%; justify-content: flex-start; min-height: 48px; }
+.quit, .settings { width: 100%; justify-content: flex-start; min-height: 48px; }
 .modal-codes { max-width: 180px; font-size: 10px; text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
@@ -205,7 +203,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-copy { flex: 1; min-width: 0; }.message-copy p { margin: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .message-copy.paired p { -webkit-line-clamp: 1; }
 .machine-state { font-weight: 600; }
-.message-copy p:empty { height: 0; }.no-message { color: var(--text-dim); }
+.message-copy p:empty { height: 0; }
 .message-log, .dismiss { flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text-dim); font-size: 12px; cursor: pointer; }
 .log-count { display: inline-block; width: 3ch; min-width: 3ch; text-align: right; }
 .message-log:hover, .dismiss:hover { color: var(--text); background: var(--bg); }

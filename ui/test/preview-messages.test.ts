@@ -8,7 +8,7 @@ import { SimMachine } from '../src/sim/machine'
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({}) as typeof import('../src/machine').panel
-  return { panel, live: computed(() => true) }
+  return { panel, live: computed(() => panel.link === 'live') }
 })
 vi.mock('../src/appearance', async () => ({ theme: (await import('vue')).ref('light') }))
 vi.mock('../src/step', () => ({ part: { attachment: null }, showPart: false, partBlock: '' }))
@@ -36,6 +36,17 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('preview messages', () => {
+  it('keeps homing guidance while leaving connection warnings to the message band', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = null
+    for (const axis of panel.status.axes) axis.homed = false
+    wrapper = shallowMount(PathView)
+    expect(wrapper.get('.banners').text()).toBe('Home the axes to show the tool position')
+    panel.link = 'stale'
+    await nextTick()
+    expect(wrapper.find('.banners').exists()).toBe(false)
+  })
+
   it('hides a brief recomputation and delays a current pending notice for one second', async () => {
     vi.useFakeTimers()
     if (panel.status === null || panel.preview === null) throw new Error('Missing fixture')
@@ -105,14 +116,15 @@ describe('preview messages', () => {
     expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped at line 3: partial path shown')
   })
 
-  it('distinguishes an unavailable preview, no loaded program and an obsolete context', async () => {
+  it('reports preview failures and obsolete contexts when a program is loaded', async () => {
     if (panel.preview === null || panel.status === null) throw new Error('Missing fixture')
     panel.preview.state = 'unavailable'
     wrapper = shallowMount(PathView)
     expect(wrapper.get('.preview-banner').text()).toContain('Preview unavailable')
     panel.status.program.file = null
     await nextTick()
-    expect(wrapper.get('.preview-banner').text()).toContain('No program loaded')
+    expect(wrapper.find('.preview-banner').exists()).toBe(false)
+    panel.status.program.file = '/parts/a.ngc'
     panel.status.preview_context += 1
     await nextTick()
     expect(wrapper.get('.preview-banner').text()).toContain('Preview out of date')

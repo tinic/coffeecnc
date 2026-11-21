@@ -68,7 +68,7 @@ describe('fixed setter workflow', () => {
     for (const listener of resultListeners)
       listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '' })
     await nextTick()
-    expect(getWrapper().get('.setter-band p').text()).toBe('Measures this tool at the setter.')
+    expect(getWrapper().get('.setter-band').text()).toBe('')
     expect(getWrapper().get('.setter-action button').attributes('disabled')).toBeUndefined()
     vi.mocked(send).mockClear()
     await press('Touch off')

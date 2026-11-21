@@ -46,7 +46,8 @@ describe('work offset availability in the operator table', () => {
     wrapper = mount(ToolsTab)
     expect(rows()).toHaveLength(9)
     const unknown = wrapper.get('.offsets tbody tr')
-    expect(unknown.text()).toContain('Unavailable')
+    expect(unknown.get('td:first-child').attributes('aria-label')).toBe('G54 offsets unavailable')
+    expect(unknown.text()).not.toContain('Unavailable')
     expect(unknown.findAll('td.num').map((cell) => cell.text())).toEqual(['—', '—', '—', '—'])
     expect(wrapper.text()).not.toContain('12345')
     expect(wrapper.text()).not.toContain('90°')
@@ -77,7 +78,7 @@ describe('work offset availability in the operator table', () => {
     panel.workOffsets.systems = panel.workOffsets.systems.map((system) => ({ ...system, available: system.wcs === 1, offset: [1, 2, 3], rotation_xy: 0 }))
     await nextTick()
     expect(wrapper.get('.offsets tr.loaded').text()).toContain('G54')
-    expect(wrapper.findAll('.offsets tbody tr')[1]?.text()).toContain('Unavailable')
+    expect(wrapper.findAll('.offsets tbody tr')[1]?.get('td:first-child').attributes('aria-label')).toBe('G55 offsets unavailable')
     expect(send).toHaveBeenCalledTimes(1)
   })
 
@@ -85,7 +86,8 @@ describe('work offset availability in the operator table', () => {
     panel.link = link
     Object.assign(mdiBlock, { value: 'No current controller status' })
     wrapper = mount(ToolsTab)
-    expect(wrapper.findAll('.offsets tbody tr')[1]?.text()).toContain('Stale')
+    expect(wrapper.findAll('.offsets tbody tr')[1]?.get('td:first-child').attributes('aria-label')).toBe('G55 last reported offsets')
+    expect(wrapper.get('.offset-history').text()).toBe('Last reported')
     expect(wrapper.find('.offsets tr.loaded').exists()).toBe(false)
     expect(wrapper.findAll('.offsets button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })
@@ -100,7 +102,7 @@ describe('work offset availability in the operator table', () => {
     if (panel.status === null) throw new Error('Missing fixture')
     panel.status.link = 'stale'
     wrapper = mount(ToolsTab)
-    expect(wrapper.get('.offsets').text()).toContain('Stale')
+    expect(wrapper.get('.offset-history').text()).toBe('Last reported')
     expect(wrapper.findAll('.offsets button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
     panel.status.link = 'down'
     await nextTick()

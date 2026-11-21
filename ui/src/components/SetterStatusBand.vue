@@ -6,15 +6,16 @@ defineProps<{ line: SetterStatusLine }>()
 </script>
 
 <template>
-  <div class="setter-band" :class="line.level" role="status" aria-live="polite">
-    <span class="setter-label" aria-hidden="true">{{ line.level === 'blocked' ? '!' : line.level === 'done' ? '✓' : 'i' }}</span>
-    <p v-tooltip="line.text">{{ line.text }}</p>
+  <div class="setter-band" :class="[line.level, { empty: !line.text }]" role="status" aria-live="polite">
+    <span v-if="line.text" class="setter-label" aria-hidden="true">{{ line.level === 'blocked' ? '!' : line.level === 'done' ? '✓' : 'i' }}</span>
+    <p v-if="line.text" v-tooltip="line.text">{{ line.text }}</p>
     <slot name="actions" />
   </div>
 </template>
 
 <style scoped>
 .setter-band { display: flex; flex: none; align-items: center; gap: 12px; height: 40px; margin: 6px 0 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); }
+.setter-band.empty { border-color: transparent; background: transparent; }
 .setter-band.blocked { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); box-shadow: inset 4px 0 var(--stop); }
 .setter-band.done { color: var(--go); }
 .setter-band.busy { color: var(--accent); }

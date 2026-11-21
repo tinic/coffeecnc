@@ -15,7 +15,7 @@ import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
-import { allHomed, axes, homingActive, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
+import { allHomed, axes, homingActive, live, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
 import type { AxisLetter } from '../protocol'
 import { touchProbeLoaded } from '../tool-models'
 import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
@@ -289,7 +289,7 @@ const mdiList = useTemplateRef<HTMLElement>('mdiList')
 let recall = -1
 const mdiLocalBlock = computed(() => mdiBlock.value !== jogMachineBlock.value ? mdiBlock.value : null)
 const { line: mdiLine, allow: allowMdi } = useCardFeedback(
-  () => 'Enter a G-code command.',
+  () => '',
   () => mdiLocalBlock.value,
   [mdiBlock, (): boolean => mdiText.value.trim() === ''],
 )
@@ -347,7 +347,7 @@ const spindleLocalBlock = computed((): string | null => {
 const spindleBlock = computed(() => manualBlock.value ?? spindleLocalBlock.value)
 const coolantBlock = computed(() => powerBlock(panel))
 const { line: spindleLine, allow: allowSpindle } = useCardFeedback(
-  () => 'Set a speed, then Forward or Reverse.',
+  () => '',
   () => touchProbeLoaded.value ? spindleLocalBlock.value : null,
   [manualBlock, coolantBlock, spindleLocalBlock],
 )
@@ -523,7 +523,7 @@ function coolant(which: 'flood' | 'mist'): void {
       <section v-if="touchOff" class="card probe-card">
         <div class="wcs-heading">
           <h2>{{ materialProbeTool ? `Probe T${materialProbeTool}` : 'Probe' }}</h2>
-          <span v-if="materialProbeTool" class="hint" :class="{ 'probe-contact': status?.probe_input }">
+          <span v-if="materialProbeTool && live" class="hint" :class="{ 'probe-contact': status?.probe_input }">
             {{ status?.probe_input === true ? 'Contact' : status?.probe_input === false ? 'Probe clear' : 'Probe input unavailable' }}
           </span>
         </div>
@@ -533,7 +533,6 @@ function coolant(which: 'flood' | 'mist'): void {
       <section v-else class="card mdi">
         <h2>MDI</h2>
         <div ref="mdiList" class="history">
-          <p v-if="panel.mdi.length === 0" class="hint">No commands sent in this session.</p>
           <button
             v-for="entry in panel.mdi"
             :key="entry.id"

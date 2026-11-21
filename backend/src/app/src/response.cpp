@@ -2,6 +2,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 namespace coffeecnc {
 namespace {
 using Json = nlohmann::json;
@@ -18,6 +21,12 @@ auto name(CommandOutcome outcome) -> std::string_view {
     return "timed_out";
   }
   return "failed";
+}
+
+auto finite_numbers(const Json& value) -> bool {
+  if (value.is_number_float())
+    return std::isfinite(value.get<double>());
+  return !value.is_structured() || std::all_of(value.begin(), value.end(), finite_numbers);
 }
 
 auto text(const Json& message) -> std::string {
@@ -88,6 +97,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                           {"approach_feed", p.approach_feed},
                           {"start", p.start}};
   }
+  if (!finite_numbers(message))
+    return encode_result(id, CommandOutcome::failed, "The controller returned a non-finite result.");
   return text(message);
 }
 

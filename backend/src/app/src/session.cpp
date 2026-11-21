@@ -308,7 +308,7 @@ auto Session::staged(ActionResult result) -> Stage {
   return answer(reply(std::move(result)));
 }
 
-auto Session::begin_page(bool watch_frames) -> PageToken {
+auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) -> PageToken {
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
@@ -318,6 +318,7 @@ auto Session::begin_page(bool watch_frames) -> PageToken {
   drop_requests();
   ready_ = false;
   watch_frames_ = watch_frames;
+  panel_frame_clock_ = frame_clock;
   last_panel_frame_.reset();
   panel_recovered_at_.reset();
   last_id_.reset();
@@ -369,15 +370,28 @@ void Session::expire_panel_frame(JogLease::Time now) {
     problems_.emplace_back(panel_frame_stop);
 }
 
+auto Session::frame_age(Instant now, std::chrono::milliseconds rendered_at) const
+    -> std::chrono::milliseconds {
+  // Compare the document's epoch-based monotonic timestamp to the native clock
+  // projected from the start of the document. Wall-clock corrections cannot renew
+  // or invalidate a motion lease.
+  const auto clock = panel_frame_clock_.value_or(now);
+  return clock.unix_time +
+         std::chrono::duration_cast<std::chrono::milliseconds>(now.monotonic - clock.monotonic) -
+         rendered_at;
+}
+
 void Session::panel_frame(PageToken page, std::chrono::milliseconds rendered_at, Instant now) {
   const std::scoped_lock lock{mutex_};
   if (!watch_frames_ || !page_open_ || page != PageToken{pages_})
     return;
   expire_panel_frame(now.monotonic);
-  const auto age = now.unix_time - rendered_at;
+  const auto age = frame_age(now, rendered_at);
   if (rendered_at.count() <= 0 || age < -panel_clock_slop || age > panel_frame_max_transit ||
       (last_panel_frame_ && rendered_at <= last_panel_frame_->unix_time))
     return;
+  if (!panel_frame_clock_)
+    panel_frame_clock_ = now;
   const Instant frame{now.monotonic - std::max(age, std::chrono::milliseconds::zero()),
                       rendered_at};
   if (!panel_recovered_at_ && last_panel_frame_ &&
@@ -424,12 +438,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   }
   expire_panel_frame(now.monotonic);
   const bool requires_frame = watch_frames_ && needs_panel_frame(request.command);
-  if (requires_frame &&
-      (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
-       now.unix_time - rendered_at >= panel_frame_timeout ||
-       rendered_at - now.unix_time > panel_clock_slop)) {
-    result(CommandOutcome::rejected, panel_frame_reason);
-    return outcome;
+  if (requires_frame) {
+    const auto age = frame_age(now, rendered_at);
+    if (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
+        age >= panel_frame_timeout || age < -panel_clock_slop) {
+      result(CommandOutcome::rejected, panel_frame_reason);
+      return outcome;
+    }
   }
 
   if (auto* settings = std::get_if<SetOperatorSettings>(&request.command)) {
@@ -505,6 +520,11 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
                decision.allowed ? std::string(release_reason) : std::move(decision.reason));
         return outcome;
       }
+      if (axis.pressed || axis.running) {
+        stop_jogs();
+        result(CommandOutcome::rejected, release_reason);
+        return outcome;
+      }
       if (requests_.size() >= max_queued) {
         result(CommandOutcome::rejected, busy_reason);
         return outcome;
@@ -532,7 +552,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     for (const auto& waiting : requests_)
       if (!waiting.stop)
         outcome.messages.push_back(
-            encode_result(waiting.id, CommandOutcome::rejected, cancelled_reason));
+            encode_result(waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
+                          waiting.sent ? mode_changed_reason : cancelled_reason));
     drop_requests();
   }
   auto& queue = stop_request ? stops_ : requests_;
@@ -678,13 +699,16 @@ auto Session::work(const Clock& clock) -> Work {
     };
     if (available())
       port_.idle_maintenance(available);
-    published = port_.take_messages();
+    if (idle_page)
+      published = port_.take_messages();
   }
   const auto now = clock();
   const std::scoped_lock lock{mutex_};
-  if (!page_open_)
+  if (!page_open_ || !ready_)
     return result;
   result.outcome.page = PageToken{pages_};
+  if (idle_page && idle_page != result.outcome.page)
+    published.clear();
   for (const auto& message : published)
     result.outcome.messages.push_back(encode_message(
         message.error ? MessageLevel::error : MessageLevel::info, message.text, now.unix_time));
@@ -727,10 +751,12 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (step.kind == StageKind::blocked) {
     const std::scoped_lock lock{mutex_};
     // Still the next request: order is kept.
-    if (current(request))
+    if (current(request)) {
       requests_.push_front(std::move(request));
-    result.status = WorkStatus::blocked;
-    return result;
+      result.status = WorkStatus::blocked;
+      return result;
+    }
+    step = cancelled();
   }
   if (step.kind == StageKind::cancelled) {
     forget_press(request);
@@ -847,6 +873,8 @@ void Session::wake() {
 }
 
 void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
+  if (!ready_)
+    return;
   for (const auto& problem : problems_)
     outcome.messages.push_back(encode_message(MessageLevel::error, problem, unix_time));
   problems_.clear();
@@ -1248,7 +1276,12 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<SelectWcs>(request.command) ||
       std::holds_alternative<SetWorkOffset>(request.command) ||
       std::holds_alternative<RestoreOffset>(request.command) ||
-      std::holds_alternative<TouchOff>(request.command)) {
+      std::holds_alternative<TouchOff>(request.command) ||
+      std::holds_alternative<ToolTouchOff>(request.command) ||
+      std::holds_alternative<SetTool>(request.command) ||
+      std::holds_alternative<RemoveTool>(request.command) ||
+      std::holds_alternative<OpenProgram>(request.command) ||
+      std::holds_alternative<EditProgram>(request.command)) {
     const std::scoped_lock lock{mutex_};
     if (changes_datum)
       ++setter_datum_;
@@ -1338,7 +1371,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           const auto file = programs_.resolve_program(c.path);
           if (!file)
             return answer({CommandOutcome::rejected, file.error()});
-          if (*file != state.program_file)
+          const auto loaded = programs_.resolve_program(state.program_file);
+          if (!loaded || *file != *loaded)
             return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
           return act(request, [&](const Wanted& still) -> ActionResult {
             auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
@@ -1351,11 +1385,15 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (program_writer_ == nullptr)
             return answer({CommandOutcome::rejected, "This CoffeeCNC cannot save programs."});
           // Through a link too: the file LinuxCNC has open is never written over.
-          if (const auto target = programs_.resolve_new_program(c.path);
-              c.replace && target && target->exists && !state.program_file.empty() &&
-              programs_.resolve_program(target->path).value_or("") == state.program_file)
-            return answer({CommandOutcome::rejected,
-                           "The loaded program is not replaced. Choose another name."});
+          if (c.replace && !state.program_file.empty()) {
+            const auto target = programs_.resolve_new_program(c.path);
+            const auto loaded = programs_.resolve_program(state.program_file);
+            if (target && target->exists &&
+                (target->path == state.program_file ||
+                 (loaded && programs_.resolve_program(target->path).value_or("") == *loaded)))
+              return answer({CommandOutcome::rejected,
+                             "The loaded program is not replaced. Choose another name."});
+          }
           auto written = program_writer_->create(c.path, c.text, c.replace);
           if (!written)
             return answer({CommandOutcome::failed, written.error()});

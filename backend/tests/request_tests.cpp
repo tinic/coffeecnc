@@ -373,6 +373,10 @@ void save_program_requests() {
   require(body<SaveProgram>(wire("save_program", std::size_t{200} * 1024)).text.size() ==
               std::size_t{200} * 1024,
           "A long program decodes");
+  const auto reordered = R"({"text":")" + std::string(std::size_t{32} * 1024, 'G') +
+                         R"(","path":"big.ngc","id":42,"type":"save_program"})";
+  require(body<SaveProgram>(reordered).text.size() == std::size_t{32} * 1024,
+          "A long program still decodes when its type follows the text");
   require(rejected(wire("mdi", std::size_t{200} * 1024), std::nullopt).find("16 KiB") !=
               std::string::npos,
           "Another long command is refused for its size");

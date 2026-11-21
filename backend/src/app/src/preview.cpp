@@ -26,6 +26,16 @@ void PreviewWorker::submit(std::uint64_t context, const PreviewInputs& inputs) {
   wake_.notify_all();
 }
 
+void PreviewWorker::advance_context(std::uint64_t context) {
+  const std::scoped_lock lock{mutex_};
+  if (newest_ != context) {
+    newest_ = context;
+    wanted_.reset();
+    unchecked_.reset();
+    waiting_ = false;
+  }
+}
+
 auto PreviewWorker::latest() const -> std::shared_ptr<const Preview> {
   const std::scoped_lock lock{mutex_};
   return latest_;
@@ -36,8 +46,11 @@ void PreviewWorker::revalidate(std::uint64_t context) {
     const std::scoped_lock lock{mutex_};
     if (!latest_ || latest_->context != context)
       return;
+    if (newest_ != context)
+      return;
     unchecked_ = std::move(latest_);
     latest_.reset();
+    ++revalidation_;
   }
   wake_.notify_all();
 }
@@ -62,6 +75,7 @@ auto PreviewWorker::checked_preview() const -> CheckedPreview {
 void PreviewWorker::loop() {
   // Of the preview that is current; this thread's alone.
   PreviewComputation::Watch files_changed;
+  std::uint64_t files_context{};
   std::unique_lock lock{mutex_};
   for (;;) {
     const auto due = [&]() -> bool {
@@ -92,6 +106,7 @@ void PreviewWorker::loop() {
                   std::move(outcome.check)});
       latest_source_ = {std::move(request.inputs), std::move(computed.program_snapshot)};
       files_changed = std::move(computed.files_changed);
+      files_context = request.context;
       latest_files_ = files_changed;
       continue;
     }
@@ -104,10 +119,19 @@ void PreviewWorker::loop() {
       }
       continue;
     }
+    if (files_context != newest_) {
+      files_changed = nullptr;
+      continue;
+    }
+    const auto check = revalidation_;
     lock.unlock();
     // A new context or the end need not wait for the files to be compared.
-    const bool changed = files_changed([&]() -> bool { return stop_ || waiting_; });
+    const bool changed = files_changed([&]() -> bool {
+      return stop_ || waiting_ || files_context != newest_;
+    });
     lock.lock();
+    if (files_context != newest_ || check != revalidation_)
+      continue;
     if (changed) {
       // Once: the composer makes a new context of it and submits that. The result is of
       // files that are no more: it is gone for good, and nothing can bring it back.

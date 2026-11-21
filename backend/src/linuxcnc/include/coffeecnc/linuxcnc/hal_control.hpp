@@ -108,6 +108,8 @@ public:
   [[nodiscard]] auto move_paused_z(Clock::time_point now, std::int32_t delta, bool clear) -> bool;
   [[nodiscard]] auto renew_paused_z(Clock::time_point now) -> bool;
   void stop_paused_z();
+  // Called after the controller has seen the gate closed and the applied offset is zero.
+  [[nodiscard]] auto rebase_paused_z_counts() -> bool;
   [[nodiscard]] auto paused_z_outputs(Clock::time_point now) const -> PausedZOutputs;
 
 private:

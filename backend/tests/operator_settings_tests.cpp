@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <unistd.h>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;

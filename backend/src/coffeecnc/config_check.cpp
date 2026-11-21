@@ -92,7 +92,7 @@ struct HalInspection {
            a->second.signal == b->second.signal;
   }
 
-  void read(const fs::path& path);
+  void read(const fs::path& path, bool sourced = false);
   void command(const std::vector<std::string>& words, const fs::path& path);
 };
 
@@ -105,7 +105,7 @@ void HalInspection::command(const std::vector<std::string>& words, const fs::pat
     if (words.size() != 2 || name.find_first_of("$[") != name.npos)
       notes.push_back(std::format("{}: could not resolve source {}", path.string(), name));
     else
-      read(directory / name);
+      read(directory / name, true);
   } else if (words[0] == "net") {
     for (std::size_t i = 2; i < words.size(); ++i)
       if (words[i] != "=>" && words[i] != "<=" && words[i] != "<=>")
@@ -121,7 +121,7 @@ void HalInspection::command(const std::vector<std::string>& words, const fs::pat
   }
 }
 
-void HalInspection::read(const fs::path& path) {
+void HalInspection::read(const fs::path& path, bool sourced) {
   std::error_code error;
   const auto file = fs::weakly_canonical(path, error);
   if (error || !fs::is_regular_file(file, error)) {
@@ -158,12 +158,12 @@ void HalInspection::read(const fs::path& path) {
   std::istringstream lines{*text};
   std::string logical;
   for (std::string line; std::getline(lines, line);) {
-    const auto content = trimmed(line);
-    if (content.ends_with('\\')) {
-      logical.append(content.substr(0, content.size() - 1));
-      logical += ' ';
+    // halcmd -f joins physical lines before it strips comments. Its 'source' command
+    // instead parses each line independently, including lines in nested source files.
+    if (!sourced && line.ends_with('\\')) {
+      logical.append(line, 0, line.size() - 1);
     } else {
-      logical.append(content);
+      logical.append(line);
       command(hal_words(logical), file);
       logical.clear();
     }

@@ -147,6 +147,14 @@ void HalShared::stop_paused_z() {
   paused_z_clear_ = false;
 }
 
+auto HalShared::rebase_paused_z_counts() -> bool {
+  const std::scoped_lock lock{mutex_};
+  if (paused_z_deadline_)
+    return false;
+  paused_z_counts_ = 0;
+  return true;
+}
+
 auto HalShared::paused_z_outputs(Clock::time_point now) const -> PausedZOutputs {
   const std::scoped_lock lock{mutex_};
   return {paused_z_deadline_ && now < *paused_z_deadline_, paused_z_counts_, paused_z_clear_};

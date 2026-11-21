@@ -116,6 +116,29 @@ void fixed_setter_homing() {
           "a hard limit blocks a probe cycle");
 }
 
+void paused_z_gates() {
+  CommandPolicy policy{simulator_limits()};
+  auto s = ready();
+  s.mode = TaskMode::automatic;
+  s.interp = InterpState::paused;
+  s.program_loaded = true;
+  s.paused_z = PausedZStatus{0, 20, false, true, "Stop the spindle.", PausedSpindle::can_stop};
+  const JogPausedZ lift{5, true};
+  require(policy.evaluate(lift, s).allowed, "An otherwise valid paused lift may stop the spindle");
+  s.axes[0].homed = false;
+  require(!policy.evaluate(lift, s).allowed, "Stopping the spindle never waives the homing check");
+  s.axes[0].homed = true;
+  s.paused_z->max_lift = std::numeric_limits<double>::quiet_NaN();
+  require(!policy.evaluate(lift, s).allowed, "Paused lift needs a finite configured limit");
+  s.paused_z->max_lift = 20;
+  s.paused_z->spindle = PausedSpindle::stopping;
+  require(!policy.evaluate(Step{}, s).allowed, "Single block waits for the spindle to stop");
+  s.paused_z->feedback_available = false;
+  require(!policy.evaluate(Resume{}, s).allowed &&
+              policy.evaluate(SetOverride{Override::feed, 0.8}, s).allowed,
+          "Missing paused Z feedback gates motion, while feed override remains available");
+}
+
 void work_origin_gates() {
   CommandPolicy policy{simulator_limits()};
   const SetWorkOffset command{2, {25.4, -50.8, 0}};
@@ -517,6 +540,7 @@ auto main() -> int {
     pending_manual_tool_change();
     fixed_setter_homing();
     work_origin_gates();
+    paused_z_gates();
     homing_capability();
     axis_jog_ceilings();
     stops_survive_lost_state();

@@ -386,7 +386,7 @@ void tool_table_text() {
   check("tool_table_replace_keeps_other_words",
         with_tool(table, tool, 25.4) ==
             "T1 P1 Z50 D6 ;6 mm end mill\nT2 P5 Z1 D0.5 I30 ;half inch\n",
-        with_tool(table, tool, 25.4));
+        with_tool(table, tool, 25.4).value_or("tool row rejected"));
   tool.number = 7;
   check("tool_table_add", with_tool(table, tool, 1) == table + "T7 P5 Z25.4 D12.7 ;half inch\n");
   check("tool_table_remove", without_tool(table, 1) == "T2 P2 Z40 D3 I30 ;drill\n" &&
@@ -4272,15 +4272,54 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
               refused_resume.reason.find("original program changed") != std::string::npos &&
               at_breakpoint(4),
           refused_resume.text());
-    const auto stopped = recovered.send(R"("type":"abort")");
-    check("breakpoint_stop_reopens_original_after_restart",
-          stopped.accepted() && recovered.pump_until(5s, [&] {
-            return recovered.idle() && recovered.status().program_file == oracle.program &&
-                   !std::filesystem::exists(runtime / copy.filename()) &&
-                   !std::filesystem::exists(runtime / record.filename()) &&
-                   std::filesystem::exists(copy) && std::filesystem::exists(record);
-          }), stopped.text());
+    // Stop from another NML client. The panel keeps polling, but no page can reopen the
+    // original until the source has seen the external abort in Task's status.
+    recovered.runtime->end_page(recovered.page);
+    const auto abort_count = oracle.source.read().program_aborts;
+    const auto foreign = NmlPort::connect(migrated, &rig.shared);
+    const bool stopped = foreign && (*foreign)->abort().status == ActionStatus::accepted;
+    check("breakpoint_source_observes_external_stop",
+          stopped && recovered.pump_until(3s, [&] {
+            return oracle.source.read().program_aborts > abort_count;
+          }));
+    recovered.new_page();
+    check("breakpoint_stop_reopens_original_after_restart", stopped && recovered.pump_until(5s, [&] {
+      return recovered.idle() && recovered.status().program_file == oracle.program &&
+             !std::filesystem::exists(runtime / copy.filename()) &&
+             !std::filesystem::exists(runtime / record.filename()) &&
+             std::filesystem::exists(copy) && std::filesystem::exists(record);
+    }));
     recovered.stop();
+  }
+  auto orphan_config = migrated;
+  orphan_config.remember_spindle_tool = true;
+  const auto orphan_dir = runtime / "orphan";
+  orphan_config.runtime_directory = orphan_dir.string();
+  std::filesystem::create_directories(orphan_dir);
+  const auto orphan_file = orphan_dir / copy.filename();
+  std::ofstream{orphan_file} << "M2\n";
+  std::ofstream{orphan_dir / "coffeecnc-spindle-tool.txt"} << "1\n";
+  rig.direct([&] {
+    const auto mode = rig.port.set_task_mode(TaskMode::mdi, always());
+    const auto unloaded = rig.port.mdi("M61 Q0 G49", always());
+    const auto opened = rig.port.open_program(orphan_file.string(), always());
+    check("breakpoint_orphan_fixture_loaded",
+          mode.status == ActionStatus::accepted && unloaded.status == ActionStatus::accepted &&
+          opened.status == ActionStatus::accepted && rig.port.status().controller.tool_in_spindle == 0);
+  });
+  rig.stop();
+  if (const auto orphaned = NmlPort::connect(orphan_config, &rig.shared, &loads)) {
+    Rig orphan{orphan_config, rig.hal, rig.shared, **orphaned, rig.reader, rig.view, rig.probe};
+    check("breakpoint_orphan_allows_spindle_restore", orphan.pump_until(5s, [&] {
+      const auto state = orphan.status();
+      return state.program_file == orphan_file.string() && state.controller.tool_in_spindle == 1;
+    }));
+    const auto refused = orphan.send(R"("type":"run")");
+    check("breakpoint_orphan_still_blocks_run",
+          !refused.accepted() && refused.reason.find("breakpoint") != std::string::npos, refused.text());
+    orphan.stop();
+  } else {
+    check("breakpoint_orphan_allows_spindle_restore", false, orphaned.error());
   }
   rig.restart_preview = nullptr;
   rig.start();
@@ -4355,6 +4394,9 @@ void paused_z_jog(Rig& rig) {
             rig.pump_until(5s, [&] { return rig.idle() && near(rig.machine(0), 5); }) &&
             near(rig.machine(2), base),
         continued.text());
+  const auto rebased = rig.shared.paused_z_outputs(Clock::now());
+  check("paused_z_rebases_counts_after_clear", !rebased.enable && rebased.counts == 0,
+        std::to_string(rebased.counts));
 
   if (!at_pause("M5"))
     return;

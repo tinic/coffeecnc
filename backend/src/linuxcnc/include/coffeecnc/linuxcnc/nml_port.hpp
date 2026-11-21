@@ -65,6 +65,7 @@ struct NmlStatus {
   // The serial number of the last command task has taken up, and whether task reports that
   // command done (neither executing nor failed).
   int echo_serial{};
+  bool task_abort{};
   bool command_done{};
   // Task has something in execution: its execution state is not "done" (it waits for motion,
   // for io, for a delay) or its overall status is "executing". A tool table load sent through

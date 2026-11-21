@@ -15,3 +15,19 @@ net tool-prep-loop iocontrol.0.tool-prepare => iocontrol.0.tool-prepared
 net spindle-vel-fb-rpm-abs => coffeecnc.spindle-rpm
 net spindle-at-speed => coffeecnc.spindle-at-speed
 net probe-in => coffeecnc.probe-input
+
+# Keep the realtime Z offset permit tied to AUTO pause, spindle off and a live app.
+addf coffeecnc-eoffset-gate servo-thread
+setp coffeecnc-eoffset-gate.function 0x80
+setp axis.z.eoffset-scale 0.001
+net coffeecnc-eoffset-request coffeecnc.eoffset-z-enable => coffeecnc-eoffset-gate.in-0
+net coffeecnc-watchdog-ok => coffeecnc-eoffset-gate.in-1
+net coffeecnc-program-paused halui.program.is-paused => coffeecnc-eoffset-gate.in-2
+net spindle-enable => coffeecnc-eoffset-gate.in-3
+net coffeecnc-jog-stop => coffeecnc-eoffset-gate.in-4
+net coffeecnc-eoffset-permit coffeecnc-eoffset-gate.out => axis.z.eoffset-enable
+net coffeecnc-eoffset-counts coffeecnc.eoffset-z-counts => axis.z.eoffset-counts
+net coffeecnc-eoffset-clear coffeecnc.eoffset-z-clear => axis.z.eoffset-clear
+net coffeecnc-eoffset-z axis.z.eoffset => coffeecnc.eoffset-z
+net coffeecnc-eoffset-active motion.eoffset-active => coffeecnc.eoffset-active
+net coffeecnc-eoffset-limited motion.eoffset-limited => coffeecnc.eoffset-limited

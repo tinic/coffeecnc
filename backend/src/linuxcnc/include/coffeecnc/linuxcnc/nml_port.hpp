@@ -77,6 +77,10 @@ struct NmlStatus {
   bool optional_stop{};
   bool block_delete{};
   bool paused{};
+  // Safety interlocks checked even while an external offset is moving.
+  std::string paused_z_interlock;
+  bool paused_z_still{};
+  std::optional<PausedZInputs> paused_z_feedback{};
 };
 
 // What LinuxCNC has loaded at this port's request, counted at the moment LinuxCNC accepted it.
@@ -263,6 +267,7 @@ public:
                                    bool after_change, const Wanted& files_current,
                                    const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto pause(const Wanted& wanted) -> ActionResult override;
+  [[nodiscard]] auto jog_paused_z(double distance, const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto resume(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto step(const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto abort() -> ActionResult override;
@@ -303,6 +308,8 @@ private:
   [[nodiscard]] auto write_air_offset(double lift, const Wanted& wanted) -> ActionResult;
   void recover_air_offset(const Wanted& wanted);
   void finish_breakpoint(const Wanted& wanted);
+  [[nodiscard]] auto move_paused_z(double distance, bool returning, const Wanted& wanted)
+      -> ActionResult;
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

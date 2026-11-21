@@ -6,7 +6,7 @@ import { theme } from '../appearance'
 import { machineBlock } from '../machine-block'
 import { dismissNotice, live, onResult, panel, reported, send, toggleTheme } from '../machine'
 import type { CommandBody, Hello, Status } from '../protocol'
-import { baseName, wcsName } from '../units'
+import { baseName, formatLength, wcsName } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
@@ -67,7 +67,19 @@ const linkLabel = computed(() => {
     case 'incompatible': return 'Protocol mismatch'
   }
 })
-const machineMessage = computed(() => machineBlock(panel))
+const liftedAfterStop = computed(() => live.value && status.value?.machine === 'on' &&
+  status.value.interp === 'idle' && status.value.paused_z?.displaced === true)
+const machineMessage = computed(() => {
+  const z = status.value?.paused_z
+  if (liftedAfterStop.value && z) {
+    const lift = `${formatLength(z.offset, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
+    return `Z is still lifted ${lift}. Switch machine power off and on to clear the offset at this height.`
+  }
+  const reason = machineBlock(panel)
+  if (reason === 'Program paused' && panel.tab === 'program' && z?.reason)
+    return `${reason} · ${z.reason}`
+  return reason
+})
 const notice = computed(() => panel.notice?.text === machineMessage.value ? null : panel.notice)
 const state = computed(() => ({
   label: machineMessage.value ?? 'Machine idle',
@@ -137,7 +149,7 @@ const subtitle = computed(() => {
     </div>
   </section>
   <section class="message-area" aria-label="Machine messages">
-    <div class="message-band" :class="notice?.level ?? (machineMessage ? 'machine-message' : 'empty')">
+    <div class="message-band" :class="notice?.level ?? (liftedAfterStop ? 'lift-warning' : machineMessage ? 'machine-message' : 'empty')">
       <span class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
@@ -187,6 +199,7 @@ h1 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -.7px; font-w
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
 .message-band.error { color: var(--stop); background: var(--stop-soft); border-color: var(--stop); border-left-width: 5px; }
+.message-band.lift-warning { color: var(--warn); border-color: var(--warn); border-left-width: 5px; }
 .message-band.empty { color: var(--text-dim); border-color: transparent; background: transparent; }
 .message-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
 .message-copy { flex: 1; min-width: 0; }.message-copy p { margin: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

@@ -1,5 +1,8 @@
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 
+#include <cmath>
+#include <limits>
+
 namespace coffeecnc {
 
 auto HalShared::view(Clock::time_point now) const -> std::optional<HalView> {
@@ -14,7 +17,8 @@ auto HalShared::view(Clock::time_point now) const -> std::optional<HalView> {
                inputs_.jog_stop_high,
                inputs_.probe_setter_selected,
                inputs_.probe_motion_permitted,
-               inputs_.probe_cycle_active};
+               inputs_.probe_cycle_active,
+               inputs_.paused_z};
   if (inputs_.tool_change_request && !answered_)
     view.tool_change_request = ToolChangeRequest{generation_, *inputs_.tool_change_request};
   return view;
@@ -52,6 +56,9 @@ auto HalShared::exchange(const HalInputs& inputs, Clock::time_point now) -> bool
     history_.watchdog_tripped = now;
   if (probe_deadline_ && !inputs.watchdog_ok)
     probe_deadline_ = Clock::time_point::min();
+  if (!inputs.watchdog_ok || inputs.jog_stop_high || inputs.jog_contact || !inputs.paused_z ||
+      !inputs.spindle_rpm || std::abs(*inputs.spindle_rpm) >= 1.0)
+    paused_z_deadline_.reset();
   // Withdrawn or replaced since it was confirmed: the confirmation answers nothing.
   const bool raise = confirmed_ && inputs.tool_change_request &&
                      *confirmed_ == ToolChangeRequest{generation_, *inputs.tool_change_request};
@@ -102,18 +109,68 @@ auto HalShared::probe_cycle_outputs(Clock::time_point now) const -> ProbeCycleOu
   return {probe_deadline_.has_value(), probe_deadline_ && now < *probe_deadline_, probe_setter_};
 }
 
+auto HalShared::begin_paused_z(Clock::time_point now) -> bool {
+  const std::scoped_lock lock{mutex_};
+  if (paused_z_deadline_ || !have_inputs_ || now - read_at_ > max_age || !inputs_.watchdog_ok ||
+      inputs_.jog_stop_high || inputs_.jog_contact || !inputs_.paused_z ||
+      inputs_.paused_z->limited)
+    return false;
+  paused_z_clear_ = false;
+  paused_z_deadline_ = now + max_age;
+  return true;
+}
+
+auto HalShared::move_paused_z(Clock::time_point now, std::int32_t delta, bool clear) -> bool {
+  const std::scoped_lock lock{mutex_};
+  const auto counts = static_cast<std::int64_t>(paused_z_counts_) + delta;
+  if (!paused_z_deadline_ || now >= *paused_z_deadline_ || now - read_at_ > max_age ||
+      counts < std::numeric_limits<std::int32_t>::min() ||
+      counts > std::numeric_limits<std::int32_t>::max())
+    return false;
+  paused_z_counts_ = static_cast<std::int32_t>(counts);
+  paused_z_clear_ = clear;
+  return true;
+}
+
+auto HalShared::renew_paused_z(Clock::time_point now) -> bool {
+  const std::scoped_lock lock{mutex_};
+  if (!paused_z_deadline_ || now >= *paused_z_deadline_ || now - read_at_ > max_age)
+    return false;
+  paused_z_deadline_ = now + max_age;
+  return true;
+}
+
+void HalShared::stop_paused_z() {
+  const std::scoped_lock lock{mutex_};
+  paused_z_deadline_.reset();
+  paused_z_clear_ = false;
+}
+
+auto HalShared::paused_z_outputs(Clock::time_point now) const -> PausedZOutputs {
+  const std::scoped_lock lock{mutex_};
+  return {paused_z_deadline_ && now < *paused_z_deadline_, paused_z_counts_, paused_z_clear_};
+}
+
 HalControl::HalControl(HalComponent& hal, HalShared& shared) : hal_(hal), shared_(shared) {}
 
 void HalControl::beat() {
   const auto now = HalShared::Clock::now();
-  const HalInputs inputs{hal_.tool_change_request(), hal_.spindle_rpm(), hal_.spindle_at_speed(),
-                         hal_.probe_input(),         hal_.watchdog_ok(), hal_.jog_stop_high(),
-                         hal_.probe_setter_selected(), hal_.probe_motion_permitted(),
-                         hal_.probe_cycle_active(),   hal_.jog_contact()};
+  const HalInputs inputs{hal_.tool_change_request(),
+                         hal_.spindle_rpm(),
+                         hal_.spindle_at_speed(),
+                         hal_.probe_input(),
+                         hal_.watchdog_ok(),
+                         hal_.jog_stop_high(),
+                         hal_.probe_setter_selected(),
+                         hal_.probe_motion_permitted(),
+                         hal_.probe_cycle_active(),
+                         hal_.jog_contact(),
+                         hal_.paused_z()};
   // The exchange notes a high level before beat() may lower it.
   if (shared_.exchange(inputs, now))
     hal_.confirm_tool_changed();
   hal_.set_probe_cycle(shared_.probe_cycle_outputs(now));
+  hal_.set_paused_z(shared_.paused_z_outputs(now));
   hal_.beat();
 }
 
@@ -121,6 +178,8 @@ void HalControl::hold_jog_stop(bool on) {
   // Noted before the pin changes: raised, held, or lowered from high.
   if (on || hal_.jog_stop_high())
     shared_.note_jog_stop_high(HalShared::Clock::now());
+  if (on)
+    shared_.stop_paused_z();
   hal_.hold_jog_stop(on);
 }
 auto HalControl::jog_stop_high() const -> bool { return hal_.jog_stop_high(); }

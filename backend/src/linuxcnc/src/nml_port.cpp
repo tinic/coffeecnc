@@ -2687,6 +2687,93 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused != 0; });
 }
 
+auto NmlPort::jog_paused_z(double distance, const Wanted& wanted) -> ActionResult {
+  return move_paused_z(distance, false, wanted);
+}
+
+auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wanted) -> ActionResult {
+  const auto& limits = impl_->config.paused_z;
+  auto* hal = impl_->hal;
+  const auto start = status();
+  const auto& z = start.controller.paused_z;
+  if (!wanted())
+    return withdrawn();
+  if (!limits || !hal || !z || !start.paused_z_feedback)
+    return failed("Paused Z feedback is unavailable.");
+  if (!z->reason.empty())
+    return failed(z->reason);
+  if (!std::isfinite(distance) ||
+      (!returning && (distance == 0 || std::abs(distance) > limits->lift_mm)))
+    return failed("The paused Z jog distance is out of range.");
+
+  const double count = limits->count_mm;
+  const double tolerance = count / 2;
+  const auto delta = returning ? 0 : static_cast<std::int32_t>(std::round(distance / count));
+  const double target = returning ? 0 : z->offset + delta * count;
+  if (target < -tolerance || target > limits->lift_mm + 1e-9 || (!returning && delta == 0))
+    return failed("Z must stay between the paused position and the configured lift limit.");
+  const auto& axes = start.controller.axes;
+  const double base_z = axes[2].machine - z->offset;
+  const bool clear = std::abs(target) <= tolerance;
+  const double end_z = base_z + (clear ? 0 : target);
+  if (!std::isfinite(end_z) || !std::isfinite(axes[2].min_limit) ||
+      !std::isfinite(axes[2].max_limit) || end_z < axes[2].min_limit || end_z > axes[2].max_limit)
+    return failed("The requested lift would cross a Z travel limit.");
+  if (!hal->begin_paused_z(Clock::now()))
+    return failed("The paused Z motion interlock is open.");
+  const struct Permit {
+    HalShared& hal;
+    ~Permit() { hal.stop_paused_z(); }
+  } permit{*hal};
+
+  const auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.");
+  const auto safe = [&](const NmlStatus& now) {
+    return wanted() && now.controller.paused_z && now.paused_z_feedback &&
+           now.paused_z_interlock.empty() && now.program_file == start.program_file &&
+           now.current_line == start.current_line;
+  };
+  // Let the realtime gate open before changing the counts. LinuxCNC samples counts even
+  // with the gate closed, so changing the enable and counts in the same cycle can lose a step.
+  constexpr auto gate_settle = std::chrono::milliseconds{40};
+  const auto enable_at = Clock::now();
+  bool interrupted = false;
+  until(gate_settle, [&] {
+    interrupted = !safe(status()) || !hal->renew_paused_z(Clock::now());
+    return interrupted || Clock::now() - enable_at >= gate_settle;
+  });
+  if (interrupted || !hal->move_paused_z(Clock::now(), delta, clear))
+    return stopped;
+
+  // Include acceleration and allow for the slower tail at either end of the move.
+  using Seconds = std::chrono::duration<double>;
+  const auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+      Seconds{std::min(120.0, std::abs(end_z - axes[2].machine) / limits->velocity_mm_s +
+                                  limits->velocity_mm_s / limits->acceleration_mm_s2 + 2.0)});
+  const auto arrived = [&](const NmlStatus& now) {
+    const auto& current = now.controller.axes;
+    return now.paused_z_still &&
+           std::abs(now.paused_z_feedback->offset - (clear ? 0 : target)) <= tolerance &&
+           std::abs(current[0].machine - axes[0].machine) <= 0.01 &&
+           std::abs(current[1].machine - axes[1].machine) <= 0.01 &&
+           std::abs(current[2].machine - end_z) <= 0.01 &&
+           (!clear || !now.controller.paused_z->displaced);
+  };
+  const bool finished = until(timeout, [&] {
+    const auto now = status();
+    interrupted = !safe(now) || !hal->renew_paused_z(Clock::now());
+    return interrupted || arrived(now);
+  });
+  hal->stop_paused_z();
+  if (interrupted)
+    return stopped;
+  if (!finished)
+    return failed(
+        "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
+  std::this_thread::sleep_for(gate_settle);
+  const auto now = status();
+  return safe(now) && arrived(now) ? ActionResult{} : stopped;
+}
+
 auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   if (!impl_->breakpoint && status().controller.breakpoint_program)
     return failed("The breakpoint source is unavailable. Stop and reopen the original program.");
@@ -2706,6 +2793,14 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
     if (!matches())
       return failed("The original program changed. Stop and reopen it before running again.");
     impl_->breakpoint_recovered = false;
+  }
+  const auto before = status();
+  if (impl_->config.paused_z && (before.controller.link != Link::live || !before.paused_z_feedback))
+    return failed("Paused Z feedback is unavailable. Resume could not check the Z position.");
+  if (before.controller.paused_z && before.controller.paused_z->displaced) {
+    auto returned = move_paused_z(0, true, wanted);
+    if (!accepted(returned))
+      return returned;
   }
   const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
   const auto from = impl_->begin(&wanted);

@@ -884,6 +884,8 @@ export class SimMachine {
         return this.jog(command.axis, command.direction, command.velocity, command.held)
       case 'jog_step':
         return this.jogStep(command.axis, command.distance, command.velocity)
+      case 'jog_paused_z':
+        return reject('Paused Z jog requires the LinuxCNC simulator with external offsets.')
       case 'jog_stop_all':
         this.stopJogs()
         return null

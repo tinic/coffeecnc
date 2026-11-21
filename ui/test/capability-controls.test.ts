@@ -129,6 +129,44 @@ describe('capability-aware controls', () => {
     panel.status.offsets.wcs = 1; panel.link = 'stale'; await nextTick()
     expect(wrapper.get('.wcs-values').text()).toContain('Last reported')
   })
+  it('shows a bounded Z step in Machine during an eligible AUTO pause', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.tab = 'program'
+    panel.status.mode = 'auto'
+    panel.status.interp = 'paused'
+    panel.status.wait = { kind: 'paused' }
+    panel.status.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Home all axes' }
+    wrapper = mount(RunBar)
+    const lift = wrapper.get('button[aria-label="Lift paused Z"]')
+    expect(lift.attributes('disabled')).toBeDefined()
+    panel.status.paused_z.reason = ''
+    panel.unit = 'inch'
+    await nextTick()
+    expect(wrapper.get('button[aria-label="Lower paused Z"]').attributes('disabled')).toBeDefined()
+    await lift.trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'jog_paused_z', distance: 1.27 })
+    expect(lift.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.main-action').attributes('disabled')).toBeDefined()
+  })
+  it('labels the verified return and explains an offset left after Stop', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.tab = 'program'
+    panel.status.mode = 'auto'
+    panel.status.interp = 'paused'
+    panel.status.wait = { kind: 'paused' }
+    panel.status.paused_z = { offset: 2, max_lift: 10, displaced: true, reason: '' }
+    wrapper = mount(RunBar)
+    expect(wrapper.get('.paused-z-reading').text()).toContain('2.000 mm')
+    expect(wrapper.get('.main-action').text()).toBe('Return Z & resume')
+    await wrapper.get('.main-action').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'resume' })
+    expect(wrapper.get('.stop-button').attributes('disabled')).toBeUndefined()
+    panel.status.interp = 'idle'
+    panel.status.wait = { kind: 'none' }
+    await nextTick()
+    expect(wrapper.find('.paused-z').exists()).toBe(false)
+    expect(wrapper.get('.main-action').attributes('disabled')).toBeDefined()
+  })
   it('has explicit override reset buttons and concise Stop text', async () => {
     if (!panel.status) throw new Error('Missing status')
     panel.status.motion.feed_override = 0.45

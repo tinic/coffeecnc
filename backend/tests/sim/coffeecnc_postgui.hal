@@ -13,9 +13,9 @@
 # machine files rarely load them. A machine that does load one must ask for these instances in
 # its own loadrt line instead:
 #   watchdog  has no names= and is always the one instance `watchdog`
-#   lut5      two named instances; the logic that `not` and `or2` would otherwise do
+#   lut5      named instances for jog interlocks and the G0759 paused Z gate
 loadrt watchdog num_inputs=1
-loadrt lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit
+loadrt lut5 names=coffeecnc-jog-stop,coffeecnc-jog-inhibit,coffeecnc-eoffset-gate
 addf watchdog.process servo-thread
 addf watchdog.set-timeouts servo-thread
 addf coffeecnc-jog-stop servo-thread

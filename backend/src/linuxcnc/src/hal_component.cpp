@@ -41,6 +41,12 @@ struct HalComponent::Pins {
   hal_bit_t* probe_cycle_active;
   hal_bit_t* probe_cycle_lease;
   hal_bit_t* probe_motion_permitted;
+  hal_bit_t* paused_z_enable;
+  hal_s32_t* paused_z_counts;
+  hal_bit_t* paused_z_clear;
+  hal_float_t* paused_z_offset;
+  hal_bit_t* paused_z_active;
+  hal_bit_t* paused_z_limited;
 };
 
 auto HalComponent::create(const std::string& name, const HalSignals& wired)
@@ -69,7 +75,14 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
       !bit("probe-setter-selected", HAL_IN, &pins->probe_setter_selected) ||
       !bit("probe-cycle-active", HAL_OUT, &pins->probe_cycle_active) ||
       !bit("probe-cycle-lease", HAL_OUT, &pins->probe_cycle_lease) ||
-      !bit("probe-motion-permitted", HAL_IN, &pins->probe_motion_permitted))
+      !bit("probe-motion-permitted", HAL_IN, &pins->probe_motion_permitted) ||
+      !bit("eoffset-z-enable", HAL_OUT, &pins->paused_z_enable) ||
+      hal_pin_s32_new((name + ".eoffset-z-counts").c_str(), HAL_OUT, &pins->paused_z_counts, id) !=
+          0 ||
+      !bit("eoffset-z-clear", HAL_OUT, &pins->paused_z_clear) ||
+      hal_pin_float_new((name + ".eoffset-z").c_str(), HAL_IN, &pins->paused_z_offset, id) != 0 ||
+      !bit("eoffset-active", HAL_IN, &pins->paused_z_active) ||
+      !bit("eoffset-limited", HAL_IN, &pins->paused_z_limited))
     return std::unexpected(std::format("Creating the HAL pins of {} failed", name));
   if (const int result = hal_ready(id); result != 0)
     return std::unexpected(std::format("hal_ready failed: {}", result));
@@ -186,6 +199,24 @@ void HalComponent::set_probe_cycle(ProbeCycleOutputs outputs) {
   set(pins_->probe_cycle_lease, outputs.lease);
   if (outputs.active)
     set(pins_->probe_cycle_active, true);
+}
+
+auto HalComponent::paused_z() const -> std::optional<PausedZInputs> {
+  if (!wired_.paused_z)
+    return {};
+  const double offset = get(pins_->paused_z_offset);
+  if (!std::isfinite(offset))
+    return {};
+  return PausedZInputs{offset, get(pins_->paused_z_active), get(pins_->paused_z_limited)};
+}
+
+void HalComponent::set_paused_z(PausedZOutputs outputs) {
+  if (!outputs.enable)
+    set(pins_->paused_z_enable, false);
+  set(pins_->paused_z_counts, outputs.counts);
+  set(pins_->paused_z_clear, outputs.enable && outputs.clear);
+  if (outputs.enable)
+    set(pins_->paused_z_enable, true);
 }
 
 } // namespace coffeecnc

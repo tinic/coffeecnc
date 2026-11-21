@@ -170,7 +170,14 @@ function restartLine(line: number): void {
   restartAt.value = { line, section: index < 0 ? 'Before the first tool section' : sectionName(index) }
 }
 // Where the program stopped before its end; offered only while a restart is possible.
-const stoppedAt = computed(() => canRestart.value ? status.value?.program.restart_hint ?? null : null)
+// The operator can dismiss it; a stop at another line, or in another load, shows again.
+const dismissedStop = ref('')
+const stopKey = computed(() => {
+  const program = status.value?.program
+  const hint = program?.restart_hint
+  return program && hint ? `${program.file ?? ''}:${String(program.revision)}:${String(hint.line)}` : ''
+})
+const stoppedAt = computed(() => canRestart.value && stopKey.value !== dismissedStop.value ? status.value?.program.restart_hint ?? null : null)
 function restartSection(index: number): void {
   const section = sections.value[index]
   if (section === undefined) return
@@ -247,6 +254,7 @@ async function showFailure(): Promise<void> {
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
           <div v-if="stoppedAt" class="stopped-at" role="status">
+            <button class="btn dismiss-stop" type="button" aria-label="Dismiss stopped line" @click="dismissedStop = stopKey"><AppIcon name="close" /></button>
             <span>Stopped at line <strong class="mono">{{ stoppedAt.line }}</strong> · {{ toolLabel(stoppedAt.tool) }}</span>
             <button class="btn primary" type="button" @click="restartLine(stoppedAt.line)">Restart there</button>
           </div>
@@ -340,9 +348,9 @@ async function showFailure(): Promise<void> {
 .failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }
 .preview-diagnostic button { pointer-events: auto; }
 /* The stop hint shares the bottom of the view with transient code actions. */
-.stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
-.stopped-at .btn { height: 36px; }
+.stopped-at .btn { height: 36px; }.dismiss-stop { min-width: 36px; padding: 0; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
 .inspector { padding: 0; overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }

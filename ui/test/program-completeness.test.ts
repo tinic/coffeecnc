@@ -209,6 +209,25 @@ describe('status row', () => {
   })
 })
 
+describe('stopped at line', () => {
+  // turo: "There is no X" on the Stopped at line hint.
+  it('can be dismissed, and shows again for a stop at another line', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    panel.status.mode = 'manual'; panel.status.interp = 'idle'
+    panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['T1 M6', 'G1 X1 F100', 'G1 Y1'], truncated: false }
+    panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'ready', error: null, bounds: null, dwells: [],
+      segments: [2, 3].map((line) => ({ line, kind: 'feed' as const, tool: 1, points: [0, 0, 0, 1, 0, 0], feed: 100 })) }
+    panel.status.program = { ...panel.status.program, restart_hint: { line: 2, tool: 1 } }
+    wrapper = shallowMount(ProgramTab)
+    expect(wrapper.find('.stopped-at').exists()).toBe(true)
+    await wrapper.get('.stopped-at .dismiss-stop').trigger('click')
+    expect(wrapper.find('.stopped-at').exists()).toBe(false)
+    panel.status.program = { ...panel.status.program, restart_hint: { line: 3, tool: 1 } }
+    await nextTick()
+    expect(wrapper.get('.stopped-at').text()).toContain('Stopped at line 3')
+  })
+})
+
 describe('preview diagnostics', () => {
   it('shows why a matching preview is unavailable without inventing a source line', () => {
     if (panel.status === null) throw new Error('Missing fixture')

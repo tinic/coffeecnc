@@ -41,6 +41,13 @@ if(BUILD_TESTING)
   target_link_libraries(coffeecnc_text_file_tests PRIVATE coffeecnc_core coffeecnc_project_options)
   coffeecnc_enable_analyzers(coffeecnc_text_file_tests)
   add_test(NAME text_file COMMAND coffeecnc_text_file_tests ${PROJECT_BINARY_DIR})
+  # How the adapter replaces the tool table and its records: POSIX only, built from its source
+  # so that it runs wherever the core does.
+  add_executable(coffeecnc_durable_file_tests tests/durable_file_tests.cpp
+    src/linuxcnc/src/durable_file.cpp)
+  target_link_libraries(coffeecnc_durable_file_tests PRIVATE coffeecnc_core coffeecnc_project_options)
+  coffeecnc_enable_analyzers(coffeecnc_durable_file_tests)
+  add_test(NAME durable_file COMMAND coffeecnc_durable_file_tests ${PROJECT_BINARY_DIR})
   if(COFFEECNC_BUILD_APP)
     add_executable(coffeecnc_request_tests tests/request_tests.cpp)
     target_link_libraries(coffeecnc_request_tests PRIVATE coffeecnc_app coffeecnc_project_options)

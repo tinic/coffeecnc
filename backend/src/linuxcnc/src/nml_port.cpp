@@ -6,6 +6,7 @@
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include "durable_file.hpp"
 #include "nml_gate.hpp"
 #include "nml_status.hpp"
 #include "program_watch.hpp"
@@ -54,19 +55,10 @@ auto load_touched(const std::string& file) -> std::optional<TouchedOff> {
     text += line + '\n';
   return parse_touched_off(text);
 }
+// The records beside the tool table say what is in the spindle and where a run stopped: on
+// disk, whole, before anything relies on them.
 auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> bool {
-  auto temporary = path;
-  temporary += ".new";
-  {
-    std::ofstream out(temporary);
-    out << text;
-    out.close();
-    if (!out)
-      return false;
-  }
-  std::error_code error;
-  std::filesystem::rename(temporary, path, error);
-  return !error;
+  return replace_synced(path.string(), text).has_value();
 }
 void save_touched(const std::string& file, const TouchedOff& touched) {
   static_cast<void>(write_sidecar(file, format_touched_off(touched)));
@@ -807,21 +799,16 @@ struct NmlPort::Impl {
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
   // edit can be withdrawn and leaves nothing behind; between them only half of it.
   [[nodiscard]] auto load_tool_table(const std::string& table) -> ActionResult {
+    // On disk before LinuxCNC reads it: a power cut leaves the old table or the new one.
     const std::string temporary = config.tool_table + ".coffeecnc";
-    {
-      std::ofstream out{temporary, std::ios::binary | std::ios::trunc};
-      out << table;
-      out.flush();
-      if (!out)
-        return failed(std::format("Cannot write tool table {}.", temporary));
-    }
-    std::error_code error;
+    if (!write_synced(temporary, table))
+      return failed(std::format("Cannot write tool table {}.", temporary));
     if (!still()) {
+      std::error_code error;
       std::filesystem::remove(temporary, error);
       return withdrawn();
     }
-    std::filesystem::rename(temporary, config.tool_table, error);
-    if (error)
+    if (!rename_synced(temporary, config.tool_table))
       return failed(std::format("Cannot replace tool table {}.", config.tool_table));
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;

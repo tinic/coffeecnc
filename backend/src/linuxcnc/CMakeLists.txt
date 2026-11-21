@@ -48,7 +48,7 @@ if(NOT COFFEECNC_LINUXCNC_TOOLDATA_INCLUDE_DIR)
   message(STATUS "LinuxCNC adapter: tooldata.hh is not installed, using upstream/tooldata.hh")
 endif()
 
-add_library(coffeecnc_linuxcnc src/hal_component.cpp src/hal_control.cpp src/loaded_tools.cpp
+add_library(coffeecnc_linuxcnc src/durable_file.cpp src/hal_component.cpp src/hal_control.cpp src/loaded_tools.cpp
   src/machine_config.cpp src/nml_panel_source.cpp src/nml_port.cpp src/nml_status.cpp src/panel_mapping.cpp
   src/preview_engine.cpp src/preview_wire.cpp src/program_watch.cpp src/tool_table.cpp)
 target_include_directories(coffeecnc_linuxcnc PUBLIC include)

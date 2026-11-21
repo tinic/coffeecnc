@@ -279,7 +279,7 @@ onBeforeUnmount(() => {
       </div>
       <button
         v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
-        type="button" class="btn quiet calibrate" :class="{ on: pending?.action === 'ball' }" @click="askingGauge = true"
+        type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="askingGauge = true"
       >
         Calibrate ball…
       </button>
@@ -340,7 +340,7 @@ onBeforeUnmount(() => {
 .probe-actions button:first-child { grid-column: 1 / -1; }
 .probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
 .probe-actions button.corner { min-height: 44px; }
-.calibrate { grid-column: 2; justify-self: end; min-height: 36px; font-size: 12px; }
+.calibrate { grid-column: 2; align-self: start; min-height: 44px; }
 .centres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .centres button { min-height: 44px; }
 @container (max-width: 390px) {

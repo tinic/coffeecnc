@@ -36,7 +36,12 @@ CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine 
 ![Material touch-off with the T99 probe on the G0759](ui/screenshots/g0759-touch-off.png)
 
 - With the touch probe (T99) loaded, probe the **Z top** or one workpiece edge: **X−** (left), **X+** (right), **Y−** (front) or **Y+** (back). The diagram shows which face each button probes.
-- The result goes into the active work coordinate system. Edge results include the probe ball radius.
+- **Corners** (X− Y−, X+ Y−, X− Y+, X+ Y+): probe Z top first, then jog the ball over the part within 10 mm of both edges. CoffeeCNC goes down beside each face and sets X0 and Y0 together.
+- **Bore centre** and **Boss centre** set X0 and Y0 at the centre and show the diameter.
+- **Edge angle** probes the front edge at two points and shows how far it turns, to square a vise.
+- **Calibrate ball** measures the effective ball diameter on a gauge of known width and saves it to the tool table.
+- Every move between contacts runs with the probe active, so an unexpected contact stops the machine. Nothing is written unless every contact succeeds.
+- Results go into the active work coordinate system. Edge results include the probe ball radius.
 - The probe can teach the tool setter, so you do not need to measure T98 first when the tool lengths are valid.
 
 ### Machine
@@ -48,6 +53,9 @@ CoffeeCNC runs on a Grizzly **G0759** mill with a Mesa 7i76e, using the machine 
 - The tool sequence lists each section, its tool, its lines and its estimated time. The status line shows the estimated cycle time, then elapsed and remaining time during the run, and the last run time and part count.
 - **Program check** lists the tools and their lengths, the work extents and lowest Z, feed and spindle ranges and the program units. Errors block Cycle start; warnings need a confirmation.
 - **Restart** from any line or tool section. The restart sheet shows the state at that line and the approach: Z to clearance, the tool change if needed, X and Y, spindle and coolant, then a slow feed down. After a Stop, an E-stop or a power loss, the Machine tab offers **Restart there** at the line where the program stopped.
+- **Run to line** pauses before a chosen line; Resume continues from there.
+- **Air cut** runs the program with Z raised by a set amount, through a temporary offset that CoffeeCNC removes again.
+- During a pause, jog **Z** up to inspect or clear chips. CoffeeCNC stops the spindle if needed, and Resume returns Z, restarts the spindle at speed, then continues.
 - Tap an F or S number in the code list to change it. CoffeeCNC changes only that number in the file and opens the program again.
 - Attach a STEP model to show the stock or part in the work coordinate system.
 - Cycle start, feed hold, stop, and feed and spindle overrides are always at the bottom of the screen.

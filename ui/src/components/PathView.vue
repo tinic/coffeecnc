@@ -539,7 +539,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.viewport { position: relative; height: calc(100% - 42px); background: radial-gradient(ellipse at 50% 45%, var(--panel-raised), var(--bg-sunken) 80%); }
+.viewport { position: relative; height: calc(100% - 42px); background: var(--preview-backdrop); }
 .work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 22%, transparent 74%); }
 .toolpath-canvas { position: relative; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }

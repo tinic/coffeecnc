@@ -54,7 +54,7 @@ export function flutedCutterGeometry(family: ToolFamily, profile: Profile, diame
     startR = endR
     startZ = endZ
   }
-  return sweptGeometry(rings, contour, count)
+  return sweptGeometry(rings, contour, count, true)
 }
 
 function isFluted(family: ToolFamily): family is keyof typeof flutedFamilies {
@@ -121,13 +121,14 @@ export function faceMillGeometry(diameter: number, length: number): {
   return { body, inserts, screws }
 }
 
-function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number): BufferGeometry {
+function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number, shadeFlutes = false): BufferGeometry {
   const around = contour.length * repeats
   const [bottom] = rings
   const top = rings.at(-1)
   if (!bottom || !top) throw new Error('Missing cutter profile')
   const tip = bottom.radius === 0
   const positions: number[] = []
+  const colours: number[] = []
   const indices: number[] = []
   const sides = tip ? rings.slice(1) : rings
   for (const { radius, z, phase, depth } of sides) {
@@ -136,6 +137,11 @@ function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number
         const angle = (tooth + fraction) * 2 * Math.PI / repeats + phase
         const r = radius * (1 - (1 - ratio) * depth)
         positions.push(r * Math.cos(angle), r * Math.sin(angle), z)
+        if (shadeFlutes) {
+          // The ground lands catch more light than the recessed flute faces.
+          const shade = 1 - 0.35 * Math.min(1, (1 - ratio) * 3) * depth
+          colours.push(shade, shade, shade)
+        }
       }
     }
   }
@@ -155,9 +161,11 @@ function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number
       const offset = rim * 3
       rim = positions.length / 3
       positions.push(...positions.slice(offset, offset + around * 3))
+      if (shadeFlutes) colours.push(...colours.slice(offset, offset + around * 3))
     }
     const centre = positions.length / 3
     positions.push(0, 0, z)
+    if (shadeFlutes) colours.push(0.85, 0.85, 0.85)
     for (let i = 0; i < around; i += 1) {
       const a = rim + i, b = rim + (i + 1) % around
       if (top) indices.push(centre, a, b)
@@ -169,6 +177,7 @@ function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number
 
   const geometry = new BufferGeometry()
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  if (shadeFlutes) geometry.setAttribute('color', new Float32BufferAttribute(colours, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry

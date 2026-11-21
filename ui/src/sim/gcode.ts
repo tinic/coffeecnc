@@ -26,6 +26,8 @@ export interface Modal {
   rotations: number[]
   g92: Vec3
   toolOffset: Vec3
+  /** The H number of an active G43, or null under G49. A zero-length offset is still G43. */
+  lengthTool: number | null
   units: LengthUnit
   absolute: boolean
   motion: Motion
@@ -92,6 +94,7 @@ export function newModal(tools: Tool[]): Modal {
     rotations: Array.from({ length: 9 }, () => 0),
     g92: [0, 0, 0],
     toolOffset: [0, 0, 0],
+    lengthTool: null,
     units: 'mm',
     absolute: true,
     motion: 1,
@@ -169,7 +172,7 @@ export function activeCodes(m: Modal): string[] {
     `G${String(m.motion)}`,
     'G17',
     m.units === 'inch' ? 'G20' : 'G21',
-    m.toolOffset.some((v) => v !== 0) ? 'G43' : 'G49',
+    m.lengthTool !== null ? 'G43' : 'G49',
     wcsNames[m.wcs - 1] ?? 'G54',
     m.absolute ? 'G90' : 'G91',
     'G94',
@@ -562,8 +565,10 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
       throw new InterpError(line, `G43: tool ${String(number)} not found in the tool table`)
     }
     m.toolOffset = [0, 0, tool?.length ?? 0]
+    m.lengthTool = number
   } else if (has(490)) {
     m.toolOffset = [0, 0, 0]
+    m.lengthTool = null
   }
   for (const [index, code] of wcsCodes.entries()) {
     if (has(code)) {

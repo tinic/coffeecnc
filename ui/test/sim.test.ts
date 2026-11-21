@@ -273,7 +273,13 @@ describe('jogging', () => {
       outcome: 'rejected',
       reason: 'X is at its negative soft limit',
     })
-    r.send({ type: 'jog_step', axis: 'y', distance: 1000, velocity: 3000 })
+    // A homed step past the travel is refused, as the native command policy does; one that
+    // ends exactly on the limit runs.
+    expect(r.send({ type: 'jog_step', axis: 'y', distance: 1000, velocity: 3000 })).toMatchObject({
+      outcome: 'rejected', reason: 'Incremental jog exceeds configured travel.' })
+    expect(r.send({ type: 'jog_step', axis: 'y', distance: 0, velocity: 3000 }).outcome).toBe('rejected')
+    expect(r.status().axes[1]?.machine).toBe(0)
+    r.send({ type: 'jog_step', axis: 'y', distance: travel.max[1], velocity: 3000 })
     r.sim.advance(20_000)
     expect(r.status().axes[1]?.machine).toBe(travel.max[1])
     expect(r.send({ type: 'jog', axis: 'y', direction: 1, velocity: 600, held: true }).reason).toBe(

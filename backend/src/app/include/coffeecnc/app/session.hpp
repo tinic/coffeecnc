@@ -335,6 +335,9 @@ private:
   [[nodiscard]] static auto staged(ActionResult result) -> Stage;
   void drop_requests();
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
+  [[nodiscard]] auto check_program_start(const Queued& request, const Run& command,
+                                         const ControllerState& state,
+                                         const CheckedPreview& check) const -> std::string;
   [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
   [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
                                   const ControllerState& state) -> Stage;
@@ -345,7 +348,8 @@ private:
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
-                             const ControllerState& state, const Clock& clock) -> Stage;
+                             const ControllerState& state, const Clock& clock,
+                             const std::optional<CheckedPreview>& verified) -> Stage;
   [[nodiscard]] auto jog(Queued& request, const Jog& command, const Decision& decision,
                          const Clock& clock) -> Stage;
   [[nodiscard]] auto start_gate(Queued& request, std::size_t index, bool held)

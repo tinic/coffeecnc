@@ -34,6 +34,11 @@ struct PreviewSettings {
   std::vector<std::string> interpreter_options;
   // Why no preview is computed on this machine at all; empty when one is.
   std::string refusal;
+  std::optional<Bounds> soft_travel{};
+  std::optional<Bounds> physical_travel{};
+  double max_spindle_rpm{};
+  std::string tool_table;
+  std::optional<int> reference_tool{};
 
   std::chrono::milliseconds timeout{20000};
   // How long the helper may take to exit after it has closed its result.
@@ -73,7 +78,7 @@ struct PreviewSettings {
 //             plane, distance modes, feed mode, retract mode, motion mode G0 or G1; any other
 //             motion mode is named to the helper, which ends the preview at a block that
 //             would move by it). The tool table is the one of the inputs: this class reads
-//             none.
+//             none for interpretation. Program check reads the saved touch-off marks.
 //   private   a directory per computation with the program in `program/`, the subroutine
 //             copies in `subroutines/`, which is the only PROGRAM_PREFIX and SUBROUTINE_PATH
 //             of the private INI file, and `empty/`, the helper's working directory (the

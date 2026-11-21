@@ -3958,8 +3958,101 @@ void restart_cuts(Rig& rig) {
   rig.start();
 }
 
+void program_preflight(Rig& rig) {
+  const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("preflight_loaded_tool_table", table.has_value());
+  if (!table)
+    return;
+  PreviewOracle oracle{rig, *table};
+  PreviewWorker preview{oracle.engine};
+  rig.stop();
+  rig.restart_preview = &preview;
+  rig.start();
+  const auto setup = rig.send(
+      R"("type":"set_tool","tool":{"number":2,"pocket":2,"length":0,"diameter":6.35,"comment":"Untouched"})");
+  check("preflight_setup", setup.accepted(), setup.text());
+  std::uint64_t context = 0;
+  const auto load = [&](std::string_view blocks) {
+    const std::string prefix = "G21 G90 G17 G54 G40 G49 G80 G94 G97 G61\n";
+    const auto [inputs, path] = oracle.preview(prefix + std::string(blocks) + "M30\n");
+    preview.submit(++context, inputs);
+    const bool ready = rig.pump_until(3s, [&] {
+      const auto shown = preview.checked_preview().preview;
+      return shown && shown->context == context;
+    });
+    check("preflight_context_ready", ready && path.check.has_value(),
+          path.error ? path.error->text : "");
+    return path.check.value_or(ProgramCheck{});
+  };
+  const auto start = [&](bool confirmed, std::uint64_t reviewed) {
+    return rig.send(
+        std::format(R"("type":"run","preview_context":{},"display_units":"mm","confirmed":{})",
+                    reviewed, confirmed));
+  };
+  const auto refused = [&](const char* scenario, std::string_view blocks, std::string_view reason) {
+    const auto report = load(blocks);
+    const auto trace = rig.port.writes();
+    const auto outcome = start(true, context);
+    check(scenario,
+          !report.errors.empty() && outcome.outcome == "rejected" &&
+              outcome.reason.find(reason) != std::string::npos && rig.port.writes() == trace,
+          outcome.text());
+  };
+  refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit");
+  refused("preflight_blocks_missing_tool_length", "T2 M6\nG43 H2\nG0 X10\n", "T2");
+  refused("preflight_blocks_unverified_work_origin", "G55\nG0 X10\n", "G55");
+  refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel");
+
+  const auto report = load("G0 X8\nG1 X10 F300\n");
+  check("preflight_reports_work_and_feed",
+        report.errors.empty() && report.travel == TravelCheck::unknown && report.warnings.empty() &&
+            report.frames.size() == 1 && report.frames[0].wcs == 1 && report.frames[0].bounds &&
+            near(report.frames[0].bounds->max[0], 10) && report.feed == ProgramRange{300, 300});
+  const auto direct = start(false, context);
+  const bool reached_direct =
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 10, 0.02); });
+  check("preflight_allows_unverified_physical_travel_without_confirmation",
+        direct.accepted() && reached_direct, direct.text());
+
+  const auto inch = load("G20\nG0 X0.25\n");
+  const auto review = start(false, context);
+  const auto stale = start(true, context - 1);
+  check("preflight_requires_current_confirmation",
+        std::ranges::contains(inch.units, LengthUnit::inch) && review.outcome == "rejected" &&
+            review.reason.find("warnings") != std::string::npos && stale.outcome == "rejected" &&
+            stale.reason.find("changed") != std::string::npos,
+        review.text() + " " + stale.text());
+  const auto accepted = start(true, context);
+  const bool reached =
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 6.35, 0.02); });
+  check("preflight_allows_confirmed_warning", accepted.accepted() && reached, accepted.text());
+
+  // A file save can replace the inode while LinuxCNC still has the earlier program open.
+  const auto [inputs, old] = oracle.preview("G21 G90 G54\nG0 X8\nM30\n");
+  const auto replacement = oracle.program + ".replacement";
+  {
+    std::ofstream updated{replacement};
+    updated << "G21 G90 G54\nG0 X14\nM30\n";
+  }
+  std::filesystem::rename(replacement, oracle.program);
+  preview.submit(++context, inputs);
+  const bool ready = rig.pump_until(3s, [&] {
+    const auto shown = preview.checked_preview().preview;
+    return shown && shown->context == context && shown->check && shown->check->errors.empty();
+  });
+  const auto replaced = start(true, context);
+  const bool reached_new =
+      rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 14, 0.02); });
+  check("preflight_runs_the_checked_replacement_file",
+        old.check.has_value() && ready && replaced.accepted() && reached_new, replaced.text());
+
+  rig.stop();
+  rig.restart_preview = nullptr;
+  rig.start();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
-         bool air_only, bool restart_only) -> int {
+         bool air_only, bool restart_only, bool preflight_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -4031,6 +4124,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (preflight_only) {
+    program_preflight(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (restart_only) {
     restart_cuts(rig);
     power_off(rig);
@@ -4129,6 +4227,7 @@ auto main(int argc, char** argv) -> int {
   bool restore_only = false;
   bool air_only = false;
   bool restart_only = false;
+  bool preflight_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -4140,6 +4239,7 @@ auto main(int argc, char** argv) -> int {
     restore_only = restore_only || std::string_view(argv[i]) == "restore-spindle-tool";
     air_only = air_only || std::string_view(argv[i]) == "air-cuts";
     restart_only = restart_only || std::string_view(argv[i]) == "restart-cuts";
+    preflight_only = preflight_only || std::string_view(argv[i]) == "program-preflight";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -4148,7 +4248,7 @@ auto main(int argc, char** argv) -> int {
     if (ini_file.empty())
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
-    code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only);
+    code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

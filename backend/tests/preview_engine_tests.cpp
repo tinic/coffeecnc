@@ -226,6 +226,41 @@ void restart_checkpoints() {
           "An explicit T word in the suffix prepares its own M6: " + outcome.restart_blocked);
 }
 
+void program_check_touched_lengths_and_travel() {
+  Rig rig{"program-check"};
+  const auto table = rig.root / "config" / "tool.tbl";
+  const auto marks = rig.root / "config" / "coffeecnc-touched-off.txt";
+  rig.settings.tool_table = table.string();
+  rig.settings.reference_tool = 98;
+  rig.settings.max_spindle_rpm = 1500;
+  rig.settings.soft_travel = Bounds{{-1000, -1000, -1000}, {1000, 1000, 1000}};
+  rig.settings.physical_travel = Bounds{{-40, -40, -40}, {40, 40, 40}};
+  rig.inputs.raw_tools[1].offset[2] = 0;
+  rig.inputs.raw_tools.push_back({3, 98, 98, {0, 0, 25.4}, 3, 0, 0, 0});
+  write(table, "T1 P1 Z50 D6\nT2 P2 Z0 D3\nT98 P98 Z25.4 D3\n");
+  write(marks, "reference 25.4\nT2 0\n");
+  write(rig.file(), "G20 G90 G17\nT2 M6\nG43 H2\nS1200 M3\nG1 X1 F10\nM5\nM2\n");
+  auto result = rig.compute();
+  require(result.outcome.check.has_value(), "The interpreter reports program check facts.");
+  const auto& check = *result.outcome.check;
+  require(check.errors.empty() && check.warnings.empty() && check.travel == TravelCheck::fits &&
+              check.tools == std::vector<ProgramToolCheck>{{2, ToolLengthCheck::touched_off}} &&
+              check.units == std::vector<LengthUnit>{LengthUnit::inch} &&
+              check.feed && near(check.feed->min, 254) &&
+              check.spindle == ProgramRange{1200, 1200},
+          "A touched-off zero length is valid. Feed is converted to mm/min.");
+  write(marks, "reference 5\nT2 0\n");
+  require(result.files_changed && result.files_changed({}),
+          "Changing only touch-off marks invalidates the displayed check.");
+  const auto rejected = rig.compute().outcome.check;
+  require(rejected && !rejected->errors.empty() &&
+              rejected->tools.front().length == ToolLengthCheck::missing,
+          "The old mark no longer validates the zero length.");
+  const auto outside = rig.preview("G21 G90\nG0 X50\nM2\n").check;
+  require(outside && outside->travel == TravelCheck::outside && !outside->errors.empty(),
+          "A move inside LinuxCNC soft limits can exceed the verified physical envelope.");
+}
+
 // Every chord of an arc is within the tolerance of the circle.
 void require_arc(const PreviewSegment& segment, std::size_t first, std::size_t second,
                  const Vec3& centre, double radius, const std::string& what) {
@@ -1156,6 +1191,7 @@ auto main(int argc, char** argv) -> int {
     fs::create_directories(scratch);
     lines_and_bounds();
     restart_checkpoints();
+    program_check_touched_lengths_and_travel();
     arcs_in_three_planes();
     units();
     offsets_rotation_and_g92();

@@ -117,7 +117,11 @@ struct ListDirectory {
 struct OpenProgram {
   std::string path;
 };
-struct Run {};
+struct Run {
+  std::optional<std::uint64_t> preview_context{};
+  std::optional<LengthUnit> display_units{};
+  bool confirmed{};
+};
 struct PlanRestart {
   int line{};
   std::uint64_t preview_context{};

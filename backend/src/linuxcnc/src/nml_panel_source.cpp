@@ -270,9 +270,9 @@ auto NmlPanelSource::read() -> PanelReading {
   PanelReading reading;
   // Everything that can take time first: the status is taken after it, and aged last.
   impl_->read_tools(reading.messages);
-  const auto mapping = impl_->loads ? impl_->loads->breakpoint.load() : nullptr;
   const auto with_source = [&](const auto& sample) {
     auto status = sample ? sample->status : NmlStatus{};
+    const auto mapping = impl_->loads ? impl_->loads->breakpoint.load() : nullptr;
     map_breakpoint(status, mapping.get());
     return status;
   };

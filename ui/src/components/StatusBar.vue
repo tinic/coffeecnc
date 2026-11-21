@@ -2,9 +2,9 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
-import { theme, toggleTheme } from '../appearance'
+import { theme } from '../appearance'
 import { machineBlock } from '../machine-block'
-import { dismissNotice, live, onResult, panel, reported, send } from '../machine'
+import { dismissNotice, live, onResult, panel, reported, send, toggleTheme } from '../machine'
 import type { CommandBody, Hello, Status } from '../protocol'
 import { baseName, wcsName } from '../units'
 import type { Tab } from '../store'
@@ -103,7 +103,7 @@ const subtitle = computed(() => {
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }"><i class="dot"></i><span class="connection-label">{{ linkLabel }}</span></span>
-      <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme">◐</button>
+      <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme()">◐</button>
     </div>
   </header>
   <section class="jobbar">

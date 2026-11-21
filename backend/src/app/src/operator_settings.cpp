@@ -23,11 +23,32 @@ auto units(StartupUnits value) -> std::string_view {
   }
   return "";
 }
-void exact(const Json& value, std::initializer_list<std::string_view> names) {
-  if (!value.is_object() || value.size() != names.size() ||
-      !std::ranges::all_of(names,
-                           [&](std::string_view name) -> bool { return value.contains(name); }))
+auto layout_name(ProgramLayout value) -> std::string_view {
+  switch (value) {
+  case ProgramLayout::path: return "path";
+  case ProgramLayout::text: return "text";
+  case ProgramLayout::split: return "split";
+  }
+  return "";
+}
+auto theme_name(PanelTheme value) -> std::string_view {
+  switch (value) {
+  case PanelTheme::light: return "light";
+  case PanelTheme::dark: return "dark";
+  }
+  return "";
+}
+void exact(const Json& value, std::initializer_list<std::string_view> required,
+           std::initializer_list<std::string_view> optional = {}) {
+  if (!value.is_object() ||
+      !std::ranges::all_of(required, [&](std::string_view name) -> bool {
+        return value.contains(name);
+      }))
     throw std::runtime_error("Settings have missing or unknown fields.");
+  for (auto field = value.begin(); field != value.end(); ++field)
+    if (std::ranges::find(required, field.key()) == required.end() &&
+        std::ranges::find(optional, field.key()) == optional.end())
+      throw std::runtime_error("Settings have missing or unknown fields.");
 }
 auto parse(std::string_view text) -> Json {
   if (text.size() > max_operator_settings_bytes)
@@ -48,12 +69,9 @@ auto parse(std::string_view text) -> Json {
       });
 }
 auto read_document(const Json& value) -> OperatorPreferences {
-  if (value.contains("tool_reference_height"))
-    exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
-                  "default_jog_velocity", "tool_reference_height"});
-  else
-    exact(value,
-          {"version", "startup_units", "enabled_wcs", "default_spindle_rpm", "default_jog_velocity"});
+  exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
+                "default_jog_velocity"},
+        {"tool_reference_height", "program_layout", "theme"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -86,6 +104,15 @@ auto read_document(const Json& value) -> OperatorPreferences {
       throw std::runtime_error("Tool reference height must be a number.");
     document.tool_reference_height = value.at("tool_reference_height").get<double>();
   }
+  // A missing or invalid presentation preference falls back independently.
+  if (const auto layout = value.find("program_layout"); layout != value.end()) {
+    if (*layout == "text")
+      document.program_layout = ProgramLayout::text;
+    else if (*layout == "split")
+      document.program_layout = ProgramLayout::split;
+  }
+  if (const auto theme = value.find("theme"); theme != value.end() && *theme == "dark")
+    document.theme = PanelTheme::dark;
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -96,7 +123,9 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"enabled_wcs", document.enabled_wcs},
           {"default_spindle_rpm", document.default_spindle_rpm},
           {"default_jog_velocity", document.default_jog_velocity},
-          {"tool_reference_height", document.tool_reference_height}};
+          {"tool_reference_height", document.tool_reference_height},
+          {"program_layout", layout_name(document.program_layout)},
+          {"theme", theme_name(document.theme)}};
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -110,6 +139,8 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
 } // namespace
 
 auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
+  if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty())
+    return "Invalid panel presentation.";
   if (units(document.startup_units).empty())
     return "Invalid startup units.";
   if (document.enabled_wcs.empty() || document.enabled_wcs.size() > 9 ||

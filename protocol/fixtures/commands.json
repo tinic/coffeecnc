@@ -233,7 +233,9 @@
       ],
       "default_spindle_rpm": 1200,
       "default_jog_velocity": 600,
-      "tool_reference_height": 6.35
+      "tool_reference_height": 6.35,
+      "program_layout": "text",
+      "theme": "dark"
     }
   },
   { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },

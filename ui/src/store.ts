@@ -20,14 +20,14 @@ import type {
   WorkOffsets,
 } from './protocol'
 import { protocolVersion } from './protocol'
-import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPreferences, type OperatorSettings } from './operator-settings'
+import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPreferences, type OperatorSettings, type ProgramLayout } from './operator-settings'
 import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { wcsName } from './units'
 
 export type Tab = 'manual' | 'program' | 'tools' | 'probe'
 export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
-export type ProgramLayout = 'split' | 'text' | 'path'
+export type { ProgramLayout } from './operator-settings'
 
 /** Status older than this is not live, whatever its `link` says. */
 export const staleAfterMs = 1000

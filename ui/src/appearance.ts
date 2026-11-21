@@ -1,11 +1,9 @@
 import { ref, watch } from 'vue'
+import { decodeTheme, type PanelTheme } from './operator-settings'
 
-export const theme = ref<'light' | 'dark'>(new URLSearchParams(window.location.search).get('theme') === 'dark' ? 'dark' : 'light')
+export const themeOverride = decodeTheme(new URLSearchParams(window.location.search).get('theme'))
+export const theme = ref<PanelTheme>(themeOverride ?? 'light')
 
 watch(theme, (value) => {
   document.documentElement.dataset['theme'] = value
-}, { immediate: true })
-
-export function toggleTheme(): void {
-  theme.value = theme.value === 'light' ? 'dark' : 'light'
-}
+}, { immediate: true, flush: 'sync' })

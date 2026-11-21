@@ -1,15 +1,17 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { nextTick, ref, type Ref } from 'vue'
 import type { Listener } from '../src/bridge'
 import type { FromMachine, ToMachine } from '../src/protocol'
 import { hello } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, type PanelState } from '../src/store'
-import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, type OperatorPreferences } from '../src/operator-settings'
+import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, type OperatorPreferences, type ProgramLayout, type PanelTheme } from '../src/operator-settings'
 import { createOperatorSettingsState, type OperatorSettingsController } from '../src/operator-settings-state'
 
 const disposals: (() => void)[] = []
 afterEach(() => { for (const dispose of disposals.splice(0)) dispose() })
 interface Rig {
   panel: PanelState
+  theme: Ref<PanelTheme>
   settings: OperatorSettingsController
   sent: ToMachine[]
   storage: { getItem: Mock<() => string>; setItem: Mock<(key: string, value: string) => void> }
@@ -20,7 +22,8 @@ interface Rig {
   receive: (message: FromMachine) => void
   pass: (ms: number) => void
 }
-function rig(simulated = false, saved: OperatorPreferences | null = null): Rig {
+function rig(simulated = false, saved: unknown = null,
+  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme } = {}): Rig {
   let receive: Listener = () => undefined
   let timer: (() => void) | null = null
   let now = 0
@@ -30,7 +33,8 @@ function rig(simulated = false, saved: OperatorPreferences | null = null): Rig {
   const panel = createPanel({ transport: { simulated, listen: (listener): void => { receive = listener },
     send: (command): void => { sent.push(command) } }, now: (): number => now,
   timers: { setInterval: (callback): number => { timer = callback; return 1 }, clearInterval: (): void => { timer = null } } })
-  const settings = createOperatorSettingsState(panel.state, panel, storageAccess)
+  const theme = ref<PanelTheme>('light')
+  const settings = createOperatorSettingsState(panel.state, panel, storageAccess, { theme, ...overrides })
   panel.start(); disposals.push(settings.dispose, panel.stop)
   const connect = (id: string | null = 'G0759', capable = true): void => {
     receive({ ...hello, machine_id: id, max_spindle_rpm: 3000, max_jog_velocity: 1000, ...(capable ? { operator_settings_storage: 1 } : {}) })
@@ -43,7 +47,7 @@ function rig(simulated = false, saved: OperatorPreferences | null = null): Rig {
     if (!last) throw new Error('Expected a save')
     receive({ type: 'result', id: last.id, outcome, reason: outcome === 'failed' ? 'Disk full' : '' })
   }
-  return { panel: panel.state, settings, sent, storage, storageAccess, connect, snapshot, reply,
+  return { panel: panel.state, theme, settings, sent, storage, storageAccess, connect, snapshot, reply,
     receive: (message: FromMachine): void => { receive(message) }, pass: (ms: number): void => { now += ms; timer?.() } }
 }
 const custom = (): OperatorPreferences => ({ ...defaultOperatorPreferences(), startup_units: 'inch',
@@ -91,6 +95,77 @@ describe('operator settings', () => {
     r.storage.setItem.mockImplementation(() => { throw new Error('Quota') })
     expect((await r.settings.save(custom(), r.settings.context())).saved).toBe(false)
     expect(r.panel.preferences.startup_units).toBe('machine')
+  })
+  it('restarts the browser with the operator’s view and theme, with URL choices taking precedence', () => {
+    const first = rig(true, custom())
+    first.connect()
+    first.settings.chooseProgramLayout('text')
+    first.settings.chooseTheme('dark')
+    const saved: unknown = JSON.parse(first.storage.setItem.mock.lastCall?.[1] ?? 'null')
+    const restarted = rig(true, saved)
+    expect([restarted.panel.programLayout, restarted.theme.value]).toEqual(['text', 'dark'])
+    const overridden = rig(true, saved, { layoutOverride: 'split', themeOverride: 'light' })
+    expect([overridden.panel.programLayout, overridden.theme.value]).toEqual(['split', 'light'])
+
+    // The automatic jump to a failing line is a view action with no preference write.
+    restarted.panel.programLayout = 'split'
+    expect(restarted.storage.setItem).not.toHaveBeenCalled()
+    expect(overridden.storage.setItem).not.toHaveBeenCalled()
+    expect(restarted.panel.preferences).toEqual({ ...custom(), program_layout: 'text', theme: 'dark' })
+  })
+  it('falls back from invalid stored presentation values without resetting other defaults', () => {
+    const invalid = rig(true, { ...custom(), program_layout: 'both', theme: null })
+    invalid.connect()
+    expect([invalid.panel.programLayout, invalid.theme.value, invalid.panel.startupSpindleRpm])
+      .toEqual(['path', 'light', 1800])
+    expect(invalid.storage.setItem).not.toHaveBeenCalled()
+  })
+  it('restores native presentation and discards choices queued for a previous machine', async () => {
+    const r = rig()
+    r.connect(); r.snapshot(2, { ...custom(), program_layout: 'split', theme: 'dark' })
+    expect([r.panel.programLayout, r.theme.value]).toEqual(['split', 'dark'])
+    expect(r.sent).toEqual([])
+    r.settings.chooseProgramLayout('text')
+    r.settings.chooseTheme('light')
+    r.connect('SecondMill')
+    r.snapshot(5, { ...custom(), program_layout: 'path', theme: 'dark' }, 'SecondMill')
+    await nextTick()
+    expect(r.sent).toHaveLength(1)
+    expect([r.panel.programLayout, r.theme.value]).toEqual(['path', 'dark'])
+  })
+  it('queues rapid native choices on arrival of settings and rebases later choices onto the latest revision', async () => {
+    const r = rig()
+    r.connect()
+    r.settings.chooseProgramLayout('text')
+    r.settings.chooseTheme('dark')
+    expect(r.sent).toHaveLength(0)
+    r.snapshot(2, { ...custom(), program_layout: 'split' })
+    await nextTick()
+    const first = { ...custom(), program_layout: 'text', theme: 'dark' } as const
+    expect(r.sent[0]).toMatchObject({ type: 'set_operator_settings', base_revision: 2, document: first })
+    expect([r.panel.programLayout, r.theme.value]).toEqual(['text', 'dark'])
+
+    r.settings.chooseProgramLayout('path')
+    expect(r.sent).toHaveLength(1)
+    r.snapshot(3, first)
+    r.reply()
+    await nextTick()
+    const second = { ...first, program_layout: 'path' } as const
+    expect(r.sent[1]).toMatchObject({ type: 'set_operator_settings', base_revision: 3, document: second })
+    r.snapshot(4, second)
+    r.reply()
+    const restarted = rig()
+    restarted.connect()
+    restarted.snapshot(4, second)
+    expect([restarted.panel.programLayout, restarted.theme.value]).toEqual(['path', 'dark'])
+    expect(restarted.sent).toHaveLength(0)
+  })
+  it('honors native startup overrides without saving them', () => {
+    const r = rig(false, null, { layoutOverride: 'text', themeOverride: 'dark' })
+    r.connect()
+    r.snapshot(1, { ...custom(), program_layout: 'split', theme: 'light' })
+    expect([r.panel.programLayout, r.theme.value]).toEqual(['text', 'dark'])
+    expect(r.sent).toEqual([])
   })
   it('requires updated revision and accepted result; saving never changes current unit or speed', async () => {
     const r = rig(); r.connect(); r.snapshot(2)

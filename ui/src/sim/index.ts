@@ -42,7 +42,7 @@ export function createSimulator(parameters: URLSearchParams): Transport {
       if (!started) {
         // The scene runs once the panel listens, so that its operator messages arrive.
         started = true
-        const scene = parameters.get('scene')
+        const scene = parameters.get('scene') ?? (parameters.get('tab') === 'probe' ? 'probe' : null)
         if (scene !== null) {
           applyScene(machine, scene, parameters.get('setup') ?? 'top')
         }

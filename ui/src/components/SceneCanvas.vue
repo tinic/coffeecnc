@@ -11,8 +11,10 @@ import { part, showPart } from '../step'
 import { modelToMachine } from '../step-model'
 import { ToolMesh } from '../tool-mesh'
 import { toolPreviewBounds, type ToolPreview } from '../tool-preview'
+import { probeFixtureBounds } from '../sim/probe-fixture'
+import { buildProbeFixture } from '../sim/probe-mesh'
 
-const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null }>()
+const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null; probeFixture: boolean }>()
 const emit = defineEmits<{ error: [message: string] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const scene = new Scene()
@@ -24,6 +26,17 @@ const surfaces: MeshStandardMaterial[] = []
 const lines: LineBasicMaterial[] = []
 let renderer: WebGLRenderer | null = null
 let contextLost = false
+let fixture: ReturnType<typeof buildProbeFixture> | null = null
+
+function buildFixture(): void {
+  if (fixture) {
+    scene.remove(fixture.group)
+    fixture.dispose()
+  }
+  fixture = props.probeFixture ? buildProbeFixture() : null
+  if (fixture) scene.add(fixture.group)
+  draw()
+}
 
 function clear(): void {
   group.clear()
@@ -70,6 +83,10 @@ function draw(): void {
   if (renderer === null || contextLost || props.width <= 0 || props.height <= 0) return
   const attachment = part.attachment
   const corners: [number, number, number][] = []
+  if (fixture) {
+    const { min, max } = probeFixtureBounds()
+    corners.push(...boxCorners(min, max))
+  }
   group.visible = showPart.value && attachment !== null
   if (attachment !== null && group.visible) {
     const toWorld = (p: [number, number, number]): [number, number, number] => modelToMachine(p, part.placement, attachment.binding.frame)
@@ -100,6 +117,7 @@ function draw(): void {
 function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
 function restored(): void { contextLost = false; toolMesh.resetLighting(); emit('error', ''); draw() }
 watch(() => part.attachment?.geometry, build)
+watch(() => props.probeFixture, buildFixture)
 // Status changes move the existing mesh; only changed dimensions rebuild it.
 watch(() => JSON.stringify(props.tool?.model ?? null), buildTool)
 watch([(): unknown => props.camera, (): unknown => props.width, (): unknown => props.height, (): unknown => part.placement, (): unknown => part.attachment?.binding,
@@ -117,6 +135,7 @@ onMounted(() => {
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
     emit('error', '')
+    buildFixture()
     build()
     buildTool()
   } catch {
@@ -127,6 +146,7 @@ onBeforeUnmount(() => {
   canvas.value?.removeEventListener('webglcontextlost', lost)
   canvas.value?.removeEventListener('webglcontextrestored', restored)
   clear()
+  fixture?.dispose()
   toolMesh.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()

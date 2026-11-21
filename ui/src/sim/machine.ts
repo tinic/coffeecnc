@@ -24,7 +24,8 @@ import { protocolVersion } from '../protocol'
 import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
 import { defaultFiles, listDirectory, splitLines } from './files'
 import { feedOrSpeedEdit } from '../program-edit'
-import { demoProbe, demoProbeTools, demoSetter, SimProbe, type ProbePlan } from './probe'
+import { SimProbe, type ProbePlan } from './probe'
+import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
 import {
   InterpError,
   activeCodes,
@@ -231,6 +232,8 @@ export class SimMachine {
   enableProbing(): void {
     this.configuration.fixed_setter = demoSetter
     this.configuration.touch_probe_tool = demoProbe
+    const first = this.modal.tools.find(tool => tool.number === 1)
+    if (first) Object.assign(first, { diameter: 10, comment: 'Carbide end mill 10 mm' })
     this.modal.tools.push(...demoProbeTools.map(tool => ({ ...tool })))
     this.probe = new SimProbe(this.modal.tools)
   }

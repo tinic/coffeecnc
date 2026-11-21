@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Listener } from '../src/bridge'
 import type { FromMachine, Hello, ToMachine, Tool } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
+import { demoProbe, demoProbeTools, demoSetter } from '../src/sim/probe-fixture'
 import { answerTimeoutMs, createPanel } from '../src/store'
-import { factoryToolDefaults } from '../src/tool-model'
+import { factoryToolDefaults, toolIdentity } from '../src/tool-model'
 import { emptyToolModelDocument, type ToolModelDocument } from '../src/tool-model-settings'
 import { createToolModelState } from '../src/tool-model-state'
 
@@ -75,6 +76,24 @@ function saved(): ToolModelDocument {
 }
 
 describe('tool model persistence state', () => {
+  it('seeds the probe and cutter models in the demo and refreshes the probe after ball calibration', async () => {
+    const r = rig(true)
+    r.receive({ ...hello, touch_probe_tool: demoProbe, fixed_setter: demoSetter })
+    const cutter: Tool = { number: 1, pocket: 1, diameter: 10, length: 62.5, comment: 'Carbide end mill 10 mm' }
+    r.table([cutter, ...demoProbeTools])
+    expect(r.models.state.assignments.get(1)?.family).toBe('end-mill')
+    expect(r.models.state.assignments.get(98)?.family).toBe('generic')
+    const probe = demoProbeTools.find(candidate => candidate.number === demoProbe)
+    if (!probe) throw new Error('Missing demo probe')
+    expect(r.models.state.assignments.get(demoProbe)).toMatchObject({ family: 'touch-probe', overrides: { stylusLength: 16 } })
+    const calibrated = { ...probe, diameter: 4.04 }
+    r.receive({ type: 'tool_table', revision: 2, tools: [cutter, demoProbeTools[0] ?? cutter, calibrated] })
+    expect(r.models.state.assignments.get(demoProbe)?.identity).toBe(toolIdentity(calibrated))
+    const removed = await r.models.saveAssignment(calibrated, null, {}, r.models.context())
+    expect(removed.saved).toBe(true)
+    r.receive({ type: 'tool_table', revision: 3, tools: [cutter, { ...calibrated, diameter: 4.02 }] })
+    expect(r.models.state.assignments.has(demoProbe)).toBe(false)
+  })
   it('saves uncommented T1 and refuses a no-tool placeholder with operator wording', async () => {
     const r = rig(true)
     const bare: Tool = { number: 1, pocket: 1, length: 10, diameter: 6.35, comment: '' }

@@ -1,33 +1,15 @@
-import type { FixedSetter, FixedSetterLimits, ProbeDirection, SetterState, Tool, Vec3 } from '../protocol'
+import type { FixedSetter, ProbeDirection, SetterState, Tool, Vec3 } from '../protocol'
+import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
 
 type XY = [number, number]
 type Lateral = Exclude<ProbeDirection, 'z_top'>
 type Cycle = Exclude<FixedSetter, { action: 'status' }>
 type Axis = 'X' | 'Y' | 'Z' | 'XY'
-interface Block { centre: XY; half: XY; angle: number }
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
 export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState }
 
-export const demoProbe = 99
-export const demoSetter: FixedSetterLimits = {
-  reference_tool: 98, travel_mm: 30, feed_mm_min: 900, latch_feed_mm_min: 300, latch_backoff_mm: 1,
-  xy_tolerance_mm: 0.5, clearance_mm: 12, material_travel_mm: 35,
-}
-export const demoProbeTools: readonly Tool[] = [
-  { number: 98, pocket: 98, length: 52, diameter: 6, comment: 'Setter reference' },
-  { number: 99, pocket: 99, length: 48, diameter: 4, comment: 'Ruby touch probe' },
-]
-
-const stock: Block = { centre: [150, 100], half: [40, 30], angle: 0 }
-const slanted: Block = { centre: [255, 85], half: [40, 30], angle: 3 }
-const gauge: Block = { centre: [285, 190], half: [12, 15], angle: 0 }
-const bore: XY = [155, 108]
-const boss: XY = [235, 170]
-const setter: Vec3 = [55, 55, -150]
-const top = -120
-const boreRadius = 10
-const bossRadius = 12
+const { stock, slanted, gauge, bore, boss, setter, top, boreRadius, bossRadius, stockHeight } = demoFixture
 const rubyRadius = 2.02
 const reach = 10
 const margin = 3
@@ -62,10 +44,10 @@ function turn([x, y]: XY, degrees: number): XY {
   const a = degrees * Math.PI / 180
   return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
 }
-function relative(point: Vec3, block: Block): XY {
+function relative(point: Vec3, block: ProbeBlock): XY {
   return turn([point[0] - block.centre[0], point[1] - block.centre[1]], -block.angle)
 }
-function over(point: Vec3, block: Block): boolean {
+function over(point: Vec3, block: ProbeBlock): boolean {
   const [x, y] = relative(point, block)
   return Math.abs(x) <= block.half[0] && Math.abs(y) <= block.half[1]
 }
@@ -75,7 +57,7 @@ function radiusFrom(point: Vec3, centre: XY): number {
 function along(point: Vec3, direction: XY, distance: number): Vec3 {
   return [point[0] + direction[0] * distance, point[1] + direction[1] * distance, point[2]]
 }
-function rayBox(start: Vec3, direction: XY, block: Block): number | null {
+function rayBox(start: Vec3, direction: XY, block: ProbeBlock): number | null {
   const point = relative(start, block)
   const vector = turn(direction, -block.angle)
   let entry = -Infinity, exit = Infinity
@@ -178,7 +160,11 @@ export class SimProbe {
     const applied = state.measured_tools?.includes(tool.number) && modal.toolOffset[2] === tool.length
     const noContact = 'No probe contact within the simulated search travel. Check the starting position.'
     const result = (update: () => Partial<SetterState>): ProbePlan => ({
-      moves: path.moves, finish: () => ({ ...this.state(modal), ...update(), measured_tools: this.state(modal).measured_tools ?? [] }),
+      moves: path.moves,
+      finish: (): SetterState => {
+        const change = update()
+        return { ...this.state(modal), ...change }
+      },
     })
     const origin = (point: Vec3, axis: Axis): ProbePlan => result(() => {
       const work = toWork(modal, point)
@@ -241,7 +227,7 @@ export class SimProbe {
       if (tableRadius <= 0) return 'Set the probe ball diameter first.'
       const base = directions[command.direction]
       const direction = turn(base, rotation)
-      if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - 18) return noContact
+      if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return noContact
       const distance = [stock, gauge, slanted].reduce<number | null>((nearest, block) => {
         const hit = rayBox(start, direction, block)
         return hit === null ? nearest : Math.min(nearest ?? Infinity, hit)
@@ -254,7 +240,7 @@ export class SimProbe {
     if (command.action === 'angle') {
       const spacing = command.spacing
       if (!(Math.abs(spacing) >= 5 && Math.abs(spacing) <= 300)) return 'Enter a spacing of 5 to 300 mm.'
-      if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - 18) return noContact
+      if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return noContact
       const direction = directions[command.direction]
       const axis = direction[0] === 0 ? 1 : 0
       const next: Vec3 = [...start]
@@ -280,7 +266,7 @@ export class SimProbe {
     if (tableRadius <= 0) return 'Set the probe ball diameter first.'
     if (command.action === 'bore') {
       if (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
-          start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - 18) return 'Jog the ball into the simulated bore below its top.'
+          start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return 'Jog the ball into the simulated bore below its top.'
       const hit = (from: Vec3, direction: XY): Vec3 | null =>
         lateral(path, from, direction, rayRound(from, direction, bore, boreRadius - rubyRadius, true))
       const right = hit(start, [1, 0]), left = hit(start, [-1, 0])

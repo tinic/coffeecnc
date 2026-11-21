@@ -21,7 +21,8 @@
 import type { Status, ToMachine } from '../protocol'
 import { programDirectory, samplesDirectory } from './files'
 import type { SimMachine } from './machine'
-import { demoProbe, probeSceneStart } from './probe'
+import { probeSceneStart } from './probe'
+import { demoProbe } from './probe-fixture'
 
 export const sceneNames = [
   'estop',

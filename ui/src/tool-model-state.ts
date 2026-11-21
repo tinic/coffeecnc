@@ -5,6 +5,7 @@ import type { ToolHolder } from './tool-holder'
 import { decodeToolDefaults, factoryToolDefaults, toolIdentity,
   type ToolDefaults, type ToolFamily, type ToolModelAssignment, type ToolOverrides } from './tool-model'
 import { decodeToolModelDocument, matchingToolModelAssignments, toolModelBinding, validMachineId } from './tool-model-settings'
+import { demoToolAssignment, hasDemoProbeFixture } from './sim/probe-fixture'
 
 const storageKey = 'coffeecnc.tool-model-defaults.v1'
 export type ModelStorage = 'loading' | 'browser' | 'session_only' | 'available' | 'unavailable'
@@ -43,6 +44,8 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     storageReason: '', storageError: '', revision: null, saving: false, saved: '', uncertain: false })
   let pending: { command: SaveCommand; context: ModelEditContext; resolve: (result: ModelSaveResult) => void } | null = null
   const stops: (() => void)[] = []
+  const fixtureModels = new Set<number>()
+  let waitingForFixtureTools = false
 
   function fail(reason: string): ModelSaveResult {
     state.storageError = reason
@@ -64,6 +67,8 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
   stops.push(watch(() => panel.hello, (hello) => {
     if (pending !== null) finish(fail('The machine connection changed. This draft was not confirmed saved.'))
     state.assignments.clear()
+    fixtureModels.clear()
+    waitingForFixtureTools = hasDemoProbeFixture(panel.simulated, hello)
     state.storageError = ''; state.saved = ''; state.uncertain = false; state.revision = null
     if (panel.simulated) return
     state.defaults = factoryToolDefaults()
@@ -96,7 +101,24 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (state.storage === 'available') { restoreAssignments(); return }
     for (const [number, assignment] of state.assignments) {
       const tool = table?.tools.find((candidate) => candidate.number === number)
-      if (tool === undefined || assignment.identity !== toolIdentity(tool)) state.assignments.delete(number)
+      if (tool === undefined || assignment.identity !== toolIdentity(tool)) {
+        const updated = tool !== undefined && fixtureModels.has(number) ? demoToolAssignment(tool) : undefined
+        if (updated) state.assignments.set(number, updated)
+        else {
+          state.assignments.delete(number)
+          fixtureModels.delete(number)
+        }
+      }
+    }
+    if (waitingForFixtureTools && table !== null) {
+      waitingForFixtureTools = false
+      for (const tool of table.tools) {
+        const model = demoToolAssignment(tool)
+        if (model) {
+          fixtureModels.add(tool.number)
+          state.assignments.set(tool.number, model)
+        }
+      }
     }
   }, { flush: 'sync' }))
   stops.push(watch(() => panel.link, restoreAssignments, { flush: 'sync' }))
@@ -183,6 +205,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       return write({ type: 'set_tool_model_assignment', machine_id: panel.toolModels.machine_id,
         base_revision: panel.toolModels.revision, tool: binding, family, overrides: { ...overrides }, ...holderField }, edit)
     }
+    fixtureModels.delete(tool.number)
     if (family === null) state.assignments.delete(tool.number)
     else state.assignments.set(tool.number, { identity: toolIdentity(tool), family, overrides: { ...overrides }, ...holderField })
     state.storageError = ''

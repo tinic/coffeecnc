@@ -19,7 +19,7 @@ PreviewWorker::~PreviewWorker() {
 void PreviewWorker::submit(std::uint64_t context, const PreviewInputs& inputs) {
   {
     const std::scoped_lock lock{mutex_};
-    wanted_ = Request{context, inputs};
+    wanted_ = Request{context, std::make_shared<const PreviewInputs>(inputs)};
     newest_ = context;
     waiting_ = true;
   }
@@ -44,6 +44,14 @@ void PreviewWorker::revalidate(std::uint64_t context) {
 
 auto PreviewWorker::files_generation() const -> std::uint64_t { return generation_; }
 
+auto PreviewWorker::restart_source(std::uint64_t context) const -> RestartSource {
+  const std::scoped_lock lock{mutex_};
+  if (!latest_ || newest_ != context || latest_->context != context ||
+      latest_->state != PreviewState::ready)
+    return {};
+  return latest_source_;
+}
+
 void PreviewWorker::loop() {
   // Of the preview that is current; this thread's alone.
   PreviewComputation::Watch files_changed;
@@ -63,7 +71,7 @@ void PreviewWorker::loop() {
       wanted_.reset();
       waiting_ = false;
       lock.unlock();
-      auto computed = engine_.compute(request.inputs, [&]() -> bool {
+      auto computed = engine_.compute(*request.inputs, [&]() -> bool {
         return stop_ || newest_ != request.context;
       });
       lock.lock();
@@ -74,6 +82,7 @@ void PreviewWorker::loop() {
       latest_ = std::make_shared<const Preview>(
           Preview{request.context, outcome.state, std::move(outcome.error),
                   std::move(outcome.segments), outcome.bounds});
+      latest_source_ = {std::move(request.inputs), std::move(computed.program_snapshot)};
       files_changed = std::move(computed.files_changed);
       continue;
     }
@@ -97,6 +106,7 @@ void PreviewWorker::loop() {
       files_changed = nullptr;
       unchecked_.reset();
       latest_.reset();
+      latest_source_ = {};
     } else if (unchecked_ && !wanted_ && !stop_) {
       // Compared again and the same: finished for its context again.
       latest_ = std::move(unchecked_);

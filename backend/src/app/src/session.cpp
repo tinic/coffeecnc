@@ -193,8 +193,10 @@ auto starts_jog(const Command& command) -> bool {
 } // namespace
 
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
-                 ToolModelService* tool_models)
-    : port_(port), programs_(programs), tool_models_(tool_models), policy_(limits) {}
+                 ToolModelService* tool_models, PreviewWorker* preview,
+                 PreviewEngine* restart_engine)
+    : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
+      restart_engine_(restart_engine), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -331,11 +333,15 @@ auto Session::submit(PageToken page, std::string_view json, Instant now) -> Outc
 
   // Carried out whatever becomes of its page; in order with the other requests unless it is
   // one of those that go first.
-  if (setter_busy_ && std::holds_alternative<Pause>(request.command))
+  if ((setter_busy_ || restart_busy_) && std::holds_alternative<Pause>(request.command))
     request.command = Abort{};
   const bool stops = only_stops(request.command);
   if (setter_busy_ && !stops) {
     result(CommandOutcome::rejected, "A fixed setter operation is in progress.");
+    return outcome;
+  }
+  if (restart_busy_ && !stops) {
+    result(CommandOutcome::rejected, "A restart approach is in progress.");
     return outcome;
   }
   bool stop_request = cancels_requests(request.command);
@@ -518,6 +524,10 @@ auto Session::work(const Clock& clock) -> Work {
   }
   if (request)
     return run(std::move(*request), clock);
+  if (restart_ && restart_->tool_request && !wanted(restart_->owner)) {
+    restart_.reset();
+    static_cast<void>(port_.abort());
+  }
   Work result;
   std::vector<ControllerMessage> published;
   if (stopping) {
@@ -612,7 +622,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(
-        encode_result(request.id, step.reply.outcome, step.reply.reason, step.setter));
+        encode_result(request.id, step.reply.outcome, step.reply.reason, step.setter, step.restart));
   }
   report(result.outcome, now.unix_time);
   return result;
@@ -745,6 +755,24 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   auto state = port_.snapshot();
   if (!wanted(request))
     return cancelled();
+  if (restart_ && restart_->tool_request) {
+    if (!wanted(restart_->owner) || state.machine != MachineState::on ||
+        state.requested_tool != restart_->plan.point.tool ||
+        state.tool_request != *restart_->tool_request) {
+      const bool page_changed = !wanted(restart_->owner) && !cancels_requests(command);
+      restart_.reset();
+      if (page_changed)
+        static_cast<void>(port_.abort());
+    } else if (std::holds_alternative<Pause>(command)) {
+      restart_.reset();
+      return answer(reply(port_.abort()));
+    } else if (!only_stops(command) && !std::holds_alternative<ToolChanged>(command)) {
+      return answer({CommandOutcome::rejected, "Finish or stop the restart tool change first."});
+    }
+  }
+  if (restart_ && !restart_->tool_request && !std::holds_alternative<StartRestart>(command) &&
+      !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command))
+    restart_.reset();
   auto decision = policy_.evaluate(command, state);
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
@@ -822,6 +850,112 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
     verified_probe_program_ = state.program_file;
   return result;
+}
+
+auto Session::plan_restart(Queued& request, PlanRestart command, const ControllerState& state)
+    -> Stage {
+  restart_.reset();
+  if (preview_ == nullptr || restart_engine_ == nullptr)
+    return answer({CommandOutcome::rejected, "Restart planning is unavailable."});
+  const auto source = preview_->restart_source(command.preview_context);
+  if (!source.inputs || !source.program_snapshot || source.inputs->program_file != state.program_file)
+    return answer({CommandOutcome::rejected, "Wait for an up-to-date program preview."});
+  auto inputs = *source.inputs;
+  inputs.restart_line = command.line;
+  auto computed = restart_engine_->compute(inputs, [&] { return !wanted(request); });
+  if (computed.cancelled || !wanted(request))
+    return cancelled();
+  if (!computed.program_snapshot || *computed.program_snapshot != *source.program_snapshot ||
+      preview_->restart_source(command.preview_context).inputs != source.inputs)
+    return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
+  const auto& outcome = computed.outcome;
+  if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed)
+    return answer({CommandOutcome::rejected,
+                   !outcome.restart_blocked.empty() ? outcome.restart_blocked
+                   : outcome.error ? outcome.error->text
+                                   : "No verified motion is available at that line."});
+  auto point = *outcome.restart;
+  if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(point.tool) != false)
+    return answer({CommandOutcome::rejected, "Restart requires a tool verified for machining."});
+  if (auto reason = port_.validate_restart(point, inputs); !reason.empty())
+    return answer({CommandOutcome::rejected, std::move(reason)});
+  if (!wanted(request))
+    return cancelled();
+  RestartPlan plan{++restart_id_, point.tool != state.tool_in_spindle, point};
+  restart_ = PreparedRestart{plan, outcome.restart->clearance_z, command.preview_context, request, source,
+                              std::move(computed.files_changed), {}};
+  Stage result;
+  result.restart = plan;
+  return result;
+}
+
+auto Session::send_restart(Queued& request, const PreparedRestart& restart, bool after_change)
+    -> Stage {
+  const auto still = token(request);
+  const auto current_files = [&] { return still() && !restart.files_changed([&] { return !still(); }); };
+  if (!current_files())
+    return answer({CommandOutcome::rejected, "The restart was cancelled or the program changed."});
+  {
+    const std::scoped_lock lock{mutex_};
+    restart_busy_ = true;
+    ++setter_tool_;
+  }
+  auto result = port_.start_restart(restart.plan.point, *restart.source.inputs, after_change,
+                                   current_files, still);
+  {
+    const std::scoped_lock lock{mutex_};
+    restart_busy_ = false;
+  }
+  return staged(std::move(result));
+}
+
+auto Session::start_restart(Queued& request, StartRestart command) -> Stage {
+  if (!restart_ || restart_->tool_request || restart_->plan.plan_id != command.plan_id ||
+      !wanted(restart_->owner))
+    return answer({CommandOutcome::rejected, "Choose a line and review the restart plan again."});
+  auto restart = std::exchange(restart_, std::nullopt);
+  if (preview_->restart_source(restart->context).inputs != restart->source.inputs)
+    return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
+  auto check = restart->plan.point;
+  check.clearance_z = restart->programmed_clearance;
+  if (auto reason = port_.validate_restart(check, *restart->source.inputs); !reason.empty())
+    return answer({CommandOutcome::rejected, std::move(reason)});
+  if (check.clearance_z > restart->plan.point.clearance_z + 1e-6)
+    return answer({CommandOutcome::rejected, "The required clearance changed. Review a new plan."});
+  cancel_jogs(nullptr);
+  if (!wanted(request))
+    return cancelled();
+  auto result = send_restart(request, *restart, false);
+  if (result.kind != StageKind::reply || result.reply.outcome != CommandOutcome::accepted ||
+      !restart->plan.needs_tool_change)
+    return result;
+  const auto pending = port_.snapshot();
+  if (pending.requested_tool != restart->plan.point.tool || !wanted(request)) {
+    static_cast<void>(port_.abort());
+    return answer({CommandOutcome::failed, "Restart stopped before the tool change was confirmed."});
+  }
+  restart->owner = request;
+  restart->tool_request = pending.tool_request;
+  restart_ = std::move(restart);
+  return result;
+}
+
+auto Session::resume_restart(Queued& request, const ControllerState& state) -> Stage {
+  auto restart = std::exchange(restart_, std::nullopt);
+  if (!restart || restart->tool_request != state.tool_request ||
+      restart->plan.point.tool != state.requested_tool || !wanted(restart->owner))
+    return answer({CommandOutcome::rejected, "The restart tool change is no longer pending."});
+  const auto still = token(request);
+  if (!still() || restart->files_changed([&] { return !still(); })) {
+    static_cast<void>(port_.abort());
+    return answer({CommandOutcome::failed, "The restart was cancelled or the program changed."});
+  }
+  auto ack = port_.tool_changed(restart->plan.point.tool, state.tool_request, still);
+  if (ack.status != ActionStatus::accepted) {
+    static_cast<void>(port_.abort());
+    return staged(std::move(ack));
+  }
+  return send_restart(request, *restart, true);
 }
 
 auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
@@ -931,6 +1065,11 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, Run>) {
           return act(request,
                      [&](const Wanted& still) -> ActionResult { return port_.run(still); });
+        } else if constexpr (std::is_same_v<T, PlanRestart>) {
+          return plan_restart(request, c, state);
+        } else if constexpr (std::is_same_v<T, StartRestart>) {
+          verified_probe_program_.clear();
+          return start_restart(request, c);
         } else if constexpr (std::is_same_v<T, Pause>) {
           return act(request,
                      [&](const Wanted& still) -> ActionResult { return port_.pause(still); });
@@ -1012,6 +1151,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.remove_tool(c.number, still);
           });
         } else if constexpr (std::is_same_v<T, ToolChanged>) {
+          if (restart_ && restart_->tool_request)
+            return resume_restart(request, state);
           // The tool the decision was made for: not another one asked for since.
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.tool_changed(state.requested_tool.value_or(-1), state.tool_request, still);

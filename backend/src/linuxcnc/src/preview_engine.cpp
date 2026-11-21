@@ -829,7 +829,8 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       continue;
     if (is_cancelled(cancelled))
       return {{}, true, {}};
-    return {std::move(outcome), false, watch(manifest)};
+    return {std::move(outcome), false, watch(manifest),
+            {manifest, &manifest->program.bytes}};
   }
   return {failed(0, std::format("The program or one of its subroutine files changed on disk "
                                 "during each of {} computations: no preview.",

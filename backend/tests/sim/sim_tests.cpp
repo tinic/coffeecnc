@@ -129,6 +129,7 @@ struct Result {
   std::string outcome;
   std::string reason;
   bool send_snapshots{};
+  Json restart{};
   [[nodiscard]] auto accepted() const -> bool { return outcome == "accepted"; }
   [[nodiscard]] auto text() const -> std::string { return outcome + ":" + reason; }
 };
@@ -167,6 +168,8 @@ public:
   const NmlStatusMailbox* mailbox{};
   const NmlLoads* loads{};
   std::unique_ptr<Runtime> runtime;
+  PreviewWorker* restart_preview{};
+  PreviewEngine* restart_engine{};
   PageToken page;
   RequestId next_id{1};
 
@@ -179,7 +182,8 @@ public:
     }
     runtime =
         std::make_unique<Runtime>(port, reader, control, config.limits, programs,
-                                  [this](const Outcome& outcome) -> void { absorb(outcome); });
+                                  [this](const Outcome& outcome) -> void { absorb(outcome); },
+                                  nullptr, Runtime::Quit{}, restart_preview, restart_engine);
     // The control thread arms the watchdog and lowers the level a stopped runtime left high.
     pump_until(2s, [&]() -> bool { return probe.watchdog_ok() && !probe.jog_stop(); });
     new_page();
@@ -321,7 +325,7 @@ private:
       if (message.at("type") == "result")
         results_[{outcome.page.value, message.at("id").get<RequestId>()}] = {
             message.at("outcome").get<std::string>(), message.at("reason").get<std::string>(),
-            outcome.send_snapshots};
+            outcome.send_snapshots, message.value("restart", Json())};
       else if (message.at("type") == "message")
         messages_.push_back(message.at("text").get<std::string>());
     }
@@ -3775,8 +3779,148 @@ void air_cuts(Rig& rig) {
   }
 }
 
+void restart_cuts(Rig& rig) {
+  constexpr double origin_z = -55;
+  auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("restart_tool_table", table.has_value());
+  if (!table)
+    return;
+  PreviewOracle oracle{rig, *table};
+  PreviewWorker preview{oracle.engine};
+  HelperPreviewEngine engine{load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                                  rig.config.directory + "/preview-work")};
+  rig.stop();
+  rig.restart_preview = &preview;
+  rig.restart_engine = &engine;
+  rig.start();
+  const auto mdi = [&](std::string_view text) {
+    const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
+    return result.accepted() && rig.pump_until(10s, [&] {
+      const auto s = rig.status();
+      return s.command_done && !s.task_executing && s.controller.in_position &&
+             s.controller.interp == InterpState::idle;
+    });
+  };
+  const bool setup =
+      rig.send(R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6.35,"comment":"End mill"})").accepted() &&
+      rig.send(R"("type":"set_tool","tool":{"number":98,"pocket":98,"length":25.4,"diameter":6.35,"comment":"Reference"})").accepted() &&
+      mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z{} R0", origin_z)) &&
+      mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0");
+  check("restart_setup", setup);
+
+  std::uint64_t context = 0;
+  const auto plan = [&](std::string_view text, int line) {
+    auto [inputs, path] = oracle.preview(text);
+    preview.submit(++context, inputs);
+    const bool ready = rig.pump_until(4s, [&] { return preview.restart_source(context).inputs != nullptr; });
+    if (!ready)
+      return std::pair{Result{"no_preview", path.error ? path.error->text : ""}, std::move(path)};
+    const auto trace = rig.port.writes().size();
+    auto answer = rig.send(std::format(R"("type":"plan_restart","line":{},"preview_context":{})",
+                                       line, context));
+    check("restart_plan_is_read_only", rig.port.writes().size() == trace);
+    return std::pair{std::move(answer), std::move(path)};
+  };
+  const auto start_command = [](const Result& result) {
+    return std::format(R"("type":"start_restart","plan_id":{})",
+                       result.restart.at("plan_id").get<std::uint64_t>());
+  };
+  const auto file = [](std::string_view name) {
+    return read_text_file((std::filesystem::path{COFFEECNC_SAMPLES_DIRECTORY} / "air" / name).string(),
+                          65536).value();
+  };
+  const auto approach = [&](std::string_view name, int line, int tool, bool exchange) {
+    const auto [result, path] = plan(file(name), line);
+    const bool planned = result.accepted() && result.restart.value("tool", 0) == tool &&
+                         result.restart.value("h", 0) == tool &&
+                         result.restart.value("needs_tool_change", !exchange) == exchange;
+    check("restart_preview_modal_state", planned, result.text() + " " + result.restart.dump());
+    if (!planned)
+      return;
+    auto id = rig.post(start_command(result));
+    if (exchange) {
+      const auto pending = rig.await(id);
+      const auto s = rig.status();
+      check("restart_normal_tool_change",
+            pending.accepted() && s.controller.requested_tool == tool &&
+            s.spindle_direction == SpindleDirection::stopped && s.motion_line < line,
+            pending.text() + " " + PreviewOracle::join(rig.all_messages()));
+      if (!pending.accepted())
+        return;
+      id = rig.post(R"("type":"tool_changed")");
+    }
+    const auto start = result.restart.at("start").get<Vec3>();
+    const auto clearance = result.restart.at("clearance_z").get<double>();
+    const auto before = rig.status().work;
+    bool lifted = exchange;
+    bool xy_at_clearance = true;
+    bool traversed = false;
+    bool spindle_on = false;
+    bool suffix = true;
+    int first_motion = 0;
+    const bool finished = rig.pump_until(145s, [&] {
+      const auto s = rig.status();
+      if (auto done = rig.result(id); done && !done->accepted())
+        return true;
+      if (s.controller.mode != TaskMode::automatic) {
+        lifted = lifted || s.work[2] >= clearance - 0.05;
+        const bool moving_xy = std::abs(s.work[0] - before[0]) > 0.05 ||
+                               std::abs(s.work[1] - before[1]) > 0.05;
+        if (moving_xy && !traversed)
+          xy_at_clearance = xy_at_clearance && lifted && s.work[2] >= clearance - 0.05;
+        traversed = traversed || (moving_xy && std::abs(s.work[0] - start[0]) < 0.05 &&
+                                 std::abs(s.work[1] - start[1]) < 0.05);
+        return false;
+      }
+      if (s.motion_line >= line && s.velocity > 0.01) {
+        if (first_motion == 0)
+          first_motion = s.motion_line;
+        spindle_on = spindle_on || (s.spindle_rpm > 1000 &&
+                                    s.spindle_direction == SpindleDirection::forward);
+        const auto p = oracle.position();
+        const Vec3 tool_tip{p[0] - s.tool_offset[0], p[1] - s.tool_offset[1],
+                           p[2] - s.tool_offset[2]};
+        bool near_path = false;
+        for (const auto& segment : path.segments) {
+          if (segment.line < line)
+            continue;
+          for (std::size_t i = 1; i < segment.points.size(); ++i)
+            near_path = near_path || distance(tool_tip, segment.points[i - 1],
+                                              segment.points[i]) < 0.25;
+        }
+        suffix = suffix && near_path && s.controller.tool_in_spindle == tool;
+      }
+      return first_motion != 0 && !s.task_executing && rig.idle();
+    });
+    const auto end = rig.await(id);
+    check("restart_followed_preview_suffix",
+          end.accepted() && finished && first_motion == line && suffix && lifted && xy_at_clearance &&
+          spindle_on == !exchange,
+          std::format("{} first={} exact_suffix={} z_first={} spindle={} status={} messages={}",
+                      name, first_motion, suffix, xy_at_clearance, spindle_on, end.text(),
+                      PreviewOracle::join(rig.all_messages())));
+  };
+
+  if (setup) {
+    const auto missing = rig.send(R"("type":"plan_restart","line":23,"preview_context":7)");
+    check("restart_preview_pending", missing.outcome == "rejected", missing.text());
+    const auto [canned, unused] = plan("G21 G90 G17\nG0 Z20\nG81 X1 Y1 Z5 R10 F100\nG80\nM2\n", 3);
+    check("restart_canned_block", canned.reason.find("canned cycle") != std::string::npos,
+          canned.text());
+    approach("06-toolchange.ngc", 22, 98, true);
+    if (failures == 0 && mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0"))
+      approach("03-pocket.ngc", 24, 1, false);
+  }
+
+  static_cast<void>(rig.send(R"("type":"abort")"));
+  rig.stop();
+  rig.restart_preview = nullptr;
+  rig.restart_engine = nullptr;
+  rig.start();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
-         bool air_only) -> int {
+         bool air_only, bool restart_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -3848,6 +3992,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (restart_only) {
+    restart_cuts(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (air_only) {
     air_cuts(rig);
     power_off(rig);
@@ -3940,6 +4089,7 @@ auto main(int argc, char** argv) -> int {
   bool contact_only = false;
   bool restore_only = false;
   bool air_only = false;
+  bool restart_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -3950,6 +4100,7 @@ auto main(int argc, char** argv) -> int {
     contact_only = contact_only || std::string_view(argv[i]) == "jog-contact";
     restore_only = restore_only || std::string_view(argv[i]) == "restore-spindle-tool";
     air_only = air_only || std::string_view(argv[i]) == "air-cuts";
+    restart_only = restart_only || std::string_view(argv[i]) == "restart-cuts";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -3958,7 +4109,7 @@ auto main(int argc, char** argv) -> int {
     if (ini_file.empty())
       throw std::runtime_error(
           "usage: coffeecnc_sim_tests -ini <file> [g0759|g0759-machine|jog-contact|restore-spindle-tool]");
-    code = run(ini_file, g0759, contact_only, restore_only, air_only);
+    code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

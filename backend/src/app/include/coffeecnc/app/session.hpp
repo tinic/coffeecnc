@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_SESSION_HPP
 #define COFFEECNC_APP_SESSION_HPP
 
+#include <coffeecnc/app/preview.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/request.hpp>
 #include <coffeecnc/app/response.hpp>
@@ -210,7 +211,8 @@ public:
   // The port, the store and the tool-model service (may be null) must outlive the session.
   // Throws std::invalid_argument for invalid limits.
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
-          ToolModelService* tool_models = nullptr);
+          ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
+          PreviewEngine* restart_engine = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -298,6 +300,16 @@ private:
     std::vector<std::string> produced; // messages sent before the result
     std::optional<SetterState> setter{};
     bool quit{};                       // belongs only to this request and its page
+    std::optional<RestartPlan> restart{};
+  };
+  struct PreparedRestart {
+    RestartPlan plan;
+    double programmed_clearance{};
+    std::uint64_t context{};
+    Queued owner;
+    RestartSource source;
+    PreviewComputation::Watch files_changed;
+    std::optional<std::uint64_t> tool_request;
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
@@ -324,6 +336,12 @@ private:
   void drop_requests();
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
+  [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
+                                  const ControllerState& state) -> Stage;
+  [[nodiscard]] auto start_restart(Queued& request, StartRestart command) -> Stage;
+  [[nodiscard]] auto resume_restart(Queued& request, const ControllerState& state) -> Stage;
+  [[nodiscard]] auto send_restart(Queued& request, const PreparedRestart& restart,
+                                  bool after_change) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;
   [[nodiscard]] auto perform(Queued& request, const Decision& decision,
@@ -345,6 +363,10 @@ private:
   ControllerPort& port_;
   const ProgramStore& programs_;
   ToolModelService* tool_models_;
+  PreviewWorker* preview_;
+  PreviewEngine* restart_engine_;
+  std::optional<PreparedRestart> restart_; // worker-owned
+  std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.
   std::string verified_probe_program_;
   std::uint64_t pages_{};
@@ -380,6 +402,7 @@ private:
   bool page_open_{};
   bool ready_{};
   bool setter_busy_{};
+  bool restart_busy_{};
   bool have_status_{};
   bool hold_{};
   bool jog_stop_high_{};

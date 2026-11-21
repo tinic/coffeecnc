@@ -13,6 +13,9 @@
 
 namespace coffeecnc {
 
+struct RestartPoint;
+struct PreviewInputs;
+
 enum class ActionStatus : std::uint8_t {
   accepted,  // the controller took the command; motion it starts is read from the snapshot
   failed,    // the controller reported an error
@@ -136,6 +139,15 @@ public:
       -> ActionResult = 0;
   // From the first line of the loaded program.
   [[nodiscard]] virtual auto run(const Wanted& wanted) -> ActionResult = 0;
+  // Validates the approach without sending controller commands and updates its clearance.
+  [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
+    return "Restart from line is unavailable on this controller.";
+  }
+  // First call may stop at the normal tool-change prompt. The second follows its confirmation.
+  [[nodiscard]] virtual auto start_restart(const RestartPoint&, const PreviewInputs&, bool,
+                                           const Wanted&, const Wanted&) -> ActionResult {
+    return {ActionStatus::failed, "Restart from line is unavailable on this controller."};
+  }
   [[nodiscard]] virtual auto pause(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto resume(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto step(const Wanted& wanted) -> ActionResult = 0;

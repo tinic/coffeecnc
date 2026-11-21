@@ -2,6 +2,7 @@
 #include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/core/jog_stop_report.hpp>
+#include <coffeecnc/core/preview.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
@@ -1730,6 +1731,277 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_RUN message;
   message.line = 0; // from the start
   return impl_->start(message, from);
+}
+
+namespace {
+
+constexpr double restart_position_tolerance = 0.2; // mm, including encoder backlash at rest
+
+auto restart_near(const Vec3& a, const Vec3& b, double tolerance = 1e-6) -> bool {
+  return std::ranges::equal(a, b, [=](double x, double y) { return std::abs(x - y) <= tolerance; });
+}
+
+auto restart_frame(const NmlStatus& s, const RestartPoint& p, const PreviewInputs& inputs)
+    -> bool {
+  return s.controller.link == Link::live && s.controller.machine == MachineState::on &&
+         s.controller.program_file == inputs.program_file && s.block_delete == inputs.block_delete &&
+         s.wcs == p.wcs && restart_near(s.g5x, p.g5x) && restart_near(s.g92, p.g92) &&
+         std::abs(s.rotation_xy - p.rotation) <= 1e-6;
+}
+
+auto restart_position(const ControllerState& s) -> Vec3 {
+  return {s.axes[0].machine, s.axes[1].machine, s.axes[2].machine};
+}
+
+auto restart_endpoint(const RestartPoint& point) -> Vec3 {
+  const double angle = point.rotation * std::numbers::pi / 180.0;
+  const double x = point.start[0] + point.g92[0];
+  const double y = point.start[1] + point.g92[1];
+  return {x * std::cos(angle) - y * std::sin(angle) + point.g5x[0] + point.tool_offset[0],
+          x * std::sin(angle) + y * std::cos(angle) + point.g5x[1] + point.tool_offset[1],
+          point.start[2] + point.g92[2] + point.g5x[2] + point.tool_offset[2]};
+}
+
+auto restart_clearance(const RestartPoint& point) -> double {
+  return point.clearance_z + point.g92[2] + point.g5x[2] + point.tool_offset[2];
+}
+
+auto restart_travel(const Vec3& position, const MachineConfig& config) -> bool {
+  for (std::size_t i = 0; i < position.size(); ++i)
+    if (!(position[i] >= config.travel[i].min && position[i] <= config.travel[i].max))
+      return false;
+  return true;
+}
+
+auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool {
+  const auto& s = status.controller;
+  return s.interp == InterpState::idle && s.in_position && !s.requested_tool &&
+         !status.paused && !status.task_executing && status.queued_mdi == 0 &&
+         std::ranges::all_of(s.axes, [&](const auto& a) {
+           return a.enabled && !a.homing && !a.on_hard_limit &&
+                  (!config.limits.homing_required || a.homed);
+         });
+}
+
+} // namespace
+
+auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
+  const auto s = status();
+  const auto& config = impl_->config;
+  if (!restart_frame(s, point, inputs))
+    return "Machine power, the program or the work coordinate system changed.";
+  if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
+      !restart_near(s.tool_offset, inputs.start.tool_offset) ||
+      !restart_near(restart_position(s.controller), inputs.start.position,
+                    restart_position_tolerance))
+    return "The machine must remain stopped at the position shown in the preview.";
+  if (point.tool == config.touch_probe_tool)
+    return "Remove the touch probe before running a program from a line.";
+  if (point.spindle_direction != SpindleDirection::stopped &&
+      point.spindle_rpm > config.limits.max_spindle_rpm)
+    return "The restart spindle speed exceeds the machine limit.";
+  if (point.h > 0) {
+    const auto table = impl_->read_tool_table();
+    const auto length = table ? tool_z(*table, point.h) : std::nullopt;
+    if (!length || std::abs(*length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001)
+      return "The required tool length changed in the tool table.";
+  }
+  // Raise the controlled point enough for both tools before a manual exchange.
+  const double original_clearance = restart_clearance(point);
+  const double old_tool_difference = std::max(0.0, s.tool_offset[2] - point.tool_offset[2]);
+  const double minimum = std::max(s.controller.axes[2].machine, original_clearance + old_tool_difference);
+  point.clearance_z += minimum - original_clearance;
+  const auto end = restart_endpoint(point);
+  const double clearance = restart_clearance(point);
+  if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
+      !restart_travel({s.controller.axes[0].machine, s.controller.axes[1].machine, clearance}, config))
+    return "The restart approach is outside the configured machine travel.";
+  return {};
+}
+
+auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inputs,
+                            bool after_change, const Wanted& files_current, const Wanted& wanted)
+    -> ActionResult {
+  bool wrote = after_change;
+  const auto execute = [&]() -> ActionResult {
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto& config = impl_->config;
+    const auto endpoint = restart_endpoint(point);
+    const double clearance = restart_clearance(point);
+    const auto read = [&]() { return status(); };
+    const auto idle = [&](const NmlStatus& s) {
+      return restart_frame(s, point, inputs) && restart_idle(s, config);
+    };
+    const auto in_context = [&](const EMC_STAT& raw) {
+      return restart_frame(to_status(raw, config, impl_->hal, impl_->status.link()), point, inputs) &&
+             raw.motion.traj.enabled && !raw.motion.external_offsets_applied &&
+             !raw.motion.on_soft_limit;
+    };
+    const auto wait = [&](std::chrono::milliseconds timeout, const auto& ready,
+                          std::string_view reason) -> ActionResult {
+      bool done = false;
+      static_cast<void>(until(timeout, [&] {
+        impl_->collect();
+        const auto* raw = impl_->stat();
+        if (!impl_->still() || raw == nullptr || !in_context(*raw) || impl_->error_since(from))
+          return true;
+        done = ready(*raw);
+        return done;
+      }));
+      if (!impl_->still())
+        return impl_->withdraw();
+      return done ? ActionResult{} : impl_->failure(from, reason);
+    };
+    const auto mode = [&](auto target) -> ActionResult {
+      EMC_TASK_SET_MODE message;
+      message.mode = target;
+      wrote = true;
+      if (auto sent = impl_->send(message); !accepted(sent))
+        return sent;
+      return wait(settle_timeout, [&](const EMC_STAT& s) { return s.task.mode == target; },
+                  "LinuxCNC did not change mode for the restart.");
+    };
+    const auto send_mdi = [&](std::string_view block) -> ActionResult {
+      EMC_TASK_PLAN_EXECUTE message;
+      if (!put(message.command, block))
+        return failed("The restart block is too long for LinuxCNC.");
+      wrote = true;
+      auto sent = impl_->send(message);
+      if (accepted(sent) && impl_->loads)
+        ++impl_->loads->mdi_blocks;
+      return sent;
+    };
+    const auto complete = [](const EMC_STAT& s) {
+      return s.status == RCS_DONE && s.motion.traj.inpos && s.task.interpState == EMC_TASK_INTERP_IDLE;
+    };
+    const auto block = [&](std::string_view text, std::chrono::milliseconds timeout)
+        -> ActionResult {
+      if (auto sent = send_mdi(text); !accepted(sent))
+        return sent;
+      return wait(timeout, [&](const EMC_STAT& s) {
+        return s.echo_serial_number == impl_->serial && complete(s);
+      }, "LinuxCNC did not complete the restart approach.");
+    };
+    const auto current_tool = [&] {
+      const auto table = impl_->read_tool_table();
+      const auto length = table ? tool_z(*table, point.h) : std::nullopt;
+      return point.h == 0 || (length &&
+          std::abs(*length * config.millimetres_per_unit - point.tool_offset[2]) <= 0.001);
+    };
+    if (!files_current() || !current_tool())
+      return failed("The restart program or tool length changed.");
+    if (after_change) {
+      if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
+            return complete(s) && s.io.tool.toolInSpindle == point.tool;
+          }, "LinuxCNC did not finish loading the restart tool."); !accepted(done))
+        return done;
+    } else {
+      const auto before = read();
+      if (!idle(before) || before.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
+          !restart_near(restart_position(before.controller), inputs.start.position,
+                        restart_position_tolerance) ||
+          before.controller.axes[2].machine > clearance + 1e-6)
+        return failed("The machine moved after the restart was reviewed.");
+      if (before.controller.mode != TaskMode::mdi)
+        if (auto switched = mode(EMC_TASK_MODE_MDI); !accepted(switched))
+          return switched;
+      if (auto done = block("M5 M9", completion_timeout); !accepted(done))
+        return done;
+      if (auto done = block("G21 G90 G94 G97 G40 G80 G61.1", completion_timeout); !accepted(done))
+        return done;
+      const auto now = read();
+      if (!idle(now) || now.controller.spindle_active ||
+          now.controller.axes[2].machine > clearance + 1e-6)
+        return failed("The spindle or approach position changed before retracting.");
+      if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
+                            std::chrono::seconds{45}); !accepted(done))
+        return done;
+      const auto lifted = read();
+      if (!idle(lifted) || std::abs(lifted.controller.axes[2].machine - clearance) >
+                               restart_position_tolerance)
+        return failed("The machine did not reach the confirmed Z clearance.");
+      if (point.tool != inputs.start.tool_in_spindle) {
+        if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
+          return sent;
+        return wait(completion_timeout, [&](const EMC_STAT& raw) {
+          const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
+          return s.controller.requested_tool == point.tool;
+        }, "LinuxCNC did not request the required tool change.");
+      }
+    }
+    const auto loaded = read();
+    if (!idle(loaded) || loaded.controller.mode != TaskMode::mdi ||
+        loaded.controller.tool_in_spindle != point.tool ||
+        std::abs(loaded.controller.axes[2].machine - clearance) > restart_position_tolerance)
+      return failed("The tool or clearance changed before the restart approach.");
+    if (auto done = block(point.h == 0 ? "G49" : std::format("G43 H{}", point.h),
+                          completion_timeout); !accepted(done))
+      return done;
+    if (!restart_near(read().tool_offset, point.tool_offset))
+      return failed("LinuxCNC did not apply the planned tool offset.");
+    if (auto done = block(std::format("G53 G0 X{:.8f} Y{:.8f}", endpoint[0], endpoint[1]),
+                          std::chrono::seconds{45}); !accepted(done))
+      return done;
+    const auto spindle = point.spindle_direction == SpindleDirection::forward   ? "M3"
+                         : point.spindle_direction == SpindleDirection::reverse ? "M4"
+                                                                               : "M5";
+    if (auto done = block(std::format("S{:.8f} {}{}{}", point.spindle_rpm, spindle,
+                                      point.mist ? " M7" : "", point.flood ? " M8" : ""),
+                          completion_timeout); !accepted(done))
+      return done;
+    const auto at_clearance = read();
+    const Vec3 above{endpoint[0], endpoint[1], clearance};
+    if (!idle(at_clearance) || !restart_near(restart_position(at_clearance.controller), above,
+                                           restart_position_tolerance) ||
+        at_clearance.spindle_direction != point.spindle_direction ||
+        at_clearance.flood != point.flood || at_clearance.mist != point.mist)
+      return failed("LinuxCNC did not confirm the restart position, spindle or coolant.");
+    if (clearance > endpoint[2] + 1e-6) {
+      const double feed = std::min(100.0, config.limits.max_axis_jog_velocity[2]);
+      const auto bound = std::clamp((clearance - endpoint[2]) / feed * 120000.0 + 5000.0,
+                                    5000.0, 180000.0);
+      if (auto done = block(std::format("G53 G1 Z{:.8f} F{:.8f}", endpoint[2], feed),
+                            std::chrono::milliseconds{static_cast<int>(bound)}); !accepted(done))
+        return done;
+    }
+    const bool mm = point.units == LengthUnit::mm;
+    if (auto done = block(std::format("G{} G{} G{} G{} F{:.8f}", mm ? 21 : 20, point.plane,
+                                      point.incremental ? 91 : 90,
+                                      point.absolute_arc ? "90.1" : "91.1",
+                                      point.feed / (mm ? 1.0 : 25.4)),
+                          completion_timeout); !accepted(done))
+      return done;
+    if (!files_current() || !current_tool())
+      return failed("The restart program or tool length changed during the approach.");
+    const auto at_start = read();
+    if (!idle(at_start) ||
+        !restart_near(restart_position(at_start.controller), endpoint, restart_position_tolerance) ||
+        !restart_near(at_start.tool_offset, point.tool_offset))
+      return failed("The machine did not reach the verified restart point.");
+    if (auto switched = mode(EMC_TASK_MODE_AUTO); !accepted(switched))
+      return switched;
+    EMC_TASK_PLAN_CLOSE close;
+    if (auto closed = impl_->run(close, from); !accepted(closed))
+      return closed;
+    EMC_TASK_PLAN_OPEN open;
+    if (!put(open.file, *inputs.program_file))
+      return failed("The program path is too long for LinuxCNC.");
+    if (auto opened = impl_->run(open, from); !accepted(opened))
+      return opened;
+    if (!files_current())
+      return failed("The program changed before LinuxCNC could restart it.");
+    EMC_TASK_PLAN_RUN run;
+    run.line = point.line;
+    return impl_->start(run, from);
+  };
+  auto result = execute();
+  if (!accepted(result) && wrote) {
+    static_cast<void>(abort());
+    static_cast<void>(set_spindle(SpindleDirection::stopped, 0, {}));
+    static_cast<void>(set_coolant(false, false, {}));
+  }
+  return result;
 }
 
 auto NmlPort::pause(const Wanted& wanted) -> ActionResult {

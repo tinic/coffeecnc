@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -134,6 +135,8 @@ struct PreviewComputation {
   // `cancelled` is asked as in compute; given up, the answer is false.
   using Watch = std::function<bool(const std::function<bool()>& cancelled)>;
   Watch files_changed;
+  // Aliases the exact program bytes captured by the helper engine's file snapshot.
+  std::shared_ptr<const std::string> program_snapshot{};
 };
 
 // Computes the path of a program for one set of inputs. Blocking, for a thread of its own;

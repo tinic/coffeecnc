@@ -1,0 +1,32 @@
+# Example: Z jog during a pause ([COFFEECNC] PAUSED_Z_MAX_MM). Source it after
+# coffeecnc_postgui.hal from your post-GUI file, then replace the two signal names marked
+# MACHINE below with the signals of your own HAL files.
+#
+# CoffeeCNC lifts Z through LinuxCNC's external offsets while a program is paused. The INI file
+# needs [AXIS_Z] OFFSET_AV_RATIO (for example 0.1): it reserves that part of Z's velocity and
+# acceleration for the offset.
+#
+# The offset is permitted only while all of these hold (coffeecnc-eoffset-gate, loaded by
+# coffeecnc_postgui.hal, function 0x80):
+#   in-0  CoffeeCNC asks for the offset          coffeecnc.eoffset-z-enable
+#   in-1  the CoffeeCNC watchdog is ok           coffeecnc-watchdog-ok
+#   in-2  the program is paused                  halui.program.is-paused
+#   in-3  the spindle is NOT on                  MACHINE: your spindle-on signal
+#   in-4  no jog stop is requested               coffeecnc-jog-stop
+addf coffeecnc-eoffset-gate servo-thread
+setp coffeecnc-eoffset-gate.function 0x80
+# One count is 0.001 machine units (mm on a metric machine, inch on an inch machine).
+setp axis.z.eoffset-scale 0.001
+net coffeecnc-eoffset-request coffeecnc.eoffset-z-enable => coffeecnc-eoffset-gate.in-0
+net coffeecnc-watchdog-ok => coffeecnc-eoffset-gate.in-1
+net coffeecnc-program-paused halui.program.is-paused => coffeecnc-eoffset-gate.in-2
+# MACHINE: the signal that is TRUE while the spindle turns, for example spindle-enable from
+# spindle.0.on.
+net spindle-enable => coffeecnc-eoffset-gate.in-3
+net coffeecnc-jog-stop => coffeecnc-eoffset-gate.in-4
+net coffeecnc-eoffset-permit coffeecnc-eoffset-gate.out => axis.z.eoffset-enable
+net coffeecnc-eoffset-counts coffeecnc.eoffset-z-counts => axis.z.eoffset-counts
+net coffeecnc-eoffset-clear coffeecnc.eoffset-z-clear => axis.z.eoffset-clear
+net coffeecnc-eoffset-z axis.z.eoffset => coffeecnc.eoffset-z
+net coffeecnc-eoffset-active motion.eoffset-active => coffeecnc.eoffset-active
+net coffeecnc-eoffset-limited motion.eoffset-limited => coffeecnc.eoffset-limited

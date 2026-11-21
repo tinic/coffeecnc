@@ -33,7 +33,7 @@ const target = shallowRef<SavedPosition | null>(null)
 const progress = computed(() => sequence.state.running && target.value
   ? `Go to ${target.value.name}: move ${String(sequence.state.step + 1)} of ${String(sequence.state.total)}` : '')
 const { line, allow } = useCardFeedback(
-  () => positions.value.length === 0 ? 'Save the present machine position to come back to it' : '',
+  () => '',
   () => null,
   [mdiBlock, positions],
 )
@@ -139,19 +139,32 @@ const steps = computed(() => {
 
 <template>
   <div class="positions">
-    <div class="list" role="list" aria-label="Saved positions">
-      <div v-for="entry in positions" :key="`${entry.name}:${entry.position.join(',')}`" class="row" role="listitem">
-        <span class="name">{{ entry.name }}</span>
-        <span class="coords mono">
-          <span>X {{ length(entry.position[0]) }}</span><span>Y {{ length(entry.position[1]) }}</span><span>Z {{ length(entry.position[2]) }}</span>
-        </span>
-        <button v-tooltip="goToBlock ?? `Go to ${entry.name}`" class="btn" type="button" :aria-disabled="goToBlock !== null" @click="openGoTo(entry)">
-          Go to
-        </button>
-        <button v-tooltip="saving ? 'Saving…' : `Delete ${entry.name}`" class="btn square quiet" type="button" :aria-label="`Delete ${entry.name}`" :aria-disabled="saving" @click="saving || (removal = entry)">
-          <AppIcon name="trash" />
-        </button>
-      </div>
+    <div class="list">
+      <table v-if="positions.length" aria-label="Saved machine positions">
+        <thead>
+          <tr>
+            <th scope="col">Position</th>
+            <th v-for="axis in ['X', 'Y', 'Z']" :key="axis" scope="col" class="axis-col">{{ axis }}</th>
+            <th scope="col" class="go-col" aria-label="Move"></th>
+            <th scope="col" class="delete-col" aria-label="Delete"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="entry in positions" :key="`${entry.name}:${entry.position.join(',')}`" class="row">
+            <th v-tooltip="entry.name" scope="row" class="name">{{ entry.name }}</th>
+            <td v-for="(value, index) in entry.position" :key="index" class="coord mono">{{ length(value) }}</td>
+            <td class="go-col">
+              <button v-tooltip="goToBlock ?? `Go to ${entry.name}`" class="btn" type="button" :aria-disabled="goToBlock !== null" @click="openGoTo(entry)">Go to</button>
+            </td>
+            <td class="delete-col">
+              <button v-tooltip="saving ? 'Saving…' : `Delete ${entry.name}`" class="btn square quiet" type="button" :aria-label="`Delete ${entry.name}`" :aria-disabled="saving" @click="saving || (removal = entry)">
+                <AppIcon name="trash" />
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty hint">No saved positions</p>
     </div>
     <div class="line">
       <button v-tooltip="addBlock ?? 'Save the present machine position'" class="btn" type="button" :aria-disabled="addBlock !== null" @click="openSave">
@@ -196,11 +209,20 @@ const steps = computed(() => {
 
 <style scoped>
 .positions { display: flex; flex-direction: column; gap: 6px; }
-.list { display: flex; flex-direction: column; gap: 4px; height: 212px; overflow-y: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-sunken); }
-.row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding-left: 8px; }
-.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.coords { display: flex; gap: 10px; font-size: 12px; color: var(--text-dim); }
-.row .btn:not(.square) { padding: 0 12px; }
+.list { height: 212px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-sunken); }
+.list table { width: 100%; table-layout: fixed; border-spacing: 0; text-align: left; }
+.list thead { position: sticky; top: 0; background: var(--bg-sunken); }
+.list thead th { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--text-dim); font-size: 11px; font-weight: 600; }
+.list .axis-col { width: 15%; text-align: right; }
+.list .go-col { width: 70px; }
+.list .delete-col { width: 48px; }
+.row > * { padding: 2px 4px; }
+.row:not(:last-child) > * { border-bottom: 1px solid var(--line); }
+.row .name { padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row .coord { padding-right: 8px; text-align: right; font-size: 12px; white-space: nowrap; }
+.row .go-col .btn { width: 100%; padding-inline: 5px; }
+.row .delete-col { padding-inline: 2px; }
+.empty { padding: 12px; }
 .line { display: flex; align-items: center; gap: 10px; }
 .line .hint { margin-left: auto; font-size: 12px; }
 .btn[aria-disabled="true"] { opacity: .68; }

@@ -91,7 +91,7 @@ describe('offset history dialog', () => {
     await view().get('[aria-label^="Restore G54 from"]').trigger('click')
     expect(view().get('[role="dialog"]').attributes('aria-label')).toBe('Restore G54 Y?')
     const cells = view().findAll('.changes td').map((cell) => cell.text())
-    expect(cells).toEqual(['-7.000', '20.000'])
+    expect(cells).toEqual(['-7.000 mm', '20.000 mm'])
     expect(view().text()).toContain('G10 L2')
     expect(send).not.toHaveBeenCalled()
     await press('Restore G54')
@@ -103,7 +103,7 @@ describe('offset history dialog', () => {
     panel.unit = 'inch'
     wrapper = list()
     await view().get('[aria-label^="Restore T03 from"]').trigger('click')
-    expect(view().findAll('.changes td').map((cell) => cell.text())).toEqual(['1.9685', '1.8976'])
+    expect(view().findAll('.changes td').map((cell) => cell.text())).toEqual(['1.9685 in', '1.8976 in'])
     expect(view().text()).toContain('G10 L1')
     only(panel.status ?? undefined).machine = 'off'
     await view().vm.$nextTick()

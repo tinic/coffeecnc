@@ -93,11 +93,16 @@ function start(): void {
           </template>
           <template v-if="!material && limits"><dt>Setter XY tolerance</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
           <template v-if="!material && limits?.clearance_mm"><dt>Retract clearance</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
-          <template v-if="target.kind === 'check' && limits?.check_tolerance_mm"><dt>Length tolerance</dt><dd>±{{ limits.check_tolerance_mm }} mm</dd></template>
           <template v-if="outside"><dt>Traverse clearance</dt><dd>{{ limits?.material_geometry?.clearance_mm ?? 5 }} mm above top min</dd></template>
           <template v-if="outside"><dt>Ball centre at contact</dt><dd>{{ limits?.material_geometry?.depth_mm ?? 2 }} mm below top</dd></template>
         </dl>
-        <div class="guide-result"><h3>Result</h3><p>{{ plan.result }}<template v-if="tool && !material"> · T{{ tool }}</template></p></div>
+        <div class="guide-result">
+          <h3>Result<span v-if="tool && !material" class="result-tool mono">T{{ tool }}</span></h3>
+          <p>{{ plan.result }}</p>
+          <p v-if="target.kind === 'check' && limits?.check_tolerance_mm" class="check-tolerance">
+            Length tolerance <strong class="mono">±{{ limits.check_tolerance_mm }} mm</strong>
+          </p>
+        </div>
       </section>
     </div>
     <template #footer>
@@ -108,12 +113,12 @@ function start(): void {
 </template>
 
 <style scoped>
-.guide-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
+.guide-grid { display: grid; flex: 1; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
 .guide-visual { display: grid; grid-template-rows: minmax(205px, 1fr) auto; min-width: 0; min-height: 350px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .timeline { display: flex; align-items: center; gap: 6px; padding: 6px; border-top: 1px solid var(--line); background: var(--panel); }
 .phase-count { padding-left: 4px; white-space: nowrap; color: var(--accent); font-size: 11px; }
 .phase-name { flex: 1; min-width: 0; font-size: 12px; line-height: 1.2; }
-.timeline button { flex: none; min-height: 44px; min-width: 40px; padding-inline: 7px; }
+.timeline button { flex: none; min-height: 44px; min-width: 44px; padding-inline: 7px; }
 .timeline button.play { width: 58px; }
 .guide-instructions { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
 h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
@@ -128,6 +133,10 @@ p { margin: 0; line-height: 1.42; font-size: 13px; }
 .limits dt { color: var(--text-dim); }
 .limits dd { margin: 0; text-align: right; white-space: nowrap; }
 .guide-result { margin-top: auto; border-top: 1px solid var(--line); padding-top: 9px; }
+.guide-result h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.result-tool { color: var(--text-dim); font-size: 12px; }
+.check-tolerance { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px; color: var(--text-dim); }
+.check-tolerance strong { color: var(--text); white-space: nowrap; }
 .start-probe { min-width: 132px; min-height: 44px; }
 @media (max-width: 730px) {
   .guide-grid { grid-template-columns: 1fr; }

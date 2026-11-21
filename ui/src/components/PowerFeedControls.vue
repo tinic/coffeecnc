@@ -80,7 +80,7 @@ const extentText = computed(() => powerFeed.extent === 'limit'
   ? 'to the soft limit'
   : `${formatLength(powerFeed.distance, unit.value)} ${unitName.value}`)
 const { line, allow } = useCardFeedback(
-  () => `Tap a direction to feed ${extentText.value} at ${formatVelocity(powerFeed.feed, unit.value)} ${velocityUnit(unit.value)}`,
+  () => '',
   () => block.value,
   [block, (): unknown => powerFeed.extent, (): number => powerFeed.distance, (): number => powerFeed.feed],
 )
@@ -132,15 +132,33 @@ function stop(): void {
     </div>
 
     <div class="extent">
-      <div class="choices">
-        <button v-tooltip="`Stop ${limitMarginMm} mm inside the soft limit`" class="btn" type="button" :class="{ on: powerFeed.extent === 'limit' }" @click="powerFeed.extent = 'limit'">
+      <div class="choices" role="group" aria-label="Feed extent">
+        <button v-tooltip="`Stop ${limitMarginMm} mm inside the soft limit`" class="btn" type="button" :class="{ on: powerFeed.extent === 'limit' }" :aria-pressed="powerFeed.extent === 'limit'" @click="powerFeed.extent = 'limit'">
           To limit
         </button>
-        <button v-tooltip="'Feed a set distance'" class="btn" type="button" :class="{ on: powerFeed.extent === 'distance' }" @click="powerFeed.extent = 'distance'">
+        <button v-tooltip="'Feed a set distance'" class="btn" type="button" :class="{ on: powerFeed.extent === 'distance' }" :aria-pressed="powerFeed.extent === 'distance'" @click="powerFeed.extent = 'distance'">
           Distance
         </button>
       </div>
-      <div class="entry" :class="{ hidden: powerFeed.extent !== 'distance' }">
+      <label class="entry">
+        <span class="label">Feed</span>
+        <input
+          v-model="feedText"
+          v-numeric
+          class="field mono"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          aria-label="Power feed rate"
+          :data-numeric-unit="unit"
+          data-numeric-effect="Feed per minute of the next power feed."
+          @change="commitFeed"
+          @keydown.enter.prevent="commitFeed"
+        />
+        <span class="hint">{{ velocityUnit(unit) }}</span>
+      </label>
+      <label class="entry" :class="{ hidden: powerFeed.extent !== 'distance' }">
+        <span class="label">Travel</span>
         <input
           v-model="distanceText"
           v-numeric
@@ -156,26 +174,8 @@ function stop(): void {
           @keydown.enter.prevent="commitDistance"
         />
         <span class="hint">{{ unitName }}</span>
-      </div>
+      </label>
     </div>
-  </div>
-
-  <div class="line feed-line">
-    <span class="label">Feed</span>
-    <input
-      v-model="feedText"
-      v-numeric
-      class="field mono feed"
-      type="text"
-      inputmode="decimal"
-      autocomplete="off"
-      aria-label="Power feed rate"
-      :data-numeric-unit="unit"
-      data-numeric-effect="Feed per minute of the next power feed."
-      @change="commitFeed"
-      @keydown.enter.prevent="commitFeed"
-    />
-    <span class="hint">{{ velocityUnit(unit) }}</span>
   </div>
 
   <ModalDialog v-if="confirm" :title="`Power feed ${directionLabel(confirm.axis, confirm.direction)}?`" size="small" fresh-gesture @close="confirm = null">
@@ -205,13 +205,12 @@ function stop(): void {
 .jogbtn { flex-direction: column; gap: 0; padding: 0; font-size: 20px; }
 .stopfeed { grid-area: stop; font-size: 13px; }
 .extent { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.choices { display: grid; grid-template-columns: 1fr; gap: 4px; }
-.entry { display: flex; align-items: center; gap: 8px; }
+.choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.choices .btn { padding-inline: 8px; }
+.entry { display: grid; grid-template-columns: 64px minmax(44px, 1fr) 46px; align-items: center; gap: 6px; }
 .entry.hidden { visibility: hidden; }
-.entry .field { flex: 1; min-width: 0; text-align: right; }
-.line { display: flex; align-items: center; gap: 8px; }
-.line > .label { width: 44px; flex: none; }
-.feed { width: 110px; text-align: right; }
+.entry .field { width: 100%; min-width: 0; padding-inline: 8px; text-align: right; }
+.entry .hint { white-space: nowrap; }
 .btn[aria-disabled="true"] { opacity: .68; }
 .coordinate { margin: 0; font-size: 20px; }
 p { margin: 0; }

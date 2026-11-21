@@ -35,7 +35,7 @@ function button(text: string): HTMLButtonElement {
   return found.element
 }
 function input(label: string): HTMLInputElement {
-  const found = wrapper?.findAll('label').find((candidate) => candidate.find('.label').text() === label)?.find('input')
+  const found = wrapper?.findAll('input').find((candidate) => candidate.attributes('aria-label') === label)
   if (!found?.exists()) throw new Error(`Missing field ${label}`)
   return found.element
 }
@@ -118,7 +118,7 @@ describe('new operation dialog', () => {
     await open()
     button('Helical bore').click()
     await nextTick()
-    expect(wrapper?.text()).toContain('Bore diameter, in')
+    expect(input('Bore diameter, in').dataset.numericUnit).toBe('in')
     button('Create and open').click()
     const save = sent().at(-1)
     if (save?.type !== 'save_program') throw new Error('No save')

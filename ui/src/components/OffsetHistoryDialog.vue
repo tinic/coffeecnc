@@ -46,6 +46,10 @@ function current(entry: HistoryEntry, field: HistoryField): number | null {
 }
 
 const reviewing = ref<HistoryEntry | null>(null)
+const reviewChanges = computed(() => {
+  const entry = reviewing.value
+  return entry === null ? [] : entry.changes.map((change) => ({ ...change, current: current(entry, change.field) }))
+})
 const reviewBlock = computed(() => {
   const entry = reviewing.value
   if (entry === null) return null
@@ -79,12 +83,12 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
 <template>
   <ModalDialog v-if="reviewing !== null" key="review" :title="reviewTitle" size="medium" expanded fresh-gesture @close="reviewing = null">
     <table class="changes">
-      <thead><tr><th></th><th>Now {{ unitName }}</th><th>Restored {{ unitName }}</th></tr></thead>
+      <thead><tr><th></th><th>Now</th><th>Restored</th></tr></thead>
       <tbody>
-        <tr v-for="change in reviewing.changes" :key="change.field">
+        <tr v-for="change in reviewChanges" :key="change.field">
           <th>{{ fieldName(change.field) }}</th>
-          <td class="mono">{{ current(reviewing, change.field) === null ? 'Unavailable' : fieldValue(change.field, current(reviewing, change.field), unit) }}</td>
-          <td class="mono">{{ fieldValue(change.field, change.before, unit) }}</td>
+          <td class="mono">{{ change.current === null ? 'Unavailable' : fieldValue(change.field, change.current, unit) }}<span v-if="change.field !== 'rotation_xy' && change.current !== null" class="value-unit">{{ ' ' + unitName }}</span></td>
+          <td class="mono">{{ fieldValue(change.field, change.before, unit) }}<span v-if="change.field !== 'rotation_xy'" class="value-unit">{{ ' ' + unitName }}</span></td>
         </tr>
       </tbody>
     </table>
@@ -122,7 +126,7 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
       </li>
     </ul>
     <template #footer>
-      <span class="hint footer-note">{{ unitName }} · degrees for rotation · at most 200 entries</span>
+      <span class="hint footer-note">{{ unitName }} · degrees for rotation</span>
       <button class="btn" type="button" @click="emit('close')">Close</button>
     </template>
   </ModalDialog>
@@ -149,6 +153,7 @@ p { margin: 0; line-height: 1.45; }
 .changes th, .changes td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: right; }
 .changes th:first-child { text-align: left; }
 .changes thead { color: var(--text-dim); font-size: 12px; }
-.changes td { font-size: 19px; }
+.changes td { font-size: 19px; white-space: nowrap; }
+.value-unit { color: var(--text-dim); font-size: 12px; }
 .btn { min-height: 44px; }
 </style>

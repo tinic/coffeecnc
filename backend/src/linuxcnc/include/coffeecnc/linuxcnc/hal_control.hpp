@@ -1,9 +1,11 @@
 #ifndef COFFEECNC_LINUXCNC_HAL_CONTROL_HPP
 #define COFFEECNC_LINUXCNC_HAL_CONTROL_HPP
 
+#include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/safety_outputs.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -98,6 +100,9 @@ public:
   void stop_probe_cycle();
   void finish_probe_cycle();
   [[nodiscard]] auto probe_cycle_outputs(Clock::time_point now) const -> ProbeCycleOutputs;
+
+  // Worker-owned spindle hold state, reported with controller status.
+  std::atomic<PausedSpindle> paused_spindle{PausedSpindle::none};
 
   [[nodiscard]] auto begin_paused_z(Clock::time_point now) -> bool;
   [[nodiscard]] auto move_paused_z(Clock::time_point now, std::int32_t delta, bool clear) -> bool;

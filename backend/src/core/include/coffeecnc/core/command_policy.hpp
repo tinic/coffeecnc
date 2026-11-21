@@ -40,12 +40,15 @@ struct AxisState {
 // The unit the interpreter reads length words in (G21 / G20).
 enum class LengthUnit : std::uint8_t { mm, inch };
 
+enum class PausedSpindle : std::uint8_t { none, can_stop, restore, recover };
+
 struct PausedZStatus {
   double offset{}; // applied Z offset, mm
   double max_lift{};
   bool displaced{};
   bool feedback_available{};
   std::string reason;
+  PausedSpindle spindle{};
   friend auto operator==(const PausedZStatus&, const PausedZStatus&) -> bool = default;
 };
 
@@ -124,6 +127,7 @@ struct JogStep {
 struct JogStopAll {};
 struct JogPausedZ {
   double distance; // mm
+  bool stop_spindle{}; // explicitly confirmed by the operator
 };
 struct Mdi {
   std::string text;

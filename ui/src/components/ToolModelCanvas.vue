@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { OrthographicCamera, Scene, WebGLRenderer } from 'three'
+import { Box3, OrthographicCamera, Scene, Vector3, WebGLRenderer } from 'three'
 import { theme } from '../appearance'
 import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
-import { lightPreview } from '../preview-lighting'
-import { toolEnvelope, type ToolModel } from '../tool-model'
+import { lightPreview, PreviewReflections } from '../preview-lighting'
+import type { ToolModel } from '../tool-model'
 import { ToolMesh } from '../tool-mesh'
 import { holderLabel } from '../tool-holder'
 
@@ -13,27 +13,53 @@ const props = defineProps<{ model: ToolModel }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const error = ref<string>('')
 const scene = new Scene()
+const reflections = new PreviewReflections()
 const toolMesh = new ToolMesh()
 const camera = new OrthographicCamera()
+const bounds = new Box3()
+const centre = new Vector3()
+const point = new Vector3()
+const size = new Vector3()
 let renderer: WebGLRenderer | null = null
 let resize: ResizeObserver | null = null
-let view: Camera = { azimuth: -0.6, elevation: 0.3, scale: 1, centre: [0, 0, 0] }
+let view: Camera = { azimuth: -0.6, elevation: 0.24, scale: 1, centre: [0, 0, 0] }
 let drag: { id: number; x: number; y: number } | null = null
 let contextLost = false
 
-function build(): void { toolMesh.build(props.model); draw() }
+function build(): void {
+  toolMesh.build(props.model)
+  bounds.setFromObject(toolMesh.group)
+  view.centre = bounds.getCenter(centre).toArray()
+  draw()
+}
 function draw(): void {
-  if (renderer === null || canvas.value === null || contextLost) return
+  if (renderer === null || canvas.value === null || contextLost || bounds.isEmpty()) return
   const width = canvas.value.clientWidth; const height = canvas.value.clientHeight
   if (width <= 0 || height <= 0) return
-  toolMesh.light(renderer)
-  const { diameter, overallLength } = toolEnvelope(props.model.dimensions, props.model.holder)
-  const extent = Math.hypot(overallLength, diameter * 1.4)
-  view = { ...view, centre: [0, 0, overallLength / 2], scale: Math.max(0.001, Math.min((width - 24) / extent, (height - 24) / extent)) }
-  syncModelCamera(camera, view, width, height, extent)
+  camera.zoom = 1
+  syncModelCamera(camera, view, width, height, bounds.getSize(size).length())
+  camera.rotateZ(0.38)
+  camera.updateMatrixWorld()
+  let x = 0; let y = 0
+  const { min, max } = bounds
+  for (const px of [min.x, max.x]) {
+    for (const py of [min.y, max.y]) {
+      for (const pz of [min.z, max.z]) {
+        point.set(px, py, pz).project(camera)
+        x = Math.max(x, Math.abs(point.x))
+        y = Math.max(y, Math.abs(point.y))
+      }
+    }
+  }
+  camera.zoom = 0.88 / Math.max(x, y, 0.001)
+  camera.updateProjectionMatrix()
   toolMesh.setTheme(theme.value === 'dark')
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.setSize(width, height, false)
+  const ratio = Math.min(window.devicePixelRatio, 2)
+  if (renderer.getPixelRatio() !== ratio || canvas.value.width !== Math.floor(width * ratio)
+    || canvas.value.height !== Math.floor(height * ratio)) {
+    renderer.setPixelRatio(ratio)
+    renderer.setSize(width, height, false)
+  }
   renderer.render(scene, camera)
 }
 function down(event: PointerEvent): void {
@@ -48,7 +74,12 @@ function move(event: PointerEvent): void {
   draw()
 }
 function lost(event: Event): void { event.preventDefault(); contextLost = true; error.value = 'Graphics context lost. Dimensions remain editable.' }
-function restored(): void { contextLost = false; toolMesh.resetLighting(); error.value = ''; draw() }
+function restored(): void {
+  contextLost = false
+  if (renderer !== null) reflections.build(scene, renderer)
+  error.value = ''
+  draw()
+}
 watch(() => props.model, build, { deep: true })
 watch(theme, draw)
 onMounted(() => {
@@ -56,6 +87,7 @@ onMounted(() => {
   try {
     renderer = new WebGLRenderer({ canvas: canvas.value, alpha: true, antialias: true })
     lightPreview(scene, renderer)
+    reflections.build(scene, renderer)
     scene.add(toolMesh.group)
     canvas.value.addEventListener('webglcontextlost', lost)
     canvas.value.addEventListener('webglcontextrestored', restored)
@@ -69,6 +101,7 @@ onBeforeUnmount(() => {
   canvas.value?.removeEventListener('webglcontextlost', lost)
   canvas.value?.removeEventListener('webglcontextrestored', restored)
   toolMesh.dispose()
+  reflections.dispose(scene)
   renderer?.dispose(); renderer?.forceContextLoss()
 })
 </script>
@@ -85,7 +118,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: radial-gradient(ellipse at 50% 47%, var(--panel-raised), var(--bg-sunken) 72%); overflow: hidden; }
+.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--preview-backdrop); overflow: hidden; }
 .caption { padding: 12px 12px 0; pointer-events: none; }
 canvas { width: 100%; flex: 1; min-height: 0; touch-action: none; cursor: grab; }
 canvas:active { cursor: grabbing; }

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import {
-  Box3, BufferGeometry, DirectionalLight, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
-  HemisphereLight, LatheGeometry, Line, LineBasicMaterial, Mesh,
-  MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, OrthographicCamera, Path, PCFShadowMap,
+  Box3, BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
+  LatheGeometry, Line, LineBasicMaterial, Mesh,
+  MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Path, PCFShadowMap,
   PlaneGeometry, RingGeometry, Scene, ShadowMaterial, Shape, Vector2, Vector3, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
 import { brushedFinish } from '../brushed-finish'
 import { syncModelCamera } from '../model-camera'
 import { basis, orbit, type Camera } from '../pathview'
+import { lightPreview, PreviewReflections } from '../preview-lighting'
 import type { ProbeGuidePlan, ProbeGuideStep } from '../probe-guide'
 import { ToolMesh } from '../tool-mesh'
 
@@ -18,20 +19,19 @@ const emit = defineEmits<{ step: [index: number]; unavailable: [] }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const failed = ref(false)
 const scene = new Scene()
+const reflections = new PreviewReflections()
 const stage = new Group()
 const tool = new Group()
 const toolMesh = new ToolMesh()
 const camera = new OrthographicCamera()
 const view: Camera = { azimuth: -0.88, elevation: 0.60, scale: 1, centre: [0, 0, 9] }
 const grid = new GridHelper(132, 22, 0x7490a5, 0x7490a5)
-const floor = new Mesh(new PlaneGeometry(240, 240), new ShadowMaterial({ opacity: 0.26 }))
+const floor = new Mesh(new PlaneGeometry(240, 240), new ShadowMaterial({ opacity: 0.2 }))
 const stockMaterial = new MeshStandardMaterial({ metalness: 0.49, roughness: 0.38 })
 const machinedTop = stockMaterial.clone()
 const walls = new MeshStandardMaterial({ color: 0x8098aa, metalness: 0.43, roughness: 0.47 })
 const baseMaterial = new MeshStandardMaterial({ color: 0x394653, metalness: 0.5, roughness: 0.42 })
 const plunger = new MeshStandardMaterial({ color: 0xedb160, metalness: 0.55, roughness: 0.32 })
-const key = new DirectionalLight(0xfff5e9, 2.7)
-
 const finish = brushedFinish()
 machinedTop.map = finish
 
@@ -51,6 +51,7 @@ track.setAttribute('position', trackPoints)
 const trace = new Line(track, new LineBasicMaterial({ color: 0x44aefe, transparent: true, opacity: 0.92 }))
 trace.frustumCulled = false
 let renderer: WebGLRenderer | null = null
+let key: ReturnType<typeof lightPreview> | null = null
 let resize: ResizeObserver | null = null
 let frame = 0
 let previousFrame = 0
@@ -213,8 +214,8 @@ function applyTheme(): void {
   const dark = theme.value === 'dark'
   stockMaterial.color.setHex(dark ? 0xaeb8c1 : 0xabb5bc)
   machinedTop.color.copy(stockMaterial.color)
-  walls.color.setHex(dark ? 0x8299ab : 0x8394a1)
-  grid.material.opacity = dark ? 0.19 : 0.17
+  walls.color.setHex(dark ? 0x919fa9 : 0x929fa7)
+  grid.material.opacity = dark ? 0.14 : 0.13
   contact.material.color.setHex(dark ? 0xffbc57 : 0xc66a14)
   datum.material.color.setHex(dark ? 0x3edac5 : 0x007b68)
   start.material.color.setHex(dark ? 0x6fbaff : 0x216ece)
@@ -249,12 +250,10 @@ onMounted(() => {
   if (surface === null) return
   try {
     renderer = new WebGLRenderer({ canvas: surface, alpha: true, antialias: true })
-    renderer.setClearColor(0, 0)
-    renderer.toneMapping = NeutralToneMapping
-    renderer.toneMappingExposure = 0.94
+    key = lightPreview(scene, renderer)
+    reflections.build(scene, renderer)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = PCFShadowMap
-    key.position.set(-42, -50, 72)
     key.castShadow = true
     key.shadow.camera.left = key.shadow.camera.bottom = -57
     key.shadow.camera.right = key.shadow.camera.top = 57
@@ -262,8 +261,6 @@ onMounted(() => {
     key.shadow.normalBias = 0.12
     key.shadow.radius = 3
     key.shadow.mapSize.set(512, 512)
-    const rim = new DirectionalLight(0xe2f0ff, 1.2)
-    rim.position.set(48, 44, 62)
     grid.rotation.x = Math.PI / 2
     grid.position.z = -14.1
     grid.material.transparent = true
@@ -280,9 +277,8 @@ onMounted(() => {
       if (node instanceof Mesh) node.castShadow = true
       else if (node instanceof Line) node.visible = false
     })
-    toolMesh.light(renderer)
     tool.add(toolMesh.group)
-    scene.add(new HemisphereLight(0xe9f4ff, 0x565562, 1.35), key, rim, floor, grid, stage, tool, contact, datum, start, trace)
+    scene.add(floor, grid, stage, tool, contact, datum, start, trace)
     build()
     surface.addEventListener('webglcontextlost', lost)
     resize = new ResizeObserver(setView)
@@ -310,7 +306,8 @@ onBeforeUnmount(() => {
   floor.geometry.dispose()
   track.dispose()
   grid.dispose()
-  key.shadow.dispose()
+  key?.shadow.dispose()
+  reflections.dispose(scene)
   renderer?.dispose()
   renderer?.forceContextLoss()
 })
@@ -327,7 +324,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.guide-canvas { position: relative; min-height: 0; min-width: 0; overflow: hidden; background: radial-gradient(ellipse at 47% 38%, var(--panel-raised), var(--bg-sunken) 82%); }
+.guide-canvas { position: relative; min-height: 0; min-width: 0; overflow: hidden; background: var(--preview-backdrop); }
 canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 canvas:active { cursor: grabbing; }
 .unavailable { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 30px; color: var(--warn); text-align: center; }

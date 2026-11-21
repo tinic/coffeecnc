@@ -26,15 +26,15 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
   const group = new Group()
   const geometries: BufferGeometry[] = []
   const finish = brushedFinish()
-  const aluminium = new MeshStandardMaterial({ color: '#aab4bd', metalness: 0.66, roughness: 0.35 })
+  const aluminium = new MeshStandardMaterial({ color: '#b9c0c5', metalness: 0.61, roughness: 0.36 })
   const milledTop = aluminium.clone()
   milledTop.map = finish
-  const milledSides = new MeshStandardMaterial({ color: '#a4afb8', metalness: 0.63, roughness: 0.47 })
+  const milledSides = new MeshStandardMaterial({ color: '#a0a8ad', metalness: 0.58, roughness: 0.42 })
   const gaugeSteel = new MeshStandardMaterial({ color: '#b5bdc5', metalness: 0.79, roughness: 0.27 })
   const black = new MeshStandardMaterial({ color: '#394047', metalness: 0.45, roughness: 0.39 })
   const gold = new MeshStandardMaterial({ color: '#d3a055', metalness: 0.59, roughness: 0.3 })
   const shadows = [false, true].map(round => new MeshBasicMaterial({
-    map: contactShadow(round), transparent: true, depthWrite: false, opacity: 0.27, toneMapped: false,
+    map: contactShadow(round), transparent: true, depthWrite: false, opacity: 0.38, toneMapped: false,
   }))
   const { stock, slanted, gauge, bore, boss, setter, top, stockHeight, boreRadius, bossRadius, setterHeight, setterRadius } = demoFixture
   const add = (geometry: BufferGeometry, material: Mesh['material'], centre: Vec3, angle = 0): void => {
@@ -49,12 +49,14 @@ export function buildProbeFixture(): { group: Group; dispose: () => void } {
     if (material) add(new PlaneGeometry(halfWidth * 2.85, halfHeight * 2.85), material, position, angle)
   }
   const block = (item: ProbeBlock, materials: MeshStandardMaterial[], hole = false): void => {
-    const [x, y] = item.half
+    const bevel = 0.55
+    const x = item.half[0] - bevel, y = item.half[1] - bevel
     const shape = new Shape().moveTo(-x, -y).lineTo(x, -y).lineTo(x, y).lineTo(-x, y).closePath()
-    if (hole) shape.holes.push(new Path().absarc(bore[0] - item.centre[0], bore[1] - item.centre[1], boreRadius, 0, 2 * Math.PI, true))
+    if (hole) shape.holes.push(new Path().absarc(bore[0] - item.centre[0], bore[1] - item.centre[1], boreRadius + bevel, 0, 2 * Math.PI, true))
     const base: Vec3 = [item.centre[0], item.centre[1], top - stockHeight]
-    add(new ExtrudeGeometry(shape, { depth: stockHeight, bevelEnabled: false, curveSegments: 48 }), materials, base, item.angle)
-    shadow(x, y, base, item.angle)
+    add(new ExtrudeGeometry(shape, { depth: stockHeight - 2 * bevel, bevelSize: bevel, bevelThickness: bevel,
+      bevelSegments: 2, curveSegments: 48 }), materials, [base[0], base[1], base[2] + bevel], item.angle)
+    shadow(...item.half, base, item.angle)
   }
   const cylinder = (radius: number, height: number, centre: Vec3, material: MeshStandardMaterial): void => {
     add(new CylinderGeometry(radius, radius, height, 48).rotateX(Math.PI / 2), material, centre)

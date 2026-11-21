@@ -129,7 +129,7 @@ watch(active, (line, before) => {
     // A new run starts in view.
     follow.value = true
   }
-  if (follow.value) {
+  if (follow.value && picked.value === 0) {
     show(line)
   }
 })
@@ -150,12 +150,21 @@ watch(
 )
 
 function updateViewport(): void {
-  if (scroller.value === null) return
-  viewHeight.value = scroller.value.clientHeight
-  if (follow.value) show(active.value)
+  const element = scroller.value
+  if (element === null) return
+  viewHeight.value = element.clientHeight
+  if (picked.value > 0) {
+    const top = (picked.value - 1) * rowHeight
+    const bottom = top + rowHeight
+    // Scroll just enough to keep the row visible when the action bar takes space.
+    const target = Math.min(top, Math.max(element.scrollTop, bottom - viewHeight.value))
+    if (element.scrollTop !== target) element.scrollTop = target
+    onScroll()
+  } else if (follow.value) show(active.value)
 }
 
 watch(codeWidth, updateViewport, { flush: 'post' })
+watch(picked, updateViewport, { flush: 'post' })
 
 let observer: ResizeObserver | null = null
 
@@ -238,6 +247,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .nc {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
@@ -247,7 +258,8 @@ onBeforeUnmount(() => {
 }
 
 .scroller {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   outline: none;
   overflow-anchor: none;
@@ -337,13 +349,13 @@ onBeforeUnmount(() => {
 }
 
 .line-actions {
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+  padding: 6px 16px 10px;
+  border-top: 1px solid var(--line);
 }
 .row.breakpoint { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--warn); }
 .row.breakpoint .number { color: var(--warn); }

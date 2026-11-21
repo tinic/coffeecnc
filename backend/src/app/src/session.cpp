@@ -1,4 +1,5 @@
 #include <coffeecnc/app/session.hpp>
+#include <coffeecnc/app/program_edit.hpp>
 
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/core/jog_stop_report.hpp>
@@ -194,9 +195,9 @@ auto starts_jog(const Command& command) -> bool {
 
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
                  ToolModelService* tool_models, PreviewWorker* preview,
-                 PreviewEngine* restart_engine)
+                 PreviewEngine* restart_engine, ProgramWriter* program_writer)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
-      restart_engine_(restart_engine), policy_(limits) {}
+      restart_engine_(restart_engine), program_writer_(program_writer), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -1110,6 +1111,21 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return answer({CommandOutcome::rejected, file.error()});
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.open_program(*file, still);
+          });
+        } else if constexpr (std::is_same_v<T, EditProgram>) {
+          if (program_writer_ == nullptr)
+            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot edit programs."});
+          const auto file = programs_.resolve_program(c.path);
+          if (!file)
+            return answer({CommandOutcome::rejected, file.error()});
+          if (*file != state.program_file)
+            return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
+          return act(request, [&](const Wanted& still) -> ActionResult {
+            auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
+            if (!written)
+              return {ActionStatus::failed, written.error()};
+            // LinuxCNC reads the new text only when the program is opened again.
+            return port_.open_program(*written, still);
           });
         } else if constexpr (std::is_same_v<T, Run>) {
           return act(request, [&](const Wanted& still) -> ActionResult {

@@ -204,6 +204,14 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           if (s.interp != InterpState::idle || !s.in_position || s.air_offset_owned)
             return reject("Stop the program before changing the air-cut lift.");
           return allow();
+        } else if constexpr (std::is_same_v<T, EditProgram>) {
+          if (!s.program_loaded)
+            return reject("Load a program first.");
+          if (!valid_text(c.path, 254) || c.line < 1 || c.before.size() > 4096 || c.after.size() > 4096)
+            return reject("The program edit is not valid.");
+          if (s.interp != InterpState::idle || !s.in_position || homing(s))
+            return reject("Stop execution before editing the program.");
+          return allow();
         } else if constexpr (std::is_same_v<T, PlanRestart> || std::is_same_v<T, StartRestart>) {
           if (s.air_z > 0 || s.air_offset_owned)
             return reject("Turn off air cut before restarting from a line.");

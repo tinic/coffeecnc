@@ -136,6 +136,13 @@ struct PlanRestart {
 struct StartRestart {
   std::uint64_t plan_id{};
 };
+// Changes the number of one F or S word on `line` of the loaded program, then reloads it.
+struct EditProgram {
+  std::string path;
+  int line{};
+  std::string before;
+  std::string after;
+};
 struct Pause {};
 struct Resume {};
 struct Step {};
@@ -188,12 +195,13 @@ struct ToolChanged {};
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
 
-using Command = std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory,
-                             OpenProgram, Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle,
-                             SetCoolant, SetProgramOption, SelectWcs, TouchOff, ToolTouchOff,
-                             SetTool, RemoveTool, ToolChanged, SetToolModelDefaults,
-                             SetToolModelAssignment, Quit, SetOperatorSettings, SetWorkOffset,
-                             FixedSetterRequest, PlanRestart, StartRestart, SetAirCut>;
+using Command =
+    std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
+                 Run, Pause, Resume, Step, Abort, SetOverride, SetSpindle, SetCoolant,
+                 SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
+                 ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
+                 SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
+                 EditProgram, SetAirCut>;
 
 struct Decision {
   bool allowed{};

@@ -520,6 +520,17 @@ export interface StartRestart extends CommandBase {
   type: 'start_restart'
   plan_id: number
 }
+/**
+ * Changes the number of one F or S word on `line` of the loaded program (`old_text` must still
+ * be that line), saves the file and opens it again. Nothing else of the line may change.
+ */
+export interface EditProgram extends CommandBase {
+  type: 'edit_program'
+  path: string
+  line: number
+  old_text: string
+  new_text: string
+}
 export interface SetCoolant extends CommandBase {
   type: 'set_coolant'
   flood: boolean
@@ -633,6 +644,7 @@ export type ToMachine =
   | SetWorkOffset
   | PlanRestart
   | StartRestart
+  | EditProgram
   | SetAirCut
 
 /** A command without its `id`, as callers build it. */

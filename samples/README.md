@@ -6,7 +6,7 @@ These are unmodified research fixtures. None has been executed in LinuxCNC, geom
 
 ## Start here
 
-The original [G0759 air-cut programs](air/README.md) exercise the Machine tab in a clear area above G54 Z0.
+To test a job without material, use the [air-cut programs](air/README.md).
 
 | Collection | Files to explore | What it contributes | Qualification |
 |---|---|---|---|

@@ -1,16 +1,27 @@
-# G0759 air-cut programs
+# Air-cut programs
 
-These LinuxCNC programs exercise CoffeeCNC's Machine tab in the air. The programmed paths stay within 30 mm of G54 X0 and Y0 and at or above G54 Z+5 mm. The paths finish at G54 Z+30 mm with the spindle and coolant off.
+Use these programs to run a job on the G0759 without material. They test the Machine tab: preview, progress, overrides, pauses and tool changes.
 
-| Program | Exercises | Approximate run time |
+| Program | What it tests | Run time |
 | --- | --- | --- |
-| [01 Square](01-square.ngc) | Rapids, linear feeds and live program progress | 30 s |
-| [02 Arcs](02-arcs.ngc) | G2/G3, I/J and R arcs, and a descending helix | 45 s |
-| [03 Pocket](03-pocket.ngc) | Raster passes at three heights, feed changes and overrides | 2 min |
-| [04 Drill](04-drill.ngc) | G81 drilling, G83 pecking, G98 and G99 retract planes | 35 s |
-| [05 Pauses](05-pauses.ngc) | Operator messages, M0, optional M1 and a dwell | 25 s plus stops |
-| [06 Tool change](06-toolchange.ngc) | Manual T1/T98 changes and their length offsets | 25 s plus changes |
+| [01 Square](01-square.ngc) | Rapids, straight feeds, program progress | 30 s |
+| [02 Arcs](02-arcs.ngc) | G2/G3 arcs with I/J and R, a helix | 45 s |
+| [03 Pocket](03-pocket.ngc) | Passes at three heights, feed changes, overrides, feed hold | 2 min |
+| [04 Drill](04-drill.ngc) | G81 and G83 cycles, G98 and G99 retract | 35 s |
+| [05 Pauses](05-pauses.ngc) | Messages, M0, optional stop M1, dwell | 25 s and the stops |
+| [06 Tool change](06-toolchange.ngc) | Manual change from T1 to T98, length offsets | 25 s and the changes |
 
-Run in a clear area with no material under the path. Set G54 X0/Y0 at the center of that area and G54 Z0 at the intended stock-top plane. Verify that the full XY area and Z+5 to Z+30 clear the table, fixtures and both tool lengths. Confirm there is no G54 rotation or active local or temporary offset.
+## Limits
 
-Verify the T1 length in the tool table and the active length of the tool in the spindle. With the spindle and coolant stopped, bring the tool to a clear starting position near G54 X0 Y0 Z+30 before Cycle start. For program 06 verify T98's length and clearance at the manual exchange position at G54 X0 Y0 Z+30 as well. T98 moves with the spindle stopped. Enable Optional stop for program 05 to exercise M1.
+All moves stay between Z+5 and Z+30 in G54, and within 30 mm of G54 X0 Y0. The spindle turns at 1500 rpm. At the end, the spindle is off and the tool is at Z+30.
+
+The machine soft limits do not protect this area. The program is the only limit.
+
+## Before you start
+
+1. Set G54 X0 Y0 at the center of a clear area of at least 60 × 60 mm.
+2. Set G54 Z0 on the stock top, or on a surface below the path.
+3. Load T1 with a valid length.
+4. For program 05, turn on Optional stop to test M1.
+5. For program 06, make sure that T98 has a valid length. T98 moves with the spindle stopped.
+6. Each program first moves to Z+30, then to the start point.

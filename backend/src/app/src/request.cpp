@@ -238,6 +238,15 @@ auto command(const Json& object) -> Command {
     return EditProgram{string(object, "path"), line, string(object, "old_text"),
                        string(object, "new_text")};
   }
+  if (type == "save_program") {
+    fields(object, {"id", "type", "path", "text"}, {"replace"});
+    SaveProgram save{string(object, "path"), string(object, "text"), false};
+    if (save.text.size() > max_saved_program_bytes)
+      throw InvalidRequest("The program text is longer than 512 KiB.");
+    if (object.contains("replace"))
+      save.replace = boolean(object, "replace");
+    return save;
+  }
   if (type == "start_restart") {
     fields(object, {"id", "type", "plan_id"});
     return StartRestart{positive_id(object, "plan_id")};
@@ -400,13 +409,18 @@ auto command(const Json& object) -> Command {
 } // namespace
 
 auto decode_request(std::string_view json) -> DecodedRequest {
-  if (json.size() > max_request_bytes)
-    return DecodeError{std::nullopt, "Request exceeds the 16 KiB limit."};
+  constexpr auto too_long = "Request exceeds the 16 KiB limit.";
+  if (json.size() > max_save_program_request_bytes)
+    return DecodeError{std::nullopt, too_long};
   if (json.find('\0') != std::string_view::npos)
     return DecodeError{std::nullopt, "Invalid JSON request."};
   std::optional<RequestId> id;
   try {
     const auto object = parse(json);
+    // Above 16 KiB only a program to save, and nothing about it is answered by its ID.
+    if (json.size() > max_request_bytes &&
+        (!object.is_object() || object.value("type", Json{}) != "save_program"))
+      return DecodeError{std::nullopt, too_long};
     id = request_id(object);
     return Request{*id, command(object)};
   } catch (const InvalidRequest& error) {

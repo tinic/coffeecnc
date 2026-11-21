@@ -773,7 +773,8 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     }
   }
   if (restart_ && !restart_->tool_request && !std::holds_alternative<StartRestart>(command) &&
-      !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command))
+      !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command) &&
+      !std::holds_alternative<SaveProgram>(command))
     restart_.reset();
   auto decision = policy_.evaluate(command, state);
   std::optional<CheckedPreview> verified;
@@ -1147,6 +1148,19 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             // LinuxCNC reads the new text only when the program is opened again.
             return port_.open_program(*written, still);
           });
+        } else if constexpr (std::is_same_v<T, SaveProgram>) {
+          if (program_writer_ == nullptr)
+            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot save programs."});
+          // Through a link too: the file LinuxCNC has open is never written over.
+          if (const auto target = programs_.resolve_new_program(c.path);
+              c.replace && target && target->exists && !state.program_file.empty() &&
+              programs_.resolve_program(target->path).value_or("") == state.program_file)
+            return answer({CommandOutcome::rejected,
+                           "The loaded program is not replaced. Choose another name."});
+          auto written = program_writer_->create(c.path, c.text, c.replace);
+          if (!written)
+            return answer({CommandOutcome::failed, written.error()});
+          return answer({CommandOutcome::accepted, ""});
         } else if constexpr (std::is_same_v<T, Run>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
             if (!verified)

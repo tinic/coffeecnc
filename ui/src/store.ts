@@ -23,7 +23,7 @@ import { protocolVersion } from './protocol'
 import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPreferences, type OperatorSettings, type ProgramLayout } from './operator-settings'
 import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
-import { wcsName } from './units'
+import { baseName, wcsName } from './units'
 
 export type Tab = 'manual' | 'program' | 'tools' | 'probe'
 export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
@@ -180,6 +180,8 @@ export function describeCommand(command: CommandBody): string {
       return 'Restart program'
     case 'edit_program':
       return `Edit line ${String(command.line)}`
+    case 'save_program':
+      return `Save ${baseName(command.path)}`
     case 'touch_off':
       return `Touch off ${command.axis.toUpperCase()}`
     case 'tool_touch_off':

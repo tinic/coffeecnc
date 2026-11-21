@@ -34,6 +34,31 @@ export function splitLines(text: string): string[] {
   return lines
 }
 
+/**
+ * Where `save_program` writes `path`: absolute below the program directory, or relative to it.
+ * Folders must exist (the simulator has no empty ones); names follow the native rules.
+ */
+export function newProgramPath(files: ReadonlyMap<string, string>, path: string): string | { error: string } {
+  if (path === '' || path.endsWith('/')) return { error: 'Name the program file.' }
+  const absolute = path.startsWith('/') ? path : `${programDirectory}/${path}`
+  const parts: string[] = []
+  for (const part of absolute.split('/').slice(1)) {
+    if (part === '..') parts.pop()
+    else if (part !== '.' && part !== '') parts.push(part)
+  }
+  const name = parts.pop() ?? ''
+  // eslint-disable-next-line no-control-regex
+  if (name === '' || name.startsWith('.') || /[\x00-\x1f\x7f]/.test(name))
+    return { error: 'Use a file name without control characters that does not start with a dot.' }
+  const directory = `/${parts.join('/')}`
+  if (directory !== programDirectory && !directory.startsWith(`${programDirectory}/`))
+    return { error: 'New programs go in the program directory.' }
+  if (directory !== programDirectory && listDirectory(files, directory) === null)
+    return { error: 'Path is not available: No such file or directory' }
+  const file = `${directory}/${name}`
+  return file.length > 254 ? { error: 'Program path is longer than 254 bytes.' } : file
+}
+
 /** The listing of `path`, or null when it is not a directory below the program directory. */
 export function listDirectory(files: ReadonlyMap<string, string>, path: string | null): Directory | null {
   const directory = (path ?? programDirectory).replace(/\/+$/, '')

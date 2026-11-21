@@ -555,6 +555,17 @@ export interface EditProgram extends CommandBase {
   old_text: string
   new_text: string
 }
+/**
+ * Writes a new program file in the program directory ([DISPLAY] PROGRAM_PREFIX): `path` is
+ * absolute, or relative to that directory. A file of that name is replaced only with `replace`,
+ * and never the loaded program. Text of at most 512 KiB. Opening it is a separate `open_program`.
+ */
+export interface SaveProgram extends CommandBase {
+  type: 'save_program'
+  path: string
+  text: string
+  replace?: boolean
+}
 export interface SetCoolant extends CommandBase {
   type: 'set_coolant'
   flood: boolean
@@ -687,6 +698,7 @@ export type ToMachine =
   | StartRestart
   | EditProgram
   | JogPausedZ
+  | SaveProgram
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

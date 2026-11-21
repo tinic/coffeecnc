@@ -1,4 +1,6 @@
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
+
+#include "nml_status.hpp"
 #include <coffeecnc/core/text_file.hpp>
 
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
@@ -270,15 +272,22 @@ auto NmlPanelSource::read() -> PanelReading {
   PanelReading reading;
   // Everything that can take time first: the status is taken after it, and aged last.
   impl_->read_tools(reading.messages);
+  const auto with_source = [&](const auto& sample) {
+    auto status = sample ? sample->status : NmlStatus{};
+    const auto mapping = impl_->loads ? impl_->loads->breakpoint.load() : nullptr;
+    map_breakpoint(status, mapping.get());
+    return status;
+  };
   if (const auto before = impl_->mailbox.latest())
-    impl_->read_program(before->status, reading.messages);
+    impl_->read_program(with_source(before), reading.messages);
   auto latest = impl_->mailbox.latest();
+  auto status = with_source(latest);
   // Task named another file meanwhile: its text is read now, and the status taken again.
-  if (latest && latest->status.program_file != impl_->program_file) {
-    impl_->read_program(latest->status, reading.messages);
+  if (latest && status.program_file != impl_->program_file) {
+    impl_->read_program(status, reading.messages);
     latest = impl_->mailbox.latest();
+    status = with_source(latest);
   }
-  auto status = latest ? latest->status : NmlStatus{};
   if (latest && status.controller.link == Link::live && impl_->clock() - latest->read_at > max_age)
     status.controller.link = Link::stale;
   const bool loaded = status.program_file == impl_->program_file && !status.program_file.empty();
@@ -294,6 +303,7 @@ auto NmlPanelSource::read() -> PanelReading {
     impl_->track_lines(status, latest->read_at);
     reading.status.program.current_line = impl_->lines.current;
     reading.status.program.motion_line = impl_->lines.motion;
+    reading.status.program.breakpoint = status.breakpoint;
   }
   if (!loaded)
     reading.status.program = ProgramStatus{.file = {},
@@ -302,6 +312,10 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .motion_line = 0,
                                            .optional_stop = reading.status.program.optional_stop,
                                            .block_delete = reading.status.program.block_delete};
+  if (impl_->loads) {
+    reading.status.program.air_z = impl_->loads->air_z.load();
+    reading.status.program.air_offset_owned = impl_->loads->air_offset_owned.load();
+  }
   reading.tool_table = impl_->tool_table;
   reading.accepted_tools = impl_->withheld;
   reading.preview_tools = impl_->preview_tools;

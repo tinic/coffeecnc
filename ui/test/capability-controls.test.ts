@@ -6,6 +6,7 @@ import RunBar from '../src/components/RunBar.vue'
 import StatusBar from '../src/components/StatusBar.vue'
 import { panel, send } from '../src/machine'
 import { touchInput } from '../src/numeric-input'
+import { breakpointSelection } from '../src/program-breakpoint'
 import { hello, SimMachine } from '../src/sim/machine'
 
 vi.mock('../src/machine', async () => {
@@ -49,6 +50,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   wrapper?.unmount(); vi.useRealTimers()
+  breakpointSelection.value = null
   if (originalScrollTo === undefined) Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
   else Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo)
 })
@@ -342,5 +344,45 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain('The program check changed')
     expect(wrapper.find('[role="dialog"] button.primary').exists()).toBe(false)
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('requires a separate confirmation with the exact reviewed air-cut lift', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.status.program.air_z = 25
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    expect(wrapper.get('.main-action').text()).toContain('Start air cut')
+    await wrapper.get('.main-action').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('+25.000 mm')
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button.primary').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
+      display_units: 'mm', confirmed: true, air_z: 25 })
+  })
+
+  it('binds the selected source line to the reviewed run and displays Resume at the pause', async () => {
+    if (!panel.status?.program.file) throw new Error('Missing loaded program')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
+    wrapper = mount(RunBar)
+    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 5, text: 'G1 Z2 F900' }
+    await nextTick()
+    expect(wrapper.get('.main-action').text()).toContain('Run to line 5')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
+      display_units: 'mm', breakpoint: { line: 5, text: 'G1 Z2 F900' } })
+    panel.status.mode = 'auto'
+    panel.status.interp = 'paused'
+    panel.status.wait = { kind: 'paused' }
+    panel.status.program.breakpoint = { line: 5, reached: true }
+    await nextTick()
+    expect(breakpointSelection.value).toBeNull()
+    expect(wrapper.get('.main-action').text()).toContain('Resume')
   })
 })

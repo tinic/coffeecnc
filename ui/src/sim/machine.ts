@@ -30,6 +30,7 @@ import {
   cloneModal,
   interpretLine,
   newModal,
+  previewAirCut,
   previewProgram,
   toWork,
   wcsNames,
@@ -102,6 +103,7 @@ interface Exec {
   ranLine: boolean
   /** Blocks a restart runs before `nextLine`, as MDI would. */
   preamble?: string[]
+  breakpoint?: { line: number; reached: boolean }
 }
 
 interface PlannedRestart {
@@ -193,6 +195,8 @@ export class SimMachine {
   private previewBlockDelete = false
   private previewPlanBroken = false
   private previewContext = 0
+  private airLift = 0
+  private airOffsetOwned = false
   private restarts = new Map<number, PlannedRestart>()
   private restartId = 0
   private plannedResult: RestartPlan | null = null
@@ -367,6 +371,10 @@ export class SimMachine {
         motion_line: exec?.source === 'program' && move !== null ? move.line : 0,
         optional_stop: this.optionalStop,
         block_delete: this.blockDelete,
+        ...(this.airLift ? { air_z: this.airLift } : {}),
+        ...(this.airOffsetOwned ? { air_offset_owned: true } : {}),
+        ...(exec?.breakpoint ? { breakpoint: { line: exec.breakpoint.line,
+          reached: exec.breakpoint.reached && exec.paused && exec.nextLine < exec.breakpoint.line } } : {}),
         ...(exec === null && this.stoppedAt !== null && this.stoppedAt.revision === this.program?.revision
           ? { restart_hint: { line: this.stoppedAt.line, tool: this.stoppedAt.tool } } : {}),
       },
@@ -478,6 +486,7 @@ export class SimMachine {
       m.rotations,
       m.g92,
       m.tools,
+      this.airLift,
       start,
     ])
     if (key !== this.previewKey) {
@@ -501,8 +510,9 @@ export class SimMachine {
       const start = cloneModal(m)
       start.pos = this.reported()
       start.tool = this.toolInSpindle
-      this.preview = previewProgram(start, this.program.lines, this.blockDelete, this.previewContext,
-        { travel, spindleLimit: this.configuration.max_spindle_rpm })
+      const checks = { travel, spindleLimit: this.configuration.max_spindle_rpm }
+      const args = [start, this.program.lines, this.blockDelete, this.previewContext, checks] as const
+      this.preview = this.airLift ? previewAirCut(...args, this.airLift) : previewProgram(...args)
       this.emit(this.preview)
     }
   }
@@ -673,6 +683,7 @@ export class SimMachine {
       case 'end':
         this.exec = null
         this.stoppedAt = null
+        this.clearAirOffset()
         break
     }
   }
@@ -733,6 +744,12 @@ export class SimMachine {
         this.exec = null
         return
       }
+      if (exec.breakpoint && !exec.breakpoint.reached && exec.nextLine + 1 === exec.breakpoint.line) {
+        exec.breakpoint.reached = true
+        exec.currentLine = exec.breakpoint.line
+        exec.paused = true
+        return
+      }
       const text = this.program.lines[exec.nextLine]
       if (text === undefined) {
         this.execError('File ended with no percent sign or program end (M2 or M30)')
@@ -762,11 +779,19 @@ export class SimMachine {
       this.stoppedAt = { revision: this.program.revision, line, tool: this.toolInSpindle }
     }
     this.exec = null
+    this.clearAirOffset()
     this.stopJogs()
     this.homeQueue = []
     this.homing = null
     this.modal.spindle = 'stopped'
     this.syncModal()
+  }
+
+  private clearAirOffset(): void {
+    if (!this.airOffsetOwned) return
+    this.modal.g92[2] = 0
+    this.airLift = 0
+    this.airOffsetOwned = false
   }
 
   // ---- commands -------------------------------------------------------------------------------
@@ -874,7 +899,24 @@ export class SimMachine {
       }
       case 'open_program':
         return this.open(command.path)
+      case 'set_air_cut':
+        if (!Number.isFinite(command.air_z) || command.air_z < 0 || command.air_z > 1000 ||
+          command.air_z > 0 && command.air_z < 0.001) return reject('Air-cut lift is out of range.')
+        if (this.exec !== null || !this.inPosition()) return reject('Stop the program before changing the air-cut lift.')
+        if (command.air_z > 0 && this.program === null) return reject('Load a program first.')
+        this.airLift = command.air_z
+        return null
       case 'run': {
+        if ((command.air_z ?? 0) !== this.airLift) return reject('The air-cut selection changed.')
+        if (this.airLift && (command.preview_context === undefined || !command.confirmed || this.preview.state !== 'ready'))
+          return reject(this.preview.check?.errors[0] ?? 'Review the raised preview before starting the air cut.')
+        const breakpoint = command.breakpoint
+        if (breakpoint && (this.airLift || !Number.isSafeInteger(breakpoint.line) ||
+          command.preview_context === undefined || command.display_units === undefined || this.preview.state !== 'ready' ||
+          !this.preview.segments.some((segment) => segment.line === breakpoint.line)))
+          return reject('Choose a motion line in a complete preview with air cut off.')
+        if (breakpoint && this.program?.lines[breakpoint.line - 1] !== breakpoint.text)
+          return reject('The selected program line changed. Reopen the program and choose the line again.')
         if (command.preview_context !== undefined) {
           if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
             return reject('The program check changed. Review the current results.')
@@ -884,10 +926,16 @@ export class SimMachine {
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
         }
-        return this.run(false)
+        const rejection = this.run(false, breakpoint?.line)
+        if (!rejection && this.airLift) {
+          this.modal.g92[2] = this.airLift
+          this.airOffsetOwned = true
+        }
+        return rejection
       }
       case 'step':
-        return this.step()
+        if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.')
+        return this.airLift ? reject('Turn off air cut before using single block.') : this.step()
       case 'pause':
         if (this.exec === null) {
           return reject('Nothing is running')
@@ -940,6 +988,8 @@ export class SimMachine {
         if (command.option === 'optional_stop') {
           this.optionalStop = command.on
         } else {
+          if (this.airOffsetOwned) return reject('Stop the air cut before changing block delete.')
+          if (this.exec?.breakpoint) return reject('Stop the breakpoint run before changing block delete.')
           this.blockDelete = command.on
         }
         return null
@@ -1197,12 +1247,13 @@ export class SimMachine {
       return fail(`Can't open ${path}: no such file`)
     }
     this.programRevision += 1
+    this.airLift = 0
     this.program = { file: path, lines: splitLines(text), revision: this.programRevision }
     this.emit({ type: 'program', ...this.program })
     return null
   }
 
-  private run(stepping: boolean): Rejection | null {
+  private run(stepping: boolean, breakpoint?: number): Rejection | null {
     const what = stepping ? 'step' : 'run a program'
     const blocked = this.notOn(what)
     if (blocked !== null) {
@@ -1235,6 +1286,7 @@ export class SimMachine {
       paused: false,
       stepping,
       ranLine: false,
+      ...(breakpoint !== undefined ? { breakpoint: { line: breakpoint, reached: false } } : {}),
     }
     return null
   }
@@ -1263,6 +1315,7 @@ export class SimMachine {
 
   /** Interprets the program up to `line` without motion and plans how to resume there. */
   private planRestart(line: number, context: number): Rejection | null {
+    if (this.airLift) return reject('Turn off air cut before restarting from a line.')
     const blocked = this.notOn('restart a program') ?? this.busy('restart a program')
     if (blocked !== null) {
       return blocked

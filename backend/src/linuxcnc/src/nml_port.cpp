@@ -8,13 +8,11 @@
 
 #include "nml_gate.hpp"
 #include "nml_status.hpp"
+#include "program_watch.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <limits>
-#include <optional>
-#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -22,14 +20,18 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <numbers>
 #include <numeric>
+#include <optional>
 #include <span>
+#include <sstream>
 #include <system_error>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <cmd_msg.hh>
 #include <cms.hh>
@@ -86,6 +88,51 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
   const auto* end = text.data() + text.size();
   const auto [parsed, error] = std::from_chars(text.data(), end, tool);
   return error == std::errc{} && parsed == end && tool >= 0 ? std::optional{tool} : std::nullopt;
+}
+
+constexpr std::string_view breakpoint_message = "CoffeeCNC breakpoint ";
+
+auto with_breakpoint(std::string_view program, int target, std::string_view receipt)
+    -> std::expected<std::string, std::string> {
+  std::size_t insertion = std::string_view::npos;
+  auto remaining = program;
+  for (int line = 1; !remaining.empty(); ++line) {
+    const auto end = remaining.find('\n');
+    const auto block = remaining.substr(0, end);
+    if (o_word_name(block))
+      return std::unexpected("A breakpoint needs a program without subroutines or loops.");
+    if (line == target && motion_use(block) != MotionUse::none)
+      insertion = program.size() - remaining.size();
+    remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+  }
+  if (insertion == std::string_view::npos)
+    return std::unexpected("Choose a motion block in the loaded program.");
+  // The copy preserves the original words, comments and line endings on every source line.
+  std::string copied{program};
+  // LinuxCNC tags M0 with the previous motion line. This queued message is delivered after
+  // prior motion and I/O settle and immediately before that block's unconditional pause.
+  copied.insert(insertion, std::format("M0 (MSG,{}{})\n", breakpoint_message, receipt));
+  return copied;
+}
+
+auto load_breakpoint(const std::filesystem::path& record, const std::filesystem::path& copy)
+    -> std::shared_ptr<const BreakpointSource> {
+  const auto text = read_text_file(record.string(), 512);
+  if (!text)
+    return {};
+  std::istringstream fields{*text};
+  int line{};
+  std::string receipt;
+  bool received{};
+  std::string original;
+  if (!(fields >> line >> receipt >> received) || !std::getline(fields >> std::ws, original) ||
+      line <= 0 || !original.starts_with('/') || original.size() > 254 ||
+      original == copy.string() ||
+      !std::ranges::all_of(receipt, [](char c) { return c >= '0' && c <= '9'; }) ||
+      std::ranges::any_of(original, [](unsigned char c) { return c < 32 || c == 127; }))
+    return {};
+  return std::make_shared<const BreakpointSource>(std::move(original), copy.string(), line,
+                                                  std::move(receipt), received);
 }
 
 using Clock = std::chrono::steady_clock;
@@ -256,6 +303,19 @@ struct NmlPort::Impl {
   std::filesystem::path spindle_tool_file;
   std::optional<int> startup_tool;
   std::optional<int> observed_tool;
+  std::filesystem::path air_marker;
+  std::optional<double> air_offset;
+  double air_z{};
+  bool air_running{};
+  bool air_bad_marker{};
+  bool air_recovery_reported{};
+  Clock::time_point air_retry{};
+  std::filesystem::path breakpoint_copy;
+  std::filesystem::path breakpoint_record;
+  std::shared_ptr<const BreakpointSource> breakpoint;
+  Clock::time_point breakpoint_retry{};
+  bool breakpoint_reported{};
+  bool breakpoint_recovered{};
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -266,6 +326,53 @@ struct NmlPort::Impl {
           std::filesystem::path(config.tool_table).parent_path() / "coffeecnc-spindle-tool.txt";
       startup_tool = load_spindle_tool(spindle_tool_file);
     }
+    air_marker = std::filesystem::path(config.directory) / "coffeecnc-air-cut.txt";
+    breakpoint_copy = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.ngc";
+    breakpoint_record = std::filesystem::path(config.directory) / ".coffeecnc-breakpoint.txt";
+    breakpoint = load_breakpoint(breakpoint_record, breakpoint_copy);
+    breakpoint_recovered = bool(breakpoint);
+    std::error_code error;
+    if (std::filesystem::exists(air_marker, error)) {
+      if (const auto text = read_text_file(air_marker.string(), 64)) {
+        double lift{};
+        const auto* end = text->data() + text->size();
+        const auto [rest, parsed] = std::from_chars(text->data(), end, lift);
+        if (parsed == std::errc{} && (rest == end || std::string_view{rest, end} == "\n") &&
+            lift >= 0.001 && lift <= 1000)
+          air_offset = lift;
+      }
+      air_bad_marker = !air_offset;
+    } else {
+      air_bad_marker = bool(error);
+    }
+  }
+
+  [[nodiscard]] auto owns_air_offset() const -> bool {
+    return air_offset.has_value() || air_bad_marker;
+  }
+
+  void publish_air() const {
+    if (loads) {
+      loads->air_z = air_z;
+      loads->air_offset_owned = owns_air_offset();
+    }
+  }
+
+  void discard_breakpoint() {
+    // Keep the last mapping published while the publisher's mailbox catches up to the reopen.
+    breakpoint.reset();
+    breakpoint_recovered = false;
+    breakpoint_reported = false;
+    std::error_code unused;
+    std::filesystem::remove(breakpoint_record, unused);
+    std::filesystem::remove(breakpoint_copy, unused);
+  }
+
+  [[nodiscard]] auto save_breakpoint() const -> bool {
+    return write_sidecar(breakpoint_record,
+                         std::format("{} {} {}\n{}\n", breakpoint->line, breakpoint->receipt,
+                                     static_cast<int>(breakpoint->marker_seen.load()),
+                                     breakpoint->original));
   }
 
   [[nodiscard]] auto stat() -> const EMC_STAT* {
@@ -288,7 +395,14 @@ struct NmlPort::Impl {
   }
 
   void add(bool error, std::span<const char> field) {
-    if (auto text = text_of(field); !text.empty())
+    auto text = text_of(field);
+    if (!error && breakpoint && text.starts_with(breakpoint_message) &&
+        std::string_view(text).substr(breakpoint_message.size()) == breakpoint->receipt) {
+      if (!breakpoint->marker_seen.exchange(true) && !save_breakpoint())
+        messages.push_back({true, "Could not save the breakpoint pause for app recovery."});
+      return;
+    }
+    if (!text.empty())
       messages.push_back({error, std::move(text)});
   }
 
@@ -681,6 +795,9 @@ auto NmlPort::connect(const MachineConfig& config, HalShared* hal, NmlLoads* loa
   auto impl = std::make_unique<Impl>(config);
   impl->hal = hal;
   impl->loads = loads;
+  impl->publish_air();
+  if (loads)
+    loads->breakpoint.store(impl->breakpoint);
   if (impl->command.call([](RCS_CMD_CHANNEL& channel) -> int { return channel.valid(); }) == 0 ||
       !impl->status.valid() ||
       impl->errors.call([](NML& channel) -> int { return channel.valid(); }) == 0)
@@ -720,9 +837,15 @@ NmlGateHold::~NmlGateHold() = default;
 
 auto NmlPort::status() -> NmlStatus {
   const EMC_STAT* s = impl_->stat();
-  if (s == nullptr)
-    return {}; // link down
-  return to_status(*s, impl_->config, impl_->hal, impl_->status.link());
+  auto result = s ? to_status(*s, impl_->config, impl_->hal, impl_->status.link()) : NmlStatus{};
+  result.controller.air_z = impl_->air_z;
+  result.controller.air_offset_owned = impl_->owns_air_offset();
+  result.controller.air_offset_recovery =
+      result.controller.air_offset_owned &&
+      (!impl_->air_running || result.controller.interp == InterpState::idle);
+  result.controller.breakpoint_program = result.program_file == impl_->breakpoint_copy.string();
+  map_breakpoint(result, impl_->breakpoint.get());
+  return result;
 }
 
 auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
@@ -733,6 +856,14 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
 }
 
 void NmlPort::idle_maintenance(const Wanted& wanted) {
+  if (impl_->breakpoint || status().controller.breakpoint_program) {
+    finish_breakpoint(wanted);
+    return;
+  }
+  if (impl_->owns_air_offset()) {
+    recover_air_offset(wanted);
+    return;
+  }
   if (impl_->startup_tool.value_or(0) <= 0)
     return;
   const auto ready = [&](const NmlStatus& status) {
@@ -1864,6 +1995,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 }
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
+  if (path == impl_->breakpoint_copy.string())
+    return failed("Open the original program instead of its temporary breakpoint copy.");
+  return open_program_file(path, wanted, true);
+}
+
+auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, bool publish_load)
+    -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1879,15 +2017,25 @@ auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> Actio
     return closed;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
-  // LinuxCNC has taken the file up: a load, also of the file that was loaded before.
-  if (impl_->loads != nullptr)
-    ++impl_->loads->programs;
+  if (publish_load) {
+    // A newly opened file is a load, even when the operator opens the same path again.
+    if (impl_->loads)
+      ++impl_->loads->programs;
+    impl_->air_z = 0;
+    impl_->publish_air();
+    if (impl_->breakpoint)
+      impl_->discard_breakpoint();
+  }
   return impl_->settled(
       from, "LinuxCNC did not open the program.",
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
 }
 
 auto NmlPort::run(const Wanted& wanted) -> ActionResult {
+  if (impl_->air_z != 0 || impl_->owns_air_offset())
+    return failed("Air cut needs a complete raised preview.");
+  if (status().controller.breakpoint_program)
+    return failed("Wait for the original program to reopen after the breakpoint run.");
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1899,6 +2047,43 @@ auto NmlPort::run(const Wanted& wanted) -> ActionResult {
 
 auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, const Wanted& wanted)
     -> ActionResult {
+  if (inputs.air_z != impl_->air_z || impl_->owns_air_offset())
+    return failed("The air-cut selection or offset changed. Review the current preview.");
+  if (inputs.air_z == 0)
+    return start_checked(inputs, current, wanted);
+  if (!current())
+    return failed("The program or tool data changed. Review the new program check.");
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  if (inputs.g92 != Vec3{})
+    return failed("Clear the active G52 or G92 offset before an air cut.");
+  const auto registers = read_air_registers(wanted);
+  if (!registers)
+    return registers.error();
+  if (std::ranges::any_of(*registers, [](double value) { return value != 0; }))
+    return failed("Clear the stored G52 or G92 offset before an air cut.");
+  if (!current())
+    return failed("The program or tool data changed. Review the new program check.");
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  if (!write_sidecar(impl_->air_marker, std::format("{:.17g}\n", inputs.air_z)))
+    return failed("Could not save the air-cut recovery record.");
+  impl_->air_offset = inputs.air_z;
+  impl_->publish_air();
+  if (auto applied = write_air_offset(inputs.air_z, wanted); !accepted(applied))
+    return applied;
+  if (auto mode = set_task_mode(TaskMode::automatic, wanted); !accepted(mode))
+    return mode;
+  auto shifted = inputs;
+  shifted.g92[2] = inputs.air_z;
+  auto result = start_checked(shifted, current, wanted);
+  impl_->air_running = accepted(result);
+  return result;
+}
+
+auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
+                            const Wanted& wanted, std::optional<std::string_view> execution_path)
+    -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1909,7 +2094,7 @@ auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, co
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
     return failed(reason);
   EMC_TASK_PLAN_OPEN open;
-  if (!inputs.program_file || !put(open.file, *inputs.program_file))
+  if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
     return failed("The program path is too long for LinuxCNC.");
   // Refresh the interpreter's descriptor for this path without publishing a new load.
   EMC_TASK_PLAN_CLOSE close;
@@ -1924,6 +2109,54 @@ auto NmlPort::run_checked(const PreviewInputs& inputs, const Wanted& current, co
   EMC_TASK_PLAN_RUN message;
   message.line = 0;
   return impl_->start(message, from);
+}
+
+auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view program, int line,
+                                const Wanted& current, const Wanted& wanted) -> ActionResult {
+  if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program ||
+      impl_->air_z != 0 || impl_->owns_air_offset())
+    return failed("The breakpoint needs the original program and no air-cut offset.");
+  const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
+  const auto copy = with_breakpoint(program, line, receipt);
+  if (!copy)
+    return failed(copy.error());
+  if (!current())
+    return failed("The program or tool data changed. Review the new program check.");
+  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
+    return failed(reason);
+  impl_->breakpoint = std::make_shared<const BreakpointSource>(
+      *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
+  if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
+    impl_->discard_breakpoint();
+    return failed("Could not save the temporary breakpoint program.");
+  }
+  if (impl_->loads)
+    impl_->loads->breakpoint.store(impl_->breakpoint);
+  return start_checked(inputs, current, wanted, impl_->breakpoint->temporary);
+}
+
+void NmlPort::finish_breakpoint(const Wanted& wanted) {
+  const auto observed = status();
+  const auto& state = observed.controller;
+  if (state.link != Link::live || state.interp != InterpState::idle || !state.in_position ||
+      state.requested_tool || observed.paused || observed.task_executing || !wanted() ||
+      Clock::now() < impl_->breakpoint_retry)
+    return;
+  impl_->breakpoint_retry = Clock::now() + std::chrono::seconds{1};
+  if (!state.breakpoint_program) {
+    impl_->discard_breakpoint();
+    return;
+  }
+  if (impl_->breakpoint) {
+    const auto reopened = open_program_file(impl_->breakpoint->original, wanted);
+    if (accepted(reopened)) {
+      impl_->discard_breakpoint();
+      return;
+    }
+  }
+  if (wanted() && !std::exchange(impl_->breakpoint_reported, true))
+    impl_->messages.push_back({true, "The original program could not be reopened after the "
+                                     "breakpoint. Open a program to continue."});
 }
 
 namespace {
@@ -1992,11 +2225,13 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
 auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& start = inputs.start;
+  if (s.controller.link == Link::live && s.active_codes != start.active_codes)
+    return "The interpreter modes changed. Review a fresh program check.";
   if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
       s.controller.tool_in_spindle != start.tool_in_spindle ||
-      s.controller.program_units != start.program_units || s.active_codes != start.active_codes ||
+      s.controller.program_units != start.program_units ||
       s.spindle_direction != start.spindle_direction ||
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position) ||
@@ -2007,6 +2242,132 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
     return "The work origin changed. Review a fresh program check.";
   return {};
+}
+
+auto NmlPort::set_air_cut(double lift) -> ActionResult {
+  impl_->air_z = lift;
+  impl_->publish_air();
+  return {};
+}
+
+auto NmlPort::read_air_registers(const Wanted& wanted)
+    -> std::expected<std::array<double, 9>, ActionResult> {
+  if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
+    return std::unexpected(std::move(mode));
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  constexpr std::string_view tag = "CoffeeCNC air registers ";
+  EMC_TASK_PLAN_EXECUTE message;
+  const auto block =
+      std::format("(DEBUG,{}%.9f#5211 #5212 #5213 #5214 #5215 #5216 #5217 #5218 #5219)", tag);
+  if (!put(message.command, block))
+    return std::unexpected(failed("Could not read the G52/G92 registers."));
+  if (auto done = impl_->run(message, from); !accepted(done))
+    return std::unexpected(std::move(done));
+  const auto reply = [&] {
+    return std::find_if(impl_->messages.begin() + static_cast<std::ptrdiff_t>(from),
+                        impl_->messages.end(), [&](const ControllerMessage& entry) {
+                          return !entry.error && entry.text.starts_with(tag);
+                        });
+  };
+  static_cast<void>(until(error_text_time, [&] {
+    impl_->collect();
+    return reply() != impl_->messages.end() || !wanted();
+  }));
+  const auto at = reply();
+  if (at == impl_->messages.end())
+    return std::unexpected(wanted() ? failed("LinuxCNC did not report the G52/G92 registers.")
+                                    : withdrawn());
+  std::istringstream values{at->text.substr(tag.size())};
+  impl_->messages.erase(at);
+  std::array<double, 9> offsets{};
+  for (double& value : offsets)
+    if (!(values >> value) || !std::isfinite(value))
+      return std::unexpected(failed("LinuxCNC did not report all G52/G92 registers."));
+  return offsets;
+}
+
+auto NmlPort::write_air_offset(double lift, const Wanted& wanted) -> ActionResult {
+  if (auto mode = set_task_mode(TaskMode::mdi, wanted); !accepted(mode))
+    return mode;
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  const auto before = status();
+  if (before.controller.link != Link::live || before.controller.machine != MachineState::on ||
+      before.controller.mode != TaskMode::mdi || !restart_idle(before, impl_->config))
+    return failed("Air-cut offset needs a powered, stationary machine in MDI.");
+  const double units = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+  EMC_TASK_PLAN_EXECUTE message;
+  if (!put(message.command, std::format("G52 Z{:.12f}", lift / units)))
+    return failed("Could not encode the air-cut offset.");
+  if (auto done = impl_->run(message, from); !accepted(done))
+    return done;
+  if (impl_->loads)
+    ++impl_->loads->mdi_blocks;
+  const Vec3 expected{before.g92[0], before.g92[1], lift};
+  return impl_->settled(
+      from, "LinuxCNC did not verify the temporary air-cut offset.", [&](const EMC_STAT& raw) {
+        const auto s = to_status(raw, impl_->config, impl_->hal, impl_->status.link());
+        return s.controller.link == Link::live && restart_idle(s, impl_->config) &&
+               restart_near(s.g92, expected) && restart_at(s, before.commanded_position);
+      });
+}
+
+void NmlPort::recover_air_offset(const Wanted& wanted) {
+  const auto before = status();
+  const auto& state = before.controller;
+  if (state.link != Link::live || state.machine != MachineState::on ||
+      !restart_idle(before, impl_->config) || !wanted() || Clock::now() < impl_->air_retry)
+    return;
+  impl_->air_retry = Clock::now() + std::chrono::seconds{1};
+  const auto inform = [&](std::string reason) {
+    if (!std::exchange(impl_->air_recovery_reported, true))
+      impl_->messages.push_back({true, std::move(reason)});
+  };
+  if (!impl_->air_offset) {
+    inform("The air-cut recovery record could not be read. Verify the G52 offset before clearing "
+           "the record.");
+    return;
+  }
+  double current_z = before.g92[2];
+  bool other_offsets = before.g92[0] != 0 || before.g92[1] != 0;
+  if (std::abs(current_z) <= 1e-6) {
+    // A previously applied offset can have been suspended. Check the stored Z too before
+    // forgetting ownership, so a later G92.3 cannot bring the temporary lift back.
+    auto stored = read_air_registers(wanted);
+    if (!stored) {
+      if (wanted())
+        inform("Could not verify the stored air-cut offset. " + stored.error().reason);
+      return;
+    }
+    current_z = (*stored)[2] * impl_->config.millimetres_per_unit;
+    (*stored)[2] = 0;
+    other_offsets = std::ranges::any_of(*stored, [](double value) { return value != 0; });
+  }
+  if (std::abs(current_z) > 1e-6) {
+    if (other_offsets || std::abs(current_z - *impl_->air_offset) > 1e-6) {
+      inform("The current G52/G92 Z offset differs from the air-cut record. Verify the offset "
+             "before clearing the record.");
+      return;
+    }
+    if (auto result = write_air_offset(0, wanted); !accepted(result)) {
+      if (wanted())
+        inform("Could not clear the temporary air-cut offset. " + result.reason);
+      return;
+    }
+  }
+  std::error_code error;
+  std::filesystem::remove(impl_->air_marker, error);
+  if (error) {
+    inform("The air-cut offset cleared, but its recovery record could not be removed.");
+    return;
+  }
+  impl_->air_offset.reset();
+  impl_->air_running = false;
+  impl_->air_recovery_reported = false;
+  impl_->air_z = 0;
+  impl_->publish_air();
+  impl_->messages.push_back({false, "Temporary air-cut offset cleared."});
 }
 
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
@@ -2263,6 +2624,26 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
 }
 
 auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
+  if (!impl_->breakpoint && status().controller.breakpoint_program)
+    return failed("The breakpoint source is unavailable. Stop and reopen the original program.");
+  if (impl_->breakpoint_recovered && impl_->breakpoint && status().controller.breakpoint_program) {
+    // After an app restart the panel loaded the source again. It must still agree with the
+    // execution copy before the operator can resume a recovered pause.
+    constexpr std::size_t limit = (std::size_t{16} << 20) + 256;
+    const auto original = read_text_file(impl_->breakpoint->original, limit);
+    const auto saved = read_text_file(impl_->breakpoint->temporary, limit);
+    const auto matches = [&] {
+      if (!original || !saved)
+        return false;
+      const auto expected =
+          with_breakpoint(*original, impl_->breakpoint->line, impl_->breakpoint->receipt);
+      return expected && *expected == *saved;
+    };
+    if (!matches())
+      return failed("The original program changed. Stop and reopen it before running again.");
+    impl_->breakpoint_recovered = false;
+  }
+  const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -2270,8 +2651,14 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_RESUME message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
-  return impl_->settled(from, "LinuxCNC did not resume.",
-                        [](const EMC_STAT& now) -> bool { return now.task.task_paused == 0; });
+  auto resumed = impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
+    return now.task.task_paused == 0 ||
+           (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
+  });
+  if (accepted(resumed) && at_breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
+      !impl_->save_breakpoint())
+    impl_->messages.push_back({true, "Could not save that the breakpoint has resumed."});
+  return resumed;
 }
 
 auto NmlPort::step(const Wanted& wanted) -> ActionResult {
@@ -2284,6 +2671,7 @@ auto NmlPort::step(const Wanted& wanted) -> ActionResult {
 }
 
 auto NmlPort::abort() -> ActionResult {
+  impl_->air_running = false;
   const auto from = impl_->begin(nullptr);
   const Impl::Scope scope{*impl_};
   if (impl_->loads)

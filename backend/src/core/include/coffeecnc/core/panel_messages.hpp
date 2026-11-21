@@ -123,6 +123,12 @@ struct RestartHint {
   friend auto operator==(const RestartHint&, const RestartHint&) -> bool = default;
 };
 
+struct ProgramBreakpoint {
+  int line{};
+  bool reached{};
+  friend auto operator==(const ProgramBreakpoint&, const ProgramBreakpoint&) -> bool = default;
+};
+
 struct ProgramStatus {
   std::optional<std::string> file; // path of the loaded program
   // Changes whenever a program is loaded or reloaded; matches ProgramText::revision.
@@ -132,6 +138,9 @@ struct ProgramStatus {
   bool optional_stop{};
   bool block_delete{};
   std::optional<RestartHint> restart_hint{};
+  double air_z{};
+  bool air_offset_owned{};
+  std::optional<ProgramBreakpoint> breakpoint{};
   friend auto operator==(const ProgramStatus&, const ProgramStatus&) -> bool = default;
 };
 

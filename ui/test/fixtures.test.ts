@@ -132,6 +132,7 @@ const examples: Examples = {
   plan_restart: { id: 31, type: 'plan_restart', line: 25, preview_context: 7 },
   start_restart: { id: 32, type: 'start_restart', plan_id: 3 },
   edit_program: { id: 33, type: 'edit_program', path: '/home/cnc/nc_files/part.ngc', line: 12, old_text: 'G1 X10 F600', new_text: 'G1 X10 F450' },
+  set_air_cut: { id: 34, type: 'set_air_cut', air_z: 25 },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -111,6 +111,9 @@ public:
   [[nodiscard]] virtual auto take_messages() -> std::vector<ControllerMessage> = 0;
   // The worker may perform deferred startup work between operator requests.
   virtual void idle_maintenance(const Wanted&) {}
+  [[nodiscard]] virtual auto set_air_cut(double) -> ActionResult {
+    return {ActionStatus::failed, "Air cut is unavailable."};
+  }
 
   [[nodiscard]] virtual auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult = 0;
@@ -148,6 +151,10 @@ public:
     if (!current())
       return {ActionStatus::failed, "The program check changed. Review the current results."};
     return run(wanted);
+  }
+  [[nodiscard]] virtual auto run_to_breakpoint(const PreviewInputs&, std::string_view, int,
+                                               const Wanted&, const Wanted&) -> ActionResult {
+    return {ActionStatus::failed, "Program breakpoints are unavailable on this controller."};
   }
   // Validates the approach without sending controller commands and updates its clearance.
   [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {

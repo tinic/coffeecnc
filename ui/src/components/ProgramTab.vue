@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
-import { chooseProgramLayout, findTool, live, onResult, panel, reported, send } from '../machine'
+import { allHomed, chooseProgramLayout, findTool, homingRequired, live, onResult, panel, reported, send } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { airLiftLabel, currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
-import { formatLength, formatVelocity, toolLabel, velocityUnit } from '../units'
+import { formatLength, formatVelocity, fromDisplay, toolLabel, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import NcText from './NcText.vue'
 import PathView from './PathView.vue'
@@ -24,7 +25,38 @@ const status = reported
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
 const checkOpen = ref(false)
-const check = computed(() => describeProgramCheck(currentProgramPreview(panel.preview, status.value), panel.unit))
+const airEditor = ref<{ initial: string; unit: typeof panel.unit; revision: number } | null>(null)
+const airError = ref('')
+const airZ = computed(() => status.value?.program.air_z ?? 0)
+const airOwned = computed(() => status.value?.program.air_offset_owned === true)
+const airLabel = computed(() => airZ.value > 0 ? `Air cut · Z ${airLiftLabel(airZ.value, panel.unit)}`
+  : airOwned.value ? 'Clearing air cut' : 'Air cut')
+const airEditable = computed(() => live.value && status.value?.interp === 'idle' &&
+  status.value.motion.in_position && !airOwned.value && !status.value.program.breakpoint)
+function openAirCut(): void {
+  if (!airEditable.value || !status.value?.program.file) return
+  airError.value = ''
+  airEditor.value = { initial: formatLength(airZ.value || 25, panel.unit), unit: panel.unit,
+    revision: status.value.program.revision }
+}
+function selectAirCut(value: number): void {
+  const editor = airEditor.value
+  if (!editor) return
+  if (!airEditable.value || status.value?.program.revision !== editor.revision) {
+    airError.value = 'The machine or loaded program changed. Reopen Air cut.'
+    return
+  }
+  const lift = fromDisplay(value, editor.unit)
+  if (lift < 0 || lift > 1000 || lift > 0 && lift < 0.001) {
+    airError.value = 'Enter a positive lift up to 1,000 mm, or 0 to turn air cut off.'
+    return
+  }
+  send({ type: 'set_air_cut', air_z: lift })
+  if (lift) breakpointSelection.value = null
+  airEditor.value = null
+}
+const checkedPreview = computed(() => currentProgramPreview(panel.preview, status.value))
+const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const checkLabel = computed(() => check.value === null ? 'Checking program'
   : check.value.errors.length ? 'Cycle start blocked'
   : check.value.warnings.length ? 'Review program warnings'
@@ -83,6 +115,7 @@ const runState = computed(() => {
   const s = status.value
   if (s === null || machineBlock(panel) !== null) return ''
   if (s.wait.kind === 'tool_change') return `Waiting for tool ${String(s.wait.tool)}`
+  if (s.program.breakpoint?.reached) return 'Breakpoint reached'
   if (s.wait.kind === 'dwell') return 'Dwelling'
   if (!s.motion.in_position || s.motion.velocity > 0) return 'Machine moving'
   return s.program.file ? 'Program loaded · machine idle' : 'No program loaded'
@@ -119,13 +152,32 @@ const timeNote = computed(() => time.value?.unknownFeeds === true
 
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
 const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
-  sections.value.length > 0)
+  sections.value.length > 0 && !airZ.value && !airOwned.value && !status.value.program.breakpoint)
+const activeBreakpoint = computed(() => status.value?.program.breakpoint)
+const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value)?.line ?? 0)
+const breakpointBlock = computed(() => machineBlock(panel, true) ??
+  (homingRequired.value && !allHomed.value ? 'Axes are not homed' : null) ??
+  (status.value?.interp !== 'idle' || !status.value.motion.in_position ? 'Stop the program before running to a line' : null))
+const breakpointLines = computed(() => {
+  const preview = checkedPreview.value
+  return new Set(canRestart.value && preview?.state === 'ready' && preview.check
+    ? preview.segments.map((segment) => segment.line) : [])
+})
+const breakpointLabel = computed(() => activeBreakpoint.value?.reached
+  ? `Paused before line ${String(breakpointLine.value)}` : `Pause before line ${String(breakpointLine.value)}`)
+function chooseBreakpoint(line: number): void {
+  const loaded = status.value?.program
+  const text = program.value?.lines[line - 1]
+  if (breakpointBlock.value === null && loaded?.file && text !== undefined && breakpointLines.value.has(line))
+    breakpointSelection.value = { file: loaded.file, revision: loaded.revision, line, text }
+}
 const restartAt = ref<{ line: number; section: string } | null>(null)
 function sectionName(index: number): string {
   const section = sections.value[index]
   return section === undefined ? '' : `Section ${String(index + 1)} · ${toolLabel(section.tool)}`
 }
 function restartLine(line: number): void {
+  breakpointSelection.value = null
   let index = -1
   sections.value.forEach((section, candidate) => { if (section.first <= line) index = candidate })
   restartAt.value = { line, section: index < 0 ? 'Before the first tool section' : sectionName(index) }
@@ -134,7 +186,9 @@ function restartLine(line: number): void {
 const stoppedAt = computed(() => canRestart.value ? status.value?.program.restart_hint ?? null : null)
 function restartSection(index: number): void {
   const section = sections.value[index]
-  if (section !== undefined) restartAt.value = { line: section.first, section: sectionName(index) }
+  if (section === undefined) return
+  breakpointSelection.value = null
+  restartAt.value = { line: section.first, section: sectionName(index) }
 }
 // Changing one feed or speed number of the loaded program; the machine saves and reopens it.
 const editing = ref<{ line: number; text: string; word: RateWord; error: string } | null>(null)
@@ -184,6 +238,18 @@ async function showFailure(): Promise<void> {
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
           <div class="scene-actions">
             <button
+              v-if="breakpointLine" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
+              :aria-label="activeBreakpoint ? breakpointLabel : 'Clear breakpoint'" @click="breakpointSelection = null"
+            >
+              {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />
+            </button>
+            <button
+              v-if="status?.program.file || airOwned" class="btn air-cut" :class="{ selected: airZ || airOwned }"
+              type="button" :disabled="!airEditable" :aria-pressed="airZ > 0 || airOwned" @click="openAirCut"
+            >
+              {{ airLabel }}
+            </button>
+            <button
               v-if="status?.program.file" type="button" class="btn program-check"
               :title="checkLabel" :aria-label="`Program check · ${checkLabel}`"
               :class="{ blocked: check?.errors.length, review: check?.warnings.length }"
@@ -198,7 +264,12 @@ async function showFailure(): Promise<void> {
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
-            <NcText v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart" @restart="restartLine" @edit-rate="editRate" />
+            <NcText
+              v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart"
+              :breakpoint-line="breakpointLine" :breakpoint-lines="breakpointLines" :breakpoint-reached="activeBreakpoint?.reached === true"
+              :breakpoint-block="breakpointBlock"
+              @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
+            />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'" />
@@ -245,7 +316,12 @@ async function showFailure(): Promise<void> {
       action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
     />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
-    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
+    <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :air-z="airZ" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />
+    <NumberDialog
+      v-if="airEditor" title="Air cut" label="Z lift" :initial="airEditor.initial" :unit="airEditor.unit"
+      effect="Raise Z for the next run. Enter 0 to turn air cut off." action="Apply lift" :error="airError"
+      @confirm="selectAirCut" @close="airEditor = null"
+    />
     <div class="status-row"><span>{{ runState }}</span><MachineFeedback class="program-feedback" /><span class="run-time mono" :title="timeNote">{{ timeLabel }}</span><span class="line-count mono">{{ lineLabel }}</span></div>
   </div>
 </template>
@@ -257,7 +333,10 @@ async function showFailure(): Promise<void> {
 .scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
-.program-check { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check, .air-cut, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
+.breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
+.air-cut.selected { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); opacity: 1; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-check.blocked { color: var(--stop); }
 .program-check.review:not(.blocked) { color: var(--accent); }

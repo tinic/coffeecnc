@@ -21,6 +21,9 @@
 
 namespace coffeecnc {
 
+// Translate LinuxCNC's private execution file and its extra M0 line to the loaded program.
+void map_breakpoint(NmlStatus& status, const BreakpointSource* source);
+
 // Text of a fixed-size, NUL-terminated NML string field, without trailing white space.
 [[nodiscard]] auto text_of(std::span<const char> field) -> std::string;
 

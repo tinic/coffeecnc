@@ -20,12 +20,11 @@ export const runClock = reactive({
 const executing = computed(() => {
   const s = panel.status
   if (s?.machine !== 'on') return false
-  if (s.program.cycle !== undefined && !s.program.air_offset_owned && !s.program.air_z)
+  if (s.program.cycle !== undefined)
     return s.program.cycle === 'running'
   return s.mode === 'auto' && (s.interp !== 'idle' || s.wait.kind !== 'none' || !s.motion.in_position)
 })
 
-let airCut = false
 watch(() => panel.status?.program.file ?? null, (file) => {
   if (file === runClock.file) return
   runClock.file = file
@@ -38,10 +37,9 @@ watch(executing, (running, was) => {
   runClock.now = now
   if (running && !was) {
     runClock.startedAt = now
-    airCut = (panel.status?.program.air_z ?? 0) > 0 || panel.status?.program.air_offset_owned === true
   } else if (!running && was && runClock.startedAt !== null) {
     const s = panel.status
-    const completed = s?.machine === 'on' && !airCut &&
+    const completed = s?.machine === 'on' &&
       (s.program.cycle === undefined ? s.program.restart_hint === undefined : s.program.cycle === 'completed')
     if (completed) {
       runClock.lastSeconds = (now - runClock.startedAt) / 1000

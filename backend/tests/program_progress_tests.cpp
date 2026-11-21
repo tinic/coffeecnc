@@ -98,14 +98,6 @@ void stops_and_reloads(const fs::path& directory) {
   require(!reopened.status.program.restart_hint && reopened.status.program.cycle == ProgramCycle::completed,
           "A completed run confirms the completed cycle and removes the saved hint.");
   moves_on_line(reopened, 3);
-  reopened.status.program.air_offset_owned = true;
-  reloaded.observe(reopened, now + 600ms);
-  at_rest(reopened);
-  reopened.status.program.air_offset_owned = false;
-  reloaded.observe(reopened, now + 700ms);
-  require(!reopened.status.program.restart_hint && reopened.status.program.cycle == ProgramCycle::idle,
-          "An air cut leaves neither a cutting restart hint nor a completed cycle.");
-  moves_on_line(reopened, 3);
   reloaded.observe(reopened, now + 2s);
   // A process or power loss may occur while moving; the record is already on disk.
   ProgramProgress power_loss{files, directory.string()};

@@ -312,10 +312,6 @@ auto NmlPanelSource::read() -> PanelReading {
                                            .motion_line = 0,
                                            .optional_stop = reading.status.program.optional_stop,
                                            .block_delete = reading.status.program.block_delete};
-  if (impl_->loads) {
-    reading.status.program.air_z = impl_->loads->air_z.load();
-    reading.status.program.air_offset_owned = impl_->loads->air_offset_owned.load();
-  }
   reading.tool_table = impl_->tool_table;
   reading.accepted_tools = impl_->withheld;
   reading.preview_tools = impl_->preview_tools;

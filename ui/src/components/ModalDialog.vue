@@ -25,7 +25,7 @@ onBeforeUnmount(() => {
       <section class="dialog" :class="size" role="dialog" :aria-label="title">
         <header>
           <h2>{{ title }}</h2>
-          <button v-tooltip="'Close'" class="btn quiet square" type="button" @click="emit('close')">
+          <button v-tooltip="'Close'" aria-label="Close" class="btn quiet square" type="button" @click="emit('close')">
             <AppIcon name="close" />
           </button>
         </header>

@@ -21,7 +21,7 @@ const available = computed(() => live.value && Boolean(panel.status?.program.fil
 const bounds = computed(() => part.attachment?.geometry.bounds)
 const summary = computed(() => part.loading ? 'Importing STEP…' : part.attachment === null ? 'Attach STEP model' : part.attachment.name)
 const detail = computed(() => part.attachment
-  ? partBlock || (part.placed ? 'Placement set by operator' : 'Placement unconfirmed')
+  ? partBlock.value || (part.placed ? 'Placement set by operator' : 'Placement unconfirmed')
   : part.error)
 watch([open, (): unknown => part.attachment], () => {
   translation.value = part.placement.translation.map(String) as [string, string, string]
@@ -68,7 +68,9 @@ function apply(): void {
       v-tooltip="detail ? summary + ' · ' + detail : summary" class="attach" type="button"
       :class="{ on: part.attachment && part.visible }" :aria-label="'STEP · ' + summary" aria-haspopup="dialog"
       @click="open = true"
-    >STEP</button>
+    >
+      STEP
+    </button>
     <span class="model-status" role="status">{{ summary }}{{ detail ? ' · ' + detail : '' }}</span>
   </div>
   <ModalDialog v-if="open" title="Part model · STEP" size="medium" @close="open = false">

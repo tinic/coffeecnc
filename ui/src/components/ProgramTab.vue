@@ -93,16 +93,22 @@ const lineLabel = computed(() => {
   }
   return `${String(count)} ${count === 1 ? 'line' : 'lines'}${program.value.truncated ? ' shown' : ''}`
 })
-const activeLine = computed(() => status.value?.program.breakpoint?.reached
-  ? status.value.program.breakpoint.line : motionLine.value || currentLine.value)
+const activeLine = computed(() => {
+  if (!programExecuting.value) return 0
+  const breakpoint = status.value?.program.breakpoint
+  return breakpoint?.reached ? breakpoint.line : currentLine.value || motionLine.value
+})
 const runState = computed(() => {
   const s = status.value
-  if (!s || !live.value) return ''
-  if (s.wait.kind === 'tool_change') return `Change tool · ${toolLabel(s.wait.tool)}`
-  if (s.wait.kind === 'paused')
+  if (!s || !live.value || s.machine !== 'on' || s.axes.some(axis => axis.homing)) return ''
+  if (programExecuting.value && s.wait.kind === 'tool_change') return `Change tool · ${toolLabel(s.wait.tool)}`
+  if (programExecuting.value && s.wait.kind === 'paused')
     return activeLine.value ? `Paused at line ${String(activeLine.value)}` : 'Paused'
   const tool = spindleTool.value > 0 ? ` · ${toolLabel(spindleTool.value)}` : ''
-  return `${programExecuting.value ? 'Running' : 'Idle'}${tool}`
+  if (programExecuting.value) return `Running${tool}`
+  if (!s.motion.in_position) return 'Machine moving'
+  if (s.interp !== 'idle') return ''
+  return `Idle${tool}`
 })
 // Cycle time from the drawn preview: before the run the estimate, during it elapsed and left.
 const time = computed(() => {

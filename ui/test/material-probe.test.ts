@@ -192,6 +192,8 @@ describe('material probe workflow', () => {
     const fixture = await probe('X+')
     expect(fixture.get('.setter-band.blocked p').text()).toBe('A program is running')
     status.interp = 'idle'; status.tool.in_spindle = 1
+    await nextTick()
+    expect(fixture.get('.setter-band.info p').text()).toBe('Load T99 to probe material.')
     await probe('Z top')
     expect(fixture.get('.setter-band.blocked p').text()).toBe('Load T99 to probe material.')
     expect(send).not.toHaveBeenCalled()

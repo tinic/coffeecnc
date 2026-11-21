@@ -87,7 +87,7 @@ describe('program execution context', () => {
     panel.status.program.current_line = line; panel.status.program.motion_line = line
     panel.program.truncated = false
     wrapper = shallowMount(ProgramTab)
-    expect(wrapper.get('.status-row').text()).toContain('Program loaded · machine idle')
+    expect(wrapper.get('.status-row').text()).toContain('Idle')
     expect(wrapper.get('.status-row').text()).toContain('2 lines')
     expect(wrapper.get('.status-row').text()).not.toContain('Line ')
     expect(wrapper.getComponent(NcText).props()).toMatchObject({ currentLine: 0, motionLine: 0 })

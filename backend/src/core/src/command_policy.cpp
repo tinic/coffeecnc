@@ -131,10 +131,12 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
           return reject(
               "Z is still lifted. Turn machine power off and on to clear the offset here.");
 
-        // A controller that requires homing may refuse the MDI cleanup until it is homed.
-        if (s.air_offset_recovery && !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
-            !(std::is_same_v<T, Home> && limits_.homing_required && !homed(s)))
-          return reject("Wait for the temporary air-cut offset to clear.");
+        if constexpr (std::is_same_v<T, Run> || std::is_same_v<T, Step> ||
+                      std::is_same_v<T, Resume> || std::is_same_v<T, PlanRestart> ||
+                      std::is_same_v<T, StartRestart>) {
+          if (s.unresolved_legacy_offset)
+            return reject("Use the previous CoffeeCNC version to clear its temporary Z offset, then restart CoffeeCNC.");
+        }
 
         if constexpr (std::is_same_v<T, Quit>) {
           if (s.interp != InterpState::idle)
@@ -205,25 +207,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, Run>) {
           if (!s.program_loaded)
             return reject("Load a program first.");
-          if (c.air_z != s.air_z)
-            return reject("The air-cut selection changed. Review the current preview.");
           if (s.breakpoint_program)
             return reject("Wait for the original program to reopen after the breakpoint run.");
-          if (c.breakpoint && c.air_z != 0)
-            return reject("Turn off air cut before running to a breakpoint.");
-          const auto decision = idle(s, TaskMode::automatic, limits_.homing_required);
-          return decision.allowed && c.air_z > 0 ? allow() : decision;
-        } else if constexpr (std::is_same_v<T, SetAirCut>) {
-          if (!between(c.air_z, 0, 1000) || (c.air_z > 0 && c.air_z < 0.001))
-            return reject(
-                "Air-cut lift must be between 0.001 and 1,000 mm, or zero to turn it off.");
-          if (c.air_z > 0 && !s.program_loaded)
-            return reject("Load a program first.");
-          if (s.breakpoint_program)
-            return reject("Wait for the breakpoint run to finish.");
-          if (s.interp != InterpState::idle || !s.in_position || s.air_offset_owned)
-            return reject("Stop the program before changing the air-cut lift.");
-          return allow();
+          return idle(s, TaskMode::automatic, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, EditProgram>) {
           if (!s.program_loaded)
             return reject("Load a program first.");
@@ -235,8 +221,6 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, PlanRestart> || std::is_same_v<T, StartRestart>) {
           if (s.breakpoint_program)
             return reject("Wait for the breakpoint run to finish.");
-          if (s.air_z > 0 || s.air_offset_owned)
-            return reject("Turn off air cut before restarting from a line.");
           if (!s.program_loaded)
             return reject("Load a program first.");
           const auto decision = idle(s, TaskMode::mdi, limits_.homing_required);
@@ -271,8 +255,6 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
             return reject("Use Resume to return Z before continuing.");
           if (s.breakpoint_program)
             return reject("Use Resume to continue the breakpoint run.");
-          if (s.air_z > 0 || s.air_offset_owned)
-            return reject("Turn off air cut before using single block.");
           if (!s.program_loaded || s.machine != MachineState::on || s.requested_tool)
             return reject("Single block needs a loaded program and no pending tool change.");
           if (limits_.homing_required && !homed(s))
@@ -313,8 +295,6 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s) c
         } else if constexpr (std::is_same_v<T, SetProgramOption>) {
           if (c.option == ProgramOption::block_delete && s.breakpoint_program)
             return reject("Stop the breakpoint run before changing block delete.");
-          if (c.option == ProgramOption::block_delete && s.air_offset_owned)
-            return reject("Stop the air cut before changing block delete.");
           if (c.option != ProgramOption::optional_stop && c.option != ProgramOption::block_delete)
             return reject("Unknown program option.");
           if (c.option == ProgramOption::block_delete && s.interp != InterpState::idle)

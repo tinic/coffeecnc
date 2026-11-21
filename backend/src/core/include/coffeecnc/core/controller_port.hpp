@@ -111,9 +111,6 @@ public:
   [[nodiscard]] virtual auto take_messages() -> std::vector<ControllerMessage> = 0;
   // The worker may perform deferred startup work between operator requests.
   virtual void idle_maintenance(const Wanted&) {}
-  [[nodiscard]] virtual auto set_air_cut(double) -> ActionResult {
-    return {ActionStatus::failed, "Air cut is unavailable."};
-  }
 
   [[nodiscard]] virtual auto set_machine_state(MachineState state, const Wanted& wanted)
       -> ActionResult = 0;

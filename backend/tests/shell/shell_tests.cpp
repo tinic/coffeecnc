@@ -830,7 +830,7 @@ void operator_error(const Rig& rig, const std::filesystem::path& programs) {
   const bool logged = rig.wait_js("/contact/i.test(__t.text(document.querySelector('section.dialog')))");
   check("dismissed_error_stays_in_the_log", logged,
         rig.js("return __t.text(document.querySelector('section.dialog')).slice(0, 300);").dump());
-  check("panel_closes_message_log", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
+  check("panel_closes_message_log", rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok");
   rig.js("document.querySelector('details.state-menu').open = false;");
   const bool idle = rig.wait(5s, [&]() -> bool {
     return rig.status().controller.interp == InterpState::idle;
@@ -1261,7 +1261,7 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                    word(rig.js("return __t.text(__t.find('p.hint', 'CAD size'));").dump())));
   check("paired_sample_model_imported", imported);
   check("panel_closes_sample_dialog",
-        rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+        rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok" &&
             rig.wait_js("!document.querySelector('section.dialog')"));
   const auto unplaced_text = summary();
   const auto unplaced = scene("model_attached_placement_unconfirmed");
@@ -1280,7 +1280,7 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
                       rig.js("const box = document.querySelector('section.dialog .display-row "
                              "input[type=checkbox]'); if (box.checked) box.click(); "
                              "return !box.checked;") == true &&
-                      rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+                      rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok" &&
                       rig.wait_js("!document.querySelector('section.dialog')");
   const auto without_model = scene("part_hidden_by_the_operator");
   check("paired_sample_part_is_drawn_over_the_path",
@@ -1553,7 +1553,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
         invalid.value("finished", false) && invalid.at("error") != "" &&
             invalid.at("identity") == lego.at("identity"),
         invalid.dump());
-  check("panel_closes_model_dialog", rig.click("section.dialog button[title=\"Close\"]", "") == "ok" &&
+  check("panel_closes_model_dialog", rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok" &&
                                          rig.wait_js("!document.querySelector('section.dialog')"));
   // (b) again: the scene's WebGL2 canvas exists and its context is alive. That is the layer a
   // part would be drawn in; with the part hidden, nothing of a part is in it.
@@ -1617,7 +1617,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   }
   rig.snapshot("tool-model");
   status_gaps(rig, "platform.tool_model");
-  check("panel_closes_tool_model", rig.click("section.dialog button[title=\"Close\"]", "") == "ok");
+  check("panel_closes_tool_model", rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok");
   check("panel_closes_combined_editor", rig.wait_js("!document.querySelector('.tool-fields')"));
   rig.snapshot("tools-tab");
   // The work offset table of the Tools tab: only the active system has numbers.

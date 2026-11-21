@@ -60,19 +60,24 @@ describe('tapping a feed in the code list', () => {
   let wrapper: VueWrapper | null = null
   afterEach(() => { wrapper?.unmount(); wrapper = null; vi.unstubAllGlobals() })
 
-  it('offers F and S words only while the program is idle', async () => {
+  it('offers F and S words on the selected line and clears them with the footer button', async () => {
     Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } })
     vi.stubGlobal('ResizeObserver', class { observe(): void { /* fixed */ } disconnect(): void { /* none */ } })
-    const pane = mount(NcText, { props: { lines: ['G21', 'G1 X10 F600'], motionLine: 0, currentLine: 0, errorLine: 0, restartable: false } })
+    const pane = mount(NcText, { props: { lines: ['S1500 M3', 'G1 X10 F600'], motionLine: 0, currentLine: 0, errorLine: 0, restartable: false } })
     wrapper = pane
     await nextTick()
     expect(pane.find('.editable').exists()).toBe(false)
     await pane.setProps({ restartable: true })
+    expect(pane.find('.editable').exists()).toBe(false)
+    await pane.findAll('.row')[1]?.get('.number').trigger('click')
+    expect(pane.findAll('.editable')).toHaveLength(1)
     const feed = pane.get('.editable')
     expect(feed.text()).toContain('600')
     await feed.trigger('click')
     const [line, offset] = pane.emitted<[number, number]>('editRate')?.[0] ?? [0, 0]
     expect(line).toBe(2)
     expect(rateWords('G1 X10 F600').find((word) => word.end > offset)?.value).toBe(600)
+    await pane.get('[aria-label="Clear selected line"]').trigger('click')
+    expect(pane.find('.editable').exists()).toBe(false)
   })
 })

@@ -30,7 +30,6 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.tools = reading.accepted_tools.value_or(reading.tool_table.tools);
   inputs.raw_tools = reading.preview_tools;
   inputs.block_delete = status.program.block_delete;
-  inputs.air_z = status.program.air_z;
   inputs.start.wcs = status.offsets.wcs;
   inputs.start.program_units = status.program_units;
   inputs.start.position = rest_position;
@@ -59,7 +58,7 @@ void PanelComposer::count(const PanelReading& reading) {
   }
   // The interpreter can already be idle while AUTO still has motion or a wait outstanding.
   const bool automatic = status.mode == TaskMode::automatic && status.program.file.has_value();
-  const bool running = status.program.air_offset_owned || status.program.breakpoint ||
+  const bool running = status.program.breakpoint ||
                        status.interp != InterpState::idle ||
                        (automatic && (reading.task_executing || !status.motion.in_position ||
                                       !std::holds_alternative<WaitNone>(status.wait)));

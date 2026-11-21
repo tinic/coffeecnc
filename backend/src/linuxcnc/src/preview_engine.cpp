@@ -795,8 +795,7 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     return value != nullptr ? std::optional<std::string>{value} : std::nullopt;
   };
   const auto positive = [&](const char* section, const char* key) -> bool {
-    const auto value = text(section, key);
-    return value && std::atoi(value->c_str()) > 0;
+    return linuxcnc_switch(text(section, key).value_or(""));
   };
   const auto physical_min = text("COFFEECNC", "TRAVEL_MIN_MM");
   const auto physical_max = text("COFFEECNC", "TRAVEL_MAX_MM");

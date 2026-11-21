@@ -288,6 +288,14 @@ auto inspect_machine_ini(const std::string& ini_file)
   return result;
 }
 
+auto linuxcnc_switch(std::string_view value) -> bool {
+  if (value.starts_with('+') && value.size() > 1 && value[1] != '-')
+    value.remove_prefix(1);
+  int number{};
+  const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+  return !value.empty() && error == std::errc{} && end == value.data() + value.size() && number != 0;
+}
+
 auto parse_jog_increments(std::string_view text, double millimetres_per_unit)
     -> std::expected<std::vector<double>, std::string> {
   // As AXIS reads the list: a comma anywhere makes commas the separators, and `1 mm` one entry.
@@ -563,7 +571,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
       .touch_probe_tool = probe_tool,
-      .remember_spindle_tool = ini.real("EMCIO", "RANDOM_TOOLCHANGER").value_or(0) == 0 &&
+      .remember_spindle_tool = !linuxcnc_switch(ini.text("EMCIO", "RANDOM_TOOLCHANGER").value_or("")) &&
                                ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
       .paused_z = paused_z,
       .motion_tolerances = tolerances,

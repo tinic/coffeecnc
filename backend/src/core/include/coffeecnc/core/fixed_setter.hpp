@@ -36,6 +36,10 @@ enum class SetterAction : std::uint8_t {
   check,
   material,
   corner,
+  inside_corner,
+  pocket,
+  slot,
+  ridge,
   ball,
   bore,
   boss,
@@ -43,6 +47,11 @@ enum class SetterAction : std::uint8_t {
   apply_angle
 };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
+
+constexpr auto is_material_probe(SetterAction action) -> bool {
+  return action != SetterAction::status && action != SetterAction::touch_off &&
+         action != SetterAction::check;
+}
 
 struct FixedSetterRequest {
   SetterAction action;
@@ -53,7 +62,8 @@ struct FixedSetterRequest {
   // For a corner, the Y travel (y_minus or y_plus).
   ProbeDirection y_direction{ProbeDirection::y_plus};
   // For a ball calibration, the width in X of the gauge the probe starts over; for a boss, its
-  // approximate diameter; for an edge angle, how far apart along the edge it probes. Millimetres.
+  // approximate diameter; for a ridge, the approximate width; for an edge angle, how far apart
+  // along the edge it probes. Millimetres.
   double gauge_width_mm{};
   std::uint64_t edge_measurement{}; // controller-issued ID for apply_angle
 };
@@ -101,6 +111,8 @@ struct SetterState {
   };
   // Present on a measurement that can be confirmed as a G5x rotation.
   std::optional<EdgeRotation> edge_rotation{};
+  // Physical widths from the probed faces, in mm. A slot or ridge has only one measured axis.
+  std::array<std::optional<double>, 2> feature_size{};
 };
 
 } // namespace coffeecnc

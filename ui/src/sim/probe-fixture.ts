@@ -8,6 +8,7 @@ export const demoSetter: FixedSetterLimits = {
   reference_tool: 98, travel_mm: 30, feed_mm_min: 900, latch_feed_mm_min: 300, latch_backoff_mm: 1,
   xy_tolerance_mm: 0.5, clearance_mm: 12, material_travel_mm: 35,
   check_tolerance_mm: 0.1,
+  material_features: true,
 }
 export const demoProbeTools: readonly Tool[] = [
   { number: 98, pocket: 98, length: 52, diameter: 6, comment: 'Setter reference' },
@@ -22,11 +23,15 @@ interface Fixture {
   stock: ProbeBlock
   slanted: ProbeBlock
   gauge: ProbeBlock
+  pocket: ProbeBlock
+  slot: ProbeBlock
+  ridge: ProbeBlock
   bore: [number, number]
   boss: [number, number]
   setter: Vec3
   top: number
   stockHeight: number
+  recessDepth: number
   boreRadius: number
   bossRadius: number
   setterHeight: number
@@ -36,20 +41,24 @@ export const demoFixture: Fixture = {
   stock: { centre: [150, 100], half: [40, 30], angle: 0 },
   slanted: { centre: [255, 85], half: [40, 30], angle: 3 },
   gauge: { centre: [285, 190], half: [12, 15], angle: 0 },
+  pocket: { centre: [172, 85], half: [12, 9], angle: 0 },
+  slot: { centre: [125, 110], half: [6, 14], angle: 0 },
+  ridge: { centre: [343, 146], half: [8, 16], angle: 0 },
   bore: [155, 108], boss: [235, 170], setter: [55, 55, -150],
-  top: -120, stockHeight: 18, boreRadius: 10, bossRadius: 12,
+  top: -120, stockHeight: 18, recessDepth: 12, boreRadius: 10, bossRadius: 12,
   setterHeight: 12, setterRadius: 10,
 }
 
 export function probeFixtureBounds(): { min: Vec3; max: Vec3 } {
-  const { stock, slanted, gauge, boss, bossRadius, setter, setterRadius, setterHeight, top } = demoFixture
+  const { stock, slanted, gauge, ridge, boss, bossRadius, setter, setterRadius, setterHeight, top } = demoFixture
   const skew = slanted.angle * Math.PI / 180
   const skewX = Math.cos(skew) * slanted.half[0] + Math.sin(skew) * slanted.half[1]
   const skewY = Math.cos(skew) * slanted.half[1] + Math.sin(skew) * slanted.half[0]
   return {
     min: [Math.min(stock.centre[0] - stock.half[0], setter[0] - setterRadius),
       Math.min(slanted.centre[1] - skewY, setter[1] - setterRadius), setter[2] - setterHeight],
-    max: [Math.max(slanted.centre[0] + skewX, gauge.centre[0] + gauge.half[0], boss[0] + bossRadius),
+    max: [Math.max(slanted.centre[0] + skewX, gauge.centre[0] + gauge.half[0],
+      ridge.centre[0] + ridge.half[0], boss[0] + bossRadius),
       Math.max(gauge.centre[1] + gauge.half[1], boss[1] + bossRadius), top],
   }
 }

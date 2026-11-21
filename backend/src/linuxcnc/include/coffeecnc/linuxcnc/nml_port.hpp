@@ -121,6 +121,7 @@ struct FixedSetterMove {
   std::optional<double> retract_z{};
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};
+  bool return_to_clearance{}; // lift on the search-start XY with the probe interlock still active
 };
 
 struct FixedSetterContact {

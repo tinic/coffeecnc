@@ -104,6 +104,10 @@ function openCheck(): void {
   error.value = null
   if (allow(startBlock('check'))) guide.value = { kind: 'check' }
 }
+function openTouchOff(): void {
+  error.value = null
+  if (allow(startBlock('touch_off'))) guide.value = { kind: teaching.value ? 'teach' : 'measure' }
+}
 function startGuide(): void {
   const action = guide.value?.kind === 'check' ? 'check' : 'touch_off'
   guide.value = null
@@ -142,7 +146,7 @@ onBeforeUnmount(() => {
       <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
       <template v-else>
         <button v-if="limits.check_tolerance_mm !== undefined" class="btn check-length" type="button" @click="openCheck">Check length</button>
-        <button class="btn primary" type="button" @click="guide = { kind: teaching ? 'teach' : 'measure' }">Touch off</button>
+        <button class="btn primary" type="button" @click="openTouchOff">Touch off</button>
       </template>
     </div>
   </div>

@@ -118,8 +118,9 @@ describe('fixed setter workflow', () => {
     expect(getWrapper().get('.setter-band').text()).toBe('')
     expect(getWrapper().get('.setter-action button').attributes('disabled')).toBeUndefined()
     vi.mocked(send).mockClear()
+    // As Check length: the guide opens only when the touch-off can start.
     await press('Touch off')
-    await press('Start probe')
+    expect(getWrapper().find('[role="dialog"]').exists()).toBe(false)
     expect(getWrapper().get('.setter-band p').text()).toBe('Machine is off')
     expect(send).not.toHaveBeenCalled()
   })

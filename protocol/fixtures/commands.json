@@ -248,7 +248,8 @@
             -10
           ]
         }
-      ]
+      ],
+      "go_to_safe_z": 40
     }
   },
   { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },

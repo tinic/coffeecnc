@@ -28,6 +28,8 @@ export interface OperatorPreferences {
   recent_programs: string[]
   /** Positions the operator saved in Manual, machine coordinates in mm; at most sixteen. */
   saved_positions: SavedPosition[]
+  /** Machine Z in mm that Go to lifts to before X and Y move; null: Z max less 0.5 mm. */
+  go_to_safe_z: number | null
 }
 
 export interface SavedPosition {
@@ -84,14 +86,14 @@ export type OperatorSettings = {
 export function defaultOperatorPreferences(): OperatorPreferences {
   return { version: 1, startup_units: 'machine', enabled_wcs: [1, 2, 3, 4, 5, 6, 7, 8, 9],
     default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0, program_layout: 'path', theme: 'light',
-    recent_programs: [], saved_positions: [] }
+    recent_programs: [], saved_positions: [], go_to_safe_z: null }
 }
 
 export function decodeOperatorPreferences(value: unknown): OperatorPreferences | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const keys = ['version', 'startup_units', 'enabled_wcs', 'default_spindle_rpm', 'default_jog_velocity']
-  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'recent_programs', 'saved_positions'].includes(key)) ||
+  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'recent_programs', 'saved_positions', 'go_to_safe_z'].includes(key)) ||
       v['version'] !== 1 || !['machine', 'mm', 'inch'].includes(String(v['startup_units']))) return null
   const systems = v['enabled_wcs']
   if (!Array.isArray(systems) || systems.length < 1 || systems.length > 9 ||
@@ -107,7 +109,12 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
     enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog,
     tool_reference_height: reference, program_layout: decodeProgramLayout(v['program_layout']) ?? 'path',
     theme: decodeTheme(v['theme']) ?? 'light', recent_programs: decodeRecentPrograms(v['recent_programs']),
-    saved_positions: decodeSavedPositions(v['saved_positions']) }
+    saved_positions: decodeSavedPositions(v['saved_positions']), go_to_safe_z: decodeSafeZ(v['go_to_safe_z']) }
+}
+
+/** A damaged or missing safe Z falls back to the default rule without losing the rest. */
+function decodeSafeZ(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e9 ? value : null
 }
 
 export function decodeOperatorSettings(value: unknown): OperatorSettings | null {

@@ -1189,7 +1189,8 @@ const examples = [
             -10
           ]
         }
-      ]
+      ],
+      "go_to_safe_z": 40
     }
   },
   {

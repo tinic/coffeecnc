@@ -6,6 +6,7 @@ import ManualTab from '../src/components/ManualTab.vue'
 import { operatorSettings, panel, send } from '../src/machine'
 import type { OperatorPreferences } from '../src/operator-settings'
 import type { Status } from '../src/protocol'
+import { touchInput, trackNumericInput } from '../src/numeric-input'
 import { hello, SimMachine } from '../src/sim/machine'
 import type { ResultListener } from '../src/store'
 
@@ -66,6 +67,25 @@ const button = (view: VueWrapper, text: string): ReturnType<VueWrapper['get']> =
   return last
 }
 const band = (view: VueWrapper): string => view.get('.jog-status').text()
+/** A tap on the touch screen: touchstart and pointerdown on press, the click on release. */
+async function tap(target: Element | { element: Node }): Promise<void> {
+  const element = target instanceof Element ? target : target.element as Element
+  const touch = (type: string): Event => Object.assign(new Event(type, { bubbles: true, cancelable: true }), { touches: [], changedTouches: [] })
+  element.dispatchEvent(touch('touchstart'))
+  element.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true, cancelable: true }), { pointerType: 'touch' }))
+  element.dispatchEvent(Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'touch' }))
+  element.dispatchEvent(touch('touchend'))
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await nextTick()
+}
+const typeKeys = async (keys: readonly string[]): Promise<void> => {
+  for (const key of keys) {
+    const found = document.querySelector(`button[aria-label="${key}"]`)
+    if (found === null) throw new Error(`No key ${key}`)
+    await tap(found)
+  }
+}
+const nameField = (): HTMLInputElement | null => document.querySelector<HTMLInputElement>('input[aria-label="Position name"]')
 
 beforeEach(() => {
   vi.mocked(send).mockClear(); vi.mocked(operatorSettings.save).mockClear()
@@ -73,7 +93,7 @@ beforeEach(() => {
   panel.hello = { ...hello, max_jog_velocity: 3000 }
   panel.status = statusAt({ x: 100, y: 50, z: -20 })
   panel.link = 'live'; panel.unit = 'mm'
-  panel.preferences = { ...panel.preferences, saved_positions: [] }
+  panel.preferences = { ...panel.preferences, saved_positions: [], go_to_safe_z: null }
 })
 afterEach(() => {
   const element = wrapper?.element as Element | undefined
@@ -161,6 +181,76 @@ describe('saved positions in Manual', () => {
     expect(view.text()).toContain('Position 1')
     expect(send).not.toHaveBeenCalled()
   })
+  it('saves under a name typed on the on-screen keyboard, by touch', async () => {
+    const stop = trackNumericInput()
+    try {
+      const view = await mountManual()
+      await button(view, 'Positions').trigger('click')
+      await tap(button(view, 'Save position'))
+      expect(nameField()?.value).toBe('Position 1')
+      // The first key replaces the name offered; Shift gives one capital.
+      await typeKeys(['Shift', 'Type V', 'Type i', 'Type s', 'Type e', 'Type a space', 'Type j', 'Type a', 'Type w', 'Type x', 'Delete the last character'])
+      expect(nameField()?.value).toBe('Vise jaw')
+      await tap(button(view, 'Save'))
+      expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Vise jaw', position: [100, 50, -20] }])
+      expect(view.text()).toContain('Vise jaw')
+    } finally { stop(); touchInput.value = false }
+  })
+  it('saves an empty or blank name as the default, trims it, saves on Enter and refuses a duplicate', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Corner', position: [1, 2, -3] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Save position').trigger('click')
+    await typeKeys(['Clear the name'])
+    expect(document.body.textContent).toContain('An empty name saves as Position 2')
+    const field = nameField()
+    if (field === null) throw new Error('No name field')
+    field.value = '  Corner '; field.dispatchEvent(new Event('input')); await nextTick()
+    expect(document.body.textContent).toContain('Another position is named Corner')
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); await nextTick()
+    expect(operatorSettings.save).not.toHaveBeenCalled()
+    field.value = 'x'.repeat(65); field.dispatchEvent(new Event('input')); await nextTick()
+    expect(document.body.textContent).toContain('Enter a name of at most 64 bytes')
+    field.value = '   '; field.dispatchEvent(new Event('input')); await nextTick()
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); await nextTick()
+    expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Corner', position: [1, 2, -3] }, { name: 'Position 2', position: [100, 50, -20] }])
+    await button(view, 'Save position').trigger('click')
+    const next = nameField()
+    if (next === null) throw new Error('No name field')
+    next.value = '  Fixture  '; next.dispatchEvent(new Event('input')); await nextTick()
+    next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); await nextTick()
+    expect(panel.preferences.saved_positions.map((entry) => entry.name)).toEqual(['Corner', 'Position 2', 'Fixture'])
+  })
+  it('renames a saved position by tapping its name, keeps it on Cancel, and saves the new name', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }, { name: 'Corner', position: [1, 2, -3] }] }
+    const stop = trackNumericInput()
+    try {
+      const view = await mountManual()
+      await button(view, 'Positions').trigger('click')
+      await tap(view.get('button[aria-label="Rename Vise jaw"]').element)
+      expect(document.body.textContent).toContain('Rename Vise jaw')
+      expect(nameField()?.value).toBe('Vise jaw')
+      await tap(button(view, 'Cancel'))
+      expect(nameField()).toBeNull()
+      expect(operatorSettings.save).not.toHaveBeenCalled()
+      await tap(view.get('button[aria-label="Rename Vise jaw"]').element)
+      // A rename edits the name: keys add to it.
+      await typeKeys(['Type a space', 'Type x'])
+      expect(nameField()?.value).toBe('Vise jaw x')
+      await typeKeys(['Clear the name', 'Shift', 'Type C', 'Type o', 'Type r', 'Type n', 'Type e', 'Type r'])
+      expect(document.body.textContent).toContain('Another position is named Corner')
+      await tap(button(view, 'Save'))
+      expect(operatorSettings.save).not.toHaveBeenCalled()
+      await typeKeys(['Clear the name', 'Shift', 'Type L', 'Type e', 'Type f', 'Type t'])
+      await tap(button(view, 'Save'))
+      expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Left', position: [10, 20, -50] }, { name: 'Corner', position: [1, 2, -3] }])
+      expect(view.find('button[aria-label="Rename Left"]').exists()).toBe(true)
+      // Renaming to the same name saves nothing.
+      await tap(view.get('button[aria-label="Rename Corner"]').element)
+      await tap(button(view, 'Save'))
+      expect(operatorSettings.save).toHaveBeenCalledOnce()
+    } finally { stop(); touchInput.value = false }
+  })
   it('deletes a position after confirmation', async () => {
     panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }, { name: 'Corner', position: [1, 2, -3] }] }
     const view = await mountManual()
@@ -172,19 +262,23 @@ describe('saved positions in Manual', () => {
     await button(view, 'Delete').trigger('click'); await nextTick()
     expect(panel.preferences.saved_positions).toEqual([{ name: 'Corner', position: [1, 2, -3] }])
   })
-  it('confirms Go to, then sends Z up, X Y, and Z down only when included, one after another', async () => {
+  it('confirms Go to, then sends Z up, X Y, and Z down to the saved Z by default, one after another', async () => {
     panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
     const view = await mountManual()
     await button(view, 'Positions').trigger('click')
     await button(view, 'Go to').trigger('click')
-    expect(document.body.textContent).toContain('Z -20.000 → -0.500')
-    expect(document.body.textContent).not.toContain('Z -0.500 → -50.000')
+    expect([...document.querySelectorAll('.steps li')].map((step) => step.textContent.trim())).toEqual([
+      'Lift Z to the top of travel (safe Z) -0.500', 'Move X Y to X +10.000  Y +20.000', 'Lower Z to the saved -50.000'])
+    expect(button(view, 'Down to saved Z -50.000').attributes('aria-pressed')).toBe('true')
+    // Left at the safe height, then Cancel: the next Go to again includes Z.
+    const stay = button(view, 'Stays at safe height').element as HTMLButtonElement
+    stay.click(); await nextTick()
+    expect(document.body.textContent).not.toContain('Lower Z to the saved -50.000')
     await button(view, 'Cancel').trigger('click')
     expect(send).not.toHaveBeenCalled()
 
     await button(view, 'Go to').trigger('click')
-    document.querySelector<HTMLInputElement>('.check input')?.click(); await nextTick()
-    expect(document.body.textContent).toContain('Z -0.500 → -50.000')
+    expect(document.body.textContent).toContain('Lower Z to the saved -50.000')
     const confirm = [...document.querySelectorAll('footer button')].find((candidate) => candidate.textContent.trim() === 'Go to') as HTMLButtonElement
     confirm.click(); await nextTick()
     expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
@@ -197,6 +291,17 @@ describe('saved positions in Manual', () => {
     await nextTick()
     expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500', 'G21 G90 G53 G0 X10.000 Y20.000', 'G21 G90 G53 G0 Z-50.000'])
     expect(band(view)).toContain('At Vise jaw')
+  })
+  it('lifts to the safe Z of the settings and names it in the steps', async () => {
+    panel.preferences = { ...panel.preferences, go_to_safe_z: -15, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    expect([...document.querySelectorAll('.steps li')].map((step) => step.textContent.trim())).toEqual([
+      'Lift Z to safe Z -15.000', 'Move X Y to X +10.000  Y +20.000', 'Lower Z to the saved -50.000'])
+    const confirm = [...document.querySelectorAll('footer button')].find((candidate) => candidate.textContent.trim() === 'Go to') as HTMLButtonElement
+    confirm.click(); await nextTick()
+    expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-15.000'])
   })
   it('sends nothing further after Stop ends a Go to move short', async () => {
     panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
@@ -229,6 +334,52 @@ describe('saved positions in Manual', () => {
     await nextTick()
     expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
     expect(vi.mocked(send).mock.calls.map(([command]) => command.type)).toEqual(['mdi', 'abort'])
+  })
+  it('toggles Z at the end with a touch tap, and the planned moves follow', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
+    const stop = trackNumericInput()
+    try {
+      const view = await mountManual()
+      await button(view, 'Positions').trigger('click')
+      await button(view, 'Go to').trigger('click')
+      expect(touchInput.value).toBe(false)
+      const choice = (text: string): HTMLButtonElement => button(view, text).element as HTMLButtonElement
+      expect(choice('Down to saved Z -50.000').getAttribute('aria-pressed')).toBe('true')
+      expect(document.body.textContent).toContain('Lower Z to the saved -50.000')
+      // A finger on the touch screen: WebKitGTK sends touchstart, then the click on release.
+      await tap(choice('Stays at safe height'))
+      expect(touchInput.value).toBe(true)
+      expect(choice('Stays at safe height').getAttribute('aria-pressed')).toBe('true')
+      expect(choice('Down to saved Z -50.000').getAttribute('aria-pressed')).toBe('false')
+      expect(document.body.textContent).not.toContain('Lower Z to the saved -50.000')
+      await tap(choice('Down to saved Z -50.000'))
+      expect(choice('Down to saved Z -50.000').getAttribute('aria-pressed')).toBe('true')
+      expect(document.body.textContent).toContain('Lower Z to the saved -50.000')
+      await tap(choice('Stays at safe height'))
+      expect(choice('Stays at safe height').getAttribute('aria-pressed')).toBe('true')
+      expect(document.body.textContent).not.toContain('Lower Z to the saved -50.000')
+      await tap(choice('Down to saved Z -50.000'))
+      const confirm = [...document.querySelectorAll('footer button')].find((candidate) => candidate.textContent.trim() === 'Go to') as HTMLButtonElement
+      await tap(confirm)
+      expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
+      answerLast(); panel.status = statusAt({ x: 100, y: 50, z: -0.5 }, { mode: 'mdi' })
+      answerLast(); panel.status = statusAt({ x: 10, y: 20, z: -0.5 }, { mode: 'mdi' })
+      expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500', 'G21 G90 G53 G0 X10.000 Y20.000', 'G21 G90 G53 G0 Z-50.000'])
+    } finally { stop(); touchInput.value = false }
+  })
+  it('goes on when the measured position trails the command by the backlash of a scale', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    const confirm = [...document.querySelectorAll('footer button')].find((candidate) => candidate.textContent.trim() === 'Go to') as HTMLButtonElement
+    confirm.click(); await nextTick()
+    answerLast()
+    panel.status = statusAt({ x: 100, y: 50, z: -10 }, { mode: 'mdi', interp: 'reading' })
+    // The G0759's Z scale reads 0.125 mm short after a reversal.
+    panel.status = statusAt({ x: 100, y: 50, z: -0.625 }, { mode: 'mdi' })
+    await nextTick()
+    expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500', 'G21 G90 G53 G0 X10.000 Y20.000'])
   })
   it('leaves the machine alone when the card closes with no Go to running', async () => {
     const view = await mountManual()

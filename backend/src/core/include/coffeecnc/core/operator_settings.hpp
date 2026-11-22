@@ -4,6 +4,7 @@
 #include <coffeecnc/core/tool_models.hpp>
 
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,9 @@ struct OperatorPreferences {
   std::vector<std::string> recent_programs;
   // At most sixteen, in the order the operator saved them.
   std::vector<SavedPosition> saved_positions;
+  // Machine Z in mm that Go to lifts to before X and Y move; unset: Z max less 0.5 mm. The
+  // panel keeps it inside the Z soft limits, which this document does not know.
+  std::optional<double> go_to_safe_z;
   friend auto operator==(const OperatorPreferences&, const OperatorPreferences&) -> bool = default;
 };
 

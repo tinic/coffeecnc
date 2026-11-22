@@ -391,6 +391,57 @@ describe('tool table workflow', () => {
   })
 })
 
+describe('safe Z for Go to in Settings', () => {
+  function mountSettings(prepare = (): void => undefined): { setItem: ReturnType<typeof vi.fn> } {
+    const storage = { getItem: (): null => null, setItem: vi.fn() }
+    dispose?.()
+    const settings = createOperatorSettingsState(panel, { send, onResult: (): (() => void) => () => undefined }, () => storage)
+    dispose = settings.dispose
+    prepare()
+    wrapper = mount(defineComponent({ components: { SettingsDialog }, setup: () => ({ settings }),
+      template: '<div><SettingsDialog :settings="settings"/><div id="workspace-dialogs"></div></div>' }), { attachTo: document.body })
+    return storage
+  }
+  const field = (): HTMLInputElement => getWrapper().get('#settings-safe-z').element as HTMLInputElement
+  it('is empty by default and saves a machine Z typed in the display units', async () => {
+    const storage = mountSettings(() => { panel.unit = 'inch' }); await nextTick()
+    expect(field().value).toBe('')
+    expect(field().placeholder).toBe('Default -0.019685 in')
+    await getWrapper().get('#settings-safe-z').setValue('-1')
+    await press('Save settings')
+    expect(panel.preferences.go_to_safe_z).toBe(-25.4)
+    expect(JSON.parse(storage.setItem.mock.calls[0]?.[1] as string)).toMatchObject({ go_to_safe_z: -25.4 })
+    expect(send).not.toHaveBeenCalled()
+  })
+  it('takes the present machine Z only when Z is homed, and clears back to the default', async () => {
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    status.axes = status.axes.map((axis) => ({ ...axis, homed: false, machine: axis.axis === 'z' ? -42.125 : 0 }))
+    mountSettings(() => { panel.preferences.go_to_safe_z = -10 }); await nextTick()
+    expect(field().value).toBe('-10')
+    const present = getWrapper().findAll('button').find((candidate) => candidate.text() === 'Use the present Z')
+    expect(present?.attributes('disabled')).toBeDefined()
+    panel.status = { ...status, axes: status.axes.map((axis) => ({ ...axis, homed: true })) }; await nextTick()
+    await press('Use the present Z')
+    expect(field().value).toBe('-42.125')
+    await press('Save settings')
+    expect(panel.preferences.go_to_safe_z).toBe(-42.125)
+    const first = getWrapper().element as HTMLElement
+    getWrapper().unmount(); first.remove()
+    mountSettings(() => { panel.preferences.go_to_safe_z = -42.125 }); await nextTick()
+    await press('Default'); await press('Save settings')
+    expect(panel.preferences.go_to_safe_z).toBeNull()
+  })
+  it('refuses a safe Z outside the Z soft limits with the limits named', async () => {
+    mountSettings(); await nextTick()
+    await getWrapper().get('#settings-safe-z').setValue('5')
+    expect(getWrapper().text()).toContain('Safe Z must be within the Z soft limits, -200.000 to 0.000 mm')
+    expect(getWrapper().findAll('button').find((candidate) => candidate.text() === 'Save settings')?.attributes('disabled')).toBeDefined()
+    await press('Save settings')
+    expect(panel.preferences.go_to_safe_z).toBeNull()
+  })
+})
+
 // Operator scenarios of the tool editor: Save is always offered, and a press saves or says why not.
 describe('tool editor scenarios', () => {
   const saveButton = (): ReturnType<VueWrapper['get']> => {

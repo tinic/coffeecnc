@@ -104,6 +104,13 @@ export interface AxisStatus {
   max_limit: number
   /** A limit switch is tripped. */
   on_hard_limit: boolean
+  /**
+   * Only on a machine that homes on reference marks its HAL has to find first: true once this
+   * axis's mark has been found. While false, homing the axis is refused.
+   */
+  reference_mark?: boolean
+  /** With `reference_mark`: the axis stands at its reference mark now. */
+  at_reference_mark?: boolean
 }
 
 export interface Offsets {

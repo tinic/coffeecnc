@@ -434,6 +434,10 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       return std::unexpected(value.error());
     *wired = *value;
   }
+  if (const auto marks = flag(ini, "REFERENCE_MARKS"); marks)
+    signals.reference_marks = *marks;
+  else
+    return std::unexpected(marks.error());
   std::optional<PausedZLimits> paused_z;
   if (const auto text = ini.text("COFFEECNC", "PAUSED_Z_MAX_MM")) {
     const auto lift = number(*text);

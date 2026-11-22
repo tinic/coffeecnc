@@ -27,6 +27,13 @@ MAX_SPINDLE_RPM = 1500
 SPINDLE_RPM_SIGNAL = no
 SPINDLE_AT_SPEED_SIGNAL = no
 PROBE_SIGNAL = no
+# yes when the machine homes on reference marks that its HAL has to find first (linear scales
+# with a single mark) and connects, for X, Y and Z, a bit that is true once the axis's mark is
+# known to coffeecnc.reference-mark-x, -y and -z, and a bit that is true while the axis stands at
+# its mark to coffeecnc.at-reference-mark-x, -y and -z. The Home button of an axis is then marked
+# while the axis is at its mark, also with the machine off, and Home is refused until the mark
+# is known.
+#REFERENCE_MARKS = yes
 # Opt into CoffeeCNC's manual tool-change prompt once LinuxCNC's tool-change,
 # tool-changed and tool-prep-number pins are free. Leave off for an existing changer.
 MANUAL_TOOLCHANGE = no

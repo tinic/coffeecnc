@@ -87,7 +87,9 @@ const examples = [
         "dtg": 3.25,
         "min_limit": 0,
         "max_limit": 300,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": true,
+        "at_reference_mark": true
       },
       {
         "axis": "y",
@@ -98,7 +100,9 @@ const examples = [
         "dtg": 0,
         "min_limit": 0,
         "max_limit": 200,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": true,
+        "at_reference_mark": true
       },
       {
         "axis": "z",
@@ -109,7 +113,9 @@ const examples = [
         "dtg": 0,
         "min_limit": -120,
         "max_limit": 0,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": true,
+        "at_reference_mark": true
       }
     ],
     "offsets": {
@@ -194,7 +200,9 @@ const examples = [
         "dtg": 0,
         "min_limit": 0,
         "max_limit": 300,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": false,
+        "at_reference_mark": false
       },
       {
         "axis": "y",
@@ -205,7 +213,9 @@ const examples = [
         "dtg": 0,
         "min_limit": 0,
         "max_limit": 200,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": false,
+        "at_reference_mark": false
       },
       {
         "axis": "z",
@@ -216,7 +226,9 @@ const examples = [
         "dtg": 0,
         "min_limit": -120,
         "max_limit": 0,
-        "on_hard_limit": false
+        "on_hard_limit": false,
+        "reference_mark": false,
+        "at_reference_mark": false
       }
     ],
     "offsets": {

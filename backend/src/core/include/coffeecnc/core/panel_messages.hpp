@@ -80,6 +80,11 @@ struct AxisStatus {
   double min_limit{};
   double max_limit{};
   bool on_hard_limit{};
+  // The axis's reference mark has been found, so homing can go to it. Empty when the machine
+  // has no such signal; the field is then not sent.
+  std::optional<bool> reference_mark{};
+  // The axis stands at its reference mark now. Sent together with reference_mark.
+  std::optional<bool> at_reference_mark{};
   friend auto operator==(const AxisStatus&, const AxisStatus&) -> bool = default;
 };
 

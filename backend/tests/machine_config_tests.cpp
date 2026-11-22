@@ -297,6 +297,14 @@ void increments_and_signals() {
   require(wired.value().signals.spindle_rpm && wired.value().signals.probe &&
               !wired.value().signals.spindle_at_speed,
           "signals as declared");
+  require(!wired.value().signals.reference_marks, "no reference marks unless declared");
+  const auto marks =
+      load(with(std::string(g0759), section, "[COFFEECNC]\nREFERENCE_MARKS = yes\n"));
+  require(marks.value().signals.reference_marks, "reference marks as declared");
+  const auto unclear =
+      error(with(std::string(g0759), section, "[COFFEECNC]\nREFERENCE_MARKS = some\n"));
+  require(has(unclear, "[COFFEECNC] REFERENCE_MARKS") && has(unclear, "some"),
+          "an unclear reference mark setting is an error: " + unclear);
   for (const auto key : {"SPINDLE_RPM_SIGNAL", "SPINDLE_AT_SPEED_SIGNAL", "PROBE_SIGNAL"}) {
     const auto message =
         error(with(std::string(g0759), section, std::format("[COFFEECNC]\n{} = maybe\n", key)));

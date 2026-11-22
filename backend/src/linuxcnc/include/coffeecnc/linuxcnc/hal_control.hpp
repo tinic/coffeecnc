@@ -5,6 +5,7 @@
 #include <coffeecnc/core/safety_outputs.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -36,6 +37,8 @@ struct HalInputs {
   bool probe_cycle_active{};
   bool jog_contact{};
   std::optional<PausedZInputs> paused_z{};
+  std::optional<std::array<bool, 3>> reference_marks{}; // X, Y, Z
+  std::optional<std::array<bool, 3>> at_reference_marks{};
 };
 
 // The same for the other threads.
@@ -50,6 +53,8 @@ struct HalView {
   bool probe_motion_permitted{};
   bool probe_cycle_active{};
   std::optional<PausedZInputs> paused_z{};
+  std::optional<std::array<bool, 3>> reference_marks{}; // X, Y, Z
+  std::optional<std::array<bool, 3>> at_reference_marks{};
 };
 
 // What crosses between the control thread, which alone touches the HAL component, and every

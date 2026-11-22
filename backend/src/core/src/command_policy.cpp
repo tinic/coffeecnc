@@ -182,7 +182,19 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             return reject("Axis is not configured.");
           if (!std::ranges::any_of(s.axes, [](const auto& a) -> auto { return a.enabled; }))
             return reject("No axes are configured.");
-          return idle(s, TaskMode::manual);
+          auto decision = idle(s, TaskMode::manual);
+          if (!decision.allowed)
+            return decision;
+          // The home move would search for a mark it cannot find from where the axis stands.
+          for (const Axis axis : {Axis::x, Axis::y, Axis::z}) {
+            const auto* a = axis_state(s, axis);
+            if (a != nullptr && (!c.axis || *c.axis == axis) && a->reference_mark.has_value() &&
+                !*a->reference_mark)
+              return reject(std::format(
+                  "Move {} across its reference mark first: homing cannot find it yet.",
+                  letter(axis)));
+          }
+          return decision;
         } else if constexpr (std::is_same_v<T, Jog> || std::is_same_v<T, JogStep>) {
           const auto* a = axis_state(s, c.axis);
           if (!a)

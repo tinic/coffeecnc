@@ -36,6 +36,12 @@ struct HalComponent::Pins {
   hal_float_t* spindle_rpm;
   hal_bit_t* spindle_at_speed;
   hal_bit_t* probe_input;
+  hal_bit_t* reference_mark_x;
+  hal_bit_t* reference_mark_y;
+  hal_bit_t* reference_mark_z;
+  hal_bit_t* at_reference_mark_x;
+  hal_bit_t* at_reference_mark_y;
+  hal_bit_t* at_reference_mark_z;
   hal_bit_t* probe_setter_select;
   hal_bit_t* probe_setter_selected;
   hal_bit_t* probe_cycle_active;
@@ -71,6 +77,12 @@ auto HalComponent::create(const std::string& name, const HalSignals& wired)
       hal_pin_float_new((name + ".spindle-rpm").c_str(), HAL_IN, &pins->spindle_rpm, id) != 0 ||
       !bit("spindle-at-speed", HAL_IN, &pins->spindle_at_speed) ||
       !bit("probe-input", HAL_IN, &pins->probe_input) ||
+      !bit("reference-mark-x", HAL_IN, &pins->reference_mark_x) ||
+      !bit("reference-mark-y", HAL_IN, &pins->reference_mark_y) ||
+      !bit("reference-mark-z", HAL_IN, &pins->reference_mark_z) ||
+      !bit("at-reference-mark-x", HAL_IN, &pins->at_reference_mark_x) ||
+      !bit("at-reference-mark-y", HAL_IN, &pins->at_reference_mark_y) ||
+      !bit("at-reference-mark-z", HAL_IN, &pins->at_reference_mark_z) ||
       !bit("probe-setter-select", HAL_OUT, &pins->probe_setter_select) ||
       !bit("probe-setter-selected", HAL_IN, &pins->probe_setter_selected) ||
       !bit("probe-cycle-active", HAL_OUT, &pins->probe_cycle_active) ||
@@ -227,6 +239,20 @@ auto HalComponent::probe_input() const -> std::optional<bool> {
   if (!wired_.probe)
     return {};
   return get(pins_->probe_input);
+}
+
+auto HalComponent::reference_marks() const -> std::optional<std::array<bool, 3>> {
+  if (!wired_.reference_marks)
+    return {};
+  return std::array<bool, 3>{get(pins_->reference_mark_x), get(pins_->reference_mark_y),
+                             get(pins_->reference_mark_z)};
+}
+
+auto HalComponent::at_reference_marks() const -> std::optional<std::array<bool, 3>> {
+  if (!wired_.reference_marks)
+    return {};
+  return std::array<bool, 3>{get(pins_->at_reference_mark_x), get(pins_->at_reference_mark_y),
+                             get(pins_->at_reference_mark_z)};
 }
 
 auto HalComponent::probe_setter_selected() const -> bool {

@@ -95,7 +95,9 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
                            .dtg = reading.dtg.at(i),
                            .min_limit = known ? axis.min_limit : config.travel.at(i).min,
                            .max_limit = known ? axis.max_limit : config.travel.at(i).max,
-                           .on_hard_limit = axis.on_hard_limit});
+                           .on_hard_limit = axis.on_hard_limit,
+                           .reference_mark = axis.reference_mark,
+                           .at_reference_mark = axis.at_reference_mark});
   }
   constexpr std::string_view rotary_letters = "abc";
   for (std::size_t i = 0; i < config.rotary_joints.size(); ++i) {

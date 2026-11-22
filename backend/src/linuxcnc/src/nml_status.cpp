@@ -167,6 +167,14 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     out.spindle_at_speed = view->spindle_at_speed;
     out.probe_input = view->probe_input;
   }
+  if (config.signals.reference_marks) {
+    // Not known, with the control thread stalled, counts as not found: homing stays refused.
+    for (std::size_t i = 0; i < c.axes.size(); ++i) {
+      c.axes[i].reference_mark = view && view->reference_marks && view->reference_marks->at(i);
+      c.axes[i].at_reference_mark =
+          view && view->at_reference_marks && view->at_reference_marks->at(i);
+    }
+  }
   c.program_units = task.programUnits == CANON_UNITS_INCHES ? LengthUnit::inch : LengthUnit::mm;
 
   out.echo_serial = s.echo_serial_number;

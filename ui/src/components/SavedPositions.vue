@@ -125,6 +125,10 @@ const goTo = computed((): GoToPlan | string | null => {
   return planned.ok ? planned.plan : planned.reason
 })
 const confirming = ref(false)
+watch(() => panel.motionStopRequest, () => {
+  confirming.value = false
+  sequence.cancel('Go to stopped')
+}, { flush: 'sync' })
 
 function openGoTo(entry: SavedPosition): void {
   if (!act(goToBlock.value)) return
@@ -155,7 +159,7 @@ const steps = computed(() => {
     const text = x !== undefined && y !== undefined ? `Move X Y to X ${signed(x)}  Y ${signed(y)}`
       : z !== undefined && z === planned.safeZ && move === planned.moves[0]
         ? panel.preferences.go_to_safe_z === null ? `Lift Z to the top of travel (safe Z) ${signed(z)}` : `Lift Z to safe Z ${signed(z)}`
-        : `Lower Z to the saved ${signed(z ?? 0)}`
+        : `${z !== undefined && z > planned.safeZ ? 'Raise' : 'Lower'} Z to the saved ${signed(z ?? 0)}`
     return { key: move.text, text }
   })
 })
@@ -231,7 +235,7 @@ const steps = computed(() => {
       <span class="label">Z at the end</span>
       <div class="segmented" role="group" aria-label="Z at the end">
         <button class="btn" type="button" :class="{ on: !includeZ }" :aria-pressed="!includeZ" @click="includeZ = false">Stays at safe height</button>
-        <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">Down to saved Z {{ length(target.position[2]) }}</button>
+        <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">{{ goTo && typeof goTo !== 'string' && target.position[2] > goTo.safeZ ? 'Up' : 'Down' }} to saved Z {{ length(target.position[2]) }}</button>
       </div>
     </div>
     <p>Rapid moves in machine coordinates, {{ unitName }}. Z first goes up to a safe height.</p>

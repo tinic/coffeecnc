@@ -96,6 +96,8 @@ export interface PanelState {
   /** The log entry shown in the status bar, until dismissed. */
   notice: LogEntry | null
   mdi: MdiEntry[]
+  /** Changes before a panel Stop, E-stop, or machine-off request reaches the transport. */
+  motionStopRequest: number
   tab: Tab
   unit: LengthUnit
   programLayout: ProgramLayout
@@ -262,6 +264,7 @@ export function createPanel(options: PanelOptions): Panel {
     log: [],
     notice: null,
     mdi: [],
+    motionStopRequest: 0,
     tab: 'manual',
     unit: 'mm',
     programLayout: 'path',
@@ -473,6 +476,9 @@ export function createPanel(options: PanelOptions): Panel {
       const restartMove = command.type === 'start_restart' ||
         command.type === 'tool_changed' && restartToolChange
       if (command.type === 'tool_changed' || command.type === 'abort') restartToolChange = false
+      if (command.type === 'abort' || command.type === 'set_machine' && command.state !== 'on') {
+        state.motionStopRequest += 1
+      }
       const timeout = command.type === 'fixed_setter' && command.action !== 'status'
         ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })

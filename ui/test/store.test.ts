@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { watch } from 'vue'
 
 import type { Listener, Transport } from '../src/bridge'
 import type { FromMachine, Status, ToMachine } from '../src/protocol'
@@ -62,6 +63,20 @@ function rig(): Rig {
 }
 
 describe('commands', () => {
+  it('signals motion cancellation before sending a panel stop to the transport', () => {
+    const { panel, sent } = rig()
+    const stopAt: number[] = []
+    const stopWatch = watch(() => panel.state.motionStopRequest, () => {
+      stopAt.push(sent.length)
+    }, { flush: 'sync' })
+    panel.send({ type: 'mdi', text: 'G0 X10' })
+    panel.send({ type: 'abort' })
+    panel.send({ type: 'set_machine', state: 'estop' })
+    panel.send({ type: 'set_machine', state: 'off' })
+    panel.send({ type: 'set_machine', state: 'on' })
+    stopWatch()
+    expect(stopAt).toEqual([1, 2, 3])
+  })
   it('keeps probe command failures in the log and shows other machine messages globally', () => {
     const { panel, receive, status } = rig()
     receive(hello)

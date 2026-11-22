@@ -14,7 +14,8 @@ export const moveToleranceMm = 0.05
  * The measured machine position within this distance of a commanded target counts as arrived.
  * LinuxCNC ends a G53 move exactly at the target; the position it reports comes from the
  * feedback, which on a machine with linear scales trails the command by the backlash (about
- * 0.125 mm on the G0759's Z) and drifts at rest. A stopped move ends further away.
+ * 0.125 mm on the G0759's Z) and drifts at rest. Only use the wider tolerance
+ * when there is evidence the move has taken place.
  */
 export const arrivalToleranceMm = 0.5
 
@@ -224,9 +225,9 @@ export function machinePosition(status: Status): Vec3 {
 }
 
 /** The axes of `target` are within the arrival tolerance in `status`. */
-export function arrived(status: Status, target: GoToMove['target']): boolean {
+export function arrived(status: Status, target: GoToMove['target'], tolerance = arrivalToleranceMm): boolean {
   return (Object.entries(target) as [AxisLetter, number][]).every(([name, value]) => {
     const axis = axisStatus(status, name)
-    return axis !== undefined && Math.abs(axis.machine - value) <= arrivalToleranceMm
+    return axis !== undefined && Math.abs(axis.machine - value) <= tolerance
   })
 }

@@ -93,6 +93,7 @@ beforeEach(() => {
   panel.hello = { ...hello, max_jog_velocity: 3000 }
   panel.status = statusAt({ x: 100, y: 50, z: -20 })
   panel.link = 'live'; panel.unit = 'mm'
+  panel.motionStopRequest = 0
   panel.preferences = { ...panel.preferences, saved_positions: [], go_to_safe_z: null }
 })
 afterEach(() => {
@@ -316,6 +317,29 @@ describe('saved positions in Manual', () => {
     await nextTick()
     expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
     expect(band(view)).toContain('Go to stopped before the position was reached')
+  })
+  it('disarms Go to immediately on a panel stop, even when the lift appears to arrive', async () => {
+    panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    answerLast()
+    panel.status = statusAt({ x: 100, y: 50, z: -1 }, { mode: 'mdi', interp: 'reading' })
+    panel.motionStopRequest = 1
+    panel.status = statusAt({ x: 100, y: 50, z: -0.625 }, { mode: 'mdi' })
+    await nextTick()
+    expect(sentMdi()).toEqual(['G21 G90 G53 G0 Z-0.500'])
+    expect(band(view)).toContain('Go to stopped')
+  })
+  it('describes an upward final move when the saved Z is higher than the configured safe Z', async () => {
+    panel.preferences = { ...panel.preferences, go_to_safe_z: -15,
+      saved_positions: [{ name: 'Vise jaw', position: [10, 20, -10] }] }
+    const view = await mountManual()
+    await button(view, 'Positions').trigger('click')
+    await button(view, 'Go to').trigger('click')
+    expect(document.body.textContent).toContain('Raise Z to the saved -10.000')
+    expect(button(view, 'Up to saved Z -10.000').attributes('aria-pressed')).toBe('true')
   })
   it('stops a Go to that the operator leaves, and sends nothing further', async () => {
     panel.preferences = { ...panel.preferences, saved_positions: [{ name: 'Vise jaw', position: [10, 20, -50] }] }

@@ -30,7 +30,7 @@ const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}, {}}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};

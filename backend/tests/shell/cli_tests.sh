@@ -61,6 +61,8 @@ check check_reports_a_good_file $? "$(detail)"
 # The sim's post-GUI file sources a fragment that wires the prompt itself.
 said 'Manual tool change prompt *on  (wired in the post-GUI HAL file)'
 check check_finds_tool_change_wired_in_hal $? "$(grep 'Manual tool change' "$work/out" | tr ' ' '_')"
+said 'Reference marks *off  (\[COFFEECNC\] REFERENCE_MARKS = yes'
+check check_reports_reference_marks_off $? "$(grep 'Reference marks' "$work/out" | tr ' ' '_')"
 run --check "$work/sim/lathe.ini"
 [ "$code" = 1 ] && said 'CoffeeCNC does not start with this file' && said 'COORDINATES'
 check check_reports_why_a_file_is_refused $? "$(detail)"

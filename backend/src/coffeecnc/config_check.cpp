@@ -500,8 +500,17 @@ auto check_configuration(const Options& options) -> int {
             << (config->paused_z ? ""
                                  : "  (PAUSED_Z_MAX_MM, OFFSET_AV_RATIO, both spindle signals)")
             << '\n'
-            << "  Remembered spindle tool      " << on_off(config->remember_spindle_tool) << '\n'
-            << "\nSee /usr/share/coffeecnc/coffeecnc.ini.example for every key.\n";
+            << "  Remembered spindle tool      " << on_off(config->remember_spindle_tool) << '\n';
+  // Home waits for each axis's reference mark (G0759: glass scales without home switches).
+  const bool marks = config->signals.reference_marks;
+  std::cout << "  Reference marks              " << on_off(marks);
+  if (!marks)
+    std::cout << "  ([COFFEECNC] REFERENCE_MARKS = yes when coffeecnc.reference-mark-x/y/z are wired)";
+  else if (!hal.connected("coffeecnc.reference-mark-x") ||
+           !hal.connected("coffeecnc.reference-mark-y") ||
+           !hal.connected("coffeecnc.reference-mark-z"))
+    std::cout << "  (a link to coffeecnc.reference-mark-x/y/z was not found in the inspected HAL)";
+  std::cout << "\nSee /usr/share/coffeecnc/coffeecnc.ini.example for every key.\n";
   return hal.postgui_error ? 1 : 0;
 }
 

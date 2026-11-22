@@ -56,6 +56,7 @@ controller is off must be reflected in LinuxCNC before running a program.
 | `wait: dwell` | `task.delayLeft` | 1519 | |
 | `wait: tool_change` | HAL pin, see below | | Not in `EMC_STAT` |
 | `spindle.actual_rpm`, `spindle.at_speed`, `probe_input` | HAL pins `coffeecnc.spindle-rpm`, `coffeecnc.spindle-at-speed`, `coffeecnc.probe-input` | | `null` unless `[COFFEECNC] SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL`, `PROBE_SIGNAL` declare them wired |
+| `axes[].reference_mark`, `at_reference_mark` | HAL pins `coffeecnc.reference-mark-x`, `-y`, `-z` and `coffeecnc.at-reference-mark-x`, `-y`, `-z` | | Not in `EMC_STAT`. Sent only when `[COFFEECNC] REFERENCE_MARKS` declares the pins wired; false while the control thread has not renewed its reading |
 | `active_codes` | `task.activeGCodes`, `activeMCodes` | 1511 | |
 
 ## Constraints

@@ -24,7 +24,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 ### Manual
 
 - Jog continuously or in steps from 0.005 mm. Jogging stops immediately when the touch probe or the tool setter makes contact. This is not an E-stop.
-- Home each axis or all axes, enter MDI commands, and control the spindle and coolant.
+- Home each axis or all axes, enter MDI commands, and control the spindle and coolant. On a machine that homes on the reference marks of its scales, the Home buttons show which marks are known and which axis stands at its mark.
 - Large coordinates show work, machine or distance-to-go positions, in mm or inches.
 - Numeric fields accept formulas such as `1/4in` or `7mm/2`. See [numeric entry](docs/numeric-entry.md).
 - Each card shows its own status line, for example why MDI is not available now. Machine-wide states, such as "Machine is off", show once at the top.

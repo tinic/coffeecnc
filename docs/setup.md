@@ -78,10 +78,24 @@ Each function stays off until you set its keys. The comments in `coffeecnc.ini.e
 |---|---|---|
 | Measured spindle speed and at-speed | `SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL` | Connect your signals to `coffeecnc.spindle-rpm` and `coffeecnc.spindle-at-speed` |
 | Probe input display | `PROBE_SIGNAL` | Connect your probe signal to `coffeecnc.probe-input` |
+| Reference marks on the Home buttons | `REFERENCE_MARKS` | For a machine that homes on reference marks its HAL has to find first. For each of X, Y and Z connect a bit that is true once the axis's mark is known to `coffeecnc.reference-mark-x`, `-y`, `-z`, and a bit that is true while the axis stands at its mark to `coffeecnc.at-reference-mark-x`, `-y`, `-z`. See [reference marks](#reference-marks) |
 | Touch probe in the spindle | `TOUCH_PROBE_TOOL` | Route the probe to `motion.probe-input` when this tool is loaded |
 | Fixed tool setter | `FIXED_SETTER` and the `SETTER_*` keys | `/usr/share/coffeecnc/hal/examples/fixed_setter.hal`: probe input, setter selection and the probe-cycle permit; see [tool length probing](design/tool-length-probing.md) |
 | Z jog during a pause | `PAUSED_Z_MAX_MM`, and also `SPINDLE_RPM_SIGNAL` and `SPINDLE_AT_SPEED_SIGNAL` | `/usr/share/coffeecnc/hal/examples/paused_z.hal`: external offsets on Z, with `[AXIS_Z] OFFSET_AV_RATIO` in the INI file |
 | Travel check in Program check | `TRAVEL_MIN_MM`, `TRAVEL_MAX_MM` | None |
+
+## Reference marks
+
+A linear scale with a single reference mark cannot tell, after power-up, on which side of the mark its axis stands. A machine that homes on such marks has HAL logic that learns where a mark is when the axis crosses it. `[COFFEECNC] REFERENCE_MARKS = yes` lets the panel show that state and keeps Home from starting too early. It is all three axes or none.
+
+| Pin of the `coffeecnc` component | Direction | Your HAL sets it | CoffeeCNC does |
+|---|---|---|---|
+| `coffeecnc.reference-mark-x`, `-y`, `-z` | bit in | True once the mark of the axis is known, so that homing can go to it | While false: the Home button of the axis reads "find mark", and Home for that axis and Home all are refused with "Move X across its reference mark first: homing cannot find it yet." |
+| `coffeecnc.at-reference-mark-x`, `-y`, `-z` | bit in | True while the axis stands at its mark, within a distance you choose | The letter on the Home button of the axis is red and the button reads "at mark", until the axis is homed. This works with the machine off, so that an axis moved by hand can be stopped at its mark |
+
+Connect the six pins in your post-GUI HAL file, after `coffeecnc_postgui.hal`. The pins exist whatever the key says; without `REFERENCE_MARKS = yes` they are not read, the Home buttons look as on any machine and Home is never refused for this reason. With the key set, a pin you leave unconnected reads false: its axis stays at "find mark".
+
+The homing move itself is LinuxCNC's, configured in `[JOINT_n]` of your INI file; CoffeeCNC sends the same home command as on a machine with switches. [The G0759 configuration](machines/g0759.md#reference-mark-homing-22-november-2026) is a complete example, with the HAL component that derives a home switch from the mark.
 
 ## Units
 

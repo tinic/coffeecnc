@@ -153,6 +153,30 @@ describe('move sequence', () => {
     expect(r.sent.map((command) => command.type === 'mdi' && command.text)).toEqual(moves.map((move) => move.text))
     expect(r.sequence.state).toMatchObject({ running: false, error: '' })
   })
+  it('waits for a short lift inside the feedback tolerance before moving X and Y', () => {
+    const r = sequenceRig()
+    r.current.value = moved(r.current.value, { z: -0.8 })
+    r.sequence.start(moves)
+    r.answer()
+    expect(r.sent).toHaveLength(1)
+    r.current.value = moved(r.current.value, { z: -0.8 })
+    expect(r.sent).toHaveLength(1)
+    r.current.value = { ...moved(r.current.value, { z: -0.62 }),
+      motion: { ...r.current.value.motion, in_position: false } }
+    expect(r.sent).toHaveLength(1)
+    r.current.value = { ...moved(r.current.value, { z: -0.625 }),
+      motion: { ...r.current.value.motion, in_position: true } }
+    expect(r.sent).toHaveLength(2)
+  })
+  it('recognizes a short lift that completes before the next report can show motion', () => {
+    const r = sequenceRig()
+    r.current.value = moved(r.current.value, { z: -0.8 })
+    r.sequence.start(moves)
+    r.current.value = moved(r.current.value, { z: -0.5 })
+    expect(r.sent).toHaveLength(1)
+    r.answer()
+    expect(r.sent).toHaveLength(2)
+  })
   it('ends without another move when Stop leaves a move short, or a move is refused', () => {
     const r = sequenceRig()
     r.sequence.start(moves); r.answer()

@@ -17,6 +17,7 @@ struct HalSignals {
   bool spindle_at_speed{}; // [COFFEECNC] SPINDLE_AT_SPEED_SIGNAL
   bool probe{};            // [COFFEECNC] PROBE_SIGNAL
   bool paused_z{};         // [COFFEECNC] PAUSED_Z_MAX_MM
+  bool reference_marks{};  // [COFFEECNC] REFERENCE_MARKS
 };
 
 struct PausedZInputs {
@@ -52,6 +53,10 @@ struct ProbeCycleOutputs {
 //   <name>.spindle-rpm      float in measured spindle speed, rpm, either sign (optional)
 //   <name>.spindle-at-speed bit in   the signal that drives spindle.0.at-speed (optional)
 //   <name>.probe-input      bit in   the signal that drives motion.probe-input (optional)
+//   <name>.reference-mark-x, -y, -z  bit in  the axis's reference mark has been found, so
+//                                    homing can go to it (optional, all three together)
+//   <name>.at-reference-mark-x, -y, -z  bit in  the axis stands at its reference mark now
+//                                    (optional, with the three above)
 //   <name>.probe-setter-select   bit out  request the fixed setter input during a probe cycle
 //   <name>.probe-setter-selected bit in   actual selector state, true only for the fixed setter
 //   <name>.probe-cycle-active    bit out  keep the probe interlock engaged until motion stops
@@ -116,6 +121,10 @@ public:
   [[nodiscard]] auto spindle_rpm() const -> std::optional<double>;
   [[nodiscard]] auto spindle_at_speed() const -> std::optional<bool>;
   [[nodiscard]] auto probe_input() const -> std::optional<bool>;
+  // For X, Y, Z: the machine's HAL has found the axis's reference mark.
+  [[nodiscard]] auto reference_marks() const -> std::optional<std::array<bool, 3>>;
+  // For X, Y, Z: the axis stands at its reference mark now.
+  [[nodiscard]] auto at_reference_marks() const -> std::optional<std::array<bool, 3>>;
   [[nodiscard]] auto probe_setter_selected() const -> bool;
   [[nodiscard]] auto probe_motion_permitted() const -> bool;
   [[nodiscard]] auto probe_cycle_active() const -> bool;

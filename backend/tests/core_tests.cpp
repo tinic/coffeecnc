@@ -88,6 +88,31 @@ void pending_manual_tool_change() {
     require(policy.evaluate(command, s).allowed, "pending change leaves confirmation and stop actions available");
 }
 
+void reference_mark_homing() {
+  CommandPolicy policy{simulator_limits()};
+  auto s = ready();
+  for (auto& a : s.axes)
+    a.homed = false;
+  require(policy.evaluate(Home{Axis::x}, s).allowed && policy.evaluate(Home{}, s).allowed,
+          "a machine without reference marks homes as before");
+  s.axes[0].reference_mark = true;
+  s.axes[1].reference_mark = false;
+  s.axes[2].reference_mark = true;
+  require(policy.evaluate(Home{Axis::x}, s).allowed && policy.evaluate(Home{Axis::z}, s).allowed,
+          "an axis whose reference mark has been found can be homed");
+  const auto y = policy.evaluate(Home{Axis::y}, s);
+  require(!y.allowed &&
+              y.reason == "Move Y across its reference mark first: homing cannot find it yet.",
+          "an axis whose reference mark is not known is not homed: " + y.reason);
+  require(policy.evaluate(Home{}, s).reason == y.reason, "nor is it homed with the others");
+  s.axes[1].reference_mark = true;
+  require(policy.evaluate(Home{}, s).allowed, "all marks found: home all");
+  s.machine = MachineState::off;
+  s.axes[1].reference_mark = false;
+  require(policy.evaluate(Home{Axis::y}, s).reason != y.reason,
+          "machine power is asked for before the reference mark");
+}
+
 void fixed_setter_homing() {
   CommandPolicy homing{simulator_limits()};
   CommandPolicy no_homing{Limits{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false}};
@@ -538,6 +563,7 @@ auto main() -> int {
   try {
     execution_gates();
     pending_manual_tool_change();
+    reference_mark_homing();
     fixed_setter_homing();
     work_origin_gates();
     paused_z_gates();

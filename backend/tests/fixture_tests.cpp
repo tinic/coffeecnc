@@ -172,6 +172,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   running.preview_context = 4821337;
   running.active_codes = {"G1", "G55", "G90", "G94", "M3", "M8"};
   running.probe_input = true;
+  for (auto& a : running.axes) {
+    a.reference_mark = true;
+    a.at_reference_mark = true;
+  }
   messages.push_back(encode_status(running, 1));
 
   // The optional signals present with their zero and false values: not the same as unknown.
@@ -187,6 +191,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   paused.wait = WaitPaused{};
   paused.active_codes = {"G1", "G54", "G93", "M4"};
   paused.probe_input = false;
+  for (auto& a : paused.axes) {
+    a.reference_mark = false;
+    a.at_reference_mark = false;
+  }
   messages.push_back(encode_status(paused, 2));
 
   // No connection: placeholders, and a machine without the optional signals.
@@ -386,6 +394,9 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("actual_rpm", shape(message.at("spindle").at("actual_rpm")));
     add("at_speed", shape(message.at("spindle").at("at_speed")));
     add("probe_input", shape(message.at("probe_input")));
+    const auto& first_axis = message.at("axes").at(0);
+    add("reference_mark",
+        first_axis.contains("reference_mark") ? shape(first_axis.at("reference_mark")) : "absent");
     add("prepared", message.at("tool").at("prepared").is_null() ? "null" : "tool");
     add("file", message.at("program").at("file").is_null() ? "null" : "path");
   } else if (type == "tool_table") {
@@ -494,6 +505,9 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "status probe_input null",
     "status probe_input false",
     "status probe_input true",
+    "status reference_mark absent",
+    "status reference_mark false",
+    "status reference_mark true",
     "status prepared null",
     "status prepared tool",
     "status file null",

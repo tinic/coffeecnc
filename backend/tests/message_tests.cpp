@@ -163,6 +163,15 @@ void status_rules() {
           "A signal the machine does not have is an explicit null, not absent");
   require(status.at("tool").at("prepared").is_null() && status.at("program").at("file").is_null(),
           "No prepared tool and no program are null");
+  require(!status.at("axes").at(0).contains("reference_mark"),
+          "An axis of a machine without reference marks sends no such field");
+  auto unmarked = valid_status();
+  unmarked.axes.front().reference_mark = false;
+  unmarked.axes.front().at_reference_mark = false;
+  const auto unmarked_axis = parsed(encode_status(unmarked, 1)).at("axes").at(0);
+  require(unmarked_axis.at("reference_mark") == false &&
+              unmarked_axis.at("at_reference_mark") == false,
+          "A reference mark not found yet is sent as false, not left out");
 
   auto rotary = valid_status();
   rotary.rotary_axes.push_back({'b', true, false, 45.0, {}, 0.0, true});

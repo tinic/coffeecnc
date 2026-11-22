@@ -13,6 +13,7 @@ The rules the C++ layers implement and where, and the known limits. Build and te
 | A jog above its axis ceiling (`[AXIS_*] MAX_VELOCITY`) is rejected | `Limits::max_axis_jog_velocity` |
 | The spindle ceiling is `[COFFEECNC] MAX_SPINDLE_RPM`, else `[SPINDLE_0] MAX_FORWARD_VELOCITY`, else `[DISPLAY] MAX_SPINDLE_0_SPEED`; with none, start-up fails | `load_machine_config` |
 | Actual spindle speed, at-speed and probe input are reported only when `[COFFEECNC] SPINDLE_RPM_SIGNAL`, `SPINDLE_AT_SPEED_SIGNAL`, `PROBE_SIGNAL` say the pins are wired; an unconnected pin is never a measured zero | `HalComponent` |
+| An axis's reference mark is reported (found: `coffeecnc.reference-mark-x`, `-y`, `-z`; the axis stands at it: `coffeecnc.at-reference-mark-x`, `-y`, `-z`), and Home refused for an axis whose mark is not found, only when `[COFFEECNC] REFERENCE_MARKS` says those pins are wired; a reading the control thread has not renewed counts as not found | `HalComponent`, `to_status`, `CommandPolicy` |
 | An E-stop request is answered by the state a live status shows after the command: accepted only when E-stop is reported; else `failed` with "LinuxCNC reports machine off; E-stop was not confirmed.", "LinuxCNC still reports machine on; ..." or "LinuxCNC's status cannot be read; ..." | `estop_request_result`, `NmlPort` |
 | Files are read whole through one bounded reader: 16 MiB for a program, 4 MiB for the tool table | `core/text_file.hpp` |
 | Home all is refused unless every joint has a `HOME_SEQUENCE`: LinuxCNC would accept it and do nothing | `NmlPort::home` |

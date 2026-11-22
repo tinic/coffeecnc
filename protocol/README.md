@@ -54,6 +54,8 @@ These are **additive protocol v1 fields**. Existing command bodies and request d
 | `status.spindle.actual_rpm` | Nonnegative finite number or null | Configured measured speed magnitude, separate from commanded RPM and override. This does not report measured direction. | Null/absent is unknown; never replace it with commanded RPM or zero. |
 | `status.spindle.at_speed` | Boolean or null | Configured at-speed feedback. False is a reported negative result. | Null/absent is unknown, not false. |
 | `status.probe_input` | Boolean or null | Configured probe input; true is tripped, false is clear. | Null/absent is unknown. |
+| `status.axes[].reference_mark` | Boolean, on every linear axis or on none | Only on a machine that homes on reference marks its HAL has to find first (`[COFFEECNC] REFERENCE_MARKS`): true once the axis's mark has been found. While false, `home` for that axis and for all axes is refused. | Absent means the machine has no such signal: homing is offered as before. |
+| `status.axes[].at_reference_mark` | Boolean, sent with `reference_mark` | The axis stands at its reference mark now, whatever the machine state. The Home button of the axis is marked while it does. | Absent: nothing is marked. |
 | `status.paused_z` | Object with numeric `offset` and `max_lift` in mm, boolean `displaced`, and string `reason` | Applied external Z lift and its configured maximum. An empty reason permits a step, subject to native bounds. | Absent means the panel omits paused Z controls. |
 
 The optional `jog_paused_z` command takes a signed `distance` in millimetres.

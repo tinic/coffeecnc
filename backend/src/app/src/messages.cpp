@@ -294,15 +294,20 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
   auto axes = Json::array();
   std::ranges::transform(status.axes, std::back_inserter(axes),
                          [&](const AxisStatus& axis) -> Json {
-                           return {{"axis", name(axis.axis)},
-                                   {"homed", axis.homed},
-                                   {"homing", axis.homing},
-                                   {"machine", fields.real(axis.machine, "axes.machine")},
-                                   {"work", fields.real(axis.work, "axes.work")},
-                                   {"dtg", fields.real(axis.dtg, "axes.dtg")},
-                                   {"min_limit", fields.real(axis.min_limit, "axes.min_limit")},
-                                   {"max_limit", fields.real(axis.max_limit, "axes.max_limit")},
-                                   {"on_hard_limit", axis.on_hard_limit}};
+                           Json sent = {{"axis", name(axis.axis)},
+                                        {"homed", axis.homed},
+                                        {"homing", axis.homing},
+                                        {"machine", fields.real(axis.machine, "axes.machine")},
+                                        {"work", fields.real(axis.work, "axes.work")},
+                                        {"dtg", fields.real(axis.dtg, "axes.dtg")},
+                                        {"min_limit", fields.real(axis.min_limit, "axes.min_limit")},
+                                        {"max_limit", fields.real(axis.max_limit, "axes.max_limit")},
+                                        {"on_hard_limit", axis.on_hard_limit}};
+                           if (axis.reference_mark)
+                             sent["reference_mark"] = *axis.reference_mark;
+                           if (axis.at_reference_mark)
+                             sent["at_reference_mark"] = *axis.at_reference_mark;
+                           return sent;
                          });
   const auto& spindle = status.spindle;
   Json actual_rpm = nullptr;

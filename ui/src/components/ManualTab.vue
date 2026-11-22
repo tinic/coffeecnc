@@ -21,7 +21,7 @@ import { parseNumericExpression } from '../numeric-expression'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
 import { axisJogVelocity, displayJogIncrements } from '../machine-capabilities'
 import { allHomed, axes, homingActive, live, manualBlock, mdiBlock, onResult, panel, send } from '../machine'
-import type { AxisLetter } from '../protocol'
+import type { AxisLetter, AxisStatus } from '../protocol'
 import { touchProbeLoaded } from '../tool-models'
 import { formatIncrement, formatLength, formatVelocity, velocityUnit, wcsName } from '../units'
 import { workOffsetRows } from '../work-offsets'
@@ -298,8 +298,26 @@ function jogLabel(key: JogKey): string {
 
 // ---- homing ---------------------------------------------------------------------------------------
 
+// On a machine that homes on reference marks, homing finds a mark only after the axis has
+// crossed it, by a jog or by hand with the machine off.
+function markBlock(axis: AxisStatus): string | null {
+  return axis.reference_mark === false && !axis.homing
+    ? `Move ${axis.axis.toUpperCase()} across its reference mark first`
+    : null
+}
+const marksBlock = computed(() => axes.value.map(markBlock).find((reason) => reason !== null) ?? null)
+
+function homeState(axis: AxisStatus): string {
+  if (axis.homing) return 'homing'
+  if (axis.homed) return 'homed'
+  if (axis.at_reference_mark === true) return 'at mark'
+  return axis.reference_mark === false ? 'find mark' : 'not homed'
+}
+
 function home(axis: AxisLetter | 'all'): void {
-  if (allowJog(jogMachineBlock.value)) send({ type: 'home', axis })
+  const status = axes.value.find((candidate) => candidate.axis === axis)
+  const mark = axis === 'all' ? marksBlock.value : status === undefined ? null : markBlock(status)
+  if (allowJog(jogMachineBlock.value ?? mark)) send({ type: 'home', axis })
 }
 
 // ---- MDI ------------------------------------------------------------------------------------------
@@ -526,10 +544,10 @@ function coolant(which: 'flood' | 'mist'): void {
       <div v-if="!touchOff" class="line homes">
         <span class="label">Home</span>
         <button
-          v-tooltip="jogMachineBlock ?? 'Home all axes using the configured sequence'"
+          v-tooltip="jogMachineBlock ?? marksBlock ?? 'Home all axes using the configured sequence'"
           class="btn"
           type="button"
-          :aria-disabled="jogMachineBlock !== null"
+          :aria-disabled="jogMachineBlock !== null || marksBlock !== null"
           @click="home('all')"
         >
           <AppIcon name="home" />All
@@ -537,16 +555,15 @@ function coolant(which: 'flood' | 'mist'): void {
         <button
           v-for="axis in axes"
           :key="axis.axis"
-          v-tooltip="jogMachineBlock ?? `Home ${axis.axis.toUpperCase()}`"
+          v-tooltip="jogMachineBlock ?? markBlock(axis) ?? `Home ${axis.axis.toUpperCase()}`"
           class="btn homeaxis"
+          :class="{ marked: axis.at_reference_mark === true && !axis.homed }"
           type="button"
-          :aria-disabled="jogMachineBlock !== null"
+          :aria-disabled="jogMachineBlock !== null || markBlock(axis) !== null"
           @click="home(axis.axis)"
         >
-          {{ axis.axis.toUpperCase() }}
-          <span class="homestate" :class="{ homed: axis.homed }">{{
-            axis.homing ? 'homing' : axis.homed ? 'homed' : 'not homed'
-          }}</span>
+          <span class="homeletter">{{ axis.axis.toUpperCase() }}</span>
+          <span class="homestate" :class="{ homed: axis.homed }">{{ homeState(axis) }}</span>
         </button>
       </div>
       <p v-if="!touchOff && mode === 'jog'" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
@@ -761,6 +778,18 @@ function coolant(which: 'flood' | 'mist'): void {
   flex-direction: column;
   gap: 0;
   padding: 0 6px;
+}
+
+.homeletter {
+  padding: 0 8px;
+  border-radius: 3px;
+}
+
+/* The axis stands at its reference mark, also with the machine off. Fixed colours, so that the
+   letter reads as red on the light and the dark panel, also while the button is dimmed. */
+.homeaxis.marked .homeletter {
+  background: #d92d20;
+  color: #ffffff;
 }
 
 .homestate {

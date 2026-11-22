@@ -34,6 +34,12 @@ struct AxisState {
   double machine{};
   double min_limit{std::numeric_limits<double>::quiet_NaN()};
   double max_limit{std::numeric_limits<double>::quiet_NaN()};
+  // Whether homing can find this axis's reference mark, where the machine's HAL reports it: a
+  // scale with one mark says nothing about the side the axis is on until it has crossed the
+  // mark. Nothing on a machine without that signal.
+  std::optional<bool> reference_mark{};
+  // The axis stands at that mark now. Nothing on a machine without the signal.
+  std::optional<bool> at_reference_mark{};
 };
 
 // Input from the controller adapter, never reconstructed from pending UI actions.

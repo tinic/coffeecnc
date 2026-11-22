@@ -18,7 +18,9 @@ auto HalShared::view(Clock::time_point now) const -> std::optional<HalView> {
                inputs_.probe_setter_selected,
                inputs_.probe_motion_permitted,
                inputs_.probe_cycle_active,
-               inputs_.paused_z};
+               inputs_.paused_z,
+               inputs_.reference_marks,
+               inputs_.at_reference_marks};
   if (inputs_.tool_change_request && !answered_)
     view.tool_change_request = ToolChangeRequest{generation_, *inputs_.tool_change_request};
   return view;
@@ -174,7 +176,9 @@ void HalControl::beat() {
                          hal_.probe_motion_permitted(),
                          hal_.probe_cycle_active(),
                          hal_.jog_contact(),
-                         hal_.paused_z()};
+                         hal_.paused_z(),
+                         hal_.reference_marks(),
+                         hal_.at_reference_marks()};
   // The exchange notes a high level before beat() may lower it.
   if (shared_.exchange(inputs, now))
     hal_.confirm_tool_changed();

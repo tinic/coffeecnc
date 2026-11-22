@@ -5,12 +5,12 @@ import { Color, DirectionalLight, HemisphereLight, Mesh, MeshBasicMaterial, Neut
 export function lightPreview(scene: Scene, renderer: WebGLRenderer): DirectionalLight {
   renderer.setClearColor(0, 0)
   renderer.toneMapping = NeutralToneMapping
-  renderer.toneMappingExposure = 0.93
-  const key = new DirectionalLight(0xfff3e5, 2.4)
-  key.position.set(-42, -50, 72)
-  const rim = new DirectionalLight(0xdcecff, 1.15)
-  rim.position.set(48, 44, 32)
-  const ambient = new HemisphereLight(0xeaf3fd, 0x5b6372, 0.85)
+  renderer.toneMappingExposure = 0.88
+  const key = new DirectionalLight(0xfff7ef, 3.1)
+  key.position.set(-56, -38, 76)
+  const rim = new DirectionalLight(0xd9eaff, 0.95)
+  rim.position.set(48, 28, 20)
+  const ambient = new HemisphereLight(0xe9eef4, 0x555b65, 0.53)
   ambient.position.set(0, 0, 1)
   scene.add(ambient, key, rim)
   return key
@@ -25,7 +25,7 @@ export class PreviewReflections {
     if (!renderer.extensions.has('EXT_color_buffer_float') && !renderer.extensions.has('EXT_color_buffer_half_float')) return
 
     const studio = new Scene()
-    studio.background = new Color('#626b78')
+    studio.background = new Color('#363f49')
     const panelGeometry = new PlaneGeometry(1, 1)
     const panelMaterials: MeshBasicMaterial[] = []
     const softbox = (position: [number, number, number], size: [number, number], colour: string, intensity: number): void => {
@@ -37,13 +37,14 @@ export class PreviewReflections {
       panel.lookAt(0, 0, 0)
       studio.add(panel)
     }
-    softbox([-5, -6, 2], [5.2, 12], '#fff4e8', 4.4)
-    softbox([6, -1, 2], [1.6, 11], '#e1edff', 3.2)
-    softbox([1, 4, 6], [8, 3.3], '#f3f8ff', 2.6)
-    softbox([-1, -1, -6], [9, 8], '#afbbc9', 0.6)
+    softbox([-6, -4, 1.5], [3.2, 13], '#fff6eb', 4.0)
+    softbox([5, -5, 1.5], [2.6, 12], '#deebfa', 2.5)
+    softbox([4, 5, 2], [1.5, 12], '#f3f7fd', 5.2)
+    softbox([-1, 2, 6], [9, 5.5], '#edf3fb', 2.8)
+    softbox([0, -2, -6], [9, 8], '#c0c4cc', 0.8)
     const generator = new PMREMGenerator(renderer)
     try {
-      this.target = generator.fromScene(studio, 0.045, 0.1, 40, { size: 128 })
+      this.target = generator.fromScene(studio, 0.028, 0.1, 40, { size: 128 })
       scene.environment = this.target.texture
     } finally {
       panelGeometry.dispose()

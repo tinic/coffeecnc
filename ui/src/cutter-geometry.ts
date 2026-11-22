@@ -54,7 +54,8 @@ export function flutedCutterGeometry(family: ToolFamily, profile: Profile, diame
     startR = endR
     startZ = endZ
   }
-  return sweptGeometry(rings, contour, count, true)
+  const endRelief = family === 'end-mill' ? Math.min(length * 0.15, diameter * 0.115) : 0
+  return sweptGeometry(rings, contour, count, true, endRelief)
 }
 
 function isFluted(family: ToolFamily): family is keyof typeof flutedFamilies {
@@ -121,7 +122,7 @@ export function faceMillGeometry(diameter: number, length: number): {
   return { body, inserts, screws }
 }
 
-function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number, shadeFlutes = false): BufferGeometry {
+function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number, shadeFlutes = false, endRelief = 0): BufferGeometry {
   const around = contour.length * repeats
   const [bottom] = rings
   const top = rings.at(-1)
@@ -163,9 +164,28 @@ function sweptGeometry(rings: readonly Ring[], contour: Contour, repeats: number
       positions.push(...positions.slice(offset, offset + around * 3))
       if (shadeFlutes) colours.push(...colours.slice(offset, offset + around * 3))
     }
+    const gash = top ? 0 : endRelief
+    if (gash > 0) {
+      // Keep the outer cutting edges at Z0 and recess the chip space behind the lands.
+      const inner = positions.length / 3
+      for (let i = 0; i < around; i += 1) {
+        const vertex = 3 * (rim + i)
+        const shade = colours[vertex] ?? 1
+        const [x = 0, y = 0] = positions.slice(vertex, vertex + 2)
+        const [, radiusRatio] = contour[i % contour.length] ?? [0, 1]
+        positions.push(x * 0.44, y * 0.44, z + gash * Math.min(1, (1 - radiusRatio) * 3))
+        colours.push(shade * 0.74, shade * 0.74, shade * 0.74)
+        const j = (i + 1) % around
+        indices.push(rim + i, inner + i, rim + j, rim + j, inner + i, inner + j)
+      }
+      rim = inner
+    }
     const centre = positions.length / 3
-    positions.push(0, 0, z)
-    if (shadeFlutes) colours.push(0.85, 0.85, 0.85)
+    positions.push(0, 0, z + gash * 0.72)
+    if (shadeFlutes) {
+      const shade = gash > 0 ? 0.56 : 0.85
+      colours.push(shade, shade, shade)
+    }
     for (let i = 0; i < around; i += 1) {
       const a = rim + i, b = rim + (i + 1) % around
       if (top) indices.push(centre, a, b)

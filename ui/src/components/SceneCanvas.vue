@@ -57,9 +57,9 @@ function build(): void {
     else geometry.computeVertexNormals()
     geometries.push(geometry)
     const material = new MeshStandardMaterial({
-      color: mesh.color === null ? new Color('#aeb7bf') : new Color(...mesh.color),
-      metalness: mesh.color === null ? 0.56 : 0.16,
-      roughness: 0.37, transparent: true, opacity: part.opacity,
+      color: mesh.color === null ? new Color('#b7bdc2') : new Color(...mesh.color),
+      metalness: mesh.color === null ? 0.63 : 0.12,
+      roughness: mesh.color === null ? 0.34 : 0.45, transparent: true, opacity: part.opacity,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
     })
     surfaces.push(material)
@@ -67,7 +67,7 @@ function build(): void {
     // Edge extraction is a display convenience; avoid expensive work for large tessellations.
     if ((part.attachment?.geometry.triangles ?? Infinity) <= 50_000) {
       const edges = new EdgesGeometry(geometry, 30)
-      const outline = new LineBasicMaterial({ color: '#526574', transparent: true, opacity: 0.5, toneMapped: false })
+      const outline = new LineBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false })
       geometries.push(edges)
       lines.push(outline)
       group.add(new LineSegments(edges, outline))
@@ -109,10 +109,17 @@ function draw(): void {
   }
   const extent = Math.max(0, ...corners.map((p) => Math.hypot(p[0] - props.camera.centre[0], p[1] - props.camera.centre[1], p[2] - props.camera.centre[2])))
   syncModelCamera(modelCamera, props.camera, props.width, props.height, extent)
-  surfaces.forEach((material) => { material.opacity = part.opacity })
+  surfaces.forEach((material) => {
+    const transparent = part.opacity < 1
+    if (material.transparent !== transparent) {
+      material.transparent = transparent
+      material.needsUpdate = true
+    }
+    material.opacity = part.opacity
+  })
   lines.forEach((material) => {
-    material.color.set(theme.value === 'dark' ? '#b8c9d4' : '#3e5363')
-    material.opacity = part.opacity * 0.42
+    material.color.set(theme.value === 'dark' ? '#c9d7e0' : '#33485b')
+    material.opacity = part.opacity * 0.34
   })
   const ratio = Math.min(window.devicePixelRatio, 2)
   const surface = renderer.domElement

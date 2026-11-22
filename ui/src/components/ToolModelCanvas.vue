@@ -22,7 +22,7 @@ const point = new Vector3()
 const size = new Vector3()
 let renderer: WebGLRenderer | null = null
 let resize: ResizeObserver | null = null
-let view: Camera = { azimuth: -0.6, elevation: 0.24, scale: 1, centre: [0, 0, 0] }
+let view: Camera = { azimuth: -0.68, elevation: -0.24, scale: 1, centre: [0, 0, 0] }
 let drag: { id: number; x: number; y: number } | null = null
 let contextLost = false
 
@@ -38,7 +38,7 @@ function draw(): void {
   if (width <= 0 || height <= 0) return
   camera.zoom = 1
   syncModelCamera(camera, view, width, height, bounds.getSize(size).length())
-  camera.rotateZ(0.38)
+  camera.rotateZ(0.52)
   camera.updateMatrixWorld()
   let x = 0; let y = 0
   const { min, max } = bounds
@@ -51,7 +51,7 @@ function draw(): void {
       }
     }
   }
-  camera.zoom = 0.88 / Math.max(x, y, 0.001)
+  camera.zoom = 0.93 / Math.max(x, y, 0.001)
   camera.updateProjectionMatrix()
   toolMesh.setTheme(theme.value === 'dark')
   const ratio = Math.min(window.devicePixelRatio, 2)
@@ -69,7 +69,7 @@ function down(event: PointerEvent): void {
 }
 function move(event: PointerEvent): void {
   if (drag?.id !== event.pointerId) return
-  view = orbit(view, event.clientX - drag.x, event.clientY - drag.y)
+  view = orbit(view, event.clientX - drag.x, event.clientY - drag.y, -Math.PI / 2)
   drag.x = event.clientX; drag.y = event.clientY
   draw()
 }
@@ -118,7 +118,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--preview-backdrop); overflow: hidden; }
+.model-canvas { position: relative; display: flex; flex-direction: column; min-height: 0; height: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--tool-preview-backdrop); overflow: hidden; }
 .caption { padding: 12px 12px 0; pointer-events: none; }
 canvas { width: 100%; flex: 1; min-height: 0; touch-action: none; cursor: grab; }
 canvas:active { cursor: grabbing; }

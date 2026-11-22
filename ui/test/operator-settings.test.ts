@@ -62,6 +62,16 @@ describe('operator settings', () => {
       expect(decodeOperatorPreferences({ ...custom(), tool_reference_height: height })).toBeNull()
     }
   })
+  it('keeps the safe Z for Go to, and falls back to the default without it or when it is damaged', () => {
+    expect(defaultOperatorPreferences().go_to_safe_z).toBeNull()
+    expect(decodeOperatorPreferences({ ...custom(), go_to_safe_z: -12.5 })?.go_to_safe_z).toBe(-12.5)
+    const older: Record<string, unknown> = { ...custom() }
+    delete older['go_to_safe_z']
+    expect(decodeOperatorPreferences(older)).toEqual({ ...custom(), go_to_safe_z: null })
+    for (const damaged of [Infinity, NaN, '40', true, 1e10, null]) {
+      expect(decodeOperatorPreferences({ ...custom(), go_to_safe_z: damaged })).toEqual({ ...custom(), go_to_safe_z: null })
+    }
+  })
   it('applies startup values once, clamps lowered limits, and never sends controller commands', () => {
     const r = rig(); r.connect()
     r.snapshot(2, { ...custom(), default_spindle_rpm: 5000, default_jog_velocity: 2000 })

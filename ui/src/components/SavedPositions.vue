@@ -6,14 +6,15 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useCardFeedback } from '../card-feedback'
 import { mdiBlock, onResult, operatorSettings, panel, send } from '../machine'
 import { powerBlock } from '../machine-block'
-import { goToPlan, machinePosition, nextPositionName, saveBlock, type GoToPlan } from '../manual-moves'
+import { chosenPositionName, goToPlan, machinePosition, nextPositionName, saveBlock, type GoToPlan } from '../manual-moves'
 import { createMoveSequence } from '../move-sequence'
-import { validPositionName, type SavedPosition } from '../operator-settings'
+import { maxPositionNameBytes, type SavedPosition } from '../operator-settings'
 import type { SetterStatusLine } from '../setter-state'
 import { vTooltip } from '../tooltip'
 import { formatLength } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
+import NameEntry from './NameEntry.vue'
 
 const emit = defineEmits<{ line: [SetterStatusLine] }>()
 
@@ -68,24 +69,39 @@ async function store(next: SavedPosition[]): Promise<void> {
   if (!result.saved) allow(result.reason || 'The positions could not be saved')
 }
 
-// ---- save --------------------------------------------------------------------------------------
+// ---- save and rename ---------------------------------------------------------------------------
 
-const draft = shallowRef<{ name: string; position: SavedPosition['position'] } | null>(null)
+/** A new position (`renaming` null) or a saved one being renamed; `fallback` is the empty name. */
+const draft = shallowRef<{ fallback: string; position: SavedPosition['position']; renaming: SavedPosition | null } | null>(null)
 const draftName = ref('')
-const nameBlock = computed(() => validPositionName(draftName.value.trim()) ? null : 'Enter a name of at most 64 bytes')
+const chosenName = computed(() => draft.value === null ? null
+  : chosenPositionName(draftName.value, draft.value.fallback, positions.value, draft.value.renaming))
+const nameBlock = computed(() => saving.value ? 'Saving…' : chosenName.value?.ok === false ? chosenName.value.reason : null)
 
 function openSave(): void {
   if (!act(addBlock.value) || panel.status === null) return
-  draft.value = { name: nextPositionName(positions.value), position: machinePosition(panel.status) }
-  draftName.value = draft.value.name
+  const name = nextPositionName(positions.value)
+  draft.value = { fallback: name, position: machinePosition(panel.status), renaming: null }
+  draftName.value = name
 }
 
-function confirmSave(): void {
-  const saved = draft.value
-  if (saved === null || nameBlock.value !== null) return
-  const next = [...positions.value, { name: draftName.value.trim(), position: saved.position }]
+function openRename(entry: SavedPosition): void {
+  if (!act(saving.value ? 'Saving…' : null)) return
+  draft.value = { fallback: entry.name, position: entry.position, renaming: entry }
+  draftName.value = entry.name
+}
+
+function confirmName(): void {
+  const current = draft.value
+  const chosen = chosenName.value
+  if (current === null || chosen === null || !chosen.ok || saving.value) return
   draft.value = null
-  void store(next)
+  const { renaming } = current
+  if (renaming === null) {
+    void store([...positions.value, { name: chosen.plan, position: current.position }])
+  } else if (chosen.plan !== renaming.name) {
+    void store(positions.value.map((entry) => entry === renaming ? { ...entry, name: chosen.plan } : entry))
+  }
 }
 
 // ---- delete ------------------------------------------------------------------------------------
@@ -101,10 +117,11 @@ function confirmDelete(): void {
 
 // ---- go to -------------------------------------------------------------------------------------
 
-const includeZ = ref(false)
+const includeZ = ref(true)
 const goTo = computed((): GoToPlan | string | null => {
   if (target.value === null) return null
-  const planned = goToPlan({ status: panel.status, machineBlock: mdiBlock.value }, target.value.position, includeZ.value)
+  const planned = goToPlan({ status: panel.status, machineBlock: mdiBlock.value }, target.value.position, includeZ.value,
+    panel.preferences.go_to_safe_z)
   return planned.ok ? planned.plan : planned.reason
 })
 const confirming = ref(false)
@@ -112,7 +129,7 @@ const confirming = ref(false)
 function openGoTo(entry: SavedPosition): void {
   if (!act(goToBlock.value)) return
   target.value = entry
-  includeZ.value = false
+  includeZ.value = true
   const planned = goTo.value
   if (typeof planned === 'string') { allow(planned); return }
   confirming.value = true
@@ -126,18 +143,20 @@ function startGoTo(): void {
   sequence.start(planned.moves)
 }
 
-/** Each move of the plan as the axes go from where they are to where they will be. */
+/** A machine coordinate with its sign, as the steps name it: "+169.870", "-50.000". */
+const signed = (mm: number): string => `${mm >= 0 ? '+' : ''}${length(mm)}`
+
+/** Each move of the plan in plain words: the lift to the safe height, X Y, Z down to the saved Z. */
 const steps = computed(() => {
   const planned = goTo.value
-  const status = panel.status
-  if (planned === null || typeof planned === 'string' || status === null) return []
-  let [x, y, z] = machinePosition(status)
+  if (planned === null || typeof planned === 'string') return []
   return planned.moves.map((move) => {
-    const parts: string[] = []
-    if (move.target.z !== undefined) { parts.push(`Z ${length(z)} → ${length(move.target.z)}`); z = move.target.z }
-    if (move.target.x !== undefined) { parts.push(`X ${length(x)} → ${length(move.target.x)}`); x = move.target.x }
-    if (move.target.y !== undefined) { parts.push(`Y ${length(y)} → ${length(move.target.y)}`); y = move.target.y }
-    return { key: move.text, text: parts.join('   ') }
+    const { x, y, z } = move.target
+    const text = x !== undefined && y !== undefined ? `Move X Y to X ${signed(x)}  Y ${signed(y)}`
+      : z !== undefined && z === planned.safeZ && move === planned.moves[0]
+        ? panel.preferences.go_to_safe_z === null ? `Lift Z to the top of travel (safe Z) ${signed(z)}` : `Lift Z to safe Z ${signed(z)}`
+        : `Lower Z to the saved ${signed(z ?? 0)}`
+    return { key: move.text, text }
   })
 })
 </script>
@@ -156,7 +175,11 @@ const steps = computed(() => {
         </thead>
         <tbody>
           <tr v-for="entry in positions" :key="`${entry.name}:${entry.position.join(',')}`" class="row">
-            <th v-tooltip="entry.name" scope="row" class="name">{{ entry.name }}</th>
+            <th scope="row" class="name">
+              <button v-tooltip="saving ? 'Saving…' : `Rename ${entry.name}`" class="btn quiet rename" type="button" :aria-label="`Rename ${entry.name}`" :aria-disabled="saving" @click="openRename(entry)">
+                <span class="text">{{ entry.name }}</span><AppIcon name="edit" />
+              </button>
+            </th>
             <td v-for="(value, index) in entry.position" :key="index" class="coord mono">{{ length(value) }}</td>
             <td class="go-col">
               <button v-tooltip="goToBlock ?? `Go to ${entry.name}`" class="btn" type="button" :aria-disabled="goToBlock !== null" @click="openGoTo(entry)">Go to</button>
@@ -179,13 +202,14 @@ const steps = computed(() => {
     </div>
   </div>
 
-  <ModalDialog v-if="draft" title="Save position" size="small" fresh-gesture @close="draft = null">
-    <input v-model="draftName" class="field" type="text" autocomplete="off" aria-label="Position name" maxlength="64" @keydown.enter.prevent="confirmSave" />
+  <ModalDialog v-if="draft" :title="draft.renaming ? `Rename ${draft.renaming.name}` : 'Save position'" size="medium" expanded fresh-gesture @close="draft = null">
+    <NameEntry v-model="draftName" label="Position name" :placeholder="draft.fallback" :max-length="maxPositionNameBytes" :replace-first="draft.renaming === null" @enter="confirmName" />
     <p class="coordinate mono">X {{ length(draft.position[0]) }}  Y {{ length(draft.position[1]) }}  Z {{ length(draft.position[2]) }} {{ unitName }}</p>
-    <p>Machine coordinates, saved for this machine.</p>
+    <p v-if="nameBlock && nameBlock !== 'Saving…'" class="refusal" role="alert">{{ nameBlock }}</p>
+    <p v-else>Machine coordinates, saved for this machine. An empty name saves as {{ draft.fallback }}.</p>
     <template #footer>
       <button class="btn wide" type="button" @click="draft = null">Cancel</button>
-      <button v-tooltip="nameBlock ?? 'Save this position'" class="btn primary wide" type="button" :aria-disabled="nameBlock !== null" @click="confirmSave">Save</button>
+      <button v-tooltip="nameBlock ?? (draft.renaming ? 'Save the new name' : 'Save this position')" class="btn primary wide" type="button" :aria-disabled="nameBlock !== null" @click="confirmName">Save</button>
     </template>
   </ModalDialog>
 
@@ -197,13 +221,19 @@ const steps = computed(() => {
     </template>
   </ModalDialog>
 
-  <ModalDialog v-if="confirming && target" :title="`Go to ${target.name}?`" size="small" fresh-gesture @close="confirming = false">
+  <ModalDialog v-if="confirming && target" :title="`Go to ${target.name}?`" size="medium" fresh-gesture @close="confirming = false">
     <ol v-if="steps.length > 0" class="steps">
       <li v-for="step in steps" :key="step.key" class="mono">{{ step.text }}</li>
     </ol>
     <p v-else-if="typeof goTo === 'string'" class="refusal">{{ goTo }}</p>
     <p v-else>The machine is already at this position.</p>
-    <label class="check"><input v-model="includeZ" type="checkbox" />Include Z</label>
+    <div class="z-choice">
+      <span class="label">Z at the end</span>
+      <div class="segmented" role="group" aria-label="Z at the end">
+        <button class="btn" type="button" :class="{ on: !includeZ }" :aria-pressed="!includeZ" @click="includeZ = false">Stays at safe height</button>
+        <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">Down to saved Z {{ length(target.position[2]) }}</button>
+      </div>
+    </div>
     <p>Rapid moves in machine coordinates, {{ unitName }}. Z first goes up to a safe height.</p>
     <template #footer>
       <button class="btn wide" type="button" @click="confirming = false">Cancel</button>
@@ -223,7 +253,10 @@ const steps = computed(() => {
 .list .delete-col { width: 48px; }
 .row > * { padding: 2px 4px; }
 .row:not(:last-child) > * { border-bottom: 1px solid var(--line); }
-.row .name { padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row .name { padding: 2px 0 2px 2px; font-weight: 500; }
+.rename { display: flex; justify-content: space-between; gap: 6px; width: 100%; padding-inline: 6px; font-weight: 500; text-align: left; }
+.rename .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rename :deep(svg) { flex: none; width: 16px; height: 16px; opacity: .6; }
 .row .coord { padding-right: 8px; text-align: right; font-size: 12px; white-space: nowrap; }
 .row .go-col .btn { width: 100%; padding-inline: 5px; }
 .row .delete-col { padding-inline: 2px; }
@@ -233,9 +266,11 @@ const steps = computed(() => {
 .btn[aria-disabled="true"] { opacity: .68; }
 .coordinate { margin: 0; font-size: 18px; white-space: pre; }
 p { margin: 0; }
-.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; white-space: pre; }
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; }
 .refusal { color: var(--stop); }
-.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
-.check input { width: 22px; height: 22px; }
+.z-choice { display: flex; flex-direction: column; gap: 6px; }
+.z-choice .label { color: var(--text-dim); font-size: 12px; }
+.z-choice .segmented { display: flex; }
+.z-choice .segmented .btn { flex: 1; min-height: 48px; padding-inline: 8px; }
 .wide { min-height: 48px; }
 </style>

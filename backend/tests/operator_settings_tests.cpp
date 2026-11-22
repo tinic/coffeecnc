@@ -30,7 +30,7 @@ const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}, {}}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};
@@ -141,6 +141,41 @@ void saved_positions() {
   requested.document.saved_positions = {{std::string(64, 'a'), {1, 2, 3}}};
   require(operator_settings_command_error(requested, limits).empty(),
           "A 64-byte name is accepted");
+}
+void go_to_safe_z() {
+  OperatorSettingsFile value{"G0759", 1, command().document};
+  require(!value.document.go_to_safe_z, "No safe Z for Go to by default");
+  const auto unset = encode_operator_settings_file(value);
+  require(unset && Json::parse(*unset)["document"]["go_to_safe_z"].is_null(),
+          "An unset safe Z is written as null");
+  value.document.go_to_safe_z = 40.125;
+  const auto encoded = encode_operator_settings_file(value);
+  const auto decoded = decode_operator_settings_file(encoded.value_or(""));
+  require(decoded && decoded->document == value.document && decoded->document.go_to_safe_z == 40.125,
+          "The safe Z for Go to round trips exactly");
+  auto older = Json::parse(*encoded);
+  older["document"].erase("go_to_safe_z");
+  const auto upgraded = decode_operator_settings_file(older.dump());
+  require(upgraded && !upgraded->document.go_to_safe_z &&
+              upgraded->document.default_spindle_rpm == 1800,
+          "Documents without a safe Z keep their other preferences and use the default");
+  for (const auto& damaged : {Json("40"), Json(true), Json(1e10), Json::array({40})}) {
+    auto invalid = Json::parse(*encoded);
+    invalid["document"]["go_to_safe_z"] = damaged;
+    const auto dropped = decode_operator_settings_file(invalid.dump());
+    require(dropped && !dropped->document.go_to_safe_z &&
+                dropped->document.default_spindle_rpm == 1800,
+            "A damaged safe Z falls back to the default without losing other settings");
+    require(!decode_operator_preferences(invalid["document"].dump()),
+            "A save request with a damaged safe Z is refused");
+  }
+  auto requested = command();
+  requested.document.go_to_safe_z = std::nan("");
+  require(!operator_settings_command_error(requested, limits).empty(),
+          "A non-finite safe Z is refused");
+  requested.document.go_to_safe_z = -12.5;
+  require(operator_settings_command_error(requested, limits).empty(),
+          "A negative machine Z is a valid safe Z");
 }
 // A save request replaces the whole document: a damaged optional field refuses it, where a damaged
 // file only falls back for that field.
@@ -388,6 +423,7 @@ auto main() -> int {
   try {
     documents_and_limits();
     saved_positions();
+    go_to_safe_z();
     damaged_requests();
     bounded_files();
     archive_and_restart();

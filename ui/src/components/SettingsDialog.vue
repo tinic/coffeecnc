@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { panel } from '../machine'
+import { limitMarginMm, safeZBlock } from '../manual-moves'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import type { OperatorPreferences } from '../operator-settings'
 import type { OperatorSettingsController } from '../operator-settings-state'
 import { fromDisplay, toDisplay, velocityUnit, wcsNames } from '../units'
+import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 import ToolModelDialog from './ToolModelDialog.vue'
 
@@ -31,6 +33,29 @@ const referenceHeight = computed(() => {
   const value = parseNumericExpression(reference.value, unit)
   return value === null ? null : fromDisplay(value, unit)
 })
+// Safe Z for Go to: machine Z in display units; empty is the default, Z max less the margin.
+const initialSafeZ = panel.preferences.go_to_safe_z
+const lengthText = (mm: number): string => String(Number(toDisplay(mm, unit).toFixed(6)))
+const initialSafeZText = initialSafeZ === null ? '' : lengthText(initialSafeZ)
+const safeZText = ref(initialSafeZText)
+const zAxis = computed(() => panel.status?.axes.find((axis) => axis.axis === 'z'))
+const safeZ = computed((): number | null | undefined => {
+  if (safeZText.value === initialSafeZText) return initialSafeZ
+  if (safeZText.value.trim() === '') return null
+  const value = parseNumericExpression(safeZText.value, unit)
+  return value === null ? undefined : fromDisplay(value, unit)
+})
+const defaultSafeZ = computed(() => zAxis.value === undefined ? 'the top of Z travel'
+  : `${lengthText(zAxis.value.max_limit - limitMarginMm)} ${unit === 'inch' ? 'in' : 'mm'}`)
+const safeZInvalid = computed(() => {
+  const value = safeZ.value
+  if (value === undefined) return 'Enter a safe Z for Go to, or leave it empty.'
+  return value === null || value === initialSafeZ ? null : safeZBlock(panel.status, value, unit)
+})
+function usePresentZ(): void {
+  const z = zAxis.value
+  if (z?.homed === true) safeZText.value = lengthText(z.machine)
+}
 const rpm = computed(() => parseNumericExpression(spindle.value, 'rpm'))
 const velocity = computed(() => {
   if (jog.value === initialJogText) return initialJog
@@ -39,6 +64,7 @@ const velocity = computed(() => {
 })
 const invalid = computed(() => {
   if (referenceHeight.value === null || referenceHeight.value < 0 || referenceHeight.value > 1e9) return 'Enter a tool reference height of zero or higher.'
+  if (safeZInvalid.value !== null) return safeZInvalid.value
   if (enabled.value.length === 0) return 'Keep at least one work system shortcut.'
   if (rpm.value === null || rpm.value < 0 || rpm.value > 1e9) return 'Enter a spindle speed of zero or higher.'
   if (rpm.value > (panel.hello?.max_spindle_rpm ?? Infinity)) return `Spindle limit: ${String(panel.hello?.max_spindle_rpm)} rpm.`
@@ -57,9 +83,9 @@ const storageLabel = computed(() => {
   }
 })
 async function save(): Promise<void> {
-  if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null || referenceHeight.value === null) return
+  if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null || referenceHeight.value === null || safeZ.value === undefined) return
   const result = await props.settings.save({ ...panel.preferences, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
-    default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value, tool_reference_height: referenceHeight.value }, context)
+    default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value, tool_reference_height: referenceHeight.value, go_to_safe_z: safeZ.value }, context)
   if (result.saved && !closed) emit('close')
 }
 </script>
@@ -96,6 +122,17 @@ async function save(): Promise<void> {
           <div class="speed-entry"><input id="settings-reference" v-model="reference" v-numeric :disabled="settings.state.saving" class="field mono" type="text" inputmode="decimal" :data-numeric-unit="unit" data-numeric-effect="Contact height above work Z zero for tool length touch-off." /><span>{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
           <p class="hint">Gauge block or setter contact height above work Z zero. Prefills Touch off length; does not move the machine.</p>
         </div>
+        <div class="safe-z">
+          <label class="speed-label" for="settings-safe-z">Safe Z for Go to</label>
+          <div class="speed-entry">
+            <input id="settings-safe-z" v-model="safeZText" v-numeric :disabled="settings.state.saving" class="field mono" type="text" inputmode="decimal" :placeholder="`Default ${defaultSafeZ}`" :data-numeric-unit="unit" data-numeric-effect="Machine Z that Go to lifts to before X and Y move." /><span>{{ unit === 'inch' ? 'in' : 'mm' }}</span>
+          </div>
+          <div class="safe-z-actions">
+            <button v-tooltip="zAxis?.homed === true ? 'Set safe Z to the present machine Z' : 'Home Z first'" class="btn" type="button" :disabled="settings.state.saving || zAxis?.homed !== true" @click="usePresentZ">Use the present Z</button>
+            <button class="btn quiet" type="button" :disabled="settings.state.saving || safeZText === ''" @click="safeZText = ''">Default</button>
+          </div>
+          <p class="hint">Machine coordinates. Go to lifts Z here, or stays higher, before X and Y move. Empty: {{ defaultSafeZ }}, the top of travel less {{ limitMarginMm }} mm.</p>
+        </div>
         <details class="shift-note"><summary>About G92 / G52 shifts</summary><p>G92/G52 adds an offset to every work system. CoffeeCNC shows it whenever applied. Work system shortcuts do not hide or clear it.</p></details>
       </section>
     </div>
@@ -116,6 +153,7 @@ h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
 .units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }.units .btn:first-child { flex: 1.8; }
+.safe-z { margin-top: 12px; }.safe-z-actions { display: flex; gap: 8px; margin-top: 6px; }.safe-z-actions .btn { min-height: 44px; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
 .wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 13px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .shift-note { border-top: 1px solid var(--line); padding-top: 4px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 28px; padding-block: 0; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }

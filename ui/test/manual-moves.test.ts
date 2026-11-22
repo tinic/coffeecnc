@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { shallowRef } from 'vue'
 
-import { arrived, goToPlan, limitMarginMm, moveBlock, nextPositionName, powerFeedPlan, saveBlock, type MoveContext, type PowerFeedRequest } from '../src/manual-moves'
+import { arrived, goToPlan, limitMarginMm, moveBlock, nextPositionName, powerFeedPlan, safeZBlock, saveBlock, type MoveContext, type PowerFeedRequest } from '../src/manual-moves'
 import { createMoveSequence } from '../src/move-sequence'
 import type { CommandBody, CommandResult, Status } from '../src/protocol'
 import type { ResultListener } from '../src/store'
@@ -80,6 +80,18 @@ describe('go to a saved position', () => {
     const inch = goToPlan(live(status({ program_units: 'inch' })), [25.4, 50, -20], true)
     expect(inch.ok && inch.plan.moves.map((move) => move.text)).toEqual(['G20 G90 G53 G0 Z-0.0197', 'G20 G90 G53 G0 X1.0000 Y1.9685', 'G20 G90 G53 G0 Z-0.7874'])
   })
+  it('lifts to the safe Z of the settings, or stays higher, and refuses one outside the Z limits', () => {
+    const plan = goToPlan(live(), [10, 20, -50], true, -15)
+    expect(plan.ok && plan.plan.safeZ).toBe(-15)
+    expect(plan.ok && plan.plan.moves.map((move) => move.text)).toEqual(['G21 G90 G53 G0 Z-15.000', 'G21 G90 G53 G0 X10.000 Y20.000', 'G21 G90 G53 G0 Z-50.000'])
+    const higher = goToPlan(live(moved(status(), { z: -5 })), [10, 20, -50], true, -15)
+    expect(higher.ok && higher.plan.moves.map((move) => move.text)).toEqual(['G21 G90 G53 G0 X10.000 Y20.000', 'G21 G90 G53 G0 Z-50.000'])
+    expect(goToPlan(live(), [10, 20, -50], true, 3)).toEqual({ ok: false, reason: 'The safe Z for Go to is outside the Z soft limits. Change it in Settings' })
+    expect(safeZBlock(status(), -15, 'mm')).toBeNull()
+    expect(safeZBlock(status(), -200.5, 'mm')).toBe('Safe Z must be within the Z soft limits, -200.000 to 0.000 mm')
+    expect(safeZBlock(status(), 1, 'inch')).toBe('Safe Z must be within the Z soft limits, -7.8740 to 0.0000 in')
+    expect(safeZBlock(null, 1, 'mm')).toBe('Z has no soft limits')
+  })
   it('refuses a saved position outside the soft limits and an unhomed or busy machine', () => {
     expect(goToPlan(live(), [500, 20, -50], false)).toEqual({ ok: false, reason: 'The saved X is outside the soft limits' })
     expect(goToPlan(live(), [10, 20, -500], false).ok).toBe(true)
@@ -97,8 +109,10 @@ describe('go to a saved position', () => {
     const unhomed = status(); unhomed.axes = unhomed.axes.map((axis) => ({ ...axis, homed: false }))
     expect(saveBlock(unhomed, [])).toBe('Home X first')
     expect(saveBlock(status(), [])).toBeNull()
-    expect(arrived(moved(status(), { x: 10.04 }), { x: 10 })).toBe(true)
-    expect(arrived(moved(status(), { x: 10.06 }), { x: 10 })).toBe(false)
+    // The measured position trails the command by the backlash of a linear scale.
+    expect(arrived(moved(status(), { x: 10.125 }), { x: 10 })).toBe(true)
+    expect(arrived(moved(status(), { x: 9.5 }), { x: 10 })).toBe(true)
+    expect(arrived(moved(status(), { x: 10.51 }), { x: 10 })).toBe(false)
   })
 })
 

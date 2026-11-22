@@ -5300,6 +5300,156 @@ void rotary_readouts(Rig& rig) {
   check("rotary_configuration_xyz_jog", jog.accepted() && linear_jog, jog.text());
 }
 
+// Go to and power feed of Manual (ui/src/manual-moves.ts) save `axes[].machine`, LinuxCNC's
+// traj.actualPosition, and move back with G53 blocks in the interpreter's program units. Here
+// LinuxCNC itself shows where those blocks end under the state an operator has while cutting.
+void machine_moves(Rig& rig) {
+  const auto block = [&](const std::string& text) -> bool {
+    const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
+    const bool idle = rig.pump_until(30s, [&]() -> bool { return rig.idle(); });
+    if (!result.accepted())
+      fact("machine_moves_refused", std::format("text={} {}", word(text), result.text()));
+    return result.accepted() && idle;
+  };
+  const auto position = [&]() -> Vec3 {
+    rig.pump(100ms);
+    const auto& axes = rig.status().controller.axes;
+    return {axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto error = [](const Vec3& at, const Vec3& wanted) -> double {
+    return std::max({std::abs(at[0] - wanted[0]), std::abs(at[1] - wanted[1]),
+                     std::abs(at[2] - wanted[2])});
+  };
+  // A length word as manual-moves.ts writes it: mm with 3 decimals, inch with 4.
+  const auto length = [](double mm, bool inch) -> std::string {
+    return inch ? std::format("{:.4f}", mm / 25.4) : std::format("{:.3f}", mm);
+  };
+  const auto units = [](bool inch) -> std::string { return inch ? "G20" : "G21"; };
+  const auto clean = [&]() -> bool {
+    return block("G21 G90 G94 G49 G54 G92.1") && block("G10 L2 P1 X0 Y0 Z0 R0") &&
+           block("G53 G0 Z0");
+  };
+  const auto status = rig.status();
+  const double z_max = status.controller.axes[2].max_limit;
+  const double z_min = status.controller.axes[2].min_limit;
+  const double margin = 0.5; // limitMarginMm
+
+  // A G53 move ends at the machine position it names under every piece of state that moves
+  // the work coordinates: tool length and X offsets (G43, G43.1, G43.2), G5x with rotation,
+  // G92, G52, inch program units.
+  struct State {
+    const char* name;
+    std::vector<const char*> setup;
+    bool inch;
+  };
+  const std::vector<State> states = {
+      {"none", {}, false},
+      {"g43_h1", {"G43 H1"}, false},
+      {"g43_1_x4_z30", {"G43.1 X4 Z30"}, false},
+      {"g54", {"G10 L2 P1 X12 Y-7 Z5"}, false},
+      {"g92", {"G92 X1 Y2 Z3"}, false},
+      {"g52", {"G52 X6 Y5 Z4"}, false},
+      {"g54_rotation_30", {"G10 L2 P1 X12 Y-7 R30"}, false},
+      {"g20_g43_1", {"G43.1 X4 Z30", "G20"}, true},
+      {"all", {"G10 L2 P1 X12 Y-7 Z5 R30", "G43 H1", "G43.2 X4", "G92 X1 Y2 Z3"}, false},
+      {"all_g20", {"G10 L2 P1 X12 Y-7 Z5 R30", "G43 H1", "G43.2 X4", "G92 X1 Y2 Z3", "G20"}, true},
+  };
+  const Vec3 named{10, 20, -10};
+  for (const auto& state : states) {
+    bool ready = clean();
+    for (const auto* text : state.setup)
+      ready = ready && block(text);
+    const auto text = std::format("{} G90 G53 G0 X{} Y{} Z{}", units(state.inch),
+                                  length(named[0], state.inch), length(named[1], state.inch),
+                                  length(named[2], state.inch));
+    const bool moved = ready && block(text);
+    const auto at = position();
+    const auto now = rig.status();
+    check(std::format("machine_moves_g53_exact_{}", state.name),
+          moved && error(at, named) <= 0.001,
+          std::format("text={} machine={:.4f},{:.4f},{:.4f} error_mm={:.4f} tool={:.3f},{:.3f},{:.3f} "
+                      "g5x={:.3f},{:.3f},{:.3f} g92={:.3f},{:.3f},{:.3f} rotation={}",
+                      word(text), at[0], at[1], at[2], error(at, named), now.tool_offset[0],
+                      now.tool_offset[1], now.tool_offset[2], now.g5x[0], now.g5x[1], now.g5x[2],
+                      now.g92[0], now.g92[1], now.g92[2], now.rotation_xy));
+  }
+  // The tool offset is in effect for a move in work coordinates: what G53 leaves out.
+  const bool offset_move = clean() && block("G43 H1") && block("G90 G0 Z0");
+  check("machine_moves_g43_applies_to_work_moves",
+        offset_move && near(position()[2], rig.status().tool_offset[2], 0.001),
+        std::format("machine_z={:.4f} tool_z={:.4f}", position()[2], rig.status().tool_offset[2]));
+
+  // Save, move away, Go to with Z: the blocks goToPlan writes end at the saved position.
+  for (const bool inch : {false, true}) {
+    const auto name = inch ? std::string_view("g20") : std::string_view("g21");
+    bool ready = clean() && block("G53 G0 X37.5 Y-12.25 Z-22.125") &&
+                 block("G10 L2 P1 X12 Y-7 Z5 R30") && block("G43 H1") && block("G43.2 X4") &&
+                 block("G92 X1 Y2 Z3") && block(units(inch));
+    const auto saved = position();
+    const auto tool = rig.status().tool_offset;
+    ready = ready && block(std::format("{} G90 G53 G0 X{} Y{} Z{}", units(inch), length(150, inch),
+                                       length(100, inch), length(-40, inch)));
+    const double safe_z = std::max(position()[2], z_max - margin);
+    const auto prefix = units(inch) + " G90 G53 G0";
+    const std::vector<std::string> moves = {
+        std::format("{} Z{}", prefix, length(safe_z, inch)),
+        std::format("{} X{} Y{}", prefix, length(saved[0], inch), length(saved[1], inch)),
+        std::format("{} Z{}", prefix, length(saved[2], inch)),
+    };
+    bool sent = ready;
+    for (const auto& text : moves)
+      sent = sent && block(text);
+    const auto at = position();
+    const auto after = rig.status();
+    check(std::format("machine_moves_go_to_saved_{}", name),
+          sent && error(at, saved) <= 0.01 && tool[2] > 40 && near(tool[0], 4, 0.0001) &&
+              after.tool_offset == tool &&
+              after.controller.program_units == (inch ? LengthUnit::inch : LengthUnit::mm),
+          std::format("saved={:.4f},{:.4f},{:.4f} machine={:.4f},{:.4f},{:.4f} error_mm={:.4f} "
+                      "tool={:.3f},{:.3f},{:.3f}",
+                      saved[0], saved[1], saved[2], at[0], at[1], at[2], error(at, saved),
+                      after.tool_offset[0], after.tool_offset[1], after.tool_offset[2]));
+  }
+
+  // Power feed to either Z limit with G43 active: it stops the margin inside the soft limit.
+  for (const int direction : {1, -1}) {
+    const double target = direction > 0 ? z_max - margin : z_min + margin;
+    const bool fed = clean() && block("G43 H1") &&
+                     block(std::format("G21 G90 G94 G53 G1 Z{} F3000", length(target, false)));
+    const double z = position()[2];
+    check(std::format("machine_moves_power_feed_inside_limit_{}", direction > 0 ? "z_plus" : "z_minus"),
+          fed && near(z, target, 0.01) && z <= z_max && z >= z_min,
+          std::format("target={:.3f} machine_z={:.4f} limits={:.3f}..{:.3f}", target, z, z_min, z_max));
+  }
+
+  // On a machine with linear scales the measured position trails the command by the
+  // backlash after a reversal (0.125 mm on the G0759's Z). The lift of a Go to ends exactly
+  // at its target and is measured short by that much: the arrival tolerance must allow it.
+  bool wired = clean() && block("G53 G0 Z-20");
+  wired = wired && halcmd("loadrt mux2 names=sim-z-backlash") &&
+          halcmd("loadrt sum2 names=sim-z-feedback") &&
+          halcmd("addf sim-z-backlash servo-thread") && halcmd("addf sim-z-feedback servo-thread") &&
+          halcmd("unlinkp joint.2.motor-pos-fb") && halcmd("net Zpos sim-z-feedback.in0") &&
+          halcmd("net Z-positive-direction sim-z-backlash.sel") &&
+          halcmd("net sim-z-backlash-error sim-z-backlash.out sim-z-feedback.in1") &&
+          halcmd("net sim-z-encoder sim-z-feedback.out joint.2.motor-pos-fb") &&
+          halcmd(std::format("setp sim-z-backlash.in1 {}", -0.125 / rig.config.millimetres_per_unit));
+  const double lift = z_max - margin;
+  const bool lifted = wired && block(std::format("G21 G90 G53 G0 Z{}", length(lift, false)));
+  const double measured = position()[2];
+  // The joint's commanded position, before the motor offset of homing.
+  const double commanded = hal_number("joint.2.pos-cmd") * rig.config.millimetres_per_unit;
+  check("machine_moves_lift_measured_with_scale_lag",
+        lifted && near(commanded, lift, 0.001) && std::abs(measured - lift) > 0.05 &&
+            std::abs(measured - lift) <= 0.5,
+        std::format("target={:.3f} commanded={:.4f} measured={:.4f} short_mm={:.4f} old_tolerance=0.05 "
+                    "tolerance=0.5",
+                    lift, commanded, measured, lift - measured));
+  if (wired)
+    static_cast<void>(halcmd("setp sim-z-backlash.in1 0"));
+  static_cast<void>(clean());
+}
+
 class InterlockProbeTool final : public ToolModelService {
 public:
   auto submit(PageToken, RequestId, ToolModelCommand) -> std::optional<std::string> override {
@@ -5363,7 +5513,8 @@ void probe_tool_exchange(Rig& rig) {
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
-         bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only) -> int {
+         bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
+         bool moves_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5456,6 +5607,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   }
   if (gantry_only) {
     gantry(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (moves_only) {
+    homing(rig);
+    machine_moves(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5597,6 +5754,7 @@ auto main(int argc, char** argv) -> int {
   bool history_only = false;
   bool rotary_only = false;
   bool probe_interlock_only = false;
+  bool moves_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5618,6 +5776,7 @@ auto main(int argc, char** argv) -> int {
     history_only = history_only || std::string_view(argv[i]) == "offset-history";
     rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
     probe_interlock_only = probe_interlock_only || std::string_view(argv[i]) == "probe-interlock";
+    moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5629,7 +5788,7 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only, probe_interlock_only);
+               history_only, rotary_only, probe_interlock_only, moves_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

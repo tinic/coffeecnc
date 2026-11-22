@@ -133,7 +133,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
   };
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
-        {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions"});
+        {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions",
+         "go_to_safe_z"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -196,6 +197,14 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     else
       fall_back("Saved positions must be at most sixteen named, finite machine positions.");
   }
+  // Null or absent: the default safe height.
+  if (const auto safe_z = value.find("go_to_safe_z"); safe_z != value.end() && !safe_z->is_null()) {
+    if (safe_z->is_number() && std::isfinite(safe_z->get<double>()) &&
+        std::abs(safe_z->get<double>()) <= 1e9)
+      document.go_to_safe_z = safe_z->get<double>();
+    else
+      fall_back("Safe Z for Go to must be a machine Z in mm.");
+  }
   if (const auto error = operator_preferences_error(document); !error.empty())
     throw std::runtime_error(error);
   return document;
@@ -210,7 +219,8 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"program_layout", layout_name(document.program_layout)},
           {"theme", theme_name(document.theme)},
           {"recent_programs", document.recent_programs},
-          {"saved_positions", positions_json(document.saved_positions)}};
+          {"saved_positions", positions_json(document.saved_positions)},
+          {"go_to_safe_z", document.go_to_safe_z ? Json(*document.go_to_safe_z) : Json(nullptr)}};
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -250,6 +260,9 @@ auto operator_preferences_error(const OperatorPreferences& document) -> std::str
   if (!std::isfinite(document.tool_reference_height) || document.tool_reference_height < 0 ||
       document.tool_reference_height > 1e9)
     return "Tool reference height must be between zero and 1,000,000,000 mm.";
+  if (document.go_to_safe_z &&
+      (!std::isfinite(*document.go_to_safe_z) || std::abs(*document.go_to_safe_z) > 1e9))
+    return "Safe Z for Go to must be a machine Z in mm.";
   return {};
 }
 auto operator_settings_command_error(const SetOperatorSettings& command, const Limits& limits)

@@ -20,6 +20,12 @@ const native = import.meta.glob<string>([
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
   { query: '?raw', import: 'default', eager: true })
+// The first setLanguage() of a language imports its catalogs, which vitest transforms and the
+// vue-i18n plugin compiles on demand: about 0.2 s alone and over 5 s on a loaded host (#267).
+// Load them while the file is collected, outside every test's timeout; the tests then only switch.
+await Promise.all((['de', 'fr', 'ja'] as const).map(setLanguage))
+await setLanguage('en')
+
 const store = Object.values(import.meta.glob<string>('../src/store.ts', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
 
 /** Stands for a variable part: a placeholder in the catalog matches any text. */

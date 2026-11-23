@@ -337,6 +337,7 @@ const gGroups: Readonly<Record<number, string>> = {
   591: 'coordinate system',
   592: 'coordinate system',
   593: 'coordinate system',
+  610: 'path control', // Preview already follows the exact path.
   900: 'distance mode',
   910: 'distance mode',
   911: 'arc distance mode',

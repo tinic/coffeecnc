@@ -9,8 +9,9 @@ import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
+import { threadMill } from './thread-mill'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'thread-mill'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
@@ -289,6 +290,29 @@ export const operations: readonly Operation[] = [
       length: v.num('length'), width: v.num('width'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'),
       plunge: v.text('slotEntry') === 'plunge', angle: v.num('angle'), entryFeed: v.num('plungeFeed') }),
     name: (v, unit) => `slot-${v.text('along')}-${number(v.num('length'), unit)}x${size(v.num('width'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'thread-mill',
+    title: 'operations.operation.threadMill',
+    note: () => 'operations.operation.threadMillSetup',
+    fields: [
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('major', 'operations.label.threadMajor', 'length'), num('pitch', 'operations.label.threadPitch', 'length'),
+      num('pilot', 'operations.label.threadPilot', 'length'), num('pilotDepth', 'operations.label.threadPilotDepth', 'length'),
+      num('depth', 'operations.label.threadDepth', 'length'), num('passes', 'operations.label.threadPasses', 'count'),
+      { type: 'choice', key: 'hand', label: 'operations.label.threadHand',
+        options: [['right', 'operations.option.threadRight'], ['left', 'operations.option.threadLeft']] },
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { x: 0, y: 0, major: 10, pitch: 1.5, pilot: 8.5, pilotDepth: 13, depth: 9, hand: 'right', passes: 2,
+        ...speeds.mm, feed: 60, plungeFeed: 50 },
+      { x: 0, y: 0, major: 0.375, pitch: '1/16', pilot: 0.3125, pilotDepth: 0.55, depth: 0.375, hand: 'right', passes: 2,
+        ...speeds.inch, feed: 2.4, plungeFeed: 2 }),
+    generate: (v, common) => threadMill({ ...common, x: v.num('x'), y: v.num('y'),
+      majorDiameter: v.num('major'), pitch: v.num('pitch'), pilotDiameter: v.num('pilot'), pilotDepth: v.num('pilotDepth'),
+      depth: v.num('depth'), passes: v.num('passes'), leftHand: v.text('hand') === 'left', entryFeed: v.num('plungeFeed') }),
+    name: (v, unit) => `thread-${size(v.num('major'), unit)}-${v.text('hand') === 'left' ? 'lh' : 'rh'}`, // i18n-ignore
   },
 ]
 

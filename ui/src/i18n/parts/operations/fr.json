@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Choisir une fraise à chanfreiner",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
       "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "chamfer": "Chanfrein",
+      "chamferSetup": "Réglez Z0 sur la face supérieure et utilisez le diamètre de coupe maximal dans la table d’outils. La largeur du chanfrein se mesure sur la face supérieure.",
       "contour": "Contour",
       "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
@@ -33,6 +36,11 @@
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre."
     },
     "label": {
+      "chamferWidth": "Largeur du chanfrein",
+      "chamferIncludedAngle": "Angle au sommet",
+      "chamferTipDiameter": "Diamètre de la pointe",
+      "chamferTipBelow": "Pointe sous le chanfrein",
+      "chamferOpeningDepth": "Profondeur préusinée",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
       "profileDirection": "Sens",
@@ -126,6 +134,13 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "chamferAngle": "L’angle au sommet doit être supérieur à 0° et inférieur à 180°.",
+      "chamferTip": "Le diamètre de la pointe doit être nul ou inférieur à celui de la fraise.",
+      "chamferPrecision": "Vérifiez la largeur, la profondeur de pointe, le dégagement, les avances et la vitesse selon la précision du programme.",
+      "chamferTooWide": "Le chanfrein doit laisser de la place sur la face supérieure.",
+      "chamferCutter": "La coupe demandée dépasse le diamètre de coupe maximal de la fraise.",
+      "chamferOpeningDepth": "L’ouverture doit être dégagée au-delà de {depth}.",
+      "chamferRoom": "Le trou ou la poche sont trop petits pour la fraise et son entrée.",
       "profilePrecision": "Vérifiez les dimensions et les avances. Chaque passe doit respecter la précision du programme. Maximum 2 000 passes.",
       "profileCorner": "Le rayon de coin doit être positif ou nul et inférieur à la moitié du plus petit côté.",
       "profileInsideCorner": "Le rayon d’un coin intérieur doit dépasser le rayon de l’outil ({radius}).",

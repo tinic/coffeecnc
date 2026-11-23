@@ -3,6 +3,7 @@
 
 import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
+import { chamfer } from './chamfer'
 import { contour } from './contour'
 import { drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
@@ -10,7 +11,7 @@ import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'chamfer'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
@@ -260,6 +261,42 @@ export const operations: readonly Operation[] = [
     name: (v, unit) => v.text('shape') === 'rectangle'
       ? `contour-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}` // i18n-ignore
       : `contour-${size(v.num('diameter'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'chamfer',
+    title: 'operations.operation.chamfer',
+    note: () => 'operations.operation.chamferSetup',
+    fields: [
+      { type: 'choice', key: 'shape', label: 'operations.label.profileShape',
+        options: [['circle', 'operations.option.profileCircle'], ['rectangle', 'operations.option.profileRectangle']] },
+      { type: 'choice', key: 'side', label: 'operations.label.profileSide',
+        options: [['outside', 'operations.option.profileOutside'], ['inside', 'operations.option.profileInside']] },
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('diameter', 'operations.label.profileDiameter', 'length', circularProfile),
+      num('width', 'operations.label.sizeX', 'length', rectangularProfile),
+      num('height', 'operations.label.sizeY', 'length', rectangularProfile),
+      num('corner', 'operations.label.cornerRadius', 'length', rectangularProfile),
+      num('openingDepth', 'operations.label.chamferOpeningDepth', 'length', (values) => values['side'] === 'inside'),
+      num('chamferWidth', 'operations.label.chamferWidth', 'length'),
+      num('angle', 'operations.label.chamferIncludedAngle', 'angle'),
+      num('tipDiameter', 'operations.label.chamferTipDiameter', 'length'),
+      num('tipBelow', 'operations.label.chamferTipBelow', 'length'),
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { shape: 'rectangle', side: 'outside', x: 0, y: 0, diameter: 30, width: 40, height: 30, corner: 0, openingDepth: 5,
+        chamferWidth: 1, angle: 90, tipDiameter: 0, tipBelow: 0.5, ...speeds.mm, rpm: 2500, feed: 150, plungeFeed: 60 },
+      { shape: 'rectangle', side: 'outside', x: 0, y: 0, diameter: 1.2, width: 1.5, height: 1.2, corner: 0, openingDepth: 0.2,
+        chamferWidth: 0.04, angle: 90, tipDiameter: 0, tipBelow: 0.02, ...speeds.inch, rpm: 2500, feed: 6, plungeFeed: 2.4 }),
+    generate: (v, common) => chamfer({ ...common, x: v.num('x'), y: v.num('y'), inside: v.text('side') === 'inside',
+      chamferWidth: v.num('chamferWidth'), includedAngle: v.num('angle'), tipDiameter: v.num('tipDiameter'),
+      tipBelow: v.num('tipBelow'), openingDepth: v.num('openingDepth'), entryFeed: v.num('plungeFeed'),
+      ...(v.text('shape') === 'rectangle'
+        ? { shape: 'rectangle', width: v.num('width'), height: v.num('height'), corner: v.num('corner') }
+        : { shape: 'circle', diameter: v.num('diameter') }) }),
+    name: (v, unit) => v.text('shape') === 'rectangle'
+      ? `chamfer-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}` // i18n-ignore
+      : `chamfer-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
   {
     id: 'slot',

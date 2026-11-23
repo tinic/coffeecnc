@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Fasenfräser auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
       "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "chamfer": "Fase",
+      "chamferSetup": "Z0 auf die Oberseite setzen und den maximalen Schneidendurchmesser in der Werkzeugtabelle verwenden. Die Fasenbreite wird auf der Oberseite gemessen.",
       "contour": "Kontur",
       "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
@@ -33,6 +36,11 @@
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
+      "chamferWidth": "Fasenbreite",
+      "chamferIncludedAngle": "Spitzenwinkel",
+      "chamferTipDiameter": "Spitzendurchmesser",
+      "chamferTipBelow": "Spitze unter der Fase",
+      "chamferOpeningDepth": "Vorgearbeitete Tiefe",
       "profileShape": "Form",
       "profileSide": "Schnittseite",
       "profileDirection": "Richtung",
@@ -126,6 +134,13 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "chamferAngle": "Der Spitzenwinkel muss größer als 0° und kleiner als 180° sein.",
+      "chamferTip": "Der Spitzendurchmesser muss null oder kleiner als der Fräserdurchmesser sein.",
+      "chamferPrecision": "Fasenbreite, Spitzentiefe, Freihöhe, Vorschübe und Drehzahl auf die Programmgenauigkeit abstimmen.",
+      "chamferTooWide": "Auf der Oberseite muss nach dem Fasen noch Platz bleiben.",
+      "chamferCutter": "Die erforderliche Schnittbreite überschreitet den maximalen Schneidendurchmesser.",
+      "chamferOpeningDepth": "Die Öffnung muss tiefer als {depth} frei sein.",
+      "chamferRoom": "Bohrung oder Tasche sind zu klein für Fräser und Anfahrt.",
       "profilePrecision": "Prüfen Sie Abmessungen und Vorschübe. Jeder Durchgang muss mit der Programmgenauigkeit darstellbar sein. Maximal 2.000 Durchgänge.",
       "profileCorner": "Der Eckenradius muss mindestens null und kleiner als die halbe kürzere Seite sein.",
       "profileInsideCorner": "Der innere Eckenradius muss größer als der Werkzeugradius ({radius}) sein.",

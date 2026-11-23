@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "选择倒角铣刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
       "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
@@ -20,6 +21,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "chamfer": "倒角",
+      "chamferSetup": "将顶面设为 Z0，刀具表中使用铣刀的最大切削直径。倒角宽度在顶面上测量。",
       "contour": "轮廓",
       "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
@@ -33,6 +36,11 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "chamferWidth": "倒角宽度",
+      "chamferIncludedAngle": "刀具夹角",
+      "chamferTipDiameter": "刀尖直径",
+      "chamferTipBelow": "刀尖低于倒角底边",
+      "chamferOpeningDepth": "预加工深度",
       "profileShape": "形状",
       "profileSide": "切削侧",
       "profileDirection": "方向",
@@ -126,6 +134,13 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "chamferAngle": "刀具夹角必须大于 0° 且小于 180°。",
+      "chamferTip": "刀尖直径必须为零或小于铣刀直径。",
+      "chamferPrecision": "请按程序精度检查倒角宽度、刀尖深度、安全高度、进给速度和主轴转速。",
+      "chamferTooWide": "倒角后必须保留顶面。",
+      "chamferCutter": "所需切削直径超过铣刀最大切削直径。",
+      "chamferOpeningDepth": "开口的无障碍深度必须大于 {depth}。",
+      "chamferRoom": "孔或型腔太小，铣刀无法进入。",
       "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
       "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
       "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",

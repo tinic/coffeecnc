@@ -125,7 +125,8 @@
       "messageLog": "消息日志",
       "dismissTip": "关闭此消息；它仍保留在消息日志中",
       "dismiss": "关闭",
-      "estopButton": "急停"
+      "estopButton": "急停",
+      "diagnostics": "诊断"
     },
     "machineBlock": {
       "connecting": "尚未收到机床状态",
@@ -253,6 +254,81 @@
       "machineOn": "机床上电",
       "readOnly": "只读",
       "messageLog": "消息日志"
+    },
+    "diagnostics": {
+      "title": "HAL 诊断",
+      "hint": "LinuxCNC 所见的 HAL 输入，此视图打开期间每秒读取约十次。读取不会改变 HAL 中的任何内容。",
+      "waiting": "正在等待首次读取…",
+      "stale": "一秒内没有读数：数值不是最新的。",
+      "live": "实时",
+      "alarms": "{count} 个输入需要注意",
+      "section": {
+        "switches": "限位与回零开关",
+        "estop": "急停回路",
+        "probe": "探针与对刀仪",
+        "spindle": "主轴与变频器",
+        "configured": "机床信号",
+        "tools": "HAL 工具"
+      },
+      "column": {
+        "joint": "关节",
+        "minLimit": "最小限位",
+        "maxLimit": "最大限位",
+        "homeSwitch": "回零开关",
+        "driveFault": "驱动故障"
+      },
+      "jointName": "关节 {joint}",
+      "noJoints": "此读数中没有关节输入。",
+      "row": {
+        "estopChain": "外部急停回路",
+        "estopRequest": "LinuxCNC 使能",
+        "probe": "探针输入",
+        "spindleOn": "主轴开启",
+        "spindleAtSpeed": "已达速",
+        "spindleSpeedOut": "指令转速",
+        "spindleSpeedIn": "实测转速",
+        "spindleFault": "主轴驱动故障"
+      },
+      "value": {
+        "tripped": "触发",
+        "clear": "未触发",
+        "on": "开",
+        "off": "关",
+        "fault": "故障",
+        "ok": "正常",
+        "closed": "闭合",
+        "open": "断开",
+        "enabled": "已使能",
+        "estop": "急停",
+        "atSpeed": "已达速",
+        "notAtSpeed": "未达速",
+        "none": "—"
+      },
+      "state": {
+        "missing": "HAL 中不存在",
+        "unwired": "未接线",
+        "undriven": "无驱动源"
+      },
+      "stateTip": {
+        "missing": "HAL 中没有此名称的引脚或信号。",
+        "unwired": "该引脚未连接任何信号：读取的是其自身的值。",
+        "undriven": "没有任何对象写入此信号：没有开关或输入驱动它。"
+      },
+      "pinName": "引脚 {name}",
+      "signalName": "信号 {name}",
+      "setterHint": "接在其他输入上的对刀仪或第二个探针显示在“机床信号”下，来自 [COFFEECNC] DIAGNOSTIC。",
+      "noConfigured": "未配置。在 INI 文件的 [COFFEECNC] 中为每个信号添加一行，例如：{example}",
+      "tools": {
+        "halshowTip": "所有引脚、信号和参数及其数值",
+        "halmeterTip": "单个引脚或信号的值",
+        "halscopeTip": "随时间记录的信号",
+        "notInstalled": "未安装",
+        "open": "已打开",
+        "closed": "点按打开",
+        "starting": "正在启动…",
+        "unknown": "—",
+        "hint": "每个工具在面板之外以独立窗口打开，每种最多一个。它们随 CoffeeCNC 一起关闭。"
+      }
     }
   }
 }

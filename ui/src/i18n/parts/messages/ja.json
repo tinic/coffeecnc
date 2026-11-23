@@ -148,7 +148,8 @@
       "previousStopAxis": "{axis} の前回のジョグ停止が確認されていません：{detail}",
       "directoryNotSent": "ディレクトリを送信できません：{detail}",
       "mdiTooLong": "MDI には 254 バイト以下のブロックが 1 つ必要です。",
-      "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}"
+      "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}",
+      "noDiagnostics": "HAL 診断はこのセッションにはありません。"
     },
     "request": {
       "nestingLimit": "要求の入れ子の上限を超えました。",
@@ -276,7 +277,10 @@
         "saveToolPreviewModel": "工具のプレビューモデルを保存",
         "saveSettings": "設定を保存",
         "toolModels": "工具モデル",
-        "settings": "設定"
+        "settings": "設定",
+        "openDiagnostics": "診断を開く",
+        "closeDiagnostics": "診断を閉じる",
+        "startHalTool": "{tool} を起動"
       }
     },
     "sim": {
@@ -378,7 +382,8 @@
       "gaugeStart": "シミュレーションの校正ゲージの上から開始してください。",
       "bossStart": "シミュレーションのボスの上から開始してください。",
       "setLoadedLength": "確認する前に装着工具の長さを設定してください。",
-      "browserSimulator": "ブラウザーシミュレーター"
+      "browserSimulator": "ブラウザーシミュレーター",
+      "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。"
     },
     "bridge": {
       "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。",

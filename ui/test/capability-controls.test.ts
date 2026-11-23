@@ -9,6 +9,8 @@ import { touchInput } from '../src/numeric-input'
 import { breakpointSelection } from '../src/program-breakpoint'
 import { hello, SimMachine } from '../src/sim/machine'
 
+// The guide's WebGL chunk must not load in the background (#279).
+vi.mock('../src/components/ProbeGuideCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const { defaultOperatorPreferences } = await import('../src/operator-settings')

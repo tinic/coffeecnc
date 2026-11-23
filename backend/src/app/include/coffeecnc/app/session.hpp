@@ -7,6 +7,7 @@
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
 
 #include <array>
@@ -60,6 +61,28 @@ protected:
   ToolModelService(ToolModelService&&) = default;
   auto operator=(const ToolModelService&) -> ToolModelService& = default;
   auto operator=(ToolModelService&&) -> ToolModelService& = default;
+};
+
+// Where the two diagnostics commands go: HAL readings on a thread of their own (HalDiagnostics).
+class DiagnosticsService {
+public:
+  DiagnosticsService() = default;
+  virtual ~DiagnosticsService() = default;
+
+  // Start (`on`) or stop sending `diagnostics` messages to `page`; a page watched before is no
+  // longer. Called with the session's mutex held: must not block or call the session.
+  virtual void watch(PageToken page, bool on) = 0;
+  // Starts the tool as a program of its own. A reason for the operator when it is not started.
+  // Called without the session's mutex: it may take as long as starting a process does.
+  [[nodiscard]] virtual auto launch(HalTool tool) -> std::optional<std::string> = 0;
+  // This page and every one before it has ended: nothing more is sent for them.
+  virtual void page_ended(PageToken page) = 0;
+
+protected:
+  DiagnosticsService(const DiagnosticsService&) = default;
+  DiagnosticsService(DiagnosticsService&&) = default;
+  auto operator=(const DiagnosticsService&) -> DiagnosticsService& = default;
+  auto operator=(DiagnosticsService&&) -> DiagnosticsService& = default;
 };
 
 // The caller's clocks, read once per call.
@@ -204,6 +227,10 @@ struct Work {
 // in `submit` and are handed over there. They never wait in the request queues, so the worker
 // and the controller never see them. Without a service they are `rejected`.
 //
+// `watch_diagnostics` and `launch_hal_tool` are answered at once by the diagnostics service,
+// whatever the machine and the link are doing; without a service they are `rejected`. The
+// diagnostics of a page stop when it ends.
+//
 // No threads of its own and time passed in: every member is a step a test can take.
 class Session {
 public:
@@ -223,7 +250,7 @@ public:
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
-          OffsetHistoryStore* history = nullptr);
+          OffsetHistoryStore* history = nullptr, DiagnosticsService* diagnostics = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -397,6 +424,7 @@ private:
   PreviewEngine* restart_engine_;
   ProgramWriter* program_writer_;
   OffsetHistoryStore* history_;
+  DiagnosticsService* diagnostics_;
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.

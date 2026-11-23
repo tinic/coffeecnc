@@ -174,6 +174,8 @@ onBeforeUnmount(() => {
   reflections.dispose(scene)
   renderer?.dispose()
   renderer?.forceContextLoss()
+  // A draw that arrives after unmount finds no renderer and returns (#279).
+  renderer = null
 })
 </script>
 

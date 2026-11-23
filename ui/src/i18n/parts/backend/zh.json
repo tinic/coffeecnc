@@ -574,6 +574,13 @@
     "jogStop": {
       "watchdog": "点动被 HAL 看门狗停止：CoffeeCNC 的心跳中断时间超过了看门狗超时。",
       "probeContact": "点动已停止：探针接触"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} 未安装：它不在搜索路径中（{path}）。",
+      "alreadyOpen": "{name} 已经打开。",
+      "notStarted": "无法启动 {name}。",
+      "notStartedBecause": "无法启动 {name}：{error}。",
+      "cannotStart": "此处无法启动 HAL 工具。"
     }
   }
 }

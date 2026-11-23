@@ -574,6 +574,13 @@
     "jogStop": {
       "watchdog": "Tippen durch den HAL-Watchdog gestoppt: Der Heartbeat von CoffeeCNC stand länger still als das Watchdog-Timeout.",
       "probeContact": "Tippen gestoppt: Tasterkontakt"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",
+      "alreadyOpen": "{name} ist bereits geöffnet.",
+      "notStarted": "{name} konnte nicht gestartet werden.",
+      "notStartedBecause": "{name} konnte nicht gestartet werden: {error}.",
+      "cannotStart": "HAL-Werkzeuge können hier nicht gestartet werden."
     }
   }
 }

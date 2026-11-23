@@ -39,6 +39,7 @@ const table = {
   redo: { path: 'M15 6.5l4.5 4.5-4.5 4.5M19.5 11h-10a4.5 4.5 0 0 0 0 9h3' },
   search: { path: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13M15.5 15.5 20 20' },
   backspace: { path: 'M9 5.5h11.5v13H9L3.5 12zM12 9.5l5 5M17 9.5l-5 5' },
+  pulse: { path: 'M3 12h4l2.5-6 5 12 2.5-6h4' },
 } satisfies Record<string, Icon>
 
 export type IconName = keyof typeof table

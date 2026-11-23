@@ -125,7 +125,8 @@
       "messageLog": "Registro de mensajes",
       "dismissTip": "Descartar este mensaje; se conserva en el registro de mensajes",
       "dismiss": "Descartar",
-      "estopButton": "PARADA DE EMERGENCIA"
+      "estopButton": "PARADA DE EMERGENCIA",
+      "diagnostics": "Diagnóstico"
     },
     "machineBlock": {
       "connecting": "Aún no hay estado de la máquina",
@@ -253,6 +254,81 @@
       "machineOn": "Máquina encendida",
       "readOnly": "Solo lectura",
       "messageLog": "Registro de mensajes"
+    },
+    "diagnostics": {
+      "title": "Diagnóstico HAL",
+      "hint": "Entradas HAL tal como las ve LinuxCNC, leídas unas diez veces por segundo mientras esta vista está abierta. La lectura no cambia nada en HAL.",
+      "waiting": "Esperando la primera lectura…",
+      "stale": "Ninguna lectura desde hace un segundo: los valores no están actualizados.",
+      "live": "En directo",
+      "alarms": "{count} entrada requiere atención | {count} entradas requieren atención",
+      "section": {
+        "switches": "Finales de carrera y sensores de referencia",
+        "estop": "Cadena de parada de emergencia",
+        "probe": "Palpador y palpador de herramienta fijo",
+        "spindle": "Husillo y variador",
+        "configured": "Señales de la máquina",
+        "tools": "Herramientas HAL"
+      },
+      "column": {
+        "joint": "Articulación",
+        "minLimit": "Final de carrera mín.",
+        "maxLimit": "Final de carrera máx.",
+        "homeSwitch": "Sensor de referencia",
+        "driveFault": "Fallo del accionamiento"
+      },
+      "jointName": "articulación {joint}",
+      "noJoints": "No hay entradas de articulación en esta lectura.",
+      "row": {
+        "estopChain": "Cadena de parada de emergencia externa",
+        "estopRequest": "Habilitación de LinuxCNC",
+        "probe": "Entrada del palpador",
+        "spindleOn": "Husillo encendido",
+        "spindleAtSpeed": "En velocidad",
+        "spindleSpeedOut": "Velocidad ordenada",
+        "spindleSpeedIn": "Velocidad medida",
+        "spindleFault": "Fallo del accionamiento del husillo"
+      },
+      "value": {
+        "tripped": "Activado",
+        "clear": "Libre",
+        "on": "Activo",
+        "off": "Inactivo",
+        "fault": "Fallo",
+        "ok": "OK",
+        "closed": "Cerrada",
+        "open": "Abierta",
+        "enabled": "Habilitado",
+        "estop": "Parada de emergencia",
+        "atSpeed": "En velocidad",
+        "notAtSpeed": "Sin velocidad",
+        "none": "—"
+      },
+      "state": {
+        "missing": "No está en HAL",
+        "unwired": "Sin cablear",
+        "undriven": "Sin fuente"
+      },
+      "stateTip": {
+        "missing": "HAL no tiene ningún pin ni señal con este nombre.",
+        "unwired": "El pin no está unido a ninguna señal: lee su propio valor.",
+        "undriven": "Nada escribe esta señal: ningún interruptor ni entrada la controla."
+      },
+      "pinName": "Pin {name}",
+      "signalName": "Señal {name}",
+      "setterHint": "Un palpador de herramienta fijo o un segundo palpador en otras entradas aparece en Señales de la máquina, desde [COFFEECNC] DIAGNOSTIC.",
+      "noConfigured": "Ninguna configurada. Añada una línea por señal a [COFFEECNC] en el archivo INI, por ejemplo: {example}",
+      "tools": {
+        "halshowTip": "Todos los pines, señales y parámetros, con sus valores",
+        "halmeterTip": "El valor de un pin o una señal",
+        "halscopeTip": "Señales registradas en el tiempo",
+        "notInstalled": "No instalado",
+        "open": "Ya abierto",
+        "closed": "Toque para abrir",
+        "starting": "Iniciando…",
+        "unknown": "—",
+        "hint": "Cada una se abre en su propia ventana, fuera del panel, como máximo una de cada. Se cierran con CoffeeCNC."
+      }
     }
   }
 }

@@ -125,7 +125,8 @@
       "messageLog": "Meldungsprotokoll",
       "dismissTip": "Diese Meldung ausblenden; sie bleibt im Meldungsprotokoll",
       "dismiss": "Ausblenden",
-      "estopButton": "NOT-HALT"
+      "estopButton": "NOT-HALT",
+      "diagnostics": "Diagnose"
     },
     "machineBlock": {
       "connecting": "Noch kein Status von der Maschine",
@@ -253,6 +254,81 @@
       "machineOn": "Maschine ein",
       "readOnly": "Nur lesen",
       "messageLog": "Meldungsprotokoll"
+    },
+    "diagnostics": {
+      "title": "HAL-Diagnose",
+      "hint": "HAL-Eingänge, wie LinuxCNC sie sieht, etwa zehnmal pro Sekunde gelesen, solange diese Ansicht offen ist. Das Lesen ändert nichts in HAL.",
+      "waiting": "Warten auf den ersten Messwert…",
+      "stale": "Seit einer Sekunde kein Messwert: Die Werte sind nicht aktuell.",
+      "live": "Live",
+      "alarms": "{count} Eingang beachten | {count} Eingänge beachten",
+      "section": {
+        "switches": "Endschalter und Referenzschalter",
+        "estop": "Not-Halt-Kreis",
+        "probe": "Messtaster und Werkzeuglängensensor",
+        "spindle": "Spindel und Frequenzumrichter",
+        "configured": "Maschinensignale",
+        "tools": "HAL-Werkzeuge"
+      },
+      "column": {
+        "joint": "Gelenk",
+        "minLimit": "Endschalter min",
+        "maxLimit": "Endschalter max",
+        "homeSwitch": "Referenzschalter",
+        "driveFault": "Antriebsfehler"
+      },
+      "jointName": "Gelenk {joint}",
+      "noJoints": "Keine Gelenkeingänge in diesem Messwert.",
+      "row": {
+        "estopChain": "Externer Not-Halt-Kreis",
+        "estopRequest": "LinuxCNC-Freigabe",
+        "probe": "Tastereingang",
+        "spindleOn": "Spindel ein",
+        "spindleAtSpeed": "Drehzahl erreicht",
+        "spindleSpeedOut": "Solldrehzahl",
+        "spindleSpeedIn": "Istdrehzahl",
+        "spindleFault": "Spindelantriebsfehler"
+      },
+      "value": {
+        "tripped": "Ausgelöst",
+        "clear": "Frei",
+        "on": "Ein",
+        "off": "Aus",
+        "fault": "Fehler",
+        "ok": "OK",
+        "closed": "Geschlossen",
+        "open": "Offen",
+        "enabled": "Freigegeben",
+        "estop": "Not-Halt",
+        "atSpeed": "Erreicht",
+        "notAtSpeed": "Nicht erreicht",
+        "none": "—"
+      },
+      "state": {
+        "missing": "Nicht in HAL",
+        "unwired": "Nicht verdrahtet",
+        "undriven": "Ohne Quelle"
+      },
+      "stateTip": {
+        "missing": "HAL hat keinen Pin und kein Signal dieses Namens.",
+        "unwired": "Der Pin ist mit keinem Signal verbunden: Er liest seinen eigenen Wert.",
+        "undriven": "Nichts schreibt dieses Signal: Kein Schalter und kein Eingang treibt es."
+      },
+      "pinName": "Pin {name}",
+      "signalName": "Signal {name}",
+      "setterHint": "Ein Werkzeuglängensensor oder ein zweiter Taster an anderen Eingängen erscheint unter Maschinensignale, über [COFFEECNC] DIAGNOSTIC.",
+      "noConfigured": "Keine eingerichtet. Fügen Sie in der INI-Datei unter [COFFEECNC] eine Zeile je Signal hinzu, zum Beispiel: {example}",
+      "tools": {
+        "halshowTip": "Alle Pins, Signale und Parameter mit ihren Werten",
+        "halmeterTip": "Der Wert eines Pins oder Signals",
+        "halscopeTip": "Signale über die Zeit aufgezeichnet",
+        "notInstalled": "Nicht installiert",
+        "open": "Bereits geöffnet",
+        "closed": "Zum Öffnen tippen",
+        "starting": "Wird gestartet…",
+        "unknown": "—",
+        "hint": "Jedes öffnet sich in einem eigenen Fenster außerhalb des Panels, höchstens eines von jeder Art. Sie schließen sich mit CoffeeCNC."
+      }
     }
   }
 }

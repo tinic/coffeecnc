@@ -244,6 +244,33 @@ const removeEditListener = onResult((command, result) => {
 })
 onBeforeUnmount(removeEditListener)
 
+// The path view and the text select together. In Split the text holds the selection; in Preview
+// a tapped move shows its line in a chip, which opens the code at that line.
+const textSelection = ref<{ first: number; last: number } | null>(null)
+const pickedLine = ref(0)
+watch([(): string => panel.programLayout, (): number | undefined => panel.program?.revision], () => {
+  pickedLine.value = 0
+  textSelection.value = null
+})
+function textSelected(first: number, last: number): void {
+  textSelection.value = first > 0 ? { first, last } : null
+}
+const highlight = computed(() => panel.programLayout === 'path'
+  ? pickedLine.value > 0 ? { first: pickedLine.value, last: pickedLine.value } : null
+  : panel.programLayout === 'split' ? textSelection.value : null)
+const pickedText = computed(() => textCurrent.value ? program.value?.lines[lineInText(pickedLine.value) - 1] ?? null : null)
+function pathPicked(line: number): void {
+  if (panel.programLayout === 'split') text.value?.select(textCurrent.value ? lineInText(line) : 0)
+  else pickedLine.value = line
+}
+async function openPickedLine(): Promise<void> {
+  const line = lineInText(pickedLine.value)
+  if (line === 0) return
+  panel.programLayout = 'split'
+  await nextTick()
+  text.value?.select(line)
+}
+
 async function showFailure(): Promise<void> {
   if (failureLine.value === 0) return
   panel.programLayout = 'text'
@@ -271,12 +298,19 @@ async function showFailure(): Promise<void> {
               :breakpoint-block="breakpointBlock"
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
               @line-edit="lineEdits.apply" @undo-line-edit="lineEdits.undoLast" @dismiss-line-edit="lineEdits.dismiss"
+              @selection="textSelected"
             />
             <div v-else class="empty">{{ status?.program.file ? t('program.tab.waitingText') : t('program.tab.openToBegin') }}</div>
           </template>
-          <PathView v-if="panel.programLayout !== 'text'">
+          <PathView v-if="panel.programLayout !== 'text'" :highlight="highlight" @pick="pathPicked">
             <PartModel v-if="!readOnly" />
           </PathView>
+          <div v-if="panel.programLayout === 'path' && pickedText !== null" class="picked-line">
+            <button class="btn picked-open" type="button" :aria-label="t('program.tab.showLine', { line: pickedLine })" @click="openPickedLine">
+              <strong class="mono">{{ t('program.tab.line', { line: pickedLine }) }}</strong><span class="mono picked-code">{{ pickedText }}</span>
+            </button>
+            <button class="btn picked-close" type="button" :aria-label="t('program.ncText.clearSelected')" @click="pickedLine = 0"><AppIcon name="close" /></button>
+          </div>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
             <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
             <button v-if="failureLine > 0" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
@@ -379,6 +413,13 @@ async function showFailure(): Promise<void> {
 /* The stop hint shares the bottom of the view with transient code actions. */
 .stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
+/* A tapped move's line, over the top right of the preview, where nothing else is drawn. */
+.picked-line { position: absolute; z-index: 1; top: 10px; right: 16px; display: flex; gap: 4px; max-width: min(60%, 520px); padding: 4px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.picked-line .btn { height: 36px; }
+.picked-open { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 10px; font-size: 12px; }
+.picked-open strong { flex: none; font-weight: 600; color: var(--accent); }
+.picked-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--text); }
+.picked-close { flex: none; min-width: 36px; padding: 0; }
 .stopped-at .btn { height: 36px; }.dismiss-stop { min-width: 36px; padding: 0; }
 @media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
 .inspector { padding: 0; overflow: hidden; }

@@ -189,6 +189,7 @@ struct WaitPaused {
 };
 struct WaitToolChange {
   int tool{};
+  std::optional<std::uint64_t> measure_request{};
   friend auto operator==(const WaitToolChange&, const WaitToolChange&) -> bool = default;
 };
 struct WaitDwell {

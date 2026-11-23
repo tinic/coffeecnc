@@ -2726,15 +2726,6 @@ auto restart_at_z(const NmlStatus& s, double z, double tolerance) -> bool {
          std::abs(s.controller.axes[2].machine - z) <= tolerance;
 }
 
-auto restart_endpoint(const RestartPoint& point) -> Vec3 {
-  const double angle = point.rotation * std::numbers::pi / 180.0;
-  const double x = point.start[0] + point.g92[0];
-  const double y = point.start[1] + point.g92[1];
-  return {x * std::cos(angle) - y * std::sin(angle) + point.g5x[0] + point.tool_offset[0],
-          x * std::sin(angle) + y * std::cos(angle) + point.g5x[1] + point.tool_offset[1],
-          point.start[2] + point.g92[2] + point.g5x[2] + point.tool_offset[2]};
-}
-
 auto restart_clearance(const RestartPoint& point) -> double {
   return point.clearance_z + point.g92[2] + point.g5x[2] + point.tool_offset[2];
 }
@@ -2754,6 +2745,33 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
          !s.any_enabled_axis([&](const auto& a) {
            return a.homing || a.on_hard_limit || (config.limits.homing_required && !a.homed);
          });
+}
+
+auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
+                            const MachineConfig& config, std::optional<double> tool_length)
+    -> std::string {
+  if (point.tool == config.touch_probe_tool)
+    return "Remove the touch probe before running a program from a line.";
+  if (point.spindle_direction != SpindleDirection::stopped &&
+      point.spindle_rpm > config.limits.max_spindle_rpm)
+    return "The restart spindle speed exceeds the machine limit.";
+  if (point.h > 0 && (!tool_length ||
+      std::abs(*tool_length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001))
+    return "The required tool length changed in the tool table.";
+  // Raise the controlled point enough for both tools before a manual exchange.
+  const double original_clearance = restart_clearance(point);
+  const double old_tool_difference = std::max(0.0, status.tool_offset[2] - point.tool_offset[2]);
+  const auto& position = status.commanded_position;
+  const double minimum = std::max(position[2], original_clearance + old_tool_difference);
+  point.clearance_z += minimum - original_clearance;
+  point.approach_feed = std::min(
+      {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
+  const auto end = restart_machine_position(point);
+  const double clearance = restart_clearance(point);
+  if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
+      !restart_travel({position[0], position[1], clearance}, config))
+    return "The restart approach is outside the configured machine travel.";
+  return {};
 }
 
 } // namespace
@@ -2780,6 +2798,110 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
   return {};
 }
 
+auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line,
+                                      const RestartPoint& point, const PreviewInputs& inputs,
+                                      const Wanted& wanted)
+    -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  const auto& config = impl_->config;
+  const auto safe = [&](const EMC_STAT& raw, const NmlStatus& status) {
+    const auto& state = status.controller;
+    const auto hal = impl_->hal != nullptr ? impl_->hal->view(HalShared::Clock::now()) : std::nullopt;
+    return state.link == Link::live && state.machine == MachineState::on && state.in_position &&
+           hal && hal->watchdog_ok && !hal->jog_stop_high && !hal->probe_cycle_active &&
+           state.program_file == inputs.program_file && status.block_delete == inputs.block_delete &&
+           !state.breakpoint_program && !state.spindle_active &&
+           status.spindle_actual_rpm && std::abs(*status.spindle_actual_rpm) < 1.0 &&
+           raw.motion.traj.enabled && raw.motion.traj.current_vel == 0 &&
+           !raw.motion.external_offsets_applied && !raw.motion.on_soft_limit &&
+           std::ranges::all_of(state.axes, &AxisState::enabled) &&
+           !state.any_enabled_axis([&](const auto& a) {
+             return a.homing || a.on_hard_limit || (config.limits.homing_required && !a.homed);
+           });
+  };
+  const auto reading = [&](const EMC_STAT& raw) {
+    return to_status(raw, config, impl_->hal, impl_->status.link());
+  };
+  if (!impl_->still())
+    return withdrawn();
+  const auto table = impl_->read_tool_table();
+  const auto length = table ? tool_z(*table, tool) : std::nullopt;
+  const auto& limits = config.fixed_setter;
+  const auto& calibration = impl_->setter_calibration;
+  if (tool <= 0 || !limits || tool == limits->reference_tool ||
+      tool == config.touch_probe_tool || !length || !calibration)
+    return failed("A cutting tool in the tool table and a fixed setter are required.");
+  const auto setter_plane = calibration->plane;
+  const double setter_clearance = calibration->clearance_z;
+  const bool retract_to_setter_clearance = limits->clearance_mm > 0;
+  const auto* raw = impl_->stat();
+  if (raw == nullptr)
+    return failed("The controller is unavailable.");
+  const auto before = reading(*raw);
+  const auto& state = before.controller;
+  if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
+      state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line ||
+      point.tool != tool || point.h != tool || !restart_frame(before, point, inputs) ||
+      !restart_at(before, restart_machine_position(point), config.motion_tolerances.restart_position_mm))
+    return failed("The program tool change or its stationary position could not be verified.");
+  // Use the table length for the approach estimate while M6 is pending. The measured length
+  // and actual position are checked again before the operator is offered a restart.
+  auto nominal = point;
+  auto at_setter = before;
+  at_setter.commanded_position = {
+      setter_plane[0], setter_plane[1],
+      retract_to_setter_clearance ? setter_clearance
+                                  : std::max(setter_clearance, before.commanded_position[2])};
+  at_setter.tool_offset = point.tool_offset;
+  if (auto reason = check_restart_approach(nominal, at_setter, config, length); !reason.empty())
+    return failed(std::move(reason));
+  if (!impl_->still())
+    return withdrawn();
+
+  if (impl_->loads)
+    ++impl_->loads->aborts;
+  EMC_TASK_ABORT stop;
+  if (auto stopped = impl_->run(stop, from); !accepted(stopped))
+    return stopped;
+  const auto stationary = [&](const EMC_STAT& current) {
+    const auto now = reading(current);
+    return safe(current, now) && restart_idle(now, config) &&
+           restart_at(now, before.commanded_position, config.motion_tolerances.restart_position_mm) &&
+           now.wcs == before.wcs && now.g5x == before.g5x && now.g92 == before.g92 &&
+           now.rotation_xy == before.rotation_xy;
+  };
+  if (auto stopped = impl_->settled(from, "LinuxCNC did not clear the pending tool change.", stationary);
+      !accepted(stopped))
+    return stopped;
+  EMC_TASK_SET_MODE mode;
+  mode.mode = EMC_TASK_MODE_MDI;
+  if (auto sent = impl_->send(mode); !accepted(sent))
+    return sent;
+  if (auto switched = impl_->settled(
+          from, "LinuxCNC did not enter idle MDI for tool measurement.",
+          [&](const EMC_STAT& current) { return current.task.mode == mode.mode && stationary(current); });
+      !accepted(switched))
+    return switched;
+  if (impl_->read_tool_table() != table)
+    return failed("The tool table changed before registering the installed tool.");
+  raw = impl_->stat();
+  if (raw == nullptr || raw->task.mode != mode.mode || !stationary(*raw))
+    return failed("The mill changed state before registering the installed tool.");
+  EMC_TASK_PLAN_EXECUTE register_tool;
+  if (!put(register_tool.command, std::format("M61 Q{}", tool)))
+    return failed("Could not register the installed tool.");
+  if (auto registered = impl_->run(register_tool, from); !accepted(registered))
+    return registered;
+  if (impl_->loads)
+    ++impl_->loads->mdi_blocks;
+  return impl_->settled(from, "LinuxCNC did not confirm the installed tool.",
+                       [&](const EMC_STAT& current) {
+                         return current.task.mode == mode.mode && stationary(current) &&
+                                current.io.tool.toolInSpindle == tool;
+                       });
+}
+
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& config = impl_->config;
@@ -2797,30 +2919,13 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
       !restart_at(s, inputs.start.position, config.motion_tolerances.restart_position_mm))
     return "The machine must remain stopped at the position shown in the preview.";
-  if (point.tool == config.touch_probe_tool)
-    return "Remove the touch probe before running a program from a line.";
-  if (point.spindle_direction != SpindleDirection::stopped &&
-      point.spindle_rpm > config.limits.max_spindle_rpm)
-    return "The restart spindle speed exceeds the machine limit.";
+  std::optional<double> length;
   if (point.h > 0) {
     const auto table = impl_->read_tool_table();
-    const auto length = table ? tool_z(*table, point.h) : std::nullopt;
-    if (!length || std::abs(*length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001)
-      return "The required tool length changed in the tool table.";
+    if (table)
+      length = tool_z(*table, point.h);
   }
-  // Raise the controlled point enough for both tools before a manual exchange.
-  const double original_clearance = restart_clearance(point);
-  const double old_tool_difference = std::max(0.0, s.tool_offset[2] - point.tool_offset[2]);
-  const double minimum = std::max(s.commanded_position[2], original_clearance + old_tool_difference);
-  point.clearance_z += minimum - original_clearance;
-  point.approach_feed = std::min(
-      {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
-  const auto end = restart_endpoint(point);
-  const double clearance = restart_clearance(point);
-  if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
-      !restart_travel({s.commanded_position[0], s.commanded_position[1], clearance}, config))
-    return "The restart approach is outside the configured machine travel.";
-  return {};
+  return check_restart_approach(point, s, config, length);
 }
 
 auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inputs,
@@ -2830,7 +2935,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};
     const auto& config = impl_->config;
-    const auto endpoint = restart_endpoint(point);
+    const auto endpoint = restart_machine_position(point);
     const double clearance = restart_clearance(point);
     const auto read = [&]() { return status(); };
     const auto idle = [&](const NmlStatus& s) {
@@ -2929,9 +3034,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
                             std::chrono::seconds{45}); !accepted(done))
         return done;
-      const auto lifted = read();
-      if (!idle(lifted) || !restart_at_z(lifted, clearance, config.motion_tolerances.restart_position_mm))
-        return failed("The machine did not reach the confirmed Z clearance.");
+      // The trajectory reports completion before the individual joints can report in-position.
+      if (auto lifted = wait(settle_timeout, [&](const EMC_STAT& raw) {
+            const auto settled = to_status(raw, config, impl_->hal, impl_->status.link());
+            return idle(settled) &&
+                   restart_at_z(settled, clearance, config.motion_tolerances.restart_position_mm);
+          }, "The machine did not reach the confirmed Z clearance.");
+          !accepted(lifted))
+        return lifted;
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
           return sent;

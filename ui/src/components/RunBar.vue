@@ -22,13 +22,29 @@ import ProgramCheckDialog from './ProgramCheckDialog.vue'
 const { t } = useI18n()
 const status = reported
 const velocityLimit = computed(() => status.value?.motion.velocity_limit ?? null)
-const activeVelocityLimit = computed(() => velocityLimit.value !== null && velocityLimit.value < 1
-  ? formatPercent(Math.min(0.99, velocityLimit.value)) : null)
-const moreLabel = computed(() => {
-  const label = t('status.runBar.moreControls')
-  return activeVelocityLimit.value === null ? label
-    : `${label} · ${t('status.runBar.velocityLimitValue', { value: activeVelocityLimit.value })}`
+/** A factor below 1 never reads as 100: 0.996 shows 99. */
+const reduced = (factor: number | null | undefined): number | null =>
+  factor !== null && factor !== undefined && factor < 1 ? Math.min(0.99, factor) : null
+/**
+ * Execution options away from their defaults, as the controller reports them. They live in the
+ * … popover; the … button shows them so a reduced rapid or an active M1 is never hidden.
+ * Single block is not here: LinuxCNC reports no step mode, only the pause after a step, and the
+ * main action already shows Resume for that.
+ */
+const activeOptions = computed(() => {
+  const s = status.value
+  const options: { key: string; badge: string; label: string }[] = []
+  const rapid = reduced(s?.motion.rapid_override)
+  if (rapid !== null) options.push({ key: 'rapid', badge: t('status.runBar.rapidBadge', { value: String(Math.round(rapid * 100)) }),
+    label: t('status.runBar.rapidOverrideValue', { value: formatPercent(rapid) }) })
+  const cap = reduced(velocityLimit.value)
+  if (cap !== null) options.push({ key: 'velocity', badge: t('status.runBar.velocityLimitBadge', { value: String(Math.round(cap * 100)) }),
+    label: t('status.runBar.velocityLimitValue', { value: formatPercent(cap) }) })
+  if (s?.program.optional_stop) options.push({ key: 'optional-stop', badge: 'M1', label: t('status.runBar.optionalStop') })
+  if (s?.program.block_delete) options.push({ key: 'block-delete', badge: '/', label: t('status.runBar.blockDelete') })
+  return options
 })
+const moreLabel = computed(() => [t('status.runBar.moreControls'), ...activeOptions.value.map((o) => o.label)].join(' · '))
 const checkedPreview = computed(() => currentProgramPreview(panel.preview ?? null, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
@@ -230,9 +246,11 @@ function option(which: 'optional_stop' | 'block_delete'): void {
     <OverrideControl v-else-if="!touchOff" :label="t('status.runBar.spindleOverride')" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
       <details v-if="!touchOff" v-popover class="more">
-        <summary class="more-button" :aria-label="moreLabel">
-          <span aria-hidden="true">···</span>
-          <small v-if="activeVelocityLimit !== null" class="velocity-limit mono" aria-hidden="true">{{ activeVelocityLimit }}</small>
+        <summary class="more-button" :class="{ active: activeOptions.length > 0 }" :aria-label="moreLabel">
+          <span class="dots" aria-hidden="true">···</span>
+          <span v-if="activeOptions.length" class="active-options" aria-hidden="true">
+            <small v-for="o in activeOptions" :key="o.key" class="mono" :class="o.key">{{ o.badge }}</small>
+          </span>
         </summary>
         <div class="popover">
           <h3>{{ t('status.runBar.executionControls') }}</h3>
@@ -276,8 +294,12 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .stop-button { color: var(--stop); min-width: 88px; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
-.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
-.velocity-limit { font-size: 10px; color: var(--accent); white-space: nowrap; }
+.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
+/* Active options grow the button to the left only; Stop and the primary action stay put. */
+.more-button.active { gap: 3px; padding: 0 4px; border-radius: 9px; background: var(--accent-soft); }
+.more-button.active .dots { font-size: 18px; color: var(--accent); }
+.active-options { display: flex; gap: 3px; }
+.active-options small { padding: 1px 3px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--accent); background: var(--panel); white-space: nowrap; }
 .popover { bottom: calc(100% + 16px); right: -100px; width: min(430px, calc(100vw - 32px)); }
 .popover > .override { grid-template-columns: 120px minmax(65px, 1fr) 48px 86px; }
 .popover > .override :deep(input) { min-width: 0; height: 44px; }

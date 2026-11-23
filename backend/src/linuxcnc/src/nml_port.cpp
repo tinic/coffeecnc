@@ -3632,6 +3632,30 @@ auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted
   return {};
 }
 
+auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> {
+  const auto current = status();
+  if (current.controller.link != Link::live)
+    return std::unexpected(std::string("The tool length offset in effect cannot be read."));
+  ToolLengthInEffect effect;
+  effect.offset_z = current.tool_offset[2];
+  const auto active = [&](std::string_view code) {
+    return std::ranges::contains(current.active_codes, code);
+  };
+  effect.mode = active("G43")     ? LengthOffset::table
+                : active("G43.1") ? LengthOffset::dynamic
+                : active("G43.2") ? LengthOffset::additive
+                                  : LengthOffset::none;
+  const int tool = current.controller.tool_in_spindle;
+  if (effect.mode != LengthOffset::table || tool <= 0)
+    return effect;
+  const auto table = impl_->read_tool_table();
+  if (!table)
+    return std::unexpected(table.error());
+  if (const auto length = tool_z(*table, tool))
+    effect.loaded_length = *length * impl_->config.millimetres_per_unit;
+  return effect;
+}
+
 auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
   static_cast<void>(impl_->begin(&wanted));
   const Impl::Scope scope{*impl_};

@@ -544,6 +544,43 @@ void estop_request_results() {
           "no status: failed, and says so");
 }
 
+// What follows a G10 L1 of a tool length so that the offset in effect follows the table (#287).
+void tool_length_follow_up() {
+  const auto follows = [](int written, int loaded, LengthOffset mode, double offset_z,
+                          std::optional<double> loaded_length) {
+    return after_tool_length_write(written, loaded, {mode, offset_z, loaded_length});
+  };
+  const auto none = [](const LengthFollowUp& next) {
+    return !next.block && next.refusal.empty();
+  };
+  // G43 with the loaded tool's length: G43 H<tool> follows.
+  const auto applied = follows(3, 3, LengthOffset::table, 48.2, 48.2);
+  require(applied.block == "G43 H3" && applied.refusal.empty(), "G43 of the loaded tool: G43 H3");
+  require(follows(3, 3, LengthOffset::table, 48.2005, 48.2).block == "G43 H3",
+          "within 0.001 mm is the loaded tool's length");
+  // A zero length applied with G43 is still the loaded tool's.
+  require(follows(4, 4, LengthOffset::table, 0, 0).block == "G43 H4", "a zero length under G43");
+  // Another H: its offset stays.
+  require(none(follows(3, 3, LengthOffset::table, 40, 48.2)), "G43 of another H: nothing");
+  require(none(follows(3, 3, LengthOffset::table, 48.2, std::nullopt)),
+          "no row for the loaded tool: nothing");
+  // No offset in effect: nothing to follow.
+  require(none(follows(3, 3, LengthOffset::none, 0, 48.2)), "G49: nothing");
+  // G43.1: the offset is the block's value, not a table length. It is kept.
+  require(none(follows(3, 3, LengthOffset::dynamic, 48.2, 48.2)), "G43.1 is kept");
+  // G43.2: the parts of the offset cannot be told apart. Refused, nothing sent.
+  const auto additive = follows(3, 3, LengthOffset::additive, 88.2, 48.2);
+  require(!additive.block &&
+              additive.refusal == "An additive tool length offset (G43.2) is in effect and cannot "
+                                  "be applied again. Apply G43 or G49 first.",
+          "G43.2 is refused");
+  // Another tool than the loaded one, or an empty spindle: the offset in effect is not its.
+  require(none(follows(2, 3, LengthOffset::table, 48.2, 48.2)), "another tool: nothing");
+  require(none(follows(2, 3, LengthOffset::additive, 48.2, 48.2)),
+          "another tool under G43.2: not refused");
+  require(none(follows(0, 0, LengthOffset::table, 0, 0)), "empty spindle: nothing");
+}
+
 // Motion's refusal of a start under motion.jog-inhibit, as the port's reason carries it.
 void jog_inhibit_refusal() {
   require(is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active."), "LinuxCNC's text");
@@ -639,6 +676,7 @@ auto main() -> int {
     jog_stop_attribution();
     jog_inhibit_refusal();
     estop_request_results();
+    tool_length_follow_up();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << "Check " << checks << " failed: " << error.what() << '\n';

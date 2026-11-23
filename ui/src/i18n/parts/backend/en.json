@@ -266,6 +266,7 @@
       "cannotReadToolTable": "Cannot read tool table {file}.",
       "cannotWriteToolTable": "Cannot write tool table {file}.",
       "cannotReplaceToolTable": "Cannot replace tool table {file}.",
+      "lengthOffsetUnreadable": "The tool length offset in effect cannot be read.",
       "toolTableNotLoaded": "The tool table file {file} was changed, but the request was cancelled before LinuxCNC was told to load it.",
       "cannotOpenChannels": "Cannot open LinuxCNC's NML channels from {file}.",
       "restoreFromTable": "Could not restore T{tool} from the tool table.",

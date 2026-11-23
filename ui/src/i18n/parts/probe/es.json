@@ -268,7 +268,7 @@
       "sessionOnlyReason": "Guardado solo para esta sesión: {reason}",
       "gone": "Esta entrada ya no está en el historial.",
       "reviewTitle": "¿Restaurar {target} {fields}?",
-      "effectTool": "Vuelve a escribir los valores anteriores de {target} en la tabla de herramientas (G10 L1). Una longitud aplicada cambia en el próximo G43.",
+      "effectTool": "Vuelve a escribir los valores anteriores de {target} en la tabla de herramientas (G10 L1). Si {target} está en el husillo con su longitud aplicada, la longitud se vuelve a aplicar (G43).",
       "effectShift": "Vuelve a escribir el desplazamiento G92/G52 anterior (G52). Se suma a cada sistema de coordenadas de pieza.",
       "effectWork": "Vuelve a escribir los valores anteriores de {target} (G10 L2). Los demás ejes no cambian.",
       "noMotion": "La máquina no se mueve.",

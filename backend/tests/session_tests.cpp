@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <expected>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -170,6 +171,11 @@ public:
   }
   auto remove_tool(int number, const Wanted&) -> ActionResult override {
     return record("remove_tool", std::to_string(number));
+  }
+  // Read by a restore of the loaded tool's length; not an action, so not recorded.
+  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+    return length_in_effect;
   }
 
 private:
@@ -2392,6 +2398,84 @@ void offset_history() {
                "This CoffeeCNC keeps no offset history.");
 }
 
+// A restored length of the tool in the spindle is applied again in the same request when that
+// tool's length is in effect (#287): G43 H<tool> after the G10 L1, through the same MDI path.
+void tool_length_restore() {
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  OffsetHistoryStore history{files, ""};
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, &history};
+  rig.port.state.mode = TaskMode::mdi;
+  rig.port.state.tool_in_spindle = 3;
+  const auto reading = [](double length) -> PanelReading {
+    PanelReading seen;
+    seen.status.link = Link::live;
+    seen.status.offsets.wcs = 1;
+    seen.tool_table = {1, {{3, 3, length, 6, "End mill"}}};
+    return seen;
+  };
+  const auto observe = [&](PanelReading seen) -> void {
+    const auto now = at(rig.clock);
+    history.observe(seen, now.unix_time, now.monotonic);
+  };
+  observe(reading(48.2));
+  rig.port.during["mdi"] = [&]() -> void { observe(reading(50)); };
+  rig.accepted(R"("type":"mdi","text":"G10 L1 P3 Z50")");
+  const auto entry = history.snapshot()->entries.front();
+  require(entry.target == HistoryTarget::tool && entry.number == 3 &&
+              entry.changes.front().field == HistoryField::length,
+          "The length of the loaded tool is in the history");
+  rig.acted({"mdi G10 L1 P3 Z50"}, "The panel's MDI line");
+  const auto restore = std::format(R"("type":"restore_offset","entry":{})", entry.id);
+  const auto in_effect = [&](LengthOffset mode, double offset_z) -> void {
+    rig.port.length_in_effect = ToolLengthInEffect{mode, offset_z, 50};
+  };
+
+  in_effect(LengthOffset::table, 50);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2", "mdi G43 H3"}, "G43 of the loaded tool is applied again");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z1.8976377952755907", "mdi G43 H3"},
+            "In inches: the length in inches, the same G43 H3");
+  rig.port.state.program_units = LengthUnit::mm;
+
+  in_effect(LengthOffset::none, 0);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "No offset in effect: G10 L1 only");
+  in_effect(LengthOffset::table, 40);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "The offset of another H stays: G10 L1 only");
+  in_effect(LengthOffset::dynamic, 50);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.1 offset stays: G10 L1 only");
+  in_effect(LengthOffset::additive, 90);
+  rig.expect(restore, "rejected",
+             "An additive tool length offset (G43.2) is in effect and cannot be applied again. "
+             "Apply G43 or G49 first.");
+  rig.acted({}, "Under G43.2 nothing is sent");
+  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
+  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.acted({}, "An unreadable offset in effect sends nothing");
+  rig.port.state.tool_in_spindle = 2;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "Another tool in the spindle: G10 L1 only");
+  rig.port.state.tool_in_spindle = 3;
+
+  // A stop request after the G10 L1: G43 is not sent, and the result says so.
+  in_effect(LengthOffset::table, 50);
+  rig.port.during["mdi"] = [&]() -> void {
+    static_cast<void>(rig.session.submit(rig.page, R"({"id":900,"type":"abort"})", at(0ms)));
+  };
+  const auto found = results(rig.send(restore));
+  require(found.size() == 2 && found.front().at("outcome") == "failed" &&
+              found.front().at("reason") ==
+                  "The tool length was set, but a stop request cancelled the command before it "
+                  "was applied (G43 was not sent).",
+          "A stop between the blocks: G43 was not sent");
+  rig.acted({"mdi G10 L1 P3 Z48.2", "abort"}, "Only the G10 L1 and the abort are sent");
+}
+
 void exactly_one_result(std::uint32_t seed) {
   constexpr std::array<std::string_view, 30> bodies{
       R"("type":"ready")",
@@ -2650,6 +2734,7 @@ auto main(int argc, char** argv) -> int {
     program_paths();
     composed_mdi();
     offset_history();
+    tool_length_restore();
     jog_presses_and_refreshes();
     jog_failures();
     late_jog_starts();

@@ -91,6 +91,7 @@
       "cancelled": "在发送前已被停止请求取消。",
       "modeChanged": "模式已切换，但停止请求在命令发送前将其取消。",
       "toolLengthCancelled": "刀具长度已设置，但停止请求在命令生效前将其取消（未发送 G43）。",
+      "toolLengthAdditive": "附加刀长补偿（G43.2）已生效，无法重新应用。请先应用 G43 或 G49。",
       "jogStoppedBeforeStart": "点动在开始前已被停止。",
       "releaseJog": "再次点动前请先松开点动控件。",
       "jogStopInProgress": "正在停止点动。",

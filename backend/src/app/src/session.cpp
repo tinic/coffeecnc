@@ -1860,8 +1860,27 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
     block = "G10 L1 P" + std::to_string(entry->number) + words;
     break;
   }
+  // A length written for the tool in the spindle: the offset in effect follows it (#287).
+  std::optional<std::string> follow_up;
+  const bool writes_length = std::ranges::contains(entry->changes, HistoryField::length,
+                                                   &HistoryChange::field);
+  if (entry->target == HistoryTarget::tool && writes_length &&
+      entry->number == state.tool_in_spindle) {
+    const auto effect = port_.tool_length_in_effect();
+    if (!effect)
+      return answer({CommandOutcome::rejected, effect.error()});
+    auto next = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
+    if (!next.refusal.empty())
+      return answer({CommandOutcome::rejected, std::move(next.refusal)});
+    follow_up = std::move(next.block);
+  }
   const auto mark = history_->begin(HistorySource::restore, entry->id);
   auto restored = mdi(request, block);
+  if (follow_up && restored.kind == StageKind::reply &&
+      restored.reply.outcome == CommandOutcome::accepted) {
+    auto applied = mdi(request, *follow_up);
+    restored = applied.kind == StageKind::cancelled ? cancelled(touch_off_reason) : std::move(applied);
+  }
   if (entry->target == HistoryTarget::wcs && restored.kind == StageKind::reply &&
       restored.reply.outcome == CommandOutcome::accepted)
     history_->written(mark, entry->number, values, clock().unix_time);

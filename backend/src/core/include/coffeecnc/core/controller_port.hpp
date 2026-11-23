@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <expected>
 #include <functional>
@@ -52,6 +53,55 @@ struct ActionResult {
     break;
   }
   return {ActionStatus::failed, "LinuxCNC still reports machine on; E-stop was not confirmed."};
+}
+
+// The tool length offset the interpreter applies, as the controller reports it: G49 (none),
+// G43 (from the tool table), G43.1 (dynamic: from the block's own words) or G43.2 (additive:
+// one more offset on top of the one in effect).
+enum class LengthOffset : std::uint8_t { none, table, dynamic, additive };
+
+struct ToolLengthInEffect {
+  LengthOffset mode{LengthOffset::none};
+  double offset_z{}; // mm, the Z offset applied
+  // mm, the tool table length of the tool in the spindle, when it has a row.
+  std::optional<double> loaded_length;
+};
+
+// What must follow a G10 L1 that writes a new length for tool `written`, so that the offset in
+// effect follows the table. LinuxCNC applies a table length only at G43: G10 L1 alone changes
+// the table and leaves the offset in effect at the old length.
+//
+// Nothing follows when the tool is not the one in the spindle, under G49, under G43.1 (its
+// offset is the block's value, not a table length; it is kept) and under a G43 whose offset is
+// not the loaded tool's length (another H; that offset is kept). Under G43 with the loaded
+// tool's length, `G43 H<tool>` follows. Under G43.2 the parts of the offset cannot be told
+// apart, so it cannot be applied again: the write is refused before anything is sent.
+//
+// LinuxCNC does not report the H word of a G43: the offset is the loaded tool's when it equals
+// that tool's table length (within 0.001 mm). Another H with the same length is taken for it.
+struct LengthFollowUp {
+  std::optional<std::string> block; // MDI block to send after the G10 L1
+  std::string refusal;              // nonempty: send nothing
+};
+[[nodiscard]] inline auto after_tool_length_write(int written, int loaded,
+                                                  const ToolLengthInEffect& effect)
+    -> LengthFollowUp {
+  if (loaded <= 0 || written != loaded)
+    return {};
+  switch (effect.mode) {
+  case LengthOffset::none:
+  case LengthOffset::dynamic:
+    return {};
+  case LengthOffset::additive:
+    return {std::nullopt, "An additive tool length offset (G43.2) is in effect and cannot be "
+                          "applied again. Apply G43 or G49 first."};
+  case LengthOffset::table:
+    break;
+  }
+  constexpr double same_length = 0.001; // mm
+  if (!effect.loaded_length || !(std::abs(effect.offset_z - *effect.loaded_length) <= same_length))
+    return {};
+  return {"G43 H" + std::to_string(loaded), {}};
 }
 
 // Asked by a port while it carries out an action: is the action still wanted? The session
@@ -190,6 +240,12 @@ public:
   [[nodiscard]] virtual auto prepare_tool_measurement(int, std::uint64_t, int, const RestartPoint&,
                                                       const PreviewInputs&, const Wanted&) -> ActionResult {
     return {ActionStatus::failed, "Measuring during a program tool change is unavailable."};
+  }
+  // The tool length offset in effect, read from the controller's status and tool table. A port
+  // that cannot tell reports none.
+  [[nodiscard]] virtual auto tool_length_in_effect()
+      -> std::expected<ToolLengthInEffect, std::string> {
+    return ToolLengthInEffect{};
   }
   // Replaces the row with this tool number, or adds it.
   [[nodiscard]] virtual auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult = 0;

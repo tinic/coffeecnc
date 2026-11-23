@@ -268,7 +268,7 @@
       "sessionOnlyReason": "Conservé pour cette session uniquement : {reason}",
       "gone": "Cette entrée n’est plus dans l’historique.",
       "reviewTitle": "Restaurer {target} {fields} ?",
-      "effectTool": "Réécrit les valeurs antérieures de {target} dans la table d’outils (G10 L1). Une longueur appliquée change au prochain G43.",
+      "effectTool": "Réécrit les valeurs antérieures de {target} dans la table d’outils (G10 L1). Si {target} est dans la broche avec sa longueur appliquée, la longueur est réappliquée (G43).",
       "effectShift": "Réécrit le décalage G92/G52 antérieur (G52). Il s’ajoute à chaque système de coordonnées pièce.",
       "effectWork": "Réécrit les valeurs antérieures de {target} (G10 L2). Les autres axes restent inchangés.",
       "noMotion": "La machine ne bouge pas.",

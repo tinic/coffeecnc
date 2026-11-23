@@ -266,6 +266,7 @@
       "cannotReadToolTable": "Não é possível ler a tabela de ferramentas {file}.",
       "cannotWriteToolTable": "Não é possível escrever a tabela de ferramentas {file}.",
       "cannotReplaceToolTable": "Não é possível substituir a tabela de ferramentas {file}.",
+      "lengthOffsetUnreadable": "Não é possível ler a compensação de comprimento ativa.",
       "toolTableNotLoaded": "O ficheiro da tabela de ferramentas {file} foi alterado, mas o pedido foi cancelado antes de o LinuxCNC receber a ordem de o carregar.",
       "cannotOpenChannels": "Não é possível abrir os canais NML do LinuxCNC a partir de {file}.",
       "restoreFromTable": "Não foi possível restaurar T{tool} a partir da tabela de ferramentas.",

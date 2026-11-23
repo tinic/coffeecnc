@@ -91,6 +91,7 @@
       "cancelled": "Annulé par une demande d’arrêt avant l’envoi.",
       "modeChanged": "Le mode a changé, mais une demande d’arrêt a annulé la commande avant son envoi.",
       "toolLengthCancelled": "La longueur d’outil a été définie, mais une demande d’arrêt a annulé la commande avant son application (G43 n’a pas été envoyé).",
+      "toolLengthAdditive": "Une correction de longueur d’outil additive (G43.2) est active et ne peut pas être réappliquée. Appliquez d’abord G43 ou G49.",
       "jogStoppedBeforeStart": "Le jog a été arrêté avant de commencer.",
       "releaseJog": "Relâchez la commande de jog avant un nouveau jog.",
       "jogStopInProgress": "Un arrêt de jog est en cours.",

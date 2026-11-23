@@ -193,8 +193,8 @@ void halt(Halt how, const std::string& text) {
 // Whether the line may still have an effect. Ends the trusted path first when the line read a
 // value the preview does not know (see the head of this file).
 auto gate() -> bool {
-  if (canon.pending)
-    halt(Halt::stop, *std::exchange(canon.pending, std::nullopt));
+  if (const auto why = std::exchange(canon.pending, std::nullopt))
+    halt(Halt::stop, *why);
   return canon.halt == Halt::none;
 }
 

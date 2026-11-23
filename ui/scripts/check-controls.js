@@ -338,7 +338,8 @@ async function main() {
       await Promise.all(pages.map(async (page) => {
         while (next < earlier.length) {
           const item = earlier[next++]
-          if (!(await open(page, base, item.entry, item.path))) { console.log(`not reached: ${item.sig}`); continue }
+          if (!(await open(page, base, item.entry, item.path))) { console.log(`not reached: ${item.name}`); continue }
+          if (item.wait) await sleep(item.wait)
           // An item names its control by signature, or by a selector and a label text.
           const box = await page.run((sig, selector, text) => {
             // A changed class changes the signature; the label and the component still find it.

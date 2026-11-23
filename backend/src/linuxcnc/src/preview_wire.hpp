@@ -63,6 +63,7 @@ struct HelperRequest {
   std::optional<Vec3> tool_change_position;
   std::size_t max_points{400000};
   double chord_tolerance{0.01};
+  std::optional<RigidTapLimits> rigid_tap{};
   // Blocks that put the interpreter in task's modal state, in this order: "G21", "G91", "G1".
   std::vector<std::string> codes;
   // The motion mode task is in when it is one that cannot be put in place by a block ("G38.2",

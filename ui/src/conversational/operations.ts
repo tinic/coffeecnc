@@ -9,8 +9,9 @@ import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
+import { rigidTapping } from './rigid-tapping'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'hole-finishing'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'hole-finishing' | 'rigid-tap'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count' | 'duration'
@@ -215,6 +216,25 @@ export const operations: readonly Operation[] = [
       return v.text('pattern') === 'circle' ? `${operation}-circle-${String(v.num('count'))}-holes` // i18n-ignore
         : `${operation}-grid-${String(v.num('columns'))}x${String(v.num('rows'))}` // i18n-ignore
     },
+  },
+  {
+    id: 'rigid-tap',
+    title: 'operations.operation.rigidTap',
+    note: () => 'operations.operation.rigidTapSetup',
+    fields: [
+      holePattern, ...holeLocations,
+      num('pitch', 'operations.label.tapPitch', 'length'),
+      num('pilotDepth', 'operations.label.tapPilotDepth', 'length'),
+      num('retract', 'operations.label.tapStartHeight', 'length'),
+      num('rpm', 'operations.label.spindleSpeed', 'rpm'),
+      num('clearance', 'operations.label.clearance', 'length'),
+    ],
+    defaults: (unit) => pick(unit,
+      { ...holeDefaults.mm, columns: 1, rows: 1, x: 0, y: 0, pitch: 1, pilotDepth: 15, rpm: 300, clearance: 5 },
+      { ...holeDefaults.inch, columns: 1, rows: 1, x: 0, y: 0, pitch: '1/20', pilotDepth: 0.6, rpm: 300, clearance: 0.2 }),
+    generate: (v, common) => rigidTapping({ ...common, ...holeGeometry(v), pitch: v.num('pitch'), pilotDepth: v.num('pilotDepth') }),
+    name: (v) => v.text('pattern') === 'circle' ? `tap-circle-${String(v.num('count'))}-holes` // i18n-ignore
+      : `tap-grid-${String(v.num('columns'))}x${String(v.num('rows'))}`, // i18n-ignore
   },
   {
     id: 'bore',

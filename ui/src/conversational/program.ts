@@ -3,6 +3,7 @@
 // dialog saves the text through the machine and opens it like any other program.
 
 import { t, type MessageSchema } from '../i18n'
+import type { RigidTapLimits } from '../protocol'
 
 export type Unit = 'mm' | 'inch'
 
@@ -29,6 +30,7 @@ export interface Common {
   feed: number
   /** Height above Z0 (top of the stock) for every move in the air. */
   clearance: number
+  rigidTap?: RigidTapLimits
 }
 
 /** The program text, or every reason there is none, in words for the operator. */
@@ -162,7 +164,7 @@ export class Program {
   }
 
   /** Header comments, then the modal codes, the tool change and the spindle start. */
-  start(title: string, details: string[]): void {
+  start(title: string, details: string[], fixedRpm = false): void {
     const { unit, tool } = this.c
     const comment = commentText(tool.comment)
     this.add(
@@ -172,7 +174,7 @@ export class Program {
       ...details.map((line) => `(${commentText(line)})`),
       `(Feed ${feedNumber(this.c.feed, unit)}, spindle ${String(Math.round(this.c.rpm))} rpm, clearance Z${this.n(this.c.clearance)})`, // i18n-ignore
       '',
-      `G17 ${unit === 'inch' ? 'G20' : 'G21'} G40 G80 G90 G94`,
+      `G17 ${unit === 'inch' ? 'G20' : 'G21'} G40 G80 G90 G94${fixedRpm ? ' G97' : ''}`,
       `T${String(tool.number)} M6`,
       `G43 H${String(tool.number)}`,
       `S${String(Math.round(this.c.rpm))} M3`,

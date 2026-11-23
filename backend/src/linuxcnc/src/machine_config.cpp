@@ -576,6 +576,17 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
           std::string("[SPINDLE_0] MAX_FORWARD_VELOCITY or [DISPLAY] MAX_SPINDLE_0_SPEED must be "
                       "above zero."));
   }
+  std::optional<RigidTapLimits> rigid_tap;
+  const auto tapping_rpm = ini.text("COFFEECNC", "RIGID_TAP_MAX_RPM");
+  const auto reversal_turns = ini.text("COFFEECNC", "RIGID_TAP_REVERSAL_TURNS");
+  if (tapping_rpm || reversal_turns) {
+    const auto ceiling = tapping_rpm ? number(*tapping_rpm) : std::nullopt;
+    const auto turns = reversal_turns ? number(*reversal_turns) : std::nullopt;
+    if (!ceiling || *ceiling < 1 || *ceiling > *rpm || !turns || *turns <= 0)
+      return std::unexpected("Set both [COFFEECNC] RIGID_TAP_MAX_RPM and RIGID_TAP_REVERSAL_TURNS "
+                             "to positive values within the machine spindle ceiling.");
+    rigid_tap = RigidTapLimits{*ceiling, *turns};
+  }
   const auto homing = homing_required(ini);
   if (!homing)
     return std::unexpected(homing.error());
@@ -785,6 +796,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
       .paused_z = paused_z,
+      .rigid_tap = rigid_tap,
       .motion_tolerances = tolerances,
       .macros = std::move(*configured_macros),
       .diagnostics = std::move(*diagnostics),

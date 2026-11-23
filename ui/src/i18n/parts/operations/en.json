@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseTap": "Choose a tap",
       "chooseFinishTool": "Choose a reamer or boring tool",
       "pocketOptions": "Geometry, entry and walls",
       "reviewJob": "Review job",
@@ -21,6 +22,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "rigidTap": "Rigid tapping",
+      "rigidTapSetup": "Use a right-hand tap and a predrilled hole. Start height and pilot depth allow for spindle reversal travel.",
       "holeFinishing": "Ream / bore",
       "holeFinishingSetup": "Use predrilled holes and verify the tool can feed in and out to the programmed depth.",
       "contour": "Contour",
@@ -36,6 +39,9 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "tapPitch": "Thread pitch",
+      "tapPilotDepth": "Usable pilot depth",
+      "tapStartHeight": "Start height",
       "boreDwell": "Bottom dwell",
       "profileShape": "Shape",
       "profileSide": "Cut side",
@@ -132,6 +138,10 @@
       "g83": "G83 peck"
     },
     "check": {
+      "tapUnavailable": "This machine has no configured rigid tapping limits.",
+      "tapRpm": "Set the rigid tapping speed between 1 and {rpm} rpm.",
+      "tapPilotDepth": "The straight part of the pilot hole must be deeper than {depth}.",
+      "tapClearance": "Set clearance to at least {height} for the return reversal.",
       "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
       "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
       "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",

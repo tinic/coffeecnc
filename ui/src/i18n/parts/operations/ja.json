@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseTap": "タップを選択",
       "chooseFinishTool": "リーマまたはボーリング工具を選択",
       "pocketOptions": "寸法、進入、側面",
       "reviewJob": "ジョブを確認",
@@ -21,6 +22,8 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "rigidTap": "同期タッピング",
+      "rigidTapSetup": "右ねじ用タップと下穴を使用し、開始高さと下穴の有効深さには主軸反転時の移動量を見込んでください。",
       "holeFinishing": "リーマ / ボーリング",
       "holeFinishingSetup": "下穴を使用し、工具が設定した深さまで送りで進入し、退避できることを確認してください。",
       "contour": "輪郭",
@@ -36,6 +39,9 @@
       "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
     },
     "label": {
+      "tapPitch": "ねじピッチ",
+      "tapPilotDepth": "下穴の有効深さ",
+      "tapStartHeight": "開始高さ",
       "boreDwell": "底面での停止時間",
       "profileShape": "形状",
       "profileSide": "切削側",
@@ -132,6 +138,10 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "tapUnavailable": "この機械には同期タッピングの制限が設定されていません。",
+      "tapRpm": "タッピングの回転数を 1 ～ {rpm} rpm に設定してください。",
+      "tapPilotDepth": "下穴の円筒部は {depth} より深くしてください。",
+      "tapClearance": "戻り時の反転に備えて、退避高さを {height} 以上にしてください。",
       "profilePrecision": "寸法と送りを確認してください。各パスはプログラムの精度で表現できる値とし、最大 2,000 パスにしてください。",
       "profileCorner": "角の半径は 0 以上かつ短い辺の半分未満にしてください。",
       "profileInsideCorner": "内側の角の半径は工具半径（{radius}）より大きくしてください。",

@@ -40,6 +40,7 @@ struct PreviewSettings {
   std::optional<Bounds> soft_travel{};
   std::optional<Bounds> physical_travel{};
   double max_spindle_rpm{};
+  std::optional<RigidTapLimits> rigid_tap{};
   std::string tool_table;
   std::optional<int> reference_tool{};
   std::string touched_off_file{};

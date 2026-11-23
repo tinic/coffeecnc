@@ -115,6 +115,7 @@ struct Canon {
   Vec3 end{}; // the controlled point, machine coordinates, mm
   double feed{}; // mm/min
   double spindle_rpm{};
+  double sync_pitch_mm{};
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
@@ -130,6 +131,7 @@ struct Canon {
   int g5x_index{1};
   int tool_in_spindle{};
   int selected_index{-1};
+  int sync_spindle{};
   int feed_mode{}; // 0 per minute, 1 inverse time, 2 per revolution
   CANON_DIRECTION spindle{CANON_STOPPED};
   CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
@@ -499,11 +501,35 @@ void ARC_FEED(int, double first_end, double second_end, double first_axis, doubl
     move(true, point(first_end, second_end, axis_end_point));
 }
 
-void RIGID_TAP(int, double x, double y, double z, double) {
+void RIGID_TAP(int, double x, double y, double z, double return_scale) {
   if (!may_move())
     return;
   const Vec3 from = canon.end;
-  move(true, to_machine(x, y, z));
+  const Vec3 to = to_machine(x, y, z);
+  if (const auto& tap = canon.request.rigid_tap; tap && canon.sync_spindle == 0 && canon.recording) {
+    if (canon.surface_speed || std::abs(canon.spindle_rpm) * return_scale > tap->max_rpm) {
+      halt(Halt::stop, "rigid tapping exceeds the configured spindle limit");
+      return;
+    }
+    // Include the qualified reversal envelope in Program Check without drawing it as the path.
+    const double reserve = canon.sync_pitch_mm * tap->reversal_turns;
+    if (!std::isfinite(reserve) || reserve <= 0) {
+      halt(Halt::stop, "rigid tapping has no valid reversal allowance");
+      return;
+    }
+    const double length = std::hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+    if (length > 0 && !canon.request.restart_line) {
+      Vec3 before = from;
+      Vec3 beyond = to;
+      for (std::size_t axis = 0; axis < from.size(); ++axis) {
+        const double extension = reserve * ((to[axis] - from[axis]) / length);
+        before[axis] -= extension;
+        beyond[axis] += extension;
+      }
+      record_move(false, before, beyond);
+    }
+  }
+  move(true, to);
   if (canon.halt == Halt::none)
     move(true, from);
 }
@@ -701,8 +727,11 @@ void SET_NAIVECAM_TOLERANCE(double tolerance) { canon.naivecam_tolerance = toler
 void SET_CUTTER_RADIUS_COMPENSATION(double) {}
 void START_CUTTER_RADIUS_COMPENSATION(int) {}
 void STOP_CUTTER_RADIUS_COMPENSATION() {}
-void START_SPEED_FEED_SYNCH(int, double, bool) {}
-void STOP_SPEED_FEED_SYNCH() {}
+void START_SPEED_FEED_SYNCH(int spindle, double pitch, bool) {
+  canon.sync_spindle = spindle;
+  canon.sync_pitch_mm = std::abs(pitch) * program_unit();
+}
+void STOP_SPEED_FEED_SYNCH() { canon.sync_pitch_mm = 0; }
 void DWELL(double seconds) {
   if (!gate() || !canon.recording || !(seconds > 0))
     return;

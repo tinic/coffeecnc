@@ -835,6 +835,7 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
   settings.parameter_file = config.parameter_file;
   settings.units_per_mm = 1.0 / config.millimetres_per_unit;
   settings.max_spindle_rpm = config.limits.max_spindle_rpm;
+  settings.rigid_tap = config.rigid_tap;
   settings.tool_table = config.tool_table;
   if (config.fixed_setter) {
     settings.reference_tool = config.fixed_setter->reference_tool;
@@ -969,6 +970,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.tool_change_position = settings_.tool_change_position;
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
+  request.rigid_tap = settings_.rigid_tap;
   request.codes = start->codes;
   // The tool length offset in effect, in the interpreter as much as in the canon: the
   // interpreter takes it off where it works in machine coordinates (G53, G28, G30).

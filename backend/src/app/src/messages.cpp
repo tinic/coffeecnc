@@ -249,6 +249,10 @@ auto encode_hello(const Hello& hello) -> Encoded {
       fields.fail("max_spindle_rpm", "is not positive");
     message["max_spindle_rpm"] = fields.real(*hello.max_spindle_rpm, "max_spindle_rpm");
   }
+  if (hello.rigid_tap)
+    message["rigid_tap"] = {
+        {"max_rpm", fields.real(hello.rigid_tap->max_rpm, "rigid_tap.max_rpm")},
+        {"reversal_turns", fields.real(hello.rigid_tap->reversal_turns, "rigid_tap.reversal_turns")}};
   if (hello.touch_probe_tool)
     message["touch_probe_tool"] = *hello.touch_probe_tool;
   if (!hello.program_places.empty()) {

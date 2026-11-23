@@ -108,6 +108,30 @@ describe('new operation dialog', () => {
     expect(save.text).toContain('G98 G89 X10 Y10 Z-10 R2 P0.5 F60')
   })
 
+  it('offers tapping only on a qualified machine and requires a tap selection', async () => {
+    const table = panel.toolTable
+    if (table === null) throw new Error('Missing tool table')
+    const machine = { ...hello, simulated: false }
+    delete machine.rigid_tap
+    wire.receive(machine)
+    machineStatus()
+    await open()
+    expect(wrapper?.findAll('button').some((candidate) => candidate.text() === 'Rigid tapping')).toBe(false)
+    wire.receive({ ...machine, rigid_tap: { max_rpm: 300, reversal_turns: 1 } })
+    wire.receive(table)
+    await nextTick()
+    button('Rigid tapping').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    if (save?.type !== 'save_program') throw new Error('No tapping program was saved')
+    expect(save.text).toContain('G33.1 Z-10 K1')
+  })
+
   it('queues snapshots in order, discards a queued item and saves the job only', async () => {
     await open(['job-facing-100x60mm.ngc'])
     button('Add to job').click()

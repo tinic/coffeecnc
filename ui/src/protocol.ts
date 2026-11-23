@@ -38,6 +38,11 @@ export type FeedMode = 'per_minute' | 'inverse_time' | 'per_revolution'
 
 // ---- machine to panel -----------------------------------------------------------------------
 
+export interface RigidTapLimits {
+  max_rpm: number
+  reversal_turns: number
+}
+
 /** Sent once after the panel's `ready`: what does not change while the machine runs. */
 export interface Hello {
   type: 'hello'
@@ -78,6 +83,8 @@ export interface Hello {
   max_jog_velocity: number
   /** Configured spindle ceiling, rpm; optional for older peers. */
   max_spindle_rpm?: number
+  /** Qualified limits for spindle 0 rigid tapping, if enabled. */
+  rigid_tap?: RigidTapLimits
   /** Optional v1 addition, mm/min. When present, includes every configured axis. */
   axis_max_jog_velocity?: Partial<Record<AxisLetter, number>>
   /** Whether MDI/program execution requires homing. Absent means true. */

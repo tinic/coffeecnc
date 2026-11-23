@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseTap": "Selecciona un macho",
       "chooseFinishTool": "Selecciona un escariador o una herramienta de mandrinar",
       "pocketOptions": "Geometría, entrada y paredes",
       "reviewJob": "Revisar trabajo",
@@ -21,6 +22,8 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "rigidTap": "Roscado rígido",
+      "rigidTapSetup": "Usa un macho a derechas y un agujero pretaladrado. Prevé el recorrido de inversión con la altura inicial y la profundidad útil.",
       "holeFinishing": "Escariado / mandrinado",
       "holeFinishingSetup": "Usa agujeros pretaladrados y verifica que la herramienta pueda avanzar a la profundidad programada y salir de ella.",
       "contour": "Contorno",
@@ -36,6 +39,9 @@
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
+      "tapPitch": "Paso de rosca",
+      "tapPilotDepth": "Profundidad útil del pretaladrado",
+      "tapStartHeight": "Altura inicial",
       "boreDwell": "Pausa en el fondo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
@@ -132,6 +138,10 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "tapUnavailable": "Esta máquina no tiene límites de roscado rígido configurados.",
+      "tapRpm": "Ajusta la velocidad de roscado entre 1 y {rpm} rpm.",
+      "tapPilotDepth": "El tramo cilíndrico del agujero debe tener más de {depth} de profundidad.",
+      "tapClearance": "Ajusta una altura libre de al menos {height} para la inversión de salida.",
       "profilePrecision": "Revisa las dimensiones y los avances. Cada pasada debe poder expresarse con la precisión del programa. Máximo 2000 pasadas.",
       "profileCorner": "El radio de esquina debe ser mayor o igual a cero y menor que la mitad del lado más corto.",
       "profileInsideCorner": "El radio de esquina interior debe ser mayor que el radio de la herramienta ({radius}).",

@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseTap": "选择丝锥",
       "chooseFinishTool": "选择铰刀或镗刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
@@ -21,6 +22,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "rigidTap": "刚性攻丝",
+      "rigidTapSetup": "使用右旋丝锥和预钻底孔。起始高度和底孔深度必须留出主轴反转行程。",
       "holeFinishing": "铰孔 / 镗孔",
       "holeFinishingSetup": "使用预钻孔，并确认刀具能够以进给速度到达设定深度并退出。",
       "contour": "轮廓",
@@ -36,6 +39,9 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "tapPitch": "螺距",
+      "tapPilotDepth": "底孔有效深度",
+      "tapStartHeight": "起始高度",
       "boreDwell": "孔底暂停",
       "profileShape": "形状",
       "profileSide": "切削侧",
@@ -132,6 +138,10 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "tapUnavailable": "此机床尚未配置刚性攻丝限值。",
+      "tapRpm": "请将攻丝转速设为 1 至 {rpm} rpm。",
+      "tapPilotDepth": "底孔直筒段深度必须大于 {depth}。",
+      "tapClearance": "回程反转所需的安全高度至少为 {height}。",
       "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
       "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
       "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",

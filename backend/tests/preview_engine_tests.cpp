@@ -265,6 +265,25 @@ void program_check_touched_lengths_and_travel() {
           "A move inside LinuxCNC soft limits can exceed the verified physical envelope.");
 }
 
+void rigid_tapping_reversal_bounds() {
+  Rig rig{"tap-reversal-bounds"};
+  rig.settings.physical_travel = Bounds{{-50, -50, -4.5}, {50, 50, 50}};
+  const std::string metric = "G21 G90\nG0 Z3\nS300 M3\nG33.1 Z-4 K1\nM5\nM2\n";
+  const auto nominal = rig.preview(metric).check;
+  require(nominal && nominal->travel == TravelCheck::fits,
+          "The nominal tapping path alone fits the travel");
+  rig.settings.rigid_tap = RigidTapLimits{300, 1};
+  for (const auto& program : {metric, std::string{
+           "G20 G90\nG0 Z0.1\nS300 M3\nG33.1 Z-0.15 K0.04\nM5\nM2\n"}}) {
+    const auto checked = rig.preview(program).check;
+    require(checked && checked->travel == TravelCheck::outside,
+            "Tapping reversal clearance is checked in the program's units");
+  }
+  const auto fast = rig.preview("G21 G90\nG0 Z3\nS300 M3\nG33.1 Z-4 K1 I2\nM5\nM2\n");
+  require(fast.error && fast.error->text.find("configured spindle limit") != std::string::npos,
+          "A faster return cannot exceed the qualified spindle speed");
+}
+
 // Every chord of an arc is within the tolerance of the circle.
 void require_arc(const PreviewSegment& segment, std::size_t first, std::size_t second,
                  const Vec3& centre, double radius, const std::string& what) {
@@ -1588,6 +1607,7 @@ auto main(int argc, char** argv) -> int {
     lines_and_bounds();
     restart_checkpoints();
     program_check_touched_lengths_and_travel();
+    rigid_tapping_reversal_bounds();
     arcs_in_three_planes();
     units();
     offsets_rotation_and_g92();

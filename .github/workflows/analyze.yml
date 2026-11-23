@@ -1,0 +1,44 @@
+name: C++ analysis
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyze-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: debian:trixie
+      options: --init
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the native toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git ca-certificates clang-tidy cppcheck \
+            libboost-dev libgtk-3-dev libwebkit2gtk-4.1-dev linuxcnc-uspace-dev nlohmann-json3-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Analyze the native backend
+        working-directory: backend
+        run: |
+          cmake --preset analyze -DCOFFEECNC_LINUXCNC=ON -DCOFFEECNC_SHELL=ON
+          cmake --build --preset analyze --parallel
+          ctest --preset analyze -LE linuxcnc -E 'xvfb_wrapper|quit_delivery'

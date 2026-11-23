@@ -481,7 +481,9 @@
       "halNotServiced": "Le composant HAL de CoffeeCNC n’est pas servi.",
       "toolChangeGone": "LinuxCNC n’attend plus ce changement d’outil.",
       "toolInSpindleNumber": "L’outil {tool} est en broche.",
-      "toolNotInTable": "L’outil {tool} n’est pas dans la table d’outils."
+      "toolNotInTable": "L’outil {tool} n’est pas dans la table d’outils.",
+      "restartSynchFailed": "LinuxCNC n’a pas enregistré ses paramètres pour la reprise.",
+      "restartParametersChanged": "Les paramètres enregistrés de la machine ont changé après la vérification de la reprise. Choisissez de nouveau la ligne."
     },
     "previewEngine": {
       "cannotRead": "Impossible de lire le programme pour l’aperçu, ou il dépasse {size}.",
@@ -513,12 +515,9 @@
       "lineErrorStop": "Ligne {line} : {detail}.",
       "rotary": "L’aperçu du programme et la reprise à la ligne ne sont pas disponibles sur les configurations rotatives.",
       "iniUnreadable": "Impossible de lire le fichier INI de la machine pour l’aperçu.",
-      "parametersUnset": "Le programme lit un paramètre (#) avant de le définir : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu.",
-      "parametersUnchecked": "Le programme utilise des paramètres (#), et le calcul qui les vérifie ne s’est pas terminé.",
       "stopUnknownSystem": "se déplace dans {wcs}, dont les décalages ne figurent pas dans le fichier de paramètres de la machine",
       "stopG30ToolChange": "un changement d’outil qui va à la position G30 ([EMCIO] TOOL_CHANGE_AT_G30), absente du fichier de paramètres de la machine",
       "stopUndefinedParameter": "lit {name}, que le programme ne définit pas : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
-      "stopParameterDivergence": "la trajectoire à partir d’ici dépend d’un paramètre (#) que le programme lit avant de le définir : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
       "stopRemapped": "{code} est remappé sur cette machine ([RS274NGC] REMAP) : l’aperçu ne sait pas ce qu’il fait",
       "stopSavedPosition": "G{code} va à une position absente du fichier de paramètres de la machine",
       "stopTask": "lit le paramètre _task, qui vaut 1 sur la machine et 0 dans l’aperçu : le programme peut agir différemment dans chacun",
@@ -529,7 +528,12 @@
       "noDirectory": "Impossible de créer un dossier pour les fichiers de l’aperçu, ou son chemin contient des caractères que l’interpréteur développerait.",
       "filesNotWritten": "Impossible d’écrire les fichiers de l’aperçu.",
       "toolChangeMoves": "Le changement d’outil configuré déplace la machine de façon indépendante.",
-      "changedDuring": "Le programme ou l’un de ses fichiers de sous-programmes a changé sur le disque pendant chacun des {runs} calculs : pas d’aperçu."
+      "changedDuring": "Le programme ou l’un de ses fichiers de sous-programmes a changé sur le disque pendant chacun des {runs} calculs : pas d’aperçu.",
+      "stopIniHal": "lit une valeur INI ou HAL (#<_ini[...]>, #<_hal[...]>), que l’aperçu n’a pas",
+      "stopExists": "demande si un paramètre global (#<_...>) existe : sur la machine, il peut exister depuis un programme ou un bloc MDI antérieur, ce que l’aperçu ne sait pas",
+      "stopComputedParameter": "lit un paramètre dont le numéro est calculé (#[...], ##) : lequel, et si le programme l’a défini, n’est pas connu de l’aperçu",
+      "stopReturnValue": "lit #<_value> ou #<_value_returned> avant qu’un sous-programme du programme ne soit revenu : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
+      "stopDefinitionBlock": "un mot O dans une définition de sous-programme appartient à un bloc extérieur : les lignes exécutées ne sont pas connues de l’aperçu"
     },
     "nmlStatus": {
       "pauseFirst": "Mettez en pause le programme en cours avant de jogger Z.",

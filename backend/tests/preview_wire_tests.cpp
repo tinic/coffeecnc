@@ -201,6 +201,34 @@ void blocks_refused_by_their_text() {
   require(uses_parameters("G1 X#1\n") && uses_parameters("G1 X1\n#<a>=1") &&
               !uses_parameters("G1 X1\n(#1) ; #2\n") && !uses_parameters(""),
           "Whether a text uses parameters");
+  // Review of #276, findings 1, 3 and 4: what a line reads and sets, and what is refused.
+  {
+    const auto use = parameter_use("N10 #1 = [#2 + #3000] #4=#<x> (#5) ; #6");
+    require(use.sets == std::vector<int>{1, 4} && use.reads == std::vector<int>{2, 3000} &&
+                !use.computed && !use.returned && !use.control,
+            "Settings and reads of a line, outside its comments");
+    const auto branch = parameter_use("o100 if [#3000 LT 0]");
+    require(branch.control && branch.name == "100" && branch.word == "if" &&
+                branch.reads == std::vector<int>{3000} && branch.sets.empty(),
+            "An O word reads its condition and sets nothing");
+    require(parameter_use("o<a> elseif [1]").word == "elseif" &&
+                parameter_use("o<a> endsub [#1]").word == "endsub" &&
+                parameter_use("o<a> sub").word == "sub" &&
+                parameter_use("o<a> call [#5]").reads == std::vector<int>{5},
+            "The word of an O word");
+    require(parameter_use("G1 X#[1+2]").computed && parameter_use("G1 X##1").computed &&
+                parameter_use("G1 X#1.5").computed && parameter_use("G1 X#<_value>").returned &&
+                parameter_use("o1 if [#<_value_returned>]").returned &&
+                !parameter_use("G1 X#<_values>").returned,
+            "A computed number and the return value");
+    require(stored_parameters("5161\t1.5\n  31 2\nx 3\n0 1\n5220\n") ==
+                std::map<int, double>{{31, 2}, {5161, 1.5}},
+            "A parameter file as the interpreter reads it");
+  }
+  require(refused("o1 if [EXISTS[#<_depth>] EQ 0]") && refused("o1 if [exists [#< _depth >]]") &&
+              refused("G1 X#<_ini[axis_x]max_limit>") && refused("G1 X#<_HAL[x.y]>") &&
+              !refused("o1 if [EXISTS[#<depth>]]") && !refused("(exists[#<_a>])"),
+          "EXISTS of a global, INI and HAL values");
   require(refused("(py,x)") && refused("(PYRUN,x)") && refused("( pyreload)") &&
               refused(";py,x") && refused("  ;PY,x") && refused("; py ,x") && refused("(Logopen,f)") &&
               refused("(LOG,x)") && refused("(logclose)") && refused("(probeopen f)") &&

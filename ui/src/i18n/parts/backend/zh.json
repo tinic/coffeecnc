@@ -481,7 +481,9 @@
       "halNotServiced": "CoffeeCNC HAL 组件未在运行。",
       "toolChangeGone": "LinuxCNC 已不再等待该换刀。",
       "toolInSpindleNumber": "刀具 {tool} 在主轴上。",
-      "toolNotInTable": "刀具 {tool} 不在刀具表中。"
+      "toolNotInTable": "刀具 {tool} 不在刀具表中。",
+      "restartSynchFailed": "LinuxCNC 未为重启保存其参数。",
+      "restartParametersChanged": "审核重启后，机床保存的参数已更改。请重新选择该行。"
     },
     "previewEngine": {
       "cannotRead": "无法读取程序以生成预览，或程序大于 {size}。",
@@ -513,12 +515,9 @@
       "lineErrorStop": "第 {line} 行：{detail}。",
       "rotary": "旋转轴配置下不支持程序预览和从指定行重启。",
       "iniUnreadable": "无法读取机床的 INI 文件以生成预览。",
-      "parametersUnset": "程序在设置参数（#）之前读取了它：预览不知道其来自先前程序或 MDI 程序段的值。",
-      "parametersUnchecked": "程序使用了参数（#），但检查这些参数的计算未完成。",
       "stopUnknownSystem": "在{wcs}中移动，而其偏置不在机床的参数文件中",
       "stopG30ToolChange": "移动到 G30 位置（[EMCIO] TOOL_CHANGE_AT_G30）的换刀，而该位置不在机床的参数文件中",
       "stopUndefinedParameter": "读取程序未设置的{name}：预览不知道其来自先前程序或 MDI 程序段的值",
-      "stopParameterDivergence": "从这里开始的路径取决于程序在设置之前读取的参数（#）：预览不知道其来自先前程序或 MDI 程序段的值",
       "stopRemapped": "{code} 在此机床上已重映射（[RS274NGC] REMAP）：预览不知道它的作用",
       "stopSavedPosition": "G{code} 移动到不在机床参数文件中的位置",
       "stopTask": "读取参数 _task，它在机床上为 1，在预览中为 0：程序在两者中可能表现不同",
@@ -529,7 +528,12 @@
       "noDirectory": "无法为预览文件创建目录，或其路径含有解释器会展开的字符。",
       "filesNotWritten": "无法写入预览文件。",
       "toolChangeMoves": "配置的换刀会独立移动机床。",
-      "changedDuring": "在 {runs} 次计算期间，程序或其某个子程序文件每次都在磁盘上被更改：无预览。"
+      "changedDuring": "在 {runs} 次计算期间，程序或其某个子程序文件每次都在磁盘上被更改：无预览。",
+      "stopIniHal": "读取 INI 或 HAL 值（#<_ini[...]>、#<_hal[...]>），预览没有这些值",
+      "stopExists": "询问全局参数（#<_...>）是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
+      "stopComputedParameter": "读取编号为计算所得的参数（#[...]、##）：预览不知道是哪一个参数，也不知道程序是否已设置它",
+      "stopReturnValue": "在程序的子程序返回之前读取 #<_value> 或 #<_value_returned>：预览不知道其来自先前程序或 MDI 程序段的值",
+      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行"
     },
     "nmlStatus": {
       "pauseFirst": "点动 Z 前请先暂停正在运行的程序。",

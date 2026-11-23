@@ -481,7 +481,9 @@
       "halNotServiced": "O componente HAL do CoffeeCNC não está a ser servido.",
       "toolChangeGone": "O LinuxCNC já não está à espera dessa troca de ferramenta.",
       "toolInSpindleNumber": "A ferramenta {tool} está na árvore.",
-      "toolNotInTable": "A ferramenta {tool} não está na tabela de ferramentas."
+      "toolNotInTable": "A ferramenta {tool} não está na tabela de ferramentas.",
+      "restartSynchFailed": "O LinuxCNC não guardou os seus parâmetros para o reinício.",
+      "restartParametersChanged": "Os parâmetros guardados da máquina mudaram depois de o reinício ter sido revisto. Escolha a linha novamente."
     },
     "previewEngine": {
       "cannotRead": "Não é possível ler o programa para a pré-visualização, ou ocupa mais de {size}.",
@@ -513,12 +515,9 @@
       "lineErrorStop": "Linha {line}: {detail}.",
       "rotary": "A pré-visualização do programa e o reinício na linha não estão disponíveis em configurações rotativas.",
       "iniUnreadable": "Não é possível ler o ficheiro INI da máquina para a pré-visualização.",
-      "parametersUnset": "O programa lê um parâmetro (#) antes de o definir: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior.",
-      "parametersUnchecked": "O programa usa parâmetros (#) e o cálculo que os verifica não terminou.",
       "stopUnknownSystem": "move-se em {wcs}, cujos desvios não estão no ficheiro de parâmetros da máquina",
       "stopG30ToolChange": "uma troca de ferramenta que vai para a posição G30 ([EMCIO] TOOL_CHANGE_AT_G30), que não está no ficheiro de parâmetros da máquina",
       "stopUndefinedParameter": "lê {name}, que o programa não define: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
-      "stopParameterDivergence": "o percurso a partir daqui depende de um parâmetro (#) que o programa lê antes de o definir: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
       "stopRemapped": "{code} está remapeado nesta máquina ([RS274NGC] REMAP): a pré-visualização não sabe o que faz",
       "stopSavedPosition": "G{code} vai para uma posição que não está no ficheiro de parâmetros da máquina",
       "stopTask": "lê o parâmetro _task, que vale 1 na máquina e 0 na pré-visualização: o programa pode agir de forma diferente em cada um",
@@ -529,7 +528,12 @@
       "noDirectory": "Não foi possível criar um diretório para os ficheiros da pré-visualização, ou o seu caminho tem caracteres que o interpretador expandiria.",
       "filesNotWritten": "Não foi possível escrever os ficheiros da pré-visualização.",
       "toolChangeMoves": "A troca de ferramenta configurada move a máquina de forma independente.",
-      "changedDuring": "O programa ou um dos ficheiros das suas sub-rotinas mudou no disco durante cada um dos {runs} cálculos: sem pré-visualização."
+      "changedDuring": "O programa ou um dos ficheiros das suas sub-rotinas mudou no disco durante cada um dos {runs} cálculos: sem pré-visualização.",
+      "stopIniHal": "lê um valor de INI ou HAL (#<_ini[...]>, #<_hal[...]>), que a pré-visualização não tem",
+      "stopExists": "pergunta se existe um parâmetro global (#<_...>): na máquina pode existir de um programa ou bloco MDI anterior, o que a pré-visualização não sabe",
+      "stopComputedParameter": "lê um parâmetro cujo número é calculado (#[...], ##): a pré-visualização não sabe qual é nem se o programa o definiu",
+      "stopReturnValue": "lê #<_value> ou #<_value_returned> antes de uma sub-rotina do programa ter retornado: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
+      "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas"
     },
     "nmlStatus": {
       "pauseFirst": "Coloque em pausa um programa em execução antes do jog de Z.",

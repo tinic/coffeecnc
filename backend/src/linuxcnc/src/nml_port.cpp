@@ -729,6 +729,31 @@ struct NmlPort::Impl {
     return {};
   }
 
+  // EMC_TASK_PLAN_SYNCH, and the wait until task has done it: task saves its parameter file
+  // before it reports the synch done. The wait gives way to every request and stop the session
+  // queues meanwhile (still() turns false): those never wait behind a synch. Within an action
+  // (begin()).
+  enum class Synch : std::uint8_t { done, refused, given_way, unwritten };
+  [[nodiscard]] auto plan_synch() -> Synch {
+    EMC_TASK_PLAN_SYNCH message;
+    if (!accepted(write(message)))
+      return still() ? Synch::unwritten : Synch::given_way;
+    int rcs = RCS_EXEC;
+    const bool ended = until(completion_timeout, [&]() -> bool {
+      collect();
+      if (!still())
+        return true;
+      const EMC_STAT* s = stat();
+      if (s == nullptr || s->echo_serial_number != serial)
+        return false;
+      rcs = s->status;
+      return rcs != RCS_EXEC;
+    });
+    if (!still())
+      return Synch::given_way;
+    return ended && rcs == RCS_DONE ? Synch::done : Synch::refused;
+  }
+
   // Writes the message and waits until task has echoed its serial number.
   [[nodiscard]] auto send(RCS_CMD_MSG& message) -> ActionResult {
     if (auto wrote = write(message); !accepted(wrote))
@@ -987,28 +1012,11 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
     return;
   static_cast<void>(impl_->begin(&wanted));
   const Impl::Scope scope{*impl_};
-  EMC_TASK_PLAN_SYNCH message;
-  if (!accepted(impl_->write(message))) {
-    impl_->synch_retry = Clock::now() + synch_retry_period;
+  // A synch that gave way is not counted and is asked for again.
+  const auto synch = impl_->plan_synch();
+  if (synch == Impl::Synch::given_way)
     return;
-  }
-  // The wait gives way to every request and stop the session queues meanwhile (`wanted` turns
-  // false): those never wait behind a synch. The synch then is not counted and is asked for
-  // again. Done means written: task saves the file before it reports the synch done.
-  int rcs = RCS_EXEC;
-  const bool ended = until(completion_timeout, [&]() -> bool {
-    impl_->collect();
-    if (!wanted())
-      return true;
-    const EMC_STAT* s = impl_->stat();
-    if (s == nullptr || s->echo_serial_number != impl_->serial)
-      return false;
-    rcs = s->status;
-    return rcs != RCS_EXEC;
-  });
-  if (!wanted())
-    return;
-  if (ended && rcs == RCS_DONE) {
+  if (synch == Impl::Synch::done) {
     auto done_point = point;
     done_point.file = file_stamp(impl_->config.parameter_file);
     loads->synched.store(std::make_shared<const SynchPoint>(done_point));
@@ -3097,20 +3105,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     // Task writes its parameter file when it synchronises its interpreter (Interp::synch). A
     // G28.1, G10 or `#n=` given in MDI is in the file only from the next synchronisation, and
     // a restart in MDI mode does not switch modes. So task is made to synchronise, and the
-    // files are compared again, before the restart moves anything. The wait gives way to Stop
-    // and E-stop as every wait of the restart does.
+    // files are compared again, before the restart moves anything. The synch is the one of
+    // idle maintenance (Impl::plan_synch): it gives way to Stop and E-stop.
     const auto synched = [&]() -> ActionResult {
-      EMC_TASK_PLAN_SYNCH message;
-      if (auto sent = impl_->send(message); !accepted(sent))
-        return sent;
-      int rcs = RCS_EXEC;
-      if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
-            rcs = s.status;
-            return s.echo_serial_number == impl_->serial && rcs != RCS_EXEC;
-          }, "LinuxCNC did not save its parameters for the restart."); !accepted(done))
-        return done;
-      if (rcs != RCS_DONE)
-        return failed("LinuxCNC did not save its parameters for the restart.");
+      const auto synch = impl_->plan_synch();
+      if (synch == Impl::Synch::given_way)
+        return impl_->withdraw();
+      if (synch != Impl::Synch::done)
+        return impl_->failure(from, "LinuxCNC did not save its parameters for the restart.");
       if (!files_current())
         return failed("The machine's saved parameters changed after the restart was reviewed. "
                       "Choose the line again.");

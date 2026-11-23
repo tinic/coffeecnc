@@ -4557,6 +4557,61 @@ void cam_programs(Rig& rig) {
           std::format("first={} {} {}", first, end.text(), PreviewOracle::join(rig.all_messages())));
   }
 
+  // Review of #276, finding 2: a G28.1 in MDI after the restart was planned. Task has it in
+  // memory only; the file has it from the next synchronisation. The restart is in MDI mode and
+  // does not switch modes: it synchronises task first and refuses before anything moves.
+  static_cast<void>(send_mdi("G0 Z20"));
+  static_cast<void>(send_mdi("G0 X0 Y0"));
+  path = load(fusion);
+  const auto stale_plan = rig.send(
+      std::format(R"("type":"plan_restart","line":12,"preview_context":{})", context));
+  const bool resaved = send_mdi("G0 X3 Y3") && send_mdi("G28.1") && send_mdi("G0 X0 Y0");
+  const auto resting = rig.status().commanded_position;
+  std::string refused_restart = "not planned";
+  bool held = false;
+  if (stale_plan.accepted()) {
+    const auto id = rig.post(std::format(R"("type":"start_restart","plan_id":{})",
+                                         stale_plan.restart.at("plan_id").get<std::uint64_t>()));
+    std::vector<Vec3> seen;
+    static_cast<void>(rig.pump_until(30s, [&] {
+      seen.push_back(rig.status().commanded_position);
+      return rig.result(id).has_value();
+    }));
+    const auto end = rig.await(id);
+    refused_restart = end.text();
+    held = !end.accepted() &&
+           end.text().find("The machine's saved parameters changed after the restart was "
+                           "reviewed.") != std::string::npos &&
+           std::ranges::all_of(seen, [&](const Vec3& at) { return distance(at, resting) < 0.01; });
+  }
+  check("cam_restart_refuses_stale_parameter_file", resaved && held, refused_restart);
+  static_cast<void>(rig.send(R"("type":"abort")"));
+  rig.settle();
+
+  // Finding 5: a remapped code the interpreter does not know without its remap. Without the
+  // remap it is the program's error, which refuses Run; with it the preview ends there, with
+  // no error in the check.
+  {
+    auto settings = load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                          rig.config.directory + "/preview-work");
+    settings.remapped = {"m10", "g88.1"};
+    HelperPreviewEngine remapping{settings};
+    for (const auto* code : {"M10 P1", "G88.1 X1 Y1 Z1"}) {
+      auto [remap_inputs, plain] =
+          oracle.preview(std::format("G21 G90 G54\nG0 Z20\nG0 X2 Y2\n{}\nG0 X4\nM30\n", code));
+      const auto o = remapping.compute(remap_inputs, {}).outcome;
+      fact("cam_remapped_unknown", std::format("code={} plain={} remapped={} error={}", word(code),
+                                               state(plain), state(o),
+                                               word(o.error ? o.error->text : "-")));
+      check("cam_remapped_unknown_code_ends_preview",
+            plain.check && !plain.check->errors.empty() && o.state == PreviewState::failed &&
+                o.error && o.error->line == 4 &&
+                o.error->text.find("is remapped on this machine") != std::string::npos &&
+                o.check && o.check->errors.empty() && o.segments.size() == 2,
+            std::format("{}: {}", code, o.error ? o.error->text : "-"));
+    }
+  }
+
   // Several work systems: G55's offsets come from the parameter file.
   static_cast<void>(send_mdi("G0 Z20"));
   static_cast<void>(send_mdi("G0 X0 Y0"));

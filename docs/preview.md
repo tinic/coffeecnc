@@ -35,11 +35,13 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 
 | Construct | Reason |
 |---|---|
-| A parameter that task keeps between programs (`#1`–`#5000` not in the parameter file, `#5061`–`#5070`, `#5399`), read before the program sets it | Its value in task is not known. Found by a second computation with these parameters seeded: the preview ends at the first line where the two paths differ |
-| A global named parameter (`#<_name>`, also `#<_hal[...]>`, `#<_ini[...]>`) that the program reads and does not define | Task can have it from an earlier program or MDI block. An undefined local one is the program's error, as in task |
+| A numbered parameter (`#1`–`#5601`) that neither the parameter file (with the live values written over it) nor the program before has set, read by a line the interpreter executes | Task can have it from an earlier program or MDI block. The helper tracks the settings per line as the interpreter makes them: when it executes a line (`UPDATE_TAG`, the end of every executed block), not in a branch not taken or a definition. `#1`–`#30` are a subroutine's own from its call and are restored at its return. An O word line (`if`, `while`, a call's arguments) that reads one ends the preview when it is read, unless it is in a subroutine definition the interpreter skips. Interpreted once: no second computation |
+| A parameter whose number is computed (`#[...]`, `##1`) | Which one it is is not known before it is read |
+| `#<_value>`, `#<_value_returned>` before a subroutine of the program has returned | Task keeps the last return value from earlier |
+| A global named parameter (`#<_name>`) that the program reads and does not define; `EXISTS[#<_name>]` of any global; `#<_ini[...]>`, `#<_hal[...]>` | Task can have it from an earlier program or MDI block; the preview's interpreter has no INI or HAL values. An undefined local one is the program's error, as in task |
 | `#<_task>`; a computed O or G word | 1 in task and 0 in the preview; which code runs is not known before it does |
 | `M100`–`M199` | A user program can change the machine |
-| A code `[RS274NGC] REMAP` names | What the remap does is not known |
+| A code `[RS274NGC] REMAP` names, also one the interpreter does not know without the remap (`M10`, `G88.1`) | What the remap does is not known. A stop, not the program's error: Run stays available after the review |
 | `G38.x`, `M66` | The result depends on the machine |
 | `G92.3` | The saved G92 offset is replaced by the live one in the preview's copy |
 | A work system, or `G28`/`G30` (also `M6` with `[EMCIO] TOOL_CHANGE_AT_G30`), whose values the parameter file does not hold | Not known |
@@ -55,7 +57,9 @@ The toolpath of the loaded program, computed by LinuxCNC's interpreter in a help
 | Run | Run switches task to Auto, which writes the file, and then compares it again: a preview made before the file had the change refuses that Run ("The program or tool data changed. Review the new program check."), and a new preview follows. Verified in `linuxcnc_cam_programs_g0759` (`cam_stale_parameter_file_refuses_run`) |
 | Watch | The file is compared by its values, without G92, the selected system and the active system's offsets (the live state's) |
 | Tool length at the start | `G43` (the table's length of the tool in the spindle) or `G43.1` (another length) is put in place in the preview's interpreter too, so `G53`, `G28` and `G30` take off the same length as task |
-| Parameters | Interpreted. A program that uses `#` is computed a second time with the parameters task keeps between programs seeded with values of their own; the result stands when both are the same, else a third computation ends the preview at the first line where they differ |
+| Parameters | Interpreted, once; see [Where a preview ends](#where-a-preview-ends) |
+| G92 | The live G92 is in effect in the preview's interpreter. `[RS274NGC] DISABLE_G92_PERSISTENCE` is not passed to it: it would zero `#5210`–`#5219` at its start |
+| Restart from line | Before any motion the restart makes task synchronise (`EMC_TASK_PLAN_SYNCH`, the synch of the idle maintenance, which gives way to Stop and E-stop) and compares the files again; a change made in MDI since the review (`G28.1`, `G10`, `#n=`) refuses the restart with "The machine's saved parameters changed after the restart was reviewed. Choose the line again." Verified in `linuxcnc_cam_programs_g0759` (`cam_restart_refuses_stale_parameter_file`) |
 
 ## Gates when a preview ends early
 

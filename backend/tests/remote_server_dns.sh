@@ -37,7 +37,7 @@ bwrap "$@" --ro-bind / / --dev-bind /dev /dev --proc /proc --unshare-uts --hostn
   --bind "$fixture" "$fixture" /bin/sh -ec '
     if test -n "$3"; then ip link set lo up; fi
     # Ensure the fixture really returns both IPv4 addresses for the same name.
-    addresses=$(getent ahostsv4 mill.workshop.test. | awk '\''{print $1}'\'' | sort -u)
+    addresses=$(getent --no-addrconfig ahostsv4 mill.workshop.test. | awk '\''{print $1}'\'' | sort -u)
     test "$addresses" = "$(printf "127.0.0.1\n192.0.2.36\n")"
     exec "$1" "$2" mill.workshop.test mill.other.test mill.ipv6.test "$3"
   ' sh "$test_binary" "$fixture" "$delayed"

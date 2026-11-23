@@ -86,7 +86,7 @@ export async function loadProgramPart(fetcher: typeof fetch = fetch): Promise<vo
     bytes = await response.arrayBuffer()
   } catch { return }
   // Only for the program it was asked for, and never over a model the operator attached since.
-  if (!live.value || (remote && panel.hello !== hello) ||
+  if (panel.link !== 'live' || (remote && panel.hello !== hello) ||
     panel.status?.program.file !== file || panel.status.program.revision !== revision ||
     part.attachment !== null || part.loading) return
   const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '')

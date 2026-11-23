@@ -1,5 +1,5 @@
 /* eslint-disable vue/one-component-per-file -- Separate mounted fixtures for tools and settings. */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import ToolsTab from '../src/components/ToolsTab.vue'
@@ -14,9 +14,9 @@ import type { ResultListener } from '../src/store'
 
 const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultListener>() }))
 
-// The workflow tests exercise the dialogs. The lazy WebGL canvas can still be loading when
-// a dialog closes, so keep the renderer out of the jsdom fixture.
-vi.mock('../src/components/ToolModelCanvas.vue', () => ({ default: { template: '<canvas />' } }))
+// A dialog can close before its lazy renderer finishes loading. Resolve the module while this
+// fixture is alive, so its dependency imports cannot outlive the test environment.
+beforeAll(async () => { await import('../src/components/ToolModelCanvas.vue') })
 
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')

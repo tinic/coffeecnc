@@ -44,7 +44,6 @@ void wire_formats() {
   request.known_systems = 0b100000011;
   request.saved_g30 = true;
   request.remapped = {"m6", "g88.1"};
-  request.stop_line = 12;
   request.tool_change_position = Vec3{1, 2, 3};
   request.max_points = 77;
   request.chord_tolerance = 0.005;
@@ -56,6 +55,7 @@ void wire_formats() {
               !parse_request(write_request(request) + "wcs 12\n") &&
               !parse_request(write_request(request) + "known_systems 512\n") &&
               !parse_request(write_request(request) + "stop_line 3\n") &&
+              !parse_request(write_request(request) + "saved_g28 2\n") &&
               !parse_request(write_request(request) + "unknown 1\n"),
           "Another header, an empty text, a bad value and an unknown key are refused");
 

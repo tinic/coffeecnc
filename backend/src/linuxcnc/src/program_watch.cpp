@@ -290,6 +290,16 @@ auto refused_block(std::string_view line) -> std::optional<std::string> {
   if (block.find("#<_task>") != std::string::npos)
     return std::string("reads the _task parameter, which is 1 on the machine and 0 in the "
                        "preview: the program can act differently in each");
+  // The preview's interpreter has no INI or HAL values (INI_VARS and HAL_PIN_VARS are off).
+  if (block.find("#<_ini[") != std::string::npos || block.find("#<_hal[") != std::string::npos)
+    return std::string("reads an INI or HAL value (#<_ini[...]>, #<_hal[...]>), which the "
+                       "preview does not have");
+  // Task keeps global named parameters from earlier programs and MDI blocks; the preview's
+  // interpreter starts without them, so EXISTS can answer differently.
+  if (block.find("exists[#<_") != std::string::npos)
+    return std::string("asks whether a global parameter (#<_...>) exists: on the machine it "
+                       "can exist from an earlier program or MDI block, which the preview does "
+                       "not know");
   const auto text = words_part(block);
   if (!text) {
     if (after_line_number(block).starts_with("o["))
@@ -329,6 +339,88 @@ auto uses_parameters(std::string_view text) -> bool {
     text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
   }
   return false;
+}
+
+auto stored_parameters(std::string_view text) -> std::map<int, double> {
+  std::map<int, double> parameters;
+  while (!text.empty()) {
+    const auto end = text.find('\n');
+    std::string_view line = text.substr(0, end);
+    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+    const auto skip = [&line] {
+      while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
+        line.remove_prefix(1);
+    };
+    skip();
+    int number = 0;
+    const auto [after_number, number_error] =
+        std::from_chars(line.data(), line.data() + line.size(), number);
+    if (number_error != std::errc{} || number <= 0)
+      continue;
+    line.remove_prefix(static_cast<std::size_t>(after_number - line.data()));
+    skip();
+    double value = 0;
+    const auto [after_value, value_error] =
+        std::from_chars(line.data(), line.data() + line.size(), value);
+    if (value_error == std::errc{} && after_value != line.data())
+      parameters[number] = value;
+  }
+  return parameters;
+}
+
+auto parameter_use(std::string_view line) -> ParameterUse {
+  ParameterUse use;
+  const auto block = bare_block(line);
+  const std::string_view text = after_line_number(block);
+  use.control = !text.empty() && text.front() == 'o';
+  if (use.control) {
+    if (const auto found = o_word(block)) {
+      use.name = found->name;
+      // Longer words first: "elseif" before "else", "endsub" is not "sub".
+      for (const std::string_view word :
+           {"endrepeat", "endwhile", "continue", "endsub", "elseif", "return", "repeat", "endif",
+            "break", "while", "else", "call", "sub", "do", "if"})
+        if (found->rest.starts_with(word)) {
+          use.word = word;
+          break;
+        }
+    }
+  }
+  int depth = 0;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const char c = text[i];
+    if (c == '[')
+      ++depth;
+    else if (c == ']')
+      depth = std::max(depth - 1, 0);
+    if (c != '#')
+      continue;
+    const std::size_t at = i + 1;
+    if (at < text.size() && text[at] == '<') {
+      const auto end = text.find('>', at);
+      const auto name = text.substr(at + 1, end == std::string_view::npos ? text.size() : end - at - 1);
+      use.returned = use.returned || name == "_value" || name == "_value_returned";
+      i = end == std::string_view::npos ? text.size() : end;
+      continue;
+    }
+    std::size_t end = at;
+    while (end < text.size() && digit(text[end]))
+      ++end;
+    int number = 0;
+    const auto [parsed, error] = std::from_chars(text.data() + at, text.data() + end, number);
+    if (end == at || error != std::errc{} || parsed != text.data() + end ||
+        (end < text.size() && text[end] == '.')) {
+      use.computed = true;
+      continue;
+    }
+    // `#n=` at the level of the block's words is a setting; an expression has no `=`.
+    if (!use.control && depth == 0 && end < text.size() && text[end] == '=')
+      use.sets.push_back(number);
+    else
+      use.reads.push_back(number);
+    i = end - 1;
+  }
+  return use;
 }
 
 auto remapped_use(std::string_view line, const std::vector<std::string>& codes)

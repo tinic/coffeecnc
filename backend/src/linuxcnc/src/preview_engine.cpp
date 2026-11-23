@@ -76,35 +76,6 @@ struct Manifest {
 // The machine's parameter file is read up to this size.
 constexpr std::size_t max_parameter_bytes = std::size_t{1024} * 1024;
 
-// A parameter file as the interpreter reads it (Interp::restore_parameters, LinuxCNC 2.9.4,
-// rs274ngc_pre.cc:1822): a number and a value at the start of a line, other lines ignored.
-auto stored_parameters(std::string_view text) -> std::map<int, double> {
-  std::map<int, double> parameters;
-  while (!text.empty()) {
-    const auto end = text.find('\n');
-    std::string_view line = text.substr(0, end);
-    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
-    const auto skip = [&line] {
-      while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
-        line.remove_prefix(1);
-    };
-    skip();
-    int number = 0;
-    const auto [after_number, number_error] =
-        std::from_chars(line.data(), line.data() + line.size(), number);
-    if (number_error != std::errc{} || number <= 0)
-      continue;
-    line.remove_prefix(static_cast<std::size_t>(after_number - line.data()));
-    skip();
-    double value = 0;
-    const auto [after_value, value_error] =
-        std::from_chars(line.data(), line.data() + line.size(), value);
-    if (value_error == std::errc{} && after_value != line.data())
-      parameters[number] = value;
-  }
-  return parameters;
-}
-
 // The first parameter of the active work system's block (5221, 5241, ...).
 auto system_base(int wcs) -> int { return 5221 + 20 * (wcs - 1); }
 
@@ -413,27 +384,11 @@ auto start_state(const InterpreterStart& start) -> std::expected<StartState, std
   return state;
 }
 
-// The parameters task keeps from one program to the next that a parameter file need not hold:
-// #1-#5000, the probe results #5061-#5070 and #5399 (M66). Seeded with a value of each one's
-// own, the preview tells a program that reads one of them before it sets it.
-auto seed_volatile(std::map<int, double>& parameters) -> void {
-  const auto seed = [&](int number) {
-    parameters.try_emplace(number, 100000 + 0.125 * number);
-  };
-  for (int number = 1; number <= 5000; ++number)
-    seed(number);
-  for (int number = 5061; number <= 5070; ++number)
-    seed(number);
-  seed(5399);
-}
-
 // The machine's parameter file with what is live written over it: the active work system, its
 // rotation and G92. Machine units, as the interpreter keeps the file.
 auto parameter_text(const PreviewSettings& settings, const PreviewInputs& inputs,
-                    const std::optional<std::string>& saved, bool seeded) -> std::string {
+                    const std::optional<std::string>& saved) -> std::string {
   auto parameters = saved ? stored_parameters(*saved) : std::map<int, double>{};
-  if (seeded)
-    seed_volatile(parameters);
   const double unit = settings.units_per_mm;
   const int wcs = inputs.start.wcs;
   const auto& system = inputs.systems.at(static_cast<std::size_t>(wcs - 1));
@@ -860,42 +815,6 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
   return outcome;
 }
 
-// Where two results of one program first differ: the whole records they have in common, and
-// the line of the first record of `a` that is not in `b`, 0 when it has none. `a` reaches that
-// line, as a block it executes, no later than that record.
-struct Difference {
-  std::string_view common;
-  int line{};
-};
-auto first_difference(std::string_view a, std::string_view b) -> Difference {
-  const auto* const start = a.data();
-  // The line of a record, or 0.
-  const auto line_of = [](std::string_view record) -> int {
-    const auto space = record.find(' ');
-    if (space == std::string_view::npos)
-      return 0;
-    const auto kind = record.substr(0, space);
-    if (kind != "seg" && kind != "segf" && kind != "dwell" && kind != "error" && kind != "stop" &&
-        kind != "cut")
-      return 0;
-    record.remove_prefix(space + 1);
-    int line = 0;
-    const auto [end, error] = std::from_chars(record.data(), record.data() + record.size(), line);
-    return error != std::errc{} || line <= 0 ? 0 : line;
-  };
-  while (!a.empty() || !b.empty()) {
-    const auto a_end = a.find('\n');
-    const auto b_end = b.find('\n');
-    const auto first = a.substr(0, a_end);
-    const auto second = b.substr(0, b_end);
-    if (a.empty() || b.empty() || first != second || a_end == std::string_view::npos)
-      return {{start, static_cast<std::size_t>(a.data() - start)}, a.empty() ? 0 : line_of(first)};
-    a.remove_prefix(a_end + 1);
-    b.remove_prefix(b_end == std::string_view::npos ? b.size() : b_end + 1);
-  }
-  return {{start, static_cast<std::size_t>(a.data() - start)}, 0};
-}
-
 auto to_helper_tools(const std::vector<PreviewTool>& tools) -> std::vector<HelperTool> {
   std::vector<HelperTool> out;
   out.reserve(tools.size());
@@ -987,7 +906,7 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     }
   }
   for (const char* key :
-       {"RETAIN_G43", "OWORD_NARGS", "OWORD_WARNONLY", "DISABLE_G92_PERSISTENCE"})
+       {"RETAIN_G43", "OWORD_NARGS", "OWORD_WARNONLY"})
     if (const auto value = text("RS274NGC", key))
       settings.interpreter_options.push_back(std::format("{} = {}", key, *value));
 
@@ -1124,10 +1043,6 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     request.known_systems = saved.systems;
     request.saved_g28 = saved.g28;
     request.saved_g30 = saved.g30;
-    const bool parametric =
-        uses_parameters(manifest->program.bytes) ||
-        std::ranges::any_of(manifest->subroutines,
-                            [](const SnapshotFile& file) { return uses_parameters(file.bytes); });
     last = manifest;
     last_tools =
         std::make_shared<const CheckToolFiles>(check_tool_files(check_table, touched));
@@ -1156,7 +1071,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     const auto request_file = (directory.path() / "request").string();
     written = written &&
               write_file(request.parameters,
-                         parameter_text(settings_, inputs, manifest->parameters, false)) &&
+                         parameter_text(settings_, inputs, manifest->parameters)) &&
               write_file(directory.path() / "preview.ini",
                          ini_text(settings_, subroutines.string(), saved.g30)) &&
               write_file(request_file, write_request(request));
@@ -1174,67 +1089,6 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     const int program_lines =
         static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000));
     auto outcome = outcome_of(settings_, inputs, run, program_lines, *last_tools);
-    // A program with parameters again, with those task keeps between programs seeded: the
-    // same result says that the program does not read one of them before it sets it.
-    if (parametric && run.how == HelperExit::by_itself) {
-      const auto again = [&](std::string_view name, const HelperRequest& changed,
-                             bool seeded) -> std::optional<HelperRun> {
-        const auto file = (directory.path() / name).string();
-        auto given = changed;
-        given.parameters = file + ".var";
-        if (!write_file(given.parameters,
-                        parameter_text(settings_, inputs, manifest->parameters, seeded)) ||
-            !write_file(file, write_request(given)))
-          return HelperRun{};
-        ++runs_;
-        auto other = run_helper(settings_, directory.path(), working, file, cancelled);
-        if (other.how == HelperExit::cancelled)
-          return {};
-        return other;
-      };
-      const auto seeded = again("seeded", request, true);
-      if (!seeded)
-        return {{}, true, {}};
-      if (seeded->result != run.result) {
-        constexpr auto unknown = "The program reads a parameter (#) before it sets it: its value "
-                                 "from an earlier program or MDI block is not known to the "
-                                 "preview.";
-        const bool finished = seeded->how == HelperExit::by_itself;
-        const auto difference = first_difference(run.result, seeded->result);
-        std::optional<PreviewOutcome> stopped;
-        if (finished && difference.line > 0 && !inputs.restart_line) {
-          auto at = request;
-          at.stop_line = difference.line;
-          auto third = again("stopped", at, false);
-          if (!third)
-            return {{}, true, {}};
-          if (third->how == HelperExit::by_itself) {
-            auto ended = outcome_of(settings_, inputs, *third, program_lines, *last_tools);
-            if (ended.state == PreviewState::failed && ended.error &&
-                ended.error->line == difference.line)
-              stopped = std::move(ended);
-          }
-        }
-        if (stopped) {
-          outcome = std::move(*stopped);
-        } else {
-          // The path both computations have in common, without a check of what follows.
-          auto common = parse_output(difference.common, {settings_.max_points + 2, program_lines});
-          outcome.state = PreviewState::failed;
-          outcome.segments = std::move(common.segments);
-          outcome.bounds = feed_bounds(outcome.segments);
-          outcome.dwells = std::move(common.dwells);
-          outcome.error = PreviewError{0, finished ? std::string(unknown)
-                                                   : std::string("The program uses parameters "
-                                                                 "(#), and the computation that "
-                                                                 "checks them did not finish.")};
-          if (!inputs.restart_line)
-            outcome.check = program_check(settings_, inputs, HelperOutput{}, outcome, *last_tools);
-        }
-        outcome.restart.reset();
-        outcome.restart_blocked = unknown;
-      }
-    }
     if (outcome.restart &&
         outcome.restart->tool != inputs.restart_loaded_tool.value_or(inputs.start.tool_in_spindle) &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||

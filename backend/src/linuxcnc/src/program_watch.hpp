@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -31,6 +32,13 @@ namespace coffeecnc {
 //   G92.3: it restores a G92 offset saved in the parameter file, which the live G92 replaces
 //   in the preview's copy
 //   #<_task>: 1 in task, 0 in the preview
+//   EXISTS of a global named parameter (`EXISTS[#<_name>]`): task keeps globals from one
+//   program or MDI block to the next, the preview's interpreter starts without them, so the
+//   answer can differ although no value is read
+//   #<_ini[...]> and #<_hal[...]> (also in EXISTS): the preview's interpreter has neither
+//
+// Whether a numbered parameter or #<_value> is read before it is set is decided while the
+// program runs (preview_helper.cpp), not here.
 //
 // A line in a branch that is not taken, or in a subroutine that is never called, is read by
 // the interpreter too and is refused all the same.
@@ -42,6 +50,33 @@ namespace coffeecnc {
 
 // Whether any line of a text uses a parameter (`#` outside comments).
 [[nodiscard]] auto uses_parameters(std::string_view text) -> bool;
+
+// A parameter file as the interpreter reads it (Interp::restore_parameters, LinuxCNC 2.9.4,
+// rs274ngc_pre.cc:1822): a number and a value at the start of a line, other lines ignored.
+[[nodiscard]] auto stored_parameters(std::string_view text) -> std::map<int, double>;
+
+// The numbered parameters one line uses, outside its comments, as the interpreter's reader
+// takes them (LinuxCNC 2.9.4, Interp::read_parameter and read_parameter_setting,
+// interp_read.cc). The interpreter reads every value of a line when it reads the line, and
+// sets the parameters of `#n=` when it executes the line, after all reads; a line it skips
+// (a branch not taken, a subroutine definition) it does not evaluate at all.
+//
+//   reads     every `#n` whose value the line reads, also in `#m=[#n + 1]` and in the
+//             condition of an O word
+//   sets      every `#n` of a `#n=` setting (a block that is not an O word block)
+//   computed  a parameter whose number is not plainly given: `#[...]`, `##n`, `#1.5`
+//   returned  a read of #<_value> or #<_value_returned>, which the last subroutine return set
+//   control   the line is an O word block; its O word: the name and its word ("if", "sub")
+struct ParameterUse {
+  std::vector<int> reads;
+  std::vector<int> sets;
+  bool computed{};
+  bool returned{};
+  bool control{};
+  std::string name;
+  std::string word;
+};
+[[nodiscard]] auto parameter_use(std::string_view line) -> ParameterUse;
 
 // The first of `codes` (as [RS274NGC] REMAP names them, lower case: "m6", "t", "g88.1") that
 // the line uses, upper case; nothing when it uses none. A computed value of the code's letter

@@ -167,8 +167,6 @@ auto write_request(const HelperRequest& request) -> std::string {
   line("saved_g30", request.saved_g30 ? "1" : "0");
   for (const auto& code : request.remapped)
     line("remapped", code);
-  if (request.stop_line)
-    line("stop_line", std::format("{}", *request.stop_line));
   line("tool_change_at_g30", request.tool_change_at_g30 ? "1" : "0");
   if (request.tool_change_position)
     line("tool_change_position", vec(*request.tool_change_position));
@@ -233,11 +231,7 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
       good = flag(line, request.saved_g30);
     else if (key == "remapped")
       request.remapped.push_back(rest(line));
-    else if (key == "stop_line") {
-      int target = 0;
-      good = !request.stop_line && number(line, target) && target > 0 && word(line).empty();
-      request.stop_line = target;
-    } else if (key == "tool_change_at_g30")
+    else if (key == "tool_change_at_g30")
       good = flag(line, request.tool_change_at_g30);
     else if (key == "tool_change_position") {
       Vec3 position{};

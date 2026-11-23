@@ -109,13 +109,14 @@ struct PreviewSettings {
 //             `failed` with line 0 and their own text, with the valid part of the path. Its
 //             process group is ended in every case; processes left after a good exit are
 //             noted in the diagnostics and change nothing.
-//   parameters a program that uses a parameter (`#`) is computed a second time, with every
-//             parameter that task keeps between programs and the parameter file does not hold
-//             (#1-#5000, the probe results #5061-#5070, #5399) set to a value of its own. When
-//             the two results differ, the program reads one of them before it sets it, and
-//             its value in task is not known: a third computation ends the preview at the
-//             first line where the results differ (`failed`, that line). A named parameter the
-//             program reads and does not define ends the preview at that line too.
+//   parameters are interpreted, once. The helper ends the preview (`failed`, that line) at
+//             the first line that reads a numbered parameter which neither its parameter file
+//             (the machine's file with the live values written over it) nor the program
+//             before it has set, a parameter whose number is computed, #<_value> before a
+//             subroutine has returned, a global named parameter the program does not define,
+//             and EXISTS of a global one: in task each of these can hold a value from an
+//             earlier program or MDI block. The helper's interpreter keeps the live G92: the
+//             machine's [RS274NGC] DISABLE_G92_PERSISTENCE is not passed on.
 //   check     before the result is returned the originals are compared, byte for byte, with
 //             the manifest, and every call is searched again; the parameter file is compared
 //             by its values, without those the live state writes over. A difference discards

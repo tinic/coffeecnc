@@ -2995,6 +2995,28 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return point.h == 0 || (length &&
           std::abs(*length * config.millimetres_per_unit - point.tool_offset[2]) <= 0.001);
     };
+    // Task writes its parameter file when it synchronises its interpreter (Interp::synch). A
+    // G28.1, G10 or `#n=` given in MDI is in the file only from the next synchronisation, and
+    // a restart in MDI mode does not switch modes. So task is made to synchronise, and the
+    // files are compared again, before the restart moves anything. The wait gives way to Stop
+    // and E-stop as every wait of the restart does.
+    const auto synched = [&]() -> ActionResult {
+      EMC_TASK_PLAN_SYNCH message;
+      if (auto sent = impl_->send(message); !accepted(sent))
+        return sent;
+      int rcs = RCS_EXEC;
+      if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
+            rcs = s.status;
+            return s.echo_serial_number == impl_->serial && rcs != RCS_EXEC;
+          }, "LinuxCNC did not save its parameters for the restart."); !accepted(done))
+        return done;
+      if (rcs != RCS_DONE)
+        return failed("LinuxCNC did not save its parameters for the restart.");
+      if (!files_current())
+        return failed("The machine's saved parameters changed after the restart was reviewed. "
+                      "Choose the line again.");
+      return {};
+    };
     if (!files_current() || !current_tool())
       return failed("The restart program or tool length changed.");
     if (after_change) {
@@ -3002,6 +3024,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
             return complete(s) && s.io.tool.toolInSpindle == point.tool;
           }, "LinuxCNC did not finish loading the restart tool."); !accepted(done))
         return done;
+      if (auto current = synched(); !accepted(current))
+        return current;
     } else {
       const auto before = read();
       if (!idle(before) || before.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
@@ -3011,6 +3035,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (before.controller.mode != TaskMode::mdi)
         if (auto switched = mode(EMC_TASK_MODE_MDI); !accepted(switched))
           return switched;
+      if (auto current = synched(); !accepted(current))
+        return current;
       if (auto done = block("M5 M9", completion_timeout); !accepted(done))
         return done;
       if (config.signals.spindle_rpm) {

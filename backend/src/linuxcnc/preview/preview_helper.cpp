@@ -28,10 +28,26 @@
 // the controlled point less the tool offset in effect, in millimetres.
 //
 // The trusted path ends, with a `stop` line, at the first block whose effect depends on the
-// machine: a probe move, M66, M100 to M199, a code the machine remaps, a move in a work system
-// or a G28/G30 whose values the parameter file does not hold, a global named parameter the
-// program reads and does not define, the request's `stop_line`, and what ProgramWatch rejects
-// (G92.3, #<_task>, computed G and O words).
+// machine: a probe move, M66, M100 to M199, a code the machine remaps (also one the
+// interpreter does not know without the remap, such as M10), a move in a work system or a
+// G28/G30 whose values the parameter file does not hold, a global named parameter the program
+// reads and does not define, and what ProgramWatch rejects (G92.3, #<_task>, EXISTS of a
+// global, #<_ini[...]>, #<_hal[...]>, computed G and O words).
+//
+// And at the first line that reads what task may hold from an earlier program or MDI block:
+// a numbered parameter that neither the parameter file (the machine's, with the live values
+// written over it) nor this run has set, a parameter whose number is computed, and
+// #<_value>/#<_value_returned> before a subroutine has returned. Sets are tracked per call
+// level as the interpreter keeps them: #1-#30 are the call's own in a subroutine and are
+// restored at its return. The interpreter reads a line's values when it reads the line and
+// sets its `#n=` when it executes it; a line it skips (a branch not taken, a subroutine
+// definition) it neither reads nor sets. Whether it executed a line that is not an O word is
+// its own report: every executed block ends with UPDATE_TAG (Interp::execute_block,
+// interp_execute.cc:329) or returns INTERP_EXIT or INTERP_EXECUTE_FINISH, and a skipped one
+// makes no canonical call (Interp::_execute, rs274ngc_pre.cc:356). Such a line ends the
+// preview at its first canonical call, before anything of it is written. An O word line has
+// no such report: one that reads an unknown value ends the preview when it is read, unless
+// it is inside a subroutine definition that the interpreter skips.
 //
 // Only the interpreter's public interface is used: InterpBase and the canonical functions.
 //
@@ -56,6 +72,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -135,6 +152,11 @@ struct Canon {
   bool restart_inherits_preparation{};
   bool restart_needs_preparation{};
   Halt halt{Halt::none};
+  // Why the line being executed must not have an effect, if it must not: it read a value the
+  // preview does not know. The preview ends at the line's first canonical call.
+  std::optional<std::string> pending;
+  // UPDATE_TAG calls while the line is executed: one at least when it was executed.
+  int tags{};
 };
 
 Canon canon;    // NOLINT: the canonical functions are free functions
@@ -166,6 +188,14 @@ void halt(Halt how, const std::string& text) {
   std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r'; }, ' ');
   put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
                   canon.line, canon.elsewhere, clean));
+}
+
+// Whether the line may still have an effect. Ends the trusted path first when the line read a
+// value the preview does not know (see the head of this file).
+auto gate() -> bool {
+  if (canon.pending)
+    halt(Halt::stop, *std::exchange(canon.pending, std::nullopt));
+  return canon.halt == Halt::none;
 }
 
 auto program_unit() -> double {
@@ -266,7 +296,7 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
 
 // Whether motion may be written now; says why not, once.
 auto may_move() -> bool {
-  if (canon.halt != Halt::none)
+  if (!gate())
     return false;
   const auto index = static_cast<std::size_t>(canon.g5x_index - 1);
   const bool known = canon.g5x_index == canon.request.wcs ||
@@ -352,6 +382,8 @@ void load_spindle(int index) {
 }
 
 void user_m_code(int number, double /*p*/, double /*q*/) {
+  if (!gate())
+    return;
   halt(Halt::stop, std::format("M{} runs a program of the machine's own: what it does is not "
                                "known to the preview",
                                100 + number));
@@ -475,24 +507,29 @@ void RIGID_TAP(int, double x, double y, double z, double) {
 // The interpreter calls the signature from canon.hh, including the by-value vector.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 void NURBS_FEED(int, std::vector<CONTROL_POINT>, unsigned int) {
-  halt(Halt::stop, "a NURBS move (G5.2, G5.3): not computed by the preview");
+  if (gate())
+    halt(Halt::stop, "a NURBS move (G5.2, G5.3): not computed by the preview");
 }
 
 void STRAIGHT_PROBE(int, double, double, double, double, double, double, double, double, double,
                     unsigned char) {
-  halt(Halt::stop, "a probe move (G38): where it ends depends on the machine");
+  if (gate())
+    halt(Halt::stop, "a probe move (G38): where it ends depends on the machine");
 }
 
 auto WAIT(int, int, int, double) -> int {
-  halt(Halt::stop, "M66 waits for an input of the machine");
+  if (gate())
+    halt(Halt::stop, "M66 waits for an input of the machine");
   return 0;
 }
 auto GET_EXTERNAL_DIGITAL_INPUT(int, int def) -> int {
-  halt(Halt::stop, "reads an input of the machine (M66)");
+  if (gate())
+    halt(Halt::stop, "reads an input of the machine (M66)");
   return def;
 }
 auto GET_EXTERNAL_ANALOG_INPUT(int, double def) -> double {
-  halt(Halt::stop, "reads an input of the machine (M66)");
+  if (gate())
+    halt(Halt::stop, "reads an input of the machine (M66)");
   return def;
 }
 
@@ -511,7 +548,7 @@ void SET_G92_OFFSET(double x, double y, double z, double, double, double, double
 void SET_XY_ROTATION(double degrees) { canon.rotation = degrees; }
 void USE_LENGTH_UNITS(CANON_UNITS units) {
   canon.length_units = units;
-  if (canon.recording)
+  if (gate() && canon.recording)
     record_units();
 }
 void SELECT_PLANE(CANON_PLANE plane) { canon.plane = plane; }
@@ -526,7 +563,7 @@ void SELECT_TOOL(int number) {
   canon.restart_inherits_preparation = false;
 }
 void CHANGE_TOOL(int index) {
-  if (canon.halt != Halt::none)
+  if (!gate())
     return;
   if (canon.restart_inherits_preparation)
     canon.restart_needs_preparation = true;
@@ -552,6 +589,7 @@ void CHANGE_TOOL_NUMBER(int index) {
 }
 void SET_TOOL_TABLE_ENTRY(int index, int number, EmcPose given, double diameter,
                           double front_angle, double back_angle, int orientation) {
+  static_cast<void>(gate());
   if (canon.request.restart_line && canon.line <= *canon.request.restart_line)
     canon.changed_tool_table = true;
   if (!valid_index(index))
@@ -662,7 +700,7 @@ void STOP_CUTTER_RADIUS_COMPENSATION() {}
 void START_SPEED_FEED_SYNCH(int, double, bool) {}
 void STOP_SPEED_FEED_SYNCH() {}
 void DWELL(double seconds) {
-  if (!canon.recording || canon.halt != Halt::none || !(seconds > 0))
+  if (!gate() || !canon.recording || !(seconds > 0))
     return;
   flush_run();
   put(std::format("dwell {} {:.6f}\n", canon.line, seconds));
@@ -670,28 +708,28 @@ void DWELL(double seconds) {
 void SET_SPINDLE_MODE(int spindle, double css_maximum) {
   if (spindle == 0) {
     canon.surface_speed = css_maximum != 0;
-    if (canon.recording && canon.surface_speed)
+    if (gate() && canon.recording && canon.surface_speed)
       canon.check.variable_spindle = true;
   }
 }
 void SET_SPINDLE_SPEED(int spindle, double speed) {
   if (spindle == 0) {
     canon.spindle_rpm = speed;
-    if (canon.recording && !canon.surface_speed)
+    if (gate() && canon.recording && !canon.surface_speed)
       expand(canon.check.spindle, std::abs(speed));
   }
 }
 void START_SPINDLE_CLOCKWISE(int spindle, int) {
   if (spindle == 0) {
     canon.spindle = CANON_CLOCKWISE;
-    if (canon.recording && !canon.surface_speed)
+    if (gate() && canon.recording && !canon.surface_speed)
       expand(canon.check.spindle, std::abs(canon.spindle_rpm));
   }
 }
 void START_SPINDLE_COUNTERCLOCKWISE(int spindle, int) {
   if (spindle == 0) {
     canon.spindle = CANON_COUNTERCLOCKWISE;
-    if (canon.recording && !canon.surface_speed)
+    if (gate() && canon.recording && !canon.surface_speed)
       expand(canon.check.spindle, std::abs(canon.spindle_rpm));
   }
 }
@@ -741,6 +779,7 @@ void PROGRAM_END() {}
 void PROGRAM_STOP() {}
 namespace {
 void mark_output() {
+  static_cast<void>(gate());
   if (canon.request.restart_line && canon.line <= *canon.request.restart_line)
     canon.used_output = true;
 }
@@ -755,7 +794,11 @@ auto UNLOCK_ROTARY(int, int) -> int { return 0; }
 auto LOCK_ROTARY(int, int) -> int { return 0; }
 void PLUGIN_CALL(int, const char*) {}
 void IO_PLUGIN_CALL(int, const char*) {}
-void UPDATE_TAG(StateTag) {}
+// Called at the end of every block the interpreter executes, and by some of its moves.
+void UPDATE_TAG(StateTag) {
+  ++canon.tags;
+  static_cast<void>(gate());
+}
 void CANON_ERROR(const char* format, ...) {
   std::array<char, 512> text{};
   va_list arguments;
@@ -878,6 +921,58 @@ auto undefined_parameter(std::string_view error) -> std::optional<std::string> {
   return std::string(error.substr(start + head.size() - 3, end - start - head.size() + 4));
 }
 
+// What the preview knows of the numbered parameters (#1-#5601) while the program runs: the
+// parameter file's, the interpreter's own, and what this run has set (see the head of this
+// file).
+class ParameterTrack {
+public:
+  explicit ParameterTrack(const std::map<int, double>& file) {
+    for (const auto& entry : file)
+      if (in_range(entry.first))
+        held_.at(static_cast<std::size_t>(entry.first)) = true;
+    // Set by the interpreter itself as task's sets them: the tool in the spindle from the tool
+    // table (Interp::set_tool_parameters), the position at each read (Interp::_read), and
+    // #5599, which init sets.
+    for (int number = 5400; number <= 5413; ++number)
+      held_.at(static_cast<std::size_t>(number)) = true;
+    for (int number = 5420; number <= 5428; ++number)
+      held_.at(static_cast<std::size_t>(number)) = true;
+    held_.at(5599) = true;
+  }
+  // At `level`, the interpreter's call level: in a subroutine #1-#30 are the call's own.
+  [[nodiscard]] auto known(int number, int level) const -> bool {
+    if (!in_range(number))
+      return false;
+    return (number <= locals && level > 0) || held_.at(static_cast<std::size_t>(number));
+  }
+  // A setting the interpreter executed at `level`. One of #1-#30 in a subroutine is restored
+  // at its return, so it says nothing about the caller's.
+  void set(int number, int level) {
+    if (in_range(number) && (number > locals || level == 0))
+      held_.at(static_cast<std::size_t>(number)) = true;
+  }
+
+private:
+  static constexpr int locals = 30;
+  static constexpr int last = 5601;
+  static auto in_range(int number) -> bool { return number >= 1 && number <= last; }
+  std::vector<bool> held_ = std::vector<bool>(static_cast<std::size_t>(last) + 1, false);
+};
+
+// A subroutine definition at call level 0, from `oN sub` to `oN endsub`, which the interpreter
+// skips whole. That holds while none of its O words could be one that a block outside it is
+// skipping to: each is its own name or a name opened inside it.
+struct Definition {
+  std::string name;
+  std::vector<std::string> opened;
+};
+
+auto unknown_reason(std::string_view what) -> std::string {
+  return std::format("reads {}, which the program does not set: its value from an earlier "
+                     "program or MDI block is not known to the preview",
+                     what);
+}
+
 auto inherited_reason(const std::string& mode) -> std::string {
   return std::format("moves by the motion mode {} that was active before the program, which "
                      "the preview does not take over",
@@ -960,6 +1055,10 @@ auto run(const HelperRequest& request) -> int {
 
   // Never deleted: the process ends without the interpreter's exit, which writes files and
   // finalises its Python.
+  // The numbered parameters the helper's interpreter starts with: its parameter file's.
+  constexpr std::size_t max_parameter_bytes = std::size_t{16} << 20;
+  const auto parameter_text = coffeecnc::read_text_file(request.parameters, max_parameter_bytes);
+  ParameterTrack parameters{coffeecnc::stored_parameters(parameter_text.value_or(""))};
   InterpBase* const interp = makeInterp();
   // The interpreter reads the parameter file, and with it the work system and G92 in force.
   if (const int code = interp->init(); is_error(code))
@@ -990,7 +1089,11 @@ auto run(const HelperRequest& request) -> int {
   bool ended = false;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  int last_level = 0;
+  bool returned = false; // a subroutine has returned: #<_value> is this run's
+  std::optional<Definition> definition;
   while (canon.halt == Halt::none && !ended) {
+    canon.pending.reset();
     // What is finished goes out, so that it is there if the helper is ended.
     if (const auto now = std::chrono::steady_clock::now(); now - flushed > flush_period) {
       if (canon.open && canon.open_line != canon.line)
@@ -1016,11 +1119,15 @@ auto run(const HelperRequest& request) -> int {
       if (!inherited.empty() &&
           coffeecnc::motion_use(text.data()) == coffeecnc::MotionUse::inherits)
         halt(Halt::stop, inherited_reason(inherited));
+      else if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped))
+        // A remapped code the interpreter does not know without its remap (M10, G88.1): task
+        // runs the remap; the preview ends here.
+        halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
+                                     "does is not known to the preview",
+                                     *code));
       else if (const auto name = undefined_parameter(why))
         // Task may have it from an earlier program or MDI block: not the program's error.
-        halt(Halt::stop, std::format("reads {}, which the program does not set: its value from an "
-                                     "earlier program or MDI block is not known to the preview",
-                                     *name));
+        halt(Halt::stop, unknown_reason(*name));
       else
         halt(Halt::error, why);
       break;
@@ -1048,12 +1155,6 @@ auto run(const HelperRequest& request) -> int {
       halt(Halt::stop, *reason);
       break;
     }
-    if (request.stop_line == canon.line) {
-      halt(Halt::stop, "the path from here depends on a parameter (#) that the program reads "
-                       "before it sets it: its value from an earlier program or MDI block is "
-                       "not known to the preview");
-      break;
-    }
     if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped)) {
       halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
                                    "does is not known to the preview",
@@ -1078,6 +1179,53 @@ auto run(const HelperRequest& request) -> int {
       if (use == coffeecnc::MotionUse::sets)
         inherited.clear();
     }
+    // The parameters the line reads and sets, at the level the interpreter reads it at.
+    const int level = interp->call_level();
+    returned = returned || level < last_level;
+    last_level = level;
+    const auto use = coffeecnc::parameter_use(text.data());
+    // Whether the line is in a subroutine definition the interpreter skips.
+    bool skipped = level == 0 && definition.has_value();
+    if (level == 0 && use.control) {
+      constexpr std::array<std::string_view, 4> openers{"if", "while", "do", "repeat"};
+      if (!definition && use.word == "sub") {
+        definition = Definition{use.name, {}};
+        skipped = true;
+      } else if (definition && use.name != definition->name) {
+        auto& opened = definition->opened;
+        if (std::ranges::contains(openers, std::string_view{use.word}) &&
+            !std::ranges::contains(opened, use.name))
+          opened.push_back(use.name);
+        else if (!std::ranges::contains(opened, use.name)) {
+          halt(Halt::stop, "an O word in a subroutine definition belongs to a block outside it: "
+                           "which lines run is not known to the preview");
+          break;
+        }
+      }
+    }
+    std::optional<std::string> unknown;
+    if (use.computed)
+      unknown = "reads a parameter whose number is computed (#[...], ##): which one it is, and "
+                "whether the program has set it, is not known to the preview";
+    else if (use.returned && !returned)
+      unknown = "reads #<_value> or #<_value_returned> before a subroutine of the program has "
+                "returned: its value from an earlier program or MDI block is not known to the "
+                "preview";
+    else if (const auto found = std::ranges::find_if(
+                 use.reads, [&](int number) { return !parameters.known(number, level); });
+             found != use.reads.end())
+      unknown = unknown_reason(std::format("#{}", *found));
+    if (unknown && use.control && !skipped) {
+      // An O word reads its values when it is read; nothing tells whether it is skipped.
+      halt(Halt::stop, *unknown);
+      break;
+    }
+    if (!use.control)
+      canon.pending = std::move(unknown);
+    if (definition && level == 0 && use.control && use.name == definition->name &&
+        use.word == "endsub")
+      definition.reset();
+    canon.tags = 0;
     const bool target = request.restart_line == canon.line && canon.elsewhere.empty();
     GCodes before{};
     if (target) {
@@ -1088,8 +1236,18 @@ auto run(const HelperRequest& request) -> int {
       canon.restart_inherits_preparation = canon.selected_index >= 0;
     }
     result = interp->execute();
+    // Executed (not skipped): its last canonical call is UPDATE_TAG, or it ended the program
+    // or waits for the machine.
+    const bool executed =
+        canon.tags > 0 || result == INTERP_EXIT || result == INTERP_EXECUTE_FINISH;
+    if (executed)
+      static_cast<void>(gate());
+    canon.pending.reset();
     if (canon.halt != Halt::none)
       break;
+    if (executed && !use.control)
+      for (const int number : use.sets)
+        parameters.set(number, level);
     if (is_error(result)) {
       halt(Halt::error, error_text(*interp, result));
       break;

@@ -59,9 +59,6 @@ struct HelperRequest {
   // The codes [RS274NGC] REMAP names, lower case ("m6", "t"): a block that uses one ends the
   // preview.
   std::vector<std::string> remapped;
-  // The preview ends at the first block of this program line: the first line at which the
-  // path depends on a parameter the program has not set (HelperPreviewEngine).
-  std::optional<int> stop_line;
   // [EMCIO] TOOL_CHANGE_POSITION: task moves there before a tool change. Machine coordinates.
   std::optional<Vec3> tool_change_position;
   std::size_t max_points{400000};

@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
@@ -103,6 +105,15 @@ struct RestartPoint {
   double rotation{};
   friend auto operator==(const RestartPoint&, const RestartPoint&) -> bool = default;
 };
+
+[[nodiscard]] inline auto restart_machine_position(const RestartPoint& point) -> Vec3 {
+  const double angle = point.rotation * std::numbers::pi / 180.0;
+  const double x = point.start[0] + point.g92[0];
+  const double y = point.start[1] + point.g92[1];
+  return {x * std::cos(angle) - y * std::sin(angle) + point.g5x[0] + point.tool_offset[0],
+          x * std::sin(angle) + y * std::cos(angle) + point.g5x[1] + point.tool_offset[1],
+          point.start[2] + point.g92[2] + point.g5x[2] + point.tool_offset[2]};
+}
 
 // What a computation found: Preview without its context.
 struct PreviewOutcome {

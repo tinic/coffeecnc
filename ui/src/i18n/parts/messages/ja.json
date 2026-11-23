@@ -266,6 +266,7 @@
         "editTool": "工具 {tool} を編集",
         "removeTool": "工具 {tool} を削除",
         "confirmToolChange": "工具交換を確認",
+        "measureToolDuringChange": "工具交換時に測定",
         "saveToolModelDefaults": "工具モデルの既定値を保存",
         "saveToolPreviewModel": "工具のプレビューモデルを保存",
         "saveSettings": "設定を保存",

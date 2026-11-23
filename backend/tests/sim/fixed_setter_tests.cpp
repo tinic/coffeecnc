@@ -1,7 +1,11 @@
+#include <coffeecnc/app/panel_feed.hpp>
+#include <coffeecnc/app/runtime.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
+#include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
+#include <coffeecnc/linuxcnc/preview_engine.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
 #include <algorithm>
@@ -13,12 +17,15 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <numbers>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -729,6 +736,145 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
           "applying G55 rotation leaves G54 unchanged");
 }
 
+#ifdef COFFEECNC_PREVIEW_HELPER_BUILT
+void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
+                HalShared& shared, const NmlLoads& loads, const auto& mdi) {
+  using Json = nlohmann::json;
+  const auto scale = config.millimetres_per_unit;
+  const double reference_length = scale == 1 ? 50 : 50.8;
+  checked(port.set_tool({98, 98, reference_length, 0, "Setter reference"}, {}));
+  mdi("M61 Q98");
+  mdi("G43 H98");
+  mdi("G53 G0 X-12 Y-18 Z22");
+  halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
+
+  NmlStatusMailbox mailbox;
+  auto reader = NmlStatusReader::connect(config, &shared, &mailbox);
+  auto table = LoadedToolTable::attach(scale);
+  require(reader.has_value() && table.has_value(), "M6 simulation has status and loaded tools");
+  LocalFileSystem files;
+  ProgramStore programs{files, config.program_prefix};
+  std::vector<RawTool> raw;
+  NmlPanelSource source{config, mailbox,
+                       [&]() -> std::optional<std::vector<LoadedTool>> {
+                         raw = table->read_raw();
+                         return loaded_tools(raw, scale);
+                       },
+                       [&](std::string_view path, std::uint64_t revision) {
+                         return programs.read_program(path, revision);
+                       },
+                       &loads};
+  source.raw_tools([&] { return raw; });
+  const auto settings = load_preview_settings(config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                               config.directory + "/preview-work");
+  HelperPreviewEngine engine{settings};
+  HelperPreviewEngine restart_engine{settings};
+  PreviewWorker preview{engine};
+  PanelComposer composer{Hello{}, &preview};
+  std::mutex mutex;
+  Json result;
+  int request_id = 0;
+  const auto receive = [&](const Outcome& outcome) {
+    for (const auto& text : outcome.messages) {
+      auto message = Json::parse(text);
+      if (message.value("type", "") == "result") {
+        const std::scoped_lock lock{mutex};
+        result = std::move(message);
+      }
+    }
+  };
+  Runtime runtime{port, **reader, control, config.limits, programs, receive, nullptr,
+                  Runtime::Quit{}, &preview, &restart_engine};
+  const auto page = runtime.begin_page();
+  PanelReading reading;
+  const auto wait = [&](auto condition, auto timeout) {
+    const auto deadline = HalShared::Clock::now() + timeout;
+    do {
+      reading = source.read();
+      composer.observe(reading);
+      if (condition())
+        return true;
+      std::this_thread::sleep_for(20ms);
+    } while (HalShared::Clock::now() < deadline);
+    return false;
+  };
+  const auto send = [&](Json request, std::chrono::milliseconds timeout = 12s) {
+    request["id"] = ++request_id;
+    receive(runtime.submit(page, request.dump()));
+    if (!wait([&] {
+          const std::scoped_lock lock{mutex};
+          return result.is_object() && result.value("id", 0) == request_id;
+        }, timeout))
+      throw std::runtime_error("Timed out waiting for " + request.dump());
+    const std::scoped_lock lock{mutex};
+    return result;
+  };
+  const auto accepted = [&](Json request) {
+    auto reply = send(std::move(request));
+    if (reply.value("outcome", "") != "accepted")
+      throw std::runtime_error(reply.dump());
+  };
+  accepted({{"type", "ready"}});
+  require(wait([&] { return reading.status.link == Link::live; }, 4s), "M6 simulation is live");
+  accepted({{"type", "fixed_setter"}, {"action", "touch_off"}, {"tool", 98},
+            {"x", -12}, {"y", -18}, {"z", 22}});
+  accepted({{"type", "mdi"}, {"text", "M61 Q1 G43 H1"}});
+  accepted({{"type", "mdi"}, {"text", "G92.1 G10 L2 P1 X0 Y0 Z-40 R0"}});
+  accepted({{"type", "mdi"}, {"text", "G53 G0 X2 Y3 Z30"}});
+  require(wait([&] {
+    return reading.status.interp == InterpState::idle &&
+           reading.commanded_position && std::abs(reading.commanded_position->at(0) - 2) < 0.01;
+  }, 5s), "the original program starts away from the setter");
+
+  const auto path = config.program_prefix + "/measure-m6.ngc";
+  {
+    std::ofstream out{path};
+    out << "N10 G21 G90 G17 G54 G40 G49 G94\nN20 T2 M6\nN30 G43 H2\nN40 G0 Z25\n"
+           "N50 G0 X8 Y5\nN60 G1 Z15 F300\nN70 G1 X22 F600\nN80 G0 Z20\nM2\n";
+  }
+  accepted({{"type", "open_program"}, {"path", path}});
+  require(wait([&] {
+    const auto check = preview.checked_preview();
+    return check.preview && check.preview->state == PreviewState::ready && check.source.inputs &&
+           check.source.inputs->program_file == path;
+  }, 6s), "the original program has a complete check");
+  accepted({{"type", "run"}, {"confirmed", true},
+            {"display_units", "mm"},
+            {"preview_context", preview.checked_preview().preview->context}});
+  std::optional<std::uint64_t> generation;
+  require(wait([&] {
+    const auto* change = std::get_if<WaitToolChange>(&reading.status.wait);
+    if (!change || change->tool != 2)
+      return false;
+    generation = change->measure_request;
+    return generation.has_value();
+  }, 6s), "the panel offers measurement on the exact M6");
+  const auto wrong = send({{"type", "tool_changed"}, {"measure_request", *generation + 1}});
+  const auto pins = shared.view(HalShared::Clock::now());
+  require(wrong.value("outcome", "") == "rejected" && pins && pins->tool_change_request &&
+              pins->tool_change_request->generation == *generation,
+          "a different request cannot start measurement or acknowledge M6");
+  halcmd(std::format("setp sim-tool-setter.max {}", (51 - reference_length) / scale));
+  const Json measured = send({{"type", "tool_changed"}, {"measure_request", *generation}}, 35s);
+  require(measured.value("outcome", "") == "accepted" && measured.contains("restart"),
+          measured.dump());
+  const auto& plan = measured.at("restart");
+  require(plan.at("line") == 4 && plan.at("h") == 2 && !plan.at("needs_tool_change").get<bool>() &&
+              std::abs(plan.at("start").at(0).get<double>() - 2) < 0.03 &&
+              std::abs(plan.at("start").at(1).get<double>() - 3) < 0.03 &&
+              reading.status.interp == InterpState::idle,
+          "measurement leaves a stopped restart review at the original XY and first post-M6 motion");
+  const auto applied = mailbox.latest();
+  require(applied && std::abs(applied->status.tool_offset[2] - 41) < 0.03,
+          "the measured length has been applied by G43");
+  accepted({{"type", "start_restart"}, {"plan_id", plan.at("plan_id")}});
+  require(wait([&] {
+    return reading.status.interp == InterpState::idle && reading.commanded_position &&
+           std::abs(reading.commanded_position->at(0) - 22) < 0.03;
+  }, 25s), "the reviewed restart completes without another M6");
+}
+#endif
+
 void run(const std::string& ini, std::string_view scenario) {
   const bool material = scenario == "material";
   const bool edge = scenario == "edge-rotation";
@@ -743,6 +889,8 @@ void run(const std::string& ini, std::string_view scenario) {
   constexpr int reference_tool = 98;
   const double reference_length = scale == 1 ? 50 : 50.8;
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
+  if (scenario == "measure-m6")
+    config->fixed_setter->travel_mm = 30;
   if (material || edge || features)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
@@ -761,8 +909,9 @@ void run(const std::string& ini, std::string_view scenario) {
       std::this_thread::sleep_for(5ms);
     }
   }};
+  NmlLoads loads;
   const auto connect = [&] {
-    auto connected = NmlPort::connect(*config, &shared);
+    auto connected = NmlPort::connect(*config, &shared, &loads);
     if (!connected)
       throw std::runtime_error(connected.error());
     wait_for(**connected, [](const NmlStatus& s) { return s.controller.link == Link::live; });
@@ -788,6 +937,16 @@ void run(const std::string& ini, std::string_view scenario) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (scenario == "measure-m6") {
+#ifdef COFFEECNC_PREVIEW_HELPER_BUILT
+    control_thread.request_stop();
+    control_thread.join();
+    measure_m6(*config, *port, control, shared, loads, mdi);
+    return;
+#else
+    throw std::runtime_error("The M6 scenario needs the preview helper.");
+#endif
+  }
   if (features) {
     feature_scenarios(*port, scale, mdi);
     return;
@@ -1059,7 +1218,7 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features") ||
+       scenario != "features" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

@@ -9,7 +9,8 @@ import { findTool, linkBlock, panel, send } from '../machine'
 import { formatLength, toolLabel } from '../units'
 import AppIcon from './AppIcon.vue'
 
-const props = defineProps<{ tool: number }>()
+const props = defineProps<{ tool: number; measure?: boolean; measuring?: boolean }>()
+const emit = defineEmits<{ measure: [] }>()
 const { t } = useI18n()
 const loadKey = 'tools.change.load'
 const nowKey = 'tools.change.now'
@@ -26,7 +27,7 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
 
 <template>
   <div class="scrim">
-    <section class="prompt" role="alertdialog" :aria-label="t('tools.change.title')">
+    <section class="prompt" role="alertdialog" :aria-label="t('tools.change.title')" :aria-busy="measuring">
       <span class="label">{{ t('tools.change.waiting') }}</span>
       <template v-if="tool === 0">
         <h2>{{ t('tools.change.removeTool') }}</h2>
@@ -49,17 +50,27 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
         </template>
         <template #spindle>{{ t(spindleStates[spindle]) }}</template>
       </i18n-t>
-      <button
-        v-tooltip="linkBlock ?? t('tools.change.confirmHint')"
-        class="btn primary confirm"
-        type="button"
-        :disabled="linkBlock !== null"
-        @click="send({ type: 'tool_changed' })"
-      >
-        <AppIcon name="check" />{{ tool === 0 ? t('tools.change.spindleEmpty') : t('tools.change.toolInSpindle') }}
-      </button>
+      <div class="actions">
+        <button
+          v-if="measure || measuring" v-tooltip="t('tools.change.measureHint')"
+          class="btn confirm" type="button" :disabled="linkBlock !== null || measuring"
+          @click="emit('measure')"
+        >
+          {{ t('tools.change.measure') }}
+        </button>
+        <button
+          v-tooltip="linkBlock ?? t('tools.change.confirmHint')"
+          class="btn primary confirm"
+          type="button"
+          :disabled="linkBlock !== null || measuring"
+          @click="send({ type: 'tool_changed' })"
+        >
+          <AppIcon name="check" />{{ tool === 0 ? t('tools.change.spindleEmpty') : t('tools.change.toolInSpindle') }}
+        </button>
+      </div>
       <p class="hint">
-        <template v-if="linkBlock">{{ t('tools.change.cannotConfirm', { reason: linkBlock }) }}</template>
+        <template v-if="measuring">{{ t('tools.change.measuring') }}</template>
+        <template v-else-if="linkBlock">{{ t('tools.change.cannotConfirm', { reason: linkBlock }) }}</template>
         <template v-else>{{ t('tools.change.continueNote') }}</template>
       </p>
     </section>
@@ -133,9 +144,16 @@ p {
   color: var(--text);
 }
 
-.confirm {
-  min-height: 64px;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.confirm {
+  flex: 1 1 auto;
+  min-height: 64px;
   font-size: 18px;
 }
 </style>

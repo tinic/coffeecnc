@@ -146,9 +146,14 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
   status.program.motion_line = reading.motion_line;
   status.program.optional_stop = reading.optional_stop;
   status.program.block_delete = reading.block_delete;
-  if (controller.requested_tool)
-    status.wait = WaitToolChange{*controller.requested_tool};
-  else if (reading.paused)
+  if (controller.requested_tool) {
+    const auto tool = *controller.requested_tool;
+    const bool measure = controller.tool_change_line && !controller.breakpoint_program &&
+                         !controller.spindle_active && reading.spindle_actual_rpm &&
+                         controller.in_position && config.fixed_setter && tool > 0 &&
+                         tool != config.fixed_setter->reference_tool && tool != config.touch_probe_tool;
+    status.wait = WaitToolChange{tool, measure ? std::optional{controller.tool_request} : std::nullopt};
+  } else if (reading.paused)
     status.wait = WaitPaused{};
   else if (reading.dwell_seconds_left > 0)
     status.wait = WaitDwell{reading.dwell_seconds_left};

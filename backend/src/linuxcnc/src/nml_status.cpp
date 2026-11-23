@@ -162,6 +162,11 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
     if (view->tool_change_request) {
       c.requested_tool = view->tool_change_request->tool;
       c.tool_request = view->tool_change_request->generation;
+      // Readahead waits at M6; currentLine and motionLine can still refer to preceding motion.
+      if (c.mode == TaskMode::automatic && task.readLine > 0) {
+        c.tool_change_line = task.readLine;
+        c.tool_change_position = xyz(motion.traj.position);
+      }
     }
     out.spindle_actual_rpm = view->spindle_rpm;
     out.spindle_at_speed = view->spindle_at_speed;

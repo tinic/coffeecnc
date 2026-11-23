@@ -2726,15 +2726,6 @@ auto restart_at_z(const NmlStatus& s, double z, double tolerance) -> bool {
          std::abs(s.controller.axes[2].machine - z) <= tolerance;
 }
 
-auto restart_endpoint(const RestartPoint& point) -> Vec3 {
-  const double angle = point.rotation * std::numbers::pi / 180.0;
-  const double x = point.start[0] + point.g92[0];
-  const double y = point.start[1] + point.g92[1];
-  return {x * std::cos(angle) - y * std::sin(angle) + point.g5x[0] + point.tool_offset[0],
-          x * std::sin(angle) + y * std::cos(angle) + point.g5x[1] + point.tool_offset[1],
-          point.start[2] + point.g92[2] + point.g5x[2] + point.tool_offset[2]};
-}
-
 auto restart_clearance(const RestartPoint& point) -> double {
   return point.clearance_z + point.g92[2] + point.g5x[2] + point.tool_offset[2];
 }
@@ -2780,6 +2771,90 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
   return {};
 }
 
+auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line,
+                                      const PreviewInputs& inputs, const Wanted& wanted)
+    -> ActionResult {
+  const auto from = impl_->begin(&wanted);
+  const Impl::Scope scope{*impl_};
+  const auto& config = impl_->config;
+  const auto safe = [&](const EMC_STAT& raw, const NmlStatus& status) {
+    const auto& state = status.controller;
+    const auto hal = impl_->hal != nullptr ? impl_->hal->view(HalShared::Clock::now()) : std::nullopt;
+    return state.link == Link::live && state.machine == MachineState::on && state.in_position &&
+           hal && hal->watchdog_ok && !hal->jog_stop_high && !hal->probe_cycle_active &&
+           state.program_file == inputs.program_file && status.block_delete == inputs.block_delete &&
+           !state.breakpoint_program && !state.spindle_active &&
+           status.spindle_actual_rpm && std::abs(*status.spindle_actual_rpm) < 1.0 &&
+           raw.motion.traj.enabled && raw.motion.traj.current_vel == 0 &&
+           !raw.motion.external_offsets_applied && !raw.motion.on_soft_limit &&
+           std::ranges::all_of(state.axes, &AxisState::enabled) &&
+           !state.any_enabled_axis([&](const auto& a) {
+             return a.homing || a.on_hard_limit || (config.limits.homing_required && !a.homed);
+           });
+  };
+  const auto reading = [&](const EMC_STAT& raw) {
+    return to_status(raw, config, impl_->hal, impl_->status.link());
+  };
+  if (!impl_->still())
+    return withdrawn();
+  const auto table = impl_->read_tool_table();
+  if (tool <= 0 || !config.fixed_setter || tool == config.fixed_setter->reference_tool ||
+      tool == config.touch_probe_tool || !table || !tool_z(*table, tool))
+    return failed("A cutting tool in the tool table and a fixed setter are required.");
+  const auto* raw = impl_->stat();
+  if (raw == nullptr)
+    return failed("The controller is unavailable.");
+  const auto before = reading(*raw);
+  const auto& state = before.controller;
+  if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
+      state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line)
+    return failed("The program tool change or its stationary position could not be verified.");
+  if (!impl_->still())
+    return withdrawn();
+
+  if (impl_->loads)
+    ++impl_->loads->aborts;
+  EMC_TASK_ABORT stop;
+  if (auto stopped = impl_->run(stop, from); !accepted(stopped))
+    return stopped;
+  const auto stationary = [&](const EMC_STAT& current) {
+    const auto now = reading(current);
+    return safe(current, now) && restart_idle(now, config) &&
+           restart_at(now, before.commanded_position, config.motion_tolerances.restart_position_mm) &&
+           now.wcs == before.wcs && now.g5x == before.g5x && now.g92 == before.g92 &&
+           now.rotation_xy == before.rotation_xy;
+  };
+  if (auto stopped = impl_->settled(from, "LinuxCNC did not clear the pending tool change.", stationary);
+      !accepted(stopped))
+    return stopped;
+  EMC_TASK_SET_MODE mode;
+  mode.mode = EMC_TASK_MODE_MDI;
+  if (auto sent = impl_->send(mode); !accepted(sent))
+    return sent;
+  if (auto switched = impl_->settled(
+          from, "LinuxCNC did not enter idle MDI for tool measurement.",
+          [&](const EMC_STAT& current) { return current.task.mode == mode.mode && stationary(current); });
+      !accepted(switched))
+    return switched;
+  if (impl_->read_tool_table() != table)
+    return failed("The tool table changed before registering the installed tool.");
+  raw = impl_->stat();
+  if (raw == nullptr || raw->task.mode != mode.mode || !stationary(*raw))
+    return failed("The mill changed state before registering the installed tool.");
+  EMC_TASK_PLAN_EXECUTE register_tool;
+  if (!put(register_tool.command, std::format("M61 Q{}", tool)))
+    return failed("Could not register the installed tool.");
+  if (auto registered = impl_->run(register_tool, from); !accepted(registered))
+    return registered;
+  if (impl_->loads)
+    ++impl_->loads->mdi_blocks;
+  return impl_->settled(from, "LinuxCNC did not confirm the installed tool.",
+                       [&](const EMC_STAT& current) {
+                         return current.task.mode == mode.mode && stationary(current) &&
+                                current.io.tool.toolInSpindle == tool;
+                       });
+}
+
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& config = impl_->config;
@@ -2807,7 +2882,7 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
   point.clearance_z += minimum - original_clearance;
   point.approach_feed = std::min(
       {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
-  const auto end = restart_endpoint(point);
+  const auto end = restart_machine_position(point);
   const double clearance = restart_clearance(point);
   if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
       !restart_travel({s.commanded_position[0], s.commanded_position[1], clearance}, config))
@@ -2822,7 +2897,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};
     const auto& config = impl_->config;
-    const auto endpoint = restart_endpoint(point);
+    const auto endpoint = restart_machine_position(point);
     const double clearance = restart_clearance(point);
     const auto read = [&]() { return status(); };
     const auto idle = [&](const NmlStatus& s) {

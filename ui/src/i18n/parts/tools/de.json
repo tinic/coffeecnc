@@ -143,6 +143,9 @@
       "spindleEmpty": "Spindel ist leer",
       "toolInSpindle": "Werkzeug ist in der Spindel",
       "cannotConfirm": "{reason}: Der Wechsel kann nicht bestätigt werden.",
+      "measure": "Messen und Wiederanlauf prüfen",
+      "measureHint": "Setzen Sie das Werkzeug ein. Das Programm hält an und die Werkzeuglänge wird gemessen. Prüfen Sie den Wiederanlauf vor dem Start.",
+      "measuring": "Werkzeug wird gemessen. Das Programm bleibt angehalten.",
       "continueNote": "Das Programm läuft sofort weiter, wenn Sie bestätigen. Die Stopp-Taste in der Ablaufleiste beendet stattdessen das Programm."
     },
     "setter": {

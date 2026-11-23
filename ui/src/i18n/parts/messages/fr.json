@@ -376,7 +376,6 @@
       "touchOffT99First": "Faites d’abord la prise de longueur de T99 et appliquez sa longueur.",
       "ridgeStart": "Faites la prise de longueur de T99, définissez Z0 sur le dessus de la nervure et partez au-dessus de son milieu.",
       "featureStart": "Faites la prise de longueur de T99, définissez Z0 sur le dessus de l’élément et partez au-dessus.",
-      "noRotation": "Utilisez un système de coordonnées pièce sans rotation pour ce cycle de palpage.",
       "boreStart": "Amenez la bille en jog dans l’alésage simulé, sous son bord supérieur.",
       "recessStart": "Amenez la bille en jog dans la cavité simulée, sous son bord supérieur et sans toucher le fond.",
       "gaugeStart": "Partez au-dessus de l’étalon de calibrage simulé.",

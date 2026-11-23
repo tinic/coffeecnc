@@ -108,7 +108,8 @@ function startGuide(size: number, angle: AngleEdge): void {
   if (target !== null) probe(target, size, angle)
 }
 const askingRotation = shallowRef(false)
-const edgeRotation = shallowRef<{ id: number; wcs: number; degrees: number; frame: string } | null>(null)
+/** A measured edge: the turn from the present work axes, and the rotation applying it writes. */
+const edgeRotation = shallowRef<{ id: number; wcs: number; degrees: number; current: number; rotation: number; frame: string } | null>(null)
 const frame = computed(() => JSON.stringify(panel.status?.offsets))
 const shifted = computed(() => panel.status?.offsets.g92.some((value) => value !== 0) === true)
 const canApplyRotation = computed(() => edgeRotation.value !== null && frame.value === edgeRotation.value.frame &&
@@ -244,7 +245,12 @@ const removeListener = onResult((command, result) => {
     if (result.setter) setterState.value = result.setter
     const rise = Math.tan(degrees * Math.PI / 180) * request.spacing
     const offer = result.setter?.edge_rotation
-    if (offer) edgeRotation.value = { id: offer.measurement_id, wcs: offer.wcs, degrees, frame: frame.value }
+    const current = panel.status?.offsets.rotation_xy ?? 0
+    if (offer) {
+      edgeRotation.value = {
+        id: offer.measurement_id, wcs: offer.wcs, degrees, current, rotation: offer.rotation ?? current + degrees, frame: frame.value,
+      }
+    }
     const values = { degrees: degreesText(degrees), rise: Math.abs(rise).toFixed(3), spacing: String(Math.abs(request.spacing)) }
     line.value = request.direction === 'y_plus'
       ? { text: (): string => t('probe.materialProbe.angleFrontDone', values), level: 'done' }
@@ -420,7 +426,12 @@ onBeforeUnmount(() => {
       </div>
     </ModalDialog>
     <ModalDialog v-if="askingRotation && edgeRotation" :title="t('probe.materialProbe.rotationTitle')" size="small" fresh-gesture @close="askingRotation = false">
-      <p class="rotation-effect">{{ t('probe.materialProbe.rotationEffect', { wcs: wcsName(edgeRotation.wcs), degrees: degreesText(edgeRotation.degrees) }) }}</p>
+      <p class="rotation-effect">
+        {{ t('probe.materialProbe.rotationEffect', {
+          wcs: wcsName(edgeRotation.wcs), degrees: degreesText(edgeRotation.degrees),
+          current: degreesText(edgeRotation.current), rotation: degreesText(edgeRotation.rotation),
+        }) }}
+      </p>
       <p v-if="shifted" class="rotation-effect">{{ t('probe.materialProbe.shiftStays') }}</p>
       <template #footer>
         <button class="btn" type="button" @click="askingRotation = false">{{ t('common.cancel') }}</button>

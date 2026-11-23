@@ -831,42 +831,86 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
     return latest && latest->status.controller.interp == InterpState::idle &&
            std::abs(latest->status.g5x[2] + 40) < 0.01;
   }, 4s), "the programmed work origin is set");
-  accepted({{"type", "mdi"}, {"text", "G53 G0 X2 Y3 Z30"}});
+  // The inch fixture has an automatic change position, so M6 itself moves X4 Y6 Z35 to X2 Y3 Z30.
+  accepted({{"type", "mdi"}, {"text", scale == 1 ? "G53 G0 X2 Y3 Z30" : "G53 G0 X4 Y6 Z35"}});
+  const double start_x = scale == 1 ? 2 : 4;
   require(wait([&] {
     return reading.status.interp == InterpState::idle &&
-           reading.commanded_position && std::abs(reading.commanded_position->at(0) - 2) < 0.01;
+           reading.commanded_position && std::abs(reading.commanded_position->at(0) - start_x) < 0.01;
   }, 5s), "the original program starts away from the setter");
 
-  const auto path = config.program_prefix + "/measure-m6.ngc";
-  {
-    std::ofstream out{path};
-    out << "N10 G21 G90 G17 G54 G40 G49 G94\nN20 T2 M6\nN30 G43 H2\nN40 G0 Z25\n"
-           "N50 G0 X8 Y5\nN60 G1 Z15 F300\nN70 G1 X22 F600\nN80 G0 Z20\nM2\n";
+  const auto begin_exchange = [&](std::string_view name, std::string_view program) {
+    const auto path = config.program_prefix + "/" + std::string(name) + ".ngc";
+    {
+      std::ofstream out{path};
+      out << program;
+    }
+    accepted({{"type", "open_program"}, {"path", path}});
+    require(wait([&] {
+      const auto check = preview.checked_preview();
+      return check.preview && check.preview->state == PreviewState::ready && check.source.inputs &&
+             check.source.inputs->program_file == path;
+    }, 6s), "the original program has a complete check");
+    accepted({{"type", "run"}, {"confirmed", true}, {"display_units", "mm"},
+              {"preview_context", preview.checked_preview().preview->context}});
+    std::optional<std::uint64_t> generation;
+    require(wait([&] {
+      const auto* change = std::get_if<WaitToolChange>(&reading.status.wait);
+      if (!change || change->tool != 2)
+        return false;
+      generation = change->measure_request;
+      return generation.has_value();
+    }, 15s), "the panel offers measurement on the exact M6");
+    return generation.value();
+  };
+  const auto measure = [&](std::uint64_t generation) -> Json {
+    return send({{"type", "tool_changed"}, {"measure_request", generation}}, 35s);
+  };
+  const auto pending = [&](std::uint64_t generation) {
+    const auto pins = shared.view(HalShared::Clock::now());
+    return pins && pins->tool_change_request && pins->tool_change_request->generation == generation;
+  };
+  const auto stop = [&] {
+    accepted({{"type", "abort"}});
+    require(wait([&] {
+      return reading.status.interp == InterpState::idle && reading.status.motion.in_position &&
+             !std::holds_alternative<WaitToolChange>(reading.status.wait);
+    }, 5s), "the simulation is stopped before the next program");
+  };
+  const auto blocked = begin_exchange("unsupported-m6",
+      "N10 G21 G90 G17 G54 G40 G49 G94\nN20 T2 M6\nN30 G0 X8 Y5\nN40 G43 H2 Z25\n"
+      "N50 G1 X22 F600\nM2\n");
+  const auto unsupported = measure(blocked);
+  require(unsupported.value("outcome", "") == "rejected" && pending(blocked),
+          "an unsupported first motion leaves M6 pending");
+  stop();
+
+  const auto set_t2 = [&](double length) {
+    accepted({{"type", "set_tool"}, {"tool", {{"number", 2}, {"pocket", 2}, {"length", length},
+                                             {"diameter", 3}, {"comment", "Test cutter"}}}});
+  };
+  set_t2(70);
+  const auto tall = begin_exchange("outside-clearance-m6",
+      "N10 G21 G90 G17 G54 G40 G43 H1 G94\nN20 G53 G0 Z95\nN30 G53 G0 Z30\nN40 T2 M6\n"
+      "N50 G43 H2\nN60 G0 Z25\nN70 G1 X22 F600\nM2\n");
+  const auto before_aborts = loads.aborts.load();
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    const auto refused = measure(tall);
+    require(refused.value("reason", "").find("outside the configured machine travel") !=
+                std::string::npos && pending(tall) && loads.aborts.load() == before_aborts,
+            refused.dump());
   }
-  accepted({{"type", "open_program"}, {"path", path}});
-  require(wait([&] {
-    const auto check = preview.checked_preview();
-    return check.preview && check.preview->state == PreviewState::ready && check.source.inputs &&
-           check.source.inputs->program_file == path;
-  }, 6s), "the original program has a complete check");
-  accepted({{"type", "run"}, {"confirmed", true},
-            {"display_units", "mm"},
-            {"preview_context", preview.checked_preview().preview->context}});
-  std::optional<std::uint64_t> generation;
-  require(wait([&] {
-    const auto* change = std::get_if<WaitToolChange>(&reading.status.wait);
-    if (!change || change->tool != 2)
-      return false;
-    generation = change->measure_request;
-    return generation.has_value();
-  }, 6s), "the panel offers measurement on the exact M6");
-  const auto wrong = send({{"type", "tool_changed"}, {"measure_request", *generation + 1}});
-  const auto pins = shared.view(HalShared::Clock::now());
-  require(wrong.value("outcome", "") == "rejected" && pins && pins->tool_change_request &&
-              pins->tool_change_request->generation == *generation,
+  stop();
+  set_t2(scale == 1 ? 40 : 38.1);
+
+  const auto generation = begin_exchange("measure-m6",
+      "N10 G21 G90 G17 G54 G40 G49 G94\nN20 T2 M6\nN30 G43 H2\nN40 G0 Z25\n"
+      "N50 G0 X8 Y5\nN60 G1 Z15 F300\nN70 G1 X22 F600\nN80 G0 Z20\nM2\n");
+  const auto wrong = measure(generation + 1);
+  require(wrong.value("outcome", "") == "rejected" && pending(generation),
           "a different request cannot start measurement or acknowledge M6");
   halcmd(std::format("setp sim-tool-setter.max {}", (51 - reference_length) / scale));
-  const Json measured = send({{"type", "tool_changed"}, {"measure_request", *generation}}, 35s);
+  const Json measured = measure(generation);
   require(measured.value("outcome", "") == "accepted" && measured.contains("restart"),
           measured.dump());
   const auto& plan = measured.at("restart");

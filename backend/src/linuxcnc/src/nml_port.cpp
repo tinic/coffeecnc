@@ -2747,6 +2747,33 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
          });
 }
 
+auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
+                            const MachineConfig& config, std::optional<double> tool_length)
+    -> std::string {
+  if (point.tool == config.touch_probe_tool)
+    return "Remove the touch probe before running a program from a line.";
+  if (point.spindle_direction != SpindleDirection::stopped &&
+      point.spindle_rpm > config.limits.max_spindle_rpm)
+    return "The restart spindle speed exceeds the machine limit.";
+  if (point.h > 0 && (!tool_length ||
+      std::abs(*tool_length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001))
+    return "The required tool length changed in the tool table.";
+  // Raise the controlled point enough for both tools before a manual exchange.
+  const double original_clearance = restart_clearance(point);
+  const double old_tool_difference = std::max(0.0, status.tool_offset[2] - point.tool_offset[2]);
+  const auto& position = status.commanded_position;
+  const double minimum = std::max(position[2], original_clearance + old_tool_difference);
+  point.clearance_z += minimum - original_clearance;
+  point.approach_feed = std::min(
+      {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
+  const auto end = restart_machine_position(point);
+  const double clearance = restart_clearance(point);
+  if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
+      !restart_travel({position[0], position[1], clearance}, config))
+    return "The restart approach is outside the configured machine travel.";
+  return {};
+}
+
 } // namespace
 
 auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
@@ -2772,7 +2799,8 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
 }
 
 auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line,
-                                      const PreviewInputs& inputs, const Wanted& wanted)
+                                      const RestartPoint& point, const PreviewInputs& inputs,
+                                      const Wanted& wanted)
     -> ActionResult {
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
@@ -2798,8 +2826,9 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   if (!impl_->still())
     return withdrawn();
   const auto table = impl_->read_tool_table();
+  const auto length = table ? tool_z(*table, tool) : std::nullopt;
   if (tool <= 0 || !config.fixed_setter || tool == config.fixed_setter->reference_tool ||
-      tool == config.touch_probe_tool || !table || !tool_z(*table, tool))
+      tool == config.touch_probe_tool || !length || !impl_->setter_calibration)
     return failed("A cutting tool in the tool table and a fixed setter are required.");
   const auto* raw = impl_->stat();
   if (raw == nullptr)
@@ -2807,8 +2836,22 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   const auto before = reading(*raw);
   const auto& state = before.controller;
   if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
-      state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line)
+      state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line ||
+      point.tool != tool || point.h != tool || !restart_frame(before, point, inputs) ||
+      !restart_at(before, restart_machine_position(point), config.motion_tolerances.restart_position_mm))
     return failed("The program tool change or its stationary position could not be verified.");
+  // Use the table length for the approach estimate while M6 is pending. The measured length
+  // and actual position are checked again before the operator is offered a restart.
+  auto nominal = point;
+  auto at_setter = before;
+  const auto& calibration = *impl_->setter_calibration;
+  at_setter.commanded_position = {
+      calibration.plane[0], calibration.plane[1],
+      config.fixed_setter->clearance_mm > 0 ? calibration.clearance_z
+                                          : std::max(calibration.clearance_z, before.commanded_position[2])};
+  at_setter.tool_offset = point.tool_offset;
+  if (auto reason = check_restart_approach(nominal, at_setter, config, length); !reason.empty())
+    return failed(std::move(reason));
   if (!impl_->still())
     return withdrawn();
 
@@ -2864,30 +2907,13 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
       !restart_at(s, inputs.start.position, config.motion_tolerances.restart_position_mm))
     return "The machine must remain stopped at the position shown in the preview.";
-  if (point.tool == config.touch_probe_tool)
-    return "Remove the touch probe before running a program from a line.";
-  if (point.spindle_direction != SpindleDirection::stopped &&
-      point.spindle_rpm > config.limits.max_spindle_rpm)
-    return "The restart spindle speed exceeds the machine limit.";
+  std::optional<double> length;
   if (point.h > 0) {
     const auto table = impl_->read_tool_table();
-    const auto length = table ? tool_z(*table, point.h) : std::nullopt;
-    if (!length || std::abs(*length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001)
-      return "The required tool length changed in the tool table.";
+    if (table)
+      length = tool_z(*table, point.h);
   }
-  // Raise the controlled point enough for both tools before a manual exchange.
-  const double original_clearance = restart_clearance(point);
-  const double old_tool_difference = std::max(0.0, s.tool_offset[2] - point.tool_offset[2]);
-  const double minimum = std::max(s.commanded_position[2], original_clearance + old_tool_difference);
-  point.clearance_z += minimum - original_clearance;
-  point.approach_feed = std::min(
-      {100.0, config.limits.max_axis_jog_velocity[2], point.feed > 0 ? point.feed : 100.0});
-  const auto end = restart_machine_position(point);
-  const double clearance = restart_clearance(point);
-  if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
-      !restart_travel({s.commanded_position[0], s.commanded_position[1], clearance}, config))
-    return "The restart approach is outside the configured machine travel.";
-  return {};
+  return check_restart_approach(point, s, config, length);
 }
 
 auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inputs,

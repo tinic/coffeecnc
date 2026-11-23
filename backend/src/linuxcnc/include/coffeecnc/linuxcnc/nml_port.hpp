@@ -288,7 +288,8 @@ public:
   [[nodiscard]] auto tool_changed(int tool, std::uint64_t request, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto prepare_tool_measurement(int tool, std::uint64_t request, int line,
-                                              const PreviewInputs& inputs, const Wanted& wanted)
+                                              const RestartPoint& point, const PreviewInputs& inputs,
+                                              const Wanted& wanted)
       -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult override;

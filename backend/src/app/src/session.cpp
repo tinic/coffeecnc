@@ -1248,9 +1248,9 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     return refused("Restart requires a tool verified for machining.");
   const auto line = *state.tool_change_line;
   const auto target = std::ranges::find_if(preview->segments, [line](const auto& segment) {
-    return segment.line >= line;
+    return segment.line > line;
   });
-  if (target == preview->segments.end() || target->line <= line || target->tool != tool)
+  if (target == preview->segments.end() || target->tool != tool)
     return refused("There is no verified motion to restart after this tool change.");
 
   std::string_view remaining = *source.program_snapshot;
@@ -1275,14 +1275,37 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   const auto setter = port_.fixed_setter({SetterAction::status}, before, still);
   if (!setter || !setter->calibration)
     return refused("Teach the fixed setter before measuring at a program tool change.");
-  if (!still() || started_program_.files_changed([&] { return !still(); }))
-    return refused("The program or tool data changed before measurement.");
 
-  auto original = std::exchange(started_program_, {});
+  const auto anchored = [&](const RestartPoint& point, double length) {
+    return point.line == target->line && point.tool == tool && point.h == tool &&
+           std::abs(point.tool_offset[2] - length) <= 0.001 &&
+           std::ranges::equal(restart_machine_position(point), state.tool_change_position,
+                              [](double expected, double actual) {
+                                return std::abs(expected - actual) <= 0.001;
+                              });
+  };
+  const auto old_tool = std::ranges::find(source.inputs->tools, tool, &Tool::number);
+  if (old_tool == source.inputs->tools.end())
+    return refused("A cutting tool in the tool table and a fixed setter are required.");
+  auto trial_inputs = *source.inputs;
+  trial_inputs.restart_line = target->line;
+  trial_inputs.restart_loaded_tool = tool;
+  const auto trial = restart_engine_->compute(trial_inputs, [&] { return !still(); });
+  if (!still() || trial.cancelled || !trial.program_snapshot ||
+      *trial.program_snapshot != *source.program_snapshot ||
+      started_program_.files_changed([&] { return !still(); }))
+    return refused("The program or tool data changed before measurement.");
+  const auto& trial_point = trial.outcome.restart;
+  if (!trial_point || !anchored(*trial_point, old_tool->length) || !trial.files_changed)
+    return refused(trial.outcome.restart_blocked.empty()
+                       ? "There is no verified motion to restart after this tool change."
+                       : trial.outcome.restart_blocked);
+
   auto prepared = port_.prepare_tool_measurement(tool, state.tool_request, line,
-                                                 *original.source.inputs, still);
+                                                 *trial_point, *source.inputs, still);
   if (prepared.status != ActionStatus::accepted)
     return staged(std::move(prepared));
+  auto original = std::exchange(started_program_, {});
   request.sent = true;
   {
     std::unique_lock lock{mutex_};
@@ -1354,18 +1377,14 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   if (!replay.outcome.check->errors.empty())
     return cannot_restart(replay.outcome.check->errors.front());
   inputs.restart_line = target->line;
+  inputs.restart_loaded_tool = tool;
   auto computed = restart_engine_->compute(inputs, [&] { return !maintain(); });
   if (!maintain() || computed.cancelled || !computed.program_snapshot ||
       *computed.program_snapshot != *original.source.program_snapshot ||
       preview_->restart_source(fresh.preview->context).inputs != fresh.source.inputs)
     return cannot_restart("Tool measured. The restart source changed.");
   auto point = computed.outcome.restart;
-  if (!point || point->line != target->line || point->tool != tool || point->h != tool ||
-      std::abs(point->tool_offset[2] - length) > 0.001 || !computed.files_changed ||
-      !std::ranges::equal(restart_machine_position(*point), state.tool_change_position,
-                         [](double expected, double actual) {
-                           return std::abs(expected - actual) <= 0.001;
-                         }))
+  if (!point || !anchored(*point, length) || !computed.files_changed)
     return cannot_restart(computed.outcome.restart_blocked.empty()
                               ? "Tool measured. There is no verified restart at the next motion."
                               : computed.outcome.restart_blocked);
@@ -1376,6 +1395,7 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     return cannot_restart("Tool measured. Restart preparation was cancelled.");
   RestartPlan plan{++restart_id_, false, *point};
   inputs.restart_line.reset();
+  inputs.restart_loaded_tool.reset();
   auto& outcome = replay.outcome;
   CheckedPreview new_run{
       std::make_shared<const Preview>(

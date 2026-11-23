@@ -75,6 +75,9 @@ struct PreviewInputs {
   bool block_delete{};
   InterpreterStart start;
   std::optional<int> restart_line;
+  // For a native M6 measurement the installed tool is known before the restart.
+  // The replay still starts with the program's original interpreter state.
+  std::optional<int> restart_loaded_tool{};
 };
 
 // Interpreter state immediately before a selected motion block. Linear values use mm.

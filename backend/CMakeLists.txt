@@ -239,8 +239,12 @@ if(BUILD_TESTING)
         set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 470)
         if(TARGET coffeecnc_preview)
+          set(change_position)
+          if(units STREQUAL "inch")
+            set(change_position -c)
+          endif()
           add_test(NAME linuxcnc_m6_measure_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-            -u ${units} -t 130 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_m6_measure_${units}
+            -u ${units} ${change_position} -t 130 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_m6_measure_${units}
             $<TARGET_FILE:coffeecnc_fixed_setter_tests> measure-m6)
           set_tests_properties(linuxcnc_m6_measure_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
             RESOURCE_LOCK linuxcnc TIMEOUT 460)

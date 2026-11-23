@@ -58,6 +58,20 @@ const english = new Set<string>([
 
 interface Literal { text: string; before: string; after: string }
 
+const literalRefusal = /^(?:\s*,\s*\{\})*\s*,\s*RefusalMessage\{\s*"([^"]+)"/
+const formattedRefusal = /^[^;]*?\),\s*RefusalMessage\{\s*"([^"]+)"\s*,\s*\{([\s\S]*?)\}\s*\}\);/
+const namedRefusal = /\b(\w+_reason)(?:\s*,\s*\{\})*\s*,\s*RefusalMessage\{\s*"([^"]+)"/g
+
+function keyedRefusal({ before, after }: Literal): { key: string; names: string[] } | null {
+  const key = literalRefusal.exec(after)?.[1]
+  if (key !== undefined) return { key, names: [] }
+  if (!before.trimEnd().endsWith('std::format(')) return null
+  const match = formattedRefusal.exec(after)
+  if (match?.[1] === undefined || match[2] === undefined) return null
+  const names = [...match[2].matchAll(/\{\s*"(\w+)"\s*,/g)].map((field) => field[1] ?? '')
+  return { key: match[1], names }
+}
+
 /** The string literals of C++ source, adjacent ones joined, comments skipped. */
 function cppLiterals(source: string): Literal[] {
   const literals: Literal[] = []
@@ -91,10 +105,10 @@ function cppLiterals(source: string): Literal[] {
 /** The operator sentences of one C++ file. */
 function nativeSentences(path: string, source: string): string[] {
   const sentences: string[] = []
-  for (const { text, before, after } of cppLiterals(source)) {
+  for (const literal of cppLiterals(source)) {
+    const { text, before } = literal
     // A keyed refusal carries separate English fallback text for older panels.
-    if (/^\s*,\s*RefusalMessage\{/.test(after) ||
-      before.trimEnd().endsWith('std::format(') && /^[^;]*\),\s*RefusalMessage\{/.test(after)) continue
+    if (keyedRefusal(literal) !== null) continue
     // Compile-time diagnostics.
     if (/static_assert\([^;"]*$/.test(before)) continue
     // Operator text starts with a capital and has words; G-code, field names and wire values do not.
@@ -168,11 +182,36 @@ describe('native and store sentences', () => {
     expect(sentences.filter((sentence) => matchMessage(sentence) === null)).toEqual([])
   })
 
-  it('keeps every native refusal key in the catalog', () => {
-    const keys = files.flatMap(([, source]) =>
-      [...source.matchAll(/RefusalMessage\{\s*"([^"]+)"/g)].map((match) => match[1] ?? ''))
-    expect(keys.length).toBeGreaterThan(50)
-    expect(keys.filter((key) => !i18n.global.te(key, 'en'))).toEqual([])
+  it('keeps the native refusal keys, English fallbacks and argument names in sync', () => {
+    for (const [path, source] of files) {
+      const keys = [...source.matchAll(/RefusalMessage\{\s*"([^"]+)"/g)].map((match) => match[1])
+      const found: string[] = []
+      const literals = cppLiterals(source)
+      function check(key: string, names: string[], text: string): void {
+        found.push(key)
+        expect(i18n.global.te(key, 'en'), key).toBe(true)
+        const markers = names.map((name) => `{${name}}`)
+        const params = Object.fromEntries(names.map((name, index) => [name, markers[index]]))
+        const english = i18n.global.t(key as never, params, { locale: 'en' })
+        let index = 0
+        expect(english, key).toBe(text.replaceAll('{}', () => markers[index++] ?? '{}'))
+        expect(index, key).toBe(names.length)
+      }
+      const reasons = new Map<string, string>()
+      for (const literal of literals) {
+        const name = /\bconstexpr auto (\w+_reason)\s*=\s*$/.exec(literal.before)?.[1]
+        if (name !== undefined) reasons.set(name, literal.text)
+        const refusal = keyedRefusal(literal)
+        if (refusal !== null) check(refusal.key, refusal.names, literal.text)
+      }
+      for (const [, name, key] of source.matchAll(namedRefusal)) {
+        if (name === undefined || key === undefined) continue
+        const text = reasons.get(name)
+        expect(text, name).toBeDefined()
+        check(key, [], text ?? '')
+      }
+      expect(found.sort(), path).toEqual(keys.sort())
+    }
   })
 
   it('keeps the allowlist to literals that exist', () => {

@@ -13,6 +13,7 @@
       "title": "Neue Bearbeitung",
       "operations": "Bearbeitung",
       "tool": "Werkzeug",
+      "chooseThreadMill": "Gewindefräser auswählen",
       "noTools": "Keine Werkzeuge in der Werkzeugtabelle",
       "toolAndFeeds": "Werkzeug und Vorschübe",
       "geometry": "Geometrie",
@@ -36,7 +37,9 @@
       "rectangularPocket": "Rechtecktasche",
       "slot": "Nut / Passfedernut",
       "slotSetup": "Verwenden Sie einen für die Eintauchbewegung geeigneten Schaftfräser. Wählen Sie die Länge so, dass jedes offene Ende an der Werkstückkante liegt und der Fräser darüber hinausfahren kann.",
-      "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
+      "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser.",
+      "threadMill": "Innengewindefräsen",
+      "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben. Die Gewindetiefe legt die Z-Position der Werkzeugspitze fest. Die Höhe des Schneidprofils berücksichtigen."
     },
     "label": {
       "tapPitch": "Gewindesteigung",
@@ -98,7 +101,14 @@
       "slotEntry": "Eintauchen",
       "slotAngle": "Maximaler Rampenwinkel",
       "slotEntryFeed": "Eintauchvorschub",
-      "boltCircleRadius": "Lochkreisradius"
+      "boltCircleRadius": "Lochkreisradius",
+      "threadMajor": "Gewindeaußendurchmesser",
+      "threadPitch": "Gewindesteigung",
+      "threadPilot": "Vorbohrdurchmesser",
+      "threadPilotDepth": "Nutzbare Bohrtiefe",
+      "threadDepth": "Gewindetiefe",
+      "threadPasses": "Radiale Zustellungen",
+      "threadHand": "Gewinderichtung"
     },
     "option": {
       "g85": "Reiben (G85)",
@@ -135,7 +145,9 @@
       "slotBoth": "Beide offen",
       "slotRamp": "Rampe",
       "slotPlunge": "Senkrecht",
-      "g83": "G83 Tieflochbohren"
+      "g83": "G83 Tieflochbohren",
+      "threadRight": "Rechtsgewinde",
+      "threadLeft": "Linksgewinde"
     },
     "check": {
       "tapUnavailable": "Für diese Maschine sind keine Grenzen für synchrones Gewindebohren konfiguriert.",
@@ -179,7 +191,11 @@
       "slotPrecision": "Erhöhen Sie Vorschub, Tiefe, Freifahrhöhe oder Zustellung auf einen in Programmgenauigkeit darstellbaren Wert.",
       "slotRampRoom": "Die Nut ist für diesen Rampenwinkel zu kurz. Vergrößern Sie den Winkel oder wählen Sie senkrechtes Eintauchen.",
       "slotMoveCount": "Die Nut würde zu viele Bewegungen erzeugen. Vergrößern Sie die Zustellung oder den Rampenwinkel.",
-      "noHole": "Es ist keine Bohrung vorhanden."
+      "noHole": "Es ist keine Bohrung vorhanden.",
+      "threadDiameters": "Die Vorbohrung muss größer als der Fräser und kleiner als der Gewindeaußendurchmesser sein.",
+      "threadPilotDepth": "Der zylindrische Teil der Bohrung muss tiefer als {depth} sein.",
+      "threadPrecision": "Steigung, Freihöhe, Vorschub, Drehzahl und Maße auf die Programmgenauigkeit abstimmen.",
+      "threadTurns": "Die Gewindetiefe muss bei dieser Steigung 1 bis {max} Umdrehungen umfassen."
     }
   }
 }

@@ -8,7 +8,7 @@
 //   G80 G81 G83 G85 G89 (absolute distance mode; X Y Z R Q P, sticky Z R Q P) G98 G99,
 //   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91 G91.1, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
-//   block delete with a leading /.
+//   standalone M70/M72 with cutter compensation off, block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
 
 import type { LengthUnit, Preview, PreviewDwell, PreviewSegment, ProgramCheck, SpindleDirection, Tool, Vec3 } from '../protocol'
@@ -24,6 +24,9 @@ interface CutterComp {
   radius: number
   last: { end: Vec3; tangent: XY } | null
 }
+
+type SavedModes = Pick<Modal,
+  'wcs' | 'toolOffset' | 'lengthTool' | 'units' | 'absolute' | 'retract' | 'feed' | 'speed' | 'spindle' | 'flood' | 'mist'>
 
 /** Everything the interpreter remembers between blocks. Lengths in mm, feed in mm/min. */
 export interface Modal {
@@ -53,6 +56,7 @@ export interface Modal {
   spindle: SpindleDirection
   flood: boolean
   mist: boolean
+  savedModes: SavedModes | null
   /** Tool the interpreter considers loaded. */
   tool: number
   prepared: number | null
@@ -121,6 +125,7 @@ export function newModal(tools: Tool[]): Modal {
     spindle: 'stopped',
     flood: false,
     mist: false,
+    savedModes: null,
     tool: 0,
     prepared: null,
     tools,
@@ -138,6 +143,7 @@ export function cloneModal(m: Modal): Modal {
     rotations: [...m.rotations],
     g92: [...m.g92],
     toolOffset: [...m.toolOffset],
+    savedModes: m.savedModes === null ? null : { ...m.savedModes, toolOffset: [...m.savedModes.toolOffset] },
     tools: m.tools.map((t) => ({ ...t })),
   }
 }
@@ -342,6 +348,7 @@ const gGroups: Readonly<Record<number, string>> = {
   591: 'coordinate system',
   592: 'coordinate system',
   593: 'coordinate system',
+  610: 'path control', // Preview already follows the exact path.
   900: 'distance mode',
   910: 'distance mode',
   911: 'arc distance mode',
@@ -361,6 +368,8 @@ const mGroups: Readonly<Record<number, string>> = {
   7: 'mist',
   8: 'flood',
   9: 'coolant off',
+  70: 'modal state',
+  72: 'modal state',
 }
 
 const wcsCodes: readonly number[] = [540, 550, 560, 570, 580, 590, 591, 592, 593]
@@ -505,6 +514,22 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     return { ops, blank: ops.length === 0 }
   }
   checkGroups(block, line)
+  if (block.m.includes(70) || block.m.includes(72)) {
+    const saving = block.m.includes(70)
+    const name = saving ? 'M70' : 'M72'
+    if (block.m.length !== 1 || block.g.length || block.words.size)
+      throw new InterpError(line, `${name} must be on its own line in the simulator`)
+    if (m.cutter !== null || m.cutterExit !== null)
+      throw new InterpError(line, `${name} with cutter compensation is not supported by the simulator`)
+    if (saving) {
+      const { wcs, toolOffset, lengthTool, units, absolute, retract, feed, speed, spindle, flood, mist } = m
+      m.savedModes = { wcs, toolOffset: [...toolOffset], lengthTool, units, absolute, retract, feed, speed, spindle, flood, mist }
+    } else {
+      if (m.savedModes === null) throw new InterpError(line, 'M72 needs a previously saved M70 modal state')
+      Object.assign(m, m.savedModes, { toolOffset: [...m.savedModes.toolOffset] })
+    }
+    return { ops, blank: false }
+  }
 
   const used = new Set<string>()
   const has = (code: number): boolean => block.g.includes(code)
@@ -711,6 +736,7 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     m.spindle = 'stopped'
     m.flood = false
     m.mist = false
+    m.savedModes = null
     ops.push({ kind: 'end' })
   }
   return { ops, blank: false }

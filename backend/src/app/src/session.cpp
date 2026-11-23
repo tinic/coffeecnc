@@ -293,10 +293,10 @@ auto idle_for_tool_measurement(const ControllerState& state) -> bool {
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
                  ToolModelService* tool_models, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
-                 OffsetHistoryStore* history)
+                 OffsetHistoryStore* history, bool asynchronous_copies)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
       restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
-      policy_(limits) {}
+      policy_(limits), asynchronous_copies_(asynchronous_copies) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -495,6 +495,19 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       result(CommandOutcome::rejected, no_tool_models_reason);
     else if (const auto refused = tool_models_->submit(page, request.id, std::move(*models)))
       result(CommandOutcome::rejected, *refused);
+    return outcome;
+  }
+
+  if (auto* file = std::get_if<ManageProgramFile>(&request.command);
+      file && file->operation == ProgramFileOperation::copy) {
+    if (!asynchronous_copies_)
+      result(CommandOutcome::rejected, "Program file management is unavailable.");
+    else if (copy_ || copying_)
+      result(CommandOutcome::rejected, busy_reason);
+    else {
+      copy_.emplace(ProgramCopy{page, request.id, std::move(*file)});
+      work_ready_.notify_all();
+    }
     return outcome;
   }
 
@@ -703,6 +716,29 @@ void Session::wait_for_work(std::chrono::milliseconds timeout) {
   std::unique_lock lock{mutex_};
   work_ready_.wait_for(lock, timeout, [&]() -> bool { return woken_; });
   woken_ = false;
+}
+
+auto Session::copy_work(ProgramWriter& writer) -> std::optional<Outcome> {
+  std::unique_lock lock{mutex_};
+  work_ready_.wait(lock, [&] { return closing_ || copy_.has_value(); });
+  if (closing_ || !copy_)
+    return std::nullopt;
+  auto request = std::move(*copy_);
+  copy_.reset();
+  if (!page_open_ || request.page != PageToken{pages_})
+    return Outcome{};
+  copying_ = true;
+  lock.unlock();
+  const auto result = writer.manage(request.command, "");
+  lock.lock();
+  copying_ = false;
+  if (!page_open_ || request.page != PageToken{pages_})
+    return Outcome{};
+  Outcome outcome;
+  outcome.page = request.page;
+  outcome.messages.push_back(encode_result(request.id, result ? CommandOutcome::accepted : CommandOutcome::failed,
+                                           result ? std::string{} : result.error()));
+  return outcome;
 }
 
 auto Session::work(const Clock& clock) -> Work {

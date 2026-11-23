@@ -224,7 +224,7 @@ public:
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
-          OffsetHistoryStore* history = nullptr);
+          OffsetHistoryStore* history = nullptr, bool asynchronous_copies = false);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -264,6 +264,9 @@ public:
   // request. Blocks as long as the port does. The clock is read when messages are stamped. Also
   // collects the controller's operator messages for the page.
   [[nodiscard]] auto work(const Clock& clock) -> Work;
+
+  // On the disk thread, waits for one copy. A disengaged result means shutdown.
+  [[nodiscard]] auto copy_work(ProgramWriter& writer) -> std::optional<Outcome>;
 
   // Waits until there may be work, at most `timeout`.
   void wait_for_work(std::chrono::milliseconds timeout);
@@ -323,6 +326,11 @@ private:
     std::string path;
     Publication publish;
     std::promise<std::expected<void, std::string>> result;
+  };
+  struct ProgramCopy {
+    PageToken page;
+    RequestId id;
+    ManageProgramFile command;
   };
   void publish_program(ProgramPublication& request, const Clock& clock);
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
@@ -443,6 +451,7 @@ private:
   const CommandPolicy policy_;
   std::deque<Queued> stops_;
   std::deque<Queued> requests_;
+  std::optional<ProgramCopy> copy_;
   std::optional<ProgramPublication> publication_;
   ControllerState status_;
   std::array<AxisJog, 3> jog_{};
@@ -450,6 +459,8 @@ private:
   int low_periods_{settled_periods};
   bool woken_{};
   bool closing_{};
+  bool copying_{};
+  const bool asynchronous_copies_;
   bool page_open_{};
   bool ready_{};
   bool watch_frames_{};

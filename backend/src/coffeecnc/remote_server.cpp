@@ -54,6 +54,7 @@ constexpr std::size_t max_notification_bytes = 8192;
 constexpr std::size_t max_record_bytes = 48uz * 1024 * 1024;
 constexpr std::uint64_t max_step_bytes = 25uz * 1024 * 1024; // UI importer limit
 constexpr auto io_timeout = 5s;
+constexpr auto upload_timeout = 30s;
 constexpr auto interval = 75ms;
 constexpr auto host_refresh = 5s;
 constexpr std::string_view upload_path = "/program-upload";
@@ -254,7 +255,7 @@ public:
         if (!error)
           self->serve();
         else if (error == http::error::body_limit)
-          self->refuse(http::status::payload_too_large);
+          self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
       });
   }
 
@@ -344,7 +345,7 @@ private:
     if (!host_allowed(host) || !target.starts_with('/') || target.starts_with("//"))
       return refuse(http::status::forbidden);
     if (request.method() == http::verb::post && target == upload_path && owner_.upload_worker)
-      return begin_upload(host);
+      return begin_upload(host, *owner_.upload_worker);
     if (request.method() != http::verb::get && request.method() != http::verb::head)
       return refuse(http::status::method_not_allowed);
     if (!request_.is_done())
@@ -386,7 +387,7 @@ private:
     respond(std::move(response));
   }
 
-  void begin_upload(std::string_view host) {
+  void begin_upload(std::string_view host, net::thread_pool& worker) {
     const auto& request = request_.get();
     if (request[http::field::origin] != "http://" + std::string(host))
       return upload_reply(http::status::forbidden, "Upload from the CoffeeCNC LAN screen.");
@@ -399,21 +400,21 @@ private:
       return upload_reply(http::status::service_unavailable, "Another program upload is in progress.");
     owner_.upload_active = uploading_ = true;
     const bool replace = request["X-CoffeeCNC-Replace"] == "1";
-    socket_.expires_after(io_timeout);
+    socket_.expires_after(upload_timeout);
     http::async_read(socket_, request_buffer_, request_,
-      [self = shared_from_this(), name = std::move(*name), replace](Error error, std::size_t) -> void {
+      [self = shared_from_this(), &worker, name = std::move(*name), replace](Error error, std::size_t) -> void {
         if (error == http::error::body_limit)
           return self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
         if (!error)
-          self->write_upload(name, replace);
+          self->write_upload(worker, name, replace);
       });
   }
 
-  void write_upload(const std::string& name, bool replace) {
+  void write_upload(net::thread_pool& worker, const std::string& name, bool replace) {
     auto& body = request_.get().body();
     if (body.empty() || body.find('\0') != std::string::npos)
       return upload_reply(http::status::bad_request, "The upload must be a program text file.");
-    net::post(*owner_.upload_worker, [self = shared_from_this(), name, replace,
+    net::post(worker, [self = shared_from_this(), name, replace,
                                      bytes = std::move(body)]() -> void {
       auto status = http::status::created;
       std::string reason;

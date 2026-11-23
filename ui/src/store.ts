@@ -41,6 +41,7 @@ export const answerTimeoutMs = 2000
  * approach. Until then the dialog keeps the request, and Stop still ends it.
  */
 export const restartTimeoutMs = 420_000
+const programFileTimeoutMs = 60_000
 const watchdogMs = 200
 const maxLogEntries = 500
 const maxMdiEntries = 50
@@ -487,7 +488,8 @@ export function createPanel(options: PanelOptions): Panel {
       }
       const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
       const timeout = measureChange || command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs : answerTimeoutMs
+        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
+          : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })

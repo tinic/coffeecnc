@@ -527,11 +527,13 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles model_files;
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
+  LocalToolModelFiles copy_files;
   LocalToolModelFiles upload_files;
   LocalToolModelFiles history_files;
   std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
+  ProgramWriter copy_writer{programs, copy_files};
   ProgramWriter upload_writer{programs, upload_files};
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
@@ -593,8 +595,17 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             return std::unexpected("CoffeeCNC is starting.");
           ProgramWriter::Publish publish;
           if (replace) {
-            publish = [target](const std::string& path, const ProgramWriter::Commit& commit)
-                -> std::expected<void, std::string> { return target->publish_program(path, commit); };
+            publish = [target, &loads, &programs](const std::string& path, const ProgramWriter::Commit& commit)
+                -> std::expected<void, std::string> {
+              return target->publish_program(path, [&]() -> std::expected<void, std::string> {
+                const auto loaded = target->loaded_program();
+                const bool refresh = loaded == path || programs.resolve_program(loaded).value_or("") == path;
+                auto result = commit();
+                if (result && refresh)
+                  ++loads.programs;
+                return result;
+              });
+            };
           }
           if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
             return std::unexpected(written.error());
@@ -635,7 +646,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get());
+        &preview, &restart_engine, &*program_writer, history.get(), &copy_writer);
     upload_runtime.store(runtime.get());
     PanelFeed::Mirror mirror;
     if (remote) {

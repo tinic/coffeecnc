@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: [] }>()
 const directory = computed(() => panel.directory)
 // Shortcuts the machine offers: its program directory, the home folder, USB media.
 const places = computed(() => panel.hello?.program_places ?? [])
-const programs = computed(() => places.value.find((place) => place.name === 'Programs'))
+const programs = computed(() => places.value.find((place) => place.name === 'Programs')) // i18n-ignore: native shortcut identifier
 const writable = computed(() => props.pick === undefined && directory.value?.writable === true)
 const copyable = computed(() => props.pick === undefined && directory.value?.writable === false && programs.value !== undefined)
 const action = ref<{ entry: DirectoryEntry | null; directory: string; writable: boolean } | null>(null)
@@ -120,9 +120,11 @@ onMounted(() => {
               <span class="meta mono">{{ formatDate(entry.modified) }}</span>
             </button>
             <button
-              v-if="writable || (copyable && entry.kind === 'file')" class="btn quiet square entry-actions"
+              v-if="writable || (copyable && entry.kind === 'file')"
+              v-tooltip="t('program.fileBrowser.actions', { name: entry.name })"
+              class="btn quiet square entry-actions"
               type="button" :aria-label="t('program.fileBrowser.actions', { name: entry.name })"
-              :title="t('program.fileBrowser.actions', { name: entry.name })" @click="fileActions(entry)"
+              @click="fileActions(entry)"
             >
               <span aria-hidden="true">…</span>
             </button>

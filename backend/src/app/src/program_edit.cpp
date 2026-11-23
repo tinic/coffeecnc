@@ -317,7 +317,7 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
       return std::unexpected(content.error());
     const auto& file = *content;
     if (!file)
-      return std::unexpected("The file no longer exists.");
+      return std::unexpected("The file or folder no longer exists.");
     if (file->more)
       return std::unexpected("The file is longer than 32 MiB.");
     const auto copied = write_new(*target, file->bytes, false, incoming_temporary_name(), {});

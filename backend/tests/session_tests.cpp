@@ -2661,6 +2661,40 @@ void uploads_do_not_replace_the_running_program() {
           "An idle replacement publishes on disk without commanding LinuxCNC");
 }
 
+void usb_copy_does_not_hold_the_command_worker() {
+  constexpr auto source = "/media/turo/USB/part.ngc";
+  constexpr auto destination = "/home/cnc/nc_files/part.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  FakeFileSystem files;
+  files.file(source, "M2\n");
+  files.directory(program_directory);
+  const ProgramStore programs{files, "/", program_directory};
+  FakeDisk disk;
+  disk.files[source] = "M2\n";
+  FakeToolModelFiles writes{disk};
+  ProgramWriter writer{programs, writes};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs, nullptr, nullptr, nullptr, nullptr, nullptr, true};
+  Driver driver{session, port};
+  const auto page = driver.begin_page();
+  static_cast<void>(driver.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto pending = driver.handle(page,
+      R"({"id":2,"type":"manage_program_file","operation":"copy","path":"/media/turo/USB/part.ngc"})", at(0ms));
+  require(pending.messages.empty() && !disk.files.contains(destination),
+          "The command worker returns while the copy waits for the disk worker");
+  writes.during = [&](std::string_view step) {
+    if (step == "sync") {
+      const auto stopped = results(driver.handle(page, R"({"id":3,"type":"abort"})", at(0ms)));
+      require(stopped.size() == 1 && stopped.front().at("outcome") == "accepted",
+              "Stop can be handled while the copy synchronizes");
+    }
+  };
+  const auto copied = session.copy_work(writer);
+  require(copied && !copied->messages.empty() && disk.files.contains(destination),
+          "The disk worker publishes the copy and returns its result");
+}
+
 } // namespace
 
 // A failing run prints the seed of its random sequence; pass it as the only argument to repeat.
@@ -2671,6 +2705,7 @@ auto main(int argc, char** argv) -> int {
     stale_pages_are_dropped();
     editor_saves_over_the_loaded_program();
     uploads_do_not_replace_the_running_program();
+    usb_copy_does_not_hold_the_command_worker();
     controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();

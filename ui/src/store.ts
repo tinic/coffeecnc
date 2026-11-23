@@ -215,7 +215,7 @@ export function describeCommand(command: CommandBody): string {
     case 'remove_tool':
       return `Remove tool ${String(command.number)}`
     case 'tool_changed':
-      return 'Confirm tool change'
+      return command.measure_request === undefined ? 'Confirm tool change' : 'Measure tool during change'
     case 'set_tool_model_defaults':
       return 'Save tool model defaults'
     case 'set_tool_model_assignment':
@@ -487,7 +487,8 @@ export function createPanel(options: PanelOptions): Panel {
       if (command.type === 'abort' || command.type === 'set_machine' && command.state !== 'on') {
         state.motionStopRequest += 1
       }
-      const timeout = command.type === 'fixed_setter' && command.action !== 'status'
+      const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
+      const timeout = measureChange || command.type === 'fixed_setter' && command.action !== 'status'
         ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {

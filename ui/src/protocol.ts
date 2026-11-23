@@ -191,7 +191,7 @@ export type Wait =
   /** Paused: by the operator (feed hold) or by the program (M0, M1, M60). */
   | { kind: 'paused' }
   /** LinuxCNC asks for a manual tool change and waits for `tool_changed`. */
-  | { kind: 'tool_change'; tool: number }
+  | { kind: 'tool_change'; tool: number; measure_request?: number }
   | { kind: 'dwell'; seconds_left: number }
 
 export interface Status {
@@ -781,6 +781,8 @@ export interface RemoveTool extends CommandBase {
 /** The operator has put the requested tool in the spindle (answers `Wait.tool_change`). */
 export interface ToolChanged extends CommandBase {
   type: 'tool_changed'
+  /** Measure the installed tool at this exact request before reviewing a program restart. */
+  measure_request?: number
 }
 
 /** Replace all seven family defaults atomically, retaining the saved assignment catalog. */

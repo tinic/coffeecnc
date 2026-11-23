@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import LogDialog from './components/LogDialog.vue'
 import DroPanel from './components/DroPanel.vue'
 import ManualTab from './components/ManualTab.vue'
@@ -7,6 +7,7 @@ import ProgramTab from './components/ProgramTab.vue'
 import RunBar from './components/RunBar.vue'
 import StatusBar from './components/StatusBar.vue'
 import ToolChangePrompt from './components/ToolChangePrompt.vue'
+import RestartDialog from './components/RestartDialog.vue'
 import ToolsTab from './components/ToolsTab.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import OperationDialog from './components/OperationDialog.vue'
@@ -18,7 +19,8 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import QuitDialog from './components/QuitDialog.vue'
 import { startDialog } from './dialogs'
 import { editorTarget } from './program-editor'
-import { operatorSettings, panel } from './machine'
+import { onResult, operatorSettings, panel, send } from './machine'
+import type { CommandBody, RestartPlan } from './protocol'
 
 const logOpen = ref<boolean>(startDialog === 'log')
 const browsing = ref<boolean>(startDialog === 'open')
@@ -37,7 +39,25 @@ function newProgram(folder: string): void {
 }
 const quitOpen = ref(false)
 const settingsOpen = ref(false)
-const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null)
+const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait : null)
+const measurement = shallowRef<{ tool: number; command: CommandBody } | null>(null)
+const measuredRestart = shallowRef<RestartPlan | null>(null)
+const promptTool = computed(() => measurement.value?.tool ?? toolChange.value?.tool ?? null)
+
+function measureTool(): void {
+  const wait = toolChange.value
+  if (measurement.value || wait?.measure_request === undefined) return
+  const command: CommandBody = { type: 'tool_changed', measure_request: wait.measure_request }
+  measurement.value = { tool: wait.tool, command }
+  send(command)
+}
+
+onBeforeUnmount(onResult((command, result) => {
+  if (command !== measurement.value?.command) return
+  measurement.value = null
+  if (result.outcome === 'timed_out') send({ type: 'abort' })
+  if (result.outcome === 'accepted' && result.restart) measuredRestart.value = result.restart
+}))
 </script>
 
 <template>
@@ -51,7 +71,15 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
         <ProgramTab v-else-if="panel.tab === 'program'" />
         <ManualTab v-else-if="panel.tab === 'probe'" touch-off />
         <ToolsTab v-else />
-        <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" :class="{ 'with-status-row': panel.tab === 'program' }" />
+        <ToolChangePrompt
+          v-if="promptTool !== null" :tool="promptTool" :measure="toolChange?.measure_request !== undefined"
+          :measuring="measurement !== null" :class="{ 'with-status-row': panel.tab === 'program' }"
+          @measure="measureTool"
+        />
+        <RestartDialog
+          v-if="measuredRestart" :line="measuredRestart.line" section="" :prepared="measuredRestart"
+          @close="measuredRestart = null"
+        />
         <div id="dialogs"></div>
         <LogDialog v-if="logOpen" @close="logOpen = false" />
         <FileBrowser v-if="browsing" @close="browsing = false" />

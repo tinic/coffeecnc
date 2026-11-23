@@ -5,11 +5,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <format>
 #include <initializer_list>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -296,8 +298,9 @@ auto history_file(std::initializer_list<std::tuple<int, std::string_view, int,
   auto list = Json::array();
   for (const auto& [id, target, number, names] : entries) {
     auto changes = Json::array();
-    for (const auto name : names)
-      changes.push_back({{"field", name}, {"before", 1}, {"after", 2}});
+    std::ranges::transform(names, std::back_inserter(changes), [](std::string_view name) -> Json {
+      return {{"field", name}, {"before", 1}, {"after", 2}};
+    });
     list.push_back({{"id", id}, {"time", 0}, {"source", "outside"}, {"target", target},
                     {"number", number}, {"changes", changes}, {"restores", nullptr}});
   }

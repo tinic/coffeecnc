@@ -133,23 +133,67 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
     return std::unexpected("The program changed since it was shown. Open it again.");
 
   const std::string replaced = bytes.substr(0, start) + std::string{after} + bytes.substr(stop);
-  const auto slash = resolved->rfind('/');
-  const std::string directory = resolved->substr(0, slash);
+  if (auto written = write_over(*resolved, replaced, ".coffeecnc-edit"); !written)
+    return std::unexpected(written.error());
+  return std::move(*resolved);
+}
+
+auto ProgramWriter::write_over(const std::string& resolved, std::string_view bytes,
+                               std::string_view suffix) -> std::expected<void, std::string> {
+  const auto slash = resolved.rfind('/');
+  const std::string directory = resolved.substr(0, slash);
   const std::string temporary =
-      std::format("{}/.{}.coffeecnc-edit", directory, resolved->substr(slash + 1));
+      std::format("{}/.{}{}", directory, resolved.substr(slash + 1), suffix);
   auto step = files_.open_temporary(temporary);
   if (step)
-    step = files_.write(replaced);
+    step = files_.write(bytes);
   if (step)
     step = files_.sync();
   if (step)
-    step = files_.rename(temporary, *resolved);
+    step = files_.rename(temporary, resolved);
   if (step)
     step = files_.sync_directory(directory.empty() ? "/" : directory);
   if (!step) {
     files_.discard(temporary);
     return std::unexpected("The program could not be saved. " + step.error());
   }
+  return {};
+}
+
+auto ProgramWriter::replace(std::string_view path, std::string_view text, std::string_view stamp)
+    -> std::expected<std::string, std::string> {
+  auto resolved = programs_.resolve_program(path);
+  if (!resolved)
+    return std::unexpected(resolved.error());
+  if (text.size() > max_saved_program_bytes)
+    return std::unexpected(std::string("The program text is longer than 512 KiB."));
+  // As read_program reads it, so that the stamps compare the same bytes.
+  const auto content = files_.read(*resolved, ProgramStore::max_program_bytes + 1);
+  if (!content)
+    return std::unexpected(content.error());
+  if (!*content)
+    return std::unexpected("The program no longer exists.");
+  const std::string& bytes = (*content)->bytes;
+  // A change after this comparison and before the rename is not caught: a small window, as for
+  // replace_line.
+  if ((*content)->more || program_stamp(bytes) != stamp)
+    return std::unexpected(
+        "The program file changed since it was opened. Open it again to edit it.");
+  const auto end = bytes.find_first_of("\r\n");
+  const bool windows = end != std::string::npos && bytes.compare(end, 2, "\r\n") == 0;
+  std::string converted;
+  if (windows) {
+    converted.reserve(text.size() + (text.size() / 16));
+    for (std::size_t i = 0; i < text.size(); ++i) {
+      if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r'))
+        converted += '\r';
+      converted += text[i];
+    }
+  }
+  if (auto written =
+          write_over(*resolved, windows ? std::string_view{converted} : text, ".coffeecnc-edit");
+      !written)
+    return std::unexpected(written.error());
   return std::move(*resolved);
 }
 

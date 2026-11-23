@@ -1192,6 +1192,64 @@ void program_with_tool_change(const Rig& rig, const std::filesystem::path& progr
   check("no_console_errors_after_program", rig.js("return __t.errors.length;") == 0, rig.errors());
 }
 
+// The program editor in the real panel: part.ngc, idle after its run, is edited (the last cut
+// goes to X18 instead of X16) and saved. The file on disk changes, LinuxCNC opens it again and
+// the preview of the new revision ends at the new X.
+void program_edited_in_the_editor(const Rig& rig, const std::filesystem::path& programs) {
+  const auto before = rig.js("return [__t.last.program.revision, __t.last.program.stamp, "
+                             "__t.last.status.offsets.g5x[0]];");
+  check("editor_opens",
+        rig.wait_js("!!__t.find('button[aria-label=\"Edit program\"]') && "
+                    "!__t.find('button[aria-label=\"Edit program\"]').disabled") &&
+            rig.click("button[aria-label=\"Edit program\"]", "") == "ok" &&
+            rig.wait_js(
+                "(document.querySelector('textarea[aria-label=\"Program text\"]') || {}).value"
+                " === __t.last.program.lines.join('\\n') + '\\n'"),
+        rig.js("return [__t.last.program.lines, (document.querySelector('textarea') || {}).value];")
+            .dump()
+            .substr(0, 400));
+  rig.snapshot("program-editor");
+  const auto edited = rig.js(R"(
+    const area = document.querySelector('textarea[aria-label="Program text"]');
+    area.value = area.value.replace('G1 X16', 'G1 X18');
+    area.dispatchEvent(new Event('input'));
+    return area.value.includes('G1 X18');)");
+  check("editor_takes_the_edit", edited == true);
+  check("editor_saves",
+        rig.wait_js("!__t.find('[role=\"dialog\"] footer .btn.primary').disabled") &&
+            rig.click("[role=\"dialog\"] footer .btn.primary", "Save and reopen") == "ok");
+  const double offset = before.at(2).get<double>();
+  const bool reloaded = rig.wait_js(
+      std::format("__t.last.program.revision > {} && __t.last.program.lines.includes('G1 X18') && "
+                  "__t.last.status.program.revision === __t.last.program.revision && "
+                  "__t.last.preview && __t.last.preview.state === 'ready' && "
+                  "__t.last.preview.context === __t.last.status.preview_context && "
+                  "!document.querySelector('textarea[aria-label=\"Program text\"]')",
+                  before.at(0).dump()),
+      20s);
+  const auto after = rig.js("return [__t.last.program, __t.last.preview, "
+                            "__t.sent.filter((m) => m && m.type === 'save_program').pop()];");
+  // The cut of line 7 starts at X14 and now ends at X18 (points: x, y, z of each end).
+  const auto& segments = after.at(1).at("segments");
+  const auto cut = std::ranges::find_if(
+      segments, [](const Json& segment) -> bool { return segment.at("line") == 7; });
+  const double last_x = cut == segments.end() ? 0.0 : cut->at("points").at(3).get<double>();
+  check("edited_program_reloads_with_its_new_preview",
+        reloaded && cut != segments.end() && near(last_x, 18 + offset, 0.001),
+        std::format("reloaded={} segments={} last_x={} offset={}", reloaded, segments.size(),
+                    last_x, offset));
+  const auto sent = after.at(2);
+  check("editor_save_names_the_opened_stamp",
+        sent.is_object() && sent.value("stamp", "") == before.at(1).get<std::string>() &&
+            after.at(0).at("stamp") != before.at(1),
+        sent.dump().substr(0, 300));
+  check("edited_program_is_on_disk",
+        contents(programs / "part.ngc") ==
+            "G21 G90 G54\nF400\nG1 X10 Y0\nT2 M6\nG1 X14\nG4 P1.5\nG1 X18\nM2\n",
+        contents(programs / "part.ngc"));
+  check("no_console_errors_after_edit", rig.js("return __t.errors.length;") == 0, rig.errors());
+}
+
 // The paired sample of the repository: EngiWorld task 17, its two programs as they are and
 // its STEP model, in the real panel. What the preview is for each program and each active
 // work system, and what of the model is on the screen before and after its placement is
@@ -2129,6 +2187,8 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     status_gaps(rig, "tool_table");
     program_with_tool_change(rig, programs);
     status_gaps(rig, "program_with_tool_change");
+    program_edited_in_the_editor(rig, programs);
+    status_gaps(rig, "program_edited_in_the_editor");
     platform(rig, ui);
     status_gaps(rig, "platform");
     paired_sample(rig, programs);

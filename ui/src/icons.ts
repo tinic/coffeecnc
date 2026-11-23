@@ -35,6 +35,9 @@ const table = {
   fit: { path: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5' },
   target: { path: 'M12 3v5M12 16v5M3 12h5M16 12h5M12 7a5 5 0 1 0 0 10 5 5 0 1 0 0-10' },
   edit: { path: 'M4.5 19.5l1-4.5L16 4.5l3.5 3.5L9 18.5zM14 6.5l3.5 3.5' },
+  undo: { path: 'M9 6.5 4.5 11 9 15.5M4.5 11h10a4.5 4.5 0 0 1 0 9h-3' },
+  redo: { path: 'M15 6.5l4.5 4.5-4.5 4.5M19.5 11h-10a4.5 4.5 0 0 0 0 9h3' },
+  search: { path: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13M15.5 15.5 20 20' },
   backspace: { path: 'M9 5.5h11.5v13H9L3.5 12zM12 9.5l5 5M17 9.5l-5 5' },
 } satisfies Record<string, Icon>
 

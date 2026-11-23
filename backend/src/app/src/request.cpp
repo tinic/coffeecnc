@@ -239,12 +239,14 @@ auto command(const Json& object) -> Command {
                        string(object, "new_text")};
   }
   if (type == "save_program") {
-    fields(object, {"id", "type", "path", "text"}, {"replace"});
+    fields(object, {"id", "type", "path", "text"}, {"replace", "stamp"});
     SaveProgram save{string(object, "path"), string(object, "text"), false};
     if (save.text.size() > max_saved_program_bytes)
       throw InvalidRequest("The program text is longer than 512 KiB.");
     if (object.contains("replace"))
       save.replace = boolean(object, "replace");
+    if (object.contains("stamp"))
+      save.stamp = string(object, "stamp");
     return save;
   }
   if (type == "start_restart") {

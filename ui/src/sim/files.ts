@@ -35,6 +35,18 @@ export function splitLines(text: string): string[] {
 }
 
 /**
+ * The simulator's stamp of a program's text (32-bit FNV-1a of its UTF-16 code units). The
+ * native backend hashes the file's bytes instead; the panel only hands a stamp back.
+ */
+export function programStamp(text: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/**
  * Where `save_program` writes `path`: absolute below the program directory, or relative to it.
  * Folders must exist (the simulator has no empty ones); names follow the native rules.
  */

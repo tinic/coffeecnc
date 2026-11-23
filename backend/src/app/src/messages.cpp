@@ -437,7 +437,8 @@ auto encode_program(const ProgramText& program) -> Encoded {
                         {"revision", fields.count(program.revision, "revision")},
                         {"file", program.file},
                         {"lines", program.lines},
-                        {"truncated", program.truncated}});
+                        {"truncated", program.truncated},
+                        {"stamp", program.stamp}});
 }
 
 auto encode_preview(const Preview& preview) -> Encoded {

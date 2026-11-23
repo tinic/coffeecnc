@@ -98,14 +98,18 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         if constexpr (std::is_same_v<T, Abort> || std::is_same_v<T, JogStopAll>)
           return allow();
         // A new file: nothing of the machine's state decides about it. Replacing the loaded
-        // program is refused by the app, which resolves the path.
+        // program is refused by the app, which resolves the path. A save over the loaded program
+        // (`stamp`) is an edit of it: the checks below decide, as for EditProgram.
         if constexpr (std::is_same_v<T, SaveProgram>) {
           if (!valid_text(c.path, 254))
             return reject("Program path is empty, too long or contains control characters.");
           if (c.text.empty() || c.text.size() > max_saved_program_bytes ||
               c.text.find('\0') != std::string::npos)
             return reject("The program text is empty, longer than 512 KiB or contains a NUL byte.");
-          return allow();
+          if (!c.stamp)
+            return allow();
+          if (!valid_text(*c.stamp, 64))
+            return reject("The program stamp is not valid.");
         }
         // Visual preferences of the panel: nothing of the machine's state decides about them,
         // and nothing of them reaches the controller.
@@ -137,7 +141,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         if constexpr (std::is_same_v<T, Quit> || std::is_same_v<T, SetSpindle> ||
                       std::is_same_v<T, Jog> || std::is_same_v<T, JogStep> ||
                       std::is_same_v<T, JogPausedZ> || std::is_same_v<T, OpenProgram> ||
-                      std::is_same_v<T, EditProgram>) {
+                      std::is_same_v<T, EditProgram> || std::is_same_v<T, SaveProgram>) {
           if (s.requested_tool)
             return reject(pending_tool_reason);
         }
@@ -147,9 +151,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             !std::is_same_v<T, OpenProgram>)
           return reject("Press Stop before continuing after an interrupted spindle hold.");
 
-        if (s.paused_z && !s.paused_z->feedback_available &&
-            !std::is_same_v<T, SetMachine> && !std::is_same_v<T, Quit> &&
-            !std::is_same_v<T, OpenProgram> && !std::is_same_v<T, EditProgram> &&
+        if (s.paused_z && !s.paused_z->feedback_available && !std::is_same_v<T, SetMachine> &&
+            !std::is_same_v<T, Quit> && !std::is_same_v<T, OpenProgram> &&
+            !std::is_same_v<T, EditProgram> && !std::is_same_v<T, SaveProgram> &&
             !std::is_same_v<T, SetTool> && !std::is_same_v<T, RemoveTool> &&
             !std::is_same_v<T, SetOverride> && !std::is_same_v<T, SetProgramOption>)
           return reject("Wait for paused Z feedback before commanding machine motion.");
@@ -261,6 +265,12 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             return reject("The program edit is not valid.");
           if (s.interp != InterpState::idle || !s.in_position || homing(s))
             return reject("Stop execution before editing the program.");
+          return allow();
+        } else if constexpr (std::is_same_v<T, SaveProgram>) {
+          if (!s.program_loaded)
+            return reject("Load a program first.");
+          if (s.interp != InterpState::idle || !s.in_position || homing(s))
+            return reject("Stop the program before saving it.");
           return allow();
         } else if constexpr (std::is_same_v<T, PlanRestart> || std::is_same_v<T, StartRestart>) {
           if (s.breakpoint_program)

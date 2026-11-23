@@ -32,7 +32,7 @@ beforeEach(() => {
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.mode = 'auto'; panel.status.interp = 'reading'
   panel.status.program = { ...panel.status.program, file: '/parts/a.ngc', revision: 3, current_line: 2, motion_line: 2 }
-  panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: Array.from({ length: 22 }, () => 'G1 X1'), truncated: false }
+  panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: Array.from({ length: 22 }, () => 'G1 X1'), truncated: false, stamp: '0' }
   panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'ready', error: null,
     segments: lines.map(move), bounds: null, dwells: [] }
   panel.toolTable = null; panel.programLayout = 'text'; panel.unit = 'mm'

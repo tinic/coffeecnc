@@ -287,3 +287,22 @@ summary::-webkit-details-marker { display: none; }
 .popover h3 { font-size: 14px; margin: 0 0 12px; }
 .popover .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .popover .fact { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 12px; color: var(--text-dim); }
+
+/* G-code colouring of the code view and the program editor (gcode-syntax.ts). The editor's
+   overlay keeps every tone at the textarea's weight: a synthesised bold is wider. */
+.gcode-tones [data-tone='rapid'] { color: var(--gcode-rapid); }
+.gcode-tones [data-tone='cut'] { color: var(--gcode-cut); }
+.gcode-tones [data-tone='modal'] { color: var(--gcode-modal); }
+.gcode-tones [data-tone='x'] { color: var(--gcode-x); }
+.gcode-tones [data-tone='y'] { color: var(--gcode-y); }
+.gcode-tones [data-tone='z'] { color: var(--gcode-z); }
+.gcode-tones [data-tone='argument'] { color: var(--gcode-argument); }
+.gcode-tones [data-tone='rate'] { color: var(--gcode-rate); }
+.gcode-tones [data-tone='tool'] { color: var(--gcode-tool); }
+.gcode-tones [data-tone='spindle'] { color: var(--gcode-spindle); }
+.gcode-tones [data-tone='stop'] { color: var(--gcode-stop); font-weight: 700; }
+.gcode-tones [data-tone='comment'] { color: var(--gcode-comment); font-style: italic; }
+.gcode-tones [data-tone='message'] { color: var(--gcode-message); font-style: italic; font-weight: 500; }
+.gcode-tones [data-tone='flow'] { color: var(--gcode-flow); }
+.gcode-tones [data-tone='parameter'] { color: var(--gcode-parameter); }
+.gcode-tones [data-tone='expression'] { color: var(--gcode-expression); }

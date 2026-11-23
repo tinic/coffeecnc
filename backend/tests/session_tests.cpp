@@ -1,4 +1,5 @@
 #include <coffeecnc/app/offset_history.hpp>
+#include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/session.hpp>
 
 #include "fake_file_system.hpp"
@@ -2489,6 +2490,69 @@ void exactly_one_result(std::uint32_t seed) {
       answered > 5000 && dropped > 500,
       std::format("The sequence exercised both paths: {} answered, {} dropped", answered, dropped));
 }
+// The program editor's save over the loaded program: refused while the program runs or is
+// paused, only for the loaded program, only with the stamp of the file; then opened again.
+void editor_saves_over_the_loaded_program() {
+  constexpr auto part = "/home/cnc/nc_files/part.ngc";
+  const std::string before = "G0 X1\nM2\n";
+  FakePort port;
+  port.state = homed_machine();
+  port.state.program_file = part;
+  FakeFileSystem files;
+  files.file(part, before);
+  files.file("/home/cnc/nc_files/other.ngc", "M2\n");
+  const ProgramStore programs{files, program_directory};
+  FakeDisk disk;
+  disk.files[part] = before;
+  FakeToolModelFiles writes{disk};
+  ProgramWriter writer{programs, writes};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs, nullptr, nullptr, nullptr, &writer};
+  Driver driver{session, port};
+  const auto page = driver.begin_page();
+  RequestId id = 0;
+  const auto send = [&](const std::string& body) -> Json {
+    const auto found =
+        results(driver.handle(page, std::format("{{\"id\":{},{}}}", ++id, body), at(0ms)));
+    require(found.size() == 1, "One result for: " + body);
+    return found.empty() ? Json{} : found.front();
+  };
+  static_cast<void>(
+      driver.handle(page, std::format("{{\"id\":{},\"type\":\"ready\"}}", ++id), at(0ms)));
+  port.calls.clear();
+  const auto save = [](std::string_view path, std::string_view stamp) -> std::string {
+    return std::format(R"("type":"save_program","path":"{}","text":"G0 X2\nM2\n","stamp":"{}")",
+                       path, stamp);
+  };
+  const auto stamp = program_stamp(before);
+
+  for (const auto interp : {InterpState::reading, InterpState::paused}) {
+    port.state.interp = interp;
+    const auto refused = send(save(part, stamp));
+    require(refused.at("outcome") == "rejected" &&
+                refused.at("reason") == "Stop the program before saving it.",
+            "Refused while the program runs or is paused: " + refused.dump());
+  }
+  port.state.interp = InterpState::idle;
+  const auto other = send(save("/home/cnc/nc_files/other.ngc", program_stamp("M2\n")));
+  require(other.at("outcome") == "rejected" &&
+              other.at("reason") == "Only the loaded program can be edited.",
+          "Only the loaded program is saved over: " + other.dump());
+  const auto stale = send(save(part, program_stamp("G0 X0\nM2\n")));
+  require(stale.at("outcome") == "failed" &&
+              stale.at("reason") ==
+                  "The program file changed since it was opened. Open it again to edit it.",
+          "A file changed since it was opened is not written over: " + stale.dump());
+  require(disk.files.at(part) == before && port.calls.empty(),
+          "Nothing is written and nothing opened while refused");
+
+  const auto saved = send(save(part, stamp));
+  require(saved.at("outcome") == "accepted", "The save is accepted: " + saved.dump());
+  require(disk.files.at(part) == "G0 X2\nM2\n", "The edited text is on disk");
+  require(port.calls == Calls{"open_program /home/cnc/nc_files/part.ngc"},
+          "The program is opened again, so the preview and the program check follow");
+}
+
 } // namespace
 
 // A failing run prints the seed of its random sequence; pass it as the only argument to repeat.
@@ -2497,6 +2561,7 @@ auto main(int argc, char** argv) -> int {
   try {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
+    editor_saves_over_the_loaded_program();
     controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();

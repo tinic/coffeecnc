@@ -23,7 +23,7 @@ import type {
 } from '../protocol'
 import { protocolVersion } from '../protocol'
 import { axisJogVelocity, requiresHoming } from '../machine-capabilities'
-import { defaultFiles, listDirectory, newProgramPath, splitLines } from './files'
+import { defaultFiles, listDirectory, newProgramPath, programStamp, splitLines } from './files'
 import { feedOrSpeedEdit } from '../program-edit'
 import { SimProbe, type ProbePlan } from './probe'
 import { SimOffsetHistory } from './offset-history'
@@ -184,7 +184,7 @@ export class SimMachine {
   private exec: Exec | null = null
   private velocity = 0
   private readonly overrides = { feed: 1, rapid: 1, spindle: 1 }
-  private program: { file: string; lines: string[]; revision: number } | null = null
+  private program: { file: string; lines: string[]; revision: number; stamp: string } | null = null
   /** Where the program last stopped before its end, for that program revision. */
   private stoppedAt: { revision: number; line: number; tool: number } | null = null
   private cutCompleted = false
@@ -1129,7 +1129,9 @@ export class SimMachine {
       case 'edit_program':
         return this.editProgram(command.path, command.line, command.old_text, command.new_text)
       case 'save_program':
-        return this.saveProgram(command.path, command.text, command.replace === true)
+        return command.stamp === undefined
+          ? this.saveProgram(command.path, command.text, command.replace === true)
+          : this.saveOverProgram(command.path, command.text, command.stamp)
       case 'plan_restart':
         return this.planRestart(command.line, command.preview_context)
       case 'start_restart':
@@ -1410,7 +1412,7 @@ export class SimMachine {
     }
     this.programRevision += 1
     this.cutCompleted = false
-    this.program = { file: path, lines: splitLines(text), revision: this.programRevision }
+    this.program = { file: path, lines: splitLines(text), revision: this.programRevision, stamp: programStamp(text) }
     this.emit({ type: 'program', ...this.program })
     return null
   }
@@ -1487,6 +1489,21 @@ export class SimMachine {
     }
     this.files.set(target, text)
     return null
+  }
+
+  /** The program editor's save over the loaded program, then opened again, as natively. */
+  private saveOverProgram(path: string, text: string, stamp: string): Rejection | null {
+    if (text === '' || new TextEncoder().encode(text).length > maxSavedProgramBytes || text.includes('\0'))
+      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.')
+    const program = this.program
+    if (program === null) return reject('Load a program first.')
+    if (this.exec !== null) return reject('Stop the program before saving it.')
+    if (path !== program.file) return reject('Only the loaded program can be edited.')
+    const before = this.files.get(path)
+    if (before === undefined) return fail('The program no longer exists.')
+    if (programStamp(before) !== stamp) return fail('The program file changed since it was opened. Open it again to edit it.')
+    this.files.set(path, text)
+    return this.open(path)
   }
 
   /** Interprets the program up to `line` without motion and plans how to resume there. */

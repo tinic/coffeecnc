@@ -1,6 +1,9 @@
 #include <coffeecnc/app/program_store.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <ranges>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -105,6 +108,22 @@ auto folded(std::string_view name) -> std::string {
 }
 
 } // namespace
+
+auto program_stamp(std::string_view bytes) -> std::string {
+  std::uint64_t hash = 0xcbf29ce484222325ULL;
+  for (const char c : bytes) {
+    hash ^= static_cast<unsigned char>(c);
+    hash *= 0x100000001b3ULL;
+  }
+  constexpr std::array<char, 16> digits{'0', '1', '2', '3', '4', '5', '6', '7',
+                                        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+  std::string stamp(16, '0');
+  for (auto& digit : stamp | std::views::reverse) {
+    digit = digits.at(hash & 0xFU);
+    hash >>= 4U;
+  }
+  return stamp;
+}
 
 ProgramStore::ProgramStore(const FileSystem& files, std::string root, std::string start)
     : files_(files), root_(std::move(root)), start_(std::move(start)) {}
@@ -233,6 +252,7 @@ auto ProgramStore::read_program(std::string_view path, std::uint64_t revision) c
   ProgramText program;
   program.revision = revision;
   program.file = std::move(*file);
+  program.stamp = program_stamp(*content);
   std::string_view text{*content};
   if (text.size() > max_program_bytes) {
     program.truncated = true;

@@ -9,7 +9,7 @@ import { baseName, formatBytes } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; newProgram: [folder: string, taken: string[]] }>()
 
 const directory = computed(() => panel.directory)
 // Shortcuts the machine offers: its program directory, the home folder, USB media.
@@ -73,6 +73,12 @@ onMounted(() => {
             <AppIcon name="up" />Up
           </button>
           <span class="mono where">{{ directory?.path ?? 'Reading directory' }}</span>
+          <button
+            v-tooltip="'Write a new program in this directory'" class="btn new-program" type="button" :disabled="directory === null"
+            @click="directory && emit('newProgram', directory.path, directory.entries.map((entry) => entry.name))"
+          >
+            <AppIcon name="plus" />New program
+          </button>
         </div>
         <div v-if="places.length > 0" class="places" aria-label="Places">
           <button
@@ -116,6 +122,8 @@ onMounted(() => {
   gap: 10px;
   flex: none;
 }
+
+.new-program { margin-left: auto; flex: none; }
 
 .where {
   overflow: hidden;

@@ -37,7 +37,20 @@ public:
   [[nodiscard]] auto create(std::string_view path, std::string_view text, bool replace)
       -> std::expected<std::string, std::string>;
 
+  // Writes the program editor's `text` over the existing program `path`, durably as
+  // replace_line, when the file still has `stamp` (program_stamp of its bytes): a file changed
+  // by anyone else since it was shown is never written over. `text` has `\n` line ends; a file
+  // whose first line ends in `\r\n` keeps that line end on every line. No backup is kept: the
+  // rename leaves either the old file or the new one, never a part of either.
+  // The resolved path of the program written, or why nothing was written.
+  [[nodiscard]] auto replace(std::string_view path, std::string_view text, std::string_view stamp)
+      -> std::expected<std::string, std::string>;
+
 private:
+  // Replaces the file `resolved` with `bytes` through `<directory>/.<name><suffix>`.
+  [[nodiscard]] auto write_over(const std::string& resolved, std::string_view bytes,
+                                std::string_view suffix) -> std::expected<void, std::string>;
+
   const ProgramStore& programs_;
   ToolModelFiles& files_;
 };

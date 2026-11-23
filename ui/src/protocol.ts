@@ -257,6 +257,8 @@ export interface ProgramText {
   lines: string[]
   /** True when only a prefix is supplied. This is not the complete program or its line count. */
   truncated?: boolean
+  /** Names the exact bytes of the file read; `save_program` with it saves over this program. */
+  stamp: string
 }
 
 /** One contiguous run of motion from one source line, as the interpreter produced it. */
@@ -631,12 +633,17 @@ export interface EditProgram extends CommandBase {
  * Writes a new program file in the program directory ([DISPLAY] PROGRAM_PREFIX): `path` is
  * absolute, or relative to that directory. A file of that name is replaced only with `replace`,
  * and never the loaded program. Text of at most 512 KiB. Opening it is a separate `open_program`.
+ *
+ * With `stamp` (of the loaded program's `program` message) the program editor saves over the
+ * loaded program `path` instead: refused while a program runs or is paused, and when the file
+ * no longer has that stamp. The program is then opened again; `replace` does not apply.
  */
 export interface SaveProgram extends CommandBase {
   type: 'save_program'
   path: string
   text: string
   replace?: boolean
+  stamp?: string
 }
 export interface SetCoolant extends CommandBase {
   type: 'set_coolant'

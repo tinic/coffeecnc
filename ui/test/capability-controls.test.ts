@@ -163,7 +163,7 @@ describe('capability-aware controls', () => {
     s.interp = 'reading'
     wrapper = mount(StatusBar)
     expect(wrapper.get('.machine-state').text()).toBe('Program running')
-    panel.program = { type: 'program', file: s.program.file, revision: s.program.revision, lines: ['M30'], truncated: false }
+    panel.program = { type: 'program', file: s.program.file, revision: s.program.revision, lines: ['M30'], truncated: false, stamp: '0' }
     await nextTick()
     expect(wrapper.find('.message-band .machine-state').exists()).toBe(false)
     expect(wrapper.get('.state-pill').text()).toBe('Program running')

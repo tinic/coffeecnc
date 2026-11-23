@@ -295,6 +295,9 @@ struct ProgramText {
   std::vector<std::string> lines;
   // The file is longer than `lines`. Always sent.
   bool truncated{};
+  // Names the exact bytes read (program_stamp): a save over the program is refused when the
+  // file no longer has them. Always sent.
+  std::string stamp;
   friend auto operator==(const ProgramText&, const ProgramText&) -> bool = default;
 };
 

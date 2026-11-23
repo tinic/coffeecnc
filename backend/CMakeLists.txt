@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(coffeecnc_backend VERSION 0.1.3 LANGUAGES CXX)
+project(coffeecnc_backend VERSION 0.1.4 LANGUAGES CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake -S backend -B build/backend")

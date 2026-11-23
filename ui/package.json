@@ -1,7 +1,7 @@
 {
   "name": "coffeecnc-ui",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "description": "Operator panel for CoffeeCNC, rendered by the coffeecnc executable's WebKitGTK window",
   "scripts": {

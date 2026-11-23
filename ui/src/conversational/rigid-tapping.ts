@@ -54,7 +54,6 @@ export function rigidTapping(c: RigidTapping): Generated {
     `Right-hand tap, G33.1, pitch ${String(pitch)}, nominal reversal at Z-${p.n(depth)}`, // i18n-ignore
     `Qualified reversal clearance: through Z-${p.n(lowest)} below and Z${p.n(highest)} above`, // i18n-ignore
   ], true)
-  p.add('M51 P0')
   for (const [x, y] of holes(c)) {
     p.rapidXY(x, y)
     p.rapidZ(start)

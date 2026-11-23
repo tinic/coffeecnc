@@ -358,7 +358,7 @@ describe('rigid tapping', () => {
   it('prepositions XY, taps only Z and rapids to clearance only after the synchronized return', () => {
     const program = text(rigidTapping(setup))
     expect(program).toContain('G90 G94 G97')
-    expect(program).toContain('S300 M3\nG0 Z5\nM51 P0\nG0 X4 Y3\nG0 Z2\nG33.1 Z-4 K1\nG0 Z5\nG0 X14 Y3')
+    expect(program).toContain('M51 P0\nS300 M3\nG0 Z5\nG0 X4 Y3\nG0 Z2\nG33.1 Z-4 K1\nG0 Z5\nG0 X14 Y3')
     expect(program).toContain('G33.1 Z-4 K1\nG0 Z5\nM51 P1\nM5\nM2')
     const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
     expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()

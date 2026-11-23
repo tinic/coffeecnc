@@ -9,7 +9,7 @@ import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
-import { number, type Generated } from '../src/conversational/program'
+import { chainOperations, number, type Generated } from '../src/conversational/program'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -215,6 +215,7 @@ T1 M6
 G43 H1
 S8000 M3
 G0 Z5
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 2)
@@ -248,6 +249,7 @@ T2 M6
 G43 H2
 S6000 M3
 G0 Z0.2
+G91.1
 
 G0 X0.5 Y-0.5
 (Layer 1 of 1)
@@ -274,6 +276,7 @@ T1 M6
 G43 H1
 S8000 M3
 G0 Z5
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 1)
@@ -315,6 +318,7 @@ T2 M6
 G43 H2
 S6000 M3
 G0 Z0.2
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 1)
@@ -401,6 +405,36 @@ describe('conversational programs', () => {
     expect(preview.segments.some((segment) => segment.kind === 'feed')).toBe(true)
   })
 
+  it('joins a facing and drilling operation with one program end and reaches the second toolpath', () => {
+    const face = { tool: 1, text: expected['facingMm'] ?? '' }
+    const drill = { tool: 2, text: (expected['gridMm'] ?? '').replace('T1 M6\nG43 H1', 'T2 M6\nG43 H2') }
+    const joined = text(chainOperations([face, drill], 'mm', -0.5))
+    expect(text(chainOperations([face], 'mm'))).toBe(face.text)
+    expect(errors(chainOperations([face, drill], 'mm'))).toHaveLength(1)
+    expect(joined).toContain('G0 Z5\nM5\n\nG90 G53 G0 Z-0.5\n\n(Hole pattern')
+    expect(joined.indexOf('G53')).toBeLessThan(joined.indexOf('T2 M6'))
+    expect(joined.match(/^T\d+ M6$/gm)).toEqual(['T1 M6', 'T2 M6'])
+    expect(joined.match(/^M2$/gm)).toEqual(['M2'])
+    expect(joined.endsWith('G80\nG0 Z5\nM5\nM2\n')).toBe(true)
+    const tools = [
+      { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+      { number: 2, pocket: 2, length: 40, diameter: 5, comment: '' },
+    ]
+    const preview = previewProgram(newModal(tools), splitLines(joined), false, 1)
+    expect(preview.error).toBeNull()
+    expect(preview.segments.some((segment) => segment.kind === 'feed' && segment.points.includes(-5))).toBe(true)
+  })
+
+  it('keeps one tool loaded across consecutive operations that use it', () => {
+    const face = { tool: 1, text: expected['facingMm'] ?? '' }
+    const drill = { tool: 1, text: expected['gridMm'] ?? '' }
+    const joined = text(chainOperations([face, drill], 'mm'))
+    expect(joined.match(/^T\d+ M6$/gm)).toEqual(['T1 M6'])
+    expect(joined).not.toContain('G53')
+    expect(joined).toContain('G43 H1\nS')
+    expect(joined).toContain('G98 G81')
+  })
+
   it('writes numbers with the decimals of the unit and never -0', () => {
     expect(number(1 / 3, 'mm')).toBe('0.333')
     expect(number(1 / 3, 'inch')).toBe('0.3333')
@@ -456,6 +490,63 @@ describe('material removal', () => {
       }
     }
     expect(uncut).toEqual([])
+  })
+})
+
+describe('pocket entry and finishing', () => {
+  const setup = { ...mm, x: 0, y: 0, stepover: 50, depth: 2, depthPerPass: 1, plungeFeed: 200 }
+  const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
+
+  it('helices down, roughs inside the allowance and finishes at each layer', () => {
+    const program = text(circularPocket({
+      ...setup, diameter: 30, entry: 'helix', entryAngle: 3, wallStock: 1, finish: true, coolant: 'flood',
+    }))
+    expect(program).toContain('G91.1\nM9\nM8\n\nG0 X2.5 Y0\nG1 Z0 F200')
+    expect(program.match(/^G3 .* Z-/gm)).toHaveLength(4)
+    expect(program).toContain('G3 X2.5 Y0 I-2.5 J0 Z-0.5')
+    expect(program).toContain('G3 X9 Y0 I-9 J0\n(Finish walls)\nG1 X10 Y0\nG3 X10 Y0 I-10 J0')
+    expect(program.match(/\(Finish walls\)/g)).toHaveLength(2)
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('ramps along the longer axis and keeps the requested wall stock in a rough-only pocket', () => {
+    const program = text(rectangularPocket({
+      ...setup, width: 20, height: 30, cornerRadius: 7, entry: 'ramp', entryAngle: 3, wallStock: 1, coolant: 'both',
+    }))
+    expect(program).toContain('M9\nM7\nM8\n\nG0 X0 Y-9\nG1 Z0 F200')
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
+    expect(program).toContain('G1 X0 Y9 Z-0.5\nG1 X0 Y-9 Z-1')
+    expect(program).not.toContain('(Finish walls)')
+    const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
+    expect(preview.error).toBeNull()
+    const feed = preview.segments.filter((segment) => segment.kind === 'feed')
+    const x = feed.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 0))
+    const y = feed.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 1))
+    expect(Math.max(...x)).toBeCloseTo(4)
+    expect(Math.max(...y)).toBeCloseTo(9)
+  })
+
+  it('forces coolant off before entry when the operator picks Off', () => {
+    const program = text(circularPocket({ ...setup, diameter: 30, coolant: 'off' }))
+    expect(program).toContain('G91.1\nM9\n\nG0 X0 Y0')
+    expect(program.match(/^M9$/gm)).toEqual(['M9'])
+  })
+
+  it('retracts and stops pocket coolant before lifting for the next tool in a job', () => {
+    const pocket = text(circularPocket({ ...setup, diameter: 30, coolant: 'flood' }))
+    const drill = (expected['gridMm'] ?? '').replace('T1 M6\nG43 H1', 'T2 M6\nG43 H2')
+    const job = text(chainOperations([{ tool: 1, text: pocket }, { tool: 2, text: drill }], 'mm', -0.5))
+    expect(job).toContain('G0 Z5\nM9\nM5\n\nG90 G53 G0 Z-0.5\n\n(Hole pattern')
+    expect(job.match(/^M2$/gm)).toEqual(['M2'])
+  })
+
+  it('refuses stock that leaves no room and entry angles below the usable precision', () => {
+    expect(errors(circularPocket({ ...setup, diameter: 20, wallStock: 5 }))).toContain('Wall stock leaves too little room for the tool.')
+    expect(errors(circularPocket({ ...setup, diameter: 20, entry: 'helix', entryAngle: 0.00001 })))
+      .toContain('The entry path or angle is too small for this program’s coordinate precision.')
+    expect(errors(rectangularPocket({ ...setup, width: 20, height: 30, cornerRadius: 0, entry: 'ramp', entryAngle: 90 })))
+      .toContain('The entry angle must be greater than 0° and less than 90°.')
   })
 })
 

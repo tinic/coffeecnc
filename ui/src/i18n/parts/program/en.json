@@ -139,6 +139,7 @@
       "readOnlyRunning": "Read-only while a program runs or is paused. Stop it to edit.",
       "empty": "The program is empty.",
       "tooLarge": "The program is larger than 512 KiB.",
+      "stopFirst": "Stop the machine before saving.",
       "badName": "Name the file without a slash or a leading dot.",
       "editFile": "Edit {file}",
       "newProgram": "New program",

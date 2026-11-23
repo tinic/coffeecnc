@@ -3,7 +3,7 @@ import { computed, shallowRef, watch, type ComputedRef, type ShallowRef } from '
 import { t } from './i18n'
 import { translateMessage } from './i18n/messages'
 import { connectionBlock } from './machine-block'
-import { byteLength, maxProgramBytes, programSource, uneditableReason } from './program-editor'
+import { byteLength, machineBusy, maxProgramBytes, programSource, uneditableReason } from './program-editor'
 import type { CommandBody, ProgramText } from './protocol'
 import type { PanelState, ResultListener } from './store'
 
@@ -49,12 +49,8 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
     return program === null ? t('program.lineEdits.waitText') : !program.stamp ? t('program.lineEdits.reopen') : uneditableReason(program)
   })
   const block = computed(() => {
-    const status = panel.status
     return connectionBlock(panel.link) ?? fileBlock.value ??
-      (status?.interp !== 'idle' || !status.motion.in_position ||
-        status.wait.kind === 'tool_change' || status.axes.some((axis) => axis.homing) ||
-        status.rotary_axes?.some((axis) => axis.homing) || status.program.breakpoint
-        ? t('program.lineEdits.stopFirst') : null) ??
+      (machineBusy(panel.status) ? t('program.lineEdits.stopFirst') : null) ??
       (pending.value || undo.value?.saved === null ? t('program.lineEdits.reopening') : null)
   })
   const canUndo = computed(() => Boolean(undo.value?.saved))

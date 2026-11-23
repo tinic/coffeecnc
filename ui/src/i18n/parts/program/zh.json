@@ -139,6 +139,7 @@
       "readOnlyRunning": "程序运行或暂停时为只读。请停止程序后编辑。",
       "empty": "程序为空。",
       "tooLarge": "程序超过 512 KiB。",
+      "stopFirst": "保存前请停止机床。",
       "badName": "文件名不能包含斜杠，也不能以点开头。",
       "editFile": "编辑 {file}",
       "newProgram": "新建程序",

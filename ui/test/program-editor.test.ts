@@ -106,20 +106,31 @@ describe('program editor model', () => {
   it('undoes typing as one step and every other edit on its own', () => {
     const history = new EditHistory()
     const at = (text: string): { text: string; start: number; end: number } => ({ text, start: text.length, end: text.length })
-    history.record(at(''), 'insertText', 0)
-    history.record(at('G'), 'insertText', 100)
-    history.record(at('G0'), 'insertFromPaste', 200)
+    history.record(at(''), 'insertText', 0, 1)
+    history.record(at('G'), 'insertText', 100, 2)
+    history.record(at('G0'), 'insertFromPaste', 200, 5)
     expect(history.undo(at('G0 X1'))).toEqual(at('G0'))
     expect(history.undo(at('G0'))).toEqual(at(''))
     expect(history.canUndo).toBe(false)
     expect(history.redo(at(''))).toEqual(at('G0'))
-    history.record(at('G0'), 'insertText', 300)
+    history.record(at('G0'), 'insertText', 300, 3)
     expect(history.canRedo).toBe(false)
+  })
+
+  it('starts a new undo step when typing goes on elsewhere', () => {
+    const history = new EditHistory()
+    history.record({ text: 'G0\nM2\n', start: 2, end: 2 }, 'insertText', 0, 3)
+    history.record({ text: 'G0 \nM2\n', start: 3, end: 3 }, 'insertText', 100, 4)
+    // The caret moved to the start of the text, inside the merge time.
+    history.record({ text: 'G0 X\nM2\n', start: 0, end: 0 }, 'insertText', 200, 1)
+    expect(history.undo({ text: '(G0 X\nM2\n', start: 1, end: 1 })).toEqual({ text: 'G0 X\nM2\n', start: 0, end: 0 })
+    expect(history.undo({ text: 'G0 X\nM2\n', start: 0, end: 0 })).toEqual({ text: 'G0\nM2\n', start: 2, end: 2 })
+    expect(history.canUndo).toBe(false)
   })
 
   it('keeps no more history than it may', () => {
     const history = new EditHistory(3, 10)
-    for (let n = 0; n < 6; n += 1) history.record({ text: 'G0 X1', start: 0, end: 0 }, 'insertFromPaste', n * 2000)
+    for (let n = 0; n < 6; n += 1) history.record({ text: 'G0 X1', start: 0, end: 0 }, 'insertFromPaste', n * 2000, 0)
     let steps = 0
     while (history.undo({ text: '', start: 0, end: 0 }) !== null) steps += 1
     expect(steps).toBe(2)
@@ -327,6 +338,42 @@ describe('program editor', () => {
     element?.focus()
     element?.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
     expect(document.activeElement).toBe(one('.find input'))
+  })
+
+  it('does not save an unmodified program with Ctrl+S', async () => {
+    load()
+    await open()
+    area().dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(sent().filter((command) => command.type === 'save_program')).toEqual([])
+  })
+
+  it('does not save over a program without a stamp, and says to open it again', async () => {
+    load({ stamp: '' })
+    await open()
+    await type('M2\n')
+    expect(button('Save and reopen').disabled).toBe(true)
+    expect(text('.block')).toBe('Open the program again before editing.')
+    area().dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(sent().filter((command) => command.type === 'save_program')).toEqual([])
+  })
+
+  it('does not save while the machine moves, as the line edits', async () => {
+    load()
+    await open()
+    await type('M2\n')
+    for (const busy of [{ motion: { ...status.motion, in_position: false } }, { wait: { kind: 'tool_change' as const, tool: 2 } },
+      { program: { ...status.program, breakpoint: { line: 2, reached: true } } }] as Partial<Status>[]) {
+      wire.receive({ ...status, ...busy })
+      await nextTick()
+      expect(button('Save and reopen').disabled).toBe(true)
+      expect(text('.block')).toBe('Stop the machine before saving.')
+      area().dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }))
+      expect(sent().filter((command) => command.type === 'save_program')).toEqual([])
+    }
+    wire.receive(status)
+    await nextTick()
+    expect(button('Save and reopen').disabled).toBe(false)
   })
 
   it('finds, marks and counts matches, and goes to a line', async () => {

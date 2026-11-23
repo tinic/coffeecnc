@@ -139,6 +139,7 @@
       "readOnlyRunning": "Só de leitura enquanto um programa está em execução ou em pausa. Pare-o para editar.",
       "empty": "O programa está vazio.",
       "tooLarge": "O programa excede 512 KiB.",
+      "stopFirst": "Pare a máquina antes de guardar.",
       "badName": "Dê ao ficheiro um nome sem barras nem ponto inicial.",
       "editFile": "Editar {file}",
       "newProgram": "Novo programa",

@@ -428,6 +428,7 @@ describe('single-line engraving', () => {
   it('writes uppercase text and retracts before traversing between strokes', () => {
     const program = text(engraving(metric))
     expect(program).toContain('(Lettering: A-)')
+    expect(text(engraving({ ...metric, angle: 0.1 + 0.2 }))).toContain('rotation 0.3 degrees)')
     expect(program).toContain('G0 X10 Y20\nG1 Z-0.2 F40\nG1 X13 Y30 F100\nG1 X16 Y20\nG0 Z5')
     expect(program).toContain('G0 X11.2 Y24\nG1 Z-0.2 F40\nG1 X14.8 Y24 F100\nG0 Z5')
     expect(program).toContain('G0 X17 Y24.8\nG1 Z-0.2 F40\nG1 X21 Y24.8 F100\nG0 Z5\nM5\nM2')

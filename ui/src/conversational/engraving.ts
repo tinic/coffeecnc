@@ -39,14 +39,15 @@ export function engraving(c: Engraving): Generated {
 
   const p = new Program(c)
   const scale = c.height / 10
-  const angle = (c.angle % 360) * Math.PI / 180
+  const degrees = c.angle % 360
+  const angle = degrees * Math.PI / 180
   const cosine = Math.cos(angle)
   const sine = Math.sin(angle)
   const xy = (u: number, v: number): string =>
     `X${p.n(c.x + u * cosine - v * sine)} Y${p.n(c.y + u * sine + v * cosine)}`
   p.start('Engraving', [ // i18n-ignore
     `Lettering: ${label}`, // i18n-ignore
-    `Baseline ${xy(0, 0)}, height ${p.n(c.height)}, depth ${p.n(c.depth)}, rotation ${String(c.angle % 360)} degrees`, // i18n-ignore
+    `Baseline ${xy(0, 0)}, height ${p.n(c.height)}, depth ${p.n(c.depth)}, rotation ${p.n(degrees)} degrees`, // i18n-ignore
   ])
 
   let advance = 0

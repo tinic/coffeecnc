@@ -7,6 +7,7 @@ import { bore } from '../src/conversational/bore'
 import { chamfer, type Chamfer } from '../src/conversational/chamfer'
 import { contour, type Contour } from '../src/conversational/contour'
 import { drilling, holes } from '../src/conversational/drilling'
+import { engraving, type Engraving } from '../src/conversational/engraving'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
@@ -456,6 +457,42 @@ describe('chamfers', () => {
   })
 })
 
+describe('single-line engraving', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const metric = { ...mm, label: ' a- ', x: 10, y: 20, height: 10, spacing: 1,
+    angle: 0, depth: 0.2, feed: 100, entryFeed: 40 } satisfies Engraving
+
+  it('writes uppercase text and retracts before traversing between strokes', () => {
+    const program = text(engraving(metric))
+    expect(program).toContain('(Lettering: A-)')
+    expect(text(engraving({ ...metric, angle: 0.1 + 0.2 }))).toContain('rotation 0.3 degrees)')
+    expect(program).toContain('G0 X10 Y20\nG1 Z-0.2 F40\nG1 X13 Y30 F100\nG1 X16 Y20\nG0 Z5')
+    expect(program).toContain('G0 X11.2 Y24\nG1 Z-0.2 F40\nG1 X14.8 Y24 F100\nG0 Z5')
+    expect(program).toContain('G0 X17 Y24.8\nG1 Z-0.2 F40\nG1 X21 Y24.8 F100\nG0 Z5\nM5\nM2')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('rotates an inch baseline about its origin while preserving spacing', () => {
+    const program = text(engraving({ ...metric, ...inch, label: 'L 1', x: 1, y: 0.5,
+      height: 0.2, spacing: 0.05, angle: 90, depth: 0.006, entryFeed: 1.5 }))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.8 Y0.5\nG1 Z-0.006 F1.5\nG1 X1 Y0.5 F24\nG1 X1 Y0.62\nG0 Z0.2')
+    expect(program).toContain('G0 X0.84 Y0.79')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('refuses blank, too long, unsupported or unrepresentable lettering', () => {
+    expect(errors(engraving({ ...metric, label: '   ' }))[0]).toContain('between 1 and 48 characters')
+    expect(errors(engraving({ ...metric, label: 'A'.repeat(49) }))[0]).toContain('between 1 and 48 characters')
+    expect(errors(engraving({ ...metric, label: 'PART (A)' }))[0]).toContain('Use A–Z')
+    expect(errors(engraving({ ...metric, depth: 0.0001 }))[0]).toContain('program’s precision')
+    expect(errors(engraving({ ...metric, spacing: -1 }))[0]).toContain('spacing must be zero or greater')
+  })
+})
+
 describe('internal thread milling', () => {
   const tools = [
     { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
@@ -787,10 +824,12 @@ describe('dialog entries', () => {
     expect(op.name(parsed, 'mm')).toBe('facing-50.8x60mm')
   })
 
-  it('has valid defaults in both units for a 6 mm tool', () => {
+  it('has valid numeric defaults in both units for a 6 mm tool', () => {
     for (const op of operations)
       for (const unit of ['mm', 'inch'] as const) {
-        const parsed = parse(op, op.defaults(unit), unit)
+        const values = op.defaults(unit)
+        if (op.id === 'engraving') values['label'] = 'A1'
+        const parsed = parse(op, values, unit)
         const generated = op.generate(parsed, { unit, tool: { number: 2, diameter: unit === 'inch' ? 0.25 : 6, comment: '' },
           rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance') })
         expect(errors(generated), `${op.id} ${unit}`).toEqual([])

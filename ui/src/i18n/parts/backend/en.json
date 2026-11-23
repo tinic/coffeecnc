@@ -560,6 +560,13 @@
     "jogStop": {
       "watchdog": "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the watchdog timeout.",
       "probeContact": "Jog stopped: probe contact"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} is not installed: it is not in the search path ({path}).",
+      "alreadyOpen": "{name} is already open.",
+      "notStarted": "{name} could not be started.",
+      "notStartedBecause": "{name} could not be started: {error}.",
+      "cannotStart": "HAL tools cannot be started here."
     }
   }
 }

@@ -41,7 +41,8 @@ const examples = [
     "macros": [
       { "label": "Park", "mdi": "G53 G0 Z0" },
       { "label": "Clamp check", "mdi": "O<clamp> call" }
-    ]
+    ],
+    "diagnostics": true
   },
   {
     "type": "hello",
@@ -1348,13 +1349,31 @@ const examples = [
     "storage": "session_only",
     "reason": "No machine identity configured",
     "entries": []
+  },
+  {
+    "type": "diagnostics",
+    "inputs": [
+      { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },
+      { "role": "home_switch", "joint": 0, "axis": "x", "name": "joint.0.home-sw-in", "kind": "pin", "state": "live", "value": true },
+      { "role": "amp_fault", "joint": 0, "axis": "x", "name": "joint.0.amp-fault-in", "kind": "pin", "state": "unwired", "value": false },
+      { "role": "estop_chain", "name": "iocontrol.0.emc-enable-in", "kind": "pin", "state": "live", "value": true },
+      { "role": "spindle_speed_out", "name": "spindle.0.speed-out", "kind": "pin", "state": "live", "value": 1200 },
+      { "role": "spindle_speed_in", "name": "spindle.0.speed-in", "kind": "pin", "state": "live", "value": null },
+      { "role": "configured", "label": "Setter contact", "name": "setter-tripped", "kind": "signal", "state": "live", "value": false },
+      { "role": "configured", "label": "VFD errors", "name": "vfd.modbus-errors", "kind": "pin", "state": "missing", "value": null }
+    ],
+    "tools": [
+      { "tool": "halshow", "available": true, "open": false },
+      { "tool": "halmeter", "available": true, "open": true },
+      { "tool": "halscope", "available": false, "open": false }
+    ]
   }
 ] satisfies FromMachine[]
 
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
   hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
-  preview: true, message: true, result: true, directory: true, offset_history: true,
+  preview: true, message: true, result: true, directory: true, offset_history: true, diagnostics: true,
 }
 
 describe('protocol/fixtures/messages.json', () => {

@@ -560,6 +560,13 @@
     "jogStop": {
       "watchdog": "Jog parado pelo watchdog HAL: o sinal de vida do CoffeeCNC parou durante mais tempo do que o limite do watchdog.",
       "probeContact": "Jog parado: contacto do apalpador"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} não está instalado: não está no caminho de pesquisa ({path}).",
+      "alreadyOpen": "{name} já está aberto.",
+      "notStarted": "Não foi possível iniciar {name}.",
+      "notStartedBecause": "Não foi possível iniciar {name}: {error}.",
+      "cannotStart": "As ferramentas HAL não podem ser iniciadas aqui."
     }
   }
 }

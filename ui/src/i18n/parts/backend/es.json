@@ -560,6 +560,13 @@
     "jogStop": {
       "watchdog": "Jog detenido por el watchdog de HAL: el latido de CoffeeCNC se detuvo durante más tiempo que el límite del watchdog.",
       "probeContact": "Jog detenido: contacto del palpador"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} no está instalado: no está en la ruta de búsqueda ({path}).",
+      "alreadyOpen": "{name} ya está abierto.",
+      "notStarted": "No se pudo iniciar {name}.",
+      "notStartedBecause": "No se pudo iniciar {name}: {error}.",
+      "cannotStart": "Las herramientas HAL no se pueden iniciar aquí."
     }
   }
 }

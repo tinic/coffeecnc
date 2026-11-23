@@ -7,6 +7,8 @@ import type {
   AxisStatus,
   RotaryAxisStatus,
   CommandResult,
+  DiagnosticInput,
+  Diagnostics,
   FixedSetter,
   FromMachine,
   Hello,
@@ -49,6 +51,8 @@ import {
 
 export const tickMs = 20
 export const statusMs = 50
+/** The diagnostics view's readings, as the native feed sends them. */
+export const diagnosticsMs = 100
 export const deadmanMs = 150
 export const previewDelayMs = 150
 
@@ -96,6 +100,7 @@ export const hello: Hello = {
   machine_name: 'Demo mill 400 × 250',
   simulated: true,
   quit_supported: true,
+  diagnostics: true,
   axes: ['x', 'y', 'z'],
   machine_units: 'mm',
   jog_increments: [0.01, 0.1, 1, 10],
@@ -196,6 +201,9 @@ export class SimMachine {
   readonly modal: Modal = newModal(defaultTools())
   /** Suppresses status messages, for fast-forwarding. */
   quiet = false
+  /** The page watches the diagnostics view. */
+  private diagnosticsWatched = false
+  private sinceDiagnostics = 0
 
   private readonly emitMessage: (message: FromMachine) => void
   private readonly clock: () => number
@@ -320,6 +328,53 @@ export class SimMachine {
       this.sinceStatus = 0
       this.sendStatus()
     }
+    if (this.diagnosticsWatched) {
+      this.sinceDiagnostics += ms
+      if (this.sinceDiagnostics >= diagnosticsMs) {
+        this.sinceDiagnostics = 0
+        this.emit(this.diagnostics())
+      }
+    }
+  }
+
+  /**
+   * The HAL inputs of the demo mill, as the diagnostics view is sent them: home switches that
+   * close at the home position, limit switches at the ends of travel before homing, an E-stop
+   * chain that is closed, the probe, the spindle and its drive, and three configured rows.
+   */
+  diagnostics(): Diagnostics {
+    const m = this.modal
+    const running = m.spindle !== 'stopped'
+    const rpm = running ? m.speed * this.overrides.spindle : 0
+    const inputs: DiagnosticInput[] = []
+    for (const axis of axisIndices) {
+      const at = this.phys[axis]
+      const joint = { joint: axis, axis: letters[axis] ?? 'x', kind: 'pin' as const }
+      const name = (pin: string): string => `joint.${String(axis)}.${pin}`
+      inputs.push(
+        { role: 'min_limit', ...joint, name: name('neg-lim-sw-in'), state: 'live', value: !this.homed[axis] && at <= travel.min[axis] },
+        { role: 'max_limit', ...joint, name: name('pos-lim-sw-in'), state: 'live', value: !this.homed[axis] && at >= travel.max[axis] },
+        { role: 'home_switch', ...joint, name: name('home-sw-in'), state: 'live', value: Math.abs(at - homePosition[axis]) < 0.5 },
+        { role: 'amp_fault', ...joint, name: name('amp-fault-in'), state: 'unwired', value: false },
+      )
+    }
+    const pin = (role: DiagnosticInput['role'], name: string, value: boolean | number | null,
+      state: DiagnosticInput['state'] = 'live'): DiagnosticInput => ({ role, name, kind: 'pin', state, value })
+    inputs.push(
+      pin('estop_chain', 'iocontrol.0.emc-enable-in', true),
+      pin('estop_request', 'iocontrol.0.user-enable-out', this.machine !== 'estop'),
+      pin('probe', 'motion.probe-input', this.probeContact, this.probe ? 'live' : 'undriven'),
+      pin('spindle_on', 'spindle.0.on', running),
+      pin('spindle_at_speed', 'spindle.0.at-speed', running),
+      pin('spindle_speed_out', 'spindle.0.speed-out', m.spindle === 'reverse' ? -rpm : rpm),
+      pin('spindle_speed_in', 'spindle.0.speed-in', 0, 'unwired'),
+      pin('spindle_fault', 'spindle.0.amp-fault-in', false, 'unwired'),
+      { role: 'configured', label: 'E-stop button', name: 'estop-ext', kind: 'signal', state: 'live', value: true },
+      { role: 'configured', label: 'VFD Modbus errors', name: 'vfd.modbus-errors', kind: 'pin', state: 'live', value: 0 },
+      { role: 'configured', label: 'Coolant pump', name: 'coolant-pump-ok', kind: 'pin', state: 'missing', value: null },
+    )
+    return { type: 'diagnostics', inputs,
+      tools: (['halshow', 'halmeter', 'halscope'] as const).map((tool) => ({ tool, available: false, open: false })) }
   }
 
   /** Runs the machine for `ms` of its own time. */
@@ -1061,6 +1116,12 @@ export class SimMachine {
         this.emit(this.preview)
         this.sendStatus()
         return null
+      case 'watch_diagnostics':
+        this.diagnosticsWatched = command.on
+        this.sinceDiagnostics = diagnosticsMs
+        return null
+      case 'launch_hal_tool':
+        return reject('The browser simulator has no HAL tools: it runs without LinuxCNC.')
       case 'quit':
         if (this.exec !== null) return reject('Stop the program before quitting.')
         // Exercise the shutdown request without closing the development browser or resetting E-stop.

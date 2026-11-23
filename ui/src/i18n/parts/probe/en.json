@@ -268,7 +268,7 @@
       "sessionOnlyReason": "Kept for this session only: {reason}",
       "gone": "This entry is no longer in the history.",
       "reviewTitle": "Restore {target} {fields}?",
-      "effectTool": "Writes the earlier {target} values back to the tool table (G10 L1). An applied length changes at the next G43.",
+      "effectTool": "Writes the earlier {target} values back to the tool table (G10 L1). When {target} is in the spindle with its length applied, the length is applied again (G43).",
       "effectShift": "Writes the earlier G92/G52 shift back (G52). It is added to every work system.",
       "effectWork": "Writes the earlier {target} values back (G10 L2). Other axes stay unchanged.",
       "noMotion": "The machine does not move.",

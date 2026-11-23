@@ -46,9 +46,19 @@ struct HelperRequest {
   Vec3 tool_offset{};    // in effect at the start
   double feed{};         // mm/min
   bool block_delete{};
-  int wcs{1}; // the active system; the only one whose offsets are known
+  int wcs{1}; // the active system
+  // The work systems whose offsets the parameter file holds, bit `wcs - 1` each; the active
+  // one is always known. A move in another one ends the preview.
+  unsigned known_systems{};
+  // Whether the parameter file holds the G28 and the G30 position; without one, a G28 or G30
+  // ends the preview.
+  bool saved_g28{};
+  bool saved_g30{};
   // [EMCIO] TOOL_CHANGE_AT_G30: a tool change then moves to a saved position.
   bool tool_change_at_g30{};
+  // The codes [RS274NGC] REMAP names, lower case ("m6", "t"): a block that uses one ends the
+  // preview.
+  std::vector<std::string> remapped;
   // [EMCIO] TOOL_CHANGE_POSITION: task moves there before a tool change. Machine coordinates.
   std::optional<Vec3> tool_change_position;
   std::size_t max_points{400000};

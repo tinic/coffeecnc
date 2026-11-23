@@ -424,6 +424,39 @@ export interface RestoreSummary {
    * file (where it points is not written).
    */
   files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same' | 'at_exit'; bytes: number; symlink: boolean }[]
+/** One entry of the alarm log: an operator message, or a command result other than `accepted`. */
+export interface AlarmEntry {
+  /** The run of CoffeeCNC it was told in, from 1; a higher number is a later run. */
+  session: number
+  /** Milliseconds since the Unix epoch. */
+  time: number
+  level: 'error' | 'info'
+  text: string
+  /** A result's outcome; null for an operator message. */
+  outcome: Exclude<CommandResult['outcome'], 'accepted'> | null
+  /**
+   * The command as a panel sent it, without its id: null for an operator message or when it is
+   * not known, `{ type }` alone for a long one. An older panel may have sent it: read it defensively.
+   */
+  command: Record<string, unknown> | null
+}
+
+/**
+ * What the executable told before this page was loaded, oldest first, at most 500 entries: of
+ * earlier runs and of earlier pages of this run. Sent once after `hello`; what is told after it
+ * arrives as `message` and `result`.
+ */
+export interface AlarmLog {
+  type: 'alarm_log'
+  /** `saved`: kept in the machine's data directory; `session_only`: `reason` says why not. */
+  storage: 'saved' | 'session_only'
+  /** Why the log is not saved, or what went wrong reading or writing it; empty otherwise. */
+  reason: string
+  /** This run's session number. */
+  session: number
+  /** Lines of the saved log that could not be read. */
+  skipped: number
+  entries: AlarmEntry[]
 }
 
 /**
@@ -603,6 +636,7 @@ export type FromMachine =
   | OffsetHistory
   | BackupWritten
   | RestoreSummary
+  | AlarmLog
   | Diagnostics
   | OperatorMessage
   | CommandResult

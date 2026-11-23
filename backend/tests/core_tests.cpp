@@ -544,6 +544,32 @@ void estop_request_results() {
           "no status: failed, and says so");
 }
 
+// What follows a G10 L1 of a tool length so that the offset in effect follows the table (#287).
+void tool_length_follow_up() {
+  const auto follows = [](int written, int loaded, const std::array<double, 3>& offset,
+                          std::optional<double> loaded_length) {
+    return after_tool_length_write(written, loaded, {offset, loaded_length});
+  };
+  // The loaded tool's length in effect (G43 H<tool>): G43 H<tool> follows.
+  require(follows(3, 3, {0, 0, 48.2}, 48.2) == "G43 H3", "G43 of the loaded tool: G43 H3");
+  require(follows(3, 3, {0, 0, 48.2005}, 48.2) == "G43 H3",
+          "within 0.001 mm is the loaded tool's length");
+  require(follows(3, 3, {0, 0, -12.5}, -12.5) == "G43 H3", "a negative length");
+  // Another offset: another H, G43.1 with its own value, a G43.2 sum. It stays.
+  require(!follows(3, 3, {0, 0, 40}, 48.2), "another H: nothing");
+  require(!follows(3, 3, {0, 0, 88.2}, 48.2), "a G43.2 sum that contains the length: nothing");
+  require(!follows(3, 3, {0, 0, 48.202}, 48.2), "beyond 0.001 mm: nothing");
+  require(!follows(3, 3, {1, 0, 48.2}, 48.2), "an X offset (G43.1 X): nothing");
+  require(!follows(3, 3, {0, -1, 48.2}, 48.2), "a Y offset: nothing");
+  // No offset in effect (G49, or a zero length, which LinuxCNC reports as G49).
+  require(!follows(3, 3, {0, 0, 0}, 48.2), "G49: nothing");
+  require(!follows(3, 3, {0, 0, 0}, 0), "a zero length reads as G49: nothing");
+  require(!follows(3, 3, {0, 0, 48.2}, std::nullopt), "no row for the loaded tool: nothing");
+  // Another tool than the loaded one, or an empty spindle.
+  require(!follows(2, 3, {0, 0, 48.2}, 48.2), "another tool: nothing");
+  require(!follows(0, 0, {0, 0, 48.2}, 48.2), "empty spindle: nothing");
+}
+
 // Motion's refusal of a start under motion.jog-inhibit, as the port's reason carries it.
 void jog_inhibit_refusal() {
   require(is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active."), "LinuxCNC's text");
@@ -639,6 +665,7 @@ auto main() -> int {
     jog_stop_attribution();
     jog_inhibit_refusal();
     estop_request_results();
+    tool_length_follow_up();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << "Check " << checks << " failed: " << error.what() << '\n';

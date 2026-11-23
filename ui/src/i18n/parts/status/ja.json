@@ -179,6 +179,7 @@
       "reopening": "元のプログラムを開き直しています",
       "checking": "プログラムをチェック中です",
       "breakpointCheck": "ブレークポイントには完全なプログラムチェックが必要です",
+      "breakpointPastPreview": "プレビューはこの行より前で終わっています。プレビューされた経路上の行を選んでください",
       "nothingRunning": "実行中のものはありません",
       "waitingToolChange": "工具交換を待っています",
       "dismissSpindleConfirm": "続行する前に主軸の確認を閉じてください",
@@ -218,7 +219,13 @@
       "faultStale": "古い状態を報告",
       "faultStaleTip": "LinuxCNC が状態の書き込みを停止し、最後の状態が届き続けます。",
       "faultDown": "切断を報告",
-      "faultDownTip": "LinuxCNC に接続されていません。仮の状態です。"
+      "faultDownTip": "LinuxCNC に接続されていません。仮の状態です。",
+      "sinceLoad": "このセッション",
+      "noneSinceLoad": "このセッションにはまだメッセージがありません。",
+      "beforeLoad": "このセッション（パネル再読み込み前）",
+      "earlierRun": "以前のセッション、{time}",
+      "notSaved": "このログは保存されません：{reason}",
+      "skipped": "保存されたログの破損した {count} 行をスキップしました。"
     },
     "quit": {
       "title": "CoffeeCNC を終了しますか？",

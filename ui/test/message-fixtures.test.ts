@@ -1350,6 +1350,27 @@ const examples = [
     "reason": "No machine identity configured",
     "entries": []
   },
+  {
+    "type": "alarm_log",
+    "storage": "saved",
+    "reason": "",
+    "session": 3,
+    "skipped": 1,
+    "entries": [
+      { "session": 1, "time": 1700000000000, "level": "error", "text": "Joint 2 following error", "outcome": null, "command": null },
+      { "session": 2, "time": 1700000100000, "level": "info", "text": "Program loaded", "outcome": null, "command": null },
+      { "session": 2, "time": 1700000105000, "level": "error", "text": "The machine is off.", "outcome": "rejected",
+        "command": { "type": "home", "axis": "x" } }
+    ]
+  },
+  {
+    "type": "alarm_log",
+    "storage": "session_only",
+    "reason": "No machine identity configured",
+    "session": 1,
+    "skipped": 0,
+    "entries": []
+  },
   {"type": "backup_written", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "files": 8, "bytes": 5321, "not_included": [{"path": "LIB:basic_sim.tcl", "reason": "a HAL file of LinuxCNC's own library"}]},
   {"type": "backup_written", "path": "/home/cnc/coffeecnc-machine-20261123-140200.tar.gz", "files": 3, "bytes": 1024, "not_included": []},
   {"type": "restore_summary", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75", "machine_id": "G0759", "created": 1795960920000, "files": [{"role": "ini", "name": "config/g0759.ini", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.ini", "change": "same", "bytes": 4012, "symlink": false}, {"role": "hal", "name": "config/g0759.hal", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.hal", "change": "changed", "bytes": 2210, "symlink": true}, {"role": "tool_table", "name": "tool-table/tool.tbl", "target": "/home/cnc/linuxcnc/configs/g0759/tool.tbl", "change": "changed", "bytes": 310, "symlink": false}, {"role": "parameters", "name": "parameters/g0759.var", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.var", "change": "at_exit", "bytes": 1882, "symlink": false}, {"role": "data", "name": "data/tool-models.json", "target": "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "change": "new", "bytes": 512, "symlink": false}]},
@@ -1377,7 +1398,8 @@ const examples = [
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
   hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
-  preview: true, message: true, result: true, directory: true, offset_history: true, backup_written: true, restore_summary: true, diagnostics: true,
+  preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, backup_written: true,
+  restore_summary: true, diagnostics: true,
 }
 
 describe('protocol/fixtures/messages.json', () => {

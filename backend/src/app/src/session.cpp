@@ -1131,8 +1131,11 @@ auto Session::check_program_start(const Queued& request, const Run& command,
   if (program_check && !program_check->errors.empty())
     return program_check->errors.front();
   if (command.breakpoint) {
+    // The path up to where a preview ends is the program's own: a breakpoint on it pauses the
+    // run before anything the preview could not follow. Run itself needs the review then.
     if (!check.source.program_snapshot || !check.files_changed || !program_check ||
-        check.preview->state != PreviewState::ready)
+        (check.preview->state != PreviewState::ready &&
+         check.preview->state != PreviewState::failed))
       return "A breakpoint needs a complete program check.";
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
           return segment.line == command.breakpoint->line;
@@ -1929,8 +1932,24 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
     block = "G10 L1 P" + std::to_string(entry->number) + words;
     break;
   }
+  // A length written for the tool in the spindle: the offset in effect follows it (#287).
+  std::optional<std::string> follow_up;
+  const bool writes_length = std::ranges::contains(entry->changes, HistoryField::length,
+                                                   &HistoryChange::field);
+  if (entry->target == HistoryTarget::tool && writes_length &&
+      entry->number == state.tool_in_spindle) {
+    const auto effect = port_.tool_length_in_effect();
+    if (!effect)
+      return answer({CommandOutcome::rejected, effect.error()});
+    follow_up = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
+  }
   const auto mark = history_->begin(HistorySource::restore, entry->id);
   auto restored = mdi(request, block);
+  if (follow_up && restored.kind == StageKind::reply &&
+      restored.reply.outcome == CommandOutcome::accepted) {
+    auto applied = mdi(request, *follow_up);
+    restored = applied.kind == StageKind::cancelled ? cancelled(touch_off_reason) : std::move(applied);
+  }
   if (entry->target == HistoryTarget::wcs && restored.kind == StageKind::reply &&
       restored.reply.outcome == CommandOutcome::accepted)
     history_->written(mark, entry->number, values, clock().unix_time);

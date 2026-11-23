@@ -162,6 +162,11 @@ auto write_request(const HelperRequest& request) -> std::string {
   line("feed", std::format("{}", request.feed));
   line("block_delete", request.block_delete ? "1" : "0");
   line("wcs", std::format("{}", request.wcs));
+  line("known_systems", std::format("{}", request.known_systems));
+  line("saved_g28", request.saved_g28 ? "1" : "0");
+  line("saved_g30", request.saved_g30 ? "1" : "0");
+  for (const auto& code : request.remapped)
+    line("remapped", code);
   line("tool_change_at_g30", request.tool_change_at_g30 ? "1" : "0");
   if (request.tool_change_position)
     line("tool_change_position", vec(*request.tool_change_position));
@@ -218,6 +223,14 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
       good = flag(line, request.block_delete);
     else if (key == "wcs")
       good = number(line, request.wcs) && request.wcs >= 1 && request.wcs <= 9;
+    else if (key == "known_systems")
+      good = number(line, request.known_systems) && request.known_systems < (1U << 9);
+    else if (key == "saved_g28")
+      good = flag(line, request.saved_g28);
+    else if (key == "saved_g30")
+      good = flag(line, request.saved_g30);
+    else if (key == "remapped")
+      request.remapped.push_back(rest(line));
     else if (key == "tool_change_at_g30")
       good = flag(line, request.tool_change_at_g30);
     else if (key == "tool_change_position") {

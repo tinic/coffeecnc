@@ -1354,6 +1354,50 @@
     "entries": []
   },
   {
+    "type": "alarm_log",
+    "storage": "saved",
+    "reason": "",
+    "session": 3,
+    "skipped": 1,
+    "entries": [
+      {
+        "session": 1,
+        "time": 1700000000000,
+        "level": "error",
+        "text": "Joint 2 following error",
+        "outcome": null,
+        "command": null
+      },
+      {
+        "session": 2,
+        "time": 1700000100000,
+        "level": "info",
+        "text": "Program loaded",
+        "outcome": null,
+        "command": null
+      },
+      {
+        "session": 2,
+        "time": 1700000105000,
+        "level": "error",
+        "text": "The machine is off.",
+        "outcome": "rejected",
+        "command": {
+          "type": "home",
+          "axis": "x"
+        }
+      }
+    ]
+  },
+  {
+    "type": "alarm_log",
+    "storage": "session_only",
+    "reason": "No machine identity configured",
+    "session": 1,
+    "skipped": 0,
+    "entries": []
+  },
+  {
     "type": "backup_written",
     "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
     "files": 8,

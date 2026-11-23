@@ -6,6 +6,7 @@ import { reactive } from 'vue'
 
 import type { Transport } from './bridge'
 import type {
+  AlarmLog,
   BackupWritten,
   CommandBody,
   CommandResult,
@@ -92,6 +93,8 @@ export interface PanelState {
   workOffsets: WorkOffsets | null
   /** Null until the executable sends one; a peer without a history never does. */
   offsetHistory: OffsetHistory | null
+  /** What was told before this page was loaded; null until the executable sends it. */
+  alarmLog: AlarmLog | null
   /** The last HAL reading, while the diagnostics view watches; null before the first. */
   diagnostics: Diagnostics | null
   program: ProgramText | null
@@ -280,6 +283,7 @@ export function createPanel(options: PanelOptions): Panel {
     startupSpindleRpm: 0,
     workOffsets: null,
     offsetHistory: null,
+    alarmLog: null,
     diagnostics: null,
     program: null,
     preview: null,
@@ -384,6 +388,7 @@ export function createPanel(options: PanelOptions): Panel {
         state.toolModels = null
         state.toolTable = null
         state.offsetHistory = null
+        state.alarmLog = null
         state.diagnostics = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
@@ -459,6 +464,9 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'offset_history':
         state.offsetHistory = message
+        break
+      case 'alarm_log':
+        state.alarmLog = message
         break
       case 'diagnostics':
         state.diagnostics = message

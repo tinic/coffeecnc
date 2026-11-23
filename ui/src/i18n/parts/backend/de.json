@@ -169,7 +169,12 @@
       "noSettingsStorage": "Der Speicher für Bedienereinstellungen gehört nicht zu dieser Sitzung.",
       "tooManySettingsChanges": "Zu viele Einstellungsänderungen warten.",
       "settingsPageEnded": "Diese Einstellungsseite ist beendet.",
-      "tooManyChanges": "Zu viele Werkzeugmodell-Änderungen warten."
+      "tooManyChanges": "Zu viele Werkzeugmodell-Änderungen warten.",
+      "fileNotOpenedAppend": "die Datei kann nicht geöffnet werden: {error}",
+      "fileNotWritten": "die Datei kann nicht geschrieben werden: {error}",
+      "fileNotSynchronised": "die Datei kann nicht synchronisiert werden: {error}",
+      "fileNotClosed": "die Datei kann nicht geschlossen werden: {error}",
+      "appendUnsupported": "an {path} kann hier nicht angehängt werden"
     },
     "offsetHistory": {
       "nameNotString": "ein Name ist keine Zeichenkette",
@@ -266,6 +271,7 @@
       "cannotReadToolTable": "Die Werkzeugtabelle {file} kann nicht gelesen werden.",
       "cannotWriteToolTable": "Die Werkzeugtabelle {file} kann nicht geschrieben werden.",
       "cannotReplaceToolTable": "Die Werkzeugtabelle {file} kann nicht ersetzt werden.",
+      "lengthOffsetUnreadable": "Die aktive Werkzeuglängenkorrektur kann nicht gelesen werden.",
       "toolTableNotLoaded": "Die Werkzeugtabellendatei {file} wurde geändert, aber die Anfrage wurde abgebrochen, bevor LinuxCNC sie laden sollte.",
       "cannotOpenChannels": "Die NML-Kanäle von LinuxCNC können nicht aus {file} geöffnet werden.",
       "restoreFromTable": "T{tool} konnte nicht aus der Werkzeugtabelle wiederhergestellt werden.",
@@ -436,6 +442,7 @@
       "stateChanged": "Der Maschinenzustand hat sich geändert. Prüfen Sie eine neue Programmprüfung.",
       "workOriginChanged": "Der Werkstücknullpunkt hat sich geändert. Prüfen Sie eine neue Programmprüfung.",
       "restartContextChanged": "Maschine ein/aus, Programm oder Werkstückkoordinatensystem haben sich geändert.",
+      "restartSelectWcs": "Diese Zeile läuft in {wcs}. Wählen Sie {wcs} und dann die Zeile erneut.",
       "remainStopped": "Die Maschine muss an der in der Vorschau gezeigten Position stehen bleiben.",
       "removeProbe": "Entfernen Sie den Messtaster, bevor Sie ein Programm ab einer Zeile starten.",
       "restartSpindleLimit": "Die Spindeldrehzahl für den Wiederanlauf überschreitet die Maschinengrenze.",
@@ -480,7 +487,9 @@
       "halNotServiced": "Die HAL-Komponente von CoffeeCNC wird nicht bedient.",
       "toolChangeGone": "LinuxCNC wartet nicht mehr auf diesen Werkzeugwechsel.",
       "toolInSpindleNumber": "Werkzeug {tool} ist in der Spindel.",
-      "toolNotInTable": "Werkzeug {tool} ist nicht in der Werkzeugtabelle."
+      "toolNotInTable": "Werkzeug {tool} ist nicht in der Werkzeugtabelle.",
+      "restartSynchFailed": "LinuxCNC hat seine Parameter für den Neustart nicht gespeichert.",
+      "restartParametersChanged": "Die gespeicherten Parameter der Maschine haben sich geändert, nachdem der Neustart geprüft wurde. Wählen Sie die Zeile erneut."
     },
     "previewEngine": {
       "cannotRead": "Das Programm kann für eine Vorschau nicht gelesen werden oder ist größer als {size}.",
@@ -512,7 +521,12 @@
       "lineErrorStop": "Zeile {line}: {detail}.",
       "rotary": "Programmvorschau und Wiederanlauf ab Zeile sind bei Konfigurationen mit Rundachsen nicht verfügbar.",
       "iniUnreadable": "Die INI-Datei der Maschine kann für die Vorschau nicht gelesen werden.",
-      "remap": "Diese Maschine belegt Codes um ([RS274NGC] REMAP): Die Vorschau kann einem umbelegten Code nicht folgen und wird nicht berechnet.",
+      "stopUnknownSystem": "fährt in {wcs}, dessen Verschiebungen nicht in der Parameterdatei der Maschine stehen",
+      "stopG30ToolChange": "ein Werkzeugwechsel, der zur G30-Position fährt ([EMCIO] TOOL_CHANGE_AT_G30), die nicht in der Parameterdatei der Maschine steht",
+      "stopUndefinedParameter": "liest {name}, das das Programm nicht setzt: Sein Wert aus einem früheren Programm oder MDI-Satz ist der Vorschau nicht bekannt",
+      "stopRemapped": "{code} ist auf dieser Maschine umbelegt ([RS274NGC] REMAP): Was es tut, ist der Vorschau nicht bekannt",
+      "stopSavedPosition": "G{code} fährt zu einer Position, die nicht in der Parameterdatei der Maschine steht",
+      "stopTask": "liest den Parameter _task, der auf der Maschine 1 und in der Vorschau 0 ist: Das Programm kann sich in beiden unterschiedlich verhalten",
       "randomToolChanger": "Diese Maschine hat einen Werkzeugwechsler mit wahlfreier Platzbelegung: Es wird keine Vorschau berechnet.",
       "oWordCase": "Diese Maschine behält die Groß-/Kleinschreibung von O-Wort-Namen bei ([RS274NGC] NO_DOWNCASE_OWORD): Es wird keine Vorschau berechnet.",
       "notInstalled": "Das Vorschauprogramm (coffeecnc-preview) ist nicht installiert.",
@@ -520,7 +534,13 @@
       "noDirectory": "Es konnte kein Verzeichnis für die Dateien der Vorschau angelegt werden, oder sein Pfad enthält Zeichen, die der Interpreter erweitern würde.",
       "filesNotWritten": "Die Dateien der Vorschau konnten nicht geschrieben werden.",
       "toolChangeMoves": "Der konfigurierte Werkzeugwechsel bewegt die Maschine eigenständig.",
-      "changedDuring": "Das Programm oder eine seiner Unterprogrammdateien hat sich bei jeder der {runs} Berechnungen auf der Festplatte geändert: keine Vorschau."
+      "changedDuring": "Das Programm oder eine seiner Unterprogrammdateien hat sich bei jeder der {runs} Berechnungen auf der Festplatte geändert: keine Vorschau.",
+      "stopIniHal": "liest einen INI- oder HAL-Wert ({names}), den die Vorschau nicht hat",
+      "stopExists": "fragt, ob ein globaler Parameter ({name}) existiert: Auf der Maschine kann er aus einem früheren Programm oder MDI-Satz existieren, was die Vorschau nicht weiß",
+      "stopExistsNamed": "fragt außerhalb eines Unterprogramms, ob {name} existiert: Auf der Maschine kann er aus einem früheren Programm oder MDI-Satz existieren, was die Vorschau nicht weiß",
+      "stopComputedParameter": "liest einen Parameter, dessen Nummer berechnet wird (#[...], ##): Welcher es ist und ob das Programm ihn gesetzt hat, ist der Vorschau nicht bekannt",
+      "stopReturnValue": "liest {name} oder {other}, bevor ein Unterprogramm des Programms zurückgekehrt ist: Sein Wert aus einem früheren Programm oder MDI-Satz ist der Vorschau nicht bekannt",
+      "stopDefinitionBlock": "ein O-Wort in einer Unterprogrammdefinition gehört zu einem Block außerhalb davon: Welche Zeilen laufen, ist der Vorschau nicht bekannt"
     },
     "nmlStatus": {
       "pauseFirst": "Pausieren Sie ein laufendes Programm, bevor Sie Z tippen.",
@@ -610,6 +630,15 @@
       "notMarked": "der Beginn der Wiederherstellung konnte nicht vermerkt werden: {detail}",
       "readHere": "{path} kann hier nicht gelesen werden",
       "writeHere": "{path} kann hier nicht geschrieben werden"
+    },
+    "alarmLog": {
+      "cannotRead": "Das Alarmprotokoll {file} kann nicht gelesen werden: {detail}",
+      "notRotated": "Das Alarmprotokoll konnte nicht rotiert werden: {detail}",
+      "notSaved": "Das Alarmprotokoll konnte nicht gespeichert werden: {detail}",
+      "entriesLost": "Einige Einträge des Alarmprotokolls konnten nicht gespeichert werden.",
+      "keptForRun": "Das Alarmprotokoll in {directory} wird nur für diesen Lauf geführt: {detail}",
+      "inUse": "es wird von einem anderen CoffeeCNC verwendet.",
+      "notLocked": "seine Sperre kann nicht gesetzt werden: {detail}."
     },
     "halDiagnostics": {
       "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",

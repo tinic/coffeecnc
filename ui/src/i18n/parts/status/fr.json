@@ -179,6 +179,7 @@
       "reopening": "Réouverture du programme d’origine",
       "checking": "Vérification du programme",
       "breakpointCheck": "Un point d’arrêt nécessite une vérification complète du programme",
+      "breakpointPastPreview": "L’aperçu se termine avant cette ligne : choisissez une ligne sur la trajectoire de l’aperçu",
       "nothingRunning": "Rien n’est en cours",
       "waitingToolChange": "En attente du changement d’outil",
       "dismissSpindleConfirm": "Fermez la confirmation de broche avant de continuer",
@@ -218,7 +219,13 @@
       "faultStale": "Signale périmé",
       "faultStaleTip": "LinuxCNC n’écrit plus son état ; le dernier continue d’arriver.",
       "faultDown": "Signale hors ligne",
-      "faultDownTip": "Pas de connexion à LinuxCNC ; état fictif."
+      "faultDownTip": "Pas de connexion à LinuxCNC ; état fictif.",
+      "sinceLoad": "Cette session",
+      "noneSinceLoad": "Aucun message dans cette session pour l’instant.",
+      "beforeLoad": "Cette session, avant le rechargement du panneau",
+      "earlierRun": "Session précédente, {time}",
+      "notSaved": "Ce journal n’est pas enregistré : {reason}",
+      "skipped": "{count} ligne endommagée du journal enregistré a été ignorée. | {count} lignes endommagées du journal enregistré ont été ignorées."
     },
     "quit": {
       "title": "Quitter CoffeeCNC ?",

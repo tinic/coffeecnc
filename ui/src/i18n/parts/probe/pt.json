@@ -268,7 +268,7 @@
       "sessionOnlyReason": "Guardado apenas para esta sessão: {reason}",
       "gone": "Esta entrada já não está no histórico.",
       "reviewTitle": "Repor {target} {fields}?",
-      "effectTool": "Volta a escrever os valores anteriores de {target} na tabela de ferramentas (G10 L1). Um comprimento aplicado muda no próximo G43.",
+      "effectTool": "Volta a escrever os valores anteriores de {target} na tabela de ferramentas (G10 L1). Se {target} estiver no fuso com o seu comprimento aplicado, o comprimento é aplicado de novo (G43).",
       "effectShift": "Volta a escrever o deslocamento G92/G52 anterior (G52). É somado a todos os sistemas de coordenadas da peça.",
       "effectWork": "Volta a escrever os valores anteriores de {target} (G10 L2). Os outros eixos não mudam.",
       "noMotion": "A máquina não se desloca.",

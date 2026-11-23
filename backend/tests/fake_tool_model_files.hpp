@@ -129,6 +129,15 @@ public:
     calls.push_back("discard " + path);
     disk.files.erase(path);
   }
+  // A failing append writes half of the bytes, as a full disk does.
+  auto append(const std::string& path, std::string_view bytes) -> Done override {
+    if (begin("append", path)) {
+      disk.files[path] += bytes.substr(0, bytes.size() / 2);
+      return std::unexpected(std::string("the file cannot be written: No space left on device"));
+    }
+    disk.files[path] += bytes;
+    return {};
+  }
 
   // Beneath `root`: a link on the way is refused, the last component is followed for reading.
   // Steps: read_beneath, replace (before the rename), replace_sync (after it), remove.

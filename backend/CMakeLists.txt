@@ -109,6 +109,11 @@ if(BUILD_TESTING)
       coffeecnc_enable_analyzers(coffeecnc_machine_data_tests)
       add_test(NAME machine_data COMMAND coffeecnc_machine_data_tests ${PROJECT_BINARY_DIR})
     endif()
+    add_executable(coffeecnc_alarm_log_tests tests/alarm_log_tests.cpp)
+    target_link_libraries(coffeecnc_alarm_log_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_alarm_log_tests)
+    add_test(NAME alarm_log COMMAND coffeecnc_alarm_log_tests ${PROJECT_BINARY_DIR})
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)
@@ -202,7 +207,8 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_preview_engine_tests PRIVATE coffeecnc_linuxcnc
           coffeecnc_project_options)
         target_compile_definitions(coffeecnc_preview_engine_tests PRIVATE
-          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples")
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+          COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam")
         coffeecnc_enable_analyzers(coffeecnc_preview_engine_tests)
         add_test(NAME preview_engine COMMAND coffeecnc_preview_engine_tests
           $<TARGET_FILE:coffeecnc_preview> ${PROJECT_BINARY_DIR})
@@ -216,6 +222,7 @@ if(BUILD_TESTING)
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
         COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+        COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam"
         COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
       if(TARGET coffeecnc_preview)
         add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
@@ -427,6 +434,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 program-breakpoint)
         set_tests_properties(linuxcnc_program_breakpoint_g0759 PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+        add_test(NAME linuxcnc_cam_programs_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 240 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_cam_programs_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 cam-programs)
+        set_tests_properties(linuxcnc_cam_programs_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 570)
       endif()
       add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759

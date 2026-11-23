@@ -7,6 +7,7 @@
 //                  that report `stale` or `down`
 
 import type { Listener, Transport } from '../bridge'
+import { SimAlarmLog } from './alarm-log'
 import { SimMachine, tickMs, type LinkFault } from './machine'
 import { applyScene } from './scenes'
 
@@ -23,8 +24,10 @@ function parseFault(text: string | null): LinkFault {
 
 export function createSimulator(parameters: URLSearchParams): Transport {
   const listeners: Listener[] = []
+  const alarms = new SimAlarmLog(() => localStorage)
   const machine = new SimMachine({
     emit: (message): void => {
+      alarms.observe(message, Date.now())
       for (const listener of listeners) {
         listener(message)
       }
@@ -36,6 +39,15 @@ export function createSimulator(parameters: URLSearchParams): Transport {
     fault = next
     machine.setFault(next)
   }
+  const handle = (message: Parameters<Transport['send']>[0]): void => {
+    alarms.request(message)
+    machine.handle(message)
+    // After hello and the snapshots, as the executable sends it.
+    if (message.type === 'ready' && fault !== 'silent') {
+      const view = alarms.view()
+      for (const listener of listeners) listener(view)
+    }
+  }
   return {
     simulated: true,
     send: (message): void => {
@@ -46,7 +58,7 @@ export function createSimulator(parameters: URLSearchParams): Transport {
         if (scene !== null) {
           applyScene(machine, scene, parameters.get('setup') ?? 'top')
         }
-        machine.handle(message)
+        handle(message)
         const wanted = parseFault(parameters.get('fault'))
         if (wanted !== 'none' || scene === 'stale') {
           setFault(wanted === 'none' ? 'silent' : wanted)
@@ -56,7 +68,7 @@ export function createSimulator(parameters: URLSearchParams): Transport {
         }, tickMs)
         return
       }
-      machine.handle(message)
+      handle(message)
     },
     listen: (listener): void => {
       listeners.push(listener)

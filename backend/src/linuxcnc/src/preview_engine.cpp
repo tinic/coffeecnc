@@ -68,7 +68,48 @@ struct Manifest {
   SnapshotFile program;
   std::vector<SnapshotFile> subroutines;
   std::vector<Call> calls; // every distinct name called, found or not
+  // The machine's parameter file as read with the program; none when it cannot be read.
+  std::optional<std::string> parameters;
+  int wcs{1}; // the active work system, whose values the live state writes over
 };
+
+// The machine's parameter file is read up to this size.
+constexpr std::size_t max_parameter_bytes = std::size_t{1024} * 1024;
+
+// The first parameter of the active work system's block (5221, 5241, ...).
+auto system_base(int wcs) -> int { return 5221 + 20 * (wcs - 1); }
+
+// The values of a parameter file that the preview takes from it: without G92 (5210-5219), the
+// active system (5220) and its offsets, which the live state writes over.
+auto file_values(const std::optional<std::string>& text, int wcs)
+    -> std::optional<std::map<int, double>> {
+  if (!text)
+    return {};
+  auto values = stored_parameters(*text);
+  std::erase_if(values, [base = system_base(wcs)](const auto& entry) {
+    return (entry.first >= 5210 && entry.first <= 5220) ||
+           (entry.first >= base && entry.first <= base + 9);
+  });
+  return values;
+}
+
+// What the preview knows from a parameter file: the work systems and saved positions it holds.
+struct Saved {
+  unsigned systems{};
+  bool g28{};
+  bool g30{};
+};
+auto saved_in(const std::map<int, double>& parameters) -> Saved {
+  const auto has = [&](int first) {
+    return parameters.contains(first) && parameters.contains(first + 1) &&
+           parameters.contains(first + 2);
+  };
+  Saved saved{0, has(5161), has(5181)};
+  for (int wcs = 1; wcs <= 9; ++wcs)
+    if (has(system_base(wcs)))
+      saved.systems |= 1U << static_cast<unsigned>(wcs - 1);
+  return saved;
+}
 
 auto is_cancelled(const Cancelled& cancelled) -> bool { return cancelled && cancelled(); }
 
@@ -173,6 +214,8 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
       manifest.subroutines.push_back({std::move(found), name + ".ngc", std::move(*text)});
     }
   }
+  if (!settings.parameter_file.empty())
+    manifest.parameters = read_file(settings.parameter_file, max_parameter_bytes);
   return manifest;
 }
 
@@ -180,7 +223,16 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
 // file compared byte for byte. `cancelled` is asked before every name and every file; given
 // up, the answer is "no change".
 auto files_differ(const Manifest& manifest, const std::vector<std::string>& search_path,
-                  const Cancelled& cancelled, const Lookups& lookups) -> bool {
+                  const std::string& parameter_file, const Cancelled& cancelled,
+                  const Lookups& lookups) -> bool {
+  // The parameter file by its values: task writes it again and again with the same ones.
+  if (!parameter_file.empty()) {
+    if (is_cancelled(cancelled))
+      return false;
+    if (file_values(read_file(parameter_file, max_parameter_bytes), manifest.wcs) !=
+        file_values(manifest.parameters, manifest.wcs))
+      return true;
+  }
   for (const auto& call : manifest.calls) {
     if (is_cancelled(cancelled))
       return false;
@@ -211,6 +263,7 @@ auto plain_path(std::string_view path) -> bool {
 struct StartState {
   std::vector<std::string> codes;
   std::string inherited_motion;
+  std::string tool_length; // G43, G43.1, G43.2 or G49, as task has it
 };
 auto start_state(const InterpreterStart& start) -> std::expected<StartState, std::string> {
   StartState state;
@@ -262,6 +315,12 @@ auto start_state(const InterpreterStart& start) -> std::expected<StartState, std
       break;
     case 800:
       motion.clear();
+      break;
+    case 430:
+    case 431:
+    case 432:
+    case 490:
+      state.tool_length = code;
       break;
     case 171:
     case 181:
@@ -327,15 +386,9 @@ auto start_state(const InterpreterStart& start) -> std::expected<StartState, std
 
 // The machine's parameter file with what is live written over it: the active work system, its
 // rotation and G92. Machine units, as the interpreter keeps the file.
-auto parameter_text(const PreviewSettings& settings, const PreviewInputs& inputs) -> std::string {
-  std::map<int, double> parameters;
-  if (const auto saved = read_file(settings.parameter_file, std::size_t{1024} * 1024)) {
-    std::istringstream lines{*saved};
-    int number = 0;
-    double value = 0;
-    while (lines >> number >> value)
-      parameters[number] = value;
-  }
+auto parameter_text(const PreviewSettings& settings, const PreviewInputs& inputs,
+                    const std::optional<std::string>& saved) -> std::string {
+  auto parameters = saved ? stored_parameters(*saved) : std::map<int, double>{};
   const double unit = settings.units_per_mm;
   const int wcs = inputs.start.wcs;
   const auto& system = inputs.systems.at(static_cast<std::size_t>(wcs - 1));
@@ -354,7 +407,9 @@ auto parameter_text(const PreviewSettings& settings, const PreviewInputs& inputs
 }
 
 // The INI file of the helper's interpreter: subroutines are looked for in `directory` alone.
-auto ini_text(const PreviewSettings& settings, const std::string& directory) -> std::string {
+// With the G30 position known, its interpreter moves there at a tool change as task's does.
+auto ini_text(const PreviewSettings& settings, const std::string& directory, bool saved_g30)
+    -> std::string {
   std::string text = "[RS274NGC]\nPARAMETER_FILE = preview.var\nINI_VARS = 0\nHAL_PIN_VARS = 0\n"
                      "DISABLE_FANUC_STYLE_SUB = 1\n";
   text += std::format("SUBROUTINE_PATH = {}\n", directory);
@@ -362,6 +417,8 @@ auto ini_text(const PreviewSettings& settings, const std::string& directory) -> 
     text += option + "\n";
   text += std::format("[DISPLAY]\nPROGRAM_PREFIX = {}\n", directory);
   text += std::format("[EMCIO]\nTOOL_CHANGE_QUILL_UP = {}\n", settings.tool_change_quill_up ? 1 : 0);
+  if (settings.tool_change_at_g30 && saved_g30)
+    text += "TOOL_CHANGE_AT_G30 = 1\n";
   text += "[TRAJ]\nSPINDLES = 1\n";
   return text;
 }
@@ -849,14 +906,25 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     }
   }
   for (const char* key :
-       {"RETAIN_G43", "OWORD_NARGS", "OWORD_WARNONLY", "DISABLE_G92_PERSISTENCE"})
+       {"RETAIN_G43", "OWORD_NARGS", "OWORD_WARNONLY"})
     if (const auto value = text("RS274NGC", key))
       settings.interpreter_options.push_back(std::format("{} = {}", key, *value));
 
-  if (text("RS274NGC", "REMAP"))
-    settings.refusal = "This machine remaps codes ([RS274NGC] REMAP): the preview cannot follow "
-                       "a remapped code and is not computed.";
-  else if (positive("EMCIO", "RANDOM_TOOLCHANGER"))
+  // Every REMAP line names its code first: `REMAP = M6 modalgroup=6 ngc=change`.
+  for (int number = 1; number <= 256; ++number) {
+    const char* value = ini.Find("REMAP", "RS274NGC", number);
+    if (value == nullptr)
+      break;
+    std::istringstream words{value};
+    std::string code;
+    if (words >> code) {
+      std::ranges::transform(code, code.begin(), [](char c) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      });
+      settings.remapped.push_back(code);
+    }
+  }
+  if (positive("EMCIO", "RANDOM_TOOLCHANGER"))
     settings.refusal = "This machine has a random tool changer: no preview is computed.";
   else if (positive("RS274NGC", "NO_DOWNCASE_OWORD"))
     settings.refusal = "This machine keeps the case of O word names ([RS274NGC] "
@@ -902,6 +970,24 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
   request.codes = start->codes;
+  // The tool length offset in effect, in the interpreter as much as in the canon: the
+  // interpreter takes it off where it works in machine coordinates (G53, G28, G30).
+  if (start->tool_length != "G49" && !start->tool_length.empty() &&
+      inputs.start.tool_offset != Vec3{}) {
+    const auto& offset = inputs.start.tool_offset;
+    const bool by_table = start->tool_length == "G43" &&
+        std::ranges::any_of(inputs.raw_tools, [&](const PreviewTool& tool) {
+          return tool.index != 0 && tool.number == inputs.start.tool_in_spindle &&
+                 std::ranges::equal(tool.offset, offset, [&](double table, double live) {
+                   return std::abs(table / settings_.units_per_mm - live) <= 1e-6;
+                 });
+        });
+    const double unit = inputs.start.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    request.codes.push_back(by_table ? std::string("G43")
+                                     : std::format("G43.1 X{:.8f} Y{:.8f} Z{:.8f}",
+                                                   offset[0] / unit, offset[1] / unit,
+                                                   offset[2] / unit));
+  }
   const bool css = std::ranges::contains(inputs.start.active_codes, "G96");
   for (const auto& code : inputs.start.active_codes)
     if (code == "G61" || code == "G61.1")
@@ -921,6 +1007,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.inherited_motion = start->inherited_motion;
   request.tools = to_helper_tools(inputs.raw_tools);
   request.restart_line = inputs.restart_line;
+  request.remapped = settings_.remapped;
 
   const std::string check_table = inputs.restart_line ? std::string{} : settings_.tool_table;
   const std::string touched = !settings_.reference_tool || check_table.empty() ? std::string{}
@@ -928,12 +1015,13 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
           ? (fs::path(check_table).parent_path() / "coffeecnc-touched-off.txt").string()
           : settings_.touched_off_file;
   const auto watch =
-      [lookups = lookups_, search_path = settings_.search_path, check_table,
+      [lookups = lookups_, search_path = settings_.search_path,
+       parameter_file = settings_.parameter_file, check_table,
        touched](std::shared_ptr<const Manifest> manifest,
                      std::shared_ptr<const CheckToolFiles> tools) -> PreviewComputation::Watch {
-    return [manifest = std::move(manifest), lookups, search_path, check_table, touched,
-            tools = std::move(tools)](const std::function<bool()>& given_up) -> bool {
-      return files_differ(*manifest, search_path, given_up, lookups) ||
+    return [manifest = std::move(manifest), lookups, search_path, parameter_file, check_table,
+            touched, tools = std::move(tools)](const std::function<bool()>& given_up) -> bool {
+      return files_differ(*manifest, search_path, parameter_file, given_up, lookups) ||
              (tools && !is_cancelled(given_up) &&
               *tools != check_tool_files(check_table, touched));
     };
@@ -946,7 +1034,15 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {{}, true, {}};
     if (!taken)
       return {failed(taken.error().error.line, taken.error().error.text), false, {}};
+    taken->wcs = wcs;
     const auto manifest = std::make_shared<const Manifest>(std::move(*taken));
+    const auto& parameter_bytes = manifest->parameters;
+    const auto saved = saved_in(parameter_bytes.has_value()
+                                    ? stored_parameters(parameter_bytes.value())
+                                    : std::map<int, double>{});
+    request.known_systems = saved.systems;
+    request.saved_g28 = saved.g28;
+    request.saved_g30 = saved.g30;
     last = manifest;
     last_tools =
         std::make_shared<const CheckToolFiles>(check_tool_files(check_table, touched));
@@ -973,9 +1069,11 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     request.subroutines = subroutines.string();
     request.parameters = (directory.path() / "preview.var").string();
     const auto request_file = (directory.path() / "request").string();
-    written = written && write_file(request.parameters, parameter_text(settings_, inputs)) &&
+    written = written &&
+              write_file(request.parameters,
+                         parameter_text(settings_, inputs, manifest->parameters)) &&
               write_file(directory.path() / "preview.ini",
-                         ini_text(settings_, subroutines.string())) &&
+                         ini_text(settings_, subroutines.string(), saved.g30)) &&
               write_file(request_file, write_request(request));
     if (!written)
       return {unavailable("The preview's files could not be written."), false, {}};
@@ -988,10 +1086,9 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     if (run.how == HelperExit::cancelled)
       return {{}, true, {}};
     const auto& text = manifest->program.bytes;
-    auto outcome = outcome_of(
-        settings_, inputs, run,
-        static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000)),
-        *last_tools);
+    const int program_lines =
+        static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000));
+    auto outcome = outcome_of(settings_, inputs, run, program_lines, *last_tools);
     if (outcome.restart &&
         outcome.restart->tool != inputs.restart_loaded_tool.value_or(inputs.start.tool_in_spindle) &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||

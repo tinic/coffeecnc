@@ -1219,7 +1219,8 @@ export class SimMachine {
       case 'run': {
         const breakpoint = command.breakpoint
         if (breakpoint && (!Number.isSafeInteger(breakpoint.line) ||
-          command.preview_context === undefined || command.display_units === undefined || this.preview.state !== 'ready' ||
+          command.preview_context === undefined || command.display_units === undefined ||
+          !(this.preview.state === 'ready' || (this.preview.state === 'failed' && this.preview.check)) ||
           !this.preview.segments.some((segment) => segment.line === breakpoint.line)))
           return reject('Choose a motion line in a complete preview.')
         if (breakpoint && this.program?.lines[breakpoint.line - 1] !== breakpoint.text)
@@ -1954,6 +1955,11 @@ export class SimMachine {
         if (offset !== undefined) offset[axis] = value
       }
     }
+    // As the native backend: a restored length of the loaded tool is applied again (G43 H)
+    // when that tool's length is the one in effect.
+    if (tool?.number === this.toolInSpindle && this.modal.lengthTool === tool.number &&
+      entry.changes.some((change) => change.field === 'length'))
+      this.modal.toolOffset = [0, 0, tool.length]
     this.historySource = { source: 'restore', restores: entry.id }
     return null
   }

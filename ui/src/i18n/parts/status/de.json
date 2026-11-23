@@ -179,6 +179,7 @@
       "reopening": "Ursprüngliches Programm wird wieder geöffnet",
       "checking": "Programm wird geprüft",
       "breakpointCheck": "Ein Haltepunkt erfordert eine vollständige Programmprüfung",
+      "breakpointPastPreview": "Die Vorschau endet vor dieser Zeile: Wählen Sie eine Zeile auf dem vorausberechneten Weg",
       "nothingRunning": "Es läuft nichts",
       "waitingToolChange": "Warten auf den Werkzeugwechsel",
       "dismissSpindleConfirm": "Schließen Sie vor dem Fortfahren die Spindelbestätigung",
@@ -218,7 +219,13 @@
       "faultStale": "Meldet veraltet",
       "faultStaleTip": "LinuxCNC schreibt seinen Status nicht mehr; der letzte kommt weiter an.",
       "faultDown": "Meldet getrennt",
-      "faultDownTip": "Keine Verbindung zu LinuxCNC; Platzhalterstatus."
+      "faultDownTip": "Keine Verbindung zu LinuxCNC; Platzhalterstatus.",
+      "sinceLoad": "Diese Sitzung",
+      "noneSinceLoad": "In dieser Sitzung noch keine Meldungen.",
+      "beforeLoad": "Diese Sitzung, vor dem Neuladen der Bedienoberfläche",
+      "earlierRun": "Frühere Sitzung, {time}",
+      "notSaved": "Dieses Protokoll wird nicht gespeichert: {reason}",
+      "skipped": "{count} beschädigte Zeile des gespeicherten Protokolls wurde übersprungen. | {count} beschädigte Zeilen des gespeicherten Protokolls wurden übersprungen."
     },
     "quit": {
       "title": "CoffeeCNC beenden?",

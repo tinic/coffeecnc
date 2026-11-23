@@ -268,7 +268,7 @@
       "sessionOnlyReason": "仅在本次会话中保留：{reason}",
       "gone": "此条目已不在历史记录中。",
       "reviewTitle": "恢复 {target} {fields}？",
-      "effectTool": "将 {target} 之前的值写回刀具表（G10 L1）。已应用的长度在下一次 G43 时改变。",
+      "effectTool": "将 {target} 之前的值写回刀具表（G10 L1）。若 {target} 在主轴上且其长度已应用，则重新应用该长度（G43）。",
       "effectShift": "将之前的 G92/G52 偏移写回（G52）。它叠加到每个工件坐标系。",
       "effectWork": "将 {target} 之前的值写回（G10 L2）。其他轴保持不变。",
       "noMotion": "机床不会移动。",

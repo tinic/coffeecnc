@@ -4142,7 +4142,15 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
   const auto marker = std::filesystem::path(rig.config.directory) / "coffeecnc-air-cut.txt";
   std::ofstream{marker} << "25\n";
   const auto position = rig.status().commanded_position;
-  if (auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads)) {
+  // The new command port has its own Task heartbeat. The existing reader may already be live
+  // while this port is still waiting for the writer counter to advance.
+  const auto restarted = NmlPort::connect(rig.config, &rig.shared, &loads);
+  if (!restarted) {
+    check("preflight_legacy_offset_blocks_program_motion", false, restarted.error());
+  } else if (!rig.pump_until(3s, [&] { return (*restarted)->snapshot().link == Link::live; })) {
+    check("preflight_legacy_offset_blocks_program_motion", false,
+          "The reconnected command port never received a fresh Task status.");
+  } else {
     Rig blocked{rig.config, rig.hal, rig.shared, **restarted, rig.reader, rig.view, rig.probe};
     const auto run = blocked.send(R"("type":"run")");
     const auto step = blocked.send(R"("type":"step")");
@@ -4154,8 +4162,6 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
               distance(blocked.status().commanded_position, position) < 0.02,
           run.text() + " " + step.text());
     blocked.stop();
-  } else {
-    check("preflight_legacy_offset_blocks_program_motion", false, restarted.error());
   }
   std::filesystem::remove(marker);
   rig.restart_preview = nullptr;

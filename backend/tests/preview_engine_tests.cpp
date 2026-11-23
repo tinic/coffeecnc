@@ -276,6 +276,15 @@ void rigid_tapping_reversal_bounds() {
             std::format("Program Check must reject {}: {}", reason, text_of(outcome)));
   };
   reject(metric, "not configured");
+  reject("G92.3\nS300 M3\nM51 P0\n/ N100 g + 033 . 10 Z-4 K1\nM2\n", "Line 4:");
+  write(rig.root / "subs" / "tap.ngc", "o<tap> sub\nG33.1 Z-4 K1\no<tap> endsub\n");
+  reject("G92.3\no<tap> call\nM2\n", "tap.ngc line 2:");
+  const auto ordinary = rig.preview("(G33.1 is not used here)\nG0 Z3 ; G33.1 Z-4\nM2\n");
+  require(ordinary.state == PreviewState::ready && ordinary.check && ordinary.check->errors.empty(),
+          "Tapping mentioned in a comment has no effect on an unqualified machine.");
+  rig.settings.refusal = "The preview helper is missing.";
+  reject(metric, "not configured");
+  rig.settings.refusal.clear();
   rig.settings.rigid_tap = RigidTapLimits{300, 1, 500};
   for (const auto& program : {metric, std::string{
            "G20 G90\nG0 Z0.1\nS300 M3\nM51 P0\nG33.1 Z-0.15 K0.04\nM5\nM2\n"}}) {

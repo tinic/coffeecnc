@@ -39,7 +39,7 @@ The [storage contract](../docs/design/native-tool-model-storage.md) defines docu
 
 ## Rigid tapping
 
-An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `reversal_turns` (the larger qualified overrun at either reversal, in spindle revolutions), and `max_z_feed_mm_min` (the Z and trajectory feed ceiling in mm/min). Missing limits hide the conversational G33.1 generator. Program Check validates spindle 0, clockwise fixed-speed rotation, disabled spindle override, Z-only motion, and the synchronized feed and reversal envelope. The toolpath preview shows nominal travel.
+An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `reversal_turns` (the larger qualified overrun at either reversal, in spindle revolutions), and `max_z_feed_mm_min` (the Z and trajectory feed ceiling in mm/min). Missing limits hide the conversational G33.1 generator and block literal G33.1 in the program and its subprograms, even if the interpreter cannot preview the program. Program Check validates spindle 0, clockwise fixed-speed rotation, disabled spindle override, Z-only motion, and the synchronized feed and reversal envelope. The toolpath preview shows nominal travel.
 
 ## Alarm log
 

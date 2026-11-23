@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseChamferMill": "选择倒角铣刀",
+      "chooseFinishTool": "选择铰刀或镗刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
       "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
@@ -23,6 +24,8 @@
     "operation": {
       "chamfer": "倒角",
       "chamferSetup": "将顶面设为 Z0，刀具表中使用铣刀的最大切削直径。倒角宽度在顶面上测量。",
+      "holeFinishing": "铰孔 / 镗孔",
+      "holeFinishingSetup": "使用预钻孔，并确认刀具能够以进给速度到达设定深度并退出。",
       "contour": "轮廓",
       "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
@@ -41,6 +44,7 @@
       "chamferTipDiameter": "刀尖直径",
       "chamferTipBelow": "刀尖低于倒角底边",
       "chamferOpeningDepth": "预加工深度",
+      "boreDwell": "孔底暂停",
       "profileShape": "形状",
       "profileSide": "切削侧",
       "profileDirection": "方向",
@@ -99,6 +103,8 @@
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
+      "g85": "铰孔 (G85)",
+      "g89": "镗孔 (G89)",
       "profileCircle": "圆形",
       "profileRectangle": "矩形",
       "profileOutside": "外侧",

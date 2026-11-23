@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseChamferMill": "Choisir une fraise à chanfreiner",
+      "chooseFinishTool": "Choisir un alésoir ou un outil à aléser",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
       "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
@@ -23,6 +24,8 @@
     "operation": {
       "chamfer": "Chanfrein",
       "chamferSetup": "Réglez Z0 sur la face supérieure et utilisez le diamètre de coupe maximal dans la table d’outils. La largeur du chanfrein se mesure sur la face supérieure.",
+      "holeFinishing": "Alésage",
+      "holeFinishingSetup": "Utilisez des trous prépercés et vérifiez que l’outil peut descendre à la profondeur programmée et remonter en avance.",
       "contour": "Contour",
       "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
@@ -41,6 +44,7 @@
       "chamferTipDiameter": "Diamètre de la pointe",
       "chamferTipBelow": "Pointe sous le chanfrein",
       "chamferOpeningDepth": "Profondeur préusinée",
+      "boreDwell": "Temporisation au fond",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
       "profileDirection": "Sens",
@@ -99,6 +103,8 @@
       "boltCircleRadius": "Rayon du cercle de perçage"
     },
     "option": {
+      "g85": "Alésoir (G85)",
+      "g89": "Outil à aléser (G89)",
       "profileCircle": "Cercle",
       "profileRectangle": "Rectangle",
       "profileOutside": "Extérieur",

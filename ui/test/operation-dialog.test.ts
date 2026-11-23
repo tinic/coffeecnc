@@ -108,6 +108,25 @@ describe('new operation dialog', () => {
     expect(save.text).toContain('G1 Z-1 F60')
   })
 
+  it('requires an explicit finishing tool and only displays dwell for boring', async () => {
+    await open()
+    button('Ream / bore').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    expect(wrapper?.find('[aria-label="Bottom dwell, s"]').exists()).toBe(false)
+    await tool?.setValue('2')
+    button('Bore (G89)').click()
+    await nextTick()
+    expect(input('Bottom dwell, s').value).toBe('0.5')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/bore-grid-3x2.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No boring program was saved')
+    expect(save.text).toContain('G98 G89 X10 Y10 Z-10 R2 P0.5 F60')
+  })
+
   it('queues snapshots in order, discards a queued item and saves the job only', async () => {
     await open(['job-facing-100x60mm.ngc'])
     button('Add to job').click()

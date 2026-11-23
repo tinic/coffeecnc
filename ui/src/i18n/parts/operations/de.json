@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseChamferMill": "Fasenfräser auswählen",
+      "chooseFinishTool": "Reibahle oder Ausdrehwerkzeug auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
       "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
@@ -23,6 +24,8 @@
     "operation": {
       "chamfer": "Fase",
       "chamferSetup": "Z0 auf die Oberseite setzen und den maximalen Schneidendurchmesser in der Werkzeugtabelle verwenden. Die Fasenbreite wird auf der Oberseite gemessen.",
+      "holeFinishing": "Reiben / Ausdrehen",
+      "holeFinishingSetup": "Vorgebohrte Löcher verwenden. Prüfen, ob das Werkzeug bis zur programmierten Tiefe hinein- und herausfahren kann.",
       "contour": "Kontur",
       "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
@@ -41,6 +44,7 @@
       "chamferTipDiameter": "Spitzendurchmesser",
       "chamferTipBelow": "Spitze unter der Fase",
       "chamferOpeningDepth": "Vorgearbeitete Tiefe",
+      "boreDwell": "Verweilzeit am Grund",
       "profileShape": "Form",
       "profileSide": "Schnittseite",
       "profileDirection": "Richtung",
@@ -99,6 +103,8 @@
       "boltCircleRadius": "Lochkreisradius"
     },
     "option": {
+      "g85": "Reiben (G85)",
+      "g89": "Ausdrehen (G89)",
       "profileCircle": "Kreis",
       "profileRectangle": "Rechteck",
       "profileOutside": "Außen",

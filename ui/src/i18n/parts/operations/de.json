@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Fasenfräser auswählen",
       "chooseTap": "Gewindebohrer auswählen",
       "chooseFinishTool": "Reibahle oder Ausdrehwerkzeug auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
@@ -23,6 +24,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "chamfer": "Fase",
+      "chamferSetup": "Z0 auf die Oberseite setzen und den maximalen Schneidendurchmesser in der Werkzeugtabelle verwenden. Die Fasenbreite wird auf der Oberseite gemessen.",
       "rigidTap": "Synchrones Gewindebohren",
       "rigidTapSetup": "Rechtsgewindebohrer und vorgebohrtes Loch verwenden. Starthöhe und nutzbare Tiefe müssen den Umkehrweg berücksichtigen.",
       "holeFinishing": "Reiben / Ausdrehen",
@@ -42,6 +45,11 @@
       "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben. Die Gewindetiefe legt die Z-Position der Werkzeugspitze fest. Die Höhe des Schneidprofils berücksichtigen."
     },
     "label": {
+      "chamferWidth": "Fasenbreite",
+      "chamferIncludedAngle": "Spitzenwinkel",
+      "chamferTipDiameter": "Spitzendurchmesser",
+      "chamferTipBelow": "Spitze unter der Fase",
+      "chamferOpeningDepth": "Vorgearbeitete Tiefe",
       "tapPitch": "Gewindesteigung",
       "tapPilotDepth": "Nutzbare Vorbohrtiefe",
       "tapStartHeight": "Starthöhe",
@@ -150,6 +158,13 @@
       "threadLeft": "Linksgewinde"
     },
     "check": {
+      "chamferAngle": "Der Spitzenwinkel muss größer als 0° und kleiner als 180° sein.",
+      "chamferTip": "Der Spitzendurchmesser muss null oder kleiner als der Fräserdurchmesser sein.",
+      "chamferPrecision": "Fasenbreite, Spitzentiefe, Freihöhe, Vorschübe und Drehzahl auf die Programmgenauigkeit abstimmen.",
+      "chamferTooWide": "Auf der Oberseite muss nach dem Fasen noch Platz bleiben.",
+      "chamferCutter": "Die erforderliche Schnittbreite überschreitet den maximalen Schneidendurchmesser.",
+      "chamferOpeningDepth": "Die Öffnung muss tiefer als {depth} frei sein.",
+      "chamferRoom": "Bohrung oder Tasche sind zu klein für Fräser und Anfahrt.",
       "tapUnavailable": "Für diese Maschine sind keine Grenzen für synchrones Gewindebohren konfiguriert.",
       "tapZFeed": "Steigung × Drehzahl überschreitet den Z-Vorschubgrenzwert von {feed}. Spindeldrehzahl senken.",
       "tapRpm": "Drehzahl zwischen 1 und {rpm} U/min einstellen.",

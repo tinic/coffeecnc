@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Selecionar uma fresa de chanfrar",
       "chooseTap": "Selecionar um macho",
       "chooseFinishTool": "Selecionar um alargador ou uma ferramenta de mandrilar",
       "pocketOptions": "Geometria, entrada e paredes",
@@ -23,6 +24,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "chamfer": "Chanfro",
+      "chamferSetup": "Defina Z0 na face superior e use o diâmetro máximo de corte na tabela de ferramentas. A largura do chanfro é medida na face superior.",
       "rigidTap": "Roscagem rígida",
       "rigidTapSetup": "Use um macho à direita e um furo pré-perfurado. Deixe espaço para a inversão na altura inicial e na profundidade útil.",
       "holeFinishing": "Alargamento / mandrilagem",
@@ -42,6 +45,11 @@
       "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta. A profundidade da rosca define o Z da ponta. Tenha em conta a altura do dente."
     },
     "label": {
+      "chamferWidth": "Largura do chanfro",
+      "chamferIncludedAngle": "Ângulo incluído",
+      "chamferTipDiameter": "Diâmetro da ponta",
+      "chamferTipBelow": "Ponta abaixo do chanfro",
+      "chamferOpeningDepth": "Profundidade pré-maquinada",
       "tapPitch": "Passo da rosca",
       "tapPilotDepth": "Profundidade útil do pré-furo",
       "tapStartHeight": "Altura inicial",
@@ -150,6 +158,13 @@
       "threadLeft": "À esquerda"
     },
     "check": {
+      "chamferAngle": "O ângulo incluído tem de ser maior que 0° e menor que 180°.",
+      "chamferTip": "O diâmetro da ponta tem de ser zero ou menor que o da fresa.",
+      "chamferPrecision": "Verifique a largura, a profundidade da ponta, a altura livre, os avanços e a rotação em relação à precisão do programa.",
+      "chamferTooWide": "O chanfro tem de deixar espaço na face superior.",
+      "chamferCutter": "O corte necessário excede o diâmetro máximo de corte da fresa.",
+      "chamferOpeningDepth": "A abertura tem de estar livre a uma profundidade superior a {depth}.",
+      "chamferRoom": "O furo ou a cavidade são demasiado pequenos para a fresa e a sua entrada.",
       "tapUnavailable": "Esta máquina não tem limites de roscagem rígida configurados.",
       "tapZFeed": "Passo × rotação excede o limite de avanço em Z de {feed}. Reduza a rotação do fuso.",
       "tapRpm": "Defina a velocidade de roscagem entre 1 e {rpm} rpm.",

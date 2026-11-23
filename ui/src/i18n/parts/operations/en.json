@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Choose a chamfer mill",
       "chooseTap": "Choose a tap",
       "chooseFinishTool": "Choose a reamer or boring tool",
       "pocketOptions": "Geometry, entry and walls",
@@ -23,6 +24,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "chamfer": "Chamfer",
+      "chamferSetup": "Set Z0 at the top face and use the cutter’s maximum cutting diameter in the tool table. Chamfer width is measured on the top face.",
       "rigidTap": "Rigid tapping",
       "rigidTapSetup": "Use a right-hand tap and a predrilled hole. Start height and pilot depth allow for spindle reversal travel.",
       "holeFinishing": "Ream / bore",
@@ -42,6 +45,11 @@
       "threadMillSetup": "Use a single-form thread mill and a predrilled hole. Verify cutter and neck clearance. Enter the tool-centre feed. Thread depth sets tool-tip Z. Allow for the cutter’s tooth height."
     },
     "label": {
+      "chamferWidth": "Chamfer width",
+      "chamferIncludedAngle": "Included angle",
+      "chamferTipDiameter": "Tip diameter",
+      "chamferTipBelow": "Tip below chamfer",
+      "chamferOpeningDepth": "Pre-cut depth",
       "tapPitch": "Thread pitch",
       "tapPilotDepth": "Usable pilot depth",
       "tapStartHeight": "Start height",
@@ -150,6 +158,13 @@
       "threadLeft": "Left-hand"
     },
     "check": {
+      "chamferAngle": "The included angle must be greater than 0° and less than 180°.",
+      "chamferTip": "The tip diameter must be zero or smaller than the cutter diameter.",
+      "chamferPrecision": "Check the chamfer width, tip depth, clearance, feeds and spindle speed against the program’s precision.",
+      "chamferTooWide": "The chamfer must leave room on the top face.",
+      "chamferCutter": "The required cut exceeds the cutter’s maximum cutting diameter.",
+      "chamferOpeningDepth": "The opening must be clear deeper than {depth}.",
+      "chamferRoom": "The hole or pocket is too small for the cutter and its entry.",
       "tapUnavailable": "This machine has no configured rigid tapping limits.",
       "tapZFeed": "Pitch × rpm exceeds the Z feed limit of {feed}. Reduce the spindle speed.",
       "tapRpm": "Set the rigid tapping speed between 1 and {rpm} rpm.",

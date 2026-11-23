@@ -53,7 +53,7 @@ const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
 const pickedTool = reactive<Partial<Record<OperationId, number>>>({})
 function suggestedTool(id: OperationId): number {
   // The tool table diameter cannot identify these cutters.
-  if (id === 'thread-mill' || id === 'hole-finishing' || id === 'rigid-tap') return 0
+  if (id === 'thread-mill' || id === 'hole-finishing' || id === 'chamfer' || id === 'rigid-tap') return 0
   const cutting = tools.value.filter((tool) => tool.diameter > 0)
   const named = (wanted: RegExp, unwanted: RegExp): number | undefined =>
     cutting.find((tool) => wanted.test(tool.comment) && !unwanted.test(tool.comment))?.number
@@ -261,12 +261,20 @@ const fieldGroups = computed(() => {
         <p v-if="operationNote" class="operation-note">{{ t(operationNote) }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
-          <div class="fields" :class="{ cutting: group.includesTool, pocket: pocket && !group.includesTool }">
+          <div
+            class="fields"
+            :class="{
+              cutting: group.includesTool,
+              pocket: pocket && !group.includesTool,
+              chamfer: chosen === 'chamfer' && !group.includesTool,
+            }"
+          >
             <label v-if="group.includesTool" class="entry tool-entry">
               <span class="label">{{ t('operations.dialog.tool') }}</span>
               <select v-model.number="toolNumber" class="field" :aria-label="t('operations.dialog.tool')" :disabled="saving">
                 <option v-if="tools.length === 0" :value="0">{{ t('operations.dialog.noTools') }}</option>
                 <option v-else-if="chosen === 'thread-mill'" :value="0" disabled>{{ t('operations.dialog.chooseThreadMill') }}</option>
+                <option v-else-if="chosen === 'chamfer'" :value="0" disabled>{{ t('operations.dialog.chooseChamferMill') }}</option>
                 <option v-else-if="chosen === 'hole-finishing'" :value="0" disabled>{{ t('operations.dialog.chooseFinishTool') }}</option>
                 <option v-else-if="chosen === 'rigid-tap'" :value="0" disabled>{{ t('operations.dialog.chooseTap') }}</option>
                 <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
@@ -347,8 +355,9 @@ const fieldGroups = computed(() => {
 .form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }
 .fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
-.fields.cutting { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.fields.cutting, .fields.chamfer { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .fields.pocket { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.fields.chamfer .entry { justify-content: flex-end; }
 .fields.pocket .number-field:has(.field-unit) input { padding-right: 44px; }
 .tool-entry { grid-column: span 2; }
 .number-field { position: relative; min-width: 0; }
@@ -364,5 +373,5 @@ p.errors { padding: 0; }
 .file strong, .where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file strong { font-size: 13px; font-weight: 500; }
 .where { margin-top: 2px; color: var(--text-dim); }
-@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting, .fields.pocket { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting, .fields.pocket, .fields.chamfer { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

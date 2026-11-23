@@ -298,19 +298,19 @@ describe('machine functions', () => {
 })
 
 describe('what the interpreter does not support', () => {
-  it('refuses unsupported compensated corners and an undersized G40 exit', () => {
+  it('refuses unsupported compensated corners, a short lead, and an arc immediately after G40', () => {
     const inside = modal()
     run(inside, 'G1 G41 D1 X10 Y0 F100')
     expect(error(inside, 'G1 X10 Y10')).toContain('use a tangent arc')
+    expect(error(modal(), 'G41 D1 G1 X5 F100')).toContain('longer than the cutter radius')
     const outside = modal()
     run(outside, 'G1 G42 D1 X10 Y0 F100', 'G1 X10 Y10')
-    expect(error(outside, 'G40 G0 X13 Y10')).toContain('longer than the cutter diameter')
+    expect(error(outside, 'G40 G3 X12 Y12 I0 J2')).toContain('straight move before an arc')
   })
 
   it('names the line and the word, and never skips', () => {
     const m = modal()
-    expect(error(m, 'G41 D9')).toBe('line 12: G41: tool 9 needs a positive diameter in the tool table')
-    expect(error(m, 'G41')).toBe('line 12: G41: tool 0 needs a positive diameter in the tool table')
+    expect(error(m, 'G41 D9')).toBe('line 12: G41: tool 9 needs a nonnegative diameter in the tool table')
     expect(error(m, 'G82 R.1 Z-.5 P1')).toBe('line 12: G82 is not supported by the simulator')
     expect(error(m, 'G38.2 Z-1')).toBe('line 12: G38.2 is not supported by the simulator')
     expect(error(m, 'G93')).toBe('line 12: G93 is not supported by the simulator')
@@ -328,6 +328,30 @@ describe('what the interpreter does not support', () => {
     expect(error(m, 'G10 L1 P1 Z5')).toBe('line 12: G10 L1 is not supported by the simulator')
     expect(error(m, 'G0 X')).toBe('line 12: X word has no number')
     expect(error(m, '(open')).toBe('line 12: comment is not closed with )')
+  })
+})
+
+describe('cutter compensation exits and tool selection', () => {
+  it('allows a short exit and a Z-only exit, then accepts an arc', () => {
+    const m = modal()
+    run(m, 'G41 D1 G1 X10 F100', 'G40 G0 X10.1 Y0')
+    expect(rounded(m.pos)).toEqual([10.1, 0, 0])
+    const at = modal()
+    const path = moves(run(at, 'G41 D1 G1 X10 F100', 'G40 G0 Z5', 'G3 X20 Y10 I0 J10'))
+    expect(path[1]?.points.map(rounded)).toEqual([[10, 5, 0], [10, 0, 5]])
+    expect(rounded(at.pos)).toEqual([20, 10, 5])
+  })
+
+  it('uses the spindle tool for D0 and makes no offset for an empty spindle or zero diameter', () => {
+    const loaded = modal()
+    run(loaded, 'T1 M6', 'G41 D0 G1 X10 F100')
+    expect(rounded(loaded.pos)).toEqual([10, 5, 0])
+    const empty = modal()
+    run(empty, 'G41 D0 G1 X1 F100')
+    expect(rounded(empty.pos)).toEqual([1, 0, 0])
+    const zero = newModal([{ number: 3, pocket: 3, comment: '', length: 50, diameter: 0 }])
+    run(zero, 'G42 D3 G1 X1 F100', 'G40 G3 X2 Y1 I0 J1')
+    expect(rounded(zero.pos)).toEqual([2, 1, 0])
   })
 })
 
@@ -361,7 +385,7 @@ describe('preview', () => {
   it('fails at the first line the interpreter refuses and keeps the path so far', () => {
     const preview = previewProgram(modal(), ['G0 X5', 'G1 X10 F100', 'G41 D9', 'G1 X20', 'M2'], false, 1)
     expect(preview.state).toBe('failed')
-    expect(preview.error).toEqual({ line: 3, text: 'line 3: G41: tool 9 needs a positive diameter in the tool table' })
+    expect(preview.error).toEqual({ line: 3, text: 'line 3: G41: tool 9 needs a nonnegative diameter in the tool table' })
     expect(preview.segments).toHaveLength(2)
   })
 

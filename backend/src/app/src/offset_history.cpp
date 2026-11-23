@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -93,9 +95,13 @@ auto entry_from(const Json& value) -> HistoryEntry {
   entry.time = value.at("time").get<std::int64_t>();
   entry.source = parse(value.at("source"), sources);
   entry.target = parse(value.at("target"), targets);
-  if (!value.at("number").is_number_integer())
-    throw Damaged("a number is not an integer");
-  entry.number = value.at("number").get<int>();
+  // Valid numbers are 0 to 9 or a tool number. Checked before narrowing, so that 2^32 + 1 does
+  // not wrap to work system 1.
+  const auto& number = value.at("number");
+  if (!number.is_number_unsigned() ||
+      number.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+    throw Damaged("a number is not a small integer");
+  entry.number = static_cast<int>(number.get<std::uint64_t>());
   const bool numbered = entry.target == HistoryTarget::wcs ? entry.number >= 1 && entry.number <= 9
                         : entry.target == HistoryTarget::g92 ? entry.number == 0
                                                              : entry.number > 0;

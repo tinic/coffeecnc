@@ -312,6 +312,14 @@ auto history_file(std::initializer_list<std::tuple<int, std::string_view, int,
       .dump();
 }
 
+// A file with one work system entry whose number is the JSON text `number`.
+auto history_number(std::string_view number) -> std::string {
+  auto content = history_file({{1, "wcs", 7, {"x"}}});
+  const auto at = content.find(R"("number":7)");
+  require(at != std::string::npos, "The history file has the entry number");
+  return content.replace(at, 10, std::string(R"("number":)") + std::string(number));
+}
+
 void damaged_files() {
   {
     Fixture f;
@@ -331,6 +339,10 @@ void damaged_files() {
            {history_file({{1, "wcs", 1, {"x", "x"}}}), "a field twice in one entry"},
            {history_file({{2, "wcs", 1, {"x"}}, {2, "wcs", 1, {"y"}}}), "an id used twice"},
            {history_file({{1, "wcs", 1, {"x"}}, {2, "wcs", 1, {"y"}}}), "oldest first"},
+           // 2^32 + 1 narrowed to int would be work system 1; 1.5 would be truncated to 1.
+           {history_number("4294967297"), "a work system number beyond int"},
+           {history_number("1.5"), "a fractional work system number"},
+           {history_number("-1"), "a negative work system number"},
            {"{not json", "not JSON"},
            {R"({"version":2,"entries":[],"next_id":1,"seen":{}})", "another version"},
            {R"({"version":1,"entries":[{"id":1}],"next_id":2,"seen":{}})", "an entry cut short"},

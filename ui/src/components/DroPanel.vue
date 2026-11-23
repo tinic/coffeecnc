@@ -106,27 +106,29 @@ watch([axes, touchBlock], () => {
         <AppIcon name="forward" />
       </button>
     </div>
-    <div v-for="axis in axes" :key="axis.axis" class="axis-group">
-      <component
-        :is="readOnly ? 'div' : 'button'"
-        v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
-        class="axis tone-control" :class="{ 'remote-axis': readOnly }"
-        :type="readOnly ? undefined : 'button'" :disabled="readOnly ? undefined : touchBlock !== null || !Number.isFinite(axis.work)"
-        :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
-      >
-        <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
-        <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
-      </component>
-      <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
-        <summary class="tone-control" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
-        <div class="popover">
-          <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
-          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'zero', $event)">{{ t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() }) }}</button>
-          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.halfAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'half', $event)">{{ t('manual.dro.halfAxisButton', { axis: axis.axis.toUpperCase() }) }}</button>
-        </div>
-      </details>
+    <div v-if="axes.length" class="linear-axes">
+      <div v-for="axis in axes" :key="axis.axis" class="axis-group">
+        <component
+          :is="readOnly ? 'div' : 'button'"
+          v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
+          class="axis tone-control" :class="{ 'remote-axis': readOnly }"
+          :type="readOnly ? undefined : 'button'" :disabled="readOnly ? undefined : touchBlock !== null || !Number.isFinite(axis.work)"
+          :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
+        >
+          <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
+          <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
+        </component>
+        <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
+          <summary class="tone-control" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
+          <div class="popover">
+            <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
+            <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'zero', $event)">{{ t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() }) }}</button>
+            <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.halfAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'half', $event)">{{ t('manual.dro.halfAxisButton', { axis: axis.axis.toUpperCase() }) }}</button>
+          </div>
+        </details>
+      </div>
     </div>
-    <span v-if="axes.length === 0" class="unavailable">{{ t('manual.dro.positionUnavailable') }}</span>
+    <span v-else class="unavailable">{{ t('manual.dro.positionUnavailable') }}</span>
     <div class="display-units">
       <div class="units" role="group" :aria-label="t('manual.dro.displayUnits')">
         <button class="tone-control" type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
@@ -166,8 +168,9 @@ watch([axes, touchBlock], () => {
 .basis-toggle > span { min-width: 0; white-space: normal; line-height: 1.2; text-align: left; }
 .basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
 .g92 { display: block; font-size: var(--type-sm); line-height: 1.2; color: var(--warn); }
-.axis-group { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); }
-.axis { display: flex; height: 56px; align-items: center; justify-content: flex-end; gap: 9px; width: 11.8ch; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 var(--type-dro)/1.2 var(--mono); cursor: pointer; }
+.linear-axes { display: flex; flex: none; }
+.axis-group { display: flex; align-items: center; border-left: 1px solid var(--line); }
+.axis { display: flex; height: 56px; align-items: center; justify-content: flex-end; gap: 9px; width: 11.4ch; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 var(--type-dro)/1.2 var(--mono); cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
 .axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .letter { flex: none; }
@@ -182,6 +185,11 @@ watch([axes, touchBlock], () => {
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
 .tool-heading, .tool-length { color: var(--text-dim); font-size: var(--type-sm); }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: var(--type-md); font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
+@media (max-width: 1220px) {
+  .dro { --type-dro: clamp(18px, 2.05vw, 25px); }
+  .display-units { margin-inline: 4px; padding-left: 6px; }
+  .active-tool { flex-basis: 130px; padding-inline: 8px; }
+}
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 @media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-toggle { min-height: 52px; } }
 </style>

@@ -20,7 +20,7 @@
   --gcode-message: #495561; --gcode-flow: #504c83; --gcode-parameter: #515d75; --gcode-expression: #6a5470;
   --radius: 12px; --gap: 12px; --touch: 44px;
   --type-sm: 12px; --type-body: 14px; --type-md: 16px; --type-lg: 20px;
-  --type-dro: clamp(19px, 2.1vw, 30px);
+  --type-dro: 27px;
   --press-fade: 100ms;
   --sans: 'DM Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', monospace;
   font-family: var(--sans); font-size: var(--type-body); line-height: 1.4;

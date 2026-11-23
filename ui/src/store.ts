@@ -454,6 +454,7 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'alarm_log':
         state.alarmLog = message
+        break
       case 'diagnostics':
         state.diagnostics = message
         break

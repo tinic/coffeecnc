@@ -93,3 +93,14 @@ export function probeCodeBlock(line: string): string {
   const block = inspectProbeCode(line)
   return block.relabelsTool ? probeLoadedReason : block.refusal
 }
+
+/**
+ * Why native refuses `text` as an MDI block (Session::probe_block), or '': an M61 mixed with a
+ * tool change or a spindle command always, other code while `probeLoaded`.
+ */
+export function mdiProbeBlock(text: string, probeLoaded: boolean): string {
+  const block = inspectProbeCode(text)
+  if (block.relabelsTool && (block.changesTool || block.refusal !== ''))
+    return 'Separate M61 from tool changes and spindle commands.'
+  return probeLoaded ? probeCodeBlock(text) : ''
+}

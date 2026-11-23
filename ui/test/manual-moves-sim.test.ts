@@ -51,7 +51,7 @@ describe('Go to and power feed in the simulator', () => {
     mdi(r, 'G21 G90 G53 G0 Z-100')
     mdi(r, 'G43 H1')
     const feed = powerFeedPlan({ status: r.status(), machineBlock: null },
-      { axis: 'z', direction: 1, extent: { kind: 'limit' }, feed: 6000, maxFeed: 6000 })
+      { axis: 'z', direction: 1, extent: { kind: 'limit' }, feed: 6000, maxFeed: 6000, unit: 'mm' })
     if (!feed.ok) throw new Error(feed.reason)
     const z = mdi(r, feed.plan.text).axes.find((axis) => axis.axis === 'z')
     expect(z?.machine).toBeCloseTo((z?.max_limit ?? NaN) - limitMarginMm, 3)

@@ -30,7 +30,7 @@ import { SimProbe, type ProbePlan } from './probe'
 import { SimOffsetHistory } from './offset-history'
 import { fieldAxis } from '../offset-history'
 import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
-import { inspectProbeCode, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
+import { mdiProbeBlock, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
 import {
   InterpError,
   activeCodes,
@@ -138,6 +138,8 @@ interface Rejection {
 
 /** The longest program text `save_program` writes, as natively. */
 const maxSavedProgramBytes = 512 * 1024
+/** The longest MDI block, as natively (session.cpp max_mdi_bytes). */
+const maxMdiBytes = 254
 
 function reject(reason: string): Rejection {
   return { outcome: 'rejected', reason }
@@ -929,9 +931,11 @@ export class SimMachine {
   private execute(command: Exclude<ToMachine, FixedSetter>): Rejection | null {
     switch (command.type) {
       case 'set_tool_model_defaults':
-      case 'set_operator_settings':
       case 'set_tool_model_assignment':
         return reject('Native tool model storage is unavailable in the browser simulator')
+      case 'set_operator_settings':
+        // As Session without tool model storage, which also holds the operator settings.
+        return reject('Operator settings storage is not part of this session.')
       case 'ready':
         this.emit(this.configuration)
         this.sendTools()
@@ -964,6 +968,8 @@ export class SimMachine {
         this.stopJogs()
         return null
       case 'mdi':
+        // As command_policy.cpp valid_text: LinuxCNC's LINELEN is 255 with the terminator.
+        if (!validMdiText(command.text)) return reject('MDI requires one nonempty block of at most 254 bytes.')
         return this.probeCode(command.text) ?? this.mdi(command.text)
       case 'list_directory': {
         const listing = listDirectory(this.files, command.path)
@@ -1038,7 +1044,7 @@ export class SimMachine {
         if (blocked !== null) {
           return blocked
         }
-        if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
+        if (this.probe && this.toolInSpindle === demoProbe) return reject(probeLoadedReason)
         if (!(command.rpm > 0)) {
           return reject('Spindle speed must be above zero')
         }
@@ -1342,15 +1348,10 @@ export class SimMachine {
   private probeCode(mdi?: string): Rejection | null {
     if (!this.probe) return null
     if (mdi !== undefined) {
-      const block = inspectProbeCode(mdi)
-      if (block.relabelsTool && (block.changesTool || block.refusal !== ''))
-        return reject('Separate M61 from tool changes and spindle commands.')
-    }
-    if (this.toolInSpindle !== demoProbe) return null
-    if (mdi !== undefined) {
-      const reason = probeCodeBlock(mdi)
+      const reason = mdiProbeBlock(mdi, this.toolInSpindle === demoProbe)
       return reason === '' ? null : reject(reason)
     }
+    if (this.toolInSpindle !== demoProbe) return null
     if (this.modal.spindle !== 'stopped') return reject(probeLoadedReason)
     if (this.exec?.source === 'mdi') return reject(probeCodeUnknown)
     for (const line of this.program?.lines ?? []) {
@@ -1717,6 +1718,11 @@ function historySource(command: ToMachine): HistorySource | null {
   if (command.type === 'tool_touch_off') return 'tool_touch_off'
   if (command.type === 'set_tool' || command.type === 'remove_tool') return 'tool_table'
   return command.type === 'mdi' ? 'mdi' : null
+}
+
+/** One nonblank block of at most 254 bytes, without a line break or NUL (command_policy.cpp valid_text). */
+function validMdiText(text: string): boolean {
+  return /[^ \t]/.test(text) && new TextEncoder().encode(text).length <= maxMdiBytes && !/[\r\n\0]/.test(text)
 }
 
 function blankStatus(): Status {

@@ -10,7 +10,7 @@ import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
 import { tokenizeGcodeLine } from '../gcode-syntax'
 import {
-  byteLength, EditHistory, findAll, lineOf, lineStart, maxProgramBytes, programSource, uneditableReason,
+  byteLength, EditHistory, findAll, lineOf, lineStart, machineBusy, maxProgramBytes, programSource, uneditableReason,
   type EditorState, type EditorTarget,
 } from '../program-editor'
 import type { CommandBody, ProgramText } from '../protocol'
@@ -45,7 +45,11 @@ const saving = ref(false)
 const readOnly = computed(() => notice.value !== null || saving.value)
 const feedback = ref('')
 const size = computed(() => byteLength(text.value))
+// Over the loaded program a save needs its stamp, and every save opens a program: neither while
+// the machine is busy, as for the line edits.
 const saveBlock = computed(() => connectionBlock(panel.link) ?? notice.value ??
+  (!savingAs.value && loaded.value !== null && !loaded.value.stamp ? t('program.lineEdits.reopen') : null) ??
+  (machineBusy(panel.status) ? t('program.editor.stopFirst') : null) ??
   (text.value.trim() === '' ? t('program.editor.empty') : null) ??
   (size.value > maxProgramBytes ? t('program.editor.tooLarge') : null) ??
   (savingAs.value && !/^[^/.][^/]*$/.test(name.value.trim()) ? t('program.editor.badName') : null))
@@ -59,7 +63,7 @@ const title = computed(() => loaded.value !== null ? t('program.editor.editFile'
 let saveRequest: CommandBody | null = null
 let openRequest: CommandBody | null = null
 function save(): void {
-  if (saving.value || saveBlock.value !== null) return
+  if (saving.value || saveBlock.value !== null || (!dirty.value && !savingAs.value)) return
   feedback.value = ''
   saving.value = true
   const program = loaded.value
@@ -108,6 +112,7 @@ function startNew(): void {
 
 // The text area and what is drawn with it.
 const area = useTemplateRef<HTMLTextAreaElement>('area')
+const findField = useTemplateRef<HTMLInputElement>('findField')
 const rowHeight = 24
 const overscan = 6
 const scrollTop = ref(0)
@@ -209,7 +214,7 @@ let before: EditorState | null = null
 function input(event: Event): void {
   const element = area.value
   if (element === null) return
-  history.record(before ?? { text: text.value, ...selection }, event instanceof InputEvent ? event.inputType : '', Date.now())
+  history.record(before ?? { text: text.value, ...selection }, event instanceof InputEvent ? event.inputType : '', Date.now(), element.selectionEnd)
   before = null
   text.value = element.value
   canUndo.value = history.canUndo
@@ -229,7 +234,7 @@ function keydown(event: KeyboardEvent): void {
     redo()
   } else if (key === 'f') {
     event.preventDefault()
-    document.querySelector<HTMLInputElement>('.editor-tools input[aria-label="Find"]')?.focus()
+    findField.value?.focus()
   } else if (key === 's') {
     event.preventDefault()
     save()
@@ -311,7 +316,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
         <button v-tooltip="t('program.editor.newProgram')" class="btn square" type="button" :aria-label="t('program.editor.newProgram')" :disabled="saving" @click="startNew"><AppIcon name="plus" /></button>
         <span class="find">
           <AppIcon name="search" />
-          <input v-model="query" class="field mono" type="search" :aria-label="t('program.editor.find')" :placeholder="t('program.editor.find')" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
+          <input ref="findField" v-model="query" class="field mono" type="search" :aria-label="t('program.editor.find')" :placeholder="t('program.editor.find')" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
           <span class="count mono" role="status">{{ matchLabel }}</span>
         </span>
         <button v-tooltip="t('program.editor.previousMatch')" class="btn square" type="button" :aria-label="t('program.editor.previousMatch')" :disabled="matches.length === 0" @click="findNext(-1)"><AppIcon name="up" /></button>

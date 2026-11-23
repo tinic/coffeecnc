@@ -21,6 +21,10 @@ for (const [path, text] of Object.entries(raw)) {
   catalog.set(language, flatten('', JSON.parse(text), catalog.get(language) ?? new Map<string, string>()))
 }
 const english = catalog.get('en') ?? new Map<string, string>()
+// Load every language's catalogs while the file is collected, outside the tests' timeouts: the
+// first switch to a language compiles its catalogs and can take over 5 s on a loaded host (#267).
+await Promise.all(languages.filter((language) => language !== 'en').map(setLanguage))
+await setLanguage('en')
 // Texts the components render with t(): labels and sentences without placeholders. The run-time
 // sentence areas are translated through translateMessage and checked in i18n-native.test.ts.
 const plain = [...english].filter(([key, text]) => !/[{}|]/.test(text) && text.length >= 4 &&

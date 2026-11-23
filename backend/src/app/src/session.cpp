@@ -80,6 +80,8 @@ auto history_source(const Command& command) -> std::optional<HistorySource> {
             return std::nullopt;
           return c.action == SetterAction::touch_off ? HistorySource::tool_setter
                                                      : HistorySource::probe;
+        } else if constexpr (std::is_same_v<T, ToolChanged>) {
+          return c.measure_request ? std::optional{HistorySource::tool_setter} : std::nullopt;
         } else if constexpr (std::is_same_v<T, SetTool> || std::is_same_v<T, RemoveTool>) {
           return HistorySource::tool_table;
         } else if constexpr (std::is_same_v<T, Mdi>) {
@@ -125,6 +127,7 @@ struct ProbeCode {
   std::string_view refusal;
   bool changes_tool{};
   bool relabels_tool{};
+  bool stops_program{};
 };
 
 auto inspect_probe_code(std::string_view line) -> ProbeCode {
@@ -209,6 +212,8 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     }
     if (value == number && number == 6)
       result.changes_tool = true;
+    if (value == number && (number == 0 || number == 1 || number == 60))
+      result.stops_program = true;
     if (number == 3 || number == 4 || number == 19) {
       if (result.refusal.empty())
         result.refusal = probe_loaded_reason;
@@ -222,6 +227,15 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
 auto probe_code_block(std::string_view line) -> std::string_view {
   const auto block = inspect_probe_code(line);
   return block.relabels_tool ? probe_loaded_reason : block.refusal;
+}
+
+auto program_line(std::string_view& remaining) -> std::string_view {
+  const auto end = remaining.find('\n');
+  auto line = remaining.substr(0, end);
+  remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
+  if (line.ends_with('\r'))
+    line.remove_suffix(1);
+  return line;
 }
 
 
@@ -582,12 +596,15 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
         !std::ranges::equal(state.rotary_axes, status_.rotary_axes, {},
                             &AxisState::homed, &AxisState::homed))))
     ++setter_datum_;
-  if (state.tool_in_spindle != status_.tool_in_spindle ||
-      state.tool_request != status_.tool_request)
+  const bool tool_changed = state.tool_in_spindle != status_.tool_in_spindle ||
+                            state.tool_request != status_.tool_request;
+  if (tool_changed)
     ++setter_tool_;
   status_ = state;
   status_at_ = now;
   have_status_ = true;
+  if (tool_changed)
+    work_ready_.notify_all();
 }
 
 auto Session::control(Instant now, const ControlInput& input) -> bool {
@@ -737,7 +754,9 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     step = answer({CommandOutcome::rejected, stopped_reason});
   } else {
     const auto* setter = std::get_if<FixedSetterRequest>(&request.command);
-    const bool exclusive = setter && setter->action != SetterAction::status;
+    const auto* changed = std::get_if<ToolChanged>(&request.command);
+    const bool exclusive = (setter && setter->action != SetterAction::status) ||
+                           (changed && changed->measure_request);
     if (exclusive) {
       const std::scoped_lock lock{mutex_};
       setter_busy_ = true;
@@ -1002,6 +1021,12 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (fresh_run || std::holds_alternative<OpenProgram>(command) ||
       std::holds_alternative<Mdi>(command) || cancels_requests(command))
     verified_probe_program_.clear();
+  const auto* option = std::get_if<SetProgramOption>(&command);
+  const auto* run_command = std::get_if<Run>(&command);
+  if (fresh_run || std::holds_alternative<OpenProgram>(command) ||
+      std::holds_alternative<Mdi>(command) || std::holds_alternative<StartRestart>(command) ||
+      (option && option->option == ProgramOption::block_delete) || cancels_requests(command))
+    started_program_ = {};
   const bool checked_run = fresh_run && tool_models_ != nullptr &&
       tool_models_->touch_probe_loaded(state.tool_in_spindle) == true;
   if (checked_run && !verified) {
@@ -1031,6 +1056,9 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   auto result = perform(request, decision, state, clock, verified);
   if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
     verified_probe_program_ = state.program_file;
+  if (fresh_run && run_command && !run_command->breakpoint && verified && result.kind == StageKind::reply &&
+      result.reply.outcome == CommandOutcome::accepted)
+    started_program_ = std::move(*verified);
   return result;
 }
 
@@ -1056,13 +1084,9 @@ auto Session::check_program_start(const Queued& request, const Run& command,
     // Bind the operator's picked text to the checked bytes, including when a program on disk
     // was replaced after the panel loaded its text.
     std::string_view remaining = *check.source.program_snapshot;
-    for (int line = 1; line < command.breakpoint->line && !remaining.empty(); ++line) {
-      const auto end = remaining.find('\n');
-      remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
-    }
-    auto selected = remaining.substr(0, remaining.find('\n'));
-    if (selected.ends_with('\r'))
-      selected.remove_suffix(1);
+    for (int line = 1; line < command.breakpoint->line && !remaining.empty(); ++line)
+      static_cast<void>(program_line(remaining));
+    const auto selected = program_line(remaining);
     if (selected.empty() || selected != command.breakpoint->text)
       return "The selected program line changed. Reopen the program and choose the line again.";
   }
@@ -1168,9 +1192,12 @@ auto Session::start_restart(const Queued& request, StartRestart command) -> Stag
   if (!wanted(request))
     return cancelled();
   auto result = send_restart(request, restart, false);
-  if (result.kind != StageKind::reply || result.reply.outcome != CommandOutcome::accepted ||
-      !restart.plan.needs_tool_change)
+  if (result.kind != StageKind::reply || result.reply.outcome != CommandOutcome::accepted)
     return result;
+  if (!restart.plan.needs_tool_change) {
+    started_program_ = std::move(restart.measured_run);
+    return result;
+  }
   const auto pending = port_.snapshot();
   if (pending.requested_tool != restart.plan.point.tool || !wanted(request)) {
     static_cast<void>(port_.abort());
@@ -1202,6 +1229,185 @@ auto Session::resume_restart(const Queued& request, const ControllerState& state
     return staged(std::move(ack));
   }
   return send_restart(request, *restart, true);
+}
+
+auto Session::measure_tool_change(Queued& request, const ControllerState& state) -> Stage {
+  const auto refused = [](std::string reason) {
+    return answer({CommandOutcome::rejected, std::move(reason)});
+  };
+  const auto& source = started_program_.source;
+  const auto& preview = started_program_.preview;
+  if (preview_ == nullptr || restart_engine_ == nullptr || !port_.fixed_setter_available() ||
+      !preview || preview->state != PreviewState::ready || !source.inputs ||
+      !source.program_snapshot || !started_program_.files_changed ||
+      source.inputs->program_file != state.program_file || !state.tool_change_line ||
+      !state.requested_tool)
+    return refused("Measuring at M6 requires a complete check of the running program.");
+  const auto tool = *state.requested_tool;
+  if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(tool) != false)
+    return refused("Restart requires a tool verified for machining.");
+  const auto line = *state.tool_change_line;
+  const auto target = std::ranges::find_if(preview->segments, [line](const auto& segment) {
+    return segment.line > line;
+  });
+  if (target == preview->segments.end() || target->tool != tool)
+    return refused("There is no verified motion to restart after this tool change.");
+
+  std::string_view remaining = *source.program_snapshot;
+  for (int index = 1; index < line && !remaining.empty(); ++index)
+    static_cast<void>(program_line(remaining));
+  const auto exchange = inspect_probe_code(program_line(remaining));
+  if (!exchange.changes_tool || exchange.relabels_tool || exchange.stops_program ||
+      !exchange.refusal.empty())
+    return refused("The original M6 block could not be verified.");
+  for (int index = line + 1; index < target->line; ++index) {
+    const auto block = inspect_probe_code(program_line(remaining));
+    if (block.changes_tool || block.relabels_tool || block.stops_program ||
+        block.refusal == probe_code_unknown)
+      return refused("Restart would skip a tool change, stop, or unsupported block.");
+  }
+  const auto context = [&]() -> SetterEpoch {
+    const std::scoped_lock lock{mutex_};
+    return {request.page.value, setter_datum_, setter_tool_, cancels_};
+  };
+  const auto before = context();
+  const auto still = [&] { return wanted(request) && context().datum == before.datum; };
+  const auto setter = port_.fixed_setter({SetterAction::status}, before, still);
+  if (!setter || !setter->calibration)
+    return refused("Teach the fixed setter before measuring at a program tool change.");
+
+  const auto anchored = [&](const RestartPoint& point, double length) {
+    return point.line == target->line && point.tool == tool && point.h == tool &&
+           std::abs(point.tool_offset[2] - length) <= 0.001 &&
+           std::ranges::equal(restart_machine_position(point), state.tool_change_position,
+                              [](double expected, double actual) {
+                                return std::abs(expected - actual) <= 0.001;
+                              });
+  };
+  const auto old_tool = std::ranges::find(source.inputs->tools, tool, &Tool::number);
+  if (old_tool == source.inputs->tools.end())
+    return refused("A cutting tool in the tool table and a fixed setter are required.");
+  auto trial_inputs = *source.inputs;
+  trial_inputs.restart_line = target->line;
+  trial_inputs.restart_loaded_tool = tool;
+  const auto trial = restart_engine_->compute(trial_inputs, [&] { return !still(); });
+  if (!still() || trial.cancelled || !trial.program_snapshot ||
+      *trial.program_snapshot != *source.program_snapshot ||
+      started_program_.files_changed([&] { return !still(); }))
+    return refused("The program or tool data changed before measurement.");
+  const auto& trial_point = trial.outcome.restart;
+  if (!trial_point || !anchored(*trial_point, old_tool->length) || !trial.files_changed)
+    return refused(trial.outcome.restart_blocked.empty()
+                       ? "There is no verified motion to restart after this tool change."
+                       : trial.outcome.restart_blocked);
+
+  auto prepared = port_.prepare_tool_measurement(tool, state.tool_request, line,
+                                                 *trial_point, *source.inputs, still);
+  if (prepared.status != ActionStatus::accepted)
+    return staged(std::move(prepared));
+  auto original = std::exchange(started_program_, {});
+  request.sent = true;
+  {
+    std::unique_lock lock{mutex_};
+    const auto loaded = [&] {
+      return status_.link == Link::live && status_.interp == InterpState::idle &&
+             status_.mode == TaskMode::mdi && !status_.requested_tool &&
+             status_.tool_in_spindle == tool;
+    };
+    work_ready_.wait_for(lock, std::chrono::seconds{2}, [&] {
+      return loaded() || !current(request);
+    });
+    if (!current(request) || !loaded())
+      return answer({CommandOutcome::failed, "The program stopped before the tool could be measured."});
+  }
+  const auto measurement_epoch = context();
+  const auto maintain = [&] { return still() && context() == measurement_epoch; };
+  if (!maintain() || original.files_changed([&] { return !maintain(); }))
+    return answer({CommandOutcome::failed, "The program stopped before the tool could be measured."});
+  const auto ready = port_.snapshot();
+  const FixedSetterRequest measurement{SetterAction::touch_off, tool,
+                                        {ready.axes[0].machine, ready.axes[1].machine, ready.axes[2].machine}};
+  const auto measured = port_.fixed_setter(measurement, measurement_epoch, maintain);
+  if (!measured)
+    return answer({CommandOutcome::failed, measured.error()});
+  const auto& recorded = measured->measurement;
+  if (!recorded || recorded->calibration)
+    return answer({CommandOutcome::failed, "LinuxCNC did not measure the tool length."});
+  const auto length = recorded->value;
+
+  Stage result;
+  result.setter = *measured;
+  const auto cannot_restart = [&](std::string reason) {
+    result.reply = {CommandOutcome::failed, std::move(reason)};
+    return result;
+  };
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  CheckedPreview fresh;
+  for (;;) {
+    if (!maintain())
+      return cannot_restart("Tool measured. Restart preparation was cancelled.");
+    fresh = preview_->checked_preview();
+    if (fresh.preview && fresh.preview->state == PreviewState::ready && fresh.source.inputs &&
+        fresh.source.inputs->program_file == state.program_file && fresh.files_changed &&
+        fresh.source.program_snapshot && *fresh.source.program_snapshot == *original.source.program_snapshot &&
+        fresh.source.inputs->block_delete == original.source.inputs->block_delete &&
+        fresh.source.inputs->start.tool_in_spindle == tool &&
+        std::ranges::any_of(fresh.source.inputs->tools, [&](const auto& row) {
+          return row.number == tool && std::abs(row.length - length) <= 0.001;
+        }))
+      break;
+    if (std::chrono::steady_clock::now() >= deadline)
+      return cannot_restart("Tool measured. The updated program check is unavailable.");
+    std::unique_lock lock{mutex_};
+    work_ready_.wait_for(lock, std::chrono::milliseconds{50}, [&] { return !current(request); });
+  }
+  // Reproduce the planned path from before the M6. A preview started at the setter can
+  // inherit its XY on the first Z-only motion. Validate the approach from the live pose.
+  auto inputs = *original.source.inputs;
+  inputs.tools = fresh.source.inputs->tools;
+  inputs.raw_tools = fresh.source.inputs->raw_tools;
+  // The helper seeds slot zero from the original spindle tool. The live slot now holds M6's tool.
+  std::erase_if(inputs.raw_tools, [](const auto& entry) { return entry.index == 0; });
+  auto replay = restart_engine_->compute(inputs, [&] { return !maintain(); });
+  if (!maintain() || replay.cancelled || !replay.program_snapshot ||
+      *replay.program_snapshot != *original.source.program_snapshot)
+    return cannot_restart("Tool measured. The restart source changed.");
+  if (replay.outcome.state != PreviewState::ready || !replay.outcome.check || !replay.files_changed)
+    return cannot_restart("Tool measured. The updated program check is unavailable.");
+  if (!replay.outcome.check->errors.empty())
+    return cannot_restart(replay.outcome.check->errors.front());
+  inputs.restart_line = target->line;
+  inputs.restart_loaded_tool = tool;
+  auto computed = restart_engine_->compute(inputs, [&] { return !maintain(); });
+  if (!maintain() || computed.cancelled || !computed.program_snapshot ||
+      *computed.program_snapshot != *original.source.program_snapshot ||
+      preview_->restart_source(fresh.preview->context).inputs != fresh.source.inputs)
+    return cannot_restart("Tool measured. The restart source changed.");
+  auto point = computed.outcome.restart;
+  if (!point || !anchored(*point, length) || !computed.files_changed)
+    return cannot_restart(computed.outcome.restart_blocked.empty()
+                              ? "Tool measured. There is no verified restart at the next motion."
+                              : computed.outcome.restart_blocked);
+  const double clearance = point->clearance_z;
+  if (auto reason = port_.validate_restart(*point, *fresh.source.inputs); !reason.empty())
+    return cannot_restart(std::move(reason));
+  if (!maintain())
+    return cannot_restart("Tool measured. Restart preparation was cancelled.");
+  RestartPlan plan{++restart_id_, false, *point};
+  inputs.restart_line.reset();
+  inputs.restart_loaded_tool.reset();
+  auto& outcome = replay.outcome;
+  CheckedPreview new_run{
+      std::make_shared<const Preview>(
+          Preview{fresh.preview->context, outcome.state, std::move(outcome.error),
+                  std::move(outcome.segments), outcome.bounds, std::move(outcome.dwells),
+                  std::move(outcome.check)}),
+      {std::make_shared<const PreviewInputs>(std::move(inputs)), std::move(replay.program_snapshot)},
+      std::move(replay.files_changed)};
+  restart_ = PreparedRestart{plan, clearance, fresh.preview->context, request, fresh.source,
+                              std::move(computed.files_changed), {}, std::move(new_run)};
+  result.restart = plan;
+  return result;
 }
 
 auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
@@ -1541,6 +1747,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.remove_tool(c.number, still);
           });
         } else if constexpr (std::is_same_v<T, ToolChanged>) {
+          if (c.measure_request)
+            return measure_tool_change(request, state);
           if (restart_ && restart_->tool_request)
             return resume_restart(request, state);
           // The tool the decision was made for: not another one asked for since.

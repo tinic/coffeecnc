@@ -190,7 +190,10 @@ auto wait(Fields& fields, const Wait& w) -> Json {
         } else if constexpr (std::is_same_v<T, WaitPaused>) {
           return {{"kind", "paused"}};
         } else if constexpr (std::is_same_v<T, WaitToolChange>) {
-          return {{"kind", "tool_change"}, {"tool", kind.tool}};
+          Json result{{"kind", "tool_change"}, {"tool", kind.tool}};
+          if (kind.measure_request)
+            result["measure_request"] = *kind.measure_request;
+          return result;
         } else {
           static_assert(std::is_same_v<T, WaitDwell>, "Every wait needs a wire form.");
           return {{"kind", "dwell"},

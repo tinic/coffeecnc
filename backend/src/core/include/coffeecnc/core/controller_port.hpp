@@ -185,6 +185,12 @@ public:
   // was replaced, also by a new one for the same tool.
   [[nodiscard]] virtual auto tool_changed(int tool, std::uint64_t request, const Wanted& wanted)
       -> ActionResult = 0;
+  // Stops the exact AUTO tool-change request without acknowledging it and registers the
+  // installed tool in idle MDI. This does not move the machine or apply compensation.
+  [[nodiscard]] virtual auto prepare_tool_measurement(int, std::uint64_t, int, const RestartPoint&,
+                                                      const PreviewInputs&, const Wanted&) -> ActionResult {
+    return {ActionStatus::failed, "Measuring during a program tool change is unavailable."};
+  }
   // Replaces the row with this tool number, or adds it.
   [[nodiscard]] virtual auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto remove_tool(int number, const Wanted& wanted) -> ActionResult = 0;

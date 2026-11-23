@@ -188,6 +188,24 @@ describe('translateMessage', () => {
       .toBe('Auf dem Datenträger gespeichert, aber nicht erneut geöffnet. emcTaskPlanOpen failed')
   })
 
+  it('keeps data placeholders verbatim, also when they are catalog words', async () => {
+    await setLanguage('fr')
+    // `two` is a catalog word ("deux"), but here it names a subroutine file.
+    expect(translateMessage('No preview: two.ngc line 3: two.'))
+      .toBe('Pas d’aperçu\u202f: two.ngc ligne 3\u202f: deux.')
+    expect(translateMessage('the directory two cannot be made: Permission denied'))
+      .toBe('impossible de créer le dossier two\u202f: Permission denied')
+    expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')
+  })
+
+  it('translates a nested reason', async () => {
+    await setLanguage('fr')
+    expect(translateMessage("Can't home: machine is in E-stop"))
+      .toBe('Référencement impossible\u202f: la machine est en arrêt d’urgence')
+    expect(translateMessage("Arc move in MDI would exceed X's negative limit"))
+      .toBe('Le mouvement circulaire en MDI dépasserait la limite négative de X')
+  })
+
   it('passes unknown text unchanged', async () => {
     await setLanguage('fr')
     expect(translateMessage('joint 0 following error')).toBe('joint 0 following error')

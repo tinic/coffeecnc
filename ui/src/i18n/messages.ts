@@ -4,10 +4,16 @@
 // `parts/messages/en.json` (panel store, simulator, command refusals) and `parts/backend/en.json`
 // (native storage, files, preview, LinuxCNC adapter) hold each known sentence, with `{name}`
 // for its variable parts, and the matching key gives the translation. Text that matches no sentence, for example LinuxCNC's
-// own operator errors, is shown as it arrived.
+// own operator errors, is shown as it arrived. A placeholder is translated in turn only when
+// its name is in `nested`: those carry a sentence or a phrase of the catalogs (a reason, an
+// action, "longer", a motor count). Every other placeholder (a path, a file or program name, a
+// tool, a G-code line, a number) is data and stays exactly as it arrived, also when it is a
+// catalog word such as "two".
 import { i18n, type Params } from './index'
 import backend from './parts/backend/en.json?raw'
 import panel from './parts/messages/en.json?raw'
+
+const nested = new Set(['detail', 'error', 'reason', 'what', 'where', 'direction', 'motors'])
 
 interface Pattern { key: string; regex: RegExp; names: string[] }
 
@@ -49,7 +55,10 @@ export function matchMessage(text: string): { key: string; params: Params } | nu
     const match = pattern.regex.exec(text)
     if (match === null) continue
     const params: Params = {}
-    pattern.names.forEach((name, index) => { params[name] = translateMessage(match[index + 1] ?? '') })
+    pattern.names.forEach((name, index) => {
+      const value = match[index + 1] ?? ''
+      params[name] = nested.has(name) ? translateMessage(value) : value
+    })
     return { key: pattern.key, params }
   }
   return null

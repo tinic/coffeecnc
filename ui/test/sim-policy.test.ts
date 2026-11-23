@@ -116,3 +116,25 @@ describe('tool length offset codes', () => {
     expect(r.status().active_codes).toContain('G49')
   })
 })
+
+describe('native refusals', () => {
+  it('refuses an MDI block that native refuses, before the machine state', () => {
+    const r = rig()
+    const refusal = { outcome: 'rejected', reason: 'MDI requires one nonempty block of at most 254 bytes.' }
+    for (const text of ['', ' \t', 'G0 X1\nG0 X2', 'G0 X1\0', `(${'x'.repeat(253)})`, `(${'ä'.repeat(127)})`])
+      expect(r.send({ type: 'mdi', text })).toMatchObject(refusal)
+    r.home()
+    expect(r.send({ type: 'mdi', text: `G0 X1 (${'x'.repeat(246)})` }).outcome).toBe('accepted')
+  })
+
+  it('refuses to save operator settings as native does without its storage', () => {
+    const r = rig()
+    expect(r.send({ type: 'set_operator_settings', machine_id: 'sim', base_revision: 0, document: {} as never })).toMatchObject({
+      outcome: 'rejected', reason: 'Operator settings storage is not part of this session.' })
+  })
+
+  it('refuses to start the spindle with the touch probe loaded, as native', () => {
+    expect(probeRig().send({ type: 'set_spindle', direction: 'forward', rpm: 6000 }))
+      .toMatchObject({ outcome: 'rejected', reason: probeLoadedReason })
+  })
+})

@@ -58,8 +58,12 @@ auto hal_words(std::string_view line) -> std::vector<std::string> {
   }
   std::istringstream input{std::string(line)};
   std::vector<std::string> words;
-  for (std::string word; input >> std::quoted(word);)
+  for (;;) {
+    std::string word;
+    if (!(input >> std::quoted(word)))
+      break;
     words.push_back(std::move(word));
+  }
   return words;
 }
 

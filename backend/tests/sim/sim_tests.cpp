@@ -4093,10 +4093,13 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
   refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel");
 
   const auto report = load("G0 X8\nG1 X10 F300\n");
+  const bool expected_frame = report.frames.size() == 1 &&
+      std::ranges::all_of(report.frames, [](const ProgramFrameCheck& frame) {
+        return frame.wcs == 1 && frame.bounds && near(frame.bounds->max[0], 10);
+      });
   check("preflight_reports_work_and_feed",
         report.errors.empty() && report.travel == TravelCheck::unknown && report.warnings.empty() &&
-            report.frames.size() == 1 && report.frames[0].wcs == 1 && report.frames[0].bounds &&
-            near(report.frames[0].bounds->max[0], 10) && report.feed == ProgramRange{300, 300});
+            expected_frame && report.feed == ProgramRange{300, 300});
   const auto direct = start(false, context);
   const bool reached_direct =
       rig.pump_until(5s, [&] { return rig.idle() && near(rig.status().work[0], 10, 0.02); });
@@ -4473,7 +4476,6 @@ void paused_z_jog(Rig& rig) {
 }
 
 void paused_spindle(Rig& rig, NmlLoads& loads) {
-  constexpr auto lift = R"("type":"jog_paused_z","distance":2,"stop_spindle":true)";
   constexpr auto resume = R"("type":"resume")";
   constexpr auto abort = R"("type":"abort")";
   const auto file = rig.config.program_prefix + "/coffeecnc_paused_spindle.ngc";
@@ -4502,7 +4504,7 @@ void paused_spindle(Rig& rig, NmlLoads& loads) {
     return eligible;
   };
   const auto held = [&] {
-    const auto jog = rig.post(lift);
+    const auto jog = rig.post(R"("type":"jog_paused_z","distance":2,"stop_spindle":true)");
     const bool off = rig.pump_until(3s, [] { return hal_signal("spindle-enable") == "FALSE"; });
     rig.pump(150ms);
     check("paused_spindle_waits_for_measured_stop",

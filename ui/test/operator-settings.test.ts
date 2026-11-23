@@ -16,7 +16,7 @@ interface Rig {
   language: Ref<Language>
   settings: OperatorSettingsController
   sent: ToMachine[]
-  storage: { getItem: Mock<() => string>; setItem: Mock<(key: string, value: string) => void> }
+  storage: { getItem: Mock<(key: string) => string | null>; setItem: Mock<(key: string, value: string) => void> }
   storageAccess: Mock<() => Pick<Storage, 'getItem' | 'setItem'>>
   connect: (id?: string | null, capable?: boolean) => void
   snapshot: (revision?: number, document?: OperatorPreferences, id?: string) => void
@@ -25,19 +25,23 @@ interface Rig {
   pass: (ms: number) => void
 }
 function rig(simulated = false, saved: unknown = null,
-  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme; languageOverride?: Language } = {}): Rig {
+  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme; languageOverride?: Language; savedLanguage?: string } = {}): Rig {
   let receive: Listener = () => undefined
   let timer: (() => void) | null = null
   let now = 0
   const sent: ToMachine[] = []
-  const storage = { getItem: vi.fn(() => JSON.stringify(saved)), setItem: vi.fn<(key: string, value: string) => void>() }
+  const stored = new Map<string, string>([['coffeecnc.operator-settings.v1', JSON.stringify(saved)]])
+  const { savedLanguage, ...presentation } = overrides
+  if (savedLanguage !== undefined) stored.set('coffeecnc.panel-language.v1', savedLanguage)
+  const storage = { getItem: vi.fn((key: string) => stored.get(key) ?? null),
+    setItem: vi.fn<(key: string, value: string) => void>((key, value) => { stored.set(key, value) }) }
   const storageAccess = vi.fn(() => storage)
   const panel = createPanel({ transport: { simulated, listen: (listener): void => { receive = listener },
     send: (command): void => { sent.push(command) } }, now: (): number => now,
   timers: { setInterval: (callback): number => { timer = callback; return 1 }, clearInterval: (): void => { timer = null } } })
   const theme = ref<PanelTheme>('light')
   const language = ref<Language>('en')
-  const settings = createOperatorSettingsState(panel.state, panel, storageAccess, { theme, language, ...overrides })
+  const settings = createOperatorSettingsState(panel.state, panel, storageAccess, { theme, language, ...presentation })
   panel.start(); disposals.push(settings.dispose, panel.stop)
   const connect = (id: string | null = 'G0759', capable = true): void => {
     receive({ ...hello, machine_id: id, max_spindle_rpm: 3000, max_jog_velocity: 1000, ...(capable ? { operator_settings_storage: 1 } : {}) })
@@ -132,8 +136,18 @@ describe('operator settings', () => {
     browser.settings.chooseLanguage(choice)
     expect(browser.language.value).toBe(choice)
     const browserSaved: unknown = JSON.parse(browser.storage.setItem.mock.lastCall?.[1] ?? 'null')
-    expect(browserSaved).toMatchObject({ language: choice })
-    expect(rig(true, browserSaved).language.value).toBe(choice)
+    // The previous version refuses a settings document with a field it does not know.
+    expect(Object.keys(browserSaved as object).sort()).toEqual(['default_jog_velocity', 'default_spindle_rpm',
+      'enabled_wcs', 'go_to_safe_z', 'program_layout', 'recent_programs', 'saved_positions', 'startup_units',
+      'theme', 'tool_reference_height', 'version'])
+    expect(browser.storage.setItem).toHaveBeenCalledWith('coffeecnc.panel-language.v1', choice)
+    expect(rig(true, browserSaved, { savedLanguage: choice }).language.value).toBe(choice)
+    expect(rig(true, browserSaved).language.value).toBe('en')
+    // Choosing a theme keeps the language and does not write it again.
+    browser.storage.setItem.mockClear()
+    browser.settings.chooseTheme('dark')
+    expect(browser.storage.setItem.mock.calls.map(([key]) => key)).toEqual(['coffeecnc.operator-settings.v1'])
+    expect(browser.language.value).toBe(choice)
 
     const native = rig()
     native.connect()

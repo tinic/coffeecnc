@@ -2,10 +2,13 @@ import { reactive, ref, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
-import { t, type Language } from './i18n'
+import { decodeLanguage, t, type Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
+// The language is kept apart from the settings, as on the machine (panel-language.json): earlier
+// versions refuse a settings document with a field they do not know.
+const languageKey = 'coffeecnc.panel-language.v1'
 type SaveCommand = Extract<CommandBody, { type: 'set_operator_settings' }>
 export interface SettingsContext { hello: Hello | null; revision: number | null }
 export interface SettingsResult { saved: boolean; reason: string }
@@ -50,6 +53,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     try {
       const saved: unknown = JSON.parse(browserStorage().getItem(storageKey) ?? 'null')
       panel.preferences = decodeOperatorPreferences(saved) ?? defaultOperatorPreferences()
+      panel.preferences.language = decodeLanguage(browserStorage().getItem(languageKey)) ?? 'en'
     } catch { /* Browser demo can still run with session defaults. */ }
   }
   const theme = presentation?.theme ?? ref<PanelTheme>('light')
@@ -173,7 +177,11 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       })
     }
     if (state.storage === 'browser') {
-      try { browserStorage().setItem(storageKey, JSON.stringify(document)) }
+      const { language: chosen, ...stored } = document
+      try {
+        if (chosen !== panel.preferences.language) browserStorage().setItem(languageKey, chosen)
+        browserStorage().setItem(storageKey, JSON.stringify(stored))
+      }
       catch { return Promise.resolve(fail(t('status.settingsState.browserStorage'))) }
     }
     panel.preferences = document

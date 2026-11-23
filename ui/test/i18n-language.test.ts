@@ -21,6 +21,10 @@ for (const [path, text] of Object.entries(raw)) {
   catalog.set(language, flatten('', JSON.parse(text), catalog.get(language) ?? new Map<string, string>()))
 }
 const english = catalog.get('en') ?? new Map<string, string>()
+// Load every language's catalogs while the file is collected, outside the tests' timeouts: the
+// first switch to a language compiles its catalogs and can take over 5 s on a loaded host (#267).
+await Promise.all(languages.filter((language) => language !== 'en').map(setLanguage))
+await setLanguage('en')
 // Texts the components render with t(): labels and sentences without placeholders. The run-time
 // sentence areas are translated through translateMessage and checked in i18n-native.test.ts.
 const plain = [...english].filter(([key, text]) => !/[{}|]/.test(text) && text.length >= 4 &&
@@ -30,14 +34,29 @@ const keysOf = new Map<string, string[]>()
 for (const [key, text] of plain) keysOf.set(text, [...(keysOf.get(text) ?? []), key])
 
 let wrapper: VueWrapper
+// The simulator ticks for the life of the page. Its ticks must end with this file: one after the
+// jsdom environment is gone re-reads window in step.ts's program watch and throws (#279).
+const intervals: number[] = []
 beforeAll(async () => {
   vi.stubGlobal('ResizeObserver', class { observe(): void { /* Fixed size. */ } disconnect(): void { /* Nothing. */ } })
   Element.prototype.scrollTo = (): void => undefined
+  const setInterval = window.setInterval.bind(window)
+  vi.spyOn(window, 'setInterval').mockImplementation((...args: Parameters<typeof window.setInterval>) => {
+    const id = setInterval(...args)
+    intervals.push(id)
+    return id
+  })
   wrapper = mount(App, { attachTo: document.body })
   start()
   await flushPromises()
 })
-afterAll(async () => { wrapper.unmount(); await setLanguage('en') })
+afterAll(async () => {
+  wrapper.unmount()
+  expect(intervals.length).toBeGreaterThan(0)
+  for (const id of intervals) window.clearInterval(id)
+  vi.restoreAllMocks()
+  await setLanguage('en')
+})
 
 /** Every text the page shows or labels on its own: element texts, text nodes, labels, titles. */
 function shownTexts(): Set<string> {

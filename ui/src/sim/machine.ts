@@ -5,6 +5,7 @@
 import type {
   AxisLetter,
   AxisStatus,
+  RotaryAxisStatus,
   CommandResult,
   DiagnosticInput,
   Diagnostics,
@@ -66,6 +67,29 @@ const homePosition: Vec3 = [0, 0, 0]
 const startPosition: Vec3 = [140, 90, -60]
 /** Z first, so the tool is clear before X and Y move. */
 const homeOrder: readonly AxisIndex[] = [2, 0, 1]
+
+/**
+ * Where each axis's reference mark is on a machine that homes on reference marks
+ * (`enableReferenceMarks`). Homing ends at the mark, as HOME and HOME_OFFSET there say.
+ */
+export const referenceMarks: Vec3 = [150, 100, -50]
+/** `at_reference_mark` is true within this distance of the mark, as on the G0759. */
+export const atMarkDistance = 2
+/** command_policy.cpp, Home: the mark of the axis is not found yet. */
+export function crossMarkFirst(axis: string): string {
+  return `Move ${axis} across its reference mark first: homing cannot find it yet.`
+}
+
+/** The A axis of the rotary configuration (`enableRotary`): unhomed at switch-on, homes to 0°. */
+const rotaryStart = 37.5
+/** preview_engine.cpp load_preview_settings, on a configuration with rotary joints. */
+export const rotaryPreviewRefusal = 'Program preview and line restart are unavailable on rotary configurations.'
+/** command_policy.cpp, ClearG92: G92.1 would also clear the A, B and C shift. */
+export const rotaryClearShiftRefusal =
+  'On a machine with A, B or C axes, clear the G92/G52 shift with G92.1 in MDI: it clears their shift too.'
+
+/** A linear axis, or the rotary A axis. */
+type HomeAxis = AxisIndex | 'a'
 
 const letters: readonly AxisLetter[] = ['x', 'y', 'z']
 const names: readonly string[] = ['X', 'Y', 'Z']
@@ -193,8 +217,12 @@ export class SimMachine {
   /** Before homing, LinuxCNC counts from wherever the machine was switched on. */
   private readonly unhomedOffset: Vec3 = [...startPosition]
   private readonly homed: [boolean, boolean, boolean] = [false, false, false]
-  private homeQueue: AxisIndex[] = []
-  private homing: { axis: AxisIndex; from: number; elapsed: number; seconds: number } | null = null
+  private homeQueue: HomeAxis[] = []
+  private homing: { axis: HomeAxis; from: number; elapsed: number; seconds: number } | null = null
+  /** Reference marks found since the encoders were powered; null on a machine without them. */
+  private marks: [boolean, boolean, boolean] | null = null
+  /** The A axis, in degrees; null on the three-axis mill. */
+  private rotary: { angle: number; unhomedOffset: number; homed: boolean } | null = null
   private readonly jogs: [JogState | null, JogState | null, JogState | null] = [null, null, null]
   private exec: Exec | null = null
   private velocity = 0
@@ -267,14 +295,31 @@ export class SimMachine {
     this.probe = new SimProbe(this.modal.tools)
   }
 
+  /**
+   * A machine that homes on reference marks ([COFFEECNC] REFERENCE_MARKS = yes): an axis's mark
+   * is found when the axis crosses it, and Home is refused for an axis whose mark is not found.
+   */
+  enableReferenceMarks(): void {
+    this.marks = [false, false, false]
+  }
+
+  /** A rotary A axis besides X, Y and Z: it homes with Home all; preview and restart are refused. */
+  enableRotary(): void {
+    this.rotary = { angle: rotaryStart, unhomedOffset: rotaryStart, homed: false }
+    this.previewKey = ''
+    this.checkPreview()
+  }
+
   // ---- time -----------------------------------------------------------------------------------
 
   tick(ms: number = tickMs): void {
     this.now += ms
     this.velocity = 0
+    const before: Vec3 = [...this.phys]
     this.runHoming(ms)
     this.runJogs(ms)
     this.runExec(ms)
+    this.findMarks(before)
     this.checkTools()
     this.checkOffsets()
     this.checkPreview()
@@ -423,6 +468,10 @@ export class SimMachine {
         min_limit: travel.min[axis],
         max_limit: travel.max[axis],
         on_hard_limit: !homed && (this.phys[axis] <= travel.min[axis] || this.phys[axis] >= travel.max[axis]),
+        ...(this.marks === null ? {} : {
+          reference_mark: this.marks[axis],
+          at_reference_mark: Math.abs(this.phys[axis] - referenceMarks[axis]) <= atMarkDistance,
+        }),
       }
     })
     const m = this.modal
@@ -473,6 +522,21 @@ export class SimMachine {
       wait: this.wait(),
       active_codes: activeCodes(m),
       program_units: m.units,
+      ...(this.rotary === null ? {} : { rotary_axes: [this.rotaryStatus(this.rotary)] }),
+    }
+  }
+
+  /** As panel_mapping.cpp: the sim keeps no A offsets, so work equals machine. */
+  private rotaryStatus(rotary: NonNullable<SimMachine['rotary']>): RotaryAxisStatus {
+    const machine = rotary.angle - (rotary.homed ? 0 : rotary.unhomedOffset)
+    return {
+      axis: 'a',
+      homed: rotary.homed,
+      homing: this.homing?.axis === 'a',
+      machine,
+      work: machine,
+      dtg: 0,
+      on_hard_limit: false,
     }
   }
 
@@ -606,12 +670,14 @@ export class SimMachine {
     if (key !== this.previewKey) {
       this.previewKey = key
       this.previewContext += 1
-      this.previewDue = this.program === null ? null : this.now + previewDelayMs
+      // A rotary configuration refuses every preview, with or without a program.
+      const refused = this.rotary !== null
+      this.previewDue = this.program === null || refused ? null : this.now + previewDelayMs
       this.preview = {
         type: 'preview',
         context: this.previewContext,
-        state: this.program === null ? 'unavailable' : 'pending',
-        error: null,
+        state: this.program === null || refused ? 'unavailable' : 'pending',
+        error: refused ? { line: 0, text: rotaryPreviewRefusal } : null,
         segments: [],
         bounds: null,
         dwells: [],
@@ -649,7 +715,27 @@ export class SimMachine {
   }
 
   private allHomed(): boolean {
-    return this.homed.every((h) => h)
+    return this.homed.every((h) => h) && this.rotary?.homed !== false
+  }
+
+  private position(axis: HomeAxis): number {
+    return axis === 'a' ? this.rotary?.angle ?? 0 : this.phys[axis]
+  }
+
+  private homeTarget(axis: HomeAxis): number {
+    if (axis === 'a') return 0
+    return this.marks === null ? homePosition[axis] : referenceMarks[axis]
+  }
+
+  /** The HAL learns where a mark is when its axis crosses it, by any motion. */
+  private findMarks(before: Vec3): void {
+    const marks = this.marks
+    if (marks === null) return
+    for (const axis of axisIndices) {
+      const from = before[axis] - referenceMarks[axis]
+      const to = this.phys[axis] - referenceMarks[axis]
+      if (before[axis] !== this.phys[axis] && from * to <= 0) marks[axis] = true
+    }
   }
 
   private runHoming(ms: number): void {
@@ -658,20 +744,33 @@ export class SimMachine {
       if (next === undefined) {
         return
       }
-      const from = this.phys[next]
-      const seconds = Math.max(minHomeSeconds, (Math.abs(from - homePosition[next]) / homeVelocity) * 60)
-      this.homed[next] = false
+      const from = this.position(next)
+      const seconds = Math.max(minHomeSeconds, (Math.abs(from - this.homeTarget(next)) / homeVelocity) * 60)
+      if (next === 'a') {
+        if (this.rotary) this.rotary.homed = false
+      } else {
+        this.homed[next] = false
+      }
       this.homing = { axis: next, from, elapsed: 0, seconds }
     }
     const homing = this.homing
     homing.elapsed += ms / 1000
     const t = Math.min(1, homing.elapsed / homing.seconds)
-    const target = homePosition[homing.axis]
-    this.phys[homing.axis] = homing.from + (target - homing.from) * t
+    const target = this.homeTarget(homing.axis)
+    const here = homing.from + (target - homing.from) * t
+    if (homing.axis === 'a') {
+      if (this.rotary) this.rotary.angle = here
+    } else {
+      this.phys[homing.axis] = here
+    }
     this.velocity = (Math.abs(target - homing.from) / homing.seconds) * 60
     if (t >= 1) {
-      this.homed[homing.axis] = true
-      this.unhomedOffset[homing.axis] = 0
+      if (homing.axis === 'a') {
+        if (this.rotary) Object.assign(this.rotary, { homed: true, unhomedOffset: 0 })
+      } else {
+        this.homed[homing.axis] = true
+        this.unhomedOffset[homing.axis] = 0
+      }
       this.homing = null
       this.velocity = 0
       this.syncModal()
@@ -1186,6 +1285,7 @@ export class SimMachine {
         return this.internal(`G10 L2 P${String(command.wcs)} R${degrees}`)
       }
       case 'clear_g92': {
+        if (this.rotary !== null) return reject(rotaryClearShiftRefusal)
         const blocked = this.offsetCommand('clear the G92/G52 shift')
         if (blocked !== null) return blocked
         return this.internal('G92.1')
@@ -1353,9 +1453,18 @@ export class SimMachine {
     if (this.exec !== null) {
       return reject("Can't home while a program or MDI command is running")
     }
+    // command_policy.cpp: the home move would search for a mark it cannot find.
+    const marks = this.marks
+    if (marks !== null) {
+      const missing = axisIndices.find((index) => (axis === 'all' || letters[index] === axis) && !marks[index])
+      if (missing !== undefined) return reject(crossMarkFirst(names[missing] ?? ''))
+    }
     this.stopJogs()
     this.mode = 'manual'
-    const wanted = axis === 'all' ? [...homeOrder] : [letters.indexOf(axis) as AxisIndex]
+    // LinuxCNC's home of all joints homes the rotary joint too, after the linear ones.
+    const wanted: HomeAxis[] = axis === 'all'
+      ? [...homeOrder, ...(this.rotary === null ? [] : ['a' as const])]
+      : [letters.indexOf(axis) as AxisIndex]
     for (const index of wanted) {
       if (this.homing?.axis !== index && !this.homeQueue.includes(index)) {
         this.homeQueue.push(index)
@@ -1617,6 +1726,10 @@ export class SimMachine {
     const program = this.program
     if (program === null) {
       return reject('No program is loaded')
+    }
+    // Session::plan_restart: no restart source, and the preview shown for the context says why.
+    if (this.preview.context === context && this.preview.state === 'unavailable' && this.preview.error) {
+      return reject(this.preview.error.text)
     }
     if (context !== this.previewContext || this.preview.context !== context || this.preview.state !== 'ready') {
       return reject('Wait for the preview of this program')

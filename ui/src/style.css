@@ -48,7 +48,6 @@
   --control: #2b3035; --control-hover: #343c43; --control-active: #404951;
   --line: #343a40; --line-strong: #3d444b;
   --text: #edf0f2; --text-dim: #a0aab3; --text-faint: #7d8993;
-  --dro-zero-opacity: .72;
   --accent: #81b4ff; --accent-soft: #283c56; --on-accent: #102237;
   --go: #78d7b3; --go-soft: #233c34;
   --gcode-rapid: #b2bcc6; --gcode-cut: #9ec6ff; --gcode-modal: #b9a9f4; --gcode-x: #edabb1;

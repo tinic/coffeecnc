@@ -83,7 +83,9 @@ jobs:
       - name: Build tools and LinuxCNC
         run: |
           set -eu
-          tools="git build-essential cmake ninja-build pkg-config dpkg-dev file xvfb xauth
+          # xvfb, xauth: the window tests. bubblewrap: remote_server_dns, which skips where the
+          # container refuses a hostname namespace.
+          tools="git build-essential cmake ninja-build pkg-config dpkg-dev file xvfb xauth bubblewrap
             libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev"
           if [ "$LINUXCNC_ORG" = 1 ]; then
             apt-get install -y --no-install-recommends $tools linuxcnc-uspace-dev

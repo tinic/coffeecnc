@@ -88,10 +88,10 @@ main { position: relative; flex: 1; min-height: 0; margin: 0 24px 12px; }
   .remote :deep(.basis-toggle) { min-height: 44px; }
   .remote :deep(.display-units) { grid-area: 1 / 3; justify-content: flex-end; padding: 0; margin: 0; border: 0; }
   .remote :deep(.units button) { width: 36px; height: 44px; }
+  .remote :deep(.linear-axes) { display: contents; }
   .remote :deep(.axis-group) { border: 0; }
-  .remote :deep(.remote-axis) { display: grid; width: 100%; height: auto; gap: 2px; padding: 2px 4px; }
-  .remote :deep(.letter), .remote :deep(.number) { font-size: clamp(15px, 5vw, 20px); }
-  .remote :deep(.reading) { width: auto; min-height: 35px; text-align: left; }
+  .remote :deep(.remote-axis) { --type-dro: clamp(15px, 5vw, 20px); display: grid; width: 100%; height: auto; gap: 2px; padding: 2px 3px; }
+  .remote :deep(.reading) { min-height: 35px; text-align: left; }
   .remote :deep(.marker) { position: static; }
   .remote :deep(.rotary) { grid-column: span 3; flex-wrap: wrap; padding-left: 0; }
   .remote :deep(.rotary-axis) { flex: 1 1 100px; grid-template-columns: auto auto; gap: 4px; }

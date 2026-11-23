@@ -5,13 +5,13 @@
 /* Surface, type and spacing values from the original CoffeeCNC concept. */
 :root, .theme-sample {
   color-scheme: light;
-  --bg: #f5f6f7; --bg-sunken: #edf0f2; --panel: #fff; --panel-raised: #fff;
-  --preview-backdrop: radial-gradient(ellipse at 47% 33%, #fafcfd, #e8edf1 78%, #e2e9ef);
+  --bg: #eef1f3; --bg-sunken: #e4e9ed; --panel: #fbfcfd; --panel-raised: #fff;
+  --preview-backdrop: radial-gradient(ellipse at 45% 32%, #f8fafc, #e5ecf1 64%, #d4dfe7);
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #fbfcfd, #e8edf1 78%, #e2e8ed);
-  --control: #fff; --control-hover: #f1f4f7; --control-active: #e8edf0;
+  --control: #e9edf2; --control-hover: #dfe7ee; --control-active: #d1dce6;
   --line: #dce1e5; --line-strong: #dce1e5;
-  --text: #20272c; --text-dim: #68747d; --text-faint: #85919a;
-  --accent: #377ef2; --accent-soft: #edf3fe; --on-accent: #fff;
+  --text: #20272c; --text-dim: #515f6a; --text-faint: #697680;
+  --accent: #245bb0; --accent-soft: #e1edfc; --on-accent: #fff;
   --go: #187957; --go-soft: #e8f5ef; --warn: #966518; --warn-soft: #fff5df;
   --stop: #ba393d; --stop-soft: #fff0f0;
   --gcode-rapid: #495b6a; --gcode-cut: #1e5ca7; --gcode-modal: #5a4ca0; --gcode-x: #8f3d4c;
@@ -19,8 +19,11 @@
   --gcode-tool: #7a5130; --gcode-spindle: #32686b; --gcode-stop: #9a2637; --gcode-comment: #596671;
   --gcode-message: #495561; --gcode-flow: #504c83; --gcode-parameter: #515d75; --gcode-expression: #6a5470;
   --radius: 12px; --gap: 12px; --touch: 44px;
+  --type-sm: 12px; --type-body: 14px; --type-md: 16px; --type-lg: 20px;
+  --type-dro: 27px;
+  --press-fade: 100ms;
   --sans: 'DM Sans', system-ui, sans-serif; --mono: 'IBM Plex Mono', monospace;
-  font-family: var(--sans); font-size: 14px; line-height: 1.4;
+  font-family: var(--sans); font-size: var(--type-body); line-height: 1.4;
   font-variant-numeric: tabular-nums;
   color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
 }
@@ -41,10 +44,11 @@
   --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;
   --preview-backdrop: radial-gradient(ellipse at 46% 32%, #303943, #1c242d 75%, #171e26);
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #3b4652, #252e37 60%, #1c232b);
-  --control: #202326; --control-hover: #292e33; --control-active: #343a40;
+  --control: #2b3035; --control-hover: #343c43; --control-active: #404951;
   --line: #343a40; --line-strong: #3d444b;
   --text: #edf0f2; --text-dim: #a0aab3; --text-faint: #7d8993;
-  --accent-soft: #28374f; --go: #78d7b3; --go-soft: #233c34;
+  --accent: #81b4ff; --accent-soft: #283c56; --on-accent: #102237;
+  --go: #78d7b3; --go-soft: #233c34;
   --gcode-rapid: #b2bcc6; --gcode-cut: #9ec6ff; --gcode-modal: #b9a9f4; --gcode-x: #edabb1;
   --gcode-y: #a5d8bb; --gcode-z: #9ab9e5; --gcode-argument: #a9bacb; --gcode-rate: #cab4e8;
   --gcode-tool: #dfbf9a; --gcode-spindle: #98d2d1; --gcode-stop: #ff9a9f; --gcode-comment: #abb6c1;
@@ -53,13 +57,13 @@
 }
 
 :is(:root, .theme-sample)[data-theme='sandstone'] {
-  --bg: #f5e8d2; --bg-sunken: #f2e5cf; --panel: #fff7e9; --panel-raised: #fff9ee;
+  --bg: #f3e9d9; --bg-sunken: #ece0cf; --panel: #fff8ed; --panel-raised: #fffbf5;
   --preview-backdrop: radial-gradient(ellipse at 46% 34%, #fff7e9, #e9d8b9 80%, #e1cca8);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #fffaf1, #e9d9bc 82%, #e4cfae);
-  --control: #fff8eb; --control-hover: #f9edd8; --control-active: #eedec4;
+  --control: #f1e7d8; --control-hover: #ebd9c2; --control-active: #e4ccb1;
   --line: #ddc9a9; --line-strong: #cbb38d;
   --text: #30271f; --text-dim: #635242; --text-faint: #77614e;
-  --accent: #58428f; --accent-soft: #ede3f2;
+  --accent: #865033; --accent-soft: #f2e1cd;
   --go: #236947; --go-soft: #e1edda; --warn: #825515; --warn-soft: #f9e8c0;
   --stop: #a6323b; --stop-soft: #f9e2df;
 }
@@ -111,9 +115,9 @@ select {
 }
 
 .label {
-  font-size: 11px;
+  font-size: var(--type-sm);
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
@@ -126,7 +130,7 @@ select {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 14px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   background: var(--control);
   font-weight: 500;
@@ -153,13 +157,13 @@ input:focus-visible {
 .btn:disabled {
   color: var(--text-faint);
   background: transparent;
-  border-color: var(--line);
   cursor: not-allowed;
 }
 
 .btn.on {
-  border-color: var(--accent);
   background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .btn.primary:not(:disabled) {
@@ -218,16 +222,15 @@ input:focus-visible {
   min-width: 0;
   min-height: 0;
   padding: 12px;
-  border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
 }
 
 .card > h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--type-sm);
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
@@ -252,39 +255,48 @@ input:focus-visible {
   align-items: center;
   gap: 6px;
   padding: 2px 8px;
-  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  font-size: 12px;
+  background: var(--bg-sunken);
+  font-size: var(--type-sm);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .chip.warn {
-  border-color: var(--warn);
   background: var(--warn-soft);
   color: var(--warn);
 }
 
 .chip.stop {
-  border-color: var(--stop);
   background: var(--stop-soft);
   color: var(--stop);
 }
 
 .chip.go {
-  border-color: var(--go);
   background: var(--go-soft);
   color: var(--go);
 }
 
 .hint {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--text-dim);
 }
 
 .blocked {
-  font-size: 13px;
+  font-size: var(--type-body);
   color: var(--warn);
+}
+
+.btn, .tone-control {
+  transition: background-color var(--press-fade) ease-out, border-color var(--press-fade) ease-out;
+}
+
+.btn:active, .btn.held, .tone-control:active {
+  transition-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --press-fade: 0s; }
 }
 
 input[type='range'] {

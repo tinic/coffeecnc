@@ -710,15 +710,19 @@ auto encode_diagnostics(const Diagnostics& diagnostics) -> Encoded {
              {"value", value}};
     if (input.joint)
       row["joint"] = *input.joint;
+    if (input.axis)
+      row["axis"] = std::string(1, *input.axis);
     if (input.role == DiagnosticRole::configured)
       row["label"] = input.label;
     inputs.push_back(std::move(row));
   }
   auto tools = Json::array();
-  for (const auto& tool : diagnostics.tools)
-    tools.push_back({{"tool", hal_tool_name(tool.tool)},
-                     {"available", tool.available},
-                     {"open", tool.open}});
+  std::ranges::transform(diagnostics.tools, std::back_inserter(tools),
+                         [](const HalToolState& tool) -> Json {
+                           return {{"tool", hal_tool_name(tool.tool)},
+                                   {"available", tool.available},
+                                   {"open", tool.open}};
+                         });
   return fields.finish(
       {{"type", "diagnostics"}, {"inputs", std::move(inputs)}, {"tools", std::move(tools)}});
 }

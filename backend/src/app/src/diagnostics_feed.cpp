@@ -59,22 +59,22 @@ void DiagnosticsFeed::loop() {
       continue;
     }
     const auto page = *watched_;
-    const auto watch = watches_;
+    const auto generation = watches_;
     const auto due = Clock::now() + period_;
     lock.unlock();
-    if (begun != watch && source_.begin)
+    if (begun != generation && source_.begin)
       source_.begin();
-    begun = watch;
+    begun = generation;
     std::optional<std::string> message;
     if (source_.read)
       if (auto encoded = encode_diagnostics(source_.read()))
         message = std::move(*encoded);
     lock.lock();
     // Posted only while that watch is still the one: never after it has ended.
-    if (message && watched_ == page && watches_ == watch)
+    if (message && watched_ == page && watches_ == generation)
       sink_(page, {std::move(*message)});
     changed_.wait_until(lock, due,
-                        [&]() -> bool { return closing_ || watched_ != page || watches_ != watch; });
+                        [&]() -> bool { return closing_ || watched_ != page || watches_ != generation; });
   }
 }
 

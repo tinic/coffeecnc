@@ -148,7 +148,8 @@
       "previousStopAxis": "La parada de jog anterior en {axis} no está confirmada: {detail}",
       "directoryNotSent": "No se puede enviar la carpeta: {detail}",
       "mdiTooLong": "MDI requiere un único bloque de 254 bytes como máximo.",
-      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}"
+      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}",
+      "noDiagnostics": "El diagnóstico HAL no forma parte de esta sesión."
     },
     "request": {
       "nestingLimit": "Se superó el límite de anidamiento de la solicitud.",
@@ -276,7 +277,10 @@
         "saveToolPreviewModel": "Guardar modelo de vista previa de la herramienta",
         "saveSettings": "Guardar ajustes",
         "toolModels": "Modelos de herramienta",
-        "settings": "Ajustes"
+        "settings": "Ajustes",
+        "openDiagnostics": "Abrir el diagnóstico",
+        "closeDiagnostics": "Cerrar el diagnóstico",
+        "startHalTool": "Iniciar {tool}"
       }
     },
     "sim": {
@@ -378,7 +382,8 @@
       "gaugeStart": "Empiece sobre el patrón de calibración simulado.",
       "bossStart": "Empiece sobre el saliente simulado.",
       "setLoadedLength": "Fije la longitud de la herramienta cargada antes de comprobarla.",
-      "browserSimulator": "simulador en el navegador"
+      "browserSimulator": "simulador en el navegador",
+      "noHalTools": "El simulador del navegador no tiene herramientas HAL: funciona sin LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación.",

@@ -125,7 +125,8 @@
       "messageLog": "Message log",
       "dismissTip": "Dismiss this message; keep it in the message log",
       "dismiss": "Dismiss",
-      "estopButton": "E-STOP"
+      "estopButton": "E-STOP",
+      "diagnostics": "Diagnostics"
     },
     "machineBlock": {
       "connecting": "No status from the machine yet",
@@ -252,6 +253,81 @@
       "machineOn": "Machine on",
       "readOnly": "Read-only",
       "messageLog": "Message log"
+    },
+    "diagnostics": {
+      "title": "HAL diagnostics",
+      "hint": "HAL inputs as LinuxCNC sees them, read about ten times a second while this view is open. Reading changes nothing in HAL.",
+      "waiting": "Waiting for the first reading…",
+      "stale": "No reading for a second: the values are not current.",
+      "live": "Live",
+      "alarms": "{count} input needs attention | {count} inputs need attention",
+      "section": {
+        "switches": "Limit and home switches",
+        "estop": "E-stop chain",
+        "probe": "Probe and tool setter",
+        "spindle": "Spindle and VFD",
+        "configured": "Machine signals",
+        "tools": "HAL tools"
+      },
+      "column": {
+        "joint": "Joint",
+        "minLimit": "Min limit",
+        "maxLimit": "Max limit",
+        "homeSwitch": "Home switch",
+        "driveFault": "Drive fault"
+      },
+      "jointName": "joint {joint}",
+      "noJoints": "No joint inputs in this reading.",
+      "row": {
+        "estopChain": "External E-stop chain",
+        "estopRequest": "LinuxCNC enable",
+        "probe": "Probe input",
+        "spindleOn": "Spindle on",
+        "spindleAtSpeed": "At speed",
+        "spindleSpeedOut": "Commanded speed",
+        "spindleSpeedIn": "Measured speed",
+        "spindleFault": "Spindle drive fault"
+      },
+      "value": {
+        "tripped": "Tripped",
+        "clear": "Clear",
+        "on": "On",
+        "off": "Off",
+        "fault": "Fault",
+        "ok": "OK",
+        "closed": "Closed",
+        "open": "Open",
+        "enabled": "Enabled",
+        "estop": "E-stop",
+        "atSpeed": "At speed",
+        "notAtSpeed": "Not at speed",
+        "none": "—"
+      },
+      "state": {
+        "missing": "Not in HAL",
+        "unwired": "Not wired",
+        "undriven": "No source"
+      },
+      "stateTip": {
+        "missing": "HAL has no pin or signal of this name.",
+        "unwired": "The pin is linked to no signal: it reads its own value.",
+        "undriven": "Nothing writes this signal: no switch or input drives it."
+      },
+      "pinName": "Pin {name}",
+      "signalName": "Signal {name}",
+      "setterHint": "A tool setter or a second probe on other inputs shows under Machine signals, from [COFFEECNC] DIAGNOSTIC.",
+      "noConfigured": "None configured. Add one line per signal to [COFFEECNC] in the INI file, for example: {example}",
+      "tools": {
+        "halshowTip": "Every pin, signal and parameter, with their values",
+        "halmeterTip": "The value of one pin or signal",
+        "halscopeTip": "Signals recorded over time",
+        "notInstalled": "Not installed",
+        "open": "Already open",
+        "closed": "Tap to open",
+        "starting": "Starting…",
+        "unknown": "—",
+        "hint": "Each opens as a window of its own, outside the panel, at most one of each. They close with CoffeeCNC."
+      }
     }
   }
 }

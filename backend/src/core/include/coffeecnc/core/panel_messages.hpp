@@ -60,6 +60,8 @@ struct Hello {
   std::array<std::optional<double>, 3> axis_max_jog_velocity{};
   // The machine refuses programs and MDI until its axes are homed.
   bool homing_required{};
+  // `watch_diagnostics` and `launch_hal_tool` are served. Sent only when true.
+  bool diagnostics{};
   double max_feed_override{};
   double min_spindle_override{};
   double max_spindle_override{};
@@ -76,8 +78,6 @@ struct Hello {
   std::vector<ProgramPlace> program_places{};
   // The configured macros, in the order of the INI file. Not sent when there are none.
   std::vector<Macro> macros{};
-  // `watch_diagnostics` and `launch_hal_tool` are served. Sent only when true.
-  bool diagnostics{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

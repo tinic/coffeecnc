@@ -63,6 +63,7 @@ inline constexpr std::size_t max_hal_name = 47;
 struct DiagnosticInput {
   DiagnosticRole role{DiagnosticRole::configured};
   std::optional<int> joint{}; // the joint rows
+  std::optional<char> axis{}; // of a joint row: the axis letter the joint moves, x ... c
   std::string label{};        // configured rows
   std::string name;           // a HAL pin, or for a configured row a signal or pin
   friend auto operator==(const DiagnosticInput&, const DiagnosticInput&) -> bool = default;

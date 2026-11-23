@@ -659,13 +659,13 @@ void diagnostics() {
   const auto rows = diagnostic_inputs(*plain);
   require(rows.size() == 3 * 4 + 8, std::format("four rows per joint and eight more: {}", rows.size()));
   require(rows.front() == DiagnosticInput{.role = DiagnosticRole::min_limit,
-                                          .joint = 0,
+                                          .joint = 0, .axis = 'x',
                                           .name = "joint.0.neg-lim-sw-in"} &&
               rows.at(5) == DiagnosticInput{.role = DiagnosticRole::max_limit,
-                                            .joint = 1,
+                                            .joint = 1, .axis = 'y',
                                             .name = "joint.1.pos-lim-sw-in"} &&
               rows.at(10) == DiagnosticInput{.role = DiagnosticRole::home_switch,
-                                             .joint = 2,
+                                             .joint = 2, .axis = 'z',
                                              .name = "joint.2.home-sw-in"} &&
               rows.at(12) == DiagnosticInput{.role = DiagnosticRole::estop_chain,
                                              .name = "iocontrol.0.emc-enable-in"} &&
@@ -720,6 +720,23 @@ void diagnostics() {
           "a label of 32 characters");
   require(refused("DIAGNOSTIC = E-stop | a\nDIAGNOSTIC = E-stop | b\n", "\"E-stop\" is there twice"),
           "labels are unique");
+  // The lines docs/machines/g0759.md gives for the machine's INI file.
+  const auto machine = load(with_rows("DIAGNOSTIC = E-stop button (input-16) | estop-ext\n"
+                                      "DIAGNOSTIC = Setter overtravel (input-17) | setter-ok\n"
+                                      "DIAGNOSTIC = E-stop inputs together | estop-ok\n"
+                                      "DIAGNOSTIC = Setter contact (input-19) | setter-tripped\n"
+                                      "DIAGNOSTIC = Ruby probe (input-18) | ruby-tripped\n"
+                                      "DIAGNOSTIC = Probe routed to ruby | probe-route-ruby\n"
+                                      "DIAGNOSTIC = Setter selected | probe-setter-selected\n"
+                                      "DIAGNOSTIC = Probe-cycle permit | probe-motion-permitted\n"
+                                      "DIAGNOSTIC = VFD at speed | svd-ps_vfd.at-speed\n"
+                                      "DIAGNOSTIC = VFD Modbus errors | svd-ps_vfd.modbus-errors\n"
+                                      "DIAGNOSTIC = VFD frequency | svd-ps_vfd.freq-fb\n"
+                                      "DIAGNOSTIC = VFD current | svd-ps_vfd.output-current\n"));
+  require(machine && machine->diagnostics.size() == 12 &&
+              machine->diagnostics.at(3) ==
+                  DiagnosticSignal{"Setter contact (input-19)", "setter-tripped"},
+          machine ? "the G0759's twelve rows" : machine.error());
   std::string seventeen;
   for (int i = 1; i <= 17; ++i)
     seventeen += std::format("DIAGNOSTIC = Row {} | signal-{}\n", i, i);

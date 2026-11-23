@@ -64,6 +64,8 @@ export interface Hello {
    * configured. Each runs as one `mdi` command, under the same rules as a typed block.
    */
   macros?: Macro[]
+  /** `watch_diagnostics` and `launch_hal_tool` are served; absent on older peers and the LAN screen. */
+  diagnostics?: boolean
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -391,6 +393,55 @@ export interface OffsetHistory {
   entries: HistoryEntry[]
 }
 
+/**
+ * What a row of the diagnostics view reads. The joint rows are LinuxCNC's `joint.N.*` inputs;
+ * `estop_chain` is `iocontrol.0.emc-enable-in` (true while the external chain is closed),
+ * `estop_request` is `iocontrol.0.user-enable-out` (true while LinuxCNC is out of E-stop);
+ * `configured` is a `[COFFEECNC] DIAGNOSTIC = <label> | <signal or pin>` line.
+ */
+export type DiagnosticRole = 'min_limit' | 'max_limit' | 'home_switch' | 'amp_fault' | 'estop_chain' | 'estop_request' |
+  'probe' | 'spindle_on' | 'spindle_at_speed' | 'spindle_speed_out' | 'spindle_speed_in' | 'spindle_fault' | 'configured'
+
+/**
+ * `missing`: HAL has no such pin or signal. `unwired`: a pin linked to no signal (it reads its own
+ * value, which `setp` sets). `undriven`: a signal, or a pin's signal, that nothing writes. `live`:
+ * something writes it.
+ */
+export type DiagnosticState = 'missing' | 'unwired' | 'undriven' | 'live'
+
+export interface DiagnosticInput {
+  role: DiagnosticRole
+  /** The joint rows only. */
+  joint?: number
+  /** Of a joint row: the axis letter the joint moves, `x` ... `c`. A gantry has two joints on one. */
+  axis?: string
+  /** The configured rows only: the INI label. */
+  label?: string
+  /** The HAL pin or signal read. */
+  name: string
+  kind: 'pin' | 'signal'
+  state: DiagnosticState
+  /** A bit, a number (float, s32 or u32), or null while missing or not a finite number. */
+  value: boolean | number | null
+}
+
+export type HalToolName = 'halshow' | 'halmeter' | 'halscope'
+
+export interface HalToolState {
+  tool: HalToolName
+  /** The program is installed. */
+  available: boolean
+  /** CoffeeCNC started it and it has not ended. */
+  open: boolean
+}
+
+/** HAL readings, about ten a second, while the page watches (`watch_diagnostics`). */
+export interface Diagnostics {
+  type: 'diagnostics'
+  inputs: DiagnosticInput[]
+  tools: HalToolState[]
+}
+
 /** An operator error or message from LinuxCNC, or from the executable itself. */
 export interface OperatorMessage {
   type: 'message'
@@ -517,6 +568,7 @@ export type FromMachine =
   | Preview
   | WorkOffsets
   | OffsetHistory
+  | Diagnostics
   | OperatorMessage
   | CommandResult
   | Directory
@@ -690,6 +742,16 @@ export interface SetWorkRotation extends CommandBase {
 export interface ClearG92 extends CommandBase {
   type: 'clear_g92'
 }
+/** The diagnostics view opens (`on`) or closes: HAL is read and `diagnostics` sent only while it is open. */
+export interface WatchDiagnostics extends CommandBase {
+  type: 'watch_diagnostics'
+  on: boolean
+}
+/** Starts halshow, halmeter or halscope as a window of its own; refused when missing or already open. */
+export interface LaunchHalTool extends CommandBase {
+  type: 'launch_hal_tool'
+  tool: HalToolName
+}
 /** Sets the work offset so the axis reads `value` at its present position (G10 L20). */
 export interface TouchOff extends CommandBase {
   type: 'touch_off'
@@ -823,6 +885,8 @@ export type ToMachine =
   | RestoreOffset
   | SetWorkRotation
   | ClearG92
+  | WatchDiagnostics
+  | LaunchHalTool
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

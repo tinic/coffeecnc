@@ -1335,9 +1335,9 @@ const examples = [
   {
     "type": "diagnostics",
     "inputs": [
-      { "role": "min_limit", "joint": 0, "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },
-      { "role": "home_switch", "joint": 0, "name": "joint.0.home-sw-in", "kind": "pin", "state": "live", "value": true },
-      { "role": "amp_fault", "joint": 0, "name": "joint.0.amp-fault-in", "kind": "pin", "state": "unwired", "value": false },
+      { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },
+      { "role": "home_switch", "joint": 0, "axis": "x", "name": "joint.0.home-sw-in", "kind": "pin", "state": "live", "value": true },
+      { "role": "amp_fault", "joint": 0, "axis": "x", "name": "joint.0.amp-fault-in", "kind": "pin", "state": "unwired", "value": false },
       { "role": "estop_chain", "name": "iocontrol.0.emc-enable-in", "kind": "pin", "state": "live", "value": true },
       { "role": "spindle_speed_out", "name": "spindle.0.speed-out", "kind": "pin", "state": "live", "value": 1200 },
       { "role": "spindle_speed_in", "name": "spindle.0.speed-in", "kind": "pin", "state": "live", "value": null },

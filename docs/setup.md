@@ -85,6 +85,7 @@ Each function stays off until you set its keys. The comments in `coffeecnc.ini.e
 | Z jog during a pause | `PAUSED_Z_MAX_MM`, and also `SPINDLE_RPM_SIGNAL` and `SPINDLE_AT_SPEED_SIGNAL` | `/usr/share/coffeecnc/hal/examples/paused_z.hal`: external offsets on Z, with `[AXIS_Z] OFFSET_AV_RATIO` in the INI file |
 | Travel check in Program check | `TRAVEL_MIN_MM`, `TRAVEL_MAX_MM` | None |
 | Macro buttons in MDI | `MACRO` | None. See [macros](#macros) |
+| Extra rows of the HAL diagnostics view | `DIAGNOSTIC` | None. See [HAL diagnostics](#hal-diagnostics) |
 
 ## Macros
 
@@ -101,6 +102,31 @@ MACRO = Clamp check | O<clamp> call
 - For a macro with more steps, write the steps in a subroutine file and call it with `O<name> call`. Put `name.ngc` in `[DISPLAY] PROGRAM_PREFIX` or in a directory of `[RS274NGC] SUBROUTINE_PATH`. If CoffeeCNC cannot find the file, it does not start and tells you which macro is wrong.
 
 In Manual, the MDI card then shows a **Macros** button. Tap it, then tap a macro. CoffeeCNC shows the MDI command. Tap **Run** to send it. The macro has the same conditions as an MDI command that you type: for example, the machine must be on, homed if your configuration requires it, and idle. The result shows in the MDI history. Without `MACRO` lines, the panel shows no **Macros** button. `coffeecnc --check` lists the macros.
+
+## HAL diagnostics
+
+The application menu (☰) has **Diagnostics** on a machine that runs CoffeeCNC. It shows the HAL inputs as LinuxCNC sees them, about ten times a second, while the view is open:
+
+- each joint's minimum and maximum limit switch, home switch and drive fault (`joint.N.neg-lim-sw-in`, `pos-lim-sw-in`, `home-sw-in`, `amp-fault-in`);
+- the E-stop chain (`iocontrol.0.emc-enable-in`) and LinuxCNC's own enable (`iocontrol.0.user-enable-out`);
+- the probe input (`motion.probe-input`);
+- the spindle (`spindle.0.on`, `at-speed`, `speed-out`, `speed-in`, `amp-fault-in`).
+
+Each row also tells what HAL has for it: **Not wired** is a pin on no signal, **No source** a signal that nothing writes (a limit switch that the machine does not have), **Not in HAL** a name that HAL does not know. Reading creates, links and sets nothing.
+
+For inputs that LinuxCNC's pins do not show, such as a tool setter, a second probe, the parts of an E-stop chain or a VFD's status, add one `DIAGNOSTIC` line for each row to `[COFFEECNC]`, with the label, a `|` and a HAL signal or pin:
+
+```ini
+[COFFEECNC]
+DIAGNOSTIC = E-stop button | estop-ext
+DIAGNOSTIC = VFD Modbus errors | vfd.modbus-errors
+```
+
+- You can set at most 16 rows. A label has at most 32 characters. Each row must have a different label.
+- The name is one word of at most 47 characters. CoffeeCNC looks for a signal of that name first, then for a pin.
+- `coffeecnc --check` lists the rows. The rows of the G0759 are in [its machine page](machines/g0759.md#hal-diagnostics-23-november-2026).
+
+The view also starts **halshow**, **halmeter** and **halscope**, each as a window of its own with LinuxCNC's environment, at most one of each. A tool that is not installed is shown as such. The tools that are still open close when CoffeeCNC closes.
 
 ## Reference marks
 

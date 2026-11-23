@@ -373,7 +373,14 @@ auto encoded_messages() -> std::vector<Encoded> {
   const auto row = [](DiagnosticRole role, std::optional<int> joint, std::string name,
                       DiagnosticState state, DiagnosticValue value, std::string label = {},
                       bool signal = false) -> DiagnosticReading {
-    return {{role, joint, std::move(label), std::move(name)}, state, value, signal};
+    return {{.role = role,
+             .joint = joint,
+             .axis = joint ? std::optional<char>{'x'} : std::nullopt,
+             .label = std::move(label),
+             .name = std::move(name)},
+            state,
+            value,
+            signal};
   };
   diagnostics.inputs = {
       row(DiagnosticRole::min_limit, 0, "joint.0.neg-lim-sw-in", DiagnosticState::undriven, false),

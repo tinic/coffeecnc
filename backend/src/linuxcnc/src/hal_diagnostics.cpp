@@ -72,11 +72,21 @@ auto pin_reading(DiagnosticReading reading, HalLookup& hal, const PinSignals& wi
 } // namespace
 
 auto diagnostic_inputs(const MachineConfig& config) -> std::vector<DiagnosticInput> {
-  int joints = 0;
-  for (const auto* groups : {&config.axis_joints, &config.rotary_joints})
-    for (const auto& group : *groups)
-      for (const int joint : group)
-        joints = std::max(joints, joint + 1);
+  // The axis letter of each joint, as trivkins assigns them: X Y Z, then A B C.
+  std::map<int, char> letters;
+  constexpr std::string_view linear = "xyz";
+  constexpr std::string_view rotary = "abc";
+  for (std::size_t i = 0; i < config.axis_joints.size(); ++i)
+    for (const int joint : config.axis_joints.at(i))
+      letters.emplace(joint, linear.at(i));
+  for (std::size_t i = 0; i < config.rotary_joints.size(); ++i)
+    for (const int joint : config.rotary_joints.at(i))
+      letters.emplace(joint, rotary.at(i));
+  const int joints = letters.empty() ? 0 : letters.rbegin()->first + 1;
+  const auto letter = [&](int joint) -> std::optional<char> {
+    const auto found = letters.find(joint);
+    return found == letters.end() ? std::nullopt : std::optional{found->second};
+  };
   std::vector<DiagnosticInput> inputs;
   struct Pin {
     DiagnosticRole role;
@@ -90,6 +100,7 @@ auto diagnostic_inputs(const MachineConfig& config) -> std::vector<DiagnosticInp
     for (const auto& pin : joint_pins)
       inputs.push_back({.role = pin.role,
                         .joint = joint,
+                        .axis = letter(joint),
                         .name = std::format("joint.{}.{}", joint, pin.name)});
   constexpr std::array machine_pins{
       Pin{DiagnosticRole::estop_chain, "iocontrol.0.emc-enable-in"},

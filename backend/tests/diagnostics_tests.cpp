@@ -34,7 +34,10 @@ void require(bool condition, const std::string& message) {
 auto sample() -> Diagnostics {
   Diagnostics diagnostics;
   diagnostics.inputs = {
-      {.input = {.role = DiagnosticRole::min_limit, .joint = 0, .name = "joint.0.neg-lim-sw-in"},
+      {.input = {.role = DiagnosticRole::min_limit,
+                 .joint = 0,
+                 .axis = 'x',
+                 .name = "joint.0.neg-lim-sw-in"},
        .state = DiagnosticState::unwired,
        .value = false},
       {.input = {.role = DiagnosticRole::estop_chain, .name = "iocontrol.0.emc-enable-in"},
@@ -65,7 +68,7 @@ void wire_text() {
   require(encoded.has_value(), "A diagnostics message encodes, with a NaN among its values");
   const auto message = Json::parse(*encoded);
   const auto expected = Json::parse(R"({"type":"diagnostics","inputs":[
-    {"role":"min_limit","joint":0,"name":"joint.0.neg-lim-sw-in","kind":"pin","state":"unwired","value":false},
+    {"role":"min_limit","joint":0,"axis":"x","name":"joint.0.neg-lim-sw-in","kind":"pin","state":"unwired","value":false},
     {"role":"estop_chain","name":"iocontrol.0.emc-enable-in","kind":"pin","state":"live","value":true},
     {"role":"spindle_speed_in","name":"spindle.0.speed-in","kind":"pin","state":"live","value":null},
     {"role":"configured","label":"Setter contact","name":"setter-tripped","kind":"signal","state":"undriven","value":true},

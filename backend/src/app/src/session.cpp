@@ -1805,12 +1805,11 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.tool_changed(state.requested_tool.value_or(-1), state.tool_request, still);
           });
         } else {
-          static_assert(std::is_same_v<T, SetToolModelDefaults> ||
-                            std::is_same_v<T, SetToolModelAssignment> ||
-                            std::is_same_v<T, SetOperatorSettings> ||
-                            std::is_same_v<T, WatchDiagnostics> ||
-                            std::is_same_v<T, LaunchHalTool>,
-                        "Every command needs an action.");
+          constexpr bool served_in_submit =
+              std::is_same_v<T, SetToolModelDefaults> || std::is_same_v<T, SetToolModelAssignment> ||
+              std::is_same_v<T, SetOperatorSettings> || std::is_same_v<T, WatchDiagnostics> ||
+              std::is_same_v<T, LaunchHalTool>;
+          static_assert(served_in_submit, "Every command needs an action.");
           // `submit` hands these to the tool-model or diagnostics service: none is ever queued.
           return answer({CommandOutcome::rejected, no_tool_models_reason});
         }

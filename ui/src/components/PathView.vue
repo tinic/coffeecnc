@@ -615,8 +615,8 @@ onBeforeUnmount(() => {
         <button class="tone-control choice" type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
         <button class="tone-control choice" type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
         <button class="tone-control choice" type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
-        <button v-tooltip="t('program.pathView.fit')" class="tone-control" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
-        <button v-tooltip="t('program.pathView.travelTooltip')" class="tone-control" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
+        <button v-tooltip="t('program.pathView.fit')" class="btn square" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button v-tooltip="t('program.pathView.travelTooltip')" class="btn travel-control" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
         <slot />
       </div>
     </div>
@@ -632,9 +632,10 @@ onBeforeUnmount(() => {
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--cut-sample); }.legend .rapid { height: 0; border-top: 1px dashed var(--rapid-sample); background: none; }
 .legend label { display: flex; align-items: center; gap: 4px; min-height: var(--touch); cursor: pointer; }
 .views { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: auto; }
-.views button { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
-.views button:hover { background: var(--control-hover); }
-.views button:active { background: var(--control-active); }
+.views .choice { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
+.views .choice:hover { background: var(--control-hover); }
+.views .choice:active { background: var(--control-active); }
+.travel-control { padding-inline: 9px; }
 .views :deep(svg) { display: block; width: 16px; height: 16px; }
 .banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: var(--type-sm); color: var(--text-dim); }
 .banners { top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }

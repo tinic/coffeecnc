@@ -19,7 +19,7 @@
   --gcode-y: #28644a; --gcode-z: #365791; --gcode-argument: #57646e; --gcode-rate: #6c527e;
   --gcode-tool: #7a5130; --gcode-spindle: #32686b; --gcode-stop: #9a2637; --gcode-comment: #596671;
   --gcode-message: #495561; --gcode-flow: #504c83; --gcode-parameter: #515d75; --gcode-expression: #6a5470;
-  --radius: 12px; --gap: 12px; --touch: 44px;
+  --radius: 12px; --control-radius: 9px; --gap: 12px; --touch: 44px;
   --type-sm: 12px; --type-body: 14px; --type-md: 16px; --type-lg: 20px;
   --type-dro: 27px;
   --press-fade: 100ms;
@@ -131,8 +131,8 @@ select {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--control-radius);
   background: var(--control);
   font-weight: 500;
   white-space: nowrap;
@@ -156,6 +156,7 @@ input:focus-visible {
 }
 
 .btn:disabled {
+  border-color: transparent;
   color: var(--text-faint);
   background: transparent;
   cursor: not-allowed;
@@ -163,7 +164,9 @@ input:focus-visible {
 
 /* The same mark identifies a selection in tabs, segmented controls and view switches. */
 .btn.on,
+details[open] > summary.btn:not(.quiet),
 .choice:not(:disabled):is([aria-current='page'], [aria-pressed='true']) {
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
@@ -209,6 +212,7 @@ input:focus-visible {
 }
 
 .btn.square {
+  flex: none;
   padding: 0;
   width: var(--touch);
 }
@@ -224,11 +228,11 @@ input:focus-visible {
 
 .segmented .btn:first-child {
   margin-left: 0;
-  border-radius: var(--radius) 0 0 var(--radius);
+  border-radius: var(--control-radius) 0 0 var(--control-radius);
 }
 
 .segmented .btn:last-child {
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
 }
 
 .segmented .btn.on {
@@ -260,7 +264,7 @@ input:focus-visible {
   min-height: var(--touch);
   padding: 0 12px;
   border: 1px solid var(--control-edge);
-  border-radius: var(--radius);
+  border-radius: var(--control-radius);
   background: var(--bg-sunken);
   user-select: text;
   -webkit-user-select: text;

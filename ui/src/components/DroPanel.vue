@@ -136,7 +136,7 @@ watch([axes, touchBlock], () => {
           </span>
         </component>
         <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
-          <summary class="tone-control" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
+          <summary class="btn square axis-menu-toggle" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
           <div class="popover">
             <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
             <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'zero', $event)">{{ t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() }) }}</button>
@@ -188,7 +188,7 @@ watch([axes, touchBlock], () => {
 .linear-axes { display: flex; flex: none; }
 .axis-group { display: flex; align-items: center; border-left: 1px solid var(--line); }
 .axis { display: flex; height: 56px; align-items: center; justify-content: flex-end; gap: 9px; width: 11.4ch; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 var(--type-dro)/1.2 var(--mono); cursor: pointer; }
-.axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
+.axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-menu-toggle { font-size: var(--type-lg); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .popover .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
 .axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .letter { flex: none; }
 /* A sign slot and muted zero padding hold the digits in place through zero and across decades. */

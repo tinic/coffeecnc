@@ -246,7 +246,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
     <OverrideControl v-else-if="!touchOff" :label="t('status.runBar.spindleOverride')" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
       <details v-if="!touchOff" v-popover class="more">
-        <summary class="more-button" :class="{ active: activeOptions.length > 0 }" :aria-label="moreLabel">
+        <summary class="btn more-button" :class="{ active: activeOptions.length > 0 }" :aria-label="moreLabel">
           <span class="dots" aria-hidden="true">···</span>
           <span v-if="activeOptions.length" class="active-options" aria-hidden="true">
             <small v-for="o in activeOptions" :key="o.key" class="mono" :class="o.key">{{ o.badge }}</small>
@@ -294,9 +294,9 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .stop-button { min-width: 88px; font-weight: 650; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
-.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: var(--touch); height: 48px; font-size: var(--type-lg); line-height: 1; color: var(--text-dim); }
+.more { position: relative; }.more-button { flex-direction: column; height: 48px; padding: 0 8px; font-size: var(--type-lg); line-height: 1; }
 /* Active options grow the button to the left only; Stop and the primary action stay put. */
-.more-button.active { gap: 3px; padding: 0 4px; border-radius: 9px; background: var(--accent-soft); }
+.more-button.active { gap: 3px; padding: 0 4px; border-color: var(--accent); background: var(--accent-soft); }
 .more-button.active .dots { color: var(--accent); }
 .active-options { display: flex; gap: 3px; }
 .active-options small { padding: 1px 3px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--accent); background: var(--panel); white-space: nowrap; }

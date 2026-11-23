@@ -5440,16 +5440,16 @@ void offset_edits(Rig& rig) {
     settle();
 
     // A program runs: both are refused, nothing is sent.
-    const auto program = rig.config.program_prefix + "/coffeecnc_dwell.ngc";
+    const auto dwell = rig.config.program_prefix + "/coffeecnc_dwell.ngc";
     {
-      std::ofstream out{program};
+      std::ofstream out{dwell};
       out << "G4 P3\nM2\n";
     }
     const auto ran = all_output_of(std::format(
         "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_AUTO); "
         "c.wait_complete(); c.program_open(\"{}\"); c.wait_complete(); c.auto(linuxcnc.AUTO_RUN, 0); "
         "print(\"started=1\")'",
-        program));
+        dwell));
     rig.pump_until(2s, [&]() -> bool { return rig.snapshot().interp != InterpState::idle; });
     const auto busy_rotation = session.send(R"("type":"set_work_rotation","wcs":1,"rotation_xy":5)");
     const auto busy_clear = session.send(R"("type":"clear_g92")");

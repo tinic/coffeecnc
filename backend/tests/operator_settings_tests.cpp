@@ -496,7 +496,8 @@ void separate_language_file() {
   owner.open();
   OperatorSettingsArchive archive{files, limits};
   archive.open(owner.shared_location());
-  require(archive.settings().document->language == PanelLanguage::en, "English by default");
+  const auto& defaults = archive.settings().document;
+  require(defaults && defaults->language == PanelLanguage::en, "English by default");
   std::uint64_t revision = 0;
   for (const auto& [language, name] : languages) {
     auto chosen = command(revision);
@@ -507,8 +508,9 @@ void separate_language_file() {
                                  "The previous version reads the settings saved with " + name);
     OperatorSettingsArchive restarted{files, limits};
     restarted.open(owner.shared_location());
-    require(restarted.settings() == archive.settings() &&
-                restarted.settings().document->language == language,
+    const auto& restored = restarted.settings();
+    require(restored == archive.settings() && restored.document &&
+                restored.document->language == language,
             "A restart restores the language " + name);
   }
   const auto chosen = disk.files.at(language_path);
@@ -532,17 +534,19 @@ void separate_language_file() {
   disk.files[file] = older.dump();
   OperatorSettingsArchive upgraded{files, limits};
   upgraded.open(owner.shared_location());
-  require(upgraded.settings().document->theme == PanelTheme::harbor &&
-              upgraded.settings().document->language == PanelLanguage::ja,
+  const auto& upgraded_document = upgraded.settings().document;
+  require(upgraded_document && upgraded_document->theme == PanelTheme::harbor &&
+              upgraded_document->language == PanelLanguage::ja,
           "After a downgrade and upgrade, the settings and the language both remain");
   for (const auto& damaged :
        {std::string("corrupt"), std::string(R"({"machine_id":"OtherMill","language":"de"})")}) {
     disk.files[language_path] = damaged;
     OperatorSettingsArchive restarted{files, limits};
     restarted.open(owner.shared_location());
-    require(restarted.settings().availability == ToolModelAvailability::available &&
-                restarted.settings().document->language == PanelLanguage::en &&
-                restarted.settings().document->theme == PanelTheme::harbor,
+    const auto& restored = restarted.settings();
+    require(restored.availability == ToolModelAvailability::available && restored.document &&
+                restored.document->language == PanelLanguage::en &&
+                restored.document->theme == PanelTheme::harbor,
             "A damaged language file gives English and keeps the other settings");
   }
   // A failed language write after the settings file was replaced: uncertain, read back.
@@ -553,9 +557,10 @@ void separate_language_file() {
   auto german = command(failing.settings().revision);
   german.document.language = PanelLanguage::de;
   const auto reply = failing.apply(german);
+  const auto& failed_document = failing.settings().document;
   require(reply.outcome == CommandOutcome::failed && reply.snapshot &&
               reply.reason.find("uncertain") != std::string::npos &&
-              failing.settings().document->language == PanelLanguage::ja &&
+              failed_document && failed_document->language == PanelLanguage::ja &&
               disk.files.at(language_path) == chosen,
           "A failed language write reports uncertainty and shows the language on disk");
 }

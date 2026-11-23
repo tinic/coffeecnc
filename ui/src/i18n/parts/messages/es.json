@@ -363,7 +363,6 @@
       "touchOffT99First": "Tome primero la referencia de T99 y aplique su longitud.",
       "ridgeStart": "Tome la referencia de T99, fije Z0 en la parte superior del nervio y empiece sobre su centro.",
       "featureStart": "Tome la referencia de T99, fije Z0 en la parte superior del elemento y empiece por encima.",
-      "noRotation": "Use un sistema de coordenadas de pieza sin rotación para este ciclo de palpado.",
       "boreStart": "Lleve la bola con jog dentro del agujero simulado, por debajo de su borde superior.",
       "recessStart": "Lleve la bola con jog dentro del rebaje simulado, por debajo de su borde superior y sin tocar el fondo.",
       "gaugeStart": "Empiece sobre el patrón de calibración simulado.",

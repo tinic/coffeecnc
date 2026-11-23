@@ -363,7 +363,6 @@
       "touchOffT99First": "Tasten Sie T99 an und übernehmen Sie zuerst seine Länge.",
       "ridgeStart": "Tasten Sie T99 an, setzen Sie Z0 auf der Stegoberseite und starten Sie über seiner Mitte.",
       "featureStart": "Tasten Sie T99 an, setzen Sie Z0 auf der Oberseite des Merkmals und starten Sie darüber.",
-      "noRotation": "Verwenden Sie für diesen Antastzyklus ein Werkstückkoordinatensystem ohne Drehung.",
       "boreStart": "Fahren Sie die Kugel im Tippbetrieb unter die Oberkante in die simulierte Bohrung.",
       "recessStart": "Fahren Sie die Kugel im Tippbetrieb unter die Oberkante in die simulierte Vertiefung, frei vom Boden.",
       "gaugeStart": "Starten Sie über dem simulierten Kalibriernormal.",

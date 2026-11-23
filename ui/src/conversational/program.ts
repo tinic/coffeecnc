@@ -34,6 +34,16 @@ export interface Common {
 /** The program text, or every reason there is none, in words for the operator. */
 export type Generated = { text: string } | { errors: string[] }
 
+const programEnd = 'M2'
+
+/** Joins complete generator outputs in order, retaining setup and retracts at each boundary. */
+export function chainOperations(operations: readonly string[]): Generated {
+  const end = `${programEnd}\n`
+  if (operations.length === 0 || operations.some((text) => !text.endsWith(`\n${end}`)))
+    return { errors: [t('operations.check.invalidJob')] }
+  return { text: operations.map((text) => text.slice(0, -end.length)).join('\n') + end }
+}
+
 const decimals = (unit: Unit): number => (unit === 'inch' ? 4 : 3)
 
 /** A length or coordinate as written: fixed decimals for the unit, no trailing zeros, no -0. */
@@ -153,7 +163,7 @@ export class Program {
   /** Clear of the work, spindle off, program end. */
   end(): string {
     if (this.lines.at(-1) !== `G0 Z${this.n(this.c.clearance)}`) this.rapidZ(this.c.clearance)
-    this.add('M5', 'M2')
+    this.add('M5', programEnd)
     return `${this.lines.join('\n')}\n`
   }
 }

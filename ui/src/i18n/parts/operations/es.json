@@ -1,6 +1,10 @@
 {
   "operations": {
     "dialog": {
+      "job": "Trabajo",
+      "addToJob": "Añadir al trabajo",
+      "createJob": "Crear y abrir trabajo",
+      "removeOperation": "Quitar {name} del trabajo",
       "title": "Nueva operación",
       "operations": "Operación",
       "tool": "Herramienta",
@@ -75,6 +79,8 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "invalidJob": "No se pudo preparar el trabajo.",
+      "jobTooLarge": "El programa supera el límite de guardado de 512 KiB.",
       "positive": "{label}: debe ser mayor que cero.",
       "count": "{label}: debe ser un número entero de 1 a {max}.",
       "chooseTool": "Elija una herramienta de la tabla de herramientas.",

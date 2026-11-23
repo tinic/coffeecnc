@@ -8,7 +8,7 @@ import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
-import { number, type Generated } from '../src/conversational/program'
+import { chainOperations, number, type Generated } from '../src/conversational/program'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -353,6 +353,23 @@ describe('conversational programs', () => {
     expect(preview.error).toBeNull()
     expect(preview.state).toBe('ready')
     expect(preview.segments.some((segment) => segment.kind === 'feed')).toBe(true)
+  })
+
+  it('joins a facing and drilling operation with one program end and reaches the second toolpath', () => {
+    const face = expected['facingMm'] ?? ''
+    const drill = (expected['gridMm'] ?? '').replace('T1 M6\nG43 H1', 'T2 M6\nG43 H2')
+    const joined = text(chainOperations([face, drill]))
+    expect(text(chainOperations([face]))).toBe(face)
+    expect(joined).toContain('G0 Z5\nM5\n\n(Hole pattern')
+    expect(joined.match(/^M2$/gm)).toEqual(['M2'])
+    expect(joined.endsWith('G80\nG0 Z5\nM5\nM2\n')).toBe(true)
+    const tools = [
+      { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+      { number: 2, pocket: 2, length: 40, diameter: 5, comment: '' },
+    ]
+    const preview = previewProgram(newModal(tools), splitLines(joined), false, 1)
+    expect(preview.error).toBeNull()
+    expect(preview.segments.some((segment) => segment.kind === 'feed' && segment.points.includes(-5))).toBe(true)
   })
 
   it('writes numbers with the decimals of the unit and never -0', () => {

@@ -1,6 +1,10 @@
 {
   "operations": {
     "dialog": {
+      "job": "Auftrag",
+      "addToJob": "Zum Auftrag hinzufügen",
+      "createJob": "Auftrag erstellen und öffnen",
+      "removeOperation": "{name} aus dem Auftrag entfernen",
       "title": "Neue Bearbeitung",
       "operations": "Bearbeitung",
       "tool": "Werkzeug",
@@ -75,6 +79,8 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "invalidJob": "Der Auftrag konnte nicht zusammengestellt werden.",
+      "jobTooLarge": "Das Programm überschreitet die Speichergrenze von 512 KiB.",
       "positive": "{label} muss größer als null sein.",
       "count": "{label} muss eine ganze Zahl von 1 bis {max} sein.",
       "chooseTool": "Wählen Sie ein Werkzeug aus der Werkzeugtabelle.",

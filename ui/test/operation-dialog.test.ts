@@ -81,6 +81,46 @@ describe('new operation dialog', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('queues snapshots in order, discards a queued item and saves the job only', async () => {
+    await open(['job-facing-100x60mm.ngc'])
+    button('Add to job').click()
+    await nextTick()
+    const width = input('Size X, mm')
+    width.value = '80'
+    width.dispatchEvent(new Event('input'))
+    await nextTick()
+    button('Add to job').click()
+    await nextTick()
+    await wrapper?.get('.job-toggle').trigger('click')
+    const queued = wrapper?.findAll('button[aria-label="Remove Facing from job"]') ?? []
+    expect(queued).toHaveLength(2)
+    await queued[1]?.trigger('click')
+
+    button('Hole pattern').click()
+    await nextTick()
+    button('Add to job').click()
+    await nextTick()
+    button('Circular pocket').click()
+    await nextTick()
+    const diameter = input('Pocket diameter, mm')
+    diameter.value = '5'
+    diameter.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(button('Add to job').disabled).toBe(true)
+    expect(button('Create job and open').disabled).toBe(false)
+    button('Create job and open').click()
+    const save = sent().at(-1)
+    if (save?.type !== 'save_program') throw new Error('No job save')
+    expect(save.path).toBe(`${programDirectory}/job-facing-100x60mm-2.ngc`)
+    expect(save.text).toContain('Rectangle X 100 by Y 60')
+    expect(save.text).not.toContain('Rectangle X 80')
+    expect(save.text.indexOf('(Facing')).toBeLessThan(save.text.indexOf('(Hole pattern'))
+    expect(save.text).not.toContain('(Circular pocket')
+    expect(save.text.match(/^M2$/gm)).toEqual(['M2'])
+    answer(save)
+    expect(sent().at(-1)).toMatchObject({ type: 'open_program', path: save.path })
+  })
+
   it('keeps the dialog with the reason when the save fails, and opens nothing', async () => {
     await open()
     button('Create and open').click()

@@ -1,6 +1,10 @@
 {
   "operations": {
     "dialog": {
+      "job": "ジョブ",
+      "addToJob": "ジョブに追加",
+      "createJob": "ジョブを作成して開く",
+      "removeOperation": "{name} をジョブから削除",
       "title": "新規加工",
       "operations": "加工",
       "tool": "工具",
@@ -75,6 +79,8 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "invalidJob": "ジョブを組み立てられませんでした。",
+      "jobTooLarge": "プログラムが保存上限の 512 KiB を超えています。",
       "positive": "{label}は 0 より大きい値にしてください。",
       "count": "{label}は 1 から {max} までの整数にしてください。",
       "chooseTool": "工具テーブルから工具を選択してください。",

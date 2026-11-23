@@ -1,6 +1,10 @@
 {
   "operations": {
     "dialog": {
+      "job": "Trabalho",
+      "addToJob": "Adicionar ao trabalho",
+      "createJob": "Criar e abrir trabalho",
+      "removeOperation": "Remover {name} do trabalho",
       "title": "Nova operação",
       "operations": "Operação",
       "tool": "Ferramenta",
@@ -75,6 +79,8 @@
       "g83": "G83 picagem"
     },
     "check": {
+      "invalidJob": "Não foi possível compor o trabalho.",
+      "jobTooLarge": "O programa excede o limite de gravação de 512 KiB.",
       "positive": "{label}: tem de ser maior do que zero.",
       "count": "{label}: tem de ser um número inteiro de 1 a {max}.",
       "chooseTool": "Escolha uma ferramenta da tabela de ferramentas.",

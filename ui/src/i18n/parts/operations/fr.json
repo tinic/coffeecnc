@@ -1,6 +1,10 @@
 {
   "operations": {
     "dialog": {
+      "job": "Tâche",
+      "addToJob": "Ajouter à la tâche",
+      "createJob": "Créer et ouvrir la tâche",
+      "removeOperation": "Retirer {name} de la tâche",
       "title": "Nouvelle opération",
       "operations": "Opération",
       "tool": "Outil",
@@ -75,6 +79,8 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "invalidJob": "La tâche n’a pas pu être assemblée.",
+      "jobTooLarge": "Le programme dépasse la limite d’enregistrement de 512 Kio.",
       "positive": "{label} : la valeur doit être supérieure à zéro.",
       "count": "{label} : entrez un nombre entier de 1 à {max}.",
       "chooseTool": "Choisissez un outil dans la table d’outils.",

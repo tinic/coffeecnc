@@ -176,7 +176,7 @@ const steps = computed(() => {
       <table v-if="positions.length" aria-label="Saved machine positions">
         <thead>
           <tr>
-            <th scope="col">Position</th>
+            <th scope="col">Name</th>
             <th v-for="axis in ['X', 'Y', 'Z']" :key="axis" scope="col" class="axis-col">{{ axis }}</th>
             <th scope="col" class="go-col" aria-label="Move"></th>
             <th scope="col" class="delete-col" aria-label="Delete"></th>
@@ -257,8 +257,8 @@ const steps = computed(() => {
 </template>
 
 <style scoped>
-.positions { display: flex; flex-direction: column; gap: 6px; }
-.list { height: 212px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-sunken); }
+.positions { display: flex; flex-direction: column; gap: 6px; height: var(--motion-content-height); }
+.list { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-sunken); }
 .list table { width: 100%; table-layout: fixed; border-spacing: 0; text-align: left; }
 .list thead { position: sticky; top: 0; background: var(--bg-sunken); }
 .list thead th { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--text-dim); font-size: 11px; font-weight: 600; }

@@ -29,6 +29,7 @@ import AppIcon from './AppIcon.vue'
 import MaterialProbeControls from './MaterialProbeControls.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
+import MotionPad from './MotionPad.vue'
 import PowerFeedControls from './PowerFeedControls.vue'
 import SavedPositions from './SavedPositions.vue'
 import type { SetterStatusLine } from '../setter-state'
@@ -68,7 +69,7 @@ const materialProbeTool = computed(() => panel.hello?.fixed_setter?.material_tra
   ? panel.hello.touch_probe_tool : undefined)
 
 const motionModes = [
-  ['jog', 'Jog', 'Jog while held, or by a step'],
+  ['jog', 'Jog', 'Jog while held, or by a step. Keyboard: arrows X/Y, Page Up/Down Z.'],
   ['feed', 'Power feed', 'Feed one axis to the soft limit or a set distance'],
   ['positions', 'Positions', 'Save machine positions and go back to them'],
 ] as const
@@ -263,15 +264,6 @@ function setJogVelocity(event: Event): void {
   panel.jogVelocity = Number((event.target as HTMLInputElement).value)
 }
 
-const pad: readonly (readonly [JogKey, string, 'up' | 'down' | 'left' | 'right'])[] = [
-  ['y+', 'ypos', 'up'],
-  ['x-', 'xneg', 'left'],
-  ['x+', 'xpos', 'right'],
-  ['y-', 'yneg', 'down'],
-  ['z+', 'zpos', 'up'],
-  ['z-', 'zneg', 'down'],
-]
-
 function jogBlock(key: JogKey): string | null {
   if (jogUnavailable.value !== null) return jogUnavailable.value
   return axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) > 0 ? null : 'Configured jog speed is unavailable'
@@ -282,7 +274,7 @@ const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])
   .map(({ axis, speed }) => `${axis.toUpperCase()} ${formatVelocity(speed, unit.value)} ${velocityUnit(unit.value)}`).join(' · '))
 
 const { line: jogLine, allow: allowJog } = useCardFeedback(
-  () => limitedSpeeds.value ? `Axis limits: ${limitedSpeeds.value}` : 'Hold a direction to jog, or select a step.',
+  () => limitedSpeeds.value ? `Axis limits: ${limitedSpeeds.value}` : '',
   () => stepUnavailable.value,
   [jogMachineBlock, stepUnavailable, (): number => panel.jogVelocity, (): unknown => panel.hello],
 )
@@ -462,84 +454,83 @@ function coolant(which: 'flood' | 'mist'): void {
       </div>
       <PowerFeedControls v-if="mode === 'feed'" @line="modeLine = $event" />
       <SavedPositions v-else-if="mode === 'positions'" @line="modeLine = $event" />
-      <div v-if="mode === 'jog'" class="jog-controls">
-        <div class="pads">
-          <div class="pad">
-            <button
-              v-for="[key, area, icon] in pad"
-              :key="key"
-              v-tooltip="jogBlock(key) ?? `Jog ${jogLabel(key)}`"
-              class="btn jogbtn"
-              type="button"
-              :class="{ held: held.has(key) }"
-              :style="{ gridArea: area }"
-              :aria-disabled="jogBlock(key) !== null"
-              @click="showJogBlock(key)"
-              @touchstart.prevent="jogTouchStart(key, $event)"
-              @touchend.prevent="jogTouchEnd(key, $event)"
-              @touchcancel="jogTouchEnd(key, $event)"
-              @pointerdown="jogPointerDown(key, $event)"
-              @pointerup="jogHold.release(key)"
-              @pointercancel="jogHold.release(key)"
-              @lostpointercapture="jogHold.release(key)"
-              @contextmenu.prevent
-            >
-              <AppIcon :name="icon" />
-              <span class="mono">{{ jogLabel(key) }}</span>
-            </button>
-            <button
-              v-tooltip="'Stop all jogging'"
-              class="btn danger jogbtn stopjog"
-              type="button"
-              @touchstart.prevent="stopTouch"
-              @pointerdown="stopPointerDown"
-            >
-              Stop jog
-            </button>
+      <MotionPad v-if="mode === 'jog'" class="jog-controls">
+        <template #direction="{ jog, area, icon }">
+          <button
+            v-tooltip="jogBlock(jog) ?? `Jog ${jogLabel(jog)}`"
+            class="btn jogbtn"
+            type="button"
+            :class="{ held: held.has(jog) }"
+            :style="{ gridArea: area }"
+            :aria-disabled="jogBlock(jog) !== null"
+            @click="showJogBlock(jog)"
+            @touchstart.prevent="jogTouchStart(jog, $event)"
+            @touchend.prevent="jogTouchEnd(jog, $event)"
+            @touchcancel="jogTouchEnd(jog, $event)"
+            @pointerdown="jogPointerDown(jog, $event)"
+            @pointerup="jogHold.release(jog)"
+            @pointercancel="jogHold.release(jog)"
+            @lostpointercapture="jogHold.release(jog)"
+            @contextmenu.prevent
+          >
+            <AppIcon :name="icon" />
+            <span class="mono">{{ jogLabel(jog) }}</span>
+          </button>
+        </template>
+        <template #stop>
+          <button
+            v-tooltip="'Stop all jogging'"
+            class="btn danger jogbtn stopjog"
+            type="button"
+            @touchstart.prevent="stopTouch"
+            @pointerdown="stopPointerDown"
+          >
+            Stop jog
+          </button>
+        </template>
+        <div class="jog-parameters">
+          <div class="steps">
+            <div class="step-heading"><span class="label">Step</span><span class="hint">{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
+            <div class="increments">
+              <button
+                v-tooltip="'Jog while the button or key is held'"
+                class="btn"
+                type="button"
+                :class="{ on: panel.jogIncrement === null }"
+                @click="panel.jogIncrement = null"
+              >
+                Continuous
+              </button>
+              <button
+                v-for="increment in increments"
+                :key="increment"
+                class="btn mono"
+                type="button"
+                :class="{ on: panel.jogIncrement === increment }"
+                @click="panel.jogIncrement = increment"
+              >
+                {{ formatIncrement(increment, unit) }}
+              </button>
+            </div>
           </div>
+          <label class="jog-speed">
+            <span class="step-heading">
+              <span class="label">Speed</span>
+              <span><strong class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</strong> <span class="hint">{{ velocityUnit(unit) }}</span></span>
+            </span>
+            <input
+              type="range"
+              min="10"
+              :max="panel.hello?.max_jog_velocity ?? 10"
+              step="10"
+              :value="panel.jogVelocity"
+              aria-label="Jog speed"
+              :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
+              @input="setJogVelocity"
+            />
+          </label>
         </div>
-
-        <div class="steps">
-          <div class="step-heading"><span class="label">Step</span><span class="hint">{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
-          <div class="increments">
-            <button
-              v-tooltip="'Jog while the button or key is held'"
-              class="btn"
-              type="button"
-              :class="{ on: panel.jogIncrement === null }"
-              @click="panel.jogIncrement = null"
-            >
-              Continuous
-            </button>
-            <button
-              v-for="increment in increments"
-              :key="increment"
-              class="btn mono"
-              type="button"
-              :class="{ on: panel.jogIncrement === increment }"
-              @click="panel.jogIncrement = increment"
-            >
-              {{ formatIncrement(increment, unit) }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="mode === 'jog'" class="line">
-        <span class="label">Speed</span>
-        <input
-          type="range"
-          min="10"
-          :max="panel.hello?.max_jog_velocity ?? 10"
-          step="10"
-          :value="panel.jogVelocity"
-          aria-label="Jog speed"
-          :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
-          @input="setJogVelocity"
-        />
-        <span class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</span>
-        <span class="hint">{{ velocityUnit(unit) }}</span>
-      </div>
+      </MotionPad>
 
       <div v-if="!touchOff" class="line homes">
         <span class="label">Home</span>
@@ -566,9 +557,6 @@ function coolant(which: 'flood' | 'mist'): void {
           <span class="homestate" :class="{ homed: axis.homed }">{{ homeState(axis) }}</span>
         </button>
       </div>
-      <p v-if="!touchOff && mode === 'jog'" v-tooltip="'Keyboard jogging is active only in Manual with no input field focused.'" class="hint keys">
-        Keyboard: arrows X/Y · Page Up/Down Z
-      </p>
       <SetterStatusBand class="jog-status" :line="mode === 'jog' ? jogLine : modeLine" />
     </section>
 
@@ -708,41 +696,16 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .jog {
-  gap: 6px;
+  --motion-content-height: 236px;
+  gap: 8px;
   align-self: start;
   max-height: 100%;
   overflow-y: auto;
 }
-
-.jog-controls { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; align-items: center; }
-.pads {
-  display: flex;
-  justify-content: center;
-}
-
-.pad {
-  display: grid;
-  grid-template-areas:
-    '. ypos . gap zpos'
-    'xneg stop xpos gap .'
-    '. yneg . gap zneg';
-  grid-template-columns: 68px 68px 68px 12px 68px;
-  grid-template-rows: 68px 68px 68px;
-  gap: 4px;
-}
-
-.jogbtn {
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  font-size: 20px;
-  touch-action: none;
-}
-
-.stopjog {
-  grid-area: stop;
-  font-size: 13px;
-}
+.jogbtn { touch-action: none; }
+.jog-parameters, .steps, .jog-speed { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.jog-parameters { gap: 6px; }
+.jog-speed input { width: 100%; min-height: 44px; margin: 0; }
 
 .line {
   display: flex;
@@ -755,23 +718,13 @@ function coolant(which: 'flood' | 'mist'): void {
   flex: none;
 }
 
-.line input[type='range'] {
-  flex: 1;
-}
-
-.steps { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.step-heading { display: flex; justify-content: space-between; }
-.increments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.step-heading { display: flex; justify-content: space-between; align-items: baseline; }
+.increments { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 4px; }
 .increments > :first-child { grid-column: 1 / -1; }
-.increments .btn { min-width: 44px; padding: 0 10px; }
-
-.speed {
-  flex: none;
-  width: 7ch;
-  min-width: 7ch;
-  text-align: right;
-  font-weight: 600;
-}
+.increments .btn { padding-inline: 3px; font-size: 12px; }
+.speed { font-weight: 600; }
+.homes .btn { flex: 1; min-height: 48px; }
+.jog-status { margin-block: 0; }
 
 .homeaxis {
   flex: 1;
@@ -804,11 +757,6 @@ function coolant(which: 'flood' | 'mist'): void {
   color: var(--go);
 }
 
-.keys {
-  margin: 0;
-  font-size: 10px;
-}
-
 .btn[aria-disabled="true"] { opacity: .68; }
 
 .side > .mdi {
@@ -819,10 +767,10 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 .mdi > .setter-band, .utilities > .setter-band { margin-block: 0; }
 .work-system { margin-top: auto; }
-.probe-side .work-system { margin-top: 0; }
 .side > .probe-card { gap: 12px; padding: 14px; }
 .probe-contact { color: var(--warn); }
-.modes .btn { min-width: 0; padding: 0 16px; font-size: 13px; }
+.modes { display: flex; }
+.modes .btn { flex: 1; min-width: 44px; min-height: 44px; padding: 0 12px; font-size: 13px; }
 .jog-heading h2, .wcs-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
 .wcs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.wcs-heading h2 { flex: none; }
 
@@ -924,12 +872,10 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
-@media (max-height: 820px) { .jog { gap: 4px; } }
 @media (max-height: 760px) {
-  .jog { display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: 'heading heading' 'pads steps' 'pads homes' 'speed speed' 'status status'; align-content: start; column-gap: 12px; }
-  .jog-heading { grid-area: heading; display: flex; align-items: center; gap: 12px; }
-  .jog-controls { display: contents; }.pads { grid-area: pads; align-self: center; }.steps { grid-area: steps; }.homes { grid-area: homes; gap: 4px; }.homes > .label { display: none; }.homes > .btn { padding: 0 5px; }
-  .jog > .line:not(.homes) { grid-area: speed; }.jog-status { grid-area: status; }.keys { display: none; }
+  .jog { gap: 4px; padding-block: 8px; }
+  .homes { gap: 4px; }
+  .homes .btn { min-height: 44px; }
   .side { gap: 6px; }.side > .card { gap: 4px; padding-block: 8px; }.history .hint { margin: 2px 8px; }.wcs-values { min-height: 18px; }
 }
 </style>

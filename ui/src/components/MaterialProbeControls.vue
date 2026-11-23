@@ -71,6 +71,11 @@ let statusRequest: CommandBody | null = null
 
 const guide = shallowRef<MaterialGuideTarget | null>(null)
 const choosingFeature = shallowRef(false)
+const extendedFeatures = computed(() => panel.hello?.fixed_setter?.material_features === true)
+const featureActive = computed(() => {
+  const action = pending.value?.action
+  return choosingFeature.value || action !== undefined && !['material', 'ball', 'apply_angle'].includes(action)
+})
 function openGuide(target: MaterialGuideTarget): void {
   if (pending.value === null) {
     choosingFeature.value = false
@@ -295,51 +300,22 @@ onBeforeUnmount(() => {
         >
           {{ face.label }}
         </button>
-        <button
-          v-for="corner in corners" :key="corner.label"
-          v-tooltip="`Probe the ${corner.name}: X then Y face, from over the part.`"
-          type="button" class="btn corner" :class="{ on: pending?.action === 'corner' && pending.x_direction === corner.x && pending.y_direction === corner.y }"
-          @click="openGuide({ kind: 'corner', x: corner.x, y: corner.y })"
-        >
-          {{ corner.label }}
-        </button>
       </div>
       <WorkpieceProbeDiagram :travel="pending?.action === 'material' ? pending.direction : null" :corner="pendingCorner" />
-      <div class="centres">
-        <button
-          v-tooltip="'Jog the ball into the bore, below its top, then press. Sets X0 Y0 at the centre.'"
-          type="button" class="btn" :class="{ on: pending?.action === 'bore' }" @click="openGuide({ kind: 'bore' })"
-        >
-          Bore centre
-        </button>
-        <button
-          v-tooltip="'Probe Z top on the boss, jog the ball over its middle, then enter its approximate diameter.'"
-          type="button" class="btn" :class="{ on: pending?.action === 'boss' }" @click="openGuide({ kind: 'boss' })"
-        >
-          Boss centre…
-        </button>
-        <button
-          v-tooltip="'Measure how far the front or left edge turns.'"
-          type="button" class="btn" :class="{ on: pending?.action === 'angle' }" @click="openGuide({ kind: 'angle' })"
-        >
-          Edge angle…
-        </button>
-      </div>
-      <div class="probe-utilities">
-        <button
-          v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
-          type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
-        >
-          Calibrate ball…
-        </button>
-        <button
-          v-if="panel.hello?.fixed_setter?.material_features" class="btn" type="button" aria-haspopup="dialog"
-          :class="{ on: pending?.action === 'inside_corner' || pending?.action === 'pocket' || pending?.action === 'slot' || pending?.action === 'ridge' }"
-          @click="pending === null && (choosingFeature = true)"
-        >
-          Features…
-        </button>
-      </div>
+    </div>
+    <div class="probe-utilities">
+      <button
+        class="btn" type="button" aria-haspopup="dialog" :class="{ on: featureActive }"
+        @click="pending === null && (choosingFeature = true)"
+      >
+        Features…
+      </button>
+      <button
+        v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
+        type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
+      >
+        Calibrate ball…
+      </button>
     </div>
     <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
@@ -352,31 +328,49 @@ onBeforeUnmount(() => {
     />
     <ModalDialog v-if="choosingFeature" title="Probe a feature" size="medium" fresh-gesture @close="choosingFeature = false">
       <div class="feature-options">
+        <div class="feature-types">
+          <button class="btn" type="button" @click="openGuide({ kind: 'bore' })">Bore centre</button>
+          <button class="btn" type="button" @click="openGuide({ kind: 'boss' })">Boss centre…</button>
+          <button class="btn" type="button" @click="openGuide({ kind: 'angle' })">Edge angle…</button>
+          <button v-if="extendedFeatures" class="btn" type="button" @click="openGuide({ kind: 'pocket' })">Rectangular pocket</button>
+        </div>
         <div class="feature-row">
-          <span>Inside corner</span>
-          <div class="feature-buttons">
+          <span>Outside corner</span>
+          <div class="feature-buttons corners">
             <button
-              v-for="corner in insideCorners" :key="corner.label" class="btn" type="button"
-              :aria-label="'Inside corner ' + corner.label" @click="openGuide({ kind: 'inside_corner', x: corner.x, y: corner.y })"
+              v-for="corner in corners" :key="corner.label"
+              v-tooltip="`Probe the ${corner.name}: X then Y face, from over the part.`"
+              class="btn" type="button" :aria-label="'Outside corner ' + corner.label"
+              @click="openGuide({ kind: 'corner', x: corner.x, y: corner.y })"
             >
               {{ corner.label }}
             </button>
           </div>
         </div>
-        <button class="btn pocket-action" type="button" @click="openGuide({ kind: 'pocket' })">
-          Rectangular pocket
-        </button>
-        <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
-          <span class="feature-name">{{ kind }}</span>
-          <div class="feature-buttons">
-            <button
-              v-for="axis in featureAxes" :key="axis" class="btn" type="button" :aria-label="kind + ' across ' + axis.toUpperCase()"
-              @click="openGuide({ kind, axis })"
-            >
-              Across {{ axis.toUpperCase() }}
-            </button>
+        <template v-if="extendedFeatures">
+          <div class="feature-row">
+            <span>Inside corner</span>
+            <div class="feature-buttons corners">
+              <button
+                v-for="corner in insideCorners" :key="corner.label" class="btn" type="button"
+                :aria-label="'Inside corner ' + corner.label" @click="openGuide({ kind: 'inside_corner', x: corner.x, y: corner.y })"
+              >
+                {{ corner.label }}
+              </button>
+            </div>
           </div>
-        </div>
+          <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
+            <span class="feature-name">{{ kind }}</span>
+            <div class="feature-buttons">
+              <button
+                v-for="axis in featureAxes" :key="axis" class="btn" type="button" :aria-label="kind + ' across ' + axis.toUpperCase()"
+                @click="openGuide({ kind, axis })"
+              >
+                Across {{ axis.toUpperCase() }}
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
     </ModalDialog>
     <ModalDialog v-if="askingRotation && edgeRotation" title="Apply as G5x rotation?" size="small" fresh-gesture @close="askingRotation = false">
@@ -391,31 +385,25 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.probe-status { height: 48px; }
+.probe-status { height: 48px; margin-bottom: 0; }
 .rotation-action { flex: none; min-height: 44px; padding-inline: 8px; font-size: 12px; }
 .rotation-effect { margin: 0; line-height: 1.5; }
 .material-probe { min-width: 0; container-type: inline-size; }
-.probe-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(186px, 0.82fr); align-items: center; gap: 12px; }
-.probe-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.probe-layout { display: grid; grid-template-columns: 1fr minmax(186px, 0.96fr); align-items: stretch; gap: 12px; }
+.probe-actions { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 6px; }
 .probe-actions button:first-child { grid-column: 1 / -1; }
-.probe-actions button { min-height: 56px; min-width: 0; padding-inline: 4px; white-space: nowrap; }
-.probe-actions button.corner { min-height: 44px; }
-.probe-utilities { display: flex; gap: 8px; grid-column: 2; align-self: start; }
-.probe-utilities button { flex: 1; min-height: 44px; padding-inline: 5px; }
-.feature-options { display: grid; gap: 8px; }
-.pocket-action { justify-content: flex-start; }
-.feature-row { display: grid; grid-template-columns: minmax(108px, .6fr) 1.4fr; gap: 12px; align-items: center; }
+.probe-actions button { min-height: 56px; padding-inline: 4px; white-space: nowrap; }
+.probe-utilities { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.probe-utilities button { min-height: 44px; }
+.feature-options { display: grid; gap: 9px; }
+.feature-types { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.feature-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 10px; align-items: center; }
 .feature-name { text-transform: capitalize; }
-.feature-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
-.feature-buttons button { flex: 1; white-space: nowrap; }
-.feature-options button { min-height: 44px; }
-.centres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.centres button { min-height: 44px; }
-@container (max-width: 390px) {
+.feature-buttons { display: grid; grid-template-columns: repeat(2, minmax(44px, 1fr)); gap: 6px; }
+.feature-buttons.corners { grid-template-columns: repeat(4, minmax(44px, 1fr)); }
+.feature-options button { min-height: 44px; padding-inline: 6px; }
+.feature-buttons button { white-space: nowrap; }
+@container (max-width: 400px) {
   .probe-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .probe-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .probe-actions button.corner { grid-column: span 1; }
-  .probe-actions button:first-child { grid-column: auto; }
-  .probe-utilities { grid-column: 1; }
 }
 </style>

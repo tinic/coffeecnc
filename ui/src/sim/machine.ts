@@ -80,6 +80,10 @@ export const hello: Hello = {
   max_feed_override: 1.5,
   min_spindle_override: 0.5,
   max_spindle_override: 1.5,
+  macros: [
+    { label: 'Park Z', mdi: 'G53 G0 Z0' },
+    { label: 'Work XY zero', mdi: 'G90 G0 X0 Y0' },
+  ],
 }
 
 /**

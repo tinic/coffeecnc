@@ -63,6 +63,19 @@ said 'Manual tool change prompt *on  (wired in the post-GUI HAL file)'
 check check_finds_tool_change_wired_in_hal $? "$(grep 'Manual tool change' "$work/out" | tr ' ' '_')"
 said 'Reference marks *off  (\[COFFEECNC\] REFERENCE_MARKS = yes'
 check check_reports_reference_marks_off $? "$(grep 'Reference marks' "$work/out" | tr ' ' '_')"
+said 'Macros *off  (\[COFFEECNC\] MACRO = <label> | <MDI block>)'
+check check_reports_macros_off $? "$(grep 'Macros' "$work/out" | tr ' ' '_')"
+# Macros (#211): the labels in the check, and a call to a missing subroutine refused.
+printf 'o<clamp> sub\no<clamp> endsub\nM2\n' >"$work/sim/nc_files/clamp.ngc"
+cp "$work/sim/coffeecnc_sim.ini" "$work/sim/macros.ini" || exit 125
+printf '\n[COFFEECNC]\nMACRO = Park | G53 G0 Z0\nMACRO = Clamp check | O<clamp> call\n' >>"$work/sim/macros.ini"
+run --check "$work/sim/macros.ini"
+[ "$code" = 0 ] && said 'Macros *2  (Park, Clamp check)'
+check check_reports_macros $? "$(grep 'Macros' "$work/out" | tr ' ' '_')"
+printf 'MACRO = Missing | O<nowhere> call\n' >>"$work/sim/macros.ini"
+run --check "$work/sim/macros.ini"
+[ "$code" = 1 ] && said 'MACRO "Missing" calls O<nowhere>, but nowhere.ngc is not in'
+check check_refuses_macro_without_subroutine $? "$(detail)"
 run --check "$work/sim/lathe.ini"
 [ "$code" = 1 ] && said 'CoffeeCNC does not start with this file' && said 'COORDINATES'
 check check_reports_why_a_file_is_refused $? "$(detail)"

@@ -83,6 +83,23 @@ Each function stays off until you set its keys. The comments in `coffeecnc.ini.e
 | Fixed tool setter | `FIXED_SETTER` and the `SETTER_*` keys | `/usr/share/coffeecnc/hal/examples/fixed_setter.hal`: probe input, setter selection and the probe-cycle permit; see [tool length probing](design/tool-length-probing.md) |
 | Z jog during a pause | `PAUSED_Z_MAX_MM`, and also `SPINDLE_RPM_SIGNAL` and `SPINDLE_AT_SPEED_SIGNAL` | `/usr/share/coffeecnc/hal/examples/paused_z.hal`: external offsets on Z, with `[AXIS_Z] OFFSET_AV_RATIO` in the INI file |
 | Travel check in Program check | `TRAVEL_MIN_MM`, `TRAVEL_MAX_MM` | None |
+| Macro buttons in MDI | `MACRO` | None. See [macros](#macros) |
+
+## Macros
+
+A macro is a button that runs one MDI command. Add one `MACRO` line for each macro to `[COFFEECNC]`, with the label, a `|` and the MDI command:
+
+```ini
+[COFFEECNC]
+MACRO = Park | G53 G0 Z0
+MACRO = Clamp check | O<clamp> call
+```
+
+- You can set at most 12 macros. A label has at most 24 characters. Each macro must have a different label.
+- The MDI command is one line of at most 254 bytes.
+- For a macro with more steps, write the steps in a subroutine file and call it with `O<name> call`. Put `name.ngc` in `[DISPLAY] PROGRAM_PREFIX` or in a directory of `[RS274NGC] SUBROUTINE_PATH`. If CoffeeCNC cannot find the file, it does not start and tells you which macro is wrong.
+
+In Manual, the MDI card then shows a **Macros** button. Tap it, then tap a macro. CoffeeCNC shows the MDI command. Tap **Run** to send it. The macro has the same conditions as an MDI command that you type: for example, the machine must be on, homed if your configuration requires it, and idle. The result shows in the MDI history. Without `MACRO` lines, the panel shows no **Macros** button. `coffeecnc --check` lists the macros.
 
 ## Reference marks
 

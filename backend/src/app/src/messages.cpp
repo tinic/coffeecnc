@@ -254,6 +254,12 @@ auto encode_hello(const Hello& hello) -> Encoded {
       places.push_back({{"name", place.name}, {"path", place.path}});
     message["program_places"] = std::move(places);
   }
+  if (!hello.macros.empty()) {
+    auto macros = Json::array();
+    for (const auto& macro : hello.macros)
+      macros.push_back({{"label", macro.label}, {"mdi", macro.mdi}});
+    message["macros"] = std::move(macros);
+  }
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
   if (const auto& setter = hello.fixed_setter)

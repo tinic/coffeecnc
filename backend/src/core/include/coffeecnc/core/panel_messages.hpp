@@ -41,6 +41,13 @@ struct ProgramPlace {
   friend auto operator==(const ProgramPlace&, const ProgramPlace&) -> bool = default;
 };
 
+// A button that runs one MDI block: [COFFEECNC] MACRO = <label> | <MDI block>.
+struct Macro {
+  std::string label;
+  std::string mdi;
+  friend auto operator==(const Macro&, const Macro&) -> bool = default;
+};
+
 struct Hello {
   std::string machine_name;
   // No LinuxCNC is behind the session.
@@ -67,6 +74,8 @@ struct Hello {
   std::optional<int> touch_probe_tool{};
   // Shortcuts of the program browser, first the program directory.
   std::vector<ProgramPlace> program_places{};
+  // The configured macros, in the order of the INI file. Not sent when there are none.
+  std::vector<Macro> macros{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

@@ -59,6 +59,11 @@ export interface Hello {
   touch_probe_tool?: number
   /** Program browser shortcuts (program directory, home, USB media); absent on older peers. */
   program_places?: { name: string; path: string }[]
+  /**
+   * `[COFFEECNC] MACRO = <label> | <MDI block>` in INI order, at most 12; absent when none is
+   * configured. Each runs as one `mdi` command, under the same rules as a typed block.
+   */
+  macros?: Macro[]
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -77,6 +82,13 @@ export interface Hello {
   max_feed_override: number
   min_spindle_override: number
   max_spindle_override: number
+}
+
+export interface Macro {
+  /** At most 24 characters. */
+  label: string
+  /** One MDI block, at most 254 bytes. */
+  mdi: string
 }
 
 export interface RotaryAxisStatus {

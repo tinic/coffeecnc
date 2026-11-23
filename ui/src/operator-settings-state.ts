@@ -2,6 +2,7 @@ import { reactive, ref, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
+import type { Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
@@ -21,9 +22,11 @@ interface StartupPresentation {
   theme: Ref<PanelTheme>
   layoutOverride?: ProgramLayout | null
   themeOverride?: PanelTheme | null
+  language?: Ref<Language>
+  languageOverride?: Language | null
 }
 
-type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'recent_programs'>>
+type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'language' | 'recent_programs'>>
 
 export interface OperatorSettingsController {
   state: SettingsState
@@ -33,6 +36,7 @@ export interface OperatorSettingsController {
   chooseProgramLayout: (layout: ProgramLayout) => void
   rememberProgram: (path: string) => void
   chooseTheme: (theme: PanelTheme) => void
+  chooseLanguage: (language: Language) => void
   dispose: () => void
 }
 
@@ -53,9 +57,13 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   const themeOverride = presentation?.themeOverride ?? null
   panel.programLayout = layoutOverride ?? panel.preferences.program_layout
   theme.value = themeOverride ?? panel.preferences.theme
+  const language = presentation?.language ?? ref<Language>('en')
+  const languageOverride = presentation?.languageOverride ?? null
+  language.value = languageOverride ?? panel.preferences.language
   let initialLayout = panel.programLayout
   let layoutChosen = false
   let themeChosen = false
+  let languageChosen = false
   let queuedPresentation: PresentationChange = {}
   let initialized = false
   let machineId: string | null | undefined
@@ -75,6 +83,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (!layoutChosen && panel.programLayout === initialLayout)
       panel.programLayout = layoutOverride ?? prefs.program_layout
     if (!themeChosen) theme.value = themeOverride ?? prefs.theme
+    if (!languageChosen) language.value = languageOverride ?? prefs.language
     // A delayed first snapshot must not undo an operator's intervening edits.
     if (panel.unit === initialUnit) panel.unit = prefs.startup_units === 'machine' ? hello.machine_units : prefs.startup_units
     if (panel.jogVelocity === initialJog) panel.jogVelocity = Math.min(prefs.default_jog_velocity, hello.max_jog_velocity)
@@ -90,6 +99,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
         queuedPresentation = {}
         layoutChosen = false
         themeChosen = false
+        languageChosen = false
         initialLayout = panel.programLayout
       }
       initialized = false
@@ -175,8 +185,9 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     const patch = queuedPresentation
     queuedPresentation = {}
     if (state.storage === 'unavailable') return
-    const { program_layout: layout, theme: storedTheme, recent_programs: recent } = panel.preferences
+    const { program_layout: layout, theme: storedTheme, language: storedLanguage, recent_programs: recent } = panel.preferences
     if ((patch.program_layout ?? layout) === layout && (patch.theme ?? storedTheme) === storedTheme &&
+        (patch.language ?? storedLanguage) === storedLanguage &&
         (patch.recent_programs ?? recent).join('\n') === recent.join('\n')) return
     // Merge into the latest confirmed document so a queued choice cannot undo another save.
     void save({ ...panel.preferences, ...patch }, context())
@@ -198,6 +209,12 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     queuedPresentation.theme = value
     flushPresentation()
   }
+  function chooseLanguage(value: Language): void {
+    languageChosen = true
+    language.value = value
+    queuedPresentation.language = value
+    flushPresentation()
+  }
   stops.push(watch([
     (): SettingsState['storage'] => state.storage,
     (): boolean => state.saving,
@@ -208,7 +225,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (file !== null && file !== panel.preferences.recent_programs[0]) rememberProgram(file)
   }))
 
-  return { state, context, block, save, chooseProgramLayout, chooseTheme, rememberProgram, dispose: (): void => {
+  return { state, context, block, save, chooseProgramLayout, chooseTheme, chooseLanguage, rememberProgram, dispose: (): void => {
     for (const stop of stops) stop()
     if (pending !== null) finish(fail('CoffeeCNC closed before save confirmation.'))
   } }

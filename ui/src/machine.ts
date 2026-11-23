@@ -3,7 +3,7 @@
 
 import { computed, watch, type ComputedRef } from 'vue'
 
-import { themeOverride, themePreference } from './appearance'
+import { languageOverride, languagePreference, themeOverride, themePreference } from './appearance'
 import { alternateTheme, decodeProgramLayout } from './operator-settings'
 import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
@@ -16,7 +16,7 @@ const instance = createPanel({ transport: createTransport() })
 
 export const panel: PanelState = instance.state
 export const operatorSettings = createOperatorSettingsState(panel, instance, undefined, {
-  theme: themePreference, themeOverride,
+  theme: themePreference, themeOverride, language: languagePreference, languageOverride,
   layoutOverride: decodeProgramLayout(new URLSearchParams(window.location.search).get('layout')),
 })
 

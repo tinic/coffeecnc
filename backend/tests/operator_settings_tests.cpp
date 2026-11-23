@@ -30,7 +30,7 @@ const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}, {}}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, PanelLanguage::de, {}, {}, {}}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};
@@ -52,7 +52,25 @@ void documents_and_limits() {
     require(body.at("theme") == name && requested_theme && requested_theme->theme == theme,
             "The native settings command accepts the palette name");
   }
+  for (const auto& [language, name] : std::initializer_list<std::pair<PanelLanguage, std::string>>{
+           {PanelLanguage::en, "en"}, {PanelLanguage::fr, "fr"}, {PanelLanguage::de, "de"},
+           {PanelLanguage::es, "es"}, {PanelLanguage::pt, "pt"}, {PanelLanguage::zh, "zh"},
+           {PanelLanguage::ja, "ja"}}) {
+    auto spoken = value;
+    spoken.document.language = language;
+    const auto saved_language = encode_operator_settings_file(spoken);
+    require(saved_language.has_value(), "The chosen language can be stored");
+    const auto loaded_language = decode_operator_settings_file(*saved_language);
+    require(loaded_language && loaded_language->document == spoken.document,
+            "Restoring a language retains the whole preferences document");
+    const auto body = Json::parse(*saved_language).at("document");
+    const auto requested_language = decode_operator_preferences(body.dump());
+    require(body.at("language") == name && requested_language &&
+                requested_language->language == language,
+            "The native settings command accepts the language code " + name);
+  }
   auto legacy = Json::parse(*encoded);
+  legacy["document"].erase("language");
   legacy["document"].erase("tool_reference_height");
   legacy["document"].erase("program_layout");
   legacy["document"].erase("theme");
@@ -61,16 +79,18 @@ void documents_and_limits() {
   expected.tool_reference_height = 0;
   expected.program_layout = ProgramLayout::path;
   expected.theme = PanelTheme::light;
+  expected.language = PanelLanguage::en;
   require(upgraded && upgraded->document == expected,
           "Earlier v1 documents retain their preferences and default the new fields");
 
   auto invalid_presentation = Json::parse(*encoded);
   invalid_presentation["document"]["program_layout"] = false;
   invalid_presentation["document"]["theme"] = "sepia";
+  invalid_presentation["document"]["language"] = "tlh";
   const auto normalized = decode_operator_settings_file(invalid_presentation.dump());
   expected.tool_reference_height = value.document.tool_reference_height;
   require(normalized && normalized->document == expected,
-          "Invalid view and theme fall back independently of other preferences");
+          "Invalid view, theme and language fall back independently of other preferences");
   for (const auto& height : {Json(-1), Json("6.35"), Json(nullptr), Json(1e10)}) {
     auto invalid = Json::parse(*encoded);
     invalid["document"]["tool_reference_height"] = height;
@@ -203,6 +223,7 @@ void damaged_requests() {
   auto older = document;
   older.erase("program_layout");
   older.erase("theme");
+  older.erase("language");
   older.erase("tool_reference_height");
   require(decode_operator_preferences(older.dump()).has_value(),
           "A save request may still omit the optional fields");
@@ -218,7 +239,9 @@ void damaged_requests() {
            {"recent_programs", Json("/a.ngc")},
            {"program_layout", Json(false)},
            {"program_layout", Json("sideways")},
-           {"theme", Json("sepia")}}) {
+           {"theme", Json("sepia")},
+           {"language", Json("tlh")},
+           {"language", Json(7)}}) {
     auto invalid = document;
     invalid[field] = damaged;
     const auto decoded = decode_operator_preferences(invalid.dump());

@@ -1,4 +1,5 @@
 import type { LengthUnit, Vec3 } from './protocol'
+import { decodeLanguage, type Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
 export type ProgramLayout = 'path' | 'text' | 'split'
@@ -42,6 +43,8 @@ export interface OperatorPreferences {
   tool_reference_height: number
   program_layout: ProgramLayout
   theme: PanelTheme
+  /** Panel text language; numbers, G-code and units keep their technical form. */
+  language: Language
   /** Programs opened most recently first, absolute paths on the machine; at most eight. */
   recent_programs: string[]
   /** Positions the operator saved in Manual, machine coordinates in mm; at most sixteen. */
@@ -103,7 +106,7 @@ export type OperatorSettings = {
 
 export function defaultOperatorPreferences(): OperatorPreferences {
   return { version: 1, startup_units: 'machine', enabled_wcs: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0, program_layout: 'path', theme: 'light',
+    default_spindle_rpm: 0, default_jog_velocity: 600, tool_reference_height: 0, program_layout: 'path', theme: 'light', language: 'en',
     recent_programs: [], saved_positions: [], go_to_safe_z: null }
 }
 
@@ -111,7 +114,7 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const keys = ['version', 'startup_units', 'enabled_wcs', 'default_spindle_rpm', 'default_jog_velocity']
-  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'recent_programs', 'saved_positions', 'go_to_safe_z'].includes(key)) ||
+  if (keys.some((key) => !(key in v)) || Object.keys(v).some((key) => ![...keys, 'tool_reference_height', 'program_layout', 'theme', 'language', 'recent_programs', 'saved_positions', 'go_to_safe_z'].includes(key)) ||
       v['version'] !== 1 || !['machine', 'mm', 'inch'].includes(String(v['startup_units']))) return null
   const systems = v['enabled_wcs']
   if (!Array.isArray(systems) || systems.length < 1 || systems.length > 9 ||
@@ -126,7 +129,7 @@ export function decodeOperatorPreferences(value: unknown): OperatorPreferences |
   return { version: 1, startup_units: v['startup_units'] as OperatorPreferences['startup_units'],
     enabled_wcs: [...(systems as number[])], default_spindle_rpm: rpm, default_jog_velocity: jog,
     tool_reference_height: reference, program_layout: decodeProgramLayout(v['program_layout']) ?? 'path',
-    theme: decodeTheme(v['theme']) ?? 'light', recent_programs: decodeRecentPrograms(v['recent_programs']),
+    theme: decodeTheme(v['theme']) ?? 'light', language: decodeLanguage(v['language']) ?? 'en', recent_programs: decodeRecentPrograms(v['recent_programs']),
     saved_positions: decodeSavedPositions(v['saved_positions']), go_to_safe_z: decodeSafeZ(v['go_to_safe_z']) }
 }
 

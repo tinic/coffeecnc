@@ -13,6 +13,9 @@ namespace coffeecnc {
 enum class StartupUnits : std::uint8_t { machine, mm, inch };
 enum class ProgramLayout : std::uint8_t { path, text, split };
 enum class PanelTheme : std::uint8_t { light, dark, sandstone, harbor };
+// Panel text language: English, French, German, Spanish, European Portuguese, Simplified
+// Chinese, Japanese.
+enum class PanelLanguage : std::uint8_t { en, fr, de, es, pt, zh, ja };
 
 // A machine position the operator saved in Manual; the panel moves there only on request.
 struct SavedPosition {
@@ -30,6 +33,7 @@ struct OperatorPreferences {
   double tool_reference_height{}; // mm above work Z zero; touch-off dialog preset
   ProgramLayout program_layout{ProgramLayout::path};
   PanelTheme theme{PanelTheme::light};
+  PanelLanguage language{PanelLanguage::en};
   // Programs opened most recently first, absolute paths on the machine; at most eight.
   std::vector<std::string> recent_programs;
   // At most sixteen, in the order the operator saved them.

@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -95,6 +96,16 @@ auto theme_name(PanelTheme value) -> std::string_view {
   }
   return "";
 }
+constexpr std::array<std::pair<PanelLanguage, std::string_view>, 7> language_names{{
+    {PanelLanguage::en, "en"}, {PanelLanguage::fr, "fr"}, {PanelLanguage::de, "de"},
+    {PanelLanguage::es, "es"}, {PanelLanguage::pt, "pt"}, {PanelLanguage::zh, "zh"},
+    {PanelLanguage::ja, "ja"}}};
+auto language_name(PanelLanguage value) -> std::string_view {
+  for (const auto& [language, name] : language_names)
+    if (language == value)
+      return name;
+  return "";
+}
 void exact(const Json& value, std::initializer_list<std::string_view> required,
            std::initializer_list<std::string_view> optional = {}) {
   if (!value.is_object() ||
@@ -135,8 +146,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
   };
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
-        {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions",
-         "go_to_safe_z"});
+        {"tool_reference_height", "program_layout", "theme", "language", "recent_programs",
+         "saved_positions", "go_to_safe_z"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -188,6 +199,15 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     else if (*theme != "light")
       fall_back("Invalid panel presentation.");
   }
+  if (const auto language = value.find("language"); language != value.end()) {
+    const auto known = std::ranges::find_if(language_names, [&](const auto& entry) -> bool {
+      return language->is_string() && *language == entry.second;
+    });
+    if (known != language_names.end())
+      document.language = known->first;
+    else
+      fall_back("Invalid panel presentation.");
+  }
   // Like the presentation, a damaged list falls back to none without losing the other settings.
   if (const auto recent = value.find("recent_programs"); recent != value.end()) {
     if (recent->is_array() && recent->size() <= max_recent_programs &&
@@ -224,6 +244,7 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"tool_reference_height", document.tool_reference_height},
           {"program_layout", layout_name(document.program_layout)},
           {"theme", theme_name(document.theme)},
+          {"language", language_name(document.language)},
           {"recent_programs", document.recent_programs},
           {"saved_positions", positions_json(document.saved_positions)},
           {"go_to_safe_z", document.go_to_safe_z ? Json(*document.go_to_safe_z) : Json(nullptr)}};
@@ -240,7 +261,8 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
 } // namespace
 
 auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
-  if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty())
+  if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty() ||
+      language_name(document.language).empty())
     return "Invalid panel presentation.";
   if (document.recent_programs.size() > max_recent_programs ||
       !std::ranges::all_of(document.recent_programs,

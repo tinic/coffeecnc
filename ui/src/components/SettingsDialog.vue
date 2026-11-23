@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { panel } from '../machine'
-import { theme, themePreview } from '../appearance'
+import { useI18n } from 'vue-i18n'
+import { languagePreview, panelLanguage, theme, themePreview } from '../appearance'
+import { languageNames, languages, type Language } from '../i18n'
 import { limitMarginMm, safeZBlock } from '../manual-moves'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
@@ -12,6 +14,7 @@ import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 import ToolModelDialog from './ToolModelDialog.vue'
 
+const { t } = useI18n()
 const props = defineProps<{ settings: OperatorSettingsController }>()
 const emit = defineEmits<{ close: [] }>()
 const templates = ref(false)
@@ -23,9 +26,18 @@ function previewTheme(value: PanelTheme): void {
   themePreviewed = true
   themePreview.value = value
 }
+// The whole panel switches while the operator chooses; Cancel returns to the saved language.
+const selectedLanguage = ref<Language>(panelLanguage.value)
+let languagePreviewed = false
+function previewLanguage(value: Language): void {
+  selectedLanguage.value = value
+  languagePreviewed = true
+  languagePreview.value = value
+}
 onBeforeUnmount(() => {
   closed = true
   themePreview.value = null
+  languagePreview.value = null
 })
 const startupDisabled = computed(() => props.settings.state.saving || props.settings.state.storage === 'session_only')
 const context = props.settings.context()
@@ -96,10 +108,12 @@ const storageLabel = computed(() => {
 async function save(): Promise<void> {
   if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null || referenceHeight.value === null || safeZ.value === undefined) return
   const result = await props.settings.save({ ...panel.preferences,
-    theme: themePreviewed ? selectedTheme.value : panel.preferences.theme, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
+    theme: themePreviewed ? selectedTheme.value : panel.preferences.theme,
+    language: languagePreviewed ? selectedLanguage.value : panel.preferences.language, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
     default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value, tool_reference_height: referenceHeight.value, go_to_safe_z: safeZ.value }, context)
   if (!result.saved) return
   if (themePreviewed) props.settings.chooseTheme(selectedTheme.value)
+  if (languagePreviewed) props.settings.chooseLanguage(selectedLanguage.value)
   if (!closed) emit('close')
 }
 </script>
@@ -116,6 +130,15 @@ async function save(): Promise<void> {
               <input type="radio" name="panel-theme" :checked="selectedTheme === option" @change="previewTheme(option)" />
               <span class="theme-sample" :data-theme="option" aria-hidden="true"></span>
               <span>{{ themeLabels[option] }}</span>
+            </label>
+          </div>
+        </fieldset>
+        <fieldset class="language-picker" :disabled="settings.state.saving || settings.state.storage === 'loading'">
+          <legend>{{ t('status.settings.language') }}</legend>
+          <div class="language-options">
+            <label v-for="option in languages" :key="option" class="language-option" :class="{ selected: selectedLanguage === option }" :lang="option">
+              <input type="radio" name="panel-language" :checked="selectedLanguage === option" @change="previewLanguage(option)" />
+              <span>{{ languageNames[option] }}</span>
             </label>
           </div>
         </fieldset>
@@ -176,7 +199,13 @@ h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .hint { margin: 2px 0 4px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .theme-picker { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
-.theme-picker legend { font-size: 18px; font-weight: 600; }
+.theme-picker legend, .language-picker legend { font-size: 18px; font-weight: 600; }
+.language-picker { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.language-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.language-option { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--control); font-size: 13px; }
+.language-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.language-option.selected { border-color: var(--accent); background: var(--accent-soft); }
+.language-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .theme-option { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--control); }
 .theme-option.selected { border-color: var(--accent); background: var(--accent-soft); }

@@ -2306,15 +2306,15 @@ void restore_quit_not_delivered() {
     FakeMachineData data;
     Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
     rig.port.state.machine = MachineState::off;
-    const auto abandoned_before = data.abandoned; // the rig's first page
+    // The rig's first page began once: nothing was staged then.
     rig.accepted(restore);
-    require(rig.driver.quit && data.staged == 1 && data.abandoned == abandoned_before &&
+    require(rig.driver.quit && data.staged == 1 && data.abandoned == 1 &&
                 data.page == rig.page.value,
             "A delivered quit keeps the restore staged for the exit, for the page that asked");
     // Re-review #274, 1: the page is replaced before the window closes. The window drops a
     // close that is not for its page, so no exit comes now: the restore is abandoned.
     rig.page = rig.session.begin_page();
-    require(data.abandoned == abandoned_before + 1,
+    require(data.abandoned == 2,
             "A new page abandons the restore whose close the window drops");
   }
   for (const bool replace_page : {false, true}) {
@@ -2326,10 +2326,9 @@ void restore_quit_not_delivered() {
       if (replace_page)
         rig.page = rig.session.begin_page();
     };
-    const auto abandoned_before = data.abandoned;
     require(rig.send(restore).messages.empty(), "An ended page gets no result");
-    require(!rig.driver.quit && data.staged == 1 &&
-                data.abandoned == abandoned_before + (replace_page ? 2 : 1),
+    // One for the rig's first page, one for the new page, one for the quit not delivered.
+    require(!rig.driver.quit && data.staged == 1 && data.abandoned == (replace_page ? 3 : 2),
             "The quit is not delivered: the staged restore is abandoned");
   }
   {
@@ -2339,9 +2338,8 @@ void restore_quit_not_delivered() {
     data.during = [&]() -> void {
       static_cast<void>(rig.session.submit(rig.page, R"({"id":99,"type":"abort"})", at(0ms)));
     };
-    const auto abandoned_before = data.abandoned;
     static_cast<void>(rig.send(restore));
-    require(!rig.driver.quit && data.abandoned == abandoned_before + 1,
+    require(!rig.driver.quit && data.abandoned == 2,
             "An abort before the quit: the staged restore is abandoned");
   }
 }

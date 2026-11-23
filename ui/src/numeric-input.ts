@@ -141,18 +141,23 @@ export const vFreshGesture: ObjectDirective<HTMLElement, boolean | undefined> = 
   mounted(root, binding) {
     if (!binding.value) return
     let pressed: Element | null = null
-    const button = (event: Event): Element | null => event.target instanceof Element ? event.target.closest('button') : null
+    const control = (event: Event): Element | null => event.target instanceof Element
+      ? event.target.closest('button, input[data-native-text-input]') : null
     const start = (event: Event): void => {
+      const target = control(event)
       if (event.type === 'pointerdown' && touchInput.value && (event as PointerEvent).pointerType === 'mouse') {
         // WebKit can synthesize mouse events after touch release over newly inserted content.
-        event.preventDefault(); event.stopImmediatePropagation()
+        // A text field pressed by this touch needs the mouse default to receive native focus.
+        if (!(target instanceof HTMLInputElement) || target !== pressed) {
+          event.preventDefault(); event.stopImmediatePropagation()
+        }
         return
       }
-      pressed = button(event)
+      pressed = target
     }
     const cancel = (): void => { pressed = null }
     const click = (event: Event): void => {
-      const allowed = !touchInput.value || pressed !== null && pressed === button(event)
+      const allowed = !touchInput.value || pressed !== null && pressed === control(event)
       pressed = null
       if (!allowed) { event.preventDefault(); event.stopImmediatePropagation() }
     }

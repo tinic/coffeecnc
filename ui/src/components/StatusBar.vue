@@ -94,6 +94,10 @@ const machineMessage = computed(() => {
   return reason
 })
 const notice = computed(() => panel.notice && translateMessage(panel.notice.text) === machineMessage.value ? null : panel.notice)
+const messageTone = computed(() => {
+  if (notice.value?.level === 'error' || (live.value && status.value?.machine === 'estop')) return 'error'
+  return notice.value?.level ?? (liftedAfterStop.value ? 'lift-warning' : machineMessage.value ? 'machine-message' : 'empty')
+})
 const state = computed(() => ({
   label: machineReason.value ?? t('status.statusBar.idle'),
   tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineReason.value ? 'warn' : 'go',
@@ -124,23 +128,23 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <img v-show="isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
     </div>
     <nav class="em-nav" :aria-label="t('status.statusBar.workspace')">
-      <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
+      <button v-for="[tab, label] in tabs" :key="tab" class="choice" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
-      <button class="theme" type="button" :disabled="themePreview !== null" :aria-label="t('status.statusBar.switchTheme', { theme: t(themeLabels[alternateTheme(theme)]) })" @click="toggleTheme()">◐</button>
+      <button class="btn square theme" type="button" :disabled="themePreview !== null" :aria-label="t('status.statusBar.switchTheme', { theme: t(themeLabels[alternateTheme(theme)]) })" @click="toggleTheme()">◐</button>
     </div>
   </header>
   <section class="jobbar">
     <div class="job">
-      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="t('status.statusBar.openProgram')" class="open" type="button" :aria-label="t('status.statusBar.openProgram')" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="t('status.statusBar.newOperation')" class="open" type="button" :aria-label="t('status.statusBar.newOperation')" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="t('status.statusBar.editProgram')" class="open" type="button" :aria-label="t('status.statusBar.editProgram')" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
+      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="t('status.statusBar.openProgram')" class="btn square job-action" type="button" :aria-label="t('status.statusBar.openProgram')" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="t('status.statusBar.newOperation')" class="btn square job-action" type="button" :aria-label="t('status.statusBar.newOperation')" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="t('status.statusBar.editProgram')" class="btn square job-action" type="button" :aria-label="t('status.statusBar.editProgram')" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">
-      <button class="estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
-      <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
+      <button class="btn estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
+      <button class="btn power-control" :class="{ go: status?.machine === 'off', warning: status?.machine === 'estop' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
       <details ref="menu" v-popover class="state-menu">
-        <summary v-tooltip="t('status.statusBar.appMenu')" class="app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
+        <summary v-tooltip="t('status.statusBar.appMenu')" class="btn app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
         <div class="popover">
           <h3>{{ t('status.statusBar.machine') }}</h3>
           <div class="fact"><span>{{ t('status.statusBar.state') }}</span><span class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}</span></div>
@@ -159,15 +163,15 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
     </div>
   </section>
   <section class="message-area" :aria-label="t('status.statusBar.messages')">
-    <div class="message-band" :class="notice?.level ?? (liftedAfterStop ? 'lift-warning' : machineMessage ? 'machine-message' : 'empty')">
-      <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
+    <div class="message-band" :class="messageTone">
+      <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ messageTone === 'error' || messageTone === 'lift-warning' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
         <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
         <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text) }}</template></p>
       </div>
-      <button class="message-log" type="button" @click="emit('log')">{{ t('status.statusBar.messageLog') }} · <span class="log-count mono">{{ panel.log.length }}</span></button>
-      <button v-if="notice" v-tooltip="t('status.statusBar.dismissTip')" class="dismiss" type="button" @click="dismissNotice">{{ t('status.statusBar.dismiss') }}</button>
+      <button class="btn message-log" type="button" @click="emit('log')">{{ t('status.statusBar.messageLog') }} · <span class="log-count mono">{{ panel.log.length }}</span></button>
+      <button v-if="notice" v-tooltip="t('status.statusBar.dismissTip')" class="btn dismiss" type="button" @click="dismissNotice">{{ t('status.statusBar.dismiss') }}</button>
     </div>
   </section>
 </template>
@@ -177,29 +181,26 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
 .em-nav { display: flex; padding: 3px; gap: 3px; border-radius: 10px; background: var(--bg-sunken); }
-.em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: 7px; background: none; font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
+.em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: var(--control-radius); font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
 .em-nav button:hover { background: var(--control-hover); }
 .em-nav button:active { background: var(--control-active); transition-duration: 0s; }
-.em-nav button[aria-current] { background: var(--panel); color: var(--text); }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .connection { display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-dim); }
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
-.theme { width: var(--touch); height: var(--touch); background: none; border: 0; color: var(--text-dim); font-size: var(--type-lg); cursor: pointer; }
-.estop { display: flex; align-items: center; justify-content: center; gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; border: 2px solid #941822; border-radius: 9px; box-shadow: inset 0 -2px 0 #74131b; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
-.estop:hover { background: #a51924; }.estop:active { box-shadow: none; transform: translateY(1px); }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.theme { font-size: var(--type-lg); }
+.estop { --button-edge: #74131b; gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; color: #fff; font-size: 17px; font-weight: 700; }
+.estop:hover:not(:disabled) { background: #a51924; }.estop:active:not(:disabled) { background: #941822; }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .estop :deep(svg) { width: 22px; height: 22px; }
 .machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: var(--type-md); }
 .jobbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; gap: 20px; }
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.35px; font-weight: 650; }
 .subtitle { margin: 5px 0 0; font-size: var(--type-sm); color: var(--text-dim); }
-.open { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -6px -4px; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
-.open:disabled { opacity: .4; }
+.job-action { margin: -6px -4px; }
 .state-menu { position: relative; flex: none; }
-.app-menu-toggle { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 9px; background: var(--control); color: var(--text); }
-.app-menu-toggle :deep(svg) { width: 22px; height: 22px; }
-.app-menu-toggle:hover, .state-menu[open] .app-menu-toggle { background: var(--bg); }
+.app-menu-toggle { width: 48px; height: 48px; padding: 0; }
+.app-menu-toggle :deep(svg) { width: 24px; height: 24px; }
 .state-pill { display: inline-flex; align-items: center; gap: 8px; }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }
 .popover { top: calc(100% + 8px); }.notice { font-size: 12px; color: var(--text-dim); }
@@ -208,6 +209,7 @@ h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.3
 .modal-codes { max-width: 180px; font-size: var(--type-sm); text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border-radius: 9px; background: var(--panel); }
+.message-band.info, .message-band.machine-message { box-shadow: inset 4px 0 var(--accent); }
 .message-band.error { color: var(--stop); background: var(--stop-soft); box-shadow: inset 5px 0 var(--stop); }
 .message-band.lift-warning { color: var(--warn); background: var(--warn-soft); box-shadow: inset 5px 0 var(--warn); }
 .message-band.empty { color: var(--text-dim); background: transparent; }
@@ -216,10 +218,8 @@ h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.3
 .message-copy.paired p { -webkit-line-clamp: 1; }
 .machine-state { font-weight: 600; }
 .message-copy p:empty { height: 0; }
-.message-log, .dismiss { flex: none; min-height: var(--touch); padding: 0 10px; border: 0; border-radius: 7px; background: var(--control); color: var(--text-dim); font-size: var(--type-sm); cursor: pointer; }
+.message-log, .dismiss { flex: none; padding: 0 10px; color: var(--text-dim); font-size: var(--type-sm); }
 .log-count { display: inline-block; width: 3ch; min-width: 3ch; text-align: right; }
-.message-log:hover, .dismiss:hover { color: var(--text); background: var(--bg); }
-.message-log:focus-visible, .dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (max-height: 820px) { .em-top { padding-block: 6px; }.jobbar { padding-block: 8px; }.message-area { height: 54px; margin-bottom: 8px; } }
 @media (max-width: 1100px) { .connection-label { display: none; } }
 @media (max-height: 760px) { .em-top { padding-block: 4px; }.jobbar { padding-block: 4px; }.message-area { height: 44px; }.message-copy p { line-height: 16px; } }

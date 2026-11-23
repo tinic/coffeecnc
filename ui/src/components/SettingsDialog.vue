@@ -130,7 +130,7 @@ async function save(): Promise<void> {
         <fieldset class="theme-picker" :disabled="settings.state.saving || settings.state.storage === 'loading'">
           <legend>{{ t('status.settings.theme') }}</legend>
           <div class="theme-options">
-            <label v-for="option in panelThemes" :key="option" class="theme-option" :class="{ selected: selectedTheme === option }">
+            <label v-for="option in panelThemes" :key="option" class="choice theme-option" :class="{ selected: selectedTheme === option }">
               <input type="radio" name="panel-theme" :checked="selectedTheme === option" @change="previewTheme(option)" />
               <span class="theme-sample" :data-theme="option" aria-hidden="true"></span>
               <span>{{ t(themeLabels[option]) }}</span>
@@ -140,7 +140,7 @@ async function save(): Promise<void> {
         <fieldset class="language-picker" :disabled="settings.state.saving || settings.state.storage === 'loading'">
           <legend>{{ t('status.settings.language') }}</legend>
           <div class="language-options">
-            <label v-for="option in languages" :key="option" class="language-option" :class="{ selected: selectedLanguage === option }" :lang="option">
+            <label v-for="option in languages" :key="option" class="choice language-option" :class="{ selected: selectedLanguage === option }" :lang="option">
               <input type="radio" name="panel-language" :checked="selectedLanguage === option" @change="previewLanguage(option)" />
               <span>{{ languageNames[option] }}</span>
             </label>
@@ -165,7 +165,7 @@ async function save(): Promise<void> {
         <h3>{{ t('status.settings.wcsTitle') }}</h3>
         <p class="hint">{{ t('status.settings.wcsHint') }}</p>
         <div class="wcs-grid">
-          <label v-for="(name, index) in wcsNames" :key="name" :class="{ selected: enabled.includes(index + 1) }"><input v-model="enabled" type="checkbox" :value="index + 1" :disabled="settings.state.saving" /><span class="mono">{{ name }}</span></label>
+          <label v-for="(name, index) in wcsNames" :key="name" class="choice" :class="{ selected: enabled.includes(index + 1) }"><input v-model="enabled" type="checkbox" :value="index + 1" :disabled="settings.state.saving" /><span class="mono">{{ name }}</span></label>
         </div>
         <p class="hint">{{ t('status.settings.wcsAnyHint') }}</p>
         <div class="tool-reference">
@@ -191,7 +191,7 @@ async function save(): Promise<void> {
       <button class="btn templates" type="button" :disabled="settings.state.saving" @click="templates = true">{{ t('status.settings.templates') }}</button>
       <div class="save-state"><span>{{ storageLabel }}</span><p v-if="settings.state.error || blocked || invalid" role="status">{{ translateMessage(settings.state.error || blocked || invalid || '') }}</p><p v-else-if="settings.state.storage === 'session_only'">{{ translateMessage(settings.state.reason) }}</p></div>
       <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
-      <button class="btn go" type="button" :disabled="blocked !== null || invalid !== null" @click="save">{{ settings.state.saving ? t('common.saving') : settings.state.storage === 'session_only' ? t('common.apply') : t('status.settings.saveSettings') }}</button>
+      <button class="btn primary" type="button" :disabled="blocked !== null || invalid !== null" @click="save">{{ settings.state.saving ? t('common.saving') : settings.state.storage === 'session_only' ? t('common.apply') : t('status.settings.saveSettings') }}</button>
     </template>
   </ModalDialog>
 </template>
@@ -206,13 +206,11 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .theme-picker legend, .language-picker legend { font-size: 18px; font-weight: 600; }
 .language-picker { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
 .language-options { display: flex; flex-wrap: wrap; gap: 6px; }
-.language-option { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--control); font-size: 13px; }
+.language-option { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 5px 8px; border-radius: var(--control-radius); cursor: pointer; font-size: 13px; }
 .language-option span { white-space: nowrap; }
-.language-option.selected { border-color: var(--accent); background: var(--accent-soft); }
 .language-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.theme-option { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--control); }
-.theme-option.selected { border-color: var(--accent); background: var(--accent-soft); }
+.theme-option { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 8px; border-radius: var(--control-radius); cursor: pointer; }
 .theme-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .theme-sample { flex: none; position: relative; width: 27px; height: 24px; border: 1px solid var(--line-strong); border-radius: 5px; }
 .theme-sample::before { content: ''; position: absolute; inset: 4px 4px 9px; background: var(--panel); border-radius: 2px; }
@@ -221,7 +219,7 @@ legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-we
 .units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; padding-inline: 6px; line-height: 1.15; white-space: normal; }.units .btn:first-child { flex: 1.8; }
 .safe-z { margin-top: 12px; }.safe-z-actions { display: flex; gap: 8px; margin-top: 6px; }.safe-z-actions .btn { min-height: 44px; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
-.wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 13px; }.wcs-grid label.selected { border-color: var(--accent); background: var(--accent-soft); }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border-radius: var(--control-radius); cursor: pointer; font-size: 13px; }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .shift-note { border-top: 1px solid var(--line); padding-top: 4px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 28px; padding-block: 0; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
 .tool-reference { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .save-state { flex: 1; min-width: 0; align-self: center; color: var(--text-dim); font-size: 12px; }.save-state p { margin: 4px 0 0; color: var(--warn); font-size: 12px; }

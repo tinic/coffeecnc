@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Choose a chamfer mill",
+      "chooseEngravingTool": "Choose an engraving tool",
       "chooseFinishTool": "Choose a reamer or boring tool",
       "pocketOptions": "Geometry, entry and walls",
       "reviewJob": "Review job",
@@ -12,6 +14,7 @@
       "title": "New operation",
       "operations": "Operation",
       "tool": "Tool",
+      "chooseThreadMill": "Choose a thread mill",
       "noTools": "No tools in the tool table",
       "toolAndFeeds": "Tool and feeds",
       "geometry": "Geometry",
@@ -21,6 +24,10 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "chamfer": "Chamfer",
+      "chamferSetup": "Set Z0 at the top face and use the cutter’s maximum cutting diameter in the tool table. Chamfer width is measured on the top face.",
+      "engraving": "Engraving",
+      "engravingSetup": "Set Z0 at the surface. The baseline starts at the left of the text. Letters engrave in uppercase.",
       "holeFinishing": "Ream / bore",
       "holeFinishingSetup": "Use predrilled holes and verify the tool can feed in and out to the programmed depth.",
       "contour": "Contour",
@@ -33,9 +40,22 @@
       "rectangularPocket": "Rectangular pocket",
       "slot": "Slot / keyway",
       "slotSetup": "Use an end mill rated for the entry. Set the length so each open end is at the stock edge, with room for the tool to travel past it.",
-      "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
+      "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre.",
+      "threadMill": "Internal thread milling",
+      "threadMillSetup": "Use a single-form thread mill and a predrilled hole. Verify cutter and neck clearance. Enter the tool-centre feed. Thread depth sets tool-tip Z. Allow for the cutter’s tooth height."
     },
     "label": {
+      "chamferWidth": "Chamfer width",
+      "chamferIncludedAngle": "Included angle",
+      "chamferTipDiameter": "Tip diameter",
+      "chamferTipBelow": "Tip below chamfer",
+      "chamferOpeningDepth": "Pre-cut depth",
+      "engravingText": "Text",
+      "engravingX": "Baseline X",
+      "engravingY": "Baseline Y",
+      "engravingHeight": "Letter height",
+      "engravingSpacing": "Letter spacing",
+      "engravingRotation": "Rotation (CCW)",
       "boreDwell": "Bottom dwell",
       "profileShape": "Shape",
       "profileSide": "Cut side",
@@ -92,7 +112,14 @@
       "slotEntry": "Entry",
       "slotAngle": "Maximum ramp angle",
       "slotEntryFeed": "Entry feed",
-      "boltCircleRadius": "Bolt circle radius"
+      "boltCircleRadius": "Bolt circle radius",
+      "threadMajor": "Major thread diameter",
+      "threadPitch": "Thread pitch",
+      "threadPilot": "Predrilled diameter",
+      "threadPilotDepth": "Usable hole depth",
+      "threadDepth": "Thread depth",
+      "threadPasses": "Radial passes",
+      "threadHand": "Thread hand"
     },
     "option": {
       "g85": "Ream (G85)",
@@ -129,9 +156,23 @@
       "slotBoth": "Open both",
       "slotRamp": "Ramp",
       "slotPlunge": "Plunge",
-      "g83": "G83 peck"
+      "g83": "G83 peck",
+      "threadRight": "Right-hand",
+      "threadLeft": "Left-hand"
     },
     "check": {
+      "chamferAngle": "The included angle must be greater than 0° and less than 180°.",
+      "chamferTip": "The tip diameter must be zero or smaller than the cutter diameter.",
+      "chamferPrecision": "Check the chamfer width, tip depth, clearance, feeds and spindle speed against the program’s precision.",
+      "chamferTooWide": "The chamfer must leave room on the top face.",
+      "chamferCutter": "The required cut exceeds the cutter’s maximum cutting diameter.",
+      "chamferOpeningDepth": "The opening must be clear deeper than {depth}.",
+      "chamferRoom": "The hole or pocket is too small for the cutter and its entry.",
+      "engravingRotation": "Enter a finite rotation angle.",
+      "engravingSpacing": "Letter spacing must be zero or greater.",
+      "engravingLength": "Enter between 1 and {max} characters.",
+      "engravingCharacters": "Use A–Z, 0–9, spaces, or + - / . : _.",
+      "engravingPrecision": "Check the lettering size, depth, clearance, feeds and spindle speed against the program’s precision.",
       "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
       "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
       "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",
@@ -169,7 +210,11 @@
       "slotPrecision": "Increase the feeds, depth, clearance or depth per pass to fit the program’s precision.",
       "slotRampRoom": "The slot is too short for this ramp angle. Increase the angle or choose Plunge.",
       "slotMoveCount": "The slot would produce too many moves. Increase the depth per pass or ramp angle.",
-      "noHole": "There is no hole to drill."
+      "noHole": "There is no hole to drill.",
+      "threadDiameters": "The predrilled hole must be wider than the cutter and narrower than the major thread diameter.",
+      "threadPilotDepth": "The straight portion of the hole must be deeper than {depth}.",
+      "threadPrecision": "Check the pitch, clearance, feed, spindle speed and dimensions against the program’s precision.",
+      "threadTurns": "The thread depth must cover between 1 and {max} turns at this pitch."
     }
   }
 }

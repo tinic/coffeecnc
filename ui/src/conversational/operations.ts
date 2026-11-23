@@ -3,14 +3,17 @@
 
 import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
+import { chamfer } from './chamfer'
 import { contour } from './contour'
 import { drilling, type Drilling } from './drilling'
+import { engraving } from './engraving'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
+import { threadMill } from './thread-mill'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'hole-finishing'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'hole-finishing' | 'thread-mill' | 'chamfer' | 'engraving'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count' | 'duration'
@@ -29,6 +32,7 @@ interface FieldBase {
 }
 export type Field =
   | (FieldBase & { type: 'number'; kind: NumberKind })
+  | (FieldBase & { type: 'text' })
   | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[]; select?: boolean })
 
 export interface Operation {
@@ -307,6 +311,42 @@ export const operations: readonly Operation[] = [
       : `contour-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
   {
+    id: 'chamfer',
+    title: 'operations.operation.chamfer',
+    note: () => 'operations.operation.chamferSetup',
+    fields: [
+      { type: 'choice', key: 'shape', label: 'operations.label.profileShape',
+        options: [['circle', 'operations.option.profileCircle'], ['rectangle', 'operations.option.profileRectangle']] },
+      { type: 'choice', key: 'side', label: 'operations.label.profileSide',
+        options: [['outside', 'operations.option.profileOutside'], ['inside', 'operations.option.profileInside']] },
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('diameter', 'operations.label.profileDiameter', 'length', circularProfile),
+      num('width', 'operations.label.sizeX', 'length', rectangularProfile),
+      num('height', 'operations.label.sizeY', 'length', rectangularProfile),
+      num('corner', 'operations.label.cornerRadius', 'length', rectangularProfile),
+      num('openingDepth', 'operations.label.chamferOpeningDepth', 'length', (values) => values['side'] === 'inside'),
+      num('chamferWidth', 'operations.label.chamferWidth', 'length'),
+      num('angle', 'operations.label.chamferIncludedAngle', 'angle'),
+      num('tipDiameter', 'operations.label.chamferTipDiameter', 'length'),
+      num('tipBelow', 'operations.label.chamferTipBelow', 'length'),
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { shape: 'rectangle', side: 'outside', x: 0, y: 0, diameter: 30, width: 40, height: 30, corner: 0, openingDepth: 5,
+        chamferWidth: 1, angle: 90, tipDiameter: 0, tipBelow: 0.5, ...speeds.mm, rpm: 2500, feed: 150, plungeFeed: 60 },
+      { shape: 'rectangle', side: 'outside', x: 0, y: 0, diameter: 1.2, width: 1.5, height: 1.2, corner: 0, openingDepth: 0.2,
+        chamferWidth: 0.04, angle: 90, tipDiameter: 0, tipBelow: 0.02, ...speeds.inch, rpm: 2500, feed: 6, plungeFeed: 2.4 }),
+    generate: (v, common) => chamfer({ ...common, x: v.num('x'), y: v.num('y'), inside: v.text('side') === 'inside',
+      chamferWidth: v.num('chamferWidth'), includedAngle: v.num('angle'), tipDiameter: v.num('tipDiameter'),
+      tipBelow: v.num('tipBelow'), openingDepth: v.num('openingDepth'), entryFeed: v.num('plungeFeed'),
+      ...(v.text('shape') === 'rectangle'
+        ? { shape: 'rectangle', width: v.num('width'), height: v.num('height'), corner: v.num('corner') }
+        : { shape: 'circle', diameter: v.num('diameter') }) }),
+    name: (v, unit) => v.text('shape') === 'rectangle'
+      ? `chamfer-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}` // i18n-ignore
+      : `chamfer-${size(v.num('diameter'), unit)}`, // i18n-ignore
+  },
+  {
     id: 'slot',
     title: 'operations.operation.slot',
     note: () => 'operations.operation.slotSetup',
@@ -334,6 +374,55 @@ export const operations: readonly Operation[] = [
       length: v.num('length'), width: v.num('width'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'),
       plunge: v.text('slotEntry') === 'plunge', angle: v.num('angle'), entryFeed: v.num('plungeFeed') }),
     name: (v, unit) => `slot-${v.text('along')}-${number(v.num('length'), unit)}x${size(v.num('width'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'engraving',
+    title: 'operations.operation.engraving',
+    note: () => 'operations.operation.engravingSetup',
+    fields: [
+      { type: 'text', key: 'label', label: 'operations.label.engravingText' },
+      num('x', 'operations.label.engravingX', 'coordinate'), num('y', 'operations.label.engravingY', 'coordinate'),
+      num('height', 'operations.label.engravingHeight', 'length'),
+      num('spacing', 'operations.label.engravingSpacing', 'length'),
+      num('angle', 'operations.label.engravingRotation', 'angle'),
+      num('depth', 'operations.label.depth', 'length'),
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { label: '', x: 0, y: 0, height: 6, spacing: 0.8, angle: 0, depth: 0.15,
+        ...speeds.mm, rpm: 2500, feed: 100, plungeFeed: 40 },
+      { label: '', x: 0, y: 0, height: 0.25, spacing: 0.03, angle: 0, depth: 0.006,
+        ...speeds.inch, rpm: 2500, feed: 4, plungeFeed: 1.5 }),
+    generate: (v, common) => engraving({ ...common, label: v.text('label'), x: v.num('x'), y: v.num('y'),
+      height: v.num('height'), spacing: v.num('spacing'), angle: v.num('angle'), depth: v.num('depth'),
+      entryFeed: v.num('plungeFeed') }),
+    name: (v): string => {
+      const label = v.text('label').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30).replace(/^-|-$/g, '')
+      return label ? `engrave-${label}` : 'engraving' // i18n-ignore
+    },
+  },
+  {
+    id: 'thread-mill',
+    title: 'operations.operation.threadMill',
+    note: () => 'operations.operation.threadMillSetup',
+    fields: [
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('major', 'operations.label.threadMajor', 'length'), num('pitch', 'operations.label.threadPitch', 'length'),
+      num('pilot', 'operations.label.threadPilot', 'length'), num('pilotDepth', 'operations.label.threadPilotDepth', 'length'),
+      num('depth', 'operations.label.threadDepth', 'length'), num('passes', 'operations.label.threadPasses', 'count'),
+      { type: 'choice', key: 'hand', label: 'operations.label.threadHand',
+        options: [['right', 'operations.option.threadRight'], ['left', 'operations.option.threadLeft']] },
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { x: 0, y: 0, major: 10, pitch: 1.5, pilot: 8.5, pilotDepth: 13, depth: 9, hand: 'right', passes: 2,
+        ...speeds.mm, feed: 60, plungeFeed: 50 },
+      { x: 0, y: 0, major: 0.375, pitch: '1/16', pilot: 0.3125, pilotDepth: 0.55, depth: 0.375, hand: 'right', passes: 2,
+        ...speeds.inch, feed: 2.4, plungeFeed: 2 }),
+    generate: (v, common) => threadMill({ ...common, x: v.num('x'), y: v.num('y'),
+      majorDiameter: v.num('major'), pitch: v.num('pitch'), pilotDiameter: v.num('pilot'), pilotDepth: v.num('pilotDepth'),
+      depth: v.num('depth'), passes: v.num('passes'), leftHand: v.text('hand') === 'left', entryFeed: v.num('plungeFeed') }),
+    name: (v, unit) => `thread-${size(v.num('major'), unit)}-${v.text('hand') === 'left' ? 'lh' : 'rh'}`, // i18n-ignore
   },
 ]
 

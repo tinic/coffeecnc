@@ -4,13 +4,16 @@
 import { describe, expect, it } from 'vitest'
 
 import { bore } from '../src/conversational/bore'
+import { chamfer, type Chamfer } from '../src/conversational/chamfer'
 import { contour, type Contour } from '../src/conversational/contour'
 import { drilling, holes } from '../src/conversational/drilling'
+import { engraving, type Engraving } from '../src/conversational/engraving'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
 import { chainOperations, number, type Generated } from '../src/conversational/program'
 import { slot, type Slot } from '../src/conversational/slot'
+import { threadMill, type ThreadMill } from '../src/conversational/thread-mill'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -416,6 +419,122 @@ describe('contours', () => {
   })
 })
 
+describe('chamfers', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const outside = { ...mm, tool: { ...mm.tool, diameter: 6 }, x: 0, y: 0, inside: false,
+    shape: 'rectangle', width: 40, height: 30, corner: 0, chamferWidth: 1, includedAngle: 90,
+    tipDiameter: 0, tipBelow: 0.5, openingDepth: NaN, entryFeed: 60, feed: 150 } as const satisfies Chamfer
+  const inside = { ...inch, x: 0.5, y: -0.25, inside: true, shape: 'circle', diameter: 1,
+    chamferWidth: 0.04, includedAngle: 90, tipDiameter: 0.04, tipBelow: 0.02,
+    openingDepth: 0.2, entryFeed: 2.4, feed: 6 } as const satisfies Chamfer
+
+  it('rolls into a metric outside rectangle and rounds the tool path around sharp corners', () => {
+    const program = text(chamfer(outside))
+    expect(program).toContain('G0 X1.001 Y-16.501\nG1 Z-1.5 F60\nG3 X0 Y-15.5 I-1.001 J0 F150')
+    expect(program).toContain('G1 X-20 Y-15.5\nG2 X-20.5 Y-15 I0 J0.5')
+    expect(program).toContain('G3 X-1.001 Y-16.501 I0 J-1.001\nG0 Z5')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('accounts for a flat tip and enters a circular hole from its centre', () => {
+    const program = text(chamfer(inside))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.5 Y-0.25\nG1 Z-0.06 F2.4\nG3 X0.5 Y-0.71 I0 J-0.23 F6')
+    expect(program).toContain('G3 X0.5 Y-0.71 I0 J0.46\nG3 X0.5 Y-0.25 I0 J0.23')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('offsets an inside rounded rectangle and checks the opening and cutter geometry', () => {
+    const rounded = { ...outside, inside: true, corner: 3, openingDepth: 8 }
+    expect(text(chamfer(rounded))).toContain('G3 X19.5 Y-12 I0 J2.5')
+    expect(errors(chamfer({ ...rounded, corner: 0 }))[0]).toContain('inside corner radius')
+    expect(errors(chamfer({ ...inside, openingDepth: 0.05 }))[0]).toContain('deeper than 0.06 in')
+    expect(errors(chamfer({ ...inside, diameter: 0.12 }))[0]).toContain('too small')
+    expect(errors(chamfer({ ...outside, tipDiameter: 4 }))[0]).toContain('maximum cutting diameter')
+  })
+})
+
+describe('single-line engraving', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const metric = { ...mm, label: ' a- ', x: 10, y: 20, height: 10, spacing: 1,
+    angle: 0, depth: 0.2, feed: 100, entryFeed: 40 } satisfies Engraving
+
+  it('writes uppercase text and retracts before traversing between strokes', () => {
+    const program = text(engraving(metric))
+    expect(program).toContain('(Lettering: A-)')
+    expect(text(engraving({ ...metric, angle: 0.1 + 0.2 }))).toContain('rotation 0.3 degrees)')
+    expect(program).toContain('G0 X10 Y20\nG1 Z-0.2 F40\nG1 X13 Y30 F100\nG1 X16 Y20\nG0 Z5')
+    expect(program).toContain('G0 X11.2 Y24\nG1 Z-0.2 F40\nG1 X14.8 Y24 F100\nG0 Z5')
+    expect(program).toContain('G0 X17 Y24.8\nG1 Z-0.2 F40\nG1 X21 Y24.8 F100\nG0 Z5\nM5\nM2')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('rotates an inch baseline about its origin while preserving spacing', () => {
+    const program = text(engraving({ ...metric, ...inch, label: 'L 1', x: 1, y: 0.5,
+      height: 0.2, spacing: 0.05, angle: 90, depth: 0.006, entryFeed: 1.5 }))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.8 Y0.5\nG1 Z-0.006 F1.5\nG1 X1 Y0.5 F24\nG1 X1 Y0.62\nG0 Z0.2')
+    expect(program).toContain('G0 X0.84 Y0.79')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('refuses blank, too long, unsupported or unrepresentable lettering', () => {
+    expect(errors(engraving({ ...metric, label: '   ' }))[0]).toContain('between 1 and 48 characters')
+    expect(errors(engraving({ ...metric, label: 'A'.repeat(49) }))[0]).toContain('between 1 and 48 characters')
+    expect(errors(engraving({ ...metric, label: 'PART (A)' }))[0]).toContain('Use A–Z')
+    expect(errors(engraving({ ...metric, depth: 0.0001 }))[0]).toContain('program’s precision')
+    expect(errors(engraving({ ...metric, spacing: -1 }))[0]).toContain('spacing must be zero or greater')
+  })
+})
+
+describe('internal thread milling', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const metric = { ...mm, tool: { ...mm.tool, diameter: 6 }, x: 10, y: -5, majorDiameter: 10,
+    pilotDiameter: 8.5, pilotDepth: 12, depth: 3.75, pitch: 1.5, passes: 2, leftHand: false,
+    feed: 60, entryFeed: 50 } satisfies ThreadMill
+
+  it('cuts ascending right-hand helices with one pitch per turn and a partial last turn', () => {
+    const program = text(threadMill(metric))
+    expect(program).toContain('M70\nG61 G91.1\nG0 X10 Y-5')
+    expect(program).toContain('G1 Z-4.125 F50\nG3 X11.625 Y-5 Z-3.75 I0.8125 J0 F60')
+    expect(program).toContain('G3 X12 Y-5 Z-2.25 I-2 J0\nG3 X12 Y-5 Z-0.75 I-2 J0')
+    expect(program).toContain('G3 X8 Y-5 Z0 I-2 J0\nG3 X10 Y-5 Z0.375 I1 J0')
+    expect(program).toContain('G0 Z5\nM72\nM5\nM2\n')
+    const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
+    expect(preview.error).toBeNull()
+    expect(preview.state).toBe('ready')
+  })
+
+  it('keeps an imperial fractional pitch and descends for a left-hand thread', () => {
+    const operation = operations.find((entry) => entry.id === 'thread-mill')
+    if (!operation) throw new Error('Missing thread milling operation')
+    const values = { ...operation.defaults('inch'), pitch: '1/28in', hand: 'left', x: '1/4in' }
+    const program = text(operation.generate(parse(operation, values, 'inch'), inch))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.25 Y0\n\n(Radial pass 1 of 2)\nG1 Z0.008929 F2')
+    expect(program).toContain('Z-0.035714 I-0.046875 J0')
+    expect(program).toContain('Z-0.357143 I-0.046875 J0')
+    expect(program).toContain('G3 X0.25 Y0 Z-0.383929')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('refuses an undersized pilot, shallow hole, insufficient clearance or a sub-pitch thread', () => {
+    expect(errors(threadMill({ ...metric, pilotDiameter: 6 }))[0]).toContain('wider than the cutter')
+    expect(errors(threadMill({ ...metric, pilotDepth: 4 }))[0]).toContain('deeper than 4.125')
+    expect(errors(threadMill({ ...metric, clearance: 0.2 }))[0]).toContain('clearance')
+    expect(errors(threadMill({ ...metric, depth: 0.75 }))[0]).toContain('between 1 and 500 turns')
+  })
+})
+
 describe('slots and keyways', () => {
   const tools = [
     { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
@@ -705,10 +824,12 @@ describe('dialog entries', () => {
     expect(op.name(parsed, 'mm')).toBe('facing-50.8x60mm')
   })
 
-  it('has valid defaults in both units for a 6 mm tool', () => {
+  it('has valid numeric defaults in both units for a 6 mm tool', () => {
     for (const op of operations)
       for (const unit of ['mm', 'inch'] as const) {
-        const parsed = parse(op, op.defaults(unit), unit)
+        const values = op.defaults(unit)
+        if (op.id === 'engraving') values['label'] = 'A1'
+        const parsed = parse(op, values, unit)
         const generated = op.generate(parsed, { unit, tool: { number: 2, diameter: unit === 'inch' ? 0.25 : 6, comment: '' },
           rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance') })
         expect(errors(generated), `${op.id} ${unit}`).toEqual([])

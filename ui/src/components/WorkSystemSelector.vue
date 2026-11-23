@@ -31,7 +31,7 @@ function select(wcs: number): void {
       </details>
     </div>
     <details v-if="shifted" v-popover class="shift">
-      <summary>{{ t('manual.workSystems.shiftActive') }}<AppIcon name="info" /></summary>
+      <summary class="btn warning">{{ t('manual.workSystems.shiftActive') }}<AppIcon name="info" /></summary>
       <div class="popover shift-details">
         <h3>{{ t('manual.workSystems.shiftTitle') }}</h3>
         <div class="shift-values"><span v-for="(value, index) in shift" :key="index">{{ ['X', 'Y', 'Z'][index] }} <strong class="mono">{{ formatLength(value, panel.unit) }}</strong></span><span>{{ panel.unit === 'inch' ? 'in' : 'mm' }}</span></div>
@@ -45,5 +45,5 @@ function select(wcs: number): void {
 <style scoped>
 .work-system-controls { min-width: 0; }.selector { display: flex; gap: 6px; }.selector > .btn, .more { flex: 1; min-width: 0; }.selector .btn { min-height: 44px; padding: 8px 10px; font-size: 14px; }.more { position: relative; }.more summary { width: 100%; gap: 6px; }.more summary :deep(svg) { width: 14px; height: 14px; }
 .popover { top: auto; bottom: calc(100% + 8px); }.more-systems { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 220px; padding: 12px; }
-.shift { position: relative; margin-top: 8px; }.shift summary { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: fit-content; min-height: 32px; padding: 4px 8px; border: 1px solid var(--warn); border-radius: 6px; color: var(--warn); font-size: 12px; }.shift summary :deep(svg) { width: 16px; height: 16px; }.shift-details { left: 0; right: auto; width: 370px; max-width: 100%; }.shift-details p { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }.shift-values { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }.shift-values strong { font-weight: 400; }
+.shift { position: relative; margin-top: 8px; }.shift summary { min-height: 32px; padding: 4px 8px; font-size: var(--type-sm); }.shift summary :deep(svg) { width: 16px; height: 16px; }.shift-details { left: 0; right: auto; width: 370px; max-width: 100%; }.shift-details p { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }.shift-values { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }.shift-values strong { font-weight: 400; }
 </style>

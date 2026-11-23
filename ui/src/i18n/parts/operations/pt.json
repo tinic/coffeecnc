@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Selecionar uma fresa de chanfrar",
+      "chooseEngravingTool": "Selecionar uma ferramenta de gravação",
       "chooseFinishTool": "Selecionar um alargador ou uma ferramenta de mandrilar",
       "pocketOptions": "Geometria, entrada e paredes",
       "reviewJob": "Rever trabalho",
@@ -12,6 +14,7 @@
       "title": "Nova operação",
       "operations": "Operação",
       "tool": "Ferramenta",
+      "chooseThreadMill": "Selecionar uma fresa de roscar",
       "noTools": "Não há ferramentas na tabela de ferramentas",
       "toolAndFeeds": "Ferramenta e avanços",
       "geometry": "Geometria",
@@ -21,6 +24,10 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "chamfer": "Chanfro",
+      "chamferSetup": "Defina Z0 na face superior e use o diâmetro máximo de corte na tabela de ferramentas. A largura do chanfro é medida na face superior.",
+      "engraving": "Gravação",
+      "engravingSetup": "Defina Z0 na superfície. A linha de base começa à esquerda do texto. As letras são gravadas em maiúsculas.",
       "holeFinishing": "Alargamento / mandrilagem",
       "holeFinishingSetup": "Use furos pré-perfurados e verifique se a ferramenta consegue avançar até à profundidade programada e sair dela.",
       "contour": "Contorno",
@@ -33,9 +40,22 @@
       "rectangularPocket": "Caixa retangular",
       "slot": "Ranhura / chaveta",
       "slotSetup": "Use uma fresa de topo adequada à entrada. Defina o comprimento para que cada extremidade aberta fique no bordo do material e deixe espaço para a ferramenta o ultrapassar.",
-      "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
+      "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro.",
+      "threadMill": "Fresagem de rosca interna",
+      "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta. A profundidade da rosca define o Z da ponta. Tenha em conta a altura do dente."
     },
     "label": {
+      "chamferWidth": "Largura do chanfro",
+      "chamferIncludedAngle": "Ângulo incluído",
+      "chamferTipDiameter": "Diâmetro da ponta",
+      "chamferTipBelow": "Ponta abaixo do chanfro",
+      "chamferOpeningDepth": "Profundidade pré-maquinada",
+      "engravingText": "Texto",
+      "engravingX": "Linha de base X",
+      "engravingY": "Linha de base Y",
+      "engravingHeight": "Altura das letras",
+      "engravingSpacing": "Espaçamento das letras",
+      "engravingRotation": "Rotação anti-horária",
       "boreDwell": "Pausa no fundo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
@@ -92,7 +112,14 @@
       "slotEntry": "Entrada",
       "slotAngle": "Ângulo máximo de rampa",
       "slotEntryFeed": "Avanço de entrada",
-      "boltCircleRadius": "Raio do círculo de furos"
+      "boltCircleRadius": "Raio do círculo de furos",
+      "threadMajor": "Diâmetro maior da rosca",
+      "threadPitch": "Passo da rosca",
+      "threadPilot": "Diâmetro de pré-furo",
+      "threadPilotDepth": "Profundidade útil do furo",
+      "threadDepth": "Profundidade da rosca",
+      "threadPasses": "Passagens radiais",
+      "threadHand": "Sentido da rosca"
     },
     "option": {
       "g85": "Alargamento (G85)",
@@ -129,9 +156,23 @@
       "slotBoth": "Ambas abertas",
       "slotRamp": "Rampa",
       "slotPlunge": "Mergulho",
-      "g83": "G83 picagem"
+      "g83": "G83 picagem",
+      "threadRight": "À direita",
+      "threadLeft": "À esquerda"
     },
     "check": {
+      "chamferAngle": "O ângulo incluído tem de ser maior que 0° e menor que 180°.",
+      "chamferTip": "O diâmetro da ponta tem de ser zero ou menor que o da fresa.",
+      "chamferPrecision": "Verifique a largura, a profundidade da ponta, a altura livre, os avanços e a rotação em relação à precisão do programa.",
+      "chamferTooWide": "O chanfro tem de deixar espaço na face superior.",
+      "chamferCutter": "O corte necessário excede o diâmetro máximo de corte da fresa.",
+      "chamferOpeningDepth": "A abertura tem de estar livre a uma profundidade superior a {depth}.",
+      "chamferRoom": "O furo ou a cavidade são demasiado pequenos para a fresa e a sua entrada.",
+      "engravingRotation": "Introduza um ângulo de rotação finito.",
+      "engravingSpacing": "O espaçamento entre letras tem de ser zero ou superior.",
+      "engravingLength": "Introduza entre 1 e {max} caracteres.",
+      "engravingCharacters": "Use A–Z, 0–9, espaços ou + - / . : _.",
+      "engravingPrecision": "Verifique o tamanho, a profundidade, a altura livre, os avanços e a rotação em relação à precisão do programa.",
       "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
       "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
       "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",
@@ -169,7 +210,11 @@
       "slotPrecision": "Aumente os avanços, a profundidade, a folga ou a profundidade por passe para respeitar a precisão do programa.",
       "slotRampRoom": "A ranhura é demasiado curta para este ângulo. Aumente o ângulo ou escolha Mergulho.",
       "slotMoveCount": "A ranhura geraria demasiados movimentos. Aumente a profundidade por passe ou o ângulo da rampa.",
-      "noHole": "Não há nenhum furo para furar."
+      "noHole": "Não há nenhum furo para furar.",
+      "threadDiameters": "O pré-furo tem de ser mais largo do que a fresa e mais estreito do que o diâmetro maior da rosca.",
+      "threadPilotDepth": "A parte cilíndrica do furo tem de ser mais profunda do que {depth}.",
+      "threadPrecision": "Verifique o passo, a altura livre, o avanço, a rotação do eixo e as dimensões em relação à precisão do programa.",
+      "threadTurns": "Com este passo, a profundidade da rosca tem de abranger entre 1 e {max} voltas."
     }
   }
 }

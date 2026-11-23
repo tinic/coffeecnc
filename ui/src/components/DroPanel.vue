@@ -110,16 +110,15 @@ watch([axes, touchBlock], () => {
       <component
         :is="readOnly ? 'div' : 'button'"
         v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
-        class="axis" :class="{ 'remote-axis': readOnly }"
+        class="axis tone-control" :class="{ 'remote-axis': readOnly }"
         :type="readOnly ? undefined : 'button'" :disabled="readOnly ? undefined : touchBlock !== null || !Number.isFinite(axis.work)"
         :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
       >
         <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
         <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
-        <span v-if="!readOnly && panel.tab !== 'manual'" class="touch hidden" aria-hidden="true"><AppIcon name="target" /></span>
       </component>
       <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
-        <summary :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
+        <summary class="tone-control" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
         <div class="popover">
           <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
           <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'zero', $event)">{{ t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() }) }}</button>
@@ -130,8 +129,8 @@ watch([axes, touchBlock], () => {
     <span v-if="axes.length === 0" class="unavailable">{{ t('manual.dro.positionUnavailable') }}</span>
     <div class="display-units">
       <div class="units" role="group" :aria-label="t('manual.dro.displayUnits')">
-        <button type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
-        <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
+        <button class="tone-control" type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
+        <button class="tone-control" type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
       </div>
     </div>
     <div class="active-tool" :class="{ stale: !live }" :aria-label="t('manual.dro.activeToolGroup')">
@@ -153,36 +152,34 @@ watch([axes, touchBlock], () => {
 </template>
 
 <style scoped>
-.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border-radius: var(--radius); background: var(--panel); }
 .dro.has-rotary { flex-wrap: wrap; }
 .rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 6px; padding: 4px 0 0 154px; border-top: 1px solid var(--line); }
 .rotary-axis { display: grid; grid-template-columns: 20px 132px minmax(0, 1fr); flex: 0 0 257px; align-items: baseline; gap: 12px; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
-.rotary-letter, .rotary-angle { font-size: 18px; line-height: 24px; font-weight: 500; }
+.rotary-letter, .rotary-angle { font-size: var(--type-lg); line-height: 24px; font-weight: 500; }
 .rotary-angle { text-align: right; }
-.rotary-marker { color: var(--warn); font-size: 10px; }
+.rotary-marker { color: var(--warn); font-size: var(--type-sm); }
 .rotary-stale { margin-left: auto; padding: 0 12px; white-space: nowrap; }
 .distrust .rotary-angle { color: var(--text-faint); }
 .basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }
-.basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; border-color: var(--line-strong); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; font-size: var(--type-body); font-weight: 600; white-space: nowrap; }
 .basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
-.g92 { display: block; font-size: 9px; line-height: 10px; color: var(--warn); }
-.axis-group { display: flex; align-items: center; flex: none; min-width: 0; border-left: 1px solid var(--line); }
-.axis { display: flex; flex: none; height: 56px; align-items: center; gap: 12px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.g92 { display: block; font-size: var(--type-sm); line-height: 1.2; color: var(--warn); }
+.axis-group { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); }
+.axis { display: flex; height: 56px; align-items: center; justify-content: flex-end; gap: 9px; width: 11.8ch; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 var(--type-dro)/1.2 var(--mono); cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
 .axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
-.letter { flex: none; width: 20px; color: var(--text); }/* Coordinates sit next to their letter, grouped on the left with the units; digits right-aligned
-   in a fixed column (nine 27 px monospace characters: -9999.999 or -999.9999) so they do not move
-   as they change. */
-.reading { position: relative; display: flex; flex: none; flex-direction: column; width: 152px; text-align: right; }
-.number, .letter { font-size: 27px; line-height: 1.3; letter-spacing: -1px; font-weight: 500; white-space: nowrap; }.marker { position: absolute; top: 100%; left: 0; height: 15px; line-height: 15px; white-space: nowrap; font-size: 10px; color: var(--warn); }
-.touch { display: flex; align-self: center; padding: 2px; color: var(--text-dim); }.axis:disabled .touch { opacity: .3; }
-.touch.hidden { visibility: hidden; }
-.units { display: flex; flex: none; gap: 3px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-sunken); }
+.letter { flex: none; }
+/* The readout ends at a fixed position while the axis letter sits next to the first digit. */
+.reading { position: relative; display: flex; flex: none; flex-direction: column; text-align: right; }
+.number, .letter { letter-spacing: -.025em; white-space: nowrap; }
+.marker { position: absolute; top: 100%; right: 0; line-height: 1.2; white-space: nowrap; font: 600 var(--type-sm)/1.2 var(--sans); color: var(--warn); }
+.units { display: flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
 .display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }
-.units button { width: 44px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
-.units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.units button { width: 44px; height: 48px; border: 0; border-radius: 6px; background: none; font-size: var(--type-md); color: var(--text-dim); cursor: pointer; }
+.units button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
-.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
+.tool-heading, .tool-length { color: var(--text-dim); font-size: var(--type-sm); }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: var(--type-md); font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 @media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-toggle { min-height: 52px; } }

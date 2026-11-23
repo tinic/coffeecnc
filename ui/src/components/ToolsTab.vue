@@ -169,8 +169,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
                 {{ tool.comment || defaultToolName(tool.number) }}
               </td>
               <td class="actions">
-                <button v-tooltip="editBlock ?? t('tools.tab.editToolHint', { number: tool.number })" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="t('tools.tab.editToolLabel', { number: tool.number })" @click.stop="edit(tool)">{{ t('common.edit') }}</button>
-                <button v-tooltip="mdiBlock ?? t('tools.tab.loadToolHint', { number: tool.number })" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="t('tools.tab.loadToolLabel', { number: tool.number })" @click.stop="openLoad(tool)">{{ t('tools.tab.load') }}</button>
+                <button v-tooltip="editBlock ?? t('tools.tab.editToolHint', { number: tool.number })" class="btn quiet edit-tool" type="button" :disabled="editBlock !== null" :aria-label="t('tools.tab.editToolLabel', { number: tool.number })" @click.stop="edit(tool)">{{ t('common.edit') }}</button>
+                <button v-tooltip="mdiBlock ?? t('tools.tab.loadToolHint', { number: tool.number })" class="btn quiet load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="t('tools.tab.loadToolLabel', { number: tool.number })" @click.stop="openLoad(tool)">{{ t('tools.tab.load') }}</button>
               </td>
             </tr>
           </tbody>
@@ -208,14 +208,14 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
                 <button
                   v-else
                   v-tooltip="mdiBlock ?? t('tools.tab.selectHint', { system: wcsName(system.wcs) })"
-                  class="btn select"
+                  class="btn quiet select"
                   type="button"
                   :disabled="mdiBlock !== null || status?.link !== 'live'"
                   @click.stop="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
                   {{ t('tools.tab.select') }}
                 </button>
-                <button class="btn select" type="button" :aria-label="t('tools.tab.editOrigins', { system: wcsName(system.wcs) })" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">{{ t('common.edit') }}</button>
+                <button class="btn quiet select" type="button" :aria-label="t('tools.tab.editOrigins', { system: wcsName(system.wcs) })" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">{{ t('common.edit') }}</button>
               </td>
             </tr>
           </tbody>
@@ -254,8 +254,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 </template>
 
 <style scoped>
-.touched { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ok, #15803d); color: #fff; vertical-align: middle; }
-.touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
+.touched { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--go-soft); color: var(--go); vertical-align: middle; }
+.touched :deep(svg) { width: 18px; height: 18px; stroke-width: 3; }
 .tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -273,11 +273,9 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 
 .heading h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--type-body);
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text);
 }
 
 .spacer {
@@ -301,6 +299,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .load-tool, .edit-tool { min-width: 64px; min-height: 44px; padding-inline: 8px; white-space: nowrap; }
+.tool-row.selected .load-tool:not(:disabled, :hover, :active) { color: var(--accent); background: var(--panel-raised); }
 
 .scroll {
   flex: 1;
@@ -316,22 +315,20 @@ th {
   position: sticky;
   top: 0;
   padding: 6px;
-  border-bottom: 1px solid var(--line-strong);
-  background: var(--panel);
-  font-size: 11px;
+  background: var(--bg-sunken);
+  font-size: var(--type-sm);
   font-weight: 600;
-  letter-spacing: 0.07em;
   text-align: left;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text);
 }
 
 td {
   height: 47px;
   padding: 1px 6px;
-  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
+
+tr:nth-child(even):not(.loaded, .selected) td { background: color-mix(in srgb, var(--bg-sunken) 44%, var(--panel)); }
 
 .num {
   text-align: right;
@@ -340,7 +337,7 @@ td {
 td.comment {
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--type-body);
   line-height: 1.3;
   padding-block: 6px;
 }
@@ -364,7 +361,7 @@ tr.loaded td {
 
 .select {
   padding: 0 10px;
-  font-size: 13px;
+  font-size: var(--type-body);
   min-height: 44px;
 }
 .actions .chip + .btn { margin-left: 8px; }

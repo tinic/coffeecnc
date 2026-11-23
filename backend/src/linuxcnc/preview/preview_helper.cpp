@@ -973,6 +973,23 @@ auto unknown_reason(std::string_view what) -> std::string {
                      what);
 }
 
+// Why a line reads a value the preview does not know, if it does.
+auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& parameters, int level,
+                  bool returned) -> std::optional<std::string> {
+  if (use.computed)
+    return "reads a parameter whose number is computed (#[...], ##): which one it is, and "
+           "whether the program has set it, is not known to the preview";
+  if (use.returned && !returned)
+    return "reads #<_value> or #<_value_returned> before a subroutine of the program has "
+           "returned: its value from an earlier program or MDI block is not known to the "
+           "preview";
+  const auto found = std::ranges::find_if(
+      use.reads, [&](int number) { return !parameters.known(number, level); });
+  if (found != use.reads.end())
+    return unknown_reason(std::format("#{}", *found));
+  return {};
+}
+
 auto inherited_reason(const std::string& mode) -> std::string {
   return std::format("moves by the motion mode {} that was active before the program, which "
                      "the preview does not take over",
@@ -1119,6 +1136,15 @@ auto run(const HelperRequest& request) -> int {
       if (!inherited.empty() &&
           coffeecnc::motion_use(text.data()) == coffeecnc::MotionUse::inherits)
         halt(Halt::stop, inherited_reason(inherited));
+      else if (const auto reason = coffeecnc::refused_block(text.data()))
+        // `#<_hal[...]>` is not defined here: the reason is that it is a HAL value.
+        halt(Halt::stop, *reason);
+      else if (const auto unknown =
+                   unknown_read(coffeecnc::parameter_use(text.data()), parameters,
+                                interp->call_level(),
+                                returned || interp->call_level() < last_level))
+        // Its error may come from a value task has otherwise (`##1`, `[1/#3000]`).
+        halt(Halt::stop, *unknown);
       else if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped))
         // A remapped code the interpreter does not know without its remap (M10, G88.1): task
         // runs the remap; the preview ends here.
@@ -1203,18 +1229,7 @@ auto run(const HelperRequest& request) -> int {
         }
       }
     }
-    std::optional<std::string> unknown;
-    if (use.computed)
-      unknown = "reads a parameter whose number is computed (#[...], ##): which one it is, and "
-                "whether the program has set it, is not known to the preview";
-    else if (use.returned && !returned)
-      unknown = "reads #<_value> or #<_value_returned> before a subroutine of the program has "
-                "returned: its value from an earlier program or MDI block is not known to the "
-                "preview";
-    else if (const auto found = std::ranges::find_if(
-                 use.reads, [&](int number) { return !parameters.known(number, level); });
-             found != use.reads.end())
-      unknown = unknown_reason(std::format("#{}", *found));
+    auto unknown = unknown_read(use, parameters, level, returned);
     if (unknown && use.control && !skipped) {
       // An O word reads its values when it is read; nothing tells whether it is skipped.
       halt(Halt::stop, *unknown);

@@ -529,10 +529,10 @@
       "filesNotWritten": "Não foi possível escrever os ficheiros da pré-visualização.",
       "toolChangeMoves": "A troca de ferramenta configurada move a máquina de forma independente.",
       "changedDuring": "O programa ou um dos ficheiros das suas sub-rotinas mudou no disco durante cada um dos {runs} cálculos: sem pré-visualização.",
-      "stopIniHal": "lê um valor de INI ou HAL (#<_ini[...]>, #<_hal[...]>), que a pré-visualização não tem",
-      "stopExists": "pergunta se existe um parâmetro global (#<_...>): na máquina pode existir de um programa ou bloco MDI anterior, o que a pré-visualização não sabe",
+      "stopIniHal": "lê um valor de INI ou HAL ({names}), que a pré-visualização não tem",
+      "stopExists": "pergunta se existe um parâmetro global ({name}): na máquina pode existir de um programa ou bloco MDI anterior, o que a pré-visualização não sabe",
       "stopComputedParameter": "lê um parâmetro cujo número é calculado (#[...], ##): a pré-visualização não sabe qual é nem se o programa o definiu",
-      "stopReturnValue": "lê #<_value> ou #<_value_returned> antes de uma sub-rotina do programa ter retornado: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
+      "stopReturnValue": "lê {name} ou {other} antes de uma sub-rotina do programa ter retornado: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
       "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas"
     },
     "nmlStatus": {

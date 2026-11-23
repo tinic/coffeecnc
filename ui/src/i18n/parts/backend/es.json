@@ -529,10 +529,10 @@
       "filesNotWritten": "No se pudieron escribir los archivos de la vista previa.",
       "toolChangeMoves": "El cambio de herramienta configurado mueve la máquina de forma independiente.",
       "changedDuring": "El programa o uno de sus archivos de subrutinas cambió en el disco durante cada uno de los {runs} cálculos: sin vista previa.",
-      "stopIniHal": "lee un valor de INI o HAL (#<_ini[...]>, #<_hal[...]>), que la vista previa no tiene",
-      "stopExists": "pregunta si existe un parámetro global (#<_...>): en la máquina puede existir de un programa o bloque MDI anterior, lo que la vista previa no sabe",
+      "stopIniHal": "lee un valor de INI o HAL ({names}), que la vista previa no tiene",
+      "stopExists": "pregunta si existe un parámetro global ({name}): en la máquina puede existir de un programa o bloque MDI anterior, lo que la vista previa no sabe",
       "stopComputedParameter": "lee un parámetro cuyo número se calcula (#[...], ##): la vista previa no sabe cuál es ni si el programa lo ha asignado",
-      "stopReturnValue": "lee #<_value> o #<_value_returned> antes de que haya retornado una subrutina del programa: la vista previa no conoce su valor de un programa o bloque MDI anterior",
+      "stopReturnValue": "lee {name} o {other} antes de que haya retornado una subrutina del programa: la vista previa no conoce su valor de un programa o bloque MDI anterior",
       "stopDefinitionBlock": "una palabra O en una definición de subrutina pertenece a un bloque fuera de ella: la vista previa no sabe qué líneas se ejecutan"
     },
     "nmlStatus": {

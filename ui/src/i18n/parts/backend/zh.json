@@ -529,10 +529,10 @@
       "filesNotWritten": "无法写入预览文件。",
       "toolChangeMoves": "配置的换刀会独立移动机床。",
       "changedDuring": "在 {runs} 次计算期间，程序或其某个子程序文件每次都在磁盘上被更改：无预览。",
-      "stopIniHal": "读取 INI 或 HAL 值（#<_ini[...]>、#<_hal[...]>），预览没有这些值",
-      "stopExists": "询问全局参数（#<_...>）是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
+      "stopIniHal": "读取 INI 或 HAL 值（{names}），预览没有这些值",
+      "stopExists": "询问全局参数（{name}）是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
       "stopComputedParameter": "读取编号为计算所得的参数（#[...]、##）：预览不知道是哪一个参数，也不知道程序是否已设置它",
-      "stopReturnValue": "在程序的子程序返回之前读取 #<_value> 或 #<_value_returned>：预览不知道其来自先前程序或 MDI 程序段的值",
+      "stopReturnValue": "在程序的子程序返回之前读取 {name} 或 {other}：预览不知道其来自先前程序或 MDI 程序段的值",
       "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行"
     },
     "nmlStatus": {

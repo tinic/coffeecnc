@@ -4582,7 +4582,9 @@ void cam_programs(Rig& rig) {
     held = !end.accepted() &&
            end.text().find("The machine's saved parameters changed after the restart was "
                            "reviewed.") != std::string::npos &&
-           std::ranges::all_of(seen, [&](const Vec3& at) { return distance(at, resting) < 0.01; });
+           std::ranges::all_of(seen, [&](const Vec3& point) {
+             return distance(point, resting) < 0.01;
+           });
   }
   check("cam_restart_refuses_stale_parameter_file", resaved && held, refused_restart);
   static_cast<void>(rig.send(R"("type":"abort")"));

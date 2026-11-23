@@ -8,10 +8,12 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include <unistd.h>
@@ -78,6 +80,73 @@ auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
       return batch;
   }
   throw std::runtime_error("The current status did not arrive.");
+}
+
+// True if the server ends the connection within two seconds. The viewer reads all updates
+// meanwhile, so a connection that stays open is a live viewer, not a slow one.
+auto server_closes(net::io_context& io, Viewer& viewer) -> bool {
+  beast::flat_buffer buffer;
+  bool closed = false;
+  std::function<void()> next = [&] {
+    viewer.async_read(buffer, [&](boost::system::error_code error, std::size_t) -> void {
+      if (error) {
+        closed = true;
+        return;
+      }
+      buffer.clear();
+      next();
+    });
+  };
+  next();
+  io.restart();
+  io.run_for(2s);
+  const bool by_server = closed;
+  if (!by_server) {
+    boost::system::error_code ignored;
+    std::ignore = viewer.next_layer().close(ignored);
+    io.restart();
+    io.run();
+  }
+  return by_server;
+}
+
+// A browser viewer sends no input. Each kind of client frame must end the connection, so a
+// client cannot keep one of the viewer slots with traffic other than the replies to keep-alives.
+void input_frames_close(net::io_context& io, std::uint16_t port, const std::string& host) {
+  {
+    Viewer text{io};
+    connect(text, port, host);
+    text.write(net::buffer(std::string_view{R"({"type":"set_machine","state":"on"})"}));
+    require(server_closes(io, text), "A text frame closes the read-only socket.");
+  }
+  {
+    Viewer fragment{io};
+    connect(fragment, port, host);
+    fragment.write_some(false, net::buffer(std::string_view{"{"}));
+    require(server_closes(io, fragment), "A data fragment closes the read-only socket.");
+  }
+  {
+    // Empty non-final fragments never complete a message or a read, but they reset the idle
+    // timeout. Without a check they hold the slot forever.
+    Viewer empty{io};
+    connect(empty, port, host);
+    for (int i = 0; i < 64; ++i)
+      empty.write_some(false, net::const_buffer{});
+    require(server_closes(io, empty), "Empty fragments close the read-only socket.");
+  }
+  {
+    Viewer ping{io};
+    connect(ping, port, host);
+    ping.ping({});
+    require(server_closes(io, ping), "A client ping closes the read-only socket.");
+  }
+  {
+    // A viewer that only answers keep-alives stays connected.
+    Viewer quiet{io};
+    connect(quiet, port, host);
+    quiet.pong({});
+    require(!server_closes(io, quiet), "A pong does not close the viewer.");
+  }
 }
 
 void test(const std::filesystem::path& root, std::string_view discovered,
@@ -178,6 +247,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   boost::system::error_code rejected;
   first.read(no_reply, rejected);
   require(static_cast<bool>(rejected), "An incoming application frame closes the read-only socket.");
+  input_frames_close(io, port, host);
 
   Viewer slow{io};
   connect(slow, port, host);

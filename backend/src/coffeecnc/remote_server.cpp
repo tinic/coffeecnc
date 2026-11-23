@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <deque>
 #include <iterator>
+#include <limits>
 #include <mutex>
 #include <string_view>
 #include <thread>
@@ -55,6 +56,32 @@ struct Notification {
 };
 
 auto index(PanelRecord record) -> std::size_t { return static_cast<std::size_t>(record); }
+
+// Counts the bytes a client sends, without a rate limit. A viewer only answers keep-alive
+// pings, so the server can tell when a client sends frames that Beast does not report, such
+// as empty non-final fragments.
+class InboundBytes {
+public:
+  [[nodiscard]] auto received() const noexcept -> std::size_t { return received_; }
+
+private:
+  friend class beast::rate_policy_access;
+  static constexpr auto all = std::numeric_limits<std::size_t>::max();
+  [[nodiscard]] static auto available_read_bytes() noexcept -> std::size_t { return all; }
+  [[nodiscard]] static auto available_write_bytes() noexcept -> std::size_t { return all; }
+  void transfer_read_bytes(std::size_t bytes) noexcept { received_ += bytes; }
+  static void transfer_write_bytes(std::size_t) noexcept {}
+  static void on_timer() noexcept {}
+
+  std::size_t received_{};
+};
+
+using Stream = beast::basic_stream<tcp, net::any_io_executor, InboundBytes>;
+
+// A client frame of a pong: two header bytes, the four-byte mask and the payload.
+constexpr std::size_t client_control_header = 6;
+// A control frame that is still arriving, at most 125 payload bytes.
+constexpr std::size_t max_partial_control = client_control_header + 125;
 
 
 auto local_ipv4_addresses() -> std::vector<address_v4> {
@@ -269,19 +296,37 @@ private:
     ws_->set_option(websocket::stream_base::timeout{io_timeout, 30s, true});
     ws_->read_message_max(1024);
     ws_->text(true);
+    // The browser sends no data frames and no pings: it only answers keep-alive pings and may
+    // close. Any other input disconnects the client, so input cannot hold a viewer slot.
+    input_start_ = ws_->next_layer().rate_policy().received();
+    ws_->control_callback([this](websocket::frame_type kind, beast::string_view payload) -> void {
+      if (kind == websocket::frame_type::ping)
+        return close();
+      if (kind == websocket::frame_type::pong)
+        pong_bytes_ += client_control_header + payload.size();
+    });
     ws_->async_accept(request_.get(), [self = shared_from_this()](Error error) -> void {
       if (error)
         return self->close();
-      // The browser sends no data frames. A client that tries to send one is disconnected.
-      self->ws_->async_read(self->discard_,
+      // Completes on the first data byte, an empty final frame, a close or an error.
+      self->ws_->async_read_some(self->discard_, 1,
         [self](Error, std::size_t) -> void { self->close(); });
       self->send();
     });
   }
 
+  // Input that pongs do not explain. Beast skips empty non-final fragments without completing a
+  // read, and they reset its idle timeout. One control frame can still be arriving.
+  [[nodiscard]] auto sent_input() const -> bool {
+    return ws_->next_layer().rate_policy().received() - input_start_ >
+           pong_bytes_ + max_partial_control;
+  }
+
   void send() {
     if (closed_ || !ws_)
       return;
+    if (sent_input())
+      return close();
     auto& viewer = *ws_;
     next_ = owner_.latest.load();
     for (std::size_t i = 0; next_ && i < next_->size(); ++i) {
@@ -341,11 +386,12 @@ private:
   }
 
   Impl& owner_;
-  beast::tcp_stream socket_;
+  Stream socket_;
   net::steady_timer tick_, deadline_;
   beast::flat_buffer request_buffer_{8192}, discard_{1024};
   http::request_parser<http::empty_body> request_;
-  std::optional<websocket::stream<beast::tcp_stream>> ws_;
+  std::optional<websocket::stream<Stream>> ws_;
+  std::size_t input_start_{}, pong_bytes_{};
   std::array<std::weak_ptr<const std::string>, record_count> sent_;
   std::shared_ptr<const Snapshot> next_;
   std::vector<Record> writing_;

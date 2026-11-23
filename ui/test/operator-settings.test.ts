@@ -6,12 +6,14 @@ import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, type PanelState } from '../src/store'
 import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, withRecentProgram, type OperatorPreferences, type ProgramLayout, type PanelTheme } from '../src/operator-settings'
 import { createOperatorSettingsState, type OperatorSettingsController } from '../src/operator-settings-state'
+import type { Language } from '../src/i18n'
 
 const disposals: (() => void)[] = []
 afterEach(() => { for (const dispose of disposals.splice(0)) dispose() })
 interface Rig {
   panel: PanelState
   theme: Ref<PanelTheme>
+  language: Ref<Language>
   settings: OperatorSettingsController
   sent: ToMachine[]
   storage: { getItem: Mock<() => string>; setItem: Mock<(key: string, value: string) => void> }
@@ -23,7 +25,7 @@ interface Rig {
   pass: (ms: number) => void
 }
 function rig(simulated = false, saved: unknown = null,
-  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme } = {}): Rig {
+  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme; languageOverride?: Language } = {}): Rig {
   let receive: Listener = () => undefined
   let timer: (() => void) | null = null
   let now = 0
@@ -34,7 +36,8 @@ function rig(simulated = false, saved: unknown = null,
     send: (command): void => { sent.push(command) } }, now: (): number => now,
   timers: { setInterval: (callback): number => { timer = callback; return 1 }, clearInterval: (): void => { timer = null } } })
   const theme = ref<PanelTheme>('light')
-  const settings = createOperatorSettingsState(panel.state, panel, storageAccess, { theme, ...overrides })
+  const language = ref<Language>('en')
+  const settings = createOperatorSettingsState(panel.state, panel, storageAccess, { theme, language, ...overrides })
   panel.start(); disposals.push(settings.dispose, panel.stop)
   const connect = (id: string | null = 'G0759', capable = true): void => {
     receive({ ...hello, machine_id: id, max_spindle_rpm: 3000, max_jog_velocity: 1000, ...(capable ? { operator_settings_storage: 1 } : {}) })
@@ -47,7 +50,7 @@ function rig(simulated = false, saved: unknown = null,
     if (!last) throw new Error('Expected a save')
     receive({ type: 'result', id: last.id, outcome, reason: outcome === 'failed' ? 'Disk full' : '' })
   }
-  return { panel: panel.state, theme, settings, sent, storage, storageAccess, connect, snapshot, reply,
+  return { panel: panel.state, theme, language, settings, sent, storage, storageAccess, connect, snapshot, reply,
     receive: (message: FromMachine): void => { receive(message) }, pass: (ms: number): void => { now += ms; timer?.() } }
 }
 const custom = (): OperatorPreferences => ({ ...defaultOperatorPreferences(), startup_units: 'inch',
@@ -122,6 +125,41 @@ describe('operator settings', () => {
     expect(restarted.storage.setItem).not.toHaveBeenCalled()
     expect(overridden.storage.setItem).not.toHaveBeenCalled()
     expect(restarted.panel.preferences).toEqual({ ...custom(), program_layout: 'text', theme: 'dark' })
+  })
+  it.each(['de', 'ja', 'pt'] as const)('keeps the %s language on browser and native restart', (choice) => {
+    const browser = rig(true, custom())
+    browser.connect()
+    browser.settings.chooseLanguage(choice)
+    expect(browser.language.value).toBe(choice)
+    const browserSaved: unknown = JSON.parse(browser.storage.setItem.mock.lastCall?.[1] ?? 'null')
+    expect(browserSaved).toMatchObject({ language: choice })
+    expect(rig(true, browserSaved).language.value).toBe(choice)
+
+    const native = rig()
+    native.connect()
+    native.snapshot(7, custom())
+    expect(native.language.value).toBe('en')
+    native.settings.chooseLanguage(choice)
+    expect(native.sent.at(-1)).toMatchObject({ type: 'set_operator_settings', base_revision: 7, document: { language: choice, theme: 'light' } })
+    native.snapshot(8, { ...custom(), language: choice })
+    native.reply()
+    const restarted = rig()
+    restarted.connect()
+    restarted.snapshot(8, { ...custom(), language: choice })
+    expect(restarted.language.value).toBe(choice)
+  })
+  it('lets ?lang= override the saved language without saving it', () => {
+    const r = rig(false, null, { languageOverride: 'fr' })
+    r.connect()
+    r.snapshot(3, { ...custom(), language: 'de' })
+    expect(r.language.value).toBe('fr')
+    expect(r.sent.filter((m) => m.type === 'set_operator_settings')).toEqual([])
+  })
+  it('reads documents without a language, or with an unknown one, as English', () => {
+    const older: Record<string, unknown> = { ...custom() }
+    delete older['language']
+    expect(decodeOperatorPreferences(older)?.language).toBe('en')
+    expect(decodeOperatorPreferences({ ...custom(), language: 'tlh' })).toEqual({ ...custom(), language: 'en' })
   })
   it.each(['sandstone', 'harbor'] as const)('keeps the %s palette on browser and native restart', (palette) => {
     const browser = rig(true, custom())

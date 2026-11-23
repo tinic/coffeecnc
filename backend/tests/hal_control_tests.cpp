@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <latch>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -187,17 +188,29 @@ void probe_cycle_needs_a_live_lease() {
 void threads_share_it() {
   HalShared shared;
   std::atomic<bool> stop{};
-  std::atomic<int> raised{};
+  const auto initial_time = HalShared::Clock::now();
+  const auto initial_request = asking(1);
+  static_cast<void>(shared.exchange(initial_request, initial_time));
+  std::latch initial_attempt{1};
   std::thread reader{[&]() -> void {
     while (!stop)
       static_cast<void>(shared.view(HalShared::Clock::now()));
   }};
   std::thread confirmer{[&]() -> void {
-    while (!stop)
-      if (const auto shown = shared.view(HalShared::Clock::now()))
+    const auto confirm = [&](HalShared::Clock::time_point now) {
+      if (const auto shown = shared.view(now))
         if (const auto wanted = shown->tool_change_request)
           static_cast<void>(shared.confirm_tool_changed(*wanted));
+    };
+    confirm(initial_time);
+    initial_attempt.count_down();
+    while (!stop)
+      confirm(HalShared::Clock::now());
   }};
+  // Make the first attempt while its request is still current. The stress loop
+  // alone can exhaust all its periods before the confirming thread is scheduled.
+  initial_attempt.wait();
+  int raised = shared.exchange(initial_request, initial_time) ? 1 : 0;
   for (int period = 0; period < 20000; ++period) {
     // A request every other eight periods, each for another tool.
     const auto tool = (period / 8) % 2 == 0 ? std::optional<int>{period / 16 + 1} : std::nullopt;

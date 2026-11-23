@@ -292,14 +292,14 @@ describe('capability-aware controls', () => {
     expect(wrapper.find(selector).exists()).toBe(false)
     panel.status.motion.velocity_limit = 1
     await nextTick()
-    expect(wrapper.find('.velocity-limit').exists()).toBe(false)
+    expect(wrapper.find('.active-options').exists()).toBe(false)
     await wrapper.get('.popover').get(selector).setValue('40')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'velocity_limit', value: 0.4 })
-    expect(wrapper.find('.velocity-limit').exists()).toBe(false)
+    expect(wrapper.find('.active-options').exists()).toBe(false)
     panel.status.motion.velocity_limit = 0.4
     await nextTick()
     expect(wrapper.get('.more-button').attributes('aria-label')).toBe('More execution controls · Maximum velocity 40 %')
-    expect(wrapper.get('.velocity-limit').text()).toBe('40 %')
+    expect(wrapper.get('.active-options .velocity').text()).toBe('V40')
   })
   it('puts probing in its own workspace with jogging, WCS and Stop', async () => {
     wrapper = mount(WorkspaceControls)

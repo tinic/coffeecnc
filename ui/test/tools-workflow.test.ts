@@ -14,6 +14,10 @@ import type { ResultListener } from '../src/store'
 
 const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultListener>() }))
 
+// The workflow tests exercise the dialogs. The lazy WebGL canvas can still be loading when
+// a dialog closes, so keep the renderer out of the jsdom fixture.
+vi.mock('../src/components/ToolModelCanvas.vue', () => ({ default: { template: '<canvas />' } }))
+
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel

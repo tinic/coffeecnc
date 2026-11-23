@@ -89,6 +89,67 @@ describe('new operation dialog', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('requires a chamfer mill and calculates the tool-tip depth from the entered width', async () => {
+    await open()
+    button('Chamfer').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    const width = input('Chamfer width, mm')
+    width.value = '1/2mm'
+    width.dispatchEvent(new Event('input'))
+    await nextTick()
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/chamfer-40x30mm.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No chamfer program was saved')
+    expect(save.text).toContain('G1 Z-1 F60')
+  })
+
+  it('takes engraving text through the ordinary text field and requires an explicit tool', async () => {
+    await open()
+    button('Engraving').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    const label = input('Text')
+    expect(label.getAttribute('inputmode')).toBeNull()
+    expect(tool?.element.value).toBe('0')
+    label.value = 'part/07'
+    label.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/engrave-part-07.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No engraving program was saved')
+    expect(save.text).toContain('(Lettering: PART/07)')
+    expect(save.text).toContain('T2 M6\nG43 H2')
+  })
+
+  it('requires a thread mill selection and saves internal threads through the normal program picker', async () => {
+    await open()
+    button('Internal thread milling').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Left-hand').click()
+    await nextTick()
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/thread-10mm-lh.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No thread program was saved')
+    expect(save.text).toContain('T2 M6\nG43 H2')
+    expect(save.text).toContain('G1 Z0.375 F50\nG3 X1.625 Y0 Z0 I0.8125 J0 F60')
+    answer(save)
+    await nextTick()
+    expect(sent().at(-1)).toMatchObject({ type: 'open_program', path: save.path })
+  })
+
   it('requires an explicit finishing tool and only displays dwell for boring', async () => {
     await open()
     button('Ream / bore').click()
@@ -106,6 +167,30 @@ describe('new operation dialog', () => {
     expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/bore-grid-3x2.ngc` })
     if (save?.type !== 'save_program') throw new Error('No boring program was saved')
     expect(save.text).toContain('G98 G89 X10 Y10 Z-10 R2 P0.5 F60')
+  })
+
+  it('offers tapping only on a qualified machine and requires a tap selection', async () => {
+    const table = panel.toolTable
+    if (table === null) throw new Error('Missing tool table')
+    const machine = { ...hello, simulated: false }
+    delete machine.rigid_tap
+    wire.receive(machine)
+    machineStatus()
+    await open()
+    expect(wrapper?.findAll('button').some((candidate) => candidate.text() === 'Rigid tapping')).toBe(false)
+    wire.receive({ ...machine, rigid_tap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 } })
+    wire.receive(table)
+    await nextTick()
+    button('Rigid tapping').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    if (save?.type !== 'save_program') throw new Error('No tapping program was saved')
+    expect(save.text).toContain('G33.1 Z-10 K1')
   })
 
   it('queues snapshots in order, discards a queued item and saves the job only', async () => {

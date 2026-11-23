@@ -1,6 +1,9 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Selecciona una fresa de chaflanar",
+      "chooseEngravingTool": "Selecciona una herramienta de grabado",
+      "chooseTap": "Selecciona un macho",
       "chooseFinishTool": "Selecciona un escariador o una herramienta de mandrinar",
       "pocketOptions": "Geometría, entrada y paredes",
       "reviewJob": "Revisar trabajo",
@@ -12,6 +15,7 @@
       "title": "Nueva operación",
       "operations": "Operación",
       "tool": "Herramienta",
+      "chooseThreadMill": "Selecciona una fresa de roscar",
       "noTools": "No hay herramientas en la tabla de herramientas",
       "toolAndFeeds": "Herramienta y avances",
       "geometry": "Geometría",
@@ -21,6 +25,12 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "chamfer": "Chaflán",
+      "chamferSetup": "Sitúa Z0 en la cara superior y usa el diámetro de corte máximo en la tabla de herramientas. El ancho del chaflán se mide en la cara superior.",
+      "engraving": "Grabado",
+      "engravingSetup": "Sitúa Z0 en la superficie. La línea base empieza a la izquierda del texto. Las letras se graban en mayúsculas.",
+      "rigidTap": "Roscado rígido",
+      "rigidTapSetup": "Usa un macho a derechas y un agujero pretaladrado. Prevé el recorrido de inversión con la altura inicial y la profundidad útil.",
       "holeFinishing": "Escariado / mandrinado",
       "holeFinishingSetup": "Usa agujeros pretaladrados y verifica que la herramienta pueda avanzar a la profundidad programada y salir de ella.",
       "contour": "Contorno",
@@ -33,9 +43,25 @@
       "rectangularPocket": "Cajera rectangular",
       "slot": "Ranura / chavetero",
       "slotSetup": "Usa una fresa adecuada para la entrada. Ajusta la longitud para que cada extremo abierto coincida con el borde del material. Deja espacio para que la herramienta lo sobrepase.",
-      "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
+      "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro.",
+      "threadMill": "Fresado de rosca interior",
+      "threadMillSetup": "Usa una fresa de roscar de perfil único y un agujero pretaladrado. Verifica la holgura de la fresa y su cuello. Introduce el avance en el centro de la herramienta. La profundidad de rosca fija la Z de la punta. Ten en cuenta la altura del diente."
     },
     "label": {
+      "chamferWidth": "Ancho de chaflán",
+      "chamferIncludedAngle": "Ángulo incluido",
+      "chamferTipDiameter": "Diámetro de la punta",
+      "chamferTipBelow": "Punta por debajo del chaflán",
+      "chamferOpeningDepth": "Profundidad premecanizada",
+      "engravingText": "Texto",
+      "engravingX": "Línea base X",
+      "engravingY": "Línea base Y",
+      "engravingHeight": "Altura de letra",
+      "engravingSpacing": "Espacio entre letras",
+      "engravingRotation": "Giro antihorario",
+      "tapPitch": "Paso de rosca",
+      "tapPilotDepth": "Profundidad útil del pretaladrado",
+      "tapStartHeight": "Altura inicial",
       "boreDwell": "Pausa en el fondo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
@@ -92,7 +118,14 @@
       "slotEntry": "Entrada",
       "slotAngle": "Ángulo máximo de rampa",
       "slotEntryFeed": "Avance de entrada",
-      "boltCircleRadius": "Radio del círculo de taladros"
+      "boltCircleRadius": "Radio del círculo de taladros",
+      "threadMajor": "Diámetro mayor de rosca",
+      "threadPitch": "Paso de rosca",
+      "threadPilot": "Diámetro de pretaladrado",
+      "threadPilotDepth": "Profundidad útil del agujero",
+      "threadDepth": "Profundidad de rosca",
+      "threadPasses": "Pasadas radiales",
+      "threadHand": "Sentido de la rosca"
     },
     "option": {
       "g85": "Escariado (G85)",
@@ -129,9 +162,28 @@
       "slotBoth": "Ambos abiertos",
       "slotRamp": "Rampa",
       "slotPlunge": "Penetración",
-      "g83": "G83 picoteo"
+      "g83": "G83 picoteo",
+      "threadRight": "A derechas",
+      "threadLeft": "A izquierdas"
     },
     "check": {
+      "chamferAngle": "El ángulo incluido debe ser mayor de 0° y menor de 180°.",
+      "chamferTip": "El diámetro de la punta debe ser cero o menor que el de la fresa.",
+      "chamferPrecision": "Comprueba el ancho, la profundidad de la punta, la altura libre, los avances y las rpm según la precisión del programa.",
+      "chamferTooWide": "El chaflán debe dejar espacio en la cara superior.",
+      "chamferCutter": "El corte requerido supera el diámetro de corte máximo de la fresa.",
+      "chamferOpeningDepth": "La abertura debe estar libre a una profundidad mayor que {depth}.",
+      "chamferRoom": "El agujero o la cajera son demasiado pequeños para la fresa y su entrada.",
+      "engravingRotation": "Introduce un ángulo de giro finito.",
+      "engravingSpacing": "El espacio entre letras debe ser cero o mayor.",
+      "engravingLength": "Introduce entre 1 y {max} caracteres.",
+      "engravingCharacters": "Usa A–Z, 0–9, espacios o + - / . : _.",
+      "engravingPrecision": "Comprueba el tamaño, la profundidad, la altura libre, los avances y las rpm según la precisión del programa.",
+      "tapUnavailable": "Esta máquina no tiene límites de roscado rígido configurados.",
+      "tapZFeed": "El paso × las rpm supera el límite de avance en Z de {feed}. Reduzca la velocidad del husillo.",
+      "tapRpm": "Ajusta la velocidad de roscado entre 1 y {rpm} rpm.",
+      "tapPilotDepth": "El tramo cilíndrico del agujero debe tener más de {depth} de profundidad.",
+      "tapClearance": "Ajusta una altura libre de al menos {height} para la inversión de salida.",
       "profilePrecision": "Revisa las dimensiones y los avances. Cada pasada debe poder expresarse con la precisión del programa. Máximo 2000 pasadas.",
       "profileCorner": "El radio de esquina debe ser mayor o igual a cero y menor que la mitad del lado más corto.",
       "profileInsideCorner": "El radio de esquina interior debe ser mayor que el radio de la herramienta ({radius}).",
@@ -169,7 +221,11 @@
       "slotPrecision": "Aumenta los avances, la profundidad, la altura libre o la profundidad por pasada para ajustarlos a la precisión del programa.",
       "slotRampRoom": "La ranura es demasiado corta para este ángulo. Aumenta el ángulo o elige penetración vertical.",
       "slotMoveCount": "La ranura generaría demasiados movimientos. Aumenta la profundidad por pasada o el ángulo de rampa.",
-      "noHole": "No hay ningún taladro que hacer."
+      "noHole": "No hay ningún taladro que hacer.",
+      "threadDiameters": "El agujero debe ser más ancho que la fresa y más estrecho que el diámetro mayor de la rosca.",
+      "threadPilotDepth": "El tramo cilíndrico del agujero debe tener más de {depth} de profundidad.",
+      "threadPrecision": "Comprueba el paso, la altura libre, el avance, la velocidad del husillo y las dimensiones según la precisión del programa.",
+      "threadTurns": "Con este paso, la profundidad de rosca debe abarcar entre 1 y {max} vueltas."
     }
   }
 }

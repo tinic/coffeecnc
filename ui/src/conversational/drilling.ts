@@ -6,7 +6,7 @@ import { Checks, Program, checkCommon, feedNumber, type Common, type Generated }
 
 export type HoleCycle = 'G81' | 'G83' | 'G85' | 'G89'
 
-export interface Drilling extends Common {
+export interface HoleLayout {
   pattern: 'grid' | 'circle'
   /** Grid: the first hole, and the spacing of the columns (X) and rows (Y). */
   x: number
@@ -20,6 +20,9 @@ export interface Drilling extends Common {
   radius: number
   /** Degrees from +X. */
   startAngle: number
+}
+
+export interface Drilling extends Common, HoleLayout {
   cycle: HoleCycle
   /** G83 peck depth. */
   peck: number
@@ -33,7 +36,7 @@ export interface Drilling extends Common {
 const maxHoles = 1000
 
 /** The holes in drilling order: grid rows back and forth, the circle counter-clockwise. */
-export function holes(d: Drilling): [number, number][] {
+export function holes(d: HoleLayout): [number, number][] {
   const points: [number, number][] = []
   if (d.pattern === 'circle') {
     for (let i = 0; i < d.count; i += 1) {
@@ -51,9 +54,7 @@ export function holes(d: Drilling): [number, number][] {
   return points
 }
 
-export function drilling(d: Drilling): Generated {
-  const checks = new Checks()
-  checkCommon(d, checks)
+export function checkHoleLayout(d: HoleLayout, checks: Checks): void {
   if (d.pattern === 'grid') {
     checks.count(d.columns, 'operations.label.columns', maxHoles)
     checks.count(d.rows, 'operations.label.rows', maxHoles)
@@ -66,6 +67,12 @@ export function drilling(d: Drilling): Generated {
     checks.check(Number.isFinite(d.startAngle), t('operations.check.startAngle'))
   }
   checks.check(Number.isFinite(d.x) && Number.isFinite(d.y), t('operations.check.position'))
+}
+
+export function drilling(d: Drilling): Generated {
+  const checks = new Checks()
+  checkCommon(d, checks)
+  checkHoleLayout(d, checks)
   checks.positive(d.depth, 'operations.label.holeDepth')
   checks.positive(d.retract, 'operations.label.retractHeight')
   checks.check(!(d.retract > d.clearance), t('operations.check.retractAboveClearance'))

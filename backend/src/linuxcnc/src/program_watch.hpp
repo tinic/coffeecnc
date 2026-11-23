@@ -118,6 +118,10 @@ struct Forbidden {
 };
 [[nodiscard]] auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden>;
 
+// The first literal G33.1 in executable text, including lines below an early preview stop.
+[[nodiscard]] auto first_rigid_tap_line(std::string_view text, const std::function<bool()>& cancelled)
+    -> std::optional<int>;
+
 // The name of the O word a line begins with, as the interpreter takes it: lower case, without
 // white space; a number as its digits. Nothing when the line has no O word or its name is
 // not plainly a name (first_forbidden_line refuses those).

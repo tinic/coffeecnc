@@ -514,6 +514,16 @@
       "restartParametersChanged": "审核重启后，机床保存的参数已更改。请重新选择该行。"
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc 第 {line} 行：{detail}",
+      "rigidTapUnavailable": "此机床未配置 G33.1 刚性攻丝。",
+      "rigidTapSpindle": "此机床的该主轴未配置刚性攻丝",
+      "rigidTapDirection": "刚性攻丝要求主轴顺时针旋转（M3）",
+      "rigidTapOverride": "刚性攻丝要求关闭主轴转速倍率（M51 P0）",
+      "rigidTapRpm": "刚性攻丝超出配置的主轴固定转速上限",
+      "rigidTapZFeed": "刚性攻丝超出配置的 Z 轴进给上限",
+      "rigidTapZOnly": "刚性攻丝要求仅沿 Z 轴向下移动",
+      "rigidTapAllowance": "刚性攻丝没有有效的反转余量",
+      "rigidTapRestart": "从头运行攻丝程序以设定主轴转速倍率状态。",
       "cannotRead": "无法读取程序以生成预览，或程序大于 {size}。",
       "endsAtLine": "预览在第 {line} 行结束：{detail}。",
       "tooManySubroutines": "程序调用的不同子程序超过 {limit} 个：无预览。",

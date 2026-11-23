@@ -514,6 +514,16 @@
       "restartParametersChanged": "Les paramètres enregistrés de la machine ont changé après la vérification de la reprise. Choisissez de nouveau la ligne."
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc ligne {line} : {detail}",
+      "rigidTapUnavailable": "Le taraudage rigide G33.1 n’est pas configuré sur cette machine.",
+      "rigidTapSpindle": "Le taraudage rigide n’est pas configuré pour cette broche",
+      "rigidTapDirection": "Le taraudage rigide nécessite une rotation horaire de la broche (M3)",
+      "rigidTapOverride": "Le taraudage rigide nécessite de désactiver la correction de vitesse de broche (M51 P0)",
+      "rigidTapRpm": "Le taraudage rigide dépasse la limite de vitesse fixe configurée pour la broche",
+      "rigidTapZFeed": "Le taraudage rigide dépasse la limite d’avance configurée en Z",
+      "rigidTapZOnly": "Le taraudage rigide nécessite un mouvement descendant sur l’axe Z seul",
+      "rigidTapAllowance": "La course de réserve pour l’inversion du taraudage rigide est invalide",
+      "rigidTapRestart": "Lancez le programme de taraudage depuis le début pour régler la correction de vitesse de broche.",
       "cannotRead": "Impossible de lire le programme pour l’aperçu, ou il dépasse {size}.",
       "endsAtLine": "L’aperçu s’arrête à la ligne {line} : {detail}.",
       "tooManySubroutines": "Le programme appelle plus de {limit} sous-programmes différents : pas d’aperçu.",

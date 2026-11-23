@@ -265,6 +265,52 @@ void program_check_touched_lengths_and_travel() {
           "A move inside LinuxCNC soft limits can exceed the verified physical envelope.");
 }
 
+void rigid_tapping_reversal_bounds() {
+  Rig rig{"tap-reversal-bounds"};
+  rig.settings.physical_travel = Bounds{{-50, -50, -4.5}, {50, 50, 50}};
+  const std::string metric = "G21 G90\nG0 Z3\nS300 M3\nM51 P0\nG33.1 Z-4 K1\nM5\nM2\n";
+  const auto reject = [&](const std::string& program, std::string_view reason) {
+    const auto outcome = rig.preview(program);
+    require(outcome.error && outcome.error->text.find(reason) != std::string::npos &&
+                outcome.check && !outcome.check->errors.empty(),
+            std::format("Program Check must reject {}: {}", reason, text_of(outcome)));
+  };
+  reject(metric, "not configured");
+  reject("G92.3\nS300 M3\nM51 P0\n/ N100 g + 033 . 10 Z-4 K1\nM2\n", "Line 4:");
+  write(rig.root / "subs" / "tap.ngc", "o<tap> sub\nG33.1 Z-4 K1\no<tap> endsub\n");
+  reject("G92.3\no<tap> call\nM2\n", "tap.ngc line 2:");
+  const auto ordinary = rig.preview("(G33.1 is not used here)\nG0 Z3 ; G33.1 Z-4\nM2\n");
+  require(ordinary.state == PreviewState::ready && ordinary.check && ordinary.check->errors.empty(),
+          "Tapping mentioned in a comment has no effect on an unqualified machine.");
+  rig.settings.refusal = "The preview helper is missing.";
+  reject(metric, "not configured");
+  rig.settings.refusal.clear();
+  rig.settings.rigid_tap = RigidTapLimits{300, 1, 500};
+  for (const auto& program : {metric, std::string{
+           "G20 G90\nG0 Z0.1\nS300 M3\nM51 P0\nG33.1 Z-0.15 K0.04\nM5\nM2\n"}}) {
+    const auto checked = rig.preview(program).check;
+    require(checked && checked->travel == TravelCheck::outside,
+            "Tapping reversal clearance is checked in the program's units");
+  }
+  const std::string prelude = "G21 G90\nG0 Z3\nS150 M3\nM51 P0\n";
+  reject("G21 G90\nG0 Z3\nS300 M3\nG33.1 Z-4 K1\nM2\n", "override off");
+  reject("G21 G90\nG0 Z3\nS300 M4\nM51 P0\nG33.1 Z-4 K1\nM2\n", "clockwise");
+  reject(prelude + "G33.1 Z-4 K1 I3\nM2\n", "fixed spindle limit");
+  reject(prelude + "G33.1 Z-4 K2 I2\nM2\n", "Z feed limit");
+  reject(prelude + "G33.1 X2 Z-4 K1\nM2\n", "Z-only move");
+
+  rig.settings.physical_travel = Bounds{{-50, -50, -10}, {50, 50, 50}};
+  const auto timed = rig.preview(prelude + "F14\nG33.1 Z-4 K1 I2\nM5\nM2\n");
+  require(timed.state == PreviewState::ready && timed.check && timed.check->errors.empty() &&
+              timed.check->feed == ProgramRange{150, 300} && timed.segments.size() == 3 &&
+              timed.segments[1].feed == 150 && timed.segments[2].feed == 300,
+          "Tapping uses the synchronized infeed and accelerated return instead of stale F.");
+  rig.inputs.restart_line = 5;
+  const auto restart = rig.preview(metric);
+  require(!restart.restart && restart.restart_blocked.find("spindle override") != std::string::npos,
+          "Run from line does not recreate the tapping override state.");
+}
+
 // Every chord of an arc is within the tolerance of the circle.
 void require_arc(const PreviewSegment& segment, std::size_t first, std::size_t second,
                  const Vec3& centre, double radius, const std::string& what) {
@@ -1588,6 +1634,7 @@ auto main(int argc, char** argv) -> int {
     lines_and_bounds();
     restart_checkpoints();
     program_check_touched_lengths_and_travel();
+    rigid_tapping_reversal_bounds();
     arcs_in_three_planes();
     units();
     offsets_rotation_and_g92();

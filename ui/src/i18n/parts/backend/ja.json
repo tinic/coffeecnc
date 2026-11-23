@@ -514,6 +514,16 @@
       "restartParametersChanged": "再開を確認した後に機械の保存済みパラメータが変わりました。行をもう一度選んでください。"
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc の {line} 行目: {detail}",
+      "rigidTapUnavailable": "この機械には G33.1 リジッドタッピングが設定されていません。",
+      "rigidTapSpindle": "この主軸にはリジッドタッピングが設定されていません",
+      "rigidTapDirection": "リジッドタッピングには主軸の時計回り回転（M3）が必要です",
+      "rigidTapOverride": "リジッドタッピングには主軸オーバーライドを無効にする必要があります（M51 P0）",
+      "rigidTapRpm": "リジッドタッピングが設定済みの主軸固定回転数の上限を超えています",
+      "rigidTapZFeed": "リジッドタッピングが設定済みの Z 軸送り上限を超えています",
+      "rigidTapZOnly": "リジッドタッピングには Z 軸だけの下降動作が必要です",
+      "rigidTapAllowance": "リジッドタッピングの反転余裕が無効です",
+      "rigidTapRestart": "主軸オーバーライドの状態を設定するため、タッピングプログラムを先頭から実行してください。",
       "cannotRead": "プレビュー用にプログラムを読み込めないか、プログラムが {size} を超えています。",
       "endsAtLine": "プレビューは {line} 行目で終了しています：{detail}。",
       "tooManySubroutines": "プログラムが {limit} 種類を超えるサブルーチンを呼び出しています。プレビューはありません。",

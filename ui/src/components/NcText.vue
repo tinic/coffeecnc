@@ -371,7 +371,7 @@ onBeforeUnmount(() => {
       <template v-if="picked > 0 && edits">
         <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('cut')">{{ t('program.ncText.cut') }}</button>
         <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('copy')">{{ t('program.ncText.copy') }}</button>
-        <button v-tooltip="edits.block ?? (single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines'))" class="btn delete-line" type="button" :disabled="!!edits.block" :aria-label="single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines')" @click="editSelection('delete')">
+        <button v-tooltip="edits.block ?? (single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines'))" class="btn danger delete-line" type="button" :disabled="!!edits.block" :aria-label="single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines')" @click="editSelection('delete')">
           <AppIcon name="trash" /> <span v-if="!single">{{ t('common.delete') }}</span>
         </button>
         <details v-if="single && edits.hasClipboard && !edits.block" v-popover class="insert-lines">
@@ -479,7 +479,12 @@ onBeforeUnmount(() => {
 
 .row.picked {
   background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.row.picked .number {
+  color: var(--accent);
+  font-weight: 650;
 }
 
 .row.error {
@@ -494,7 +499,8 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 6px;
   padding: 6px 16px 10px;
-  border-top: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  background: var(--panel-raised);
 }
 .line-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }
@@ -502,7 +508,8 @@ onBeforeUnmount(() => {
 /* Narrow panes show the short label, drawn from data-short. */
 @container (max-width: 520px) { .line-actions .full-label { display: none; } .line-actions .action-label::before { content: attr(data-short); } }
 .line-actions .clear-line { margin-right: auto; padding: 0; }
-.range-label, .edit-feedback { align-self: center; color: var(--text-dim); font-size: 12px; }
+.range-label, .edit-feedback { align-self: center; color: var(--text-dim); font-size: var(--type-sm); }
+.range-label { padding: 4px 8px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .range-label + .edit-feedback { margin-left: auto; }
 .edit-feedback { flex: 1; min-width: 60px; }
 .edit-error { color: var(--stop); }
@@ -517,7 +524,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 16px;
   bottom: 12px;
-  border-color: var(--accent);
+  --button-edge: var(--accent);
   background: var(--panel-raised);
 }
 .follow-count { width: 7ch; min-width: 7ch; text-align: right; }

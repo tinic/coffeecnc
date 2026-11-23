@@ -32,6 +32,7 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.coolant = config.coolant;
   hello.touch_probe_tool = config.touch_probe_tool;
   hello.max_spindle_rpm = config.limits.max_spindle_rpm;
+  hello.rigid_tap = config.rigid_tap;
   hello.fixed_setter = config.fixed_setter;
   hello.program_places = config.program_places;
   hello.macros = config.macros;

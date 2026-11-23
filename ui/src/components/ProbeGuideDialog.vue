@@ -130,7 +130,6 @@ h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
 p { margin: 0; line-height: 1.42; font-size: 13px; }
 .edge-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .edge-choice button { min-height: 44px; padding-inline: 5px; }
-.edge-choice button[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); }
 .dimension { display: grid; grid-template-columns: auto 92px; gap: 3px 8px; align-items: center; font-size: 12px; }
 .dimension input { height: 44px; min-width: 0; padding-inline: 8px; }
 .dimension small { grid-column: 1 / -1; color: var(--text-dim); }

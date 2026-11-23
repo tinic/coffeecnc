@@ -115,6 +115,7 @@ struct Canon {
   Vec3 end{}; // the controlled point, machine coordinates, mm
   double feed{}; // mm/min
   double spindle_rpm{};
+  double sync_pitch_mm{};
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
@@ -130,6 +131,7 @@ struct Canon {
   int g5x_index{1};
   int tool_in_spindle{};
   int selected_index{-1};
+  int sync_spindle{};
   int feed_mode{}; // 0 per minute, 1 inverse time, 2 per revolution
   CANON_DIRECTION spindle{CANON_STOPPED};
   CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
@@ -144,6 +146,8 @@ struct Canon {
   bool flood{};
   bool mist{};
   bool surface_speed{};
+  bool spindle_override{true};
+  bool restart_has_tapping{};
   // Whether motion is written (not while the start state is being put in place).
   bool recording{};
   // The run of motion being collected.
@@ -273,7 +277,8 @@ auto used_frame() -> ProgramFrameCheck& {
   return frames.emplace_back(ProgramFrameCheck{canon.g5x_index, false});
 }
 
-void record_move(bool feed, const Vec3& from, const Vec3& to) {
+void record_move(bool feed, const Vec3& from, const Vec3& to,
+                 std::optional<double> synchronized_rate = std::nullopt) {
   record_units();
   expand(canon.check.machine, from);
   expand(canon.check.machine, to);
@@ -291,7 +296,9 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
       canon.check.variable_spindle = true;
     else if (canon.spindle != CANON_STOPPED)
       expand(canon.check.spindle, std::abs(canon.spindle_rpm));
-    if (canon.feed_mode != 0)
+    if (synchronized_rate)
+      expand(canon.check.feed, *synchronized_rate);
+    else if (canon.feed_mode != 0)
       canon.check.feed_per_revolution = true;
     else
       expand(canon.check.feed, canon.feed);
@@ -319,12 +326,12 @@ auto may_move() -> bool {
 }
 
 // One straight piece to the controlled point `to`.
-void move(bool feed, const Vec3& to) {
+void move(bool feed, const Vec3& to, std::optional<double> synchronized_rate = std::nullopt) {
   const Vec3 from = std::exchange(canon.end, to);
   if (!canon.recording)
     return;
   if (!canon.request.restart_line)
-    record_move(feed, from, to);
+    record_move(feed, from, to, synchronized_rate);
   const Vec3 a = tip(from);
   const Vec3 b = tip(to);
   if (const auto target = canon.request.restart_line) {
@@ -334,7 +341,7 @@ void move(bool feed, const Vec3& to) {
       canon.highest_tip_z = std::max(canon.highest_tip_z.value_or(b[2]), b[2]);
   }
   // Time estimates need the programmed feed; only a feed per minute is a speed.
-  const double rate = feed && canon.feed_mode == 0 ? canon.feed : 0.0;
+  const double rate = synchronized_rate.value_or(feed && canon.feed_mode == 0 ? canon.feed : 0.0);
   if (canon.open && (canon.open_line != canon.line || canon.open_feed != feed ||
                      canon.open_rate != rate || canon.open_tool != canon.tool_in_spindle ||
                      canon.points.back() != a))
@@ -499,13 +506,62 @@ void ARC_FEED(int, double first_end, double second_end, double first_axis, doubl
     move(true, point(first_end, second_end, axis_end_point));
 }
 
-void RIGID_TAP(int, double x, double y, double z, double) {
+void RIGID_TAP(int, double x, double y, double z, double return_scale) {
   if (!may_move())
     return;
+  const auto& tap = canon.request.rigid_tap;
+  if (!tap || canon.sync_spindle != 0) {
+    halt(Halt::error, "rigid tapping is not configured for this spindle on this machine");
+    return;
+  }
+  if (canon.spindle != CANON_CLOCKWISE) {
+    halt(Halt::error, "rigid tapping requires clockwise spindle rotation (M3)");
+    return;
+  }
+  if (canon.spindle_override) {
+    halt(Halt::error, "rigid tapping requires spindle override off (M51 P0)");
+    return;
+  }
+  const double multiplier = std::max(1.0, return_scale);
+  const double peak_rpm = canon.spindle_rpm * multiplier;
+  if (canon.surface_speed || !std::isfinite(peak_rpm) || canon.spindle_rpm <= 0 ||
+      peak_rpm > tap->max_rpm) {
+    halt(Halt::error, "rigid tapping exceeds the configured fixed spindle limit");
+    return;
+  }
+  const double infeed = canon.sync_pitch_mm * canon.spindle_rpm;
+  const double outfeed = infeed * multiplier;
+  if (!std::isfinite(outfeed) || outfeed <= 0 || outfeed > tap->max_z_feed_mm_min) {
+    halt(Halt::error, "rigid tapping exceeds the configured Z feed limit");
+    return;
+  }
   const Vec3 from = canon.end;
-  move(true, to_machine(x, y, z));
+  const Vec3 to = to_machine(x, y, z);
+  constexpr double lateral_tolerance_mm = 1e-6;
+  if (std::hypot(to[0] - from[0], to[1] - from[1]) > lateral_tolerance_mm || to[2] >= from[2]) {
+    halt(Halt::error, "rigid tapping requires a downward Z-only move");
+    return;
+  }
+  // Include both spindle reversals in the travel check and draw only the nominal path.
+  const double reserve = canon.sync_pitch_mm * tap->reversal_turns;
+  if (!std::isfinite(reserve) || reserve <= 0 ||
+      !std::isfinite(from[2] + reserve) || !std::isfinite(to[2] - reserve)) {
+    halt(Halt::error, "rigid tapping has no valid reversal allowance");
+    return;
+  }
+  if (canon.recording && !canon.request.restart_line) {
+    Vec3 before = from;
+    Vec3 beyond = to;
+    before[2] += reserve;
+    beyond[2] -= reserve;
+    record_move(false, before, beyond);
+    expand(canon.check.spindle, peak_rpm);
+  }
+  if (canon.request.restart_line && canon.line >= *canon.request.restart_line)
+    canon.restart_has_tapping = true;
+  move(true, to, infeed);
   if (canon.halt == Halt::none)
-    move(true, from);
+    move(true, from, outfeed);
 }
 
 // The interpreter calls the signature from canon.hh, including the by-value vector.
@@ -669,7 +725,9 @@ auto GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() -> double {
 auto GET_EXTERNAL_QUEUE_EMPTY() -> int { return 1; }
 auto GET_EXTERNAL_AXIS_MASK() -> int { return 7; } // X, Y, Z
 auto GET_EXTERNAL_FEED_OVERRIDE_ENABLE() -> int { return 1; }
-auto GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(int) -> int { return 1; }
+auto GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(int spindle) -> int {
+  return spindle != 0 || canon.spindle_override ? 1 : 0;
+}
 auto GET_EXTERNAL_ADAPTIVE_FEED_ENABLE() -> int { return 0; }
 auto GET_EXTERNAL_FEED_HOLD_ENABLE() -> int { return 1; }
 auto GET_EXTERNAL_OFFSET_APPLIED() -> int { return 0; }
@@ -701,8 +759,11 @@ void SET_NAIVECAM_TOLERANCE(double tolerance) { canon.naivecam_tolerance = toler
 void SET_CUTTER_RADIUS_COMPENSATION(double) {}
 void START_CUTTER_RADIUS_COMPENSATION(int) {}
 void STOP_CUTTER_RADIUS_COMPENSATION() {}
-void START_SPEED_FEED_SYNCH(int, double, bool) {}
-void STOP_SPEED_FEED_SYNCH() {}
+void START_SPEED_FEED_SYNCH(int spindle, double pitch, bool) {
+  canon.sync_spindle = spindle;
+  canon.sync_pitch_mm = std::abs(pitch) * program_unit();
+}
+void STOP_SPEED_FEED_SYNCH() { canon.sync_pitch_mm = 0; }
 void DWELL(double seconds) {
   if (!gate() || !canon.recording || !(seconds > 0))
     return;
@@ -767,8 +828,14 @@ void DISABLE_ADAPTIVE_FEED() {}
 void ENABLE_ADAPTIVE_FEED() {}
 void DISABLE_FEED_OVERRIDE() {}
 void ENABLE_FEED_OVERRIDE() {}
-void DISABLE_SPEED_OVERRIDE(int) {}
-void ENABLE_SPEED_OVERRIDE(int) {}
+void DISABLE_SPEED_OVERRIDE(int spindle) {
+  if (spindle == 0)
+    canon.spindle_override = false;
+}
+void ENABLE_SPEED_OVERRIDE(int spindle) {
+  if (spindle == 0)
+    canon.spindle_override = true;
+}
 void DISABLE_FEED_HOLD() {}
 void ENABLE_FEED_HOLD() {}
 void FLOOD_OFF() { canon.flood = false; }
@@ -1300,6 +1367,8 @@ auto run(const HelperRequest& request) -> int {
       restart_blocked = "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.";
     else if (canon.restart_needs_preparation)
       restart_blocked = "A later M6 depends on a tool selected before this restart line.";
+    else if (canon.restart_has_tapping)
+      restart_blocked = "Run this tapping program from the start to establish the spindle override state.";
     else if (!restart)
       restart_blocked = "The selected line is not executed in this program.";
     if (!restart_blocked.empty())

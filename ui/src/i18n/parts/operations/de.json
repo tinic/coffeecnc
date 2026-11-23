@@ -1,6 +1,9 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Fasenfräser auswählen",
+      "chooseEngravingTool": "Gravierwerkzeug auswählen",
+      "chooseTap": "Gewindebohrer auswählen",
       "chooseFinishTool": "Reibahle oder Ausdrehwerkzeug auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
@@ -12,6 +15,7 @@
       "title": "Neue Bearbeitung",
       "operations": "Bearbeitung",
       "tool": "Werkzeug",
+      "chooseThreadMill": "Gewindefräser auswählen",
       "noTools": "Keine Werkzeuge in der Werkzeugtabelle",
       "toolAndFeeds": "Werkzeug und Vorschübe",
       "geometry": "Geometrie",
@@ -21,6 +25,12 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "chamfer": "Fase",
+      "chamferSetup": "Z0 auf die Oberseite setzen und den maximalen Schneidendurchmesser in der Werkzeugtabelle verwenden. Die Fasenbreite wird auf der Oberseite gemessen.",
+      "engraving": "Gravur",
+      "engravingSetup": "Z0 auf die Oberfläche setzen. Die Grundlinie beginnt links am Text. Buchstaben werden als Großbuchstaben graviert.",
+      "rigidTap": "Synchrones Gewindebohren",
+      "rigidTapSetup": "Rechtsgewindebohrer und vorgebohrtes Loch verwenden. Starthöhe und nutzbare Tiefe müssen den Umkehrweg berücksichtigen.",
       "holeFinishing": "Reiben / Ausdrehen",
       "holeFinishingSetup": "Vorgebohrte Löcher verwenden. Prüfen, ob das Werkzeug bis zur programmierten Tiefe hinein- und herausfahren kann.",
       "contour": "Kontur",
@@ -33,9 +43,25 @@
       "rectangularPocket": "Rechtecktasche",
       "slot": "Nut / Passfedernut",
       "slotSetup": "Verwenden Sie einen für die Eintauchbewegung geeigneten Schaftfräser. Wählen Sie die Länge so, dass jedes offene Ende an der Werkstückkante liegt und der Fräser darüber hinausfahren kann.",
-      "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
+      "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser.",
+      "threadMill": "Innengewindefräsen",
+      "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben. Die Gewindetiefe legt die Z-Position der Werkzeugspitze fest. Die Höhe des Schneidprofils berücksichtigen."
     },
     "label": {
+      "chamferWidth": "Fasenbreite",
+      "chamferIncludedAngle": "Spitzenwinkel",
+      "chamferTipDiameter": "Spitzendurchmesser",
+      "chamferTipBelow": "Spitze unter der Fase",
+      "chamferOpeningDepth": "Vorgearbeitete Tiefe",
+      "engravingText": "Text",
+      "engravingX": "Grundlinie X",
+      "engravingY": "Grundlinie Y",
+      "engravingHeight": "Buchstabenhöhe",
+      "engravingSpacing": "Zeichenabstand",
+      "engravingRotation": "Drehung (gegen UZS)",
+      "tapPitch": "Gewindesteigung",
+      "tapPilotDepth": "Nutzbare Vorbohrtiefe",
+      "tapStartHeight": "Starthöhe",
       "boreDwell": "Verweilzeit am Grund",
       "profileShape": "Form",
       "profileSide": "Schnittseite",
@@ -92,7 +118,14 @@
       "slotEntry": "Eintauchen",
       "slotAngle": "Maximaler Rampenwinkel",
       "slotEntryFeed": "Eintauchvorschub",
-      "boltCircleRadius": "Lochkreisradius"
+      "boltCircleRadius": "Lochkreisradius",
+      "threadMajor": "Gewindeaußendurchmesser",
+      "threadPitch": "Gewindesteigung",
+      "threadPilot": "Vorbohrdurchmesser",
+      "threadPilotDepth": "Nutzbare Bohrtiefe",
+      "threadDepth": "Gewindetiefe",
+      "threadPasses": "Radiale Zustellungen",
+      "threadHand": "Gewinderichtung"
     },
     "option": {
       "g85": "Reiben (G85)",
@@ -129,9 +162,28 @@
       "slotBoth": "Beide offen",
       "slotRamp": "Rampe",
       "slotPlunge": "Senkrecht",
-      "g83": "G83 Tieflochbohren"
+      "g83": "G83 Tieflochbohren",
+      "threadRight": "Rechtsgewinde",
+      "threadLeft": "Linksgewinde"
     },
     "check": {
+      "chamferAngle": "Der Spitzenwinkel muss größer als 0° und kleiner als 180° sein.",
+      "chamferTip": "Der Spitzendurchmesser muss null oder kleiner als der Fräserdurchmesser sein.",
+      "chamferPrecision": "Fasenbreite, Spitzentiefe, Freihöhe, Vorschübe und Drehzahl auf die Programmgenauigkeit abstimmen.",
+      "chamferTooWide": "Auf der Oberseite muss nach dem Fasen noch Platz bleiben.",
+      "chamferCutter": "Die erforderliche Schnittbreite überschreitet den maximalen Schneidendurchmesser.",
+      "chamferOpeningDepth": "Die Öffnung muss tiefer als {depth} frei sein.",
+      "chamferRoom": "Bohrung oder Tasche sind zu klein für Fräser und Anfahrt.",
+      "engravingRotation": "Einen endlichen Drehwinkel eingeben.",
+      "engravingSpacing": "Der Zeichenabstand muss mindestens null sein.",
+      "engravingLength": "Zwischen 1 und {max} Zeichen eingeben.",
+      "engravingCharacters": "A–Z, 0–9, Leerzeichen oder + - / . : _ verwenden.",
+      "engravingPrecision": "Schriftgröße, Tiefe, Freihöhe, Vorschübe und Drehzahl auf die Programmgenauigkeit abstimmen.",
+      "tapUnavailable": "Für diese Maschine sind keine Grenzen für synchrones Gewindebohren konfiguriert.",
+      "tapZFeed": "Steigung × Drehzahl überschreitet den Z-Vorschubgrenzwert von {feed}. Spindeldrehzahl senken.",
+      "tapRpm": "Drehzahl zwischen 1 und {rpm} U/min einstellen.",
+      "tapPilotDepth": "Der zylindrische Teil der Vorbohrung muss tiefer als {depth} sein.",
+      "tapClearance": "Für die Rücklaufumkehr eine Freihöhe von mindestens {height} einstellen.",
       "profilePrecision": "Prüfen Sie Abmessungen und Vorschübe. Jeder Durchgang muss mit der Programmgenauigkeit darstellbar sein. Maximal 2.000 Durchgänge.",
       "profileCorner": "Der Eckenradius muss mindestens null und kleiner als die halbe kürzere Seite sein.",
       "profileInsideCorner": "Der innere Eckenradius muss größer als der Werkzeugradius ({radius}) sein.",
@@ -169,7 +221,11 @@
       "slotPrecision": "Erhöhen Sie Vorschub, Tiefe, Freifahrhöhe oder Zustellung auf einen in Programmgenauigkeit darstellbaren Wert.",
       "slotRampRoom": "Die Nut ist für diesen Rampenwinkel zu kurz. Vergrößern Sie den Winkel oder wählen Sie senkrechtes Eintauchen.",
       "slotMoveCount": "Die Nut würde zu viele Bewegungen erzeugen. Vergrößern Sie die Zustellung oder den Rampenwinkel.",
-      "noHole": "Es ist keine Bohrung vorhanden."
+      "noHole": "Es ist keine Bohrung vorhanden.",
+      "threadDiameters": "Die Vorbohrung muss größer als der Fräser und kleiner als der Gewindeaußendurchmesser sein.",
+      "threadPilotDepth": "Der zylindrische Teil der Bohrung muss tiefer als {depth} sein.",
+      "threadPrecision": "Steigung, Freihöhe, Vorschub, Drehzahl und Maße auf die Programmgenauigkeit abstimmen.",
+      "threadTurns": "Die Gewindetiefe muss bei dieser Steigung 1 bis {max} Umdrehungen umfassen."
     }
   }
 }

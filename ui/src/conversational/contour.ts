@@ -1,8 +1,8 @@
 import { t } from '../i18n'
 import { Checks, Program, checkCommon, feedNumber, steps, written, type Common, type Generated } from './program'
 
-type Point = [number, number]
-interface Segment {
+export type Point = [number, number]
+export interface Segment {
   end: Point
   centre?: Point
 }
@@ -18,7 +18,7 @@ export type Contour = Common & {
 } & ({ shape: 'circle'; diameter: number } | { shape: 'rectangle'; width: number; height: number; corner: number })
 
 /** Counterclockwise from the midpoint of the bottom edge, with the origin at the centre. */
-function rectangle(x: number, y: number, r: number): Segment[] {
+export function rectangle(x: number, y: number, r: number): Segment[] {
   if (r === 0) return [
     { end: [x, -y] }, { end: [x, y] }, { end: [-x, y] }, { end: [-x, -y] }, { end: [0, -y] },
   ]

@@ -70,7 +70,7 @@ function apply(): void {
 <template>
   <div class="model-summary">
     <button
-      v-tooltip="detail ? summary + ' · ' + detail : summary" class="attach tone-control" type="button"
+      v-tooltip="detail ? summary + ' · ' + detail : summary" class="btn attach" type="button"
       :class="{ on: part.attachment && part.visible }" :aria-label="'STEP · ' + summary" aria-haspopup="dialog"
       @click="open = true"
     >
@@ -106,10 +106,7 @@ function apply(): void {
 
 <style scoped>
 .model-summary { flex: none; }
-.attach { min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); cursor: pointer; font-size: var(--type-body); }
-.attach:hover { background: var(--control-hover); }
-.attach:active { background: var(--control-active); }
-.attach.on { color: var(--accent); background: var(--panel); }
+.attach { padding-inline: 9px; }
 .model-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 small { font-size: var(--type-sm); color: var(--text-dim); }
 .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }

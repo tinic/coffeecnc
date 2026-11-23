@@ -41,7 +41,7 @@ constexpr std::size_t max_connections = 32;
 constexpr std::size_t max_viewers = 8;
 constexpr std::size_t max_notifications = 64;
 constexpr std::size_t max_notification_bytes = 8192;
-constexpr std::size_t max_record_bytes = 48 * 1024 * 1024;
+constexpr std::size_t max_record_bytes = 48uz * 1024 * 1024;
 constexpr auto io_timeout = 5s;
 constexpr auto interval = 75ms;
 
@@ -106,7 +106,7 @@ struct RemoteServer::Impl {
   void accept();
   void add_host(std::string_view name);
   void discover_hosts();
-  void resolve_host(std::string query, bool search_candidate);
+  void resolve_host(const std::string& query, bool search_candidate);
 
   void notify(const std::string& message) {
     if (message.size() > max_notification_bytes)
@@ -279,8 +279,9 @@ private:
   }
 
   void send() {
-    if (closed_)
+    if (closed_ || !ws_)
       return;
+    auto& viewer = *ws_;
     next_ = owner_.latest.load();
     for (std::size_t i = 0; next_ && i < next_->size(); ++i) {
       const auto& record = (*next_)[i];
@@ -305,7 +306,7 @@ private:
       if (!error)
         self->close();
     });
-    ws_->async_write(buffers_, [self = shared_from_this()](Error error, std::size_t) -> void {
+    viewer.async_write(buffers_, [self = shared_from_this()](Error error, std::size_t) -> void {
       self->deadline_.cancel();
       if (error)
         return self->close();
@@ -334,8 +335,8 @@ private:
     deadline_.cancel();
     Error ignored;
     auto& stream = ws_ ? beast::get_lowest_layer(*ws_) : socket_;
-    stream.socket().shutdown(tcp::socket::shutdown_both, ignored);
-    stream.socket().close(ignored);
+    static_cast<void>(stream.socket().shutdown(tcp::socket::shutdown_both, ignored));
+    static_cast<void>(stream.socket().close(ignored));
   }
 
   Impl& owner_;
@@ -397,12 +398,15 @@ void RemoteServer::Impl::discover_hosts() {
   add_host(short_name + ".local");
 
   resolve_host(*name, false);
-  for (const auto& domain : dns_search_domains())
-    if (auto candidate = normalize_remote_host(short_name + "." + domain))
-      resolve_host(*candidate + ".", true);
+  for (const auto& domain : dns_search_domains()) {
+    auto qualified_name = short_name + '.';
+    qualified_name += domain;
+    if (auto candidate = normalize_remote_host(qualified_name))
+      resolve_host(candidate->append("."), true);
+  }
 }
 
-void RemoteServer::Impl::resolve_host(std::string query, bool search_candidate) {
+void RemoteServer::Impl::resolve_host(const std::string& query, bool search_candidate) {
   // Use only the OS hostname and system DNS configuration as lookup input.
   resolver.async_resolve(tcp::v4(), query, "0", tcp::resolver::canonical_name,
     [this, candidate = search_candidate ? query : std::string{}]
@@ -465,6 +469,7 @@ void RemoteServer::publish(std::span<const std::string> messages,
     impl_->latest.store(std::make_shared<const Snapshot>(impl_->staged));
   } catch (const std::exception&) {
     // A failed mirror cannot prevent publishing to the local panel.
+    return;
   }
 }
 
@@ -480,6 +485,7 @@ void RemoteServer::notifications(std::span<const std::string> messages) noexcept
     }
   } catch (const std::exception&) {
     // Local command and error delivery takes priority.
+    return;
   }
 }
 

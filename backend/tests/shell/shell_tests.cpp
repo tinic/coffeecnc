@@ -1259,7 +1259,7 @@ void program_edited_in_the_editor(const Rig& rig, const std::filesystem::path& p
         reloaded && cut != segments.end() && near(last_x, 18 + offset, 0.001),
         std::format("reloaded={} segments={} last_x={} offset={}", reloaded, segments.size(),
                     last_x, offset));
-  const auto sent = after.at(2);
+  const auto& sent = after.at(2);
   check("editor_save_names_the_opened_stamp",
         sent.is_object() && sent.value("stamp", "") == before.at(1).get<std::string>() &&
             after.at(0).at("stamp") != before.at(1),

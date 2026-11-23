@@ -178,6 +178,7 @@
       "reopening": "Réouverture du programme d’origine",
       "checking": "Vérification du programme",
       "breakpointCheck": "Un point d’arrêt nécessite une vérification complète du programme",
+      "breakpointPastPreview": "L’aperçu se termine avant cette ligne : choisissez une ligne sur la trajectoire de l’aperçu",
       "nothingRunning": "Rien n’est en cours",
       "waitingToolChange": "En attente du changement d’outil",
       "dismissSpindleConfirm": "Fermez la confirmation de broche avant de continuer",

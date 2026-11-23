@@ -178,6 +178,7 @@
       "reopening": "Reabriendo el programa original",
       "checking": "Comprobando el programa",
       "breakpointCheck": "Un punto de parada requiere una comprobación completa del programa",
+      "breakpointPastPreview": "La vista previa termina antes de esta línea: elija una línea de la trayectoria mostrada",
       "nothingRunning": "No hay nada en ejecución",
       "waitingToolChange": "Esperando el cambio de herramienta",
       "dismissSpindleConfirm": "Cierre la confirmación del husillo antes de continuar",

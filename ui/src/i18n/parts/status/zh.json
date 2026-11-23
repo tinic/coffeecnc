@@ -178,6 +178,7 @@
       "reopening": "正在重新打开原程序",
       "checking": "正在检查程序",
       "breakpointCheck": "断点需要完整的程序检查",
+      "breakpointPastPreview": "预览在此行之前结束：请选择预览路径上的一行",
       "nothingRunning": "没有正在运行的内容",
       "waitingToolChange": "正在等待换刀",
       "dismissSpindleConfirm": "请先关闭主轴确认再继续",

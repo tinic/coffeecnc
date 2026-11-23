@@ -482,7 +482,7 @@ void subroutines() {
           "Two subroutine files deep: line of the outermost call, the file and its line in "
           "the text: " + text_of(o));
   write(rig.root / "subs" / "inner.ngc",
-        "o<inner> sub\nG91 G1 Y1 F100\n#1=2\no<inner> endsub\nM2\n");
+        "o<inner> sub\nG91 G1 Y1 F100\nG92.3\no<inner> endsub\nM2\n");
   o = rig.preview("G21 G90\nG0 X0 Y0\n\n\no<outer> call\nG1 X9\nM2\n");
   require(o.state == PreviewState::failed && o.error && o.error->line == 5 &&
               o.error->text.find("inner.ngc line 3: ") != std::string::npos,
@@ -556,7 +556,7 @@ void helper_with_closed_standard_descriptors() {
           "The real helper returns its result when the caller has closed standard descriptors");
 }
 
-void parameters_are_refused() {
+void parameters_and_saved_positions() {
   Rig rig{"parameters"};
   const std::string head = "G21 G90\nG1 X1 F100\n";
   const auto stops = [&](std::string_view line, std::string_view what) -> void {
@@ -567,17 +567,24 @@ void parameters_are_refused() {
             std::format("`{}` ends the preview at its line with the path before it: {}", line,
                         text_of(o)));
   };
-  stops("#1=10", "parameter");
-  stops("G1 X#1", "parameter");
-  stops("G1 X#<_x>", "parameter");
-  stops("#<depth> = 3", "parameter");
-  stops("G1 X[#5220]", "parameter");
-  stops("o100 call [5]", "arguments");
-  stops("G28", "G28");
-  stops("G30 X1", "G30");
+  // Without a parameter file the saved positions and the other work systems are not known.
+  stops("G28", "G28 moves to a position that is not in the machine's parameter file");
+  stops("G30 X1", "G30 moves to a position that is not in the machine's parameter file");
+  stops("G55 G1 X1", "moves in G55, whose offsets are not in the machine's parameter file");
+  {
+    const auto unknown = rig.preview(head + "G55 G1 X1\nM2\n");
+    require(unknown.check && std::ranges::contains(unknown.check->errors,
+                                                   std::string("The G55 work origin could not be "
+                                                               "verified.")),
+            "A work system the parameter file does not hold is an error of the program check");
+  }
   stops("G92.3", "G92.3");
-  require(refused_block("G+28") == refused_block("G28") &&
-              refused_block("G+92.3") == refused_block("G92.3") &&
+  stops("G1 X#<_task>", "reads the _task parameter");
+  stops("G[1] X1", "computed G word");
+  stops("G#1 X1", "computed G word");
+  require(refused_block("G+92.3") == refused_block("G92.3") &&
+              saved_position_move("G+28 X0") == 28 && saved_position_move("g30") == 30 &&
+              saved_position_move("G28.1") == 0 && saved_position_move("(G28)G1 X1") == 0 &&
               motion_use("G+1 X5") == MotionUse::sets,
           "An explicit positive G word follows the same rules as the unsigned form");
   stops("G38.2 X5 F10", "probe");
@@ -585,10 +592,224 @@ void parameters_are_refused() {
   stops("M101", "M101");
   stops("M199 P1", "M199");
 
-  auto o = rig.preview(head + "(a # in a comment, and #1=5) G1 X3 ; and #2 here\nG1 X4\nM2\n");
+  // The machine's parameter file: G28 at (5, 6, 7), G30 at (-1, -2, -3), G55 at X100.
+  rig.settings.parameter_file = (rig.root / "config" / "mill.var").string();
+  write(rig.settings.parameter_file,
+        "5161\t5.000000\n5162\t6.000000\n5163\t7.000000\n5181\t-1.000000\n5182\t-2.000000\n"
+        "5183\t-3.000000\n5220\t1.000000\n5221\t0.000000\n5222\t0.000000\n5223\t0.000000\n"
+        "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n");
+  auto o = rig.preview(head + "G91 G28 Z0\nG90\nG28\nG30 X1\nG55 G1 X1\nG1 X2\nM2\n");
+  require(o.state == PreviewState::ready && o.segments.size() == 6 &&
+              near(o.segments[1].points.back(), {1, 0, 7}) &&
+              near(o.segments[2].points.back(), {5, 6, 7}) &&
+              near(o.segments[3].points.at(1), {1, 6, 7}) &&
+              near(o.segments[3].points.back(), {-1, 6, 7}) &&
+              near(o.segments[4].points.back(), {101, 6, 7}) &&
+              near(o.segments[5].points.back(), {102, 6, 7}) && rig.runs == 1,
+          "G28 and G30 move as the interpreter does: through the intermediate point, the named "
+          "axes only, to the saved positions; G55 by its saved offsets: " + text_of(o));
+  require(o.check && o.check->frames.size() == 2 && o.check->frames[1].wcs == 2 &&
+              o.check->frames[1].available && o.check->errors.empty(),
+          "The program check verifies the G55 origin from the parameter file");
+
+  // Parameters are interpreted, once. A program that sets what it reads stands.
+  o = rig.preview("G21 G90\n#1=10\n#<depth> = 3\no100 sub\nG1 Y#1 F100\no100 endsub\n"
+                  "G1 X#1 F100\nG1 Z-#<depth>\no100 call [4]\n#<_kept> = 2\nG1 X#<_kept>\n"
+                  "(debug, depth #<depth>)\nM2\n");
+  require(o.state == PreviewState::ready && o.segments.size() == 4 &&
+              near(o.segments[0].points.back(), {10, 0, 0}) &&
+              near(o.segments[1].points.back(), {10, 0, -3}) &&
+              near(o.segments[2].points.back(), {10, 4, -3}) &&
+              near(o.segments[3].points.back(), {2, 4, -3}) && rig.runs == 1,
+          "Numbered, named, global and subroutine parameters: " + text_of(o));
+  // A parameter read before it is set: its value in task is not known. The preview ends at
+  // the line that reads it, with the path before.
+  o = rig.preview(head + "G1 Y5\nG1 X[10 + #3000]\nG1 X2\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 4 &&
+              o.error->text.find("reads #3000, which the program does not set") !=
+                  std::string::npos &&
+              o.segments.size() == 2 && o.segments[1].line == 3 && rig.runs == 1 &&
+              o.check && !o.check->warnings.empty(),
+          "A parameter read before it is set ends the preview at its line: " + text_of(o));
+  o = rig.preview(head + "o1 if [#31 GT 0]\nG1 Y5\no1 endif\nG1 X3\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3 && rig.runs == 1,
+          "Also when it only decides a branch: " + text_of(o));
+  o = rig.preview(head + "G1 X[#5061 + 1]\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3,
+          "Also a probe result kept from an earlier probe: " + text_of(o));
+  stops("G1 X#<_never_set>", "reads #<_never_set>, which the program does not set");
+  stops("G1 X#<_hal[motion.spindle-speed-out]>", "reads an INI or HAL value");
+
+  // Review of #276, finding 1: EXISTS of a global, INI and HAL values, and #<_value> before a
+  // return. After MDI `#<_depth>=-12` task goes to Z-12 here; the preview's interpreter would
+  // take the branch and show Z-1.
+  o = rig.preview(head + "o100 if [EXISTS[#<_depth>] EQ 0]\n#<_depth>=-1\no100 endif\n"
+                         "G1 Z#<_depth>\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
+              o.error->text.find("asks whether a global parameter") != std::string::npos &&
+              o.segments.size() == 1,
+          "EXISTS of a global ends the preview at its line: " + text_of(o));
+  stops("o1 if [EXISTS[#<_ini[axis_x]max_limit>]]\no1 endif", "reads an INI or HAL value");
+  stops("G1 X#<_ini[axis_x]max_limit>", "reads an INI or HAL value");
+  stops("G1 X#<_value>", "reads #<_value> or #<_value_returned> before a subroutine");
+  stops("o1 if [#<_value_returned>]\no1 endif", "before a subroutine of the program has returned");
+  o = rig.preview(head + "o100 sub\no100 return [7]\no100 endsub\no100 call\nG1 X#<_value>\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {7, 0, 0}),
+          "#<_value> after a return of the program's own: " + text_of(o));
+  o = rig.preview(head + "o100 sub\no101 if [EXISTS[#<depth>]]\nG1 Y1\no101 endif\no100 endsub\n"
+                         "o100 call\nG1 X2\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {2, 0, 0}),
+          "EXISTS of a local in a subroutine is the call's own: " + text_of(o));
+
+  // Re-review of #276, finding 1: a name without `_` set at call level 0 (in MDI or by an
+  // earlier program) lives on in task with the globals. After MDI `#<depth>=-12` task goes to
+  // Z-12 here; the preview's interpreter would take the branch and show Z-1.
+  o = rig.preview(head + "o100 if [EXISTS[#<depth>] EQ 0]\n#<depth>=-1\no100 endif\n"
+                         "G1 Z#<depth>\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
+              o.error->text.find("asks whether #<depth> exists outside a subroutine") !=
+                  std::string::npos &&
+              o.segments.size() == 1 && o.check && o.check->errors.empty(),
+          "EXISTS of a name outside a subroutine ends the preview at its line: " + text_of(o));
+  stops("#<seen> = EXISTS[#<depth>]", "asks whether #<depth> exists outside a subroutine");
+  o = rig.preview(head + "G1 Y5\nG1 X#<depth>\nG1 X2\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 4 &&
+              o.error->text.find("reads #<depth>, which the program does not set") !=
+                  std::string::npos &&
+              o.segments.size() == 2 && o.check && o.check->errors.empty(),
+          "A name read outside a subroutine that the run has not set: a stop, not the "
+          "program's error: " + text_of(o));
+  o = rig.preview(head + "#<depth> = -3\nG1 Z#<depth>\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {1, 0, -3}),
+          "A name the program sets first, it may read: " + text_of(o));
+  // Both end in the subroutine, after its G1 Y1.
+  o = rig.preview(head + "o100 sub\nG1 Y1\nG1 X#<depth>\no100 endsub\no100 call\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.segments.size() == 2 &&
+              o.segments[1].line == 4 &&
+              o.error->text.find("not defined") != std::string::npos && o.check &&
+              !o.check->errors.empty(),
+          "In a subroutine a name without `_` is the call's own: undefined, it is the "
+          "program's error, as in task: " + text_of(o));
+  // Finding 2: the level of a line that cannot be read is the line's, not 0.
+  o = rig.preview(head + "o100 sub\nG1 Y1\nG1 X[10/#1]\no100 endsub\no100 call [0]\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.segments.size() == 2 &&
+              o.segments[1].line == 4 &&
+              o.error->text.find("reads #1") == std::string::npos && o.check &&
+              !o.check->errors.empty(),
+          "A subroutine's own #1 is known: dividing by it is the program's error: " +
+              text_of(o));
+
+  // Findings 3 and 4: reads before writes, per line, for every numbered parameter.
+  o = rig.preview(head + "o1 if [#3000 LT 0]\nG1 Z-10\no1 endif\nG1 X2\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
+              o.error->text.find("reads #3000") != std::string::npos && o.segments.size() == 1,
+          "A leftover #3000=-1 would plunge on the machine: the preview ends at the if: " +
+              text_of(o));
+  stops("G1 Z#5100", "reads #5100, which the program does not set");
+  stops("G1 X#5300", "reads #5300");
+  stops("G1 X#5420 Y#5414", "reads #5414");
+  stops("G1 X#[3000 + 1]", "whose number is computed");
+  stops("G1 X##1", "whose number is computed");
+  o = rig.preview(head + "o1 if [0]\n#3000 = 5\no1 endif\nG1 X#3000\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 6,
+          "A setting in a branch not taken sets nothing: " + text_of(o));
+  o = rig.preview(head + "#3000 = 5\n#3001 = [#3000 + 1]\nG1 X#3001\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {6, 0, 0}),
+          "What the program sets first, it may read: " + text_of(o));
+  o = rig.preview(head + "#3000 = 4 #3001 = #3000\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3,
+          "A line reads all its values before it sets any: " + text_of(o));
+  o = rig.preview(head + "o100 sub\nG1 X#1 Y#2\n#31 = #1\n#1 = 9\no100 endsub\no100 call [3]\n"
+                         "G1 Z#31\nG1 Z#1\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 10 &&
+              o.error->text.find("reads #1,") != std::string::npos &&
+              near(o.segments.back().points.back(), {3, 0, 3}),
+          "#1-#30 are a subroutine's own, from its call; #31 and above are global; the "
+          "caller's #1 is not the subroutine's: " + text_of(o));
+  o = rig.preview(head + "o100 sub\no101 if [#1 GT 0]\nG1 X#1\no101 endif\no100 endsub\n"
+                         "o100 call [3]\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {3, 0, 0}),
+          "A definition is skipped: its O words do not read the caller's #1: " + text_of(o));
+  o = rig.preview(head + "o1 if [1]\no100 sub\no1 endif\nG1 X#1\no100 endsub\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 5 &&
+              o.error->text.find("belongs to a block outside it") != std::string::npos,
+          "An O word of an outer block inside a definition: " + text_of(o));
+  rig.settings.parameter_file = (rig.root / "config" / "mill.var").string();
+  write(rig.settings.parameter_file,
+        "5161\t5.000000\n5162\t6.000000\n5163\t7.000000\n5181\t-1.000000\n5182\t-2.000000\n"
+        "5183\t-3.000000\n5220\t1.000000\n5221\t0.000000\n5222\t0.000000\n5223\t0.000000\n"
+        "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n3000\t-1.000000\n5100\t-10.000000\n");
+  o = rig.preview(head + "o1 if [#3000 LT 0]\nG1 Z-10\no1 endif\nG1 Z#5100 X#5161\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {5, 0, -10}),
+          "A parameter the file holds is known: " + text_of(o));
+  write(rig.settings.parameter_file,
+        "5161\t5.000000\n5162\t6.000000\n5163\t7.000000\n5181\t-1.000000\n5182\t-2.000000\n"
+        "5183\t-3.000000\n5220\t1.000000\n5221\t0.000000\n5222\t0.000000\n5223\t0.000000\n"
+        "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n");
+  rig.inputs.restart_line = 3;
+  o = rig.preview(head + "G1 Y5\nG1 X[10 + #3000]\nM2\n");
+  require(!o.restart && o.state == PreviewState::failed && o.error &&
+              o.error->text.find("reads #3000") != std::string::npos,
+          "Nor is a restart planned for it: " + text_of(o));
+  rig.inputs.restart_line.reset();
+
+  // Remapped codes: the preview ends at the first block that uses one, also at one the
+  // interpreter does not know without the remap (finding 5): a stop, not the program's error.
+  rig.settings.remapped = {"m6", "g88.1", "m10"};
+  stops("T1 M6", "M6 is remapped on this machine");
+  stops("M[6]", "M6 is remapped");
+  for (const auto* code : {"M10 P1", "G88.1 X1 Y1 Z1"}) {
+    const auto remapped = rig.preview(head + code + "\nG1 X2\nM2\n");
+    require(remapped.state == PreviewState::failed && remapped.error &&
+                remapped.error->line == 3 &&
+                remapped.error->text.find("is remapped on this machine") != std::string::npos &&
+                remapped.check && remapped.check->errors.empty(),
+            std::format("`{}`, unknown without its remap, ends the preview with no check error: {}",
+                        code, text_of(remapped)));
+  }
+  o = rig.preview(head + "M61 Q1\nG1 X2\nM2\n");
+  require(o.state == PreviewState::ready, "M61 is not M6: " + text_of(o));
+  rig.settings.remapped.clear();
+
+  // The watch compares the parameter file by the values the preview takes from it.
+  o = rig.preview(head + "G28\nM2\n");
+  auto computed = rig.compute();
+  require(computed.outcome.state == PreviewState::ready && !computed.files_changed({}),
+          "A fresh result is current");
+  write(rig.settings.parameter_file,
+        "5161\t5.000000\n5162\t6.000000\n5163\t7.000000\n5181\t-1.000000\n5182\t-2.000000\n"
+        "5183\t-3.000000\n5220\t2.000000\n5221\t9.000000\n5222\t0.000000\n5223\t0.000000\n"
+        "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n");
+  require(!computed.files_changed({}),
+          "The selected system and the active one's offsets are the live state's, not the file's");
+  write(rig.settings.parameter_file,
+        "5161\t5.000000\n5162\t6.000000\n5163\t8.000000\n5181\t-1.000000\n5182\t-2.000000\n"
+        "5183\t-3.000000\n5220\t1.000000\n5221\t0.000000\n5222\t0.000000\n5223\t0.000000\n"
+        "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n");
+  require(computed.files_changed({}), "A changed G28 position makes the result out of date");
+
+  o = rig.preview(head + "(a # in a comment, and #1=5) G1 X3 ; and #2 here\nG1 X4\nM2\n");
   require(o.state == PreviewState::ready && o.segments.size() == 3 &&
-              near(o.segments[1].points.back(), {3, 0, 0}),
+              near(o.segments[1].points.back(), {3, 0, 0}) && rig.runs == 1,
           "A `#` in an ordinary comment is text: " + text_of(o));
+
+  // A tool length offset in effect at the start is the interpreter's too: G53 and G28 take
+  // the controlled point to machine coordinates, the tool tip is the length below it.
+  rig.inputs.start.tool_in_spindle = 1;
+  rig.inputs.start.tool_offset = {0, 0, 50};
+  rig.inputs.start.active_codes = {"G80", "G17", "G40", "G21", "G90", "G94", "G54", "G43", "G99"};
+  o = rig.preview("G21 G90\nG53 G0 Z0\nG28\nG1 Z-1 F100\nM2\n");
+  require(o.state == PreviewState::ready && o.segments.size() == 3 &&
+              near(o.segments[0].points.back(), {0, 0, -50}) &&
+              near(o.segments[1].points.back(), {5, 6, 8 - 50}) &&
+              near(o.segments[2].points.back(), {5, 6, -1}),
+          "G43 from the start (the table's length): " + text_of(o));
+  rig.inputs.start.tool_offset = {0, 0, 42};
+  rig.inputs.start.active_codes = {"G80", "G17", "G40", "G21", "G90", "G94", "G54", "G43.1", "G99"};
+  o = rig.preview("G21 G90\nG53 G0 Z0\nG1 Z-1 F100\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments[0].points.back(), {0, 0, -42}) &&
+              near(o.segments[1].points.back(), {0, 0, -1}),
+          "G43.1 from the start (a length of its own): " + text_of(o));
 }
 
 void active_comments_are_refused() {
@@ -698,11 +919,11 @@ void active_comments_are_refused() {
     fs::permissions(hidden, fs::perms::owner_all);
   }
 
-  // (msg, (debug, (print: nothing but text, unless they hold a parameter.
+  // (msg, (debug, (print: nothing but text, also with a parameter in them.
   auto o = rig.preview(head + "(MSG, hello)\n(debug, there)\n(Print, you)\nG1 X2\nM2\n");
   require(o.state == PreviewState::ready && o.segments.size() == 2, text_of(o));
   o = rig.preview(head + "(debug, #5220)\nG1 X2\nM2\n");
-  require(o.state == PreviewState::failed && o.error && o.error->line == 3, text_of(o));
+  require(o.state == PreviewState::ready && o.segments.size() == 2, text_of(o));
   o = rig.preview(head + "(a log of things) (pyramid) (probe the part) G1 X2\nM2\n");
   require(o.state == PreviewState::ready && o.segments.size() == 2,
           "Ordinary comments that only begin like one are comments: " + text_of(o));
@@ -1181,6 +1402,92 @@ void repository_samples() {
           "ops_block_face is refused at its G28: " + text_of(o).substr(0, 300));
 }
 
+// Programs in the style of common CAM post-processors (tests/cam): what the preview makes of
+// each, as facts.
+void cam_samples() {
+  const fs::path cam{COFFEECNC_CAM_SAMPLES_DIRECTORY};
+  Rig rig{"cam"};
+  rig.inputs.start.position = {0, 0, 0};
+  rig.inputs.systems.at(0) = WorkSystem{{100, 50, -60}, 0, true};
+  // The machine's parameter file: G55 and G56 beside G54, G28 at the machine origin and G30
+  // above the tool setter.
+  rig.settings.parameter_file = (rig.root / "config" / "mill.var").string();
+  write(rig.settings.parameter_file,
+        "5161\t0\n5162\t0\n5163\t0\n5181\t-10\n5182\t-20\n5183\t-5\n5220\t1\n"
+        "5221\t100\n5222\t50\n5223\t-60\n5241\t200\n5242\t50\n5243\t-60\n"
+        "5261\t300\n5262\t50\n5263\t-61\n");
+  const auto run = [&](std::string_view name, std::optional<int> restart = {}) -> PreviewOutcome {
+    rig.inputs.program_file = (cam / name).string();
+    rig.inputs.restart_line = restart;
+    auto o = rig.compute().outcome;
+    std::cout << std::format("fact=cam_sample sample={} restart_line={} state={} error_line={} "
+                             "error=\"{}\" segments={} check_errors={} restart={} "
+                             "restart_blocked=\"{}\" helper_runs={}\n",
+                             name, restart.value_or(0),
+                             o.state == PreviewState::ready    ? "ready"
+                             : o.state == PreviewState::failed ? "failed"
+                                                               : "unavailable",
+                             o.error ? o.error->line : 0, o.error ? o.error->text : "-",
+                             o.segments.size(), o.check ? o.check->errors.size() : 0,
+                             o.restart ? o.restart->line : 0, o.restart_blocked, rig.runs);
+    return o;
+  };
+  rig.inputs.raw_tools = {{1, 1, 1, {0, 0, 50}, 6, 0, 0, 0}, {2, 2, 2, {0, 0, 40}, 3, 0, 0, 0}};
+  const auto frames = [](const PreviewOutcome& o) {
+    std::vector<int> wcs;
+    if (o.check)
+      for (const auto& frame : o.check->frames)
+        if (frame.available)
+          wcs.push_back(frame.wcs);
+    return wcs;
+  };
+  for (const auto* name : {"fusion360-linuxcnc.ngc", "mastercam-linuxcnc.ngc",
+                           "sheetcam-linuxcnc.ngc", "estlcam-linuxcnc.ngc",
+                           "parameters-subroutines.ngc", "several-work-offsets.ngc"}) {
+    const auto o = run(name);
+    require(o.state == PreviewState::ready && !o.segments.empty() && o.check &&
+                o.check->errors.empty(),
+            std::format("{} is previewed whole and checks clean: {}", name,
+                        text_of(o).substr(0, 400)));
+  }
+  // Fusion 360: G28 G91 Z0 goes to machine Z0 (tool tip 50 below it with T1), then G55.
+  auto o = run("fusion360-linuxcnc.ngc");
+  const auto at_line = [&](int line) {
+    return std::ranges::find(o.segments, line, &PreviewSegment::line);
+  };
+  require(at_line(29) != o.segments.end() && near(at_line(29)->points.back()[2], -50) &&
+              at_line(41) != o.segments.end() && near(at_line(41)->points.front()[0], 210) &&
+              frames(o) == std::vector<int>{1, 2} && o.check.has_value() &&
+              o.check.value().tools.size() == 2 && o.check.value().tools[0].tool == 1 &&
+              o.check.value().tools[1].tool == 2,
+          "Fusion 360: G28 lifts to the saved Z, the drill cycle runs in G55's saved offsets: " +
+              text_of(o).substr(0, 600));
+  o = run("several-work-offsets.ngc");
+  require(frames(o) == std::vector<int>{1, 2, 3}, "Three vises: G54, G55 and G56 are verified");
+  o = run("unset-parameter.ngc");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 5 &&
+              o.segments.size() == 2 && o.check && o.check->errors.empty() &&
+              !o.check->warnings.empty(),
+          "A parameter read before it is set ends the preview at its line; the check covers the "
+          "path before it and asks for a review: " + text_of(o));
+
+  // Restart from a line after a G28 G91 Z0: the restart state is the interpreter's after it.
+  o = run("fusion360-linuxcnc.ngc", 22);
+  require(o.restart && o.restart->line == 22 && o.restart->tool == 1 && o.restart->h == 1 &&
+              o.restart->wcs == 1 && near(o.restart->start, {-4, -4, -1}) &&
+              near(o.restart->spindle_rpm, 1500),
+          "Fusion 360 restart in the T1 section after G28: " + o.restart_blocked);
+  o = run("fusion360-linuxcnc.ngc", 40);
+  require(o.restart && o.restart->wcs == 2 && o.restart->tool == 2,
+          "Fusion 360 restart in the G55 section: " + o.restart_blocked);
+  o = run("mastercam-linuxcnc.ngc", 18);
+  require(o.restart && o.restart->line == 18 && o.restart->tool == 1,
+          "Mastercam restart before its G91 G28 Z0: " + o.restart_blocked);
+  o = run("parameters-subroutines.ngc", 20);
+  require(!o.restart && o.restart_blocked.find("subroutines") != std::string::npos,
+          "Loops and subroutines still block restart: " + o.restart_blocked);
+}
+
 void refusals_of_the_settings() {
   Rig rig{"settings"};
   rig.settings.refusal = "Not on this machine.";
@@ -1216,7 +1523,8 @@ void refusals_of_the_settings() {
       .coolant = {},
   };
   write(config.ini_file, "[RS274NGC]\nPARAMETER_FILE = mill.var\nSUBROUTINE_PATH = ../subs:macros\n"
-                         "RETAIN_G43 = 1\n[EMCIO]\nTOOL_CHANGE_POSITION = 1 2 3\n"
+                         "RETAIN_G43 = 1\nDISABLE_G92_PERSISTENCE = 1\n"
+                         "[EMCIO]\nTOOL_CHANGE_POSITION = 1 2 3\n"
                          "TOOL_CHANGE_QUILL_UP = 1\n");
   auto settings = load_preview_settings(config, helper, (rig.root / "work").string());
   require(settings.refusal.empty() && near(settings.units_per_mm, 1 / 25.4, 1e-12) &&
@@ -1227,7 +1535,22 @@ void refusals_of_the_settings() {
               settings.tool_change_position && near(*settings.tool_change_position, {25.4, 50.8, 76.2}) &&
               settings.tool_change_quill_up && !settings.tool_change_at_g30 &&
               settings.interpreter_options == std::vector<std::string>{"RETAIN_G43 = 1"},
-          "The settings of an INI file");
+          "The settings of an INI file; DISABLE_G92_PERSISTENCE is not passed on (review of "
+          "#276, finding 6)");
+  // With that machine's interpreter options the live G92 is in effect in the preview, as in
+  // task: the option would zero #5210-#5219 in the helper's Interp::init.
+  rig.settings.interpreter_options = settings.interpreter_options;
+  rig.settings.interpreter_options.emplace_back("DISABLE_G92_PERSISTENCE = 1");
+  rig.inputs.program_file = (rig.root / "nc" / "part.ngc").string();
+  rig.inputs.g92 = {1, 2, 3};
+  o = rig.preview("G21 G90\nG1 X10 Y0 Z0 F100\nM2\n");
+  const bool lost = o.state == PreviewState::ready && near(o.segments[0].points.back(), {10, 0, 0});
+  rig.settings.interpreter_options = settings.interpreter_options;
+  o = rig.preview("G21 G90\nG1 X10 Y0 Z0 F100\nM2\n");
+  require(lost && o.state == PreviewState::ready &&
+              near(o.segments[0].points.back(), {11, 2, 3}),
+          "The option drops the live G92 in the helper; without it the G92 holds: " + text_of(o));
+  rig.inputs.g92 = {};
   // The tool change switches as the interpreter reads them: a nonzero integer, nothing else.
   write(config.ini_file, "[EMCIO]\nTOOL_CHANGE_AT_G30 = -1\nTOOL_CHANGE_QUILL_UP = YES\n");
   settings = load_preview_settings(config, helper, "x");
@@ -1236,9 +1559,13 @@ void refusals_of_the_settings() {
   write(config.ini_file, "[EMCIO]\nRANDOM_TOOLCHANGER = -1\n");
   require(!load_preview_settings(config, helper, "x").refusal.empty(),
           "-1 is a random tool changer");
-  write(config.ini_file, "[RS274NGC]\nREMAP = M6 modalgroup=6 ngc=change\n");
-  require(load_preview_settings(config, helper, "x").refusal.find("REMAP") != std::string::npos,
-          "A machine that remaps codes gets no preview");
+  write(config.ini_file, "[RS274NGC]\nREMAP = M6 modalgroup=6 ngc=change\n"
+                         "REMAP=M61   modalgroup=6 python=set_tool_number\nREMAP = G88.1 "
+                         "modalgroup=1 argspec=xyz ngc=g881\n");
+  settings = load_preview_settings(config, helper, "x");
+  require(settings.refusal.empty() &&
+              settings.remapped == std::vector<std::string>{"m6", "m61", "g88.1"},
+          "A machine that remaps codes gets a preview; every remapped code is known");
   write(config.ini_file, "[EMCIO]\nRANDOM_TOOLCHANGER = 1\n");
   require(!load_preview_settings(config, helper, "x").refusal.empty(),
           "Nor one with a random tool changer");
@@ -1267,7 +1594,7 @@ auto main(int argc, char** argv) -> int {
     tool_length_and_tool_change();
     subroutines();
     errors_and_limits();
-    parameters_are_refused();
+    parameters_and_saved_positions();
     helper_with_closed_standard_descriptors();
     active_comments_are_refused();
     printed_text_is_not_a_result();
@@ -1279,6 +1606,7 @@ auto main(int argc, char** argv) -> int {
     cost_of_a_check();
     how_the_helper_ended();
     repository_samples();
+    cam_samples();
     refusals_of_the_settings();
     std::cout << checks << " preview engine checks passed\n";
     return 0;

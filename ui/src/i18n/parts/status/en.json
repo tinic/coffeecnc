@@ -178,6 +178,7 @@
       "reopening": "Reopening the original program",
       "checking": "Checking program",
       "breakpointCheck": "A breakpoint needs a complete program check",
+      "breakpointPastPreview": "The preview ends before this line: choose a line on the previewed path",
       "nothingRunning": "Nothing is running",
       "waitingToolChange": "Waiting for the tool change",
       "dismissSpindleConfirm": "Dismiss the spindle confirmation before continuing",

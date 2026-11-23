@@ -32,6 +32,9 @@ struct PreviewSettings {
   std::optional<Vec3> tool_change_position; // [EMCIO] TOOL_CHANGE_POSITION, mm
   // [RS274NGC] keys handed to the helper's interpreter as they are, `KEY = value` lines.
   std::vector<std::string> interpreter_options;
+  // The codes [RS274NGC] REMAP names, lower case ("m6", "t", "g88.1"): the preview ends at
+  // the first block that uses one.
+  std::vector<std::string> remapped;
   // Why no preview is computed on this machine at all; empty when one is.
   std::string refusal;
   std::optional<Bounds> soft_travel{};
@@ -56,8 +59,9 @@ struct PreviewSettings {
 };
 
 // The settings of a machine: its INI file read for what the interpreter and task's canon take
-// from it. A machine with [RS274NGC] REMAP, with a random tool changer, or one whose helper
-// program is missing gets a `refusal`.
+// from it. A machine with a random tool changer, with NO_DOWNCASE_OWORD, on rotary joints, or
+// one whose helper program is missing gets a `refusal`. [RS274NGC] REMAP is not a refusal: the
+// remapped codes are `remapped`.
 [[nodiscard]] auto load_preview_settings(const MachineConfig& config, std::string helper,
                                          std::string work_directory) -> PreviewSettings;
 
@@ -74,8 +78,16 @@ struct PreviewSettings {
 //             the program before the interpreter reads anything. The content manifest keeps
 //             the bytes read, and for every called name which file the search path gave, or
 //             that none did; a name is never passed over.
-//   start     the parameter file is copied and the live work system, its rotation and G92 are
-//             written over the copy; task's modal state becomes blocks to replay (units,
+//   start     the machine's parameter file is read with the snapshot and copied, and the live
+//             work system, its rotation and G92 are written over the copy. The other work
+//             systems, the G28 and G30 positions and every other saved parameter are the
+//             file's: a move in a system, or a G28 or G30, whose values the file does not have
+//             ends the preview. Task writes the file each time it synchronises its
+//             interpreter: on a switch to MDI or Auto, before each MDI block, after a program
+//             ends or is aborted. Run switches to Auto, and then compares the file again
+//             (the watch, below): what the file did not yet have when the preview was made
+//             refuses that Run, and a new preview follows. Task's modal state becomes blocks
+//             to replay (units,
 //             plane, distance modes, feed mode, retract mode, motion mode G0 or G1; any other
 //             motion mode is named to the helper, which ends the preview at a block that
 //             would move by it). The tool table is the one of the inputs: this class reads
@@ -97,9 +109,18 @@ struct PreviewSettings {
 //             `failed` with line 0 and their own text, with the valid part of the path. Its
 //             process group is ended in every case; processes left after a good exit are
 //             noted in the diagnostics and change nothing.
+//   parameters are interpreted, once. The helper ends the preview (`failed`, that line) at
+//             the first line that reads a numbered parameter which neither its parameter file
+//             (the machine's file with the live values written over it) nor the program
+//             before it has set, a parameter whose number is computed, #<_value> before a
+//             subroutine has returned, a global named parameter the program does not define,
+//             and EXISTS of a global one: in task each of these can hold a value from an
+//             earlier program or MDI block. The helper's interpreter keeps the live G92: the
+//             machine's [RS274NGC] DISABLE_G92_PERSISTENCE is not passed on.
 //   check     before the result is returned the originals are compared, byte for byte, with
-//             the manifest, and every call is searched again. A difference discards the
-//             result and starts over, `attempts` times in all; after that the outcome is
+//             the manifest, and every call is searched again; the parameter file is compared
+//             by its values, without those the live state writes over. A difference discards
+//             the result and starts over, `attempts` times in all; after that the outcome is
 //             `failed`.
 //
 // The watch of the result makes the same comparison again: at most max_input_bytes read and

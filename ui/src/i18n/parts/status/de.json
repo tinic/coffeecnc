@@ -178,6 +178,7 @@
       "reopening": "Ursprüngliches Programm wird wieder geöffnet",
       "checking": "Programm wird geprüft",
       "breakpointCheck": "Ein Haltepunkt erfordert eine vollständige Programmprüfung",
+      "breakpointPastPreview": "Die Vorschau endet vor dieser Zeile: Wählen Sie eine Zeile auf dem vorausberechneten Weg",
       "nothingRunning": "Es läuft nichts",
       "waitingToolChange": "Warten auf den Werkzeugwechsel",
       "dismissSpindleConfirm": "Schließen Sie vor dem Fortfahren die Spindelbestätigung",

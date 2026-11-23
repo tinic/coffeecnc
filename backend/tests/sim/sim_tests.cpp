@@ -5517,8 +5517,7 @@ void macros(Rig& rig, const MachineConfig& config) {
   const auto directory = std::filesystem::path(config.ini_file).parent_path();
   std::ofstream(std::filesystem::path(config.program_prefix) / "coffeecnc_macro.ngc")
       << "o<coffeecnc_macro> sub\nG53 G0 X12 Y-8\no<coffeecnc_macro> endsub\nM2\n";
-  std::ifstream in{config.ini_file};
-  const std::string original{std::istreambuf_iterator<char>(in), {}};
+  const auto original = read_text_file(config.ini_file, std::size_t{1} << 20).value_or("");
   const auto with_macros = [&](std::string_view lines) -> std::string {
     const auto file = directory / "coffeecnc_macros.ini";
     auto text = original;

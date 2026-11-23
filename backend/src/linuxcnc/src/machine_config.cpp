@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -302,8 +303,26 @@ auto characters(std::string_view text) -> std::size_t {
 // [COFFEECNC] MACRO = <label> | <MDI block>, every occurrence in order. A named O-word call must
 // find its file where the interpreter looks: [DISPLAY] PROGRAM_PREFIX, then each directory of
 // [RS274NGC] SUBROUTINE_PATH (separated by colons, relative to the INI file's directory).
-auto macros(Ini& ini, const std::filesystem::path& directory)
+auto macros(Ini& ini, const std::filesystem::path& file)
     -> std::expected<std::vector<Macro>, std::string> {
+  // LinuxCNC's IniFile cuts a line after 255 characters and says nothing (seen on 2.9.4): a
+  // longer MACRO line would run a different block from the one written.
+  constexpr std::size_t ini_line = 255;
+  std::ifstream lines{file};
+  bool inside = false;
+  for (std::string line; std::getline(lines, line);) {
+    const auto text = trimmed(line);
+    const auto equals = text.find('=');
+    if (text.starts_with('['))
+      inside = text.starts_with("[COFFEECNC]");
+    else if (inside && equals != std::string_view::npos && line.size() > ini_line &&
+             upper(without_spaces(std::string(text.substr(0, equals)))) == "MACRO")
+      return std::unexpected(std::format(
+          "[COFFEECNC] has a MACRO line of {} characters: LinuxCNC reads only the first {}. Put "
+          "the steps in a subroutine file and call it with O<file name> call.",
+          line.size(), ini_line));
+  }
+  const auto directory = file.parent_path();
   std::vector<Macro> found;
   for (int occurrence = 1;; ++occurrence) {
     const auto given = ini.text("COFFEECNC", "MACRO", occurrence);
@@ -647,7 +666,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
            {"PROBE_POSITION_TOLERANCE_MM", &tolerances.probe_position_mm},
            {"RESTART_POSITION_TOLERANCE_MM", &tolerances.restart_position_mm}}); !parsed)
     return std::unexpected(parsed.error());
-  auto configured_macros = macros(ini, directory);
+  auto configured_macros = macros(ini, file);
   if (!configured_macros)
     return std::unexpected(std::move(configured_macros.error()));
   return MachineConfig{

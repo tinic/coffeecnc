@@ -654,9 +654,17 @@ void macros() {
   require(load(with_macros("MACRO = 123456789012345678901234 | G0 X0\n")).has_value() &&
               load(with_macros("MACRO = äöüäöüäöüäöüäöüäöüäöüäöü | G0 X0\n")).has_value(),
           "24 characters, also of two bytes each");
-  require(refused(std::format("MACRO = Long | G0 X0 ({})\n", std::string(250, 'x')),
-                  "at most 254 bytes"),
-          "a block over 254 bytes");
+  // LinuxCNC's IniFile cuts a line after 255 characters without a word; that is refused here.
+  const auto line = [](std::size_t size) -> std::string {
+    std::string text = "MACRO = Long | G0 X0 (";
+    return text + std::string(size - text.size() - 1, 'x') + ")\n";
+  };
+  require(refused(line(256), "a MACRO line of 256 characters: LinuxCNC reads only the first 255"),
+          "a line longer than LinuxCNC reads");
+  const auto longest = load(with_macros(line(255)));
+  require(longest && longest->macros.at(0).mdi.size() == 255 - 15 &&
+              longest->macros.at(0).mdi.ends_with("x)"),
+          "a line of 255 characters is read whole");
   require(refused("MACRO = Park | G0 Z0\nMACRO = Park | G0 Z1\n", "\"Park\" is there twice"),
           "labels are unique");
   std::string thirteen;

@@ -16,6 +16,7 @@
 #include <mutex>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -335,8 +336,8 @@ private:
     deadline_.cancel();
     Error ignored;
     auto& stream = ws_ ? beast::get_lowest_layer(*ws_) : socket_;
-    static_cast<void>(stream.socket().shutdown(tcp::socket::shutdown_both, ignored));
-    static_cast<void>(stream.socket().close(ignored));
+    std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ignored);
+    std::ignore = stream.socket().close(ignored);
   }
 
   Impl& owner_;

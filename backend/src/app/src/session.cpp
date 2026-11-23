@@ -1022,7 +1022,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       std::holds_alternative<Mdi>(command) || cancels_requests(command))
     verified_probe_program_.clear();
   const auto* option = std::get_if<SetProgramOption>(&command);
-  const auto* run = std::get_if<Run>(&command);
+  const auto* run_command = std::get_if<Run>(&command);
   if (fresh_run || std::holds_alternative<OpenProgram>(command) ||
       std::holds_alternative<Mdi>(command) || std::holds_alternative<StartRestart>(command) ||
       (option && option->option == ProgramOption::block_delete) || cancels_requests(command))
@@ -1056,7 +1056,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   auto result = perform(request, decision, state, clock, verified);
   if (checked_run && result.kind == StageKind::reply && result.reply.outcome == CommandOutcome::accepted)
     verified_probe_program_ = state.program_file;
-  if (fresh_run && run && !run->breakpoint && verified && result.kind == StageKind::reply &&
+  if (fresh_run && run_command && !run_command->breakpoint && verified && result.kind == StageKind::reply &&
       result.reply.outcome == CommandOutcome::accepted)
     started_program_ = std::move(*verified);
   return result;

@@ -448,6 +448,13 @@ void power(Rig& rig) {
                       unanswered.reason));
     // Task runs again and takes the queued request: wait for a live link before going on.
     rig.direct_until(5s, [&]() -> bool { return rig.port.status().controller.link == Link::live; });
+    // #277: the unanswered command is in the result above, not in a loose operator message
+    // that later checks read as theirs.
+    std::string posted;
+    for (const auto& text : rig.all_messages())
+      posted += (posted.empty() ? "" : " | ") + text;
+    check("estop_request_to_a_frozen_task_posts_no_timeout_message",
+          !rig.has_message("LinuxCNC did not acknowledge the command."), posted);
   });
   check("link_live_again", rig.pump_until(2s, [&]() -> bool {
     return rig.snapshot().link == Link::live;
@@ -3945,6 +3952,8 @@ void restart_cuts(Rig& rig) {
       send_mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z{} R0", origin_z)) &&
       send_mdi("M61 Q1 G43 H1") && send_mdi("G0 Z20") && send_mdi("G0 X0 Y0");
   check("restart_setup", setup);
+  // #277: what the restarts below post is theirs alone.
+  rig.clear_messages();
 
   std::uint64_t context = 0;
   const auto plan = [&](std::string_view text, int line) {
@@ -3980,7 +3989,7 @@ void restart_cuts(Rig& rig) {
       const auto pending = rig.await(id);
       const auto s = rig.status();
       check("restart_normal_tool_change",
-            pending.accepted() && s.controller.requested_tool == tool &&
+            pending.accepted() && pending.reason.empty() && s.controller.requested_tool == tool &&
             s.spindle_direction == SpindleDirection::stopped && s.motion_line < line,
             pending.text() + " " + PreviewOracle::join(rig.all_messages()));
       if (!pending.accepted())
@@ -4041,6 +4050,12 @@ void restart_cuts(Rig& rig) {
           std::format("{} first={} exact_suffix={} z_first={} spindle={} status={} messages={}",
                       name, first_motion, suffix, xy_at_clearance, spindle_on, end.text(),
                       PreviewOracle::join(rig.all_messages())));
+    // #277: an accepted restart has no reason, and no failure text of its own steps is posted.
+    check("restart_accepted_without_reason",
+          end.accepted() && end.reason.empty() &&
+              !rig.has_message("LinuxCNC did not acknowledge the command."),
+          std::format("{} status={} messages={}", name, end.text(),
+                      PreviewOracle::join(rig.all_messages())));
   };
 
   if (setup) {
@@ -4082,7 +4097,8 @@ void restart_cuts(Rig& rig) {
         const bool finished = rig.pump_until(8s, [&] {
           return rig.idle() && near(rig.status().work[0], 12, 0.05);
         });
-        check("restart_with_encoder_backlash", restarted.accepted() && finished, restarted.text());
+        check("restart_with_encoder_backlash",
+              restarted.accepted() && restarted.reason.empty() && finished, restarted.text());
       }
       if (encoder)
         static_cast<void>(halcmd("setp restart-z-encoder.in1 0"));

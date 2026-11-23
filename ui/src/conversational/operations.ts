@@ -226,7 +226,7 @@ export const operations: readonly Operation[] = [
   {
     id: 'slot',
     title: 'operations.operation.slot',
-    note: 'operations.operation.slotSetup',
+    note: () => 'operations.operation.slotSetup',
     fields: [
       { type: 'choice', key: 'along', label: 'operations.label.slotAxis',
         options: [['x', 'operations.option.x'], ['y', 'operations.option.y']] },

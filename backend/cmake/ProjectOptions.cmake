@@ -63,7 +63,8 @@ if(COFFEECNC_SANITIZERS)
     endif()
     # Every C++ translation unit and link of the build, not only those of the project options:
     # one standard library for the whole program.
-    add_compile_options(-nostdinc++ "SHELL:-isystem ${libcxx}/include/c++/v1"
+    # One argument (-isystem<dir>), so a prefix with a space stays one path.
+    add_compile_options(-nostdinc++ "-isystem${libcxx}/include/c++/v1"
       -fsanitize-memory-track-origins=2)
     add_link_options(-stdlib=libc++ "-L${libcxx}/lib" "-Wl,-rpath,${libcxx}/lib")
   endif()

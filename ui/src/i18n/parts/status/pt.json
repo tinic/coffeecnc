@@ -297,7 +297,7 @@
         "at_exit": "Quando o LinuxCNC parar"
       },
       "symlink": "uma ligação: o ficheiro substitui a ligação",
-      "atExitNote": "O LinuxCNC escreve os deslocamentos de trabalho (.var) ao parar; são comparados e escritos depois disso."
+      "atExitNote": "O LinuxCNC escreve os deslocamentos de trabalho (.var), e o CoffeeCNC os seus próprios dados, ao parar; estes ficheiros são comparados e escritos depois disso. O registo de alarmes está na cópia de segurança, mas não é restaurado."
     },
     "diagnostics": {
       "title": "Diagnóstico HAL",

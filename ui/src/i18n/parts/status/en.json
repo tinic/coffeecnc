@@ -297,7 +297,7 @@
         "at_exit": "When LinuxCNC stops"
       },
       "symlink": "a link: the file replaces the link",
-      "atExitNote": "LinuxCNC writes the work offsets (.var) as it stops; they are compared and written after that."
+      "atExitNote": "LinuxCNC writes the work offsets (.var), and CoffeeCNC its own data, as they stop; these files are compared and written after that. The alarm log is kept in the backup but is not restored."
     },
     "diagnostics": {
       "title": "HAL diagnostics",

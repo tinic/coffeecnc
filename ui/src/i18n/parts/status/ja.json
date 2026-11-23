@@ -297,7 +297,7 @@
         "at_exit": "LinuxCNC 停止時"
       },
       "symlink": "リンク: ファイルがリンクを置き換えます",
-      "atExitNote": "LinuxCNC は停止時にワークオフセット (.var) を書き込みます。その後で比較して書き込みます。"
+      "atExitNote": "LinuxCNC はワークオフセット (.var) を、CoffeeCNC は自身のデータを停止時に書き込みます。これらのファイルはその後で比較して書き込みます。アラームログはバックアップに含まれますが、復元しません。"
     },
     "diagnostics": {
       "title": "HAL 診断",

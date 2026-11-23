@@ -297,7 +297,7 @@
         "at_exit": "À l'arrêt de LinuxCNC"
       },
       "symlink": "un lien : le fichier remplace le lien",
-      "atExitNote": "LinuxCNC écrit les décalages d'origine (.var) à son arrêt ; ils sont comparés et écrits ensuite."
+      "atExitNote": "LinuxCNC écrit les décalages d'origine (.var), et CoffeeCNC ses propres données, à leur arrêt ; ces fichiers sont comparés et écrits ensuite. Le journal des alarmes est dans la sauvegarde, mais n'est pas restauré."
     },
     "diagnostics": {
       "title": "Diagnostic HAL",

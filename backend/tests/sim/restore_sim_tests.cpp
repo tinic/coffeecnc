@@ -101,8 +101,8 @@ auto run(std::span<char*> arguments) -> int {
       std::cout << "planned role=" << file["role"].get<std::string>()
                 << " change=" << file["change"].get<std::string>()
                 << " target=" << file["target"].get<std::string>() << '\n';
-    const auto staged =
-        machine.restore(archive, summary["token"].get<std::string>(), [] { return std::string{}; });
+    const auto staged = machine.restore(archive, summary["token"].get<std::string>(), 1,
+                                        [] { return std::string{}; });
     if (staged.outcome != CommandOutcome::accepted || !staged.quit || !machine.staged())
       throw std::runtime_error("the restore is not staged: " + staged.reason);
     // As start_restore_helper does it; run.sh ends what carries its run's variable.

@@ -336,6 +336,11 @@ auto Session::staged(ActionResult result) -> Stage {
 }
 
 auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) -> PageToken {
+  // A restore staged for a quit of the page this one replaces: the window drops that close (a
+  // close is for the page that asked), so no exit comes for it now, and a later exit must not
+  // write it. Outside the lock: the restore takes it for its recheck while it stages.
+  if (machine_data_ != nullptr)
+    machine_data_->abandon_restore();
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
@@ -1595,10 +1600,11 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             done = machine_data_->check_restore(c.path);
           } else {
             // The machine as it is now, just before anything is staged.
-            done = machine_data_->restore(c.path, c.token, [&]() -> std::string {
-              const auto recheck = policy_.evaluate(request.command, port_.snapshot());
-              return recheck.allowed ? std::string{} : recheck.reason;
-            });
+            done =
+                machine_data_->restore(c.path, c.token, request.page.value, [&]() -> std::string {
+                  const auto recheck = policy_.evaluate(request.command, port_.snapshot());
+                  return recheck.allowed ? std::string{} : recheck.reason;
+                });
           }
           Stage step;
           step.reply = {done.outcome, std::move(done.reason)};

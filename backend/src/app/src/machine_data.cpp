@@ -17,7 +17,7 @@ using Json = nlohmann::json;
 
 constexpr std::string_view format_name = "coffeecnc-backup";
 constexpr int manifest_version = 1;
-constexpr int plan_version = 2;
+constexpr int plan_version = 3;
 constexpr std::size_t max_relative_bytes = 255;
 constexpr std::size_t max_record_bytes = std::size_t{1024} * 1024;
 // A file the restore makes: the configuration's are readable by all, CoffeeCNC's own are not.
@@ -225,7 +225,18 @@ auto joined(const std::vector<std::string>& parts) -> std::string {
   return out;
 }
 
+// LinuxCNC writes its .var file as it stops, CoffeeCNC its data files: what they hold when the
+// restore is prepared is not what the helper replaces, and it decides them.
+auto decided_at_exit(std::string_view role) -> bool {
+  return role == "parameters" || role == "data";
+}
+
 } // namespace
+
+auto restored_data_file(std::string_view name) -> bool {
+  return std::ranges::find(data_file_names, name) != data_file_names.end() &&
+         !name.starts_with("alarm-log");
+}
 
 MachineData::MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause)
     : files_(files), paths_(std::move(paths)), clock_(std::move(clock)) {
@@ -279,9 +290,16 @@ void MachineData::report_last_restore(const Pause& pause) {
     const auto copy = result.value("pre_restore", std::string{});
     const auto reason = result.value("reason", std::string{});
     const auto kept = strings(result.value("not_put_back", Json::array()));
+    const auto groups = strings(result.value("group_not_kept", Json::array()));
     if (result.value("ok", false) && written == 0)
       notice_ = {MessageLevel::info,
                  "The backup was restored: every file already held what the backup holds."};
+    else if (result.value("ok", false) && !groups.empty())
+      notice_ = {MessageLevel::info,
+                 std::format("The backup was restored: {} files were written. The files from "
+                             "before the restore are in {}. These files did not keep their "
+                             "group, which this user is not in: {}.",
+                             written, copy, joined(groups))};
     else if (result.value("ok", false))
       notice_ = {MessageLevel::info,
                  std::format("The backup was restored: {} files were written. The files from "
@@ -528,6 +546,8 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
       const auto name = entry.name.starts_with("data/") ? after("data/") : std::string{};
       if (std::ranges::find(data_file_names, name) == data_file_names.end())
         return refused();
+      if (!restored_data_file(name))
+        continue; // the alarm log: kept in the backup, not restored
       planned.root = paths_.data_directory;
       planned.relative = name;
     } else {
@@ -540,14 +560,26 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
       return std::unexpected(std::format("{} cannot be restored: {}. The archive is refused.",
                                          entry.name, now.error()));
     const auto& current = *now;
+    // A restore makes no folder (but the data folder): a target in a folder that is not there
+    // cannot be written once LinuxCNC has stopped.
+    if (!current && kind != "data") {
+      const auto folder = files_.folder_exists_beneath(planned.root, planned.relative);
+      if (!folder)
+        return std::unexpected(std::format("{} cannot be restored: {}. The archive is refused.",
+                                           entry.name, folder.error()));
+      if (!*folder)
+        return std::unexpected(
+            std::format("{} cannot be restored: the folder of {} does not exist. The archive is "
+                        "refused.",
+                        entry.name, planned.target()));
+    }
     planned.role = kind;
     planned.name = entry.name;
     planned.bytes = entry.bytes;
     planned.symlink = current && current->symlink;
     if (current)
       planned.held = current->content.bytes;
-    // LinuxCNC writes its .var file as it stops: what it holds now is not what is replaced.
-    planned.change = kind == "parameters"                    ? "at_exit"
+    planned.change = decided_at_exit(kind)                   ? "at_exit"
                      : !current                              ? "new"
                      : current->content.bytes == entry.bytes ? "same"
                                                              : "changed";
@@ -570,7 +602,7 @@ auto MachineData::check_restore(const std::string& path) -> MachineDataAnswer {
   return {CommandOutcome::accepted, "", {encode_restore_summary(summary)}, false};
 }
 
-auto MachineData::restore(const std::string& path, const std::string& token,
+auto MachineData::restore(const std::string& path, const std::string& token, std::uint64_t page,
                           const std::function<std::string()>& recheck) -> MachineDataAnswer {
   const auto refuse = [](std::string reason) -> MachineDataAnswer {
     return {CommandOutcome::rejected, std::move(reason), {}, false};
@@ -582,6 +614,9 @@ auto MachineData::restore(const std::string& path, const std::string& token,
     return refuse("The backup file changed after it was checked. Check it again.");
   if (const auto reason = recheck(); !reason.empty())
     return refuse(reason);
+  // After the recheck, which takes the session's lock: a page that begins meanwhile abandons
+  // under this one.
+  const std::scoped_lock lock{stage_mutex_};
   std::vector<const Planned*> changes;
   for (const auto& file : checked->files)
     if (file.change != "same")
@@ -598,7 +633,7 @@ auto MachineData::restore(const std::string& path, const std::string& token,
   if (const auto made = files_.make_directory(staging); !made)
     return failed(made.error());
   const auto plan_file = staging + '/' + std::string(restore_plan_name);
-  abandon_restore();
+  abandon_locked();
   files_.discard(plan_file);
   auto plan = Json::array();
   for (std::size_t i = 0; i < changes.size(); ++i) {
@@ -616,6 +651,8 @@ auto MachineData::restore(const std::string& path, const std::string& token,
   }
   const Json document{{"version", plan_version},
                       {"machine_id", paths_.machine_id},
+                      {"staged", clock_().count()},
+                      {"page", page},
                       {"source", path},
                       {"ini", paths_.ini_file},
                       {"files", std::move(plan)}};
@@ -626,6 +663,11 @@ auto MachineData::restore(const std::string& path, const std::string& token,
 }
 
 void MachineData::abandon_restore() {
+  const std::scoped_lock lock{stage_mutex_};
+  abandon_locked();
+}
+
+void MachineData::abandon_locked() {
   if (paths_.data_directory.empty())
     return;
   const auto staging = paths_.data_directory + '/' + std::string(restore_directory_name);
@@ -640,8 +682,7 @@ void MachineData::abandon_restore() {
 }
 
 auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directory,
-                          std::chrono::milliseconds now,
-                          const std::function<std::optional<std::string>()>& may_write)
+                          std::chrono::milliseconds now, const RestoreHooks& hooks)
     -> std::expected<std::size_t, std::string> {
   const auto staging = data_directory + '/' + std::string(restore_directory_name);
   const auto plan_file = staging + '/' + std::string(restore_plan_name);
@@ -665,6 +706,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   std::string copy_path;
   std::size_t written = 0;
   std::vector<std::string> not_put_back;
+  std::vector<std::string> group_not_kept;
   const auto& plan_found = *plan_content;
   if (!plan_found)
     return 0;
@@ -674,8 +716,22 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (!plan.is_object() || plan.value("version", 0) != plan_version ||
       !plan.contains("machine_id") || !plan["machine_id"].is_string() ||
       plan["machine_id"].get<std::string>() != base_name(data_directory) ||
-      !plan.contains("files") || !plan["files"].is_array())
+      !plan.contains("staged") || !plan["staged"].is_number_integer() || !plan.contains("files") ||
+      !plan["files"].is_array())
     reason = damaged;
+  // A plan whose quit was not delivered, written by a later exit: what it was checked against is
+  // old, and the .var and data files are not compared.
+  if (reason.empty()) {
+    const auto age =
+        hooks.ended.value_or(now) - std::chrono::milliseconds{plan["staged"].get<std::int64_t>()};
+    constexpr auto limit =
+        std::chrono::duration_cast<std::chrono::milliseconds>(restore_plan_limit);
+    if (age > limit || age < -limit)
+      reason = std::format("The restore was prepared {} s before CoffeeCNC ended, more than {} s: "
+                           "nothing was written.",
+                           std::chrono::floor<std::chrono::seconds>(age).count(),
+                           std::chrono::duration_cast<std::chrono::seconds>(limit).count());
+  }
   const auto machine_id = reason.empty() ? plan["machine_id"].get<std::string>() : std::string{};
   for (const auto& file : reason.empty() ? plan["files"] : Json::array()) {
     if (!file.is_object() || !file.contains("held")) {
@@ -710,11 +766,12 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
       reason = before.error();
       break;
     }
-    // What was there when the restore was prepared, unless LinuxCNC wrote it as it stopped.
+    // What was there when the restore was prepared, unless LinuxCNC or CoffeeCNC wrote it as
+    // it stopped.
     const auto& existing = *before;
     const auto now_held = existing ? std::optional<std::string>{existing->content.bytes}
                                    : std::optional<std::string>{};
-    if (step.role != "parameters" && held_json(now_held) != file["held"]) {
+    if (!decided_at_exit(step.role) && held_json(now_held) != file["held"]) {
       reason = std::format("{} changed after the restore was prepared: nothing was written.",
                            step.target());
       break;
@@ -770,8 +827,8 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     if (!saved)
       reason = "the files before the restore could not be saved: " + saved.error();
   }
-  if (reason.empty() && !steps.empty() && may_write)
-    if (auto refused = may_write())
+  if (reason.empty() && !steps.empty() && hooks.may_write)
+    if (auto refused = hooks.may_write())
       reason = std::move(*refused);
   if (reason.empty() && !steps.empty()) {
     // Before the first rename: a crash from here on is reported as a partial write, with the
@@ -787,19 +844,27 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (reason.empty()) {
     for (; written < steps.size(); ++written) {
       const auto& step = steps[written];
+      if (hooks.still_may_write)
+        if (auto refused = hooks.still_may_write()) {
+          reason = std::move(*refused);
+          break;
+        }
       const auto mode = step.before           ? step.before->mode
                         : step.role == "data" ? new_data_mode
                                               : new_config_mode;
       const auto group =
           step.before ? std::optional<unsigned>{step.before->group} : std::optional<unsigned>{};
-      if (auto replaced = files.replace_beneath(step.root, step.relative, step.bytes, mode, group);
-          !replaced) {
+      const auto replaced =
+          files.replace_beneath(step.root, step.relative, step.bytes, mode, group);
+      if (!replaced) {
         // Renamed, and only its folder's fsync failed: it is the backup's now, and is put back.
         if (replaced.error().renamed)
           ++written;
         reason = replaced.error().reason;
         break;
       }
+      if (!replaced->group_kept)
+        group_not_kept.push_back(step.target());
     }
     if (!reason.empty()) {
       // Back to what was there, newest first.
@@ -808,6 +873,11 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         if (!step.before) {
           if (auto removed = files.remove_beneath(step.root, step.relative); !removed)
             not_put_back.push_back(removed.error());
+        } else if (step.before->symlink && !step.before->link.empty()) {
+          // The restore replaced a link by the file: the same link again, not its content.
+          if (auto relinked = files.link_beneath(step.root, step.relative, step.before->link);
+              !relinked)
+            not_put_back.push_back(relinked.error());
         } else if (auto back =
                        files.replace_beneath(step.root, step.relative, step.before->content.bytes,
                                              step.before->mode, step.before->group);
@@ -816,6 +886,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         }
       }
       written = 0;
+      group_not_kept.clear();
     }
   }
   const bool ok = reason.empty();
@@ -825,6 +896,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
                     {"reason", reason},
                     {"pre_restore", copy_path},
                     {"not_put_back", kept},
+                    {"group_not_kept", group_not_kept},
                     {"time", now.count()}};
   const auto said = replace_file(files, result_file, dump(result) + '\n');
   // The marker goes only once the result is on the disk: without one the next start says the

@@ -251,8 +251,9 @@ fnv() {
   done
   printf '%016x' "$hash"
 }
-printf '{"version":2,"machine_id":"restore-data","source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
-  "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
+# Staged now, by page 1: a plan staged more than 2 minutes before the helper starts is refused.
+printf '{"version":3,"machine_id":"restore-data","staged":%s,"page":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
+  "$(date +%s%3N)" "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
 # Review #274, 6: a parent of PID 1 tells nothing about LinuxCNC: refused, the plan is left.
 run --apply-restore "$data" --after 1
 [ "$code" = 1 ] && said 'coffeecnc: restore=not_written reason=the parent process is 1' &&

@@ -4,6 +4,7 @@
 #include <coffeecnc/app/tool_model_store.hpp>
 
 #include <cerrno>
+#include <climits>
 #include <format>
 #include <string_view>
 #include <system_error>
@@ -161,6 +162,17 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
   }
   Found found;
   found.symlink = S_ISLNK(entry.st_mode);
+  if (found.symlink) {
+    // Where it points, so that a rollback can make the same link again.
+    std::string target(PATH_MAX, '\0');
+    const auto length =
+        ::readlinkat(parent->directory.get(), parent->name.c_str(), target.data(), target.size());
+    if (length < 0 || static_cast<std::size_t>(length) >= target.size())
+      return std::unexpected(std::format("{} cannot be read: {}", shown,
+                                         length < 0 ? said(errno) : std::string("link too long")));
+    target.resize(static_cast<std::size_t>(length));
+    found.link = std::move(target);
+  }
   const Descriptor file{::openat(parent->directory.get(), parent->name.c_str(),
                                  O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOCTTY)};
   if (!file.valid()) {
@@ -209,6 +221,7 @@ auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::st
   if (!file.valid())
     return fail(
         std::format("{} cannot be made: {}", shown + std::string(temporary_suffix), said(errno)));
+  Written kept;
   const auto written = [&]() -> std::string {
     while (!bytes.empty()) {
       const auto done = ::write(file.get(), bytes.data(), bytes.size());
@@ -218,8 +231,17 @@ auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::st
         return std::format("{} cannot be written: {}", shown, said(errno));
       bytes.remove_prefix(static_cast<std::size_t>(done));
     }
-    if (group && ::fchown(file.get(), static_cast<uid_t>(-1), *group) != 0)
-      return std::format("{} cannot keep its group {}: {}", shown, *group, said(errno));
+    struct stat made{};
+    if (::fstat(file.get(), &made) != 0)
+      return std::format("{} cannot be read back: {}", shown, said(errno));
+    // Only a group that differs is set: a user who is not in the file's group may not set it,
+    // even to the group the new file already has. A group the user may not give is not kept.
+    if (group && made.st_gid != *group &&
+        ::fchown(file.get(), static_cast<uid_t>(-1), static_cast<gid_t>(*group)) != 0) {
+      if (errno != EPERM)
+        return std::format("{} cannot keep its group {}: {}", shown, *group, said(errno));
+      kept.group_kept = false;
+    }
     if (::fchmod(file.get(), mode & 07777U) != 0)
       return std::format("{} cannot keep its mode {:o}: {}", shown, mode, said(errno));
     if (::fsync(file.get()) != 0)
@@ -234,7 +256,7 @@ auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::st
       return fail(std::format("{} was replaced, but its folder cannot be synchronised: {}", shown,
                               said(errno)),
                   true);
-    return {};
+    return kept;
   }
   const auto reason =
       written.empty() ? std::format("{} cannot be replaced: {}", shown, said(errno)) : written;
@@ -256,6 +278,39 @@ auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::str
   if (::fsync(parent->directory.get()) != 0)
     return std::unexpected(std::format("{} was removed, but its folder cannot be synchronised: {}",
                                        shown, said(errno)));
+  return {};
+}
+
+auto LocalToolModelFiles::folder_exists_beneath(const std::string& root,
+                                                const std::string& relative)
+    -> std::expected<bool, std::string> {
+  const auto parent = parent_beneath(root, relative);
+  if (parent)
+    return true;
+  if (parent.error().missing)
+    return false;
+  return std::unexpected(parent.error().reason);
+}
+
+auto LocalToolModelFiles::link_beneath(const std::string& root, const std::string& relative,
+                                       const std::string& target) -> Done {
+  auto parent = parent_beneath(root, relative);
+  if (!parent)
+    return std::unexpected(parent.error().reason);
+  const auto shown = root + '/' + relative;
+  const int directory = parent->directory.get();
+  const auto temporary = parent->name + std::string(temporary_suffix);
+  static_cast<void>(::unlinkat(directory, temporary.c_str(), 0));
+  if (::symlinkat(target.c_str(), directory, temporary.c_str()) != 0)
+    return std::unexpected(std::format("{} cannot be made a link again: {}", shown, said(errno)));
+  if (::renameat(directory, temporary.c_str(), directory, parent->name.c_str()) != 0) {
+    const auto reason = std::format("{} cannot be made a link again: {}", shown, said(errno));
+    static_cast<void>(::unlinkat(directory, temporary.c_str(), 0));
+    return std::unexpected(reason);
+  }
+  if (::fsync(directory) != 0)
+    return std::unexpected(std::format(
+        "{} is a link again, but its folder cannot be synchronised: {}", shown, said(errno)));
   return {};
 }
 

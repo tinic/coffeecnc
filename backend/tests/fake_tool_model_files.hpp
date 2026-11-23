@@ -29,6 +29,8 @@ struct FakeDisk {
   std::map<std::string, std::string> links;
   std::map<std::string, unsigned> file_modes; // 0644 where none is given
   std::map<std::string, unsigned> groups;     // 1000 where none is given
+  // Groups the user is not in: a file is not given one of them (EPERM), and keeps 1000.
+  std::set<unsigned> foreign_groups;
 };
 
 // The tool-model writer's file system in memory. Every step can be made to fail, and a hook
@@ -140,7 +142,8 @@ public:
   }
 
   // Beneath `root`: a link on the way is refused, the last component is followed for reading.
-  // Steps: read_beneath, replace (before the rename), replace_sync (after it), remove.
+  // Steps: read_beneath, replace (before the rename), replace_sync (after it), remove,
+  // folder_exists, relink.
   auto read_beneath(const std::string& root, const std::string& relative, std::size_t limit)
       -> std::expected<std::optional<Found>, std::string> override {
     const auto path = root + '/' + relative;
@@ -157,6 +160,7 @@ public:
     const auto group = disk.groups.find(actual);
     return Found{{file->second.substr(0, limit), file->second.size() > limit},
                  linked != disk.links.end(),
+                 linked == disk.links.end() ? std::string{} : linked->second,
                  mode == disk.file_modes.end() ? 0644U : mode->second,
                  group == disk.groups.end() ? 1000U : group->second};
   }
@@ -171,7 +175,10 @@ public:
     disk.links.erase(path); // the link is replaced, not followed
     disk.files[path] = std::string(bytes);
     disk.file_modes[path] = mode;
-    if (group)
+    Written kept;
+    if (group && disk.foreign_groups.contains(*group))
+      kept.group_kept = false;
+    if (group && kept.group_kept)
       disk.groups[path] = *group;
     else
       disk.groups.erase(path);
@@ -179,6 +186,34 @@ public:
       return std::unexpected(
           ReplaceError{true, path + " was replaced, but its folder cannot be synchronised: "
                                     "Input/output error"});
+    return kept;
+  }
+  // A folder exists when it was made or holds a file or a link.
+  auto folder_exists_beneath(const std::string& root, const std::string& relative)
+      -> std::expected<bool, std::string> override {
+    const auto path = root + '/' + relative;
+    if (begin("folder_exists", path))
+      return std::unexpected(path + " cannot be read: Input/output error");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    const auto folder = path.substr(0, path.rfind('/'));
+    const auto below = [&](const auto& entries) {
+      return std::ranges::any_of(
+          entries, [&](const auto& entry) { return entry.first.starts_with(folder + '/'); });
+    };
+    return disk.directories.contains(folder) || below(disk.files) || below(disk.links);
+  }
+  auto link_beneath(const std::string& root, const std::string& relative, const std::string& target)
+      -> Done override {
+    const auto path = root + '/' + relative;
+    if (begin("relink", path))
+      return std::unexpected(path + " cannot be made a link again: Read-only file system");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    disk.files.erase(path);
+    disk.file_modes.erase(path);
+    disk.groups.erase(path);
+    disk.links[path] = target;
     return {};
   }
   auto remove_beneath(const std::string& root, const std::string& relative) -> Done override {

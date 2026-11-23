@@ -7,6 +7,7 @@
 #include <expected>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -24,6 +25,14 @@ public:
   // Why LinuxCNC runs on this host: its lock file, or a milltask or rtapi_app process. None when
   // it does not.
   [[nodiscard]] virtual auto linuxcnc_running() -> std::optional<std::string> = 0;
+  // Makes LinuxCNC's lock file (O_EXCL), so that a `linuxcnc` started while the helper writes
+  // finds it: a reason when it cannot (it exists: LinuxCNC runs).
+  [[nodiscard]] virtual auto take_linuxcnc_lock() -> std::optional<std::string> = 0;
+  // The lock file is still the one take_linuxcnc_lock made: a `linuxcnc` that cleaned up "the
+  // other session" removed it.
+  [[nodiscard]] virtual auto holds_linuxcnc_lock() -> bool = 0;
+  // Removes the lock file, only when it is still the one this helper made.
+  virtual void release_linuxcnc_lock() = 0;
   virtual void pause(std::chrono::milliseconds period) = 0;
   // Since the helper started, on a clock that does not jump.
   [[nodiscard]] virtual auto elapsed() -> std::chrono::milliseconds = 0;
@@ -42,12 +51,17 @@ public:
   LocalRestoreHost();
   [[nodiscard]] auto alive(long pid) -> bool override;
   [[nodiscard]] auto linuxcnc_running() -> std::optional<std::string> override;
+  [[nodiscard]] auto take_linuxcnc_lock() -> std::optional<std::string> override;
+  [[nodiscard]] auto holds_linuxcnc_lock() -> bool override;
+  void release_linuxcnc_lock() override;
   void pause(std::chrono::milliseconds period) override;
   [[nodiscard]] auto elapsed() -> std::chrono::milliseconds override;
   [[nodiscard]] auto now() -> std::chrono::milliseconds override;
 
 private:
   std::chrono::steady_clock::time_point started_;
+  // The lock file this helper made: its device and inode; none while it holds none.
+  std::optional<std::pair<unsigned long, unsigned long>> lock_;
 };
 
 // What the helper came to: its exit code and its one line for stderr, `restore=<what>` and a
@@ -65,8 +79,13 @@ inline constexpr auto restore_helper_poll = std::chrono::milliseconds{200};
 // waits, at most restore_helper_wait, until process `parent` has ended and no LinuxCNC runs.
 // Then takes the data directory's lock (a CoffeeCNC started again at once holds it: waited for a
 // little, then the plan is left for that run to report) and writes the staged files
-// (apply_staged_restore), refusing once more if LinuxCNC runs by then. Code 0: written, or
-// nothing was staged. Whatever is not written stays staged and the next start says so.
+// (apply_staged_restore with the helper's start as the end of the run that staged them),
+// refusing once more if LinuxCNC runs by then. From that check to the last write it holds
+// /tmp/linuxcnc.lock: the `linuxcnc` script of LinuxCNC 2.9 then asks "LinuxCNC is still
+// running. Restart it?" (and, with no terminal and no display, says yes itself), and on yes
+// waits 2 s for the lock to go before it removes it and starts. A lock that is gone before a
+// write stops the restore and puts back what was written. Code 0: written, or nothing was
+// staged. Whatever is not written stays staged and the next start says so.
 [[nodiscard]] auto run_restore_helper(ToolModelFiles& files, const std::string& directory,
                                       long parent, RestoreHost& host) -> RestoreHelperOutcome;
 

@@ -1104,6 +1104,7 @@ export class SimMachine {
           { role: 'hal', name: 'config/sim.hal', target: `${config}/sim.hal`, change: 'same', bytes: 1024, symlink: false },
           { role: 'tool_table', name: 'tool-table/sim.tbl', target: `${config}/sim.tbl`, change: change(saved.tools, now.tools), bytes: saved.tools.length, symlink: false },
           { role: 'parameters', name: 'parameters/sim.var', target: `${config}/sim.var`, change: 'at_exit', bytes: saved.parameters.length, symlink: false },
+          { role: 'data', name: 'data/tool-models.json', target: '/home/sim/.local/share/coffeecnc/sim/tool-models.json', change: 'at_exit', bytes: 512, symlink: false },
         ],
       })
       return null

@@ -419,11 +419,14 @@ export interface RestoreSummary {
   /** Milliseconds since the Unix epoch; 0 when unknown. */
   created: number
   /**
-   * `at_exit`: the work offsets (.var), which LinuxCNC writes as it stops; they are compared and
-   * written after that. `symlink`: the target is a symbolic link, which the restore replaces by the
-   * file (where it points is not written).
+   * `at_exit`: the work offsets (.var) and the data files, which LinuxCNC and CoffeeCNC write as
+   * they stop; they are compared and written after that. The alarm log is in the backup but is not
+   * restored and not listed. `symlink`: the target is a symbolic link, which the restore replaces
+   * by the file (where it points is not written).
    */
   files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same' | 'at_exit'; bytes: number; symlink: boolean }[]
+}
+
 /** One entry of the alarm log: an operator message, or a command result other than `accepted`. */
 export interface AlarmEntry {
   /** The run of CoffeeCNC it was told in, from 1; a higher number is a later run. */

@@ -16,6 +16,7 @@
 
 #include <fcntl.h>
 #include <spawn.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -62,6 +63,36 @@ auto LocalRestoreHost::linuxcnc_running() -> std::optional<std::string> {
   return std::nullopt;
 }
 
+auto LocalRestoreHost::take_linuxcnc_lock() -> std::optional<std::string> {
+  const std::string path{linuxcnc_lock};
+  const int made = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+  if (made < 0)
+    return std::format("{} cannot be made: {}", path, std::generic_category().message(errno));
+  struct stat info{};
+  const bool known = ::fstat(made, &info) == 0;
+  static_cast<void>(::close(made));
+  if (!known) {
+    static_cast<void>(::unlink(path.c_str()));
+    return std::format("{} cannot be read back", path);
+  }
+  lock_ = {static_cast<unsigned long>(info.st_dev), static_cast<unsigned long>(info.st_ino)};
+  return std::nullopt;
+}
+
+auto LocalRestoreHost::holds_linuxcnc_lock() -> bool {
+  struct stat info{};
+  const std::string path{linuxcnc_lock};
+  return lock_ && ::lstat(path.c_str(), &info) == 0 &&
+         static_cast<unsigned long>(info.st_dev) == lock_->first &&
+         static_cast<unsigned long>(info.st_ino) == lock_->second;
+}
+
+void LocalRestoreHost::release_linuxcnc_lock() {
+  if (holds_linuxcnc_lock())
+    static_cast<void>(::unlink(std::string(linuxcnc_lock).c_str()));
+  lock_.reset();
+}
+
 void LocalRestoreHost::pause(std::chrono::milliseconds period) {
   std::this_thread::sleep_for(period);
 }
@@ -78,6 +109,9 @@ auto LocalRestoreHost::now() -> std::chrono::milliseconds {
 
 auto run_restore_helper(ToolModelFiles& files, const std::string& directory, long parent,
                         RestoreHost& host) -> RestoreHelperOutcome {
+  // The run that staged the restore ends now, or has ended: a plan much older was not this run's
+  // to write.
+  const auto started = host.now();
   if (parent <= 1)
     return {1, std::format("restore=not_written reason=the parent process is {}, not the "
                            "linuxcnc script: when LinuxCNC stops cannot be told",
@@ -102,12 +136,26 @@ auto run_restore_helper(ToolModelFiles& files, const std::string& directory, lon
       return {1, std::format("restore=not_written reason={}", locked.error().reason)};
     host.pause(restore_helper_poll);
   }
-  const auto applied =
-      apply_staged_restore(files, directory, host.now(), [&host]() -> std::optional<std::string> {
-        if (auto running = host.linuxcnc_running())
-          return std::format("LinuxCNC runs again ({}): nothing was written.", *running);
-        return std::nullopt;
-      });
+  RestoreHooks hooks;
+  hooks.ended = started;
+  bool locked_linuxcnc = false;
+  hooks.may_write = [&]() -> std::optional<std::string> {
+    if (auto running = host.linuxcnc_running())
+      return std::format("LinuxCNC runs again ({}): nothing was written.", *running);
+    if (auto refused = host.take_linuxcnc_lock())
+      return std::format("LinuxCNC runs again ({}): nothing was written.", *refused);
+    locked_linuxcnc = true;
+    return std::nullopt;
+  };
+  hooks.still_may_write = [&host]() -> std::optional<std::string> {
+    if (!host.holds_linuxcnc_lock())
+      return std::format("LinuxCNC was started while the files were written ({} was removed).",
+                         linuxcnc_lock);
+    return std::nullopt;
+  };
+  const auto applied = apply_staged_restore(files, directory, host.now(), hooks);
+  if (locked_linuxcnc)
+    host.release_linuxcnc_lock();
   files.unlock();
   if (!applied)
     return {1, std::format("restore=failed reason={}", applied.error())};

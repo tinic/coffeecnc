@@ -116,7 +116,8 @@ struct Fixture {
   }
   // Stages a restore of the backup at `path`; it must quit.
   void stage(const std::string& path) {
-    const auto done = machine->restore(path, summary(path)["token"], [] { return std::string{}; });
+    const auto done =
+        machine->restore(path, summary(path)["token"], 7, [] { return std::string{}; });
     require(done.outcome == CommandOutcome::accepted && done.quit && machine->staged(),
             "A restore is staged: " + done.reason);
   }
@@ -254,8 +255,10 @@ void check_and_changes() {
               summary["files"].size() == 8 && summary["token"].get<std::string>().size() == 16,
           "The summary has the machine, the time, every file and a token");
   for (const auto& file : summary["files"])
-    require(file["change"] == (file["role"] == "parameters" ? "at_exit" : "same"),
-            "Right after the backup every file is the same; the .var is compared at exit");
+    require(file["change"] ==
+                (file["role"] == "parameters" || file["role"] == "data" ? "at_exit" : "same"),
+            "Right after the backup every file is the same; the .var and the data files are "
+            "compared at exit");
   f.disk.files[tools] = "T1 P1 Z50 D6 ;End mill\n";
   f.disk.files.erase(custom);
   summary = f.summary(path);
@@ -323,7 +326,7 @@ void path_traversal() {
     const auto done = f.check(path);
     require(done.outcome == CommandOutcome::rejected && done.messages.empty(),
             std::format("Refused: {} {}", role, name));
-    const auto restored = f.machine->restore(path, "0000000000000000", allow);
+    const auto restored = f.machine->restore(path, "0000000000000000", 1, allow);
     require(restored.outcome == CommandOutcome::rejected && !restored.quit,
             std::format("Not restored: {} {}", role, name));
   }
@@ -465,12 +468,12 @@ void refusal_states() {
   const std::string path = f.backup()["path"];
   f.disk.files[tools] = "changed\n";
   const std::string token = f.summary(path)["token"];
-  auto done = f.machine->restore(path, token, [] { return std::string("Machine is on"); });
+  auto done = f.machine->restore(path, token, 1, [] { return std::string("Machine is on"); });
   require(done.outcome == CommandOutcome::rejected && done.reason == "Machine is on" &&
               !f.machine->staged(),
           "The recheck just before staging refuses");
   f.disk.files[path] += "x"; // the file changed after the check
-  done = f.machine->restore(path, token, allow);
+  done = f.machine->restore(path, token, 1, allow);
   require(done.outcome == CommandOutcome::rejected && !f.machine->staged(),
           "A file that changed after its check is refused");
 }
@@ -487,7 +490,8 @@ void restore_and_apply() {
   f.disk.groups[tools] = 27;
   f.stage(path);
   require(f.disk.files[tools] == "T1 P1 Z99 D6\n", "Nothing is written while LinuxCNC runs");
-  require(f.plan()["files"].size() == 3, "Only the three files that change are staged");
+  require(f.plan()["files"].size() == 5,
+          "The three files that change are staged, and the two data files, decided at exit");
   // LinuxCNC writes its .var as it stops: the helper comes after that.
   f.disk.files[var] = "5221\t0\n5222\t0\n";
   const auto applied = apply_staged_restore(f.files, data, now + 60s);
@@ -523,12 +527,14 @@ void restore_and_apply() {
   // The pre-restore copy is a backup the panel can restore.
   const auto back = f.summary(copy);
   require(back["files"].size() == 3, "The copy checks (the HAL file was new, so it is not in it)");
-  // Without a .var file, nothing that changes: nothing staged, no quit.
+  // Without a .var file and data files, nothing that changes: nothing staged, no quit.
   auto bare = paths();
   bare.parameter_file.clear();
+  f.disk.files.erase(in_data("tool-models.json"));
+  f.disk.files.erase(in_data("offset-history.json"));
   f.open(bare);
   const std::string again = f.backup()["path"];
-  const auto same = f.machine->restore(again, f.summary(again)["token"], allow);
+  const auto same = f.machine->restore(again, f.summary(again)["token"], 1, allow);
   require(same.outcome == CommandOutcome::accepted && !same.quit && !f.machine->staged(),
           "A restore that changes nothing does not quit");
 }
@@ -541,8 +547,9 @@ void var_decided_after_exit() {
   const auto backed_up = f.disk.files[var];
   f.stage(path); // every file is the same now
   const auto plan = f.plan();
-  require(plan["files"].size() == 1 && plan["files"][0]["role"] == "parameters",
-          "The .var file is staged although it is the same now");
+  require(plan["files"].size() == 3 && plan["files"][0]["role"] == "parameters" &&
+              plan["files"][1]["role"] == "data" && plan["files"][2]["role"] == "data",
+          "The .var file and the data files are staged although they are the same now");
   f.disk.files[var] = "5221\t99\n"; // what LinuxCNC held in memory
   const auto applied = apply_staged_restore(f.files, data, now + 60s);
   require(applied && *applied == 1 && f.disk.files[var] == backed_up,
@@ -757,8 +764,24 @@ public:
   std::function<bool(long)> parent_alive = [](long) { return false; };
   std::function<std::optional<std::string>()> running = [] { return std::optional<std::string>{}; };
   std::chrono::milliseconds clock{};
+  bool lock_file = false; // /tmp/linuxcnc.lock exists
+  bool lock_ours = false; // and this helper made it
+  int locks_taken = 0;
   auto alive(long pid) -> bool override { return parent_alive(pid); }
   auto linuxcnc_running() -> std::optional<std::string> override { return running(); }
+  auto take_linuxcnc_lock() -> std::optional<std::string> override {
+    if (lock_file)
+      return std::string("/tmp/linuxcnc.lock cannot be made: File exists");
+    lock_file = lock_ours = true;
+    ++locks_taken;
+    return std::nullopt;
+  }
+  auto holds_linuxcnc_lock() -> bool override { return lock_file && lock_ours; }
+  void release_linuxcnc_lock() override {
+    if (holds_linuxcnc_lock())
+      lock_file = false;
+    lock_ours = false;
+  }
   void pause(std::chrono::milliseconds period) override { clock += period; }
   auto elapsed() -> std::chrono::milliseconds override { return clock; }
   auto now() -> std::chrono::milliseconds override { return 1795000000000ms + clock; }
@@ -821,6 +844,226 @@ void helper_waits_for_linuxcnc() {
   outcome = run_restore_helper(f.files, data, 4000, host);
   require(outcome.code == 0 && outcome.line == "restore=written files=1",
           "It writes once LinuxCNC has stopped: " + outcome.line);
+}
+
+// Re-review #274, 1: the window drops a close when the page changed after the quit was decided,
+// and a later normal exit wrote the old plan; the .var is not compared, so the backup's offsets
+// replaced newer ones. The plan says when it was staged and for which page; the helper refuses
+// one staged long before the run ended.
+void stale_plan_refused() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now tools\n";
+  f.stage(path);
+  require(f.plan()["staged"] == now.count() && f.plan()["page"] == 7,
+          "The plan has the time it was staged and the page that asked");
+  f.disk.files[var] = "5221\t42\n"; // newer offsets, written at the late exit
+  const auto late = apply_staged_restore(f.files, data, now + 3min + 1s);
+  require(!late && late.error() == "The restore was prepared 181 s before CoffeeCNC ended, more "
+                                   "than 120 s: nothing was written.",
+          "A plan staged 3 minutes before the exit is refused: " +
+              (late ? std::string{} : late.error()));
+  require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "5221\t42\n",
+          "Nothing is written");
+  require(!f.disk.files.contains(in_staging("plan.json")), "and the plan is not tried again");
+  f.open();
+  const auto notice = f.machine->take_notice();
+  require(notice && notice->first == MessageLevel::error &&
+              notice->second.find("more than 120 s") != std::string::npos &&
+              notice->second.ends_with("The files are as they were."),
+          "The next start says so: " + (notice ? notice->second : std::string{}));
+  // The run ended at once, and LinuxCNC took long to stop: the end of the run counts.
+  f.stage(path);
+  RestoreHooks hooks;
+  hooks.ended = now + 5s;
+  const auto slow = apply_staged_restore(f.files, data, now + 4min, hooks);
+  require(slow && *slow >= 1 && f.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n",
+          "A plan of the run that just ended is written although LinuxCNC took 4 minutes");
+  // A clock that went back is as old.
+  f.open();
+  f.stage(path);
+  hooks.ended = now - 10min;
+  require(!apply_staged_restore(f.files, data, now, hooks).has_value(),
+          "A plan staged after the end of the run is refused");
+  // The helper takes its own start as the end of the run.
+  f.open();
+  f.stage(path);
+  FakeHost host;
+  host.clock = 3min; // started 3 minutes after the plan
+  const auto outcome = run_restore_helper(f.files, data, 4000, host);
+  require(outcome.code == 1 && outcome.line.find("more than 120 s") != std::string::npos,
+          "The helper refuses a plan of 3 minutes before it started: " + outcome.line);
+}
+
+// Re-review #274, 2: data files that CoffeeCNC writes until it ends (the alarm log, the offset
+// history) made the helper refuse the whole restore. They are decided after the exit, as the
+// .var is; the alarm log is kept in the backup and never restored.
+void data_decided_after_exit() {
+  Fixture f;
+  f.disk.files[in_data("alarm-log.jsonl")] = "{\"old\":1}\n";
+  const std::string path = f.backup()["path"];
+  const auto entries = read_archive(f.disk.files.at(path));
+  require(entries && std::ranges::any_of(*entries,
+                                         [](const ArchiveEntry& entry) {
+                                           return entry.name == "data/alarm-log.jsonl";
+                                         }),
+          "The alarm log is in the backup");
+  const auto summary = f.summary(path);
+  require(f.change_of(summary, "data/alarm-log.jsonl") == "absent" &&
+              f.change_of(summary, "data/offset-history.json") == "at_exit",
+          "The alarm log is not restored; the offset history is decided at exit");
+  const auto backed_up = f.disk.files[in_data("offset-history.json")];
+  f.disk.files[tools] = "now tools\n";
+  f.stage(path);
+  require(std::ranges::none_of(f.plan()["files"],
+                               [](const Json& file) {
+                                 return file["name"].get<std::string>().starts_with(
+                                     "data/alarm-log");
+                               }),
+          "The alarm log is not staged");
+  // What CoffeeCNC wrote after the restore was prepared, up to its end.
+  f.disk.files[in_data("alarm-log.jsonl")] = "{\"old\":1}\n{\"new\":2}\n";
+  f.disk.files[in_data("offset-history.json")] = R"({"version":1,"entries":[1]})";
+  const auto applied = apply_staged_restore(f.files, data, now + 30s);
+  require(applied.has_value(), "Data files written after staging do not refuse the restore: " +
+                                   (applied ? std::string{} : applied.error()));
+  require(f.disk.files[in_data("offset-history.json")] == backed_up &&
+              f.disk.files[in_data("alarm-log.jsonl")] == "{\"old\":1}\n{\"new\":2}\n" &&
+              f.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n",
+          "The offset history is the backup's; the alarm log keeps what was told since");
+}
+
+// Re-review #274, 3: a target in a folder that does not exist passed the check, and could not be
+// written once LinuxCNC had stopped.
+void missing_folder_refused() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files.erase(custom);
+  f.disk.directories.erase(std::string(config) + "/hal");
+  const auto checked = f.check(path);
+  require(checked.outcome == CommandOutcome::rejected &&
+              checked.reason == "config/hal/custom.hal cannot be restored: the folder of " +
+                                    std::string(custom) +
+                                    " does not exist. The archive is refused.",
+          "A target in a missing folder is refused at the check: " + checked.reason);
+  // A missing data file is made: the restore makes the data folder.
+  f.disk.directories.insert(std::string(config) + "/hal");
+  f.disk.files.erase(in_data("tool-models.json"));
+  f.disk.directories.erase(data);
+  const auto data_missing = f.summary(path);
+  require(f.change_of(data_missing, "config/hal/custom.hal") == "new",
+          "A missing file in a folder that exists is new");
+}
+
+// Re-review #274, 4: the rollback wrote a link's content as a file and the notice said "as they
+// were"; a group the user is not in made fchown fail and rolled back the whole restore.
+void links_and_groups() {
+  Fixture f;
+  const std::string shared = "/home/cnc/shared/tool.tbl";
+  f.disk.files[shared] = f.disk.files[tools];
+  f.disk.files.erase(tools);
+  f.disk.links[tools] = shared;
+  const std::string path = f.backup()["path"];
+  f.disk.files[shared] = "shared now\n";
+  f.disk.files[var] = "now var\n";
+  f.stage(path);
+  const auto plan = f.plan();
+  const auto target = [&](std::size_t i) {
+    return plan["files"][i]["root"].get<std::string>() + '/' +
+           plan["files"][i]["relative"].get<std::string>();
+  };
+  require(target(0) == tools && target(1) == var, "The tool table, then the .var");
+  f.files.failures["replace " + target(1)] = 1;
+  require(!apply_staged_restore(f.files, data, now).has_value(), "The second file fails");
+  require(f.disk.links.contains(tools) && f.disk.links[tools] == shared &&
+              !f.disk.files.contains(tools) && f.disk.files[shared] == "shared now\n",
+          "The tool table is the same link again");
+  f.open();
+  auto notice = f.machine->take_notice();
+  require(notice && notice->second.ends_with("The files are as they were."),
+          "and the notice can say so: " + (notice ? notice->second : std::string{}));
+  // The link cannot be made again: the notice says so.
+  f.stage(path);
+  f.files.failures["replace " + target(1)] = 1;
+  f.files.failures["relink " + std::string(tools)] = 1;
+  require(!apply_staged_restore(f.files, data, now).has_value(), "It fails again");
+  f.open();
+  notice = f.machine->take_notice();
+  require(notice &&
+              notice->second.find("These files could not be put back: " + std::string(tools) +
+                                  " cannot be made a link again") != std::string::npos &&
+              notice->second.find("as they were") == std::string::npos,
+          "The notice names the link that is not back: " +
+              (notice ? notice->second : std::string{}));
+  // A group the user is not in: written with the user's group, and said.
+  Fixture g;
+  const std::string again = g.backup()["path"];
+  g.disk.files[tools] = "now tools\n";
+  g.disk.groups[tools] = 27;
+  g.disk.foreign_groups.insert(27);
+  g.stage(again);
+  const auto applied = apply_staged_restore(g.files, data, now);
+  require(applied.has_value() && g.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n" &&
+              !g.disk.groups.contains(tools),
+          "A group that cannot be kept does not stop the restore: " +
+              (applied ? std::string{} : applied.error()));
+  g.open();
+  notice = g.machine->take_notice();
+  require(notice && notice->first == MessageLevel::info &&
+              notice->second.ends_with("These files did not keep their group, which this user is "
+                                       "not in: " +
+                                       std::string(tools) + "."),
+          "The next start says which files did not keep their group: " +
+              (notice ? notice->second : std::string{}));
+}
+
+// Re-review #274, 5: a LinuxCNC started between the last check and the last write read mixed
+// files. The helper holds /tmp/linuxcnc.lock while it writes; a lock that is gone stops it.
+void helper_holds_linuxcnc_lock() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now tools\n";
+  f.disk.files[var] = "now var\n";
+  f.stage(path);
+  FakeHost host;
+  bool held_while_writing = false;
+  f.files.during = [&](std::string_view step) {
+    if (step == "replace")
+      held_while_writing = host.holds_linuxcnc_lock();
+  };
+  auto outcome = run_restore_helper(f.files, data, 4000, host);
+  f.files.during = nullptr;
+  require(outcome.code == 0 && held_while_writing && host.locks_taken == 1 && !host.lock_file,
+          "The lock is held while the files are written, and removed after: " + outcome.line);
+  // A `linuxcnc` that cleans up "the other session" removes the lock while the helper writes.
+  f.open();
+  f.disk.files[tools] = "now tools\n";
+  f.disk.files[var] = "now var\n";
+  f.stage(path);
+  f.files.during = [&](std::string_view step) {
+    if (step == "replace" && host.lock_ours) {
+      host.lock_file = true; // LinuxCNC's own lock now
+      host.lock_ours = false;
+    }
+  };
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  f.files.during = nullptr;
+  require(outcome.code == 1 && outcome.line.find("LinuxCNC was started while the files were "
+                                                 "written") != std::string::npos,
+          "A lock that is gone stops the restore: " + outcome.line);
+  require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "now var\n",
+          "and what was written is put back");
+  require(host.lock_file, "LinuxCNC's own lock is not removed");
+  // A lock that is there when the helper is to write: nothing.
+  f.open();
+  f.stage(path);
+  host.running = [] { return std::optional<std::string>{}; };
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  require(outcome.code == 1 &&
+              outcome.line.find("LinuxCNC runs again (/tmp/linuxcnc.lock cannot "
+                                "be made: File exists)") != std::string::npos &&
+              f.disk.files[tools] == "now tools\n",
+          "The lock is made O_EXCL: " + outcome.line);
 }
 
 // A file that read_beneath found; the check fails when it did not.
@@ -896,6 +1139,29 @@ void real_files(const std::filesystem::path& base) {
   require(files.remove_beneath(dir, "tool.tbl").has_value() &&
               !std::filesystem::exists(configs / "tool.tbl"),
           "A file is removed");
+  // Re-review #274, 4: a link is made again, as it was written.
+  require(files.link_beneath(dir, "tool.tbl", "../outside/shared.tbl").has_value() &&
+              std::filesystem::read_symlink(configs / "tool.tbl") == "../outside/shared.tbl" &&
+              found(files.read_beneath(dir, "tool.tbl", 100)).link == "../outside/shared.tbl",
+          "A link is made again with its target as written");
+  // Re-review #274, 4: a group this user may not give is not kept, and is not a failure.
+  if (::geteuid() != 0) {
+    const auto foreign =
+        files.replace_beneath(dir, "machine.hal", "net e f\n", 0640, ::getegid() == 0 ? 1U : 0U);
+    require(foreign.has_value() && !foreign->group_kept &&
+                read_real(configs / "machine.hal") == "net e f\n",
+            "A file is written with this user's group: " +
+                (foreign ? std::string{} : foreign.error().reason));
+    const auto own = files.replace_beneath(dir, "machine.hal", "net g h\n", 0640, ::getegid());
+    require(own.has_value() && own->group_kept, "Its own group is kept");
+  }
+  // Re-review #274, 3: a folder that is not there.
+  require(files.folder_exists_beneath(dir, "missing/x.hal") ==
+                  std::expected<bool, std::string>{false} &&
+              files.folder_exists_beneath(dir, "x.hal") == std::expected<bool, std::string>{true},
+          "A missing folder is told from one that exists");
+  require(!files.folder_exists_beneath(dir, "hal/x.hal").has_value(),
+          "A folder reached through a link is an error");
   std::filesystem::remove_all(root);
 }
 
@@ -948,6 +1214,11 @@ auto main(int argc, char** argv) -> int {
     crash_points();
     start_check_under_lock();
     helper_waits_for_linuxcnc();
+    stale_plan_refused();
+    data_decided_after_exit();
+    missing_folder_refused();
+    links_and_groups();
+    helper_holds_linuxcnc_lock();
     real_files(base);
     spawn_closes_descriptors(base);
     std::cout << checks << " machine data checks passed\n";

@@ -297,7 +297,7 @@
         "at_exit": "Wenn LinuxCNC anhält"
       },
       "symlink": "ein Link: die Datei ersetzt den Link",
-      "atExitNote": "LinuxCNC schreibt die Nullpunktverschiebungen (.var) beim Anhalten; sie werden danach verglichen und geschrieben."
+      "atExitNote": "LinuxCNC schreibt die Nullpunktverschiebungen (.var) und CoffeeCNC seine eigenen Daten beim Anhalten; diese Dateien werden danach verglichen und geschrieben. Das Alarmprotokoll ist in der Sicherung, wird aber nicht wiederhergestellt."
     },
     "diagnostics": {
       "title": "HAL-Diagnose",

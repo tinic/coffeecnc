@@ -297,7 +297,7 @@
         "at_exit": "LinuxCNC 停止时"
       },
       "symlink": "链接：文件将替换该链接",
-      "atExitNote": "LinuxCNC 在停止时写入工件偏置 (.var)；之后再比较并写入。"
+      "atExitNote": "LinuxCNC 在停止时写入工件偏置 (.var)，CoffeeCNC 写入其自身数据；之后再比较并写入这些文件。报警日志保存在备份中，但不会恢复。"
     },
     "diagnostics": {
       "title": "HAL 诊断",

@@ -56,6 +56,8 @@
       "waitHoming": "Espere a que termine el referenciado de ejes.",
       "feedOverrideRange": "El ajuste de avance está fuera de rango.",
       "rapidOverrideRange": "El ajuste de rápido está fuera de rango.",
+      "velocityLimitRange": "El límite de velocidad máxima está fuera de rango.",
+      "velocityLimitUnavailable": "Esta máquina no permite ajustar la velocidad máxima.",
       "spindleOverrideRange": "El ajuste del husillo está fuera de rango.",
       "unknownOverride": "Ajuste desconocido.",
       "unknownSpindleDirection": "Sentido de giro del husillo desconocido.",

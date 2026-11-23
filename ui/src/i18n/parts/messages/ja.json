@@ -56,6 +56,8 @@
       "waitHoming": "原点復帰が終わるまでお待ちください。",
       "feedOverrideRange": "送りオーバーライドが範囲外です。",
       "rapidOverrideRange": "早送りオーバーライドが範囲外です。",
+      "velocityLimitRange": "最高速度の設定が範囲外です。",
+      "velocityLimitUnavailable": "この機械では最高速度を設定できません。",
       "spindleOverrideRange": "主軸オーバーライドが範囲外です。",
       "unknownOverride": "不明なオーバーライドです。",
       "unknownSpindleDirection": "不明な主軸回転方向です。",

@@ -139,6 +139,7 @@
       "readOnlyRunning": "Schreibgeschützt, solange ein Programm läuft oder pausiert. Zum Bearbeiten stoppen.",
       "empty": "Das Programm ist leer.",
       "tooLarge": "Das Programm ist größer als 512 KiB.",
+      "stopFirst": "Stoppen Sie die Maschine vor dem Speichern.",
       "badName": "Den Dateinamen ohne Schrägstrich und ohne führenden Punkt angeben.",
       "editFile": "{file} bearbeiten",
       "newProgram": "Neues Programm",

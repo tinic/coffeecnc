@@ -169,6 +169,7 @@
       "resetFeed": "送りオーバーライドを 100% に戻す",
       "resetSpindle": "主軸オーバーライドを 100% に戻す",
       "resetRapid": "早送りオーバーライドを 100% に戻す",
+      "resetVelocityLimit": "最高速度をリセット",
       "reset": "100% に戻す"
     },
     "workSystems": {
@@ -197,7 +198,7 @@
       "enterFeed": "0 より大きい送りを入力してください",
       "feedAboveMax": "送りが機械の最大値を超えています",
       "enterDistance": "0 より大きい距離を入力してください",
-      "room": "{direction} はソフトリミットまで {room} mm しかありません",
+      "room": "{direction} はソフトリミットまで {room} {unit} しかありません",
       "atLimit": "{axis} はソフトリミットにあります",
       "zNoSoftLimits": "Z にはソフトリミットがありません",
       "safeZRange": "安全 Z は Z のソフトリミット内（{min} ～ {max} {unit}）にしてください",

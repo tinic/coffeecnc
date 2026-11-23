@@ -3382,6 +3382,16 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
     message.scale = value;
     return impl_->pass(message, from);
   }
+  case Override::velocity_limit: {
+    const auto maximum = impl_->config.limits.max_trajectory_velocity;
+    if (!maximum)
+      return failed("Maximum velocity control is unavailable on this machine.");
+    if (!std::isfinite(value) || value < 0 || value > 1)
+      return failed("Maximum velocity limit is out of range.");
+    EMC_TRAJ_SET_MAX_VELOCITY message;
+    message.velocity = value * *maximum / 60 / impl_->config.millimetres_per_unit;
+    return impl_->pass(message, from);
+  }
   case Override::spindle:
     break;
   }

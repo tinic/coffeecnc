@@ -128,7 +128,8 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
                    .programmed_feed = reading.programmed_feed,
                    .feed_override = reading.feed_override,
                    .rapid_override = reading.rapid_override,
-                   .in_position = controller.in_position};
+                   .in_position = controller.in_position,
+                   .velocity_limit = known ? reading.velocity_limit : std::nullopt};
   status.spindle = {.direction = reading.spindle_direction,
                     .commanded_rpm = reading.spindle_rpm,
                     .override = reading.spindle_override,

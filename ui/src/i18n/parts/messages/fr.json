@@ -56,6 +56,8 @@
       "waitHoming": "Attendez la fin de la prise d’origine machine.",
       "feedOverrideRange": "La correction d’avance est hors plage.",
       "rapidOverrideRange": "La correction de rapide est hors plage.",
+      "velocityLimitRange": "La limite de vitesse maximale est hors plage.",
+      "velocityLimitUnavailable": "Le réglage de la vitesse maximale est indisponible sur cette machine.",
       "spindleOverrideRange": "La correction de broche est hors plage.",
       "unknownOverride": "Correction inconnue.",
       "unknownSpindleDirection": "Sens de rotation de broche inconnu.",

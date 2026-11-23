@@ -169,6 +169,7 @@
       "resetFeed": "Vorschub-Override auf 100 % zurücksetzen",
       "resetSpindle": "Spindel-Override auf 100 % zurücksetzen",
       "resetRapid": "Eilgang-Override auf 100 % zurücksetzen",
+      "resetVelocityLimit": "Maximalgeschwindigkeit zurücksetzen",
       "reset": "Auf 100 %"
     },
     "workSystems": {
@@ -197,7 +198,7 @@
       "enterFeed": "Geben Sie einen Vorschub größer als null ein",
       "feedAboveMax": "Der Vorschub liegt über dem Maschinenmaximum",
       "enterDistance": "Geben Sie eine Strecke größer als null ein",
-      "room": "{direction} hat noch {room} mm bis zum Software-Endschalter",
+      "room": "{direction} hat noch {room} {unit} bis zum Software-Endschalter",
       "atLimit": "{axis} steht am Software-Endschalter",
       "zNoSoftLimits": "Z hat keine Software-Endschalter",
       "safeZRange": "Sicheres Z muss innerhalb der Z-Software-Endschalter liegen, {min} bis {max} {unit}",

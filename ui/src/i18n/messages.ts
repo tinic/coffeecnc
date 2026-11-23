@@ -6,14 +6,17 @@
 // for its variable parts, and the matching key gives the translation. Text that matches no sentence, for example LinuxCNC's
 // own operator errors, is shown as it arrived. A placeholder is translated in turn only when
 // its name is in `nested`: those carry a sentence or a phrase of the catalogs (a reason, an
-// action, "longer", a motor count). Every other placeholder (a path, a file or program name, a
-// tool, a G-code line, a number) is data and stays exactly as it arrived, also when it is a
-// catalog word such as "two".
+// action, "longer", a motor count, the commands an action sent, "the probe", "touching", a
+// tool model object such as "The file"). A placeholder in `lists` carries such phrases joined
+// by ", " (nml_port.cpp, withdraw). Every other placeholder (a path, a file or program name, a
+// tool, a G-code line, a number such as the latched probe value) is data and stays exactly as
+// it arrived, also when it is a catalog word such as "two".
 import { i18n, type Params } from './index'
 import backend from './parts/backend/en.json?raw'
 import panel from './parts/messages/en.json?raw'
 
-const nested = new Set(['detail', 'error', 'reason', 'what', 'where', 'direction', 'motors'])
+const nested = new Set(['detail', 'error', 'reason', 'what', 'where', 'direction', 'motors', 'unsent', 'device', 'input', 'object'])
+const lists = new Set(['sent'])
 
 interface Pattern { key: string; regex: RegExp; names: string[] }
 
@@ -57,7 +60,8 @@ export function matchMessage(text: string): { key: string; params: Params } | nu
     const params: Params = {}
     pattern.names.forEach((name, index) => {
       const value = match[index + 1] ?? ''
-      params[name] = nested.has(name) ? translateMessage(value) : value
+      params[name] = lists.has(name) ? value.split(', ').map(translateMessage).join(i18n.global.t('common.listSeparator'))
+        : nested.has(name) ? translateMessage(value) : value
     })
     return { key: pattern.key, params }
   }

@@ -15,6 +15,7 @@
     "yes": "Sim",
     "no": "Não",
     "off": "Desligado",
-    "saving": "A guardar…"
+    "saving": "A guardar…",
+    "listSeparator": ", "
   }
 }

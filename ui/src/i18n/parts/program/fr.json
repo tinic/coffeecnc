@@ -139,6 +139,7 @@
       "readOnlyRunning": "Lecture seule pendant qu’un programme s’exécute ou est en pause. Arrêtez-le pour le modifier.",
       "empty": "Le programme est vide.",
       "tooLarge": "Le programme dépasse 512 Kio.",
+      "stopFirst": "Arrêtez la machine avant d’enregistrer.",
       "badName": "Nommez le fichier sans barre oblique ni point initial.",
       "editFile": "Modifier {file}",
       "newProgram": "Nouveau programme",

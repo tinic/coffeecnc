@@ -39,6 +39,7 @@ struct NmlStatus {
   double velocity{};    // mm/min
   double feed_override{};
   double rapid_override{};
+  std::optional<double> velocity_limit{}; // factor of the configured linear trajectory ceiling
   double spindle_rpm{}; // commanded, before override
   double spindle_override{};
   // From the HAL component's optional input pins. Nothing when the machine does not connect the

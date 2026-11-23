@@ -257,7 +257,10 @@ auto command(const Json& object) -> Command {
     return SetOverride{
         choice<Override>(
             object, "which",
-            {{"feed", Override::feed}, {"rapid", Override::rapid}, {"spindle", Override::spindle}}),
+            {{"feed", Override::feed},
+             {"rapid", Override::rapid},
+             {"spindle", Override::spindle},
+             {"velocity_limit", Override::velocity_limit}}),
         number(object, "value")};
   }
   if (type == "set_spindle") {

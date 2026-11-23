@@ -11,7 +11,7 @@ import { connectionBlock, interpreterBlock, machineBlock } from '../machine-bloc
 import { currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint, type BreakpointSelection } from '../program-breakpoint'
 import type { CommandBody, LengthUnit } from '../protocol'
-import { formatLength } from '../units'
+import { formatLength, formatPercent } from '../units'
 import { touchProbeLoaded } from '../tool-models'
 
 import AppIcon from './AppIcon.vue'
@@ -21,6 +21,14 @@ import ProgramCheckDialog from './ProgramCheckDialog.vue'
 
 const { t } = useI18n()
 const status = reported
+const velocityLimit = computed(() => status.value?.motion.velocity_limit ?? null)
+const activeVelocityLimit = computed(() => velocityLimit.value !== null && velocityLimit.value < 1
+  ? formatPercent(Math.min(0.99, velocityLimit.value)) : null)
+const moreLabel = computed(() => {
+  const label = t('status.runBar.moreControls')
+  return activeVelocityLimit.value === null ? label
+    : `${label} · ${t('status.runBar.velocityLimitValue', { value: activeVelocityLimit.value })}`
+})
 const checkedPreview = computed(() => currentProgramPreview(panel.preview ?? null, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
@@ -213,10 +221,14 @@ function option(which: 'optional_stop' | 'block_delete'): void {
     <OverrideControl v-else-if="!touchOff" :label="t('status.runBar.spindleOverride')" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
       <details v-if="!touchOff" v-popover class="more">
-        <summary class="more-button" :aria-label="t('status.runBar.moreControls')">···</summary>
+        <summary class="more-button" :aria-label="moreLabel">
+          <span aria-hidden="true">···</span>
+          <small v-if="activeVelocityLimit !== null" class="velocity-limit mono" aria-hidden="true">{{ activeVelocityLimit }}</small>
+        </summary>
         <div class="popover">
           <h3>{{ t('status.runBar.executionControls') }}</h3>
           <OverrideControl :label="t('status.runBar.rapidOverride')" which="rapid" :value="status?.motion.rapid_override ?? null" :min="0" :max="1" :disabled="!live" />
+          <OverrideControl v-if="velocityLimit !== null" v-tooltip="t('status.runBar.velocityLimitTip')" :label="t('status.runBar.velocityLimit')" which="velocity_limit" :value="velocityLimit" :min="0" :max="1" :disabled="!live" />
           <div class="actions">
             <button v-tooltip="stepBlock ?? t('status.runBar.singleBlockTip')" class="btn" type="button" :disabled="stepBlock !== null" @click="send({ type: 'step' })"><AppIcon name="step" />{{ t('status.runBar.singleBlock') }}</button>
             <button class="btn" type="button" :class="{ on: status?.program.optional_stop }" :disabled="!live" @click="option('optional_stop')">{{ t('status.runBar.optionalStop') }}</button>
@@ -255,6 +267,10 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .stop-button { color: var(--stop); min-width: 88px; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
-.more { position: relative; }.more-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; color: var(--text-dim); }
-.popover { bottom: calc(100% + 16px); right: -100px; }
+.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
+.velocity-limit { font-size: 10px; color: var(--accent); white-space: nowrap; }
+.popover { bottom: calc(100% + 16px); right: -100px; width: min(430px, calc(100vw - 32px)); }
+.popover > .override { grid-template-columns: 120px minmax(65px, 1fr) 48px 86px; }
+.popover > .override :deep(input) { min-width: 0; height: 44px; }
+.popover > .override + .override { margin-top: 8px; }
 </style>

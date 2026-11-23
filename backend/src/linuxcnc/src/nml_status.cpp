@@ -191,6 +191,11 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.velocity = motion.traj.current_vel * mm * seconds_per_minute;
   out.feed_override = motion.traj.scale;
   out.rapid_override = motion.traj.rapid_scale;
+  if (const auto maximum = config.limits.max_trajectory_velocity;
+      maximum && std::isfinite(motion.traj.maxVelocity)) {
+    const double applied = motion.traj.maxVelocity * mm * seconds_per_minute;
+    out.velocity_limit = std::clamp(applied / *maximum, 0.0, 1.0);
+  }
   const auto& spindle = motion.spindle[0];
   c.spindle_active = spindle.enabled != 0 || spindle.direction != 0 ||
                      (out.spindle_actual_rpm && std::abs(*out.spindle_actual_rpm) >= 1.0);

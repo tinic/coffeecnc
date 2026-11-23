@@ -681,7 +681,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   mdi("G55");
   mdi("G92 X2 Y3 Z4");
   at(0, 0);
-  mdi("G10 L20 P0 Z8"); // Z0 at machine Z 12, the top of the solid part.
+  mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12, the top of the solid part.
   const auto initial = port.status();
   require(std::abs(initial.rotation_xy - degrees) < 1e-9, std::format("G55 is rotated {}°", degrees));
 

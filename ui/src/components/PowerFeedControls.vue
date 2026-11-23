@@ -23,21 +23,13 @@ import { vTooltip } from '../tooltip'
 import { formatLength, formatVelocity, fromDisplay, toDisplay, velocityUnit } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
+import MotionPad from './MotionPad.vue'
 
 const emit = defineEmits<{ line: [SetterStatusLine] }>()
 
 const unit = computed(() => panel.unit)
 const unitName = computed(() => unit.value === 'inch' ? 'in' : 'mm')
 const maxFeed = computed(() => panel.hello?.max_jog_velocity ?? 0)
-
-const pad: readonly (readonly [AxisLetter, -1 | 1, string, 'up' | 'down' | 'left' | 'right'])[] = [
-  ['y', 1, 'ypos', 'up'],
-  ['x', -1, 'xneg', 'left'],
-  ['x', 1, 'xpos', 'right'],
-  ['y', -1, 'yneg', 'down'],
-  ['z', 1, 'zpos', 'up'],
-  ['z', -1, 'zneg', 'down'],
-]
 
 const directionLabel = (axis: AxisLetter, direction: -1 | 1): string => `${axis.toUpperCase()}${direction > 0 ? '+' : '−'}`
 
@@ -113,11 +105,9 @@ function stop(): void {
 </script>
 
 <template>
-  <div class="feed-controls">
-    <div class="pad">
+  <MotionPad class="feed-controls">
+    <template #direction="{ axis, direction, area, icon }">
       <button
-        v-for="[axis, direction, area, icon] in pad"
-        :key="area"
         v-tooltip="block ?? `Power feed ${directionLabel(axis, direction)} ${extentText}`"
         class="btn jogbtn"
         type="button"
@@ -128,10 +118,12 @@ function stop(): void {
         <AppIcon :name="icon" />
         <span class="mono">{{ directionLabel(axis, direction) }}</span>
       </button>
+    </template>
+    <template #stop>
       <button v-tooltip="'Stop the feed (same as Stop)'" class="btn danger jogbtn stopfeed" type="button" @click="stop">
-        Stop
+        Stop feed
       </button>
-    </div>
+    </template>
 
     <div class="extent">
       <div class="choices" role="group" aria-label="Feed extent">
@@ -178,7 +170,7 @@ function stop(): void {
         <span class="hint">{{ unitName }}</span>
       </label>
     </div>
-  </div>
+  </MotionPad>
 
   <ModalDialog v-if="confirm" :title="`Power feed ${directionLabel(confirm.axis, confirm.direction)}?`" size="small" fresh-gesture @close="confirm = null">
     <p class="coordinate mono">{{ confirm.axis.toUpperCase() }} {{ formatLength(confirm.start, unit) }} → {{ formatLength(confirm.target, unit) }} {{ unitName }}</p>
@@ -192,20 +184,6 @@ function stop(): void {
 </template>
 
 <style scoped>
-.feed-controls { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; align-items: center; }
-.pad {
-  display: grid;
-  justify-self: center;
-  grid-template-areas:
-    '. ypos . gap zpos'
-    'xneg stop xpos gap .'
-    '. yneg . gap zneg';
-  grid-template-columns: 68px 68px 68px 12px 68px;
-  grid-template-rows: 68px 68px 68px;
-  gap: 4px;
-}
-.jogbtn { flex-direction: column; gap: 0; padding: 0; font-size: 20px; }
-.stopfeed { grid-area: stop; font-size: 13px; }
 .extent { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .choices .btn { padding-inline: 8px; }

@@ -40,7 +40,7 @@ export function uneditableReason(program: ProgramText): string | null {
 export function machineBusy(status: Status | null): boolean {
   return status?.interp !== 'idle' || !status.motion.in_position ||
     status.wait.kind === 'tool_change' || status.axes.some((axis) => axis.homing) ||
-    status.rotary_axes?.some((axis) => axis.homing) === true || status.program.breakpoint
+    status.rotary_axes?.some((axis) => axis.homing) === true || status.program.breakpoint !== undefined
 }
 
 export interface EditorState {

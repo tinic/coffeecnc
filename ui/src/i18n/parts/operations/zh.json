@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "检查作业",
+      "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
       "job": "作业",
       "addToJob": "添加到作业",
       "createJob": "创建并打开作业",
@@ -79,6 +81,7 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "jobToolChangeHeight": "保存包含换刀的作业前，请将“前往”的安全 Z 设在所有操作的退让高度之上。",
       "invalidJob": "无法组合此作业。",
       "jobTooLarge": "程序超过 512 KiB 保存上限。",
       "positive": "{label}必须大于零。",

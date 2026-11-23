@@ -36,12 +36,32 @@ export type Generated = { text: string } | { errors: string[] }
 
 const programEnd = 'M2'
 
-/** Joins complete generator outputs in order, retaining setup and retracts at each boundary. */
-export function chainOperations(operations: readonly string[]): Generated {
+export interface ChainOperation {
+  tool: number
+  text: string
+}
+
+/** Joins complete generator outputs. The tool-change height is in program units, machine Z. */
+export function chainOperations(operations: readonly ChainOperation[], unit: Unit, toolChangeZ: number | null = null): Generated {
   const end = `${programEnd}\n`
-  if (operations.length === 0 || operations.some((text) => !text.endsWith(`\n${end}`)))
+  const toolBlock = (tool: number): string => `\nT${String(tool)} M6\n`
+  if (operations.length === 0 || operations.some(({ tool, text }) => !text.endsWith(`\n${end}`) || !text.includes(toolBlock(tool))))
     return { errors: [t('operations.check.invalidJob')] }
-  return { text: operations.map((text) => text.slice(0, -end.length)).join('\n') + end }
+  const sections: string[] = []
+  let previousTool: number | undefined
+  for (const { tool, text } of operations) {
+    let section = text.slice(0, -end.length)
+    if (previousTool === tool) {
+      section = section.replace(toolBlock(tool), '\n')
+    } else if (previousTool !== undefined) {
+      if (toolChangeZ === null || !Number.isFinite(toolChangeZ))
+        return { errors: [t('operations.check.jobToolChangeHeight')] }
+      section = `G90 G53 G0 Z${number(toolChangeZ, unit)}\n\n${section}`
+    }
+    sections.push(section)
+    previousTool = tool
+  }
+  return { text: sections.join('\n') + end }
 }
 
 const decimals = (unit: Unit): number => (unit === 'inch' ? 4 : 3)

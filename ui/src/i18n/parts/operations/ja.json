@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "ジョブを確認",
+      "toolChangeHeight": "工具交換位置は機械座標の Z {z} {unit}",
       "job": "ジョブ",
       "addToJob": "ジョブに追加",
       "createJob": "ジョブを作成して開く",
@@ -79,6 +81,7 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "jobToolChangeHeight": "工具交換を含むジョブを保存する前に、「移動」の安全 Z をすべての工程の退避高さより上に設定してください。",
       "invalidJob": "ジョブを組み立てられませんでした。",
       "jobTooLarge": "プログラムが保存上限の 512 KiB を超えています。",
       "positive": "{label}は 0 より大きい値にしてください。",

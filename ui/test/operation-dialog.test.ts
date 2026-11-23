@@ -39,6 +39,13 @@ function input(label: string): HTMLInputElement {
   if (!found?.exists()) throw new Error(`Missing field ${label}`)
   return found.element
 }
+function machineStatus(workZ = -100, g92Z = 0, maxZ = 0): void {
+  const status = new SimMachine({ emit: (): void => undefined }).status()
+  status.axes = status.axes.map((axis) => axis.axis === 'z' ? { ...axis, max_limit: maxZ } : axis)
+  status.offsets.g5x[2] = workZ
+  status.offsets.g92[2] = g92Z
+  wire.receive(status)
+}
 /** Opens the dialog and answers its listing of the program directory. */
 async function open(existing: string[] = []): Promise<void> {
   wrapper = mount(OperationDialog, { attachTo: document.body, global: { stubs: { teleport: true } } })
@@ -53,13 +60,14 @@ async function open(existing: string[] = []): Promise<void> {
 beforeEach(() => {
   wire.send.mockReset()
   wire.receive({ ...hello, simulated: false })
-  wire.receive(new SimMachine({ emit: (): void => undefined }).status())
+  machineStatus()
   wire.receive({ type: 'tool_table', revision: 1, tools: [
     { number: 1, pocket: 1, length: 60, diameter: 50, comment: 'Face mill 50 mm' },
     { number: 2, pocket: 2, length: 40, diameter: 6, comment: 'End mill 6 mm' },
     { number: 3, pocket: 3, length: 70, diameter: 5, comment: 'Drill 5 mm' },
   ] })
   panel.unit = 'mm'
+  panel.preferences.go_to_safe_z = null
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
@@ -107,6 +115,11 @@ describe('new operation dialog', () => {
     diameter.dispatchEvent(new Event('input'))
     await nextTick()
     expect(button('Add to job').disabled).toBe(true)
+    button('Review job').click()
+    await nextTick()
+    expect(sent().map((command) => command.type)).toEqual(['list_directory'])
+    expect(wrapper?.findAll('.job li')).toHaveLength(2)
+    expect(wrapper?.get('.job-height').text()).toBe('Tool changes at machine Z -0.5 mm')
     expect(button('Create job and open').disabled).toBe(false)
     button('Create job and open').click()
     const save = sent().at(-1)
@@ -116,9 +129,52 @@ describe('new operation dialog', () => {
     expect(save.text).not.toContain('Rectangle X 80')
     expect(save.text.indexOf('(Facing')).toBeLessThan(save.text.indexOf('(Hole pattern'))
     expect(save.text).not.toContain('(Circular pocket')
+    expect(save.text).toContain('M5\n\nG90 G53 G0 Z-0.5\n\n(Hole pattern')
     expect(save.text.match(/^M2$/gm)).toEqual(['M2'])
     answer(save)
     expect(sent().at(-1)).toMatchObject({ type: 'open_program', path: save.path })
+  })
+
+  it('requires a machine Z above the G5x, G92 and G43 adjusted clearance', async () => {
+    machineStatus(-100, 8)
+    panel.preferences.go_to_safe_z = -17
+    await open()
+    button('Add to job').click()
+    button('Hole pattern').click()
+    await nextTick()
+    button('Add to job').click()
+    await nextTick()
+    button('Review job').click()
+    await nextTick()
+    expect(wrapper?.get('[role="alert"]').text()).toContain('above every operation’s clearance')
+    expect(button('Create job and open').disabled).toBe(true)
+    expect(sent().map((command) => command.type)).toEqual(['list_directory'])
+    panel.preferences.go_to_safe_z = -16.9
+    await nextTick()
+    expect(button('Create job and open').disabled).toBe(false)
+    expect(wrapper?.get('.job-height').text()).toBe('Tool changes at machine Z -16.9 mm')
+  })
+
+  it('checks the emitted inch tool-change height against the machine soft limits', async () => {
+    machineStatus(-100, 0, -2.541)
+    panel.unit = 'inch'
+    panel.preferences.go_to_safe_z = -2.541
+    await open()
+    button('Add to job').click()
+    button('Hole pattern').click()
+    await nextTick()
+    button('Add to job').click()
+    await nextTick()
+    button('Review job').click()
+    await nextTick()
+    expect(wrapper?.get('[role="alert"]').text()).toContain('within the Z soft limits')
+    expect(button('Create job and open').disabled).toBe(true)
+    panel.preferences.go_to_safe_z = -2.543
+    await nextTick()
+    button('Create job and open').click()
+    const save = sent().at(-1)
+    if (save?.type !== 'save_program') throw new Error('No job save')
+    expect(save.text).toContain('G90 G53 G0 Z-0.1001')
   })
 
   it('keeps the dialog with the reason when the save fails, and opens nothing', async () => {
@@ -129,6 +185,13 @@ describe('new operation dialog', () => {
     expect(wrapper?.text()).toContain('exists already')
     expect(sent().map((command) => command.type)).toEqual(['list_directory', 'save_program'])
     expect(wrapper?.emitted('close')).toBeUndefined()
+    button('Circular pocket').click()
+    await nextTick()
+    const diameter = input('Pocket diameter, mm')
+    diameter.value = '5'
+    diameter.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(wrapper?.get('[role="alert"]').text()).toContain('too big for this pocket')
   })
 
   it('shows what is wrong and does not create', async () => {

@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "Revisar trabajo",
+      "toolChangeHeight": "Cambios de herramienta en Z de máquina {z} {unit}",
       "job": "Trabajo",
       "addToJob": "Añadir al trabajo",
       "createJob": "Crear y abrir trabajo",
@@ -79,6 +81,7 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "jobToolChangeHeight": "Ajusta la Z segura para «Ir a» por encima de la altura libre de todas las operaciones antes de guardar un trabajo con cambios de herramienta.",
       "invalidJob": "No se pudo preparar el trabajo.",
       "jobTooLarge": "El programa supera el límite de guardado de 512 KiB.",
       "positive": "{label}: debe ser mayor que cero.",

@@ -1,6 +1,8 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "Vérifier la tâche",
+      "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
       "job": "Tâche",
       "addToJob": "Ajouter à la tâche",
       "createJob": "Créer et ouvrir la tâche",
@@ -79,6 +81,7 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "jobToolChangeHeight": "Réglez le Z sûr d’« Aller à » au-dessus du dégagement de chaque opération avant d’enregistrer une tâche avec changements d’outil.",
       "invalidJob": "La tâche n’a pas pu être assemblée.",
       "jobTooLarge": "Le programme dépasse la limite d’enregistrement de 512 Kio.",
       "positive": "{label} : la valeur doit être supérieure à zéro.",

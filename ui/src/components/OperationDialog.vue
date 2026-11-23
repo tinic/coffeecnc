@@ -7,12 +7,13 @@ import { translateMessage } from '../i18n/messages'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
+import { limitMarginMm, safeZBlock } from '../manual-moves'
 import { vNumeric } from '../numeric-input'
 import { operations, parse, uniqueName, unitOf, visibleFields, type Field, type Operation, type OperationId, type Values } from '../conversational/operations'
-import { chainOperations, type Common, type OperationsKey, type Unit } from '../conversational/program'
+import { chainOperations, unitName, written, type ChainOperation, type Common, type OperationsKey, type Unit } from '../conversational/program'
 import { byteLength, maxProgramBytes } from '../program-editor'
 import type { CommandBody, Directory } from '../protocol'
-import { toDisplay } from '../units'
+import { fromDisplay, toDisplay } from '../units'
 import { vTooltip } from '../tooltip'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
@@ -70,22 +71,42 @@ const generated = computed(() => {
     unit, rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance'),
     tool: { number: selected?.number ?? 0, diameter: selected ? toDisplay(selected.diameter, unit) : NaN, comment: selected?.comment ?? '' },
   }
-  return { result: operation.value.generate(parsed, common), base: operation.value.name(parsed, unit), tool: common.tool.number }
+  return { result: operation.value.generate(parsed, common), base: operation.value.name(parsed, unit), tool: common.tool.number, clearance: common.clearance }
 })
 
-interface JobOperation {
+interface JobOperation extends ChainOperation {
   id: number
   title: OperationsKey<'operation'>
   base: string
-  tool: number
-  text: string
+  clearance: number
 }
 const job = shallowRef<readonly JobOperation[]>([])
 const reviewing = ref(false)
 let nextOperation = 1
-const output = computed(() => job.value.length
-  ? chainOperations(job.value.map((op) => op.text))
-  : generated.value.result)
+const toolChangeHeight = computed((): { z: number | null } | { error: string } => {
+  const first = job.value[0]
+  if (!first || job.value.every((op) => op.tool === first.tool)) return { z: null }
+  const status = panel.status
+  const max = status?.axes.find((axis) => axis.axis === 'z')?.max_limit
+  const setting = panel.preferences.go_to_safe_z ?? (max ?? NaN) - limitMarginMm
+  const z = written(toDisplay(setting, unit), unit)
+  const machineZ = fromDisplay(z, unit)
+  const reason = safeZBlock(status, setting, unit) ?? safeZBlock(status, machineZ, unit)
+  if (reason !== null) return { error: reason }
+  const offset = status ? status.offsets.g5x[2] + status.offsets.g92[2] : NaN
+  // The program applies each tool's G43 length before moving to its work-coordinate clearance.
+  if (job.value.some((op) => {
+    const length = tools.value.find((row) => row.number === op.tool)?.length ?? NaN
+    const clearance = offset + length + fromDisplay(written(op.clearance, unit), unit)
+    return !Number.isFinite(clearance) || machineZ <= clearance + 1e-9
+  })) return { error: t('operations.check.jobToolChangeHeight') }
+  return { z }
+})
+const output = computed(() => {
+  if (!job.value.length) return generated.value.result
+  const height = toolChangeHeight.value
+  return 'error' in height ? { errors: [height.error] } : chainOperations(job.value, unit, height.z)
+})
 const outputErrors = computed(() => {
   const result = output.value
   if ('errors' in result) return result.errors
@@ -104,9 +125,9 @@ function selectOperation(id: OperationId): void {
 }
 
 function addToJob(): void {
-  const { result, base, tool } = generated.value
+  const { result, base, tool, clearance } = generated.value
   if (saving.value || 'errors' in result) return
-  job.value = [...job.value, { id: nextOperation++, title: operation.value.title, base, tool, text: result.text }]
+  job.value = [...job.value, { id: nextOperation++, title: operation.value.title, base, tool, clearance, text: result.text }]
   feedback.value = ''
 }
 
@@ -140,7 +161,8 @@ const block = computed(() => connectionBlock(panel.link) ??
 function create(): void {
   const result = output.value
   const folder = directory.value?.path
-  if (saving.value || 'errors' in result || outputErrors.value.length || folder === undefined || block.value !== null) return
+  if ((job.value.length && !reviewing.value) || saving.value || 'errors' in result || outputErrors.value.length
+    || folder === undefined || block.value !== null) return
   saving.value = true
   feedback.value = ''
   const path = `${folder === '/' ? '' : folder}/${fileName.value}`
@@ -219,6 +241,9 @@ const fieldGroups = computed(() => [
             </div>
           </li>
         </ol>
+        <p v-if="'z' in toolChangeHeight && toolChangeHeight.z !== null" class="job-height">
+          {{ t('operations.dialog.toolChangeHeight', { z: toolChangeHeight.z, unit: unitName(unit) }) }}
+        </p>
       </section>
       <div v-else class="form">
         <p v-if="operation.note" class="operation-note">{{ t(operation.note) }}</p>
@@ -265,10 +290,10 @@ const fieldGroups = computed(() => [
         </fieldset>
       </div>
     </div>
-    <p v-if="feedback || block" class="errors" role="status">{{ feedback || (block && translateMessage(block)) }}</p>
-    <ul v-else-if="errors.length" class="errors" role="alert">
+    <ul v-if="errors.length" class="errors" role="alert">
       <li v-for="error in errors" :key="error">{{ error }}</li>
     </ul>
+    <p v-else-if="feedback || block" class="errors" role="status">{{ feedback || (block && translateMessage(block)) }}</p>
     <template #footer>
       <div class="file">
         <template v-if="directory">
@@ -280,7 +305,10 @@ const fieldGroups = computed(() => [
       <button v-if="!reviewing" class="btn" type="button" :disabled="saving || 'errors' in generated.result" @click="addToJob">
         {{ t('operations.dialog.addToJob') }}
       </button>
-      <button class="btn primary" type="button" :disabled="saving || outputErrors.length > 0 || directory === null || block !== null" @click="create">
+      <button v-if="job.length && !reviewing" class="btn primary" type="button" :disabled="saving" @click="reviewing = true">
+        {{ t('operations.dialog.reviewJob') }}
+      </button>
+      <button v-else class="btn primary" type="button" :disabled="saving || outputErrors.length > 0 || directory === null || block !== null" @click="create">
         {{ saving ? t('common.saving') : job.length ? t('operations.dialog.createJob') : t('operations.dialog.createAndOpen') }}
       </button>
     </template>
@@ -295,6 +323,7 @@ const fieldGroups = computed(() => [
 .job-toggle { width: 100%; min-height: 48px; margin-top: 12px; justify-content: space-between; }
 .job-description span { color: var(--text-dim); font-size: var(--type-sm); overflow-wrap: anywhere; }
 .job ol { display: grid; margin: 0; padding-left: 26px; }
+.job-height { margin: 0; color: var(--text-dim); font-size: var(--type-sm); }
 .job li { padding-left: 8px; }
 .job-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; border-bottom: 1px solid var(--line); }
 .job-description { display: grid; min-width: 0; gap: 2px; }

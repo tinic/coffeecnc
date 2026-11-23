@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseEngravingTool": "Choisir un outil de gravure",
+      "chooseFinishTool": "Choisir un alésoir ou un outil à aléser",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
       "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
@@ -23,6 +24,8 @@
     "operation": {
       "engraving": "Gravure",
       "engravingSetup": "Réglez Z0 sur la surface. La ligne de base commence à gauche du texte. Les lettres sont gravées en majuscules.",
+      "holeFinishing": "Alésage",
+      "holeFinishingSetup": "Utilisez des trous prépercés et vérifiez que l’outil peut descendre à la profondeur programmée et remonter en avance.",
       "contour": "Contour",
       "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
@@ -42,6 +45,7 @@
       "engravingHeight": "Hauteur des lettres",
       "engravingSpacing": "Espacement des lettres",
       "engravingRotation": "Rotation antihoraire",
+      "boreDwell": "Temporisation au fond",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
       "profileDirection": "Sens",
@@ -100,6 +104,8 @@
       "boltCircleRadius": "Rayon du cercle de perçage"
     },
     "option": {
+      "g85": "Alésoir (G85)",
+      "g89": "Outil à aléser (G89)",
       "profileCircle": "Cercle",
       "profileRectangle": "Rectangle",
       "profileOutside": "Extérieur",

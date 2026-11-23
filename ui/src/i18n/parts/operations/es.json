@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseEngravingTool": "Selecciona una herramienta de grabado",
+      "chooseFinishTool": "Selecciona un escariador o una herramienta de mandrinar",
       "pocketOptions": "Geometría, entrada y paredes",
       "reviewJob": "Revisar trabajo",
       "toolChangeHeight": "Cambios de herramienta en Z de máquina {z} {unit}",
@@ -23,6 +24,8 @@
     "operation": {
       "engraving": "Grabado",
       "engravingSetup": "Sitúa Z0 en la superficie. La línea base empieza a la izquierda del texto. Las letras se graban en mayúsculas.",
+      "holeFinishing": "Escariado / mandrinado",
+      "holeFinishingSetup": "Usa agujeros pretaladrados y verifica que la herramienta pueda avanzar a la profundidad programada y salir de ella.",
       "contour": "Contorno",
       "contourSetup": "Deja libre la entrada. Para un corte interior, empieza desde un bolsillo abierto o un agujero.",
       "inclinedEntry": "Utilice una fresa de extremo apta para la entrada seleccionada.",
@@ -42,6 +45,7 @@
       "engravingHeight": "Altura de letra",
       "engravingSpacing": "Espacio entre letras",
       "engravingRotation": "Giro antihorario",
+      "boreDwell": "Pausa en el fondo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
       "profileDirection": "Sentido",
@@ -100,6 +104,8 @@
       "boltCircleRadius": "Radio del círculo de taladros"
     },
     "option": {
+      "g85": "Escariado (G85)",
+      "g89": "Mandrinado (G89)",
       "profileCircle": "Círculo",
       "profileRectangle": "Rectángulo",
       "profileOutside": "Exterior",

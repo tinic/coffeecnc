@@ -2,6 +2,7 @@
   "operations": {
     "dialog": {
       "chooseEngravingTool": "选择雕刻刀",
+      "chooseFinishTool": "选择铰刀或镗刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
       "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
@@ -23,6 +24,8 @@
     "operation": {
       "engraving": "文字雕刻",
       "engravingSetup": "将工件表面设为 Z0。基线从文字左端开始。字母以大写雕刻。",
+      "holeFinishing": "铰孔 / 镗孔",
+      "holeFinishingSetup": "使用预钻孔，并确认刀具能够以进给速度到达设定深度并退出。",
       "contour": "轮廓",
       "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
@@ -42,6 +45,7 @@
       "engravingHeight": "字高",
       "engravingSpacing": "字间距",
       "engravingRotation": "旋转（逆时针）",
+      "boreDwell": "孔底暂停",
       "profileShape": "形状",
       "profileSide": "切削侧",
       "profileDirection": "方向",
@@ -100,6 +104,8 @@
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
+      "g85": "铰孔 (G85)",
+      "g89": "镗孔 (G89)",
       "profileCircle": "圆形",
       "profileRectangle": "矩形",
       "profileOutside": "外侧",

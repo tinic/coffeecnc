@@ -1825,11 +1825,40 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
 
   // Another program: the attachment goes with the one it was bound to.
   check("panel_machine_tab_after_tools", rig.click("nav.em-nav button", "Machine") == "ok");
-  const bool reopened = rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
-                        rig.wait_js("!!__t.find('.entries button.entry', 'probe.ngc')") &&
-                        rig.click(".entries button.entry", "probe.ngc") == "ok";
-  check("panel_opens_other_program", reopened);
-  const bool removed =
+  const auto directory_count = rig.js("return __t.counts.directory ?? 0;").get<std::size_t>();
+  // WebGL work and snapshots can trip the panel-frame watchdog while LinuxCNC still reports
+  // a live link. Even read-only directory requests need fresh frames.
+  const auto frames_ready = [&]() -> bool {
+    return rig.wait(5s, []() -> bool {
+      return output_of("halcmd getp motion.jog-inhibit") == "FALSE";
+    });
+  };
+  const auto folder = Json(rig.config.program_prefix).dump();
+  const bool listed =
+      frames_ready() && rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
+      rig.wait_js(std::format("(__t.counts.directory ?? 0) > {} && __t.last.directory.path === {} && "
+                              "!!__t.find('.entries button.entry', 'probe.ngc')",
+                              directory_count, folder));
+  const bool ready_to_open = listed && frames_ready();
+  const auto click = ready_to_open ? rig.js(R"(
+    const sent = __t.sent.length;
+    const click = __t.click('.entries button.entry', 'probe.ngc');
+    const request = __t.sent.slice(sent).find((m) => m?.type === 'open_program');
+    return { click, id: request?.id ?? null, path: request?.path ?? null };
+  )") : Json(nullptr);
+  const auto id = click.is_object() ? click.at("id") : Json(nullptr);
+  const auto reply = std::format("__t.received.find((m) => m.type === 'result' && m.id === {})",
+                                 id.dump());
+  const auto requested_path = (std::filesystem::path(rig.config.program_prefix) / "probe.ngc").string();
+  const bool answered = id.is_number() && rig.wait_js(reply);
+  const auto result = rig.js("return " + reply + " ?? null;");
+  const bool reopened = answered && result.is_object() && result.value("outcome", "") == "accepted" &&
+                        rig.wait_js(std::format("__t.last.status.program.file === {}",
+                                                Json(requested_path).dump()));
+  check("panel_opens_other_program", reopened,
+        Json{{"listed", listed}, {"frames_ready", ready_to_open}, {"click", click},
+             {"result", result}, {"program", rig.panel_status().at("program").at("file")}}.dump());
+  const bool removed = reopened &&
       rig.wait_js("/Part model removed because the program changed/.test("
                   "__t.text(document.querySelector('.model-summary')))");
   check("step_attachment_removed_with_program", removed,

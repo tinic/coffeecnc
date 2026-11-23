@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
-// Everything the operator has been told in this session, newest first. On the simulator it also
-// holds the link-fault test control.
+// Everything the operator has been told since this page was loaded, newest first, then what the
+// alarm log kept from before: earlier pages of this run and earlier runs, each under a separator.
+// On the simulator it also holds the link-fault test control.
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { alarmGroups, describeAlarmCommand } from '../alarm-log'
 import { formatTime } from '../i18n'
 import { translateMessage } from '../i18n/messages'
 
@@ -13,10 +15,21 @@ import type { LinkFault } from '../sim/machine'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
-const { t } = useI18n()
+const { t, d } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 
 const entries = computed(() => [...panel.log].reverse())
+const past = computed(() => alarmGroups(panel.alarmLog).map((group) => ({
+  ...group,
+  title: group.current ? t('status.log.beforeLoad') : t('status.log.earlierRun', { time: d(group.since, 'short') }),
+  entries: group.entries.map((entry, index) => ({ ...entry, key: `${String(group.session)}-${String(index)}`, context: describeAlarmCommand(entry.command) })),
+})))
+const notice = computed(() => {
+  const log = panel.alarmLog
+  if (log === null) return ''
+  if (log.storage === 'session_only') return t('status.log.notSaved', { reason: translateMessage(log.reason) })
+  return translateMessage(log.reason)
+})
 
 const faults = computed(() => [
   ['none', t('status.log.faultNone'), t('status.log.faultNoneTip')],
@@ -28,7 +41,9 @@ const faults = computed(() => [
 
 <template>
   <ModalDialog :title="t('status.log.title')" size="large" @close="emit('close')">
-    <p v-if="entries.length === 0" class="hint">{{ t('status.log.empty') }}</p>
+    <p v-if="entries.length === 0 && past.length === 0" class="hint">{{ t('status.log.empty') }}</p>
+    <h3 v-if="past.length > 0" class="separator">{{ t('status.log.sinceLoad') }}</h3>
+    <p v-if="past.length > 0 && entries.length === 0" class="hint">{{ t('status.log.noneSinceLoad') }}</p>
     <ul class="log">
       <li v-for="entry in entries" :key="entry.id" :class="entry.level">
         <AppIcon :name="entry.level === 'error' ? 'warning' : 'info'" />
@@ -39,6 +54,21 @@ const faults = computed(() => [
         </span>
       </li>
     </ul>
+    <p v-if="notice" class="hint notice">{{ notice }}</p>
+    <p v-if="panel.alarmLog && panel.alarmLog.skipped > 0" class="hint">{{ t('status.log.skipped', { count: panel.alarmLog.skipped }, panel.alarmLog.skipped) }}</p>
+    <section v-for="group in past" :key="group.session" class="past">
+      <h3 class="separator">{{ group.title }}</h3>
+      <ul class="log">
+        <li v-for="entry in group.entries" :key="entry.key" :class="entry.level">
+          <AppIcon :name="entry.level === 'error' ? 'warning' : 'info'" />
+          <span class="when mono">{{ formatTime(entry.time) }}</span>
+          <span class="text">
+            {{ translateMessage(entry.text) }}
+            <span v-if="entry.context" class="context">{{ t('status.log.answerTo', { context: translateMessage(entry.context) }) }}</span>
+          </span>
+        </li>
+      </ul>
+    </section>
     <template v-if="panel.simulated" #footer>
       <div class="fault">
         <span class="label">{{ t('status.log.simulatorControl') }}</span>
@@ -100,6 +130,27 @@ li.error {
   color: var(--text);
   user-select: text;
   -webkit-user-select: text;
+}
+
+.separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.separator::after {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  content: '';
+}
+
+.notice {
+  color: var(--stop);
 }
 
 .context {

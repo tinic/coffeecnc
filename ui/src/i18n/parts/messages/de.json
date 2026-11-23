@@ -148,7 +148,8 @@
       "previousStopAxis": "Der vorherige Tipp-Stopp an {axis} ist nicht bestätigt: {detail}",
       "directoryNotSent": "Das Verzeichnis kann nicht gesendet werden: {detail}",
       "mdiTooLong": "MDI erfordert genau einen Satz mit höchstens 254 Bytes.",
-      "jogStopFailed": "Tipp-Stopp an {axis} fehlgeschlagen: {detail}"
+      "jogStopFailed": "Tipp-Stopp an {axis} fehlgeschlagen: {detail}",
+      "noDiagnostics": "Die HAL-Diagnose gehört nicht zu dieser Sitzung."
     },
     "request": {
       "nestingLimit": "Die Verschachtelungsgrenze der Anfrage ist überschritten.",
@@ -276,7 +277,10 @@
         "saveToolPreviewModel": "Vorschaumodell des Werkzeugs speichern",
         "saveSettings": "Einstellungen speichern",
         "toolModels": "Werkzeugmodelle",
-        "settings": "Einstellungen"
+        "settings": "Einstellungen",
+        "openDiagnostics": "Diagnose öffnen",
+        "closeDiagnostics": "Diagnose schließen",
+        "startHalTool": "{tool} starten"
       }
     },
     "sim": {
@@ -378,7 +382,8 @@
       "gaugeStart": "Starten Sie über dem simulierten Kalibriernormal.",
       "bossStart": "Starten Sie über dem simulierten Zapfen.",
       "setLoadedLength": "Setzen Sie die Länge des eingewechselten Werkzeugs, bevor Sie sie prüfen.",
-      "browserSimulator": "Browser-Simulator"
+      "browserSimulator": "Browser-Simulator",
+      "noHalTools": "Der Browser-Simulator hat keine HAL-Werkzeuge: Er läuft ohne LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC kann keine Verbindung zu seiner nativen Steuerung herstellen. Starten Sie die Anwendung neu.",

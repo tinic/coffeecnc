@@ -243,8 +243,10 @@ void a_failed_save_keeps_the_program() {
       require(!saved && saved.error().starts_with("The program was replaced"),
               "A directory sync failure reports that replacement already happened");
       require(disk.files.at(path) == "G0 X2\nM2\n", "The new text is visible after the rename");
-      writes.failures[step] = 1;
-      const auto uploaded = writer.receive("part.ngc", "M30\n", true, {});
+      FakeToolModelFiles upload_writes{disk};
+      upload_writes.failures.emplace(step, 1);
+      ProgramWriter upload_writer{programs, upload_writes};
+      const auto uploaded = upload_writer.receive("part.ngc", "M30\n", true, {});
       require(!uploaded && uploaded.error().starts_with("Saved on disk. Directory synchronization failed.") &&
                   disk.files.at(path) == "M30\n",
               "An upload reports a directory sync failure separately from publication");

@@ -138,7 +138,9 @@ const examples: Examples = {
   restore_offset: { id: 37, type: 'restore_offset', entry: 10 },
   set_work_rotation: { id: 38, type: 'set_work_rotation', wcs: 2, rotation_xy: -12.5 },
   clear_g92: { id: 39, type: 'clear_g92' },
-  manage_program_file: { id: 40, type: 'manage_program_file', operation: 'rename', path: '/home/cnc/nc_files/part.ngc', name: 'plate.ngc' },
+  watch_diagnostics: { id: 40, type: 'watch_diagnostics', on: true },
+  launch_hal_tool: { id: 41, type: 'launch_hal_tool', tool: 'halscope' },
+  manage_program_file: { id: 42, type: 'manage_program_file', operation: 'rename', path: '/home/cnc/nc_files/part.ngc', name: 'plate.ngc' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

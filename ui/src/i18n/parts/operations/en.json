@@ -1,6 +1,13 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometry, entry and walls",
+      "reviewJob": "Review job",
+      "toolChangeHeight": "Tool changes at machine Z {z} {unit}",
+      "job": "Job",
+      "addToJob": "Add to job",
+      "createJob": "Create job and open",
+      "removeOperation": "Remove {name} from job",
       "title": "New operation",
       "operations": "Operation",
       "tool": "Tool",
@@ -13,6 +20,9 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "contour": "Contour",
+      "contourSetup": "Keep the lead-in clear. For an inside cut, start from an open pocket or hole.",
+      "inclinedEntry": "Use an end mill rated for the selected entry.",
       "facing": "Facing",
       "drilling": "Hole pattern",
       "bore": "Helical bore",
@@ -21,6 +31,16 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "profileShape": "Shape",
+      "profileSide": "Cut side",
+      "profileDirection": "Direction",
+      "profileDiameter": "Profile diameter",
+      "entryFeed": "Entry feed",
+      "pocketEntry": "Entry",
+      "entryAngle": "Maximum entry angle",
+      "pocketWalls": "Walls",
+      "wallStock": "Wall stock",
+      "pocketCoolant": "Coolant",
       "sizeX": "Size X",
       "sizeY": "Size Y",
       "origin": "X0 Y0 at",
@@ -62,6 +82,22 @@
       "boltCircleRadius": "Bolt circle radius"
     },
     "option": {
+      "profileCircle": "Circle",
+      "profileRectangle": "Rectangle",
+      "profileOutside": "Outside",
+      "profileInside": "Inside",
+      "clockwise": "Clockwise",
+      "counterclockwise": "Counterclockwise",
+      "plunge": "Plunge",
+      "helix": "Helical",
+      "ramp": "Linear ramp",
+      "toSize": "To size",
+      "leaveStock": "Leave stock",
+      "finishWalls": "Finish each layer",
+      "coolantOff": "Off",
+      "coolantFlood": "Flood",
+      "coolantMist": "Mist",
+      "coolantBoth": "Mist and flood",
       "lowerLeft": "Lower-left corner",
       "lowerRight": "Lower-right corner",
       "upperLeft": "Upper-left corner",
@@ -75,6 +111,19 @@
       "g83": "G83 peck"
     },
     "check": {
+      "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
+      "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
+      "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",
+      "profileLeadRoom": "The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.",
+      "wallStockNonnegative": "Wall stock must be zero or greater.",
+      "wallStockPrecision": "Wall stock is too small for this program’s coordinate precision.",
+      "entryAngle": "The entry angle must be greater than 0° and less than 90°.",
+      "entryPrecision": "The entry path or angle is too small for this program’s coordinate precision.",
+      "pocketTooManyMoves": "The pocket would produce too many moves. Increase the depth per pass, stepover, or entry angle.",
+      "wallStockFits": "Wall stock leaves too little room for the tool.",
+      "jobToolChangeHeight": "Set Safe Z for Go to above every operation’s clearance before saving a job with tool changes.",
+      "invalidJob": "The job could not be assembled.",
+      "jobTooLarge": "The program exceeds the 512 KiB save limit.",
       "positive": "{label} must be more than zero.",
       "count": "{label} must be a whole number from 1 to {max}.",
       "chooseTool": "Choose a tool from the tool table.",

@@ -2,13 +2,13 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 
 import { allHomed, homingRequired, linkBlock, live, onResult, panel, reported, send } from '../machine'
 import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointLines, currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint, type BreakpointSelection } from '../program-breakpoint'
 import type { CommandBody, LengthUnit } from '../protocol'
 import { formatLength, formatPercent } from '../units'
@@ -61,7 +61,9 @@ onBeforeUnmount(onResult((command, result) => {
     command.breakpoint.line === selected?.line && command.breakpoint.text === selected.text)
     breakpointSelection.value = null
 }))
-const confirmation = ref<{ context: number; unit: LengthUnit; breakpoint: BreakpointSelection | null } | null>(null)
+// Shallow: the reviewed breakpoint is compared by identity with the current selection, and a
+// deep ref would hand back a reactive proxy of it that is never the same object.
+const confirmation = shallowRef<{ context: number; unit: LengthUnit; breakpoint: BreakpointSelection | null } | null>(null)
 const checkChanged = computed(() => confirmation.value !== null &&
   (checkedPreview.value?.context !== confirmation.value.context || panel.unit !== confirmation.value.unit ||
     breakpoint.value !== confirmation.value.breakpoint))
@@ -124,7 +126,14 @@ const startBlock = computed((): string | null => {
 const runBlock = computed(() => startBlock.value ?? interpreterBlock(status.value) ??
   (activeBreakpoint.value ? t('status.runBar.reopening') : null) ??
   ((panel.preview || breakpoint.value) && check.value === null ? t('status.runBar.checking') : null) ??
-  (breakpoint.value && checkedPreview.value?.state !== 'ready' ? t('status.runBar.breakpointCheck') : null))
+  (breakpoint.value ? breakpointBlock(breakpoint.value.line) : null))
+
+/** Why Run to line cannot start at `line`: a preview that ended early offers only its path. */
+function breakpointBlock(line: number): string | null {
+  const preview = checkedPreview.value
+  if (breakpointLines(preview).has(line)) return null
+  return preview?.state === 'failed' && preview.check ? t('status.runBar.breakpointPastPreview') : t('status.runBar.breakpointCheck')
+}
 
 const pauseBlock = computed((): string | null => {
   const s = status.value

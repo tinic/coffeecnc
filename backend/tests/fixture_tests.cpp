@@ -1,3 +1,4 @@
+#include <coffeecnc/app/alarm_log.hpp>
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/request.hpp>
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -74,6 +76,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "restore_offset",
     "set_work_rotation",
     "clear_g92",
+    "watch_diagnostics",
+    "launch_hal_tool",
     "manage_program_file"};
 
 void every_panel_command_decodes() {
@@ -143,6 +147,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   g0759.machine_id = "G0759";
   g0759.coolant = CoolantOutputs{.flood = false, .mist = false};
   g0759.macros = {{"Park", "G53 G0 Z0"}, {"Clamp check", "O<clamp> call"}};
+  g0759.diagnostics = true;
   messages.push_back(encode_hello(g0759));
 
   Hello demo;
@@ -365,6 +370,49 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_offset_history(history));
   messages.push_back(
       encode_offset_history({1, false, "No machine identity configured", {}}));
+  AlarmLogView alarms;
+  alarms.saved = true;
+  alarms.session = 3;
+  alarms.skipped = 1;
+  alarms.entries = {
+      {1, 4, 1700000000000, MessageLevel::error, "Joint 2 following error", "", ""},
+      {2, 1, 1700000100000, MessageLevel::info, "Program loaded", "", ""},
+      {2, 2, 1700000105000, MessageLevel::error, "The machine is off.", "rejected",
+       R"({"axis":"x","type":"home"})"}};
+  messages.emplace_back(encode_alarm_log(alarms));
+  messages.emplace_back(encode_alarm_log({false, "No machine identity configured", 1, 0, {}}));
+
+  Diagnostics diagnostics;
+  const auto row = [](DiagnosticRole role, std::optional<int> joint, std::string name,
+                      DiagnosticState state, DiagnosticValue value, std::string label = {},
+                      bool signal = false) -> DiagnosticReading {
+    return {{.role = role,
+             .joint = joint,
+             .axis = joint ? std::optional<char>{'x'} : std::nullopt,
+             .label = std::move(label),
+             .name = std::move(name)},
+            state,
+            value,
+            signal};
+  };
+  diagnostics.inputs = {
+      row(DiagnosticRole::min_limit, 0, "joint.0.neg-lim-sw-in", DiagnosticState::undriven, false),
+      row(DiagnosticRole::home_switch, 0, "joint.0.home-sw-in", DiagnosticState::live, true),
+      row(DiagnosticRole::amp_fault, 0, "joint.0.amp-fault-in", DiagnosticState::unwired, false),
+      row(DiagnosticRole::estop_chain, {}, "iocontrol.0.emc-enable-in", DiagnosticState::live,
+          true),
+      row(DiagnosticRole::spindle_speed_out, {}, "spindle.0.speed-out", DiagnosticState::live,
+          1200.0),
+      row(DiagnosticRole::spindle_speed_in, {}, "spindle.0.speed-in", DiagnosticState::live,
+          std::numeric_limits<double>::infinity()),
+      row(DiagnosticRole::configured, {}, "setter-tripped", DiagnosticState::live, false,
+          "Setter contact", true),
+      row(DiagnosticRole::configured, {}, "vfd.modbus-errors", DiagnosticState::missing, {},
+          "VFD errors")};
+  diagnostics.tools = {{HalTool::halshow, true, false},
+                       {HalTool::halmeter, true, true},
+                       {HalTool::halscope, false, false}};
+  messages.push_back(encode_diagnostics(diagnostics));
   return messages;
 }
 
@@ -391,6 +439,7 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("machine_id", message.at("machine_id").is_null() ? "null" : "given");
     add("tool_model_storage", message.at("tool_model_storage").dump());
     add("macros", message.contains("macros") ? "some" : "absent");
+    add("diagnostics", message.contains("diagnostics") ? shape(message.at("diagnostics")) : "absent");
   } else if (type == "status") {
     for (const auto* field : {"link", "machine", "mode", "interp", "program_units"})
       add(field, message.at(field).get<std::string>());
@@ -443,6 +492,26 @@ auto variants(const Json& message) -> std::set<std::string> {
         add("before", change.at("before").is_null() ? "null" : "given");
         add("after", change.at("after").is_null() ? "null" : "given");
       }
+    }
+  } else if (type == "alarm_log") {
+    add("storage", message.at("storage").get<std::string>());
+    add("entries", message.at("entries").empty() ? "empty" : "some");
+    for (const auto& entry : message.at("entries")) {
+      add("outcome", entry.at("outcome").is_null() ? "null" : "given");
+      add("command", entry.at("command").is_null() ? "null" : "given");
+    }
+  } else if (type == "diagnostics") {
+    for (const auto& input : message.at("inputs")) {
+      add("state", input.at("state").get<std::string>());
+      add("kind", input.at("kind").get<std::string>());
+      const auto& value = input.at("value");
+      add("value", value.is_boolean() ? "bit" : value.is_number() ? "number" : shape(value));
+      add("joint", input.contains("joint") ? "given" : "absent");
+      add("label", input.contains("label") ? "given" : "absent");
+    }
+    for (const auto& tool : message.at("tools")) {
+      add("available", shape(tool.at("available")));
+      add("open", shape(tool.at("open")));
     }
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
@@ -573,6 +642,35 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "offset_history before given",
     "offset_history after null",
     "offset_history after given",
+    "alarm_log",
+    "alarm_log storage saved",
+    "alarm_log storage session_only",
+    "alarm_log entries empty",
+    "alarm_log entries some",
+    "alarm_log outcome null",
+    "alarm_log outcome given",
+    "alarm_log command null",
+    "alarm_log command given",
+    "hello diagnostics true",
+    "hello diagnostics absent",
+    "diagnostics",
+    "diagnostics state missing",
+    "diagnostics state unwired",
+    "diagnostics state undriven",
+    "diagnostics state live",
+    "diagnostics kind pin",
+    "diagnostics kind signal",
+    "diagnostics value bit",
+    "diagnostics value number",
+    "diagnostics value null",
+    "diagnostics joint given",
+    "diagnostics joint absent",
+    "diagnostics label given",
+    "diagnostics label absent",
+    "diagnostics available true",
+    "diagnostics available false",
+    "diagnostics open true",
+    "diagnostics open false",
 });
 
 void every_machine_message_encodes() {

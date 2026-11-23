@@ -77,6 +77,9 @@ struct MachineConfig {
   MotionTolerances motion_tolerances{};
   // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
   std::vector<Macro> macros{};
+  // [COFFEECNC] DIAGNOSTIC = <label> | <HAL signal or pin>, each occurrence in order; at most
+  // max_diagnostics. Extra rows of the diagnostics view, after LinuxCNC's own pins.
+  std::vector<DiagnosticSignal> diagnostics{};
   // Resolved and prepared by the application before connecting to LinuxCNC.
   std::string runtime_directory{};
   std::vector<std::string> remote_hosts{};

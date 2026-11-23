@@ -119,6 +119,10 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
                       std::is_same_v<T, SetToolModelAssignment> ||
                       std::is_same_v<T, SetOperatorSettings>)
           return allow();
+        // Reading HAL and starting a HAL tool: neither commands the controller, and both are
+        // wanted most when it is in E-stop or its link is gone.
+        if constexpr (std::is_same_v<T, WatchDiagnostics> || std::is_same_v<T, LaunchHalTool>)
+          return allow();
         if constexpr (std::is_same_v<T, SetMachine>) {
           if (c.state == MachineState::estop || c.state == MachineState::off)
             return allow();

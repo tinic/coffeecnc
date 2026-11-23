@@ -102,6 +102,11 @@ if(BUILD_TESTING)
       coffeecnc_project_options nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_offset_history_tests)
     add_test(NAME offset_history COMMAND coffeecnc_offset_history_tests)
+    add_executable(coffeecnc_alarm_log_tests tests/alarm_log_tests.cpp)
+    target_link_libraries(coffeecnc_alarm_log_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_alarm_log_tests)
+    add_test(NAME alarm_log COMMAND coffeecnc_alarm_log_tests ${PROJECT_BINARY_DIR})
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)
@@ -144,6 +149,12 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_session_tests)
     add_test(NAME session_lifecycle COMMAND coffeecnc_session_tests)
+    # The diagnostics view (#251): its wire text and the feed that reads only while watched.
+    add_executable(coffeecnc_diagnostics_tests tests/diagnostics_tests.cpp)
+    target_link_libraries(coffeecnc_diagnostics_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_diagnostics_tests)
+    add_test(NAME diagnostics_feed COMMAND coffeecnc_diagnostics_tests)
     add_executable(coffeecnc_runtime_tests tests/runtime_tests.cpp)
     target_link_libraries(coffeecnc_runtime_tests PRIVATE coffeecnc_app coffeecnc_project_options
       nlohmann_json::nlohmann_json)
@@ -174,6 +185,14 @@ if(BUILD_TESTING)
         coffeecnc_project_options)
       coffeecnc_enable_analyzers(coffeecnc_hal_control_tests)
       add_test(NAME hal_control COMMAND coffeecnc_hal_control_tests)
+      # The diagnostics view's HAL readings on a lookup of the test's own, and the HAL tool
+      # launcher on programs the test writes. No HAL runs.
+      add_executable(coffeecnc_hal_diagnostics_tests tests/hal_diagnostics_tests.cpp)
+      target_link_libraries(coffeecnc_hal_diagnostics_tests PRIVATE coffeecnc_linuxcnc
+        coffeecnc_project_options)
+      coffeecnc_enable_analyzers(coffeecnc_hal_diagnostics_tests)
+      add_test(NAME hal_diagnostics COMMAND coffeecnc_hal_diagnostics_tests
+        ${PROJECT_BINARY_DIR})
       if(TARGET coffeecnc_preview)
         # The preview engine with the real helper and LinuxCNC's interpreter on programs the
         # test writes. No LinuxCNC runs.
@@ -181,7 +200,8 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_preview_engine_tests PRIVATE coffeecnc_linuxcnc
           coffeecnc_project_options)
         target_compile_definitions(coffeecnc_preview_engine_tests PRIVATE
-          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples")
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+          COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam")
         coffeecnc_enable_analyzers(coffeecnc_preview_engine_tests)
         add_test(NAME preview_engine COMMAND coffeecnc_preview_engine_tests
           $<TARGET_FILE:coffeecnc_preview> ${PROJECT_BINARY_DIR})
@@ -195,6 +215,7 @@ if(BUILD_TESTING)
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
         COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+        COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam"
         COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
       if(TARGET coffeecnc_preview)
         add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
@@ -322,6 +343,12 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_fixed_setter_tests> edge-rotation)
       set_tests_properties(linuxcnc_edge_rotation_g0759 linuxcnc_edge_rotation_inch PROPERTIES
         LABELS linuxcnc RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+      # The HAL diagnostics view (#251): limit, home, probe and E-stop rows follow halcmd.
+      add_test(NAME linuxcnc_diagnostics_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p g0759 -t 60 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_diagnostics_g0759
+        $<TARGET_FILE:coffeecnc_sim_tests> g0759 diagnostics)
+      set_tests_properties(linuxcnc_diagnostics_g0759 PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
       add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)
@@ -387,6 +414,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 program-breakpoint)
         set_tests_properties(linuxcnc_program_breakpoint_g0759 PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+        add_test(NAME linuxcnc_cam_programs_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 240 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_cam_programs_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 cam-programs)
+        set_tests_properties(linuxcnc_cam_programs_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 570)
       endif()
       add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759

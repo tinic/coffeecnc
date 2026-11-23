@@ -191,7 +191,12 @@
       "noSettingsStorage": "Operator settings storage is not part of this session.",
       "tooManySettingsChanges": "Too many settings changes are waiting.",
       "settingsPageEnded": "This settings page has ended.",
-      "tooManyChanges": "Too many tool model changes are waiting."
+      "tooManyChanges": "Too many tool model changes are waiting.",
+      "fileNotOpenedAppend": "the file cannot be opened: {error}",
+      "fileNotWritten": "the file cannot be written: {error}",
+      "fileNotSynchronised": "the file cannot be synchronised: {error}",
+      "fileNotClosed": "the file cannot be closed: {error}",
+      "appendUnsupported": "{path} cannot be appended to here"
     },
     "offsetHistory": {
       "nameNotString": "a name is not a string",
@@ -288,6 +293,7 @@
       "cannotReadToolTable": "Cannot read tool table {file}.",
       "cannotWriteToolTable": "Cannot write tool table {file}.",
       "cannotReplaceToolTable": "Cannot replace tool table {file}.",
+      "lengthOffsetUnreadable": "The tool length offset in effect cannot be read.",
       "toolTableNotLoaded": "The tool table file {file} was changed, but the request was cancelled before LinuxCNC was told to load it.",
       "cannotOpenChannels": "Cannot open LinuxCNC's NML channels from {file}.",
       "restoreFromTable": "Could not restore T{tool} from the tool table.",
@@ -458,6 +464,7 @@
       "stateChanged": "The machine state changed. Review a fresh program check.",
       "workOriginChanged": "The work origin changed. Review a fresh program check.",
       "restartContextChanged": "Machine power, the program or the work coordinate system changed.",
+      "restartSelectWcs": "This line runs in {wcs}. Select {wcs}, then choose the line again.",
       "remainStopped": "The machine must remain stopped at the position shown in the preview.",
       "removeProbe": "Remove the touch probe before running a program from a line.",
       "restartSpindleLimit": "The restart spindle speed exceeds the machine limit.",
@@ -502,7 +509,9 @@
       "halNotServiced": "The CoffeeCNC HAL component is not being serviced.",
       "toolChangeGone": "LinuxCNC is not waiting for that tool change any more.",
       "toolInSpindleNumber": "Tool {tool} is in the spindle.",
-      "toolNotInTable": "Tool {tool} is not in the tool table."
+      "toolNotInTable": "Tool {tool} is not in the tool table.",
+      "restartSynchFailed": "LinuxCNC did not save its parameters for the restart.",
+      "restartParametersChanged": "The machine's saved parameters changed after the restart was reviewed. Choose the line again."
     },
     "previewEngine": {
       "cannotRead": "The program cannot be read for a preview, or is larger than {size}.",
@@ -534,7 +543,12 @@
       "lineErrorStop": "Line {line}: {detail}.",
       "rotary": "Program preview and line restart are unavailable on rotary configurations.",
       "iniUnreadable": "The machine's INI file cannot be read for the preview.",
-      "remap": "This machine remaps codes ([RS274NGC] REMAP): the preview cannot follow a remapped code and is not computed.",
+      "stopUnknownSystem": "moves in {wcs}, whose offsets are not in the machine's parameter file",
+      "stopG30ToolChange": "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), which is not in the machine's parameter file",
+      "stopUndefinedParameter": "reads {name}, which the program does not set: its value from an earlier program or MDI block is not known to the preview",
+      "stopRemapped": "{code} is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview",
+      "stopSavedPosition": "G{code} moves to a position that is not in the machine's parameter file",
+      "stopTask": "reads the _task parameter, which is 1 on the machine and 0 in the preview: the program can act differently in each",
       "randomToolChanger": "This machine has a random tool changer: no preview is computed.",
       "oWordCase": "This machine keeps the case of O word names ([RS274NGC] NO_DOWNCASE_OWORD): no preview is computed.",
       "notInstalled": "The preview program (coffeecnc-preview) is not installed.",
@@ -542,7 +556,13 @@
       "noDirectory": "No directory for the preview's files could be made, or its path has characters the interpreter would expand.",
       "filesNotWritten": "The preview's files could not be written.",
       "toolChangeMoves": "The configured tool change moves the machine independently.",
-      "changedDuring": "The program or one of its subroutine files changed on disk during each of {runs} computations: no preview."
+      "changedDuring": "The program or one of its subroutine files changed on disk during each of {runs} computations: no preview.",
+      "stopIniHal": "reads an INI or HAL value ({names}), which the preview does not have",
+      "stopExists": "asks whether a global parameter ({name}) exists: on the machine it can exist from an earlier program or MDI block, which the preview does not know",
+      "stopExistsNamed": "asks whether {name} exists outside a subroutine: on the machine it can exist from an earlier program or MDI block, which the preview does not know",
+      "stopComputedParameter": "reads a parameter whose number is computed (#[...], ##): which one it is, and whether the program has set it, is not known to the preview",
+      "stopReturnValue": "reads {name} or {other} before a subroutine of the program has returned: its value from an earlier program or MDI block is not known to the preview",
+      "stopDefinitionBlock": "an O word in a subroutine definition belongs to a block outside it: which lines run is not known to the preview"
     },
     "nmlStatus": {
       "pauseFirst": "Pause a running program before jogging Z.",
@@ -582,6 +602,22 @@
     "jogStop": {
       "watchdog": "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the watchdog timeout.",
       "probeContact": "Jog stopped: probe contact"
+    },
+    "alarmLog": {
+      "cannotRead": "The alarm log {file} cannot be read: {detail}",
+      "notRotated": "The alarm log could not be rotated: {detail}",
+      "notSaved": "The alarm log could not be saved: {detail}",
+      "entriesLost": "Some alarm log entries could not be saved.",
+      "keptForRun": "The alarm log in {directory} is kept for this run only: {detail}",
+      "inUse": "it is in use by another CoffeeCNC.",
+      "notLocked": "its lock cannot be taken: {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} is not installed: it is not in the search path ({path}).",
+      "alreadyOpen": "{name} is already open.",
+      "notStarted": "{name} could not be started.",
+      "notStartedBecause": "{name} could not be started: {error}.",
+      "cannotStart": "HAL tools cannot be started here."
     }
   }
 }

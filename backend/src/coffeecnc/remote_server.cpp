@@ -170,6 +170,7 @@ auto viewer_hello(const std::string& message, bool upload) -> std::string {
   hello.erase("quit_supported");
   if (upload)
     hello["program_upload"] = true;
+  hello.erase("diagnostics");
   return hello.dump();
 }
 

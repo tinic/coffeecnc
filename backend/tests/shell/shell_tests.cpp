@@ -383,11 +383,13 @@ void first_page(const Rig& rig) {
         rig.js("return __t.firstSeq === 1 && __t.seqBreaks === 0;") == true,
         rig.js("return [__t.firstSeq, __t.lastSeq, __t.seqBreaks];").dump());
 
-  const auto offsets = rig.js("return __t.last.work_offsets;");
-  bool rows = offsets.is_object() && offsets.at("systems").size() == 9;
-  for (std::size_t i = 0; rows && i < 9; ++i)
-    rows = offsets.at("systems").at(i).at("available") == (i == 0);
-  check("work_offsets_only_active_available", rows, offsets.dump());
+  // All nine systems: the active G54 from the status, the inactive ones from the parameter file
+  // (#271). Once the port's own synch has made the file current, every row is current.
+  check("work_offsets_all_available_and_current",
+        rig.wait_js("__t.last.work_offsets.systems.length === 9 && "
+                    "__t.last.work_offsets.systems.every((s, i) => s.wcs === i + 1 && "
+                    "s.available === true && s.current === true)"),
+        rig.js("return __t.last.work_offsets;").dump());
   const auto preview = rig.js("return __t.last.preview;");
   check("preview_unavailable_without_a_program",
         preview.is_object() && preview.at("state") == "unavailable" &&
@@ -502,6 +504,15 @@ void positions_in_mm(const Rig& rig) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       return __t.click('section.mdi button[type="submit"]');)") == "ok");
+  // While the block runs, the parameter file may be behind the interpreter: the inactive systems
+  // are known, but not current. The active G54 comes from the status and stays current.
+  check("work_offsets_inactive_not_current_while_mdi_runs",
+        rig.wait_js("__t.last.status.interp !== 'idle' && "
+                    "__t.last.work_offsets.systems[0].current === true && "
+                    "__t.last.work_offsets.systems.slice(1).every(s => "
+                    "s.available === true && s.current === false)",
+                    5s),
+        rig.js("return [__t.last.status.interp, __t.last.work_offsets];").dump());
   const bool arrived = rig.wait(15s, [&]() -> bool {
     return near(rig.hal_position(0), 25.4, 0.005) && near(rig.hal_position(1), -12.7, 0.005) &&
            near(rig.hal_position(2), 5, 0.005);
@@ -553,7 +564,8 @@ void positions_in_mm(const Rig& rig) {
         std::format("revision={}->{} context={}->{}", revision,
                     rig.js("return __t.last.work_offsets.revision;").dump(), context,
                     after.at("preview_context").dump()));
-  // G55 becomes the active system: it is the available one, G54 is not any more.
+  // G55 becomes the active system. G54 is now an inactive system: its value comes from the
+  // parameter file, and it is current again once the port's synch has written the file.
   rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
       input.value = 'G55';
@@ -562,10 +574,15 @@ void positions_in_mm(const Rig& rig) {
       return __t.click('section.mdi button[type="submit"]');)");
   check("active_system_changes_with_g55",
         rig.wait_js("__t.last.status.offsets.wcs === 2 && "
+                    "__t.last.status.offsets.g5x[0] === 0 && "
                     "__t.last.work_offsets.systems[1].available === true && "
-                    "__t.last.work_offsets.systems[0].available === false && "
-                    "__t.last.work_offsets.systems[0].offset[0] === 0"),
-        rig.js("return __t.last.work_offsets;").dump());
+                    "__t.last.work_offsets.systems[1].current === true && "
+                    "__t.last.work_offsets.systems[1].offset[0] === 0 && "
+                    "__t.last.work_offsets.systems[0].available === true && "
+                    "__t.last.work_offsets.systems[0].current === true && "
+                    // Six decimals in machine units: 0.0000254 mm on an inch machine.
+                    "Math.abs(__t.last.work_offsets.systems[0].offset[0] - 5.4) < 1e-4"),
+        rig.js("return [__t.last.status.offsets, __t.last.work_offsets];").dump());
   rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
       input.value = 'G54 G10 L2 P1 X0 Y0 Z0';
@@ -576,8 +593,13 @@ void positions_in_mm(const Rig& rig) {
                                 "__t.last.status.offsets.g5x[0] === 0 && "
                                 "__t.last.status.interp === 'idle' && "
                                 "__t.last.work_offsets.systems[0].available === true && "
-                                "__t.last.work_offsets.systems[1].available === false");
-  check("back_to_g54", back, rig.js("return __t.last.status.offsets;").dump());
+                                "__t.last.work_offsets.systems[0].current === true && "
+                                "__t.last.work_offsets.systems[0].offset[0] === 0 && "
+                                "__t.last.work_offsets.systems[1].available === true && "
+                                "__t.last.work_offsets.systems[1].current === true && "
+                                "__t.last.work_offsets.systems[1].offset[0] === 0");
+  check("back_to_g54", back,
+        rig.js("return [__t.last.status.offsets, __t.last.work_offsets];").dump());
 }
 
 struct Jogging {
@@ -1495,10 +1517,16 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
   const bool opened_b = open("task-17_B.nc");
   preview = report("task-17_B.nc", "G54");
   const auto context_g54 = preview.at("context").get<std::uint64_t>();
-  check("paired_sample_b_stops_at_g55_while_g54_is_active",
-        opened_b && of_status(preview, 1) && preview.at("state") == "failed" &&
-            preview.at("error").is_object() && preview.at("error").at("line") == 24 &&
-            preview.at("error").at("text").get<std::string>().find("G55") != std::string::npos,
+  // With G54 active, G55's offsets come from LinuxCNC's parameter file: the G55 part is
+  // previewed and its origin verified (#253).
+  const auto frames = preview.contains("check") && preview.at("check").is_object()
+                          ? preview.at("check").value("frames", Json::array())
+                          : Json::array();
+  check("paired_sample_b_previews_g55_while_g54_is_active",
+        opened_b && of_status(preview, 1) && !preview.at("segments").empty() &&
+            std::ranges::any_of(frames, [](const Json& frame) {
+              return frame.value("wcs", 0) == 2 && frame.value("available", false);
+            }),
         judged(preview));
   rig.snapshot("task17b-preview-g54-active");
   const bool g55 = select(2);
@@ -1818,13 +1846,32 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   check("panel_closes_tool_model", rig.click("section.dialog button[aria-label=\"Close\"]", "") == "ok");
   check("panel_closes_combined_editor", rig.wait_js("!document.querySelector('.tool-fields')"));
   rig.snapshot("tools-tab");
-  // The work offset table of the Tools tab: only the active system has numbers.
-  check("tools_tab_shows_unavailable_work_systems",
-        rig.js(R"(
+  // The work offset table of the Tools tab: all nine systems have numbers (#271). The active one
+  // is marked as such. A row is shown as not current exactly when the native shell says so. Here
+  // task is still in auto mode after program_with_tool_change, so the inactive rows are not
+  // current: task takes no synch in auto mode.
+  check("tools_tab_shows_all_work_systems",
+        rig.wait_js(R"((() => {
+          const systems = __t.last.work_offsets.systems;
           const rows = Array.from(document.querySelectorAll('.offset-row'));
-          return rows.some(row => String(row.firstElementChild?.getAttribute('aria-label')).endsWith('offsets unavailable') &&
-            Array.from(row.querySelectorAll('td.num')).slice(0, 3).every(cell => __t.text(cell) === '—'));
-        )") == true);
+          return rows.length === 9 && systems.length === 9 &&
+            rows.every((row, i) => {
+              const active = systems[i].wcs === __t.last.status.offsets.wcs;
+              const hint = row.firstElementChild?.getAttribute('aria-label') ?? '';
+              return systems[i].available === true &&
+                row.classList.contains('loaded') === active &&
+                row.classList.contains('unconfirmed') === (systems[i].current === false) &&
+                (systems[i].current === false) === hint.includes('may have changed') &&
+                !hint.endsWith('offsets unavailable') &&
+                Array.from(row.querySelectorAll('td.num')).slice(0, 3).every(cell => /\d/.test(__t.text(cell)));
+            }) &&
+            (__t.last.status.mode !== 'auto' ||
+              systems.every(s => (s.wcs === __t.last.status.offsets.wcs) === (s.current === true)));
+        })())"),
+        rig.js(R"(return [__t.last.status.mode, __t.last.status.offsets.wcs,
+          Array.from(document.querySelectorAll('.offset-row')).map(row =>
+          [row.className, row.firstElementChild?.getAttribute('aria-label') ?? null, __t.text(row)])];)")
+            .dump());
   check("no_console_errors_in_tools_tab", rig.js("return __t.errors.length;") == 0, rig.errors());
 
   // Another program: the attachment goes with the one it was bound to.

@@ -60,6 +60,8 @@ struct Hello {
   std::array<std::optional<double>, 3> axis_max_jog_velocity{};
   // The machine refuses programs and MDI until its axes are homed.
   bool homing_required{};
+  // `watch_diagnostics` and `launch_hal_tool` are served. Sent only when true.
+  bool diagnostics{};
   double max_feed_override{};
   double min_spindle_override{};
   double max_spindle_override{};

@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <expected>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -170,6 +171,11 @@ public:
   }
   auto remove_tool(int number, const Wanted&) -> ActionResult override {
     return record("remove_tool", std::to_string(number));
+  }
+  // Read by a restore of the loaded tool's length; not an action, so not recorded.
+  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+    return length_in_effect;
   }
 
 private:
@@ -632,6 +638,74 @@ void operator_settings_go_to_storage() {
           "Operator preferences go directly to storage");
   require(port.calls.empty() && port.snapshots == 0,
           "Saving preferences issues no controller commands or reads");
+}
+
+class FakeDiagnostics final : public DiagnosticsService {
+public:
+  std::vector<std::pair<std::uint64_t, bool>> watches;
+  std::vector<HalTool> launched;
+  std::vector<std::uint64_t> ended;
+  std::optional<std::string> refusal;
+  void watch(PageToken page, bool on) override { watches.emplace_back(page.value, on); }
+  auto launch(HalTool tool) -> std::optional<std::string> override {
+    launched.push_back(tool);
+    return refusal;
+  }
+  void page_ended(PageToken page) override { ended.push_back(page.value); }
+};
+
+// #251: the diagnostics view's requests go to their service at once, in E-stop with the link
+// down, and never to the controller.
+void diagnostics_go_to_their_service() {
+  FakePort port;
+  port.state = ControllerState{};
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  FakeDiagnostics diagnostics;
+  Session session{port,    Limits{3000, 1.2, 0.5, 1.2, 24000}, programs, nullptr, nullptr,
+                  nullptr, nullptr,                            nullptr,  &diagnostics};
+  Driver driver{session, port};
+  RequestId id = 0;
+  const auto send = [&](PageToken page, std::string_view body) -> Json {
+    const auto outcome = driver.handle(page, std::format("{{\"id\":{},{}}}", ++id, body), at(0ms));
+    const auto found = results(outcome);
+    return found.size() == 1 ? found.front() : Json();
+  };
+  const auto page = driver.begin_page();
+  require(send(page, R"("type":"watch_diagnostics","on":true)").at("reason") == gate_reason &&
+              diagnostics.watches.empty(),
+          "Before ready the watch is rejected like any other request");
+  static_cast<void>(send(page, R"("type":"ready")"));
+  auto answer = send(page, R"("type":"watch_diagnostics","on":true)");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.watches == std::vector<std::pair<std::uint64_t, bool>>{{page.value, true}},
+          "The watch is accepted at once, in E-stop with the link down");
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.launched == std::vector<HalTool>{HalTool::halscope},
+          "A HAL tool is started by the service");
+  diagnostics.refusal = "halscope is already open.";
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open.",
+          "The service's refusal is the result");
+  answer = send(page, R"("type":"watch_diagnostics","on":false)");
+  require(answer.at("outcome") == "accepted" && diagnostics.watches.back() ==
+                                                    std::pair<std::uint64_t, bool>{page.value, false},
+          "The watch ends");
+  require(port.calls.empty(), "Nothing reached the controller");
+  driver.end_page(page);
+  require(!diagnostics.ended.empty() && diagnostics.ended.back() == page.value,
+          "The end of the page ends its diagnostics");
+
+  Session without{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
+  Driver plain{without, port};
+  const auto other = plain.begin_page();
+  static_cast<void>(plain.handle(other, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto refused = results(
+      plain.handle(other, R"({"id":2,"type":"launch_hal_tool","tool":"halshow"})", at(0ms)));
+  require(refused.size() == 1 && refused.front().at("outcome") == "rejected" &&
+              refused.front().at("reason") == "HAL diagnostics are not part of this session.",
+          "Without a service the requests are rejected");
 }
 
 void tool_model_commands_go_to_their_service() {
@@ -1192,6 +1266,11 @@ void composed_mdi() {
   rig.port.script["mdi"] = {{}, {ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"tool_touch_off","value":1)", "timed_out", "LinuxCNC did not answer.");
   rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "Both blocks belong to the one result");
+  // #277: an accepted command has no reason, even when a step of it came back with words.
+  rig.port.script["mdi"] = {{ActionStatus::accepted, "LinuxCNC did not acknowledge the command."},
+                            {}};
+  rig.accepted(R"("type":"tool_touch_off","value":1)");
+  rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "An accepted result carries no step's reason");
 
   rig.expect(R"("type":"touch_off","axis":"x","value":1e300)", "rejected",
              "MDI requires one block of at most 254 bytes.");
@@ -2393,6 +2472,79 @@ void offset_history() {
                "This CoffeeCNC keeps no offset history.");
 }
 
+// A restored length of the tool in the spindle is applied again in the same request when that
+// tool's length is in effect (#287): G43 H<tool> after the G10 L1, through the same MDI path.
+void tool_length_restore() {
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  OffsetHistoryStore history{files, ""};
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, &history};
+  rig.port.state.mode = TaskMode::mdi;
+  rig.port.state.tool_in_spindle = 3;
+  const auto reading = [](double length) -> PanelReading {
+    PanelReading seen;
+    seen.status.link = Link::live;
+    seen.status.offsets.wcs = 1;
+    seen.tool_table = {1, {{3, 3, length, 6, "End mill"}}};
+    return seen;
+  };
+  const auto observe = [&](PanelReading seen) -> void {
+    const auto now = at(rig.clock);
+    history.observe(seen, now.unix_time, now.monotonic);
+  };
+  observe(reading(48.2));
+  rig.port.during["mdi"] = [&]() -> void { observe(reading(50)); };
+  rig.accepted(R"("type":"mdi","text":"G10 L1 P3 Z50")");
+  const auto entry = history.snapshot()->entries.front();
+  require(entry.target == HistoryTarget::tool && entry.number == 3 &&
+              entry.changes.front().field == HistoryField::length,
+          "The length of the loaded tool is in the history");
+  rig.acted({"mdi G10 L1 P3 Z50"}, "The panel's MDI line");
+  const auto restore = std::format(R"("type":"restore_offset","entry":{})", entry.id);
+  const auto in_effect = [&](double offset_z) -> void {
+    rig.port.length_in_effect = ToolLengthInEffect{{0, 0, offset_z}, 50};
+  };
+
+  in_effect(50);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2", "mdi G43 H3"}, "G43 of the loaded tool is applied again");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z1.8976377952755907", "mdi G43 H3"},
+            "In inches: the length in inches, the same G43 H3");
+  rig.port.state.program_units = LengthUnit::mm;
+
+  in_effect(0);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "No offset in effect: G10 L1 only");
+  in_effect(40);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "The offset of another H stays: G10 L1 only");
+  in_effect(90);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
+  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
+  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.acted({}, "An unreadable offset in effect sends nothing");
+  rig.port.state.tool_in_spindle = 2;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "Another tool in the spindle: G10 L1 only");
+  rig.port.state.tool_in_spindle = 3;
+
+  // A stop request after the G10 L1: G43 is not sent, and the result says so.
+  in_effect(50);
+  rig.port.during["mdi"] = [&]() -> void {
+    static_cast<void>(rig.session.submit(rig.page, R"({"id":900,"type":"abort"})", at(0ms)));
+  };
+  const auto found = results(rig.send(restore));
+  require(found.size() == 2 && found.front().at("outcome") == "failed" &&
+              found.front().at("reason") ==
+                  "The tool length was set, but a stop request cancelled the command before it "
+                  "was applied (G43 was not sent).",
+          "A stop between the blocks: G43 was not sent");
+  rig.acted({"mdi G10 L1 P3 Z48.2", "abort"}, "Only the G10 L1 and the abort are sent");
+}
+
 void exactly_one_result(std::uint32_t seed) {
   constexpr std::array<std::string_view, 30> bodies{
       R"("type":"ready")",
@@ -2681,7 +2833,8 @@ void usb_copy_does_not_hold_the_command_worker() {
   FakeToolModelFiles writes{disk};
   ProgramWriter writer{programs, writes};
   const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
-  Session session{port, limits, programs, nullptr, nullptr, nullptr, nullptr, nullptr, true};
+  Session session{port, limits, programs, nullptr, nullptr, nullptr, nullptr, nullptr,
+                  nullptr, true};
   Driver driver{session, port};
   const auto page = driver.begin_page();
   static_cast<void>(driver.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
@@ -2718,6 +2871,7 @@ auto main(int argc, char** argv) -> int {
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
+    diagnostics_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
     pending_probe_tool_changes();
     operator_settings_go_to_storage();
@@ -2732,6 +2886,7 @@ auto main(int argc, char** argv) -> int {
     program_paths();
     composed_mdi();
     offset_history();
+    tool_length_restore();
     jog_presses_and_refreshes();
     jog_failures();
     late_jog_starts();

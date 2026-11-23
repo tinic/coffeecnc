@@ -125,7 +125,8 @@
       "messageLog": "Journal des messages",
       "dismissTip": "Masquer ce message ; il reste dans le journal des messages",
       "dismiss": "Masquer",
-      "estopButton": "ARRÊT D’URGENCE"
+      "estopButton": "ARRÊT D’URGENCE",
+      "diagnostics": "Diagnostic"
     },
     "machineBlock": {
       "connecting": "Pas encore d’état de la machine",
@@ -177,6 +178,7 @@
       "reopening": "Réouverture du programme d’origine",
       "checking": "Vérification du programme",
       "breakpointCheck": "Un point d’arrêt nécessite une vérification complète du programme",
+      "breakpointPastPreview": "L’aperçu se termine avant cette ligne : choisissez une ligne sur la trajectoire de l’aperçu",
       "nothingRunning": "Rien n’est en cours",
       "waitingToolChange": "En attente du changement d’outil",
       "dismissSpindleConfirm": "Fermez la confirmation de broche avant de continuer",
@@ -216,7 +218,13 @@
       "faultStale": "Signale périmé",
       "faultStaleTip": "LinuxCNC n’écrit plus son état ; le dernier continue d’arriver.",
       "faultDown": "Signale hors ligne",
-      "faultDownTip": "Pas de connexion à LinuxCNC ; état fictif."
+      "faultDownTip": "Pas de connexion à LinuxCNC ; état fictif.",
+      "sinceLoad": "Cette session",
+      "noneSinceLoad": "Aucun message dans cette session pour l’instant.",
+      "beforeLoad": "Cette session, avant le rechargement du panneau",
+      "earlierRun": "Session précédente, {time}",
+      "notSaved": "Ce journal n’est pas enregistré : {reason}",
+      "skipped": "{count} ligne endommagée du journal enregistré a été ignorée. | {count} lignes endommagées du journal enregistré ont été ignorées."
     },
     "quit": {
       "title": "Quitter CoffeeCNC ?",
@@ -252,6 +260,81 @@
       "machineOn": "Machine sous tension",
       "readOnly": "Lecture seule",
       "messageLog": "Journal des messages"
+    },
+    "diagnostics": {
+      "title": "Diagnostic HAL",
+      "hint": "Entrées HAL telles que LinuxCNC les voit, lues environ dix fois par seconde tant que cette vue est ouverte. La lecture ne modifie rien dans HAL.",
+      "waiting": "En attente de la première lecture…",
+      "stale": "Aucune lecture depuis une seconde : les valeurs ne sont pas à jour.",
+      "live": "En direct",
+      "alarms": "{count} entrée à vérifier | {count} entrées à vérifier",
+      "section": {
+        "switches": "Fins de course et contacts d’origine",
+        "estop": "Chaîne d’arrêt d’urgence",
+        "probe": "Palpeur et palpeur d’outil fixe",
+        "spindle": "Broche et variateur",
+        "configured": "Signaux de la machine",
+        "tools": "Outils HAL"
+      },
+      "column": {
+        "joint": "Articulation",
+        "minLimit": "Fin de course min",
+        "maxLimit": "Fin de course max",
+        "homeSwitch": "Contact d’origine",
+        "driveFault": "Défaut variateur"
+      },
+      "jointName": "articulation {joint}",
+      "noJoints": "Aucune entrée d’articulation dans cette lecture.",
+      "row": {
+        "estopChain": "Chaîne d’arrêt d’urgence externe",
+        "estopRequest": "Validation LinuxCNC",
+        "probe": "Entrée palpeur",
+        "spindleOn": "Broche en marche",
+        "spindleAtSpeed": "À vitesse",
+        "spindleSpeedOut": "Vitesse commandée",
+        "spindleSpeedIn": "Vitesse mesurée",
+        "spindleFault": "Défaut variateur de broche"
+      },
+      "value": {
+        "tripped": "Déclenché",
+        "clear": "Libre",
+        "on": "Actif",
+        "off": "Inactif",
+        "fault": "Défaut",
+        "ok": "OK",
+        "closed": "Fermée",
+        "open": "Ouverte",
+        "enabled": "Validé",
+        "estop": "Arrêt d’urgence",
+        "atSpeed": "À vitesse",
+        "notAtSpeed": "Pas à vitesse",
+        "none": "—"
+      },
+      "state": {
+        "missing": "Absent de HAL",
+        "unwired": "Non câblé",
+        "undriven": "Sans source"
+      },
+      "stateTip": {
+        "missing": "HAL n’a ni pin ni signal de ce nom.",
+        "unwired": "La pin n’est reliée à aucun signal : elle lit sa propre valeur.",
+        "undriven": "Rien n’écrit ce signal : aucun contact ni entrée ne le pilote."
+      },
+      "pinName": "Pin {name}",
+      "signalName": "Signal {name}",
+      "setterHint": "Un palpeur d’outil fixe ou un second palpeur sur d’autres entrées apparaît sous Signaux de la machine, depuis [COFFEECNC] DIAGNOSTIC.",
+      "noConfigured": "Aucun configuré. Ajoutez une ligne par signal à [COFFEECNC] dans le fichier INI, par exemple : {example}",
+      "tools": {
+        "halshowTip": "Toutes les pins, signaux et paramètres, avec leurs valeurs",
+        "halmeterTip": "La valeur d’une pin ou d’un signal",
+        "halscopeTip": "Signaux enregistrés dans le temps",
+        "notInstalled": "Non installé",
+        "open": "Déjà ouvert",
+        "closed": "Toucher pour ouvrir",
+        "starting": "Démarrage…",
+        "unknown": "—",
+        "hint": "Chacun s’ouvre dans sa propre fenêtre, hors du panneau, un seul de chaque. Ils se ferment avec CoffeeCNC."
+      }
     }
   }
 }

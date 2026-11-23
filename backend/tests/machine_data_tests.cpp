@@ -87,9 +87,9 @@ struct Fixture {
     return Json::parse(done.messages.front());
   }
   [[nodiscard]] auto change_of(const Json& summary, const std::string& name) const -> std::string {
-    const auto& files = summary["files"];
-    const auto found = std::ranges::find_if(files, [&](const Json& file) { return file["name"] == name; });
-    return found == files.end() ? "absent" : (*found)["change"].get<std::string>();
+    const auto& listed = summary["files"];
+    const auto found = std::ranges::find_if(listed, [&](const Json& file) { return file["name"] == name; });
+    return found == listed.end() ? "absent" : (*found)["change"].get<std::string>();
   }
 };
 

@@ -5451,6 +5451,8 @@ void work_offsets(Rig& rig) {
         std::format("synch_written={} abort_written_after_ms={:.1f} abort={} current_again={}",
                     synch_at.has_value(), waited, stopped.outcome, took(time)));
   settle();
+}
+
 // The offset editor's XY rotation and G92/G52 clear against LinuxCNC: the blocks are taken, the
 // readout and the preview inputs follow the rotation, each edit is one history entry, Restore
 // undoes it, and a running program refuses both.

@@ -853,6 +853,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   static_cast<void>(angle(ProbeDirection::x_plus, -residual));
   edge(ProbeDirection::y_plus);
   const auto front = angle(ProbeDirection::y_plus, residual);
+  // The feature cycles above moved the G55 origin: applying keeps it where they left it.
+  const auto unturned = port.status().g5x;
   const auto applied = port.fixed_setter(
       {.action = SetterAction::apply_angle, .tool = 99, .edge_measurement = front.edge_rotation->id},
       epoch, {});
@@ -863,7 +865,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   require(applied && applied->edge_angle_deg &&
               std::abs(*applied->edge_angle_deg - (degrees + residual)) < 0.05 &&
               std::abs(turned.rotation_xy - (degrees + residual)) < 0.05 &&
-              std::ranges::equal(turned.g5x, initial.g5x,
+              std::ranges::equal(turned.g5x, unturned,
                                  [](double a, double b) { return std::abs(a - b) < 1e-6; }),
           applied ? "applying adds the measured turn to the present rotation"
                   : applied.error());

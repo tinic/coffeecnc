@@ -5,14 +5,20 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <format>
+#include <initializer_list>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace coffeecnc;
@@ -285,8 +291,61 @@ void persistence() {
           "Every write replaces the file durably");
 }
 
+// A saved file with one entry per {id, target, number, fields}, newest first.
+auto history_file(std::initializer_list<std::tuple<int, std::string_view, int,
+                                                   std::vector<std::string_view>>> entries)
+    -> std::string {
+  auto list = Json::array();
+  for (const auto& [id, target, number, names] : entries) {
+    auto changes = Json::array();
+    std::ranges::transform(names, std::back_inserter(changes), [](std::string_view name) -> Json {
+      return {{"field", name}, {"before", 1}, {"after", 2}};
+    });
+    list.push_back({{"id", id}, {"time", 0}, {"source", "outside"}, {"target", target},
+                    {"number", number}, {"changes", changes}, {"restores", nullptr}});
+  }
+  const auto unknown = Json::array({nullptr, nullptr, nullptr, nullptr});
+  return Json{{"version", 1},
+              {"entries", list},
+              {"next_id", 10},
+              {"seen", {{"systems", Json::array({unknown, unknown, unknown, unknown, unknown,
+                                                 unknown, unknown, unknown, unknown})},
+                        {"g92", nullptr},
+                        {"tools", nullptr}}}}
+      .dump();
+}
+
+// A file with one work system entry whose number is the JSON text `number`.
+auto history_number(std::string_view number) -> std::string {
+  auto content = history_file({{1, "wcs", 7, {"x"}}});
+  const auto at = content.find(R"("number":7)");
+  require(at != std::string::npos, "The history file has the entry number");
+  return content.replace(at, 10, std::string(R"("number":)") + std::string(number));
+}
+
 void damaged_files() {
+  {
+    Fixture f;
+    f.disk.files[file] = history_file({{3, "tool", 4, {"length", "diameter"}},
+                                       {2, "g92", 0, {"x", "y", "z"}},
+                                       {1, "wcs", 1, {"x", "y", "z", "rotation_xy"}}});
+    f.open();
+    require(f.history().entries.size() == 3 && f.history().reason.empty(),
+            "Each target loads with its own fields");
+  }
   for (const auto& [content, what] : std::vector<std::pair<std::string, std::string>>{
+           // A restore of these would write a bare G52, a work Z from a tool length and a tool
+           // offset from an X.
+           {history_file({{1, "g92", 0, {"length"}}}), "a G92 entry with a tool length"},
+           {history_file({{1, "wcs", 1, {"length"}}}), "a work system entry with a tool length"},
+           {history_file({{1, "tool", 4, {"x"}}}), "a tool entry with an X"},
+           {history_file({{1, "wcs", 1, {"x", "x"}}}), "a field twice in one entry"},
+           {history_file({{2, "wcs", 1, {"x"}}, {2, "wcs", 1, {"y"}}}), "an id used twice"},
+           {history_file({{1, "wcs", 1, {"x"}}, {2, "wcs", 1, {"y"}}}), "oldest first"},
+           // 2^32 + 1 narrowed to int would be work system 1; 1.5 would be truncated to 1.
+           {history_number("4294967297"), "a work system number beyond int"},
+           {history_number("1.5"), "a fractional work system number"},
+           {history_number("-1"), "a negative work system number"},
            {"{not json", "not JSON"},
            {R"({"version":2,"entries":[],"next_id":1,"seen":{}})", "another version"},
            {R"({"version":1,"entries":[{"id":1}],"next_id":2,"seen":{}})", "an entry cut short"},

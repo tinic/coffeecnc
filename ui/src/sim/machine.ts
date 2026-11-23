@@ -1035,7 +1035,7 @@ export class SimMachine {
         if (blocked !== null) {
           return blocked
         }
-        if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
+        if (this.probe && this.toolInSpindle === demoProbe) return reject('A touch probe is loaded') // As session.cpp probe_block.
         if (!(command.rpm > 0)) {
           return reject('Spindle speed must be above zero')
         }

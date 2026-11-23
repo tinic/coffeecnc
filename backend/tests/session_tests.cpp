@@ -2654,11 +2654,17 @@ void uploads_do_not_replace_the_running_program() {
   port.state.requested_tool = 2;
   session.observe(port.state, clock().monotonic);
   require(!publish(part) && published == 0, "The loaded file is protected while an M6 waits");
-  require(publish(other).has_value(), "Another file can be replaced during a run");
+  require(publish(other).has_value() && port.calls.empty(), "Another file can be replaced without reopening during a run");
   port.state.requested_tool.reset();
   session.observe(port.state, clock().monotonic);
-  require(publish(part).has_value() && published == 2 && port.calls.empty(),
-          "An idle replacement publishes on disk without commanding LinuxCNC");
+  require(publish(part).has_value() && published == 2 &&
+              port.calls == Calls{std::string("open_program ") + part},
+          "An idle replacement reopens the pathname in LinuxCNC");
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
+  const auto failed = publish(part);
+  require(!failed && published == 3 &&
+              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+          "A failed reopen reports the successful disk publication");
 }
 
 void usb_copy_does_not_hold_the_command_worker() {

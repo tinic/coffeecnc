@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "程序正在运行。",
+      "directorySync": "已保存到磁盘。目录同步失败。{detail}",
       "manage": "管理程序文件",
       "unavailable": "程序文件管理不可用。",
       "nameForRename": "仅重命名时需要提供新文件名。",

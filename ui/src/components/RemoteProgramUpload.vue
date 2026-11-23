@@ -11,13 +11,16 @@ const replace = ref(false)
 const uploading = ref(false)
 const saved = ref('')
 const problem = ref('')
+const maxUploadBytes = 16 * 1024 * 1024
 
 function select(files: FileList | null): void {
   if (uploading.value || files?.length !== 1) return
-  file.value = files.item(0)
+  const selected = files.item(0)
   replace.value = false
   saved.value = ''
-  problem.value = ''
+  const tooLarge = selected !== null && selected.size > maxUploadBytes
+  file.value = tooLarge ? null : selected
+  problem.value = tooLarge ? t('backend.programFiles.size') : ''
 }
 
 function choose(event: Event): void {

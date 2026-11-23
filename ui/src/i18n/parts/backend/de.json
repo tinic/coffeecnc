@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "Das Programm läuft.",
+      "directorySync": "Auf dem Datenträger gespeichert. Das Synchronisieren des Verzeichnisses ist fehlgeschlagen. {detail}",
       "manage": "Programmdateien verwalten",
       "unavailable": "Die Programmdateiverwaltung ist nicht verfügbar.",
       "nameForRename": "Ein neuer Dateiname ist nur beim Umbenennen erforderlich.",

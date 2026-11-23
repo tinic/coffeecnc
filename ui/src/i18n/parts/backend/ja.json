@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "プログラムを実行中です。",
+      "directorySync": "ディスクに保存しました。ディレクトリの同期に失敗しました。{detail}",
       "manage": "プログラムファイルを管理",
       "unavailable": "プログラムファイル管理は利用できません。",
       "nameForRename": "新しい名前は名前の変更時にだけ必要です。",

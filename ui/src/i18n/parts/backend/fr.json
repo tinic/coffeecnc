@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "Le programme est en cours d’exécution.",
+      "directorySync": "Enregistré sur le disque. La synchronisation du dossier a échoué. {detail}",
       "manage": "Gérer les fichiers de programme",
       "unavailable": "La gestion des fichiers de programme est indisponible.",
       "nameForRename": "Un nouveau nom est requis uniquement pour renommer un fichier.",

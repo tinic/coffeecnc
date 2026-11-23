@@ -595,16 +595,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             return std::unexpected("CoffeeCNC is starting.");
           ProgramWriter::Publish publish;
           if (replace) {
-            publish = [target, &loads, &programs](const std::string& path, const ProgramWriter::Commit& commit)
+            publish = [target](const std::string& path, const ProgramWriter::Commit& commit)
                 -> std::expected<void, std::string> {
-              return target->publish_program(path, [&]() -> std::expected<void, std::string> {
-                const auto loaded = target->loaded_program();
-                const bool refresh = loaded == path || programs.resolve_program(loaded).value_or("") == path;
-                auto result = commit();
-                if (result && refresh)
-                  ++loads.programs;
-                return result;
-              });
+              return target->publish_program(path, commit);
             };
           }
           if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)

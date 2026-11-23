@@ -77,9 +77,9 @@ auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
   request.prepare_payload();
   http::write(socket, request);
   beast::flat_buffer buffer;
-  http::response<http::string_body> response;
-  http::read(socket, buffer, response);
-  return response.result();
+  http::response_parser<http::string_body> parser;
+  http::read(socket, buffer, parser);
+  return parser.get().result();
 }
 
 void program_uploads(const std::string& assets) {

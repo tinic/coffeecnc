@@ -243,6 +243,11 @@ void a_failed_save_keeps_the_program() {
       require(!saved && saved.error().starts_with("The program was replaced"),
               "A directory sync failure reports that replacement already happened");
       require(disk.files.at(path) == "G0 X2\nM2\n", "The new text is visible after the rename");
+      writes.failures[step] = 1;
+      const auto uploaded = writer.receive("part.ngc", "M30\n", true, {});
+      require(!uploaded && uploaded.error().starts_with("Saved on disk. Directory synchronization failed.") &&
+                  disk.files.at(path) == "M30\n",
+              "An upload reports a directory sync failure separately from publication");
     } else {
       require(!saved && saved.error().starts_with("The program could not be saved."),
               "A failed " + step + " is reported");
@@ -303,6 +308,15 @@ void manages_program_files(const fs::path& base) {
       [](const std::string&, const ProgramWriter::Commit& commit) { return commit(); }).has_value() &&
               read(programs / "part.ngc") == "M30\n",
           "Accepted replacement publishes the new bytes");
+  const auto reopened = writer.receive("part.ngc", bytes, true,
+      [](const std::string&, const ProgramWriter::Commit& commit) -> std::expected<void, std::string> {
+        if (auto saved = commit(); !saved)
+          return saved;
+        return std::unexpected("Saved on disk, but not reopened. LinuxCNC refused the open.");
+      });
+  require(!reopened && reopened.error() == "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              read(programs / "part.ngc") == bytes,
+          "A failed reopen preserves the published file and reports the failure accurately");
   fs::remove_all(root);
 }
 

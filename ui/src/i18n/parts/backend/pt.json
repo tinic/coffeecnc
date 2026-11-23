@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "O programa está em execução.",
+      "directorySync": "Guardado no disco. A sincronização da pasta falhou. {detail}",
       "manage": "Gerir ficheiros de programa",
       "unavailable": "A gestão de ficheiros de programa está indisponível.",
       "nameForRename": "Só é necessário um nome novo ao mudar o nome.",

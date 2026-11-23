@@ -279,8 +279,11 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     return std::unexpected(std::format("A program named {} exists already.", name));
   const std::string directory = slash == 0 ? "/" : target.path.substr(0, slash);
   const std::string temporary = std::format("{}/{}", directory, temporary_name);
+  bool committed = false;
   const auto commit = [&]() -> ToolModelFiles::Done {
-    return replace ? files_.rename(temporary, target.path) : files_.link(temporary, target.path);
+    auto stored = replace ? files_.rename(temporary, target.path) : files_.link(temporary, target.path);
+    committed = stored.has_value();
+    return stored;
   };
   auto step = files_.open_temporary(temporary);
   if (step)
@@ -289,14 +292,17 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     step = files_.sync();
   if (step)
     step = publish ? publish(target.path, commit) : commit();
-  if (!step) {
+  if (!step && !committed) {
     files_.discard(temporary);
     return std::unexpected("The program could not be saved: " + step.error());
   }
   if (!replace)
     files_.discard(temporary);
-  if (auto synced = files_.sync_directory(directory); !synced)
-    return std::unexpected("The program could not be saved: " + synced.error());
+  auto synced = files_.sync_directory(directory);
+  if (!step)
+    return std::unexpected(std::move(step.error()));
+  if (!synced)
+    return std::unexpected("Saved on disk. Directory synchronization failed. " + synced.error());
   return std::move(target.path);
 }
 

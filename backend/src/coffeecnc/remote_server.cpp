@@ -309,7 +309,8 @@ private:
       });
   }
 
-  template <class Body> void respond(http::response<Body> response, std::string_view host = {}) {
+  template <class Body> void respond(http::response<Body> response, std::string_view host = {},
+                                     bool rejected_upload = false) {
     response.keep_alive(false);
     response.set(http::field::cache_control, "no-store");
     response.set("X-Content-Type-Options", "nosniff");
@@ -327,9 +328,12 @@ private:
       socket_.expires_after(io_timeout);
       auto outgoing = std::make_shared<http::response<Body>>(std::move(response));
       http::async_write(socket_, *outgoing,
-        [self = shared_from_this(), outgoing](Error, std::size_t) -> void {
+        [self = shared_from_this(), outgoing, rejected_upload](Error error, std::size_t) -> void {
           static_cast<void>(outgoing);
-          self->close();
+          if (!error && rejected_upload)
+            self->finish_rejected_upload();
+          else
+            self->close();
         });
     }
   }
@@ -342,10 +346,17 @@ private:
     const auto& request = request_.get();
     const std::string_view host = request[http::field::host];
     const std::string_view target = request.target();
-    if (!host_allowed(host) || !target.starts_with('/') || target.starts_with("//"))
+    const bool uploading = request.method() == http::verb::post && target == upload_path;
+    if (!host_allowed(host) || !target.starts_with('/') || target.starts_with("//")) {
+      if (uploading)
+        return upload_reply(http::status::forbidden);
       return refuse(http::status::forbidden);
-    if (request.method() == http::verb::post && target == upload_path && owner_.upload_worker)
-      return begin_upload(host, *owner_.upload_worker);
+    }
+    if (uploading) {
+      if (owner_.upload_worker)
+        return begin_upload(host, *owner_.upload_worker);
+      return upload_reply(http::status::method_not_allowed);
+    }
     if (request.method() != http::verb::get && request.method() != http::verb::head)
       return refuse(http::status::method_not_allowed);
     if (!request_.is_done())
@@ -384,7 +395,30 @@ private:
     response.set(http::field::content_type, "application/json");
     response.body() = nlohmann::json{{"reason", std::move(reason)}}.dump();
     response.prepare_payload();
-    respond(std::move(response));
+    respond(std::move(response), {}, !request_.is_done());
+  }
+
+  void finish_rejected_upload() {
+    // Send the complete response and FIN before closing the receive side, which may
+    // still have body bytes waiting. A full close with unread bytes can reset the reply.
+    Error error;
+    std::ignore = socket_.socket().shutdown(tcp::socket::shutdown_send, error);
+    if (error)
+      return close();
+    socket_.expires_after(io_timeout);
+    drain_rejected_upload(ProgramStore::max_program_bytes);
+  }
+
+  void drain_rejected_upload(std::size_t remaining) {
+    if (remaining == 0)
+      return close();
+    socket_.async_read_some(net::buffer(upload_discard_.data(), std::min(upload_discard_.size(), remaining)),
+      [self = shared_from_this(), remaining](Error error, std::size_t consumed) -> void {
+        if (error || consumed == 0)
+          self->close();
+        else
+          self->drain_rejected_upload(remaining - consumed);
+      });
   }
 
   void begin_upload(std::string_view host, net::thread_pool& worker) {
@@ -400,22 +434,30 @@ private:
       return upload_reply(http::status::service_unavailable, "Another program upload is in progress.");
     owner_.upload_active = uploading_ = true;
     const bool replace = request["X-CoffeeCNC-Replace"] == "1";
+    read_upload(worker, std::move(*name), replace);
+  }
+
+  void read_upload(net::thread_pool& worker, std::string name, bool replace) {
     socket_.expires_after(upload_timeout);
-    http::async_read(socket_, request_buffer_, request_,
-      [self = shared_from_this(), &worker, name = std::move(*name), replace](Error error, std::size_t) -> void {
+    http::async_read_some(socket_, request_buffer_, request_,
+      [self = shared_from_this(), &worker, name = std::move(name), replace](Error error, std::size_t) mutable -> void {
         if (error == http::error::body_limit)
           return self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
-        if (!error)
-          self->write_upload(worker, name, replace);
+        if (error)
+          return self->close();
+        if (self->request_.is_done())
+          self->write_upload(worker, std::move(name), replace);
+        else
+          self->read_upload(worker, std::move(name), replace);
       });
   }
 
-  void write_upload(net::thread_pool& worker, const std::string& name, bool replace) {
+  void write_upload(net::thread_pool& worker, std::string name, bool replace) {
     auto& body = request_.get().body();
     if (body.empty() || body.find('\0') != std::string::npos)
       return upload_reply(http::status::bad_request, "The upload must be a program text file.");
-    net::post(worker, [self = shared_from_this(), name, replace,
-                                     bytes = std::move(body)]() -> void {
+    net::post(worker, [self = shared_from_this(), name = std::move(name), replace,
+                                     bytes = std::move(body)]() mutable -> void {
       auto status = http::status::created;
       std::string reason;
       try {
@@ -427,7 +469,8 @@ private:
         status = http::status::internal_server_error;
         reason = "The upload could not be saved.";
       }
-      net::post(self->owner_.io, [self, status, reason = std::move(reason)]() mutable -> void {
+      auto& io = self->owner_.io;
+      net::post(io, [self = std::move(self), status, reason = std::move(reason)]() mutable -> void {
         self->upload_reply(status, std::move(reason));
       });
     });
@@ -600,6 +643,7 @@ private:
   Stream socket_;
   net::steady_timer tick_, deadline_;
   beast::flat_buffer request_buffer_{8192}, discard_{1024};
+  std::array<char, 4096> upload_discard_{};
   http::request_parser<http::string_body> request_;
   std::optional<websocket::stream<Stream>> ws_;
   std::size_t input_start_{}, pong_bytes_{};

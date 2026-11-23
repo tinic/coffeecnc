@@ -1,6 +1,8 @@
 {
   "backend": {
     "programFiles": {
+      "running": "The program is running.",
+      "directorySync": "Saved on disk. Directory synchronization failed. {detail}",
       "manage": "Manage program files",
       "unavailable": "Program file management is unavailable.",
       "nameForRename": "A new file name is required for rename only.",

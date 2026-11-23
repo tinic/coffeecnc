@@ -809,29 +809,48 @@ auto Session::work(const Clock& clock) -> Work {
 
 void Session::publish_program(ProgramPublication& request, const Clock& clock) {
   const auto controller = port_.snapshot();
-  const auto observed = [&] {
+  const auto [observed, epoch] = [&] {
     const std::scoped_lock lock{mutex_};
-    return status(clock().monotonic);
+    return std::pair{status(clock().monotonic), epoch_};
   }();
   if (observed.link != Link::live) {
     request.result.set_value(std::unexpected("Cannot verify the loaded program while the controller is offline."));
     return;
   }
+  const auto active = [](const ControllerState& state) -> bool {
+    return state.interp != InterpState::idle || state.requested_tool || state.breakpoint_program ||
+           (state.mode == TaskMode::automatic && !state.in_position);
+  };
+  const auto loaded = [&](const ControllerState& state) -> bool {
+    return !state.program_file.empty() && (state.program_file == request.path ||
+           programs_.resolve_program(state.program_file).value_or("") == request.path);
+  };
   const auto using_file = [&](const ControllerState& state) -> bool {
-    const bool active = state.interp != InterpState::idle || state.requested_tool ||
-                        (state.mode == TaskMode::automatic && !state.in_position);
-    if (!active || state.program_file.empty())
-      return false;
-    return state.program_file == request.path ||
-           programs_.resolve_program(state.program_file).value_or("") == request.path ||
+    return active(state) && (loaded(state) ||
            (state.breakpoint_program && started_program_.source.inputs &&
-            started_program_.source.inputs->program_file == request.path);
+            started_program_.source.inputs->program_file == request.path));
   };
   if (using_file(controller) || using_file(observed)) {
     request.result.set_value(std::unexpected("Stop the loaded program before replacing it."));
     return;
   }
-  request.result.set_value(request.publish());
+  auto published = request.publish();
+  if (published) {
+    const auto now = port_.snapshot();
+    if (loaded(now)) {
+      started_program_ = {};
+      verified_probe_program_.clear();
+      const auto wanted = [this, epoch] {
+        const std::scoped_lock lock{mutex_};
+        return !closing_ && epoch == epoch_;
+      };
+      const auto reopened = active(now) ? ActionResult{ActionStatus::failed, "The program is running."}
+                                        : port_.open_program(request.path, wanted);
+      if (reopened.status != ActionStatus::accepted)
+        published = std::unexpected("Saved on disk, but not reopened. " + reopened.reason);
+    }
+  }
+  request.result.set_value(std::move(published));
 }
 
 auto Session::run(Queued request, const Clock& clock) -> Work {

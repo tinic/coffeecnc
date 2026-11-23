@@ -18,6 +18,7 @@ const instance = createPanel({ transport: createTransport() })
 export const panel: PanelState = instance.state
 export const operatorSettings = createOperatorSettingsState(panel, instance, undefined, {
   theme: themePreference, themeOverride, language: languagePreference, languageOverride,
+  viewer: isRemoteScreen(),
   layoutOverride: decodeProgramLayout(new URLSearchParams(window.location.search).get('layout')),
 })
 

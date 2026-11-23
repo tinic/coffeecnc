@@ -735,7 +735,7 @@ function coolant(which: 'flood' | 'mist'): void {
 .step-heading { display: flex; justify-content: space-between; align-items: baseline; }
 .increments { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 4px; }
 .increments > :first-child { grid-column: 1 / -1; }
-.increments .btn { padding-inline: 3px; font-size: 12px; }
+.increments .btn { padding-inline: 3px; font-size: var(--type-sm); }
 .speed { font-weight: 600; }
 .homes .btn { flex: 1; min-height: 48px; }
 .jog-status { margin-block: 0; }
@@ -765,7 +765,7 @@ function coolant(which: 'flood' | 'mist'): void {
   line-height: 1.1;
   text-align: center;
   overflow-wrap: anywhere;
-  font-size: 10px;
+  font-size: var(--type-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -789,8 +789,8 @@ function coolant(which: 'flood' | 'mist'): void {
 .side > .probe-card { gap: 12px; padding: 14px; }
 .probe-contact { color: var(--warn); }
 .modes { display: flex; }
-.modes .btn { flex: 1; min-width: 44px; min-height: 44px; padding: 0 12px; font-size: 13px; }
-.jog-heading h2, .wcs-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); }
+.modes .btn { flex: 1; min-width: 44px; min-height: 44px; padding: 0 12px; font-size: var(--type-body); }
+.jog-heading h2, .wcs-heading h2 { margin: 0; font-size: var(--type-sm); font-weight: 650; letter-spacing: .045em; text-transform: uppercase; color: var(--text-dim); }
 .wcs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.wcs-heading h2 { flex: none; }
 
 .history {
@@ -832,7 +832,7 @@ function coolant(which: 'flood' | 'mist'): void {
 .entry .result {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--text-dim);
   text-align: right;
 }
@@ -880,9 +880,9 @@ function coolant(which: 'flood' | 'mist'): void {
 .wcs .btn {
   flex: 1;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--type-body);
 }
-.wcs-values { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; font-size: 11px; color: var(--text-dim); }.wcs-values > span { white-space: nowrap; }.wcs-values strong { color: var(--text); font-weight: 400; }
+.wcs-values { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; font-size: var(--type-sm); color: var(--text-dim); }.wcs-values > span { white-space: nowrap; }.wcs-values strong { color: var(--text); font-weight: 400; }
 .utilities { display: flex; flex-flow: row wrap; align-content: start; column-gap: 14px; }
 .utilities > :not(.line) { flex: 1 0 100%; }
 .utilities > .line { flex: 1 0 auto; }
@@ -890,7 +890,7 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line .btn { white-space: nowrap; }
 .utilities .sensor-feedback { margin-top: 0; }
 .utilities .line { gap: 6px; }
-.utilities .line .btn { padding: 0 10px; font-size: 12px; }
+.utilities .line .btn { padding: 0 10px; font-size: var(--type-sm); }
 .utilities .line > .label { width: auto; }
 @media (max-height: 760px) {
   .jog { gap: 4px; padding-block: 8px; }

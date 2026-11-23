@@ -647,7 +647,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 2,
@@ -657,7 +658,8 @@
           -100
         ],
         "rotation_xy": 15,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 3,
@@ -667,7 +669,8 @@
           0
         ],
         "rotation_xy": -90,
-        "available": true
+        "available": true,
+        "current": false
       },
       {
         "wcs": 4,
@@ -677,7 +680,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 5,
@@ -687,7 +691,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 6,
@@ -697,7 +702,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 7,
@@ -707,7 +713,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 8,
@@ -717,7 +724,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 9,
@@ -727,7 +735,8 @@
           3
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       }
     ]
   },
@@ -743,7 +752,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 2,
@@ -753,7 +763,8 @@
           -100
         ],
         "rotation_xy": 15,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 3,
@@ -763,7 +774,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 4,
@@ -773,7 +785,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 5,
@@ -783,7 +796,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 6,
@@ -793,7 +807,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 7,
@@ -803,7 +818,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 8,
@@ -813,7 +829,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 9,
@@ -823,7 +840,8 @@
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       }
     ]
   },

@@ -202,27 +202,27 @@ function toolState(tool: { available: boolean; open: boolean; known: boolean }):
 </template>
 
 <style scoped>
-.summary { flex: 1; margin: 0; font-size: 13px; color: var(--text-dim); text-align: right; }
+.summary { flex: 1; margin: 0; font-size: var(--type-body); color: var(--text-dim); text-align: right; }
 .summary .live { display: inline-flex; align-items: center; gap: 6px; color: var(--go); }
 .summary .live .dot { background: var(--go); }
 .summary .alarm { color: var(--stop); font-weight: 600; }
 .summary .stale { color: var(--warn); font-weight: 600; }
-.hint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.hint { margin: 0; font-size: var(--type-sm); line-height: 1.4; color: var(--text-dim); }
 .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .grid.dim .reading { opacity: .5; }
 .column { display: grid; gap: 12px; min-width: 0; }
 section { min-width: 0; }
-h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+h3 { margin: 0 0 4px; font-size: var(--type-md); font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: var(--type-body); }
 th, td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-thead th { font-size: 11px; font-weight: 500; color: var(--text-dim); }
+thead th { font-size: var(--type-sm); font-weight: 500; color: var(--text-dim); }
 tbody th { white-space: nowrap; font-weight: 500; }
-.axis { display: inline-block; min-width: 18px; font-size: 15px; font-weight: 600; }
-.joint { margin-left: 4px; font-size: 11px; color: var(--text-dim); font-weight: 400; }
+.axis { display: inline-block; min-width: 18px; font-size: var(--type-md); font-weight: 600; }
+.joint { margin-left: 4px; font-size: var(--type-sm); color: var(--text-dim); font-weight: 400; }
 .rows { margin: 0; padding: 0; list-style: none; }
-.rows li { display: flex; align-items: baseline; gap: 8px; min-height: 28px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.rows li { display: flex; align-items: baseline; gap: 8px; min-height: 28px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: var(--type-body); }
 .row-label { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
-.hal-name { font-size: 10px; color: var(--text-faint); overflow-wrap: anywhere; }
+.hal-name { font-size: var(--type-sm); color: var(--text-faint); overflow-wrap: anywhere; }
 .reading { display: inline-flex; flex: none; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
 .dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
 .reading.go { color: var(--go); }.reading.go .dot { background: var(--go); }
@@ -230,14 +230,14 @@ tbody th { white-space: nowrap; font-weight: 500; }
 .reading.warn { color: var(--warn); }.reading.warn .dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
 .reading.active { color: var(--accent); }.reading.active .dot { background: var(--accent); }
 .reading.idle { color: var(--text-dim); font-weight: 500; }.reading.idle .dot { background: var(--text-faint); opacity: .55; }
-.note { flex: none; font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+.note { flex: none; font-size: var(--type-sm); color: var(--text-faint); white-space: nowrap; }
 td .note { display: block; }
 .tools { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-.tools-title { font-size: 14px; font-weight: 600; }
+.tools-title { font-size: var(--type-body); font-weight: 600; }
 .tool { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 120px; min-height: 48px; padding: 4px 12px; }
-.tool .mono { font-size: 14px; font-weight: 600; }
-.tool-state { font-size: 11px; color: var(--text-dim); }
-.tools .hint, .refusal { flex: 1 1 220px; margin: 0; font-size: 12px; }
+.tool .mono { font-size: var(--type-body); font-weight: 600; }
+.tool-state { font-size: var(--type-sm); color: var(--text-dim); }
+.tools .hint, .refusal { flex: 1 1 220px; margin: 0; font-size: var(--type-sm); }
 .refusal { color: var(--stop); }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 </style>

@@ -263,6 +263,15 @@ void table_rules() {
   require(marked.at(1).at("available") == true && marked.at(2).at("available") == false &&
               marked.at(2).at("offset") == Json{0, 0, 0},
           "Available and not available are both said; a system that is not keeps finite zeros");
+  require(marked.at(1).at("current") == false && marked.at(2).at("current") == false,
+          "Current is always said, false unless the system says so");
+  offsets.systems.at(1).current = true;
+  offsets.systems.at(2).current = true; // not available: never current
+  const auto current = parsed(encode_work_offsets(offsets)).at("systems");
+  require(current.at(1).at("current") == true && current.at(2).at("current") == false,
+          "A known value can be current; a placeholder never is");
+  offsets.systems.at(1).current = false;
+  offsets.systems.at(2).current = false;
   offsets.systems.at(4).offset[1] = nan;
   refused(encode_work_offsets(offsets), "systems.offset");
   offsets.systems.at(4).offset[1] = 0;

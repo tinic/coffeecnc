@@ -25,14 +25,16 @@ interface Rig {
   pass: (ms: number) => void
 }
 function rig(simulated = false, saved: unknown = null,
-  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme; languageOverride?: Language; savedLanguage?: string } = {}): Rig {
+  overrides: { layoutOverride?: ProgramLayout; themeOverride?: PanelTheme; languageOverride?: Language; savedLanguage?: string;
+    viewer?: boolean; viewerAppearance?: string } = {}): Rig {
   let receive: Listener = () => undefined
   let timer: (() => void) | null = null
   let now = 0
   const sent: ToMachine[] = []
   const stored = new Map<string, string>([['coffeecnc.operator-settings.v1', JSON.stringify(saved)]])
-  const { savedLanguage, ...presentation } = overrides
+  const { savedLanguage, viewerAppearance, ...presentation } = overrides
   if (savedLanguage !== undefined) stored.set('coffeecnc.panel-language.v1', savedLanguage)
+  if (viewerAppearance !== undefined) stored.set('coffeecnc.viewer-appearance.v1', viewerAppearance)
   const storage = { getItem: vi.fn((key: string) => stored.get(key) ?? null),
     setItem: vi.fn<(key: string, value: string) => void>((key, value) => { stored.set(key, value) }) }
   const storageAccess = vi.fn(() => storage)
@@ -61,6 +63,25 @@ const custom = (): OperatorPreferences => ({ ...defaultOperatorPreferences(), st
   default_spindle_rpm: 1800, default_jog_velocity: 800, enabled_wcs: [1, 9], tool_reference_height: 6.35 })
 
 describe('operator settings', () => {
+  it('keeps LAN appearance in the viewer browser and sends no controller settings', async () => {
+    const viewer = rig(false, { ...custom(), theme: 'dark', language: 'de' }, {
+      viewer: true, viewerAppearance: '{"theme":"sandstone","language":"ja"}',
+    })
+    expect([viewer.theme.value, viewer.language.value]).toEqual(['sandstone', 'ja'])
+    viewer.connect()
+    viewer.snapshot(1, { ...custom(), theme: 'light', language: 'fr' })
+    viewer.settings.chooseTheme('harbor')
+    viewer.settings.chooseLanguage('es')
+    viewer.receive(new SimMachine({ emit: (): void => undefined }).status())
+    await nextTick()
+    expect(viewer.sent).toEqual([])
+    expect(viewer.panel.preferences.recent_programs).toEqual([])
+    expect(viewer.storage.setItem.mock.lastCall).toEqual([
+      'coffeecnc.viewer-appearance.v1', '{"theme":"harbor","language":"es"}',
+    ])
+    const restored = rig(false, null, { viewer: true, viewerAppearance: viewer.storage.setItem.mock.lastCall?.[1] ?? '' })
+    expect([restored.theme.value, restored.language.value]).toEqual(['harbor', 'es'])
+  })
   it('upgrades an earlier settings document without losing saved defaults', () => {
     const legacy: Record<string, unknown> = { ...custom() }
     delete legacy['tool_reference_height']

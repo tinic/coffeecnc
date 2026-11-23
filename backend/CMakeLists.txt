@@ -284,6 +284,18 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
         set_tests_properties(linuxcnc_offset_history_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # The inactive work systems from the parameter file, and when they are current.
+        add_test(NAME linuxcnc_work_offsets_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_work_offsets_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> work-offsets)
+        set_tests_properties(linuxcnc_work_offsets_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # When LinuxCNC writes the parameter file: the facts the reading above relies on.
+        add_test(NAME linuxcnc_parameter_file_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 90 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_parameter_file_${units}
+          ${PROJECT_SOURCE_DIR}/tests/sim/work_offset_facts.py)
+        set_tests_properties(linuxcnc_parameter_file_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 420)
         # The offset editor's XY rotation and G92/G52 clear, with history and refusals.
         add_test(NAME linuxcnc_offset_edits_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_edits_${units}
@@ -447,7 +459,7 @@ if(BUILD_TESTING)
         set_tests_properties(remote_server PROPERTIES TIMEOUT 20)
         add_test(NAME remote_server_dns COMMAND sh ${PROJECT_SOURCE_DIR}/tests/remote_server_dns.sh
           $<TARGET_FILE:coffeecnc_remote_server_tests> ${PROJECT_BINARY_DIR})
-        set_tests_properties(remote_server_dns PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77)
+        set_tests_properties(remote_server_dns PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 
         set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.

@@ -344,6 +344,10 @@ export interface WorkOffsets {
     /** False means the numeric fields are placeholders, not usable coordinates. Older peers
      * omit this field and supply a complete table. New senders always set it explicitly. */
     available?: boolean
+    /** False: a known value that the controller may have changed since it was read (an
+     * inactive system read from LinuxCNC's parameter file before the interpreter ran
+     * something). Older peers omit it: their values are taken as current. */
+    current?: boolean
   }[]
 }
 

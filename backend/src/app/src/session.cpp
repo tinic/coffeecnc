@@ -288,6 +288,11 @@ auto starts_jog(const Command& command) -> bool {
   return std::holds_alternative<JogStep>(command) || std::holds_alternative<JogPausedZ>(command);
 }
 
+auto idle_for_tool_measurement(const ControllerState& state) -> bool {
+  return state.link == Link::live && state.interp == InterpState::idle &&
+         state.mode == TaskMode::mdi && !state.requested_tool;
+}
+
 } // namespace
 
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
@@ -633,12 +638,16 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
     ++setter_datum_;
   const bool tool_changed = state.tool_in_spindle != status_.tool_in_spindle ||
                             state.tool_request != status_.tool_request;
+  // M61 can report the new tool before it reports idle MDI. Wake the measurement wait
+  // on the later transition too, even though the spindle and the HAL request are unchanged.
+  const bool measurement_ready =
+      idle_for_tool_measurement(state) && !idle_for_tool_measurement(status_);
   if (tool_changed)
     ++setter_tool_;
   status_ = state;
   status_at_ = now;
   have_status_ = true;
-  if (tool_changed)
+  if (tool_changed || measurement_ready)
     work_ready_.notify_all();
 }
 
@@ -1345,9 +1354,7 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   {
     std::unique_lock lock{mutex_};
     const auto loaded = [&] {
-      return status_.link == Link::live && status_.interp == InterpState::idle &&
-             status_.mode == TaskMode::mdi && !status_.requested_tool &&
-             status_.tool_in_spindle == tool;
+      return idle_for_tool_measurement(status_) && status_.tool_in_spindle == tool;
     };
     work_ready_.wait_for(lock, std::chrono::seconds{2}, [&] {
       return loaded() || !current(request);

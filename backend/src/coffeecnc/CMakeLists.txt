@@ -6,6 +6,11 @@ if(NOT TARGET coffeecnc_shell OR NOT TARGET coffeecnc_linuxcnc)
 endif()
 
 add_library(coffeecnc_application application.cpp config_check.cpp remote_server.cpp)
+# GCC 14 diagnoses inlined Boost.Asio executor/reactor code at -O3, even in SYSTEM headers.
+# Boost's exception locations also retain __FILE__. Keep those independent of the host path.
+set_property(SOURCE remote_server.cpp APPEND PROPERTY COMPILE_OPTIONS
+  "$<$<CXX_COMPILER_ID:GNU>:-Wno-null-dereference>"
+  "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fmacro-prefix-map=${COFFEECNC_BOOST_INCLUDE_DIR}/boost=boost>")
 target_include_directories(coffeecnc_application SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
 target_include_directories(coffeecnc_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(coffeecnc_application PUBLIC cxx_std_23)

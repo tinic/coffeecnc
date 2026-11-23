@@ -155,6 +155,33 @@ describe('arcs', () => {
   })
 })
 
+describe('hole finishing cycles', () => {
+  it('G85 feeds out to R, then rapids to the G98 clearance plane', () => {
+    const m = modal()
+    run(m, 'G0 Z5')
+    const ops = moves(run(m, 'G98 G85 X10 Y20 Z-7 R2 F60'))
+    expect(ops.slice(-3).map((op) => [op.motion, rounded(op.points.at(-1))])).toEqual([
+      ['feed', [10, 20, -7]],
+      ['feed', [10, 20, 2]],
+      ['rapid', [10, 20, 5]],
+    ])
+  })
+
+  it('G89 dwells once per hole in seconds and feeds out to the selected retract plane', () => {
+    const m = modal()
+    run(m, 'G20 G0 Z0.25')
+    const first = run(m, 'G98 G89 X1 Z-0.1 R0.05 P0.375 F2')
+    const second = run(m, 'G99 X2')
+    expect(first.at(-2)).toEqual({ kind: 'dwell', seconds: 0.375 })
+    expect(second.at(-2)).toEqual({ kind: 'dwell', seconds: 0.375 })
+    expect(moves(first).at(-1)?.motion).toBe('feed')
+    expect(rounded(moves(first).at(-1)?.points.at(-1))).toEqual([25.4, 0, 6.35])
+    expect(rounded(moves(second).at(-1)?.points.at(-1))).toEqual([50.8, 0, 1.27])
+    run(m, 'G80')
+    expect(error(m, 'G89 X3 Z-0.1 R0.05')).toContain('G89 needs a nonnegative P word')
+  })
+})
+
 describe('offsets', () => {
   it('applies the active work coordinate system', () => {
     const m = modal()

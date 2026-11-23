@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseFinishTool": "Selecionar um alargador ou uma ferramenta de mandrilar",
       "pocketOptions": "Geometria, entrada e paredes",
       "reviewJob": "Rever trabalho",
       "toolChangeHeight": "Trocas de ferramenta no Z de máquina {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "holeFinishing": "Alargamento / mandrilagem",
+      "holeFinishingSetup": "Use furos pré-perfurados e verifique se a ferramenta consegue avançar até à profundidade programada e sair dela.",
       "contour": "Contorno",
       "contourSetup": "Deixe a entrada livre. Para um corte interior, comece numa bolsa aberta ou num furo.",
       "inclinedEntry": "Use uma fresa de topo adequada à entrada escolhida.",
@@ -33,6 +36,7 @@
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
+      "boreDwell": "Pausa no fundo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
       "profileDirection": "Sentido",
@@ -91,6 +95,8 @@
       "boltCircleRadius": "Raio do círculo de furos"
     },
     "option": {
+      "g85": "Alargamento (G85)",
+      "g89": "Mandrilagem (G89)",
       "profileCircle": "Círculo",
       "profileRectangle": "Retângulo",
       "profileOutside": "Exterior",

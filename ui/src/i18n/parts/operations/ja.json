@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseFinishTool": "リーマまたはボーリング工具を選択",
       "pocketOptions": "寸法、進入、側面",
       "reviewJob": "ジョブを確認",
       "toolChangeHeight": "工具交換位置は機械座標の Z {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "holeFinishing": "リーマ / ボーリング",
+      "holeFinishingSetup": "下穴を使用し、工具が設定した深さまで送りで進入し、退避できることを確認してください。",
       "contour": "輪郭",
       "contourSetup": "進入経路に空間を確保してください。内側を切削する場合は、加工済みのポケットや穴から開始します。",
       "inclinedEntry": "選択した進入方法に対応したエンドミルを使用してください。",
@@ -33,6 +36,7 @@
       "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
     },
     "label": {
+      "boreDwell": "底面での停止時間",
       "profileShape": "形状",
       "profileSide": "切削側",
       "profileDirection": "方向",
@@ -91,6 +95,8 @@
       "boltCircleRadius": "ボルト円半径"
     },
     "option": {
+      "g85": "リーマ (G85)",
+      "g89": "ボーリング (G89)",
       "profileCircle": "円",
       "profileRectangle": "長方形",
       "profileOutside": "外側",

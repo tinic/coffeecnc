@@ -348,6 +348,29 @@ function errors(generated: Generated): string[] {
   return 'errors' in generated ? generated.errors : []
 }
 
+describe('reaming and boring', () => {
+  const operation = operations.find((entry) => entry.id === 'hole-finishing')
+  if (!operation) throw new Error('Missing ream / bore operation')
+
+  it('uses G85 for a metric grid and retracts over the work before the next hole', () => {
+    const values = { ...operation.defaults('mm'), columns: '2', rows: '1' }
+    const input = parse(operation, values, 'mm')
+    const program = text(operation.generate(input, { ...mm, feed: 60 }))
+    expect(operation.name(input, 'mm')).toBe('ream-grid-2x1')
+    expect(program).toContain('G98 G85 X10 Y10 Z-10 R2 F60\nX30 Y10\nG80')
+  })
+
+  it('writes G89 for an inch bolt circle with a dwell expression in seconds', () => {
+    const values = { ...operation.defaults('inch'), pattern: 'circle', cycle: 'G89', dwell: '3/8s' }
+    const input = parse(operation, values, 'inch')
+    const program = text(operation.generate(input, { ...inch, feed: 2.4 }))
+    expect(operation.name(input, 'inch')).toBe('bore-circle-6-holes')
+    expect(program).toContain('G98 G89 X1.5 Y0.5 Z-0.4 R0.08 P0.375 F2.4')
+    const invalid = parse(operation, { ...values, dwell: '-1/2s' }, 'inch')
+    expect(errors(operation.generate(invalid, inch))[0]).toContain('Bottom dwell')
+  })
+})
+
 describe('contours', () => {
   const tools = [
     { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },

@@ -28,6 +28,12 @@ endif()
 message(STATUS "Shell: WebKitGTK ${COFFEECNC_WEBKIT_webkit2gtk-4.1_VERSION}, "
   "GTK ${COFFEECNC_WEBKIT_gtk+-3.0_VERSION}")
 
+# LeakSanitizer's suppressions are looked up in the executable: the file is a source of every
+# program that opens the window, and is empty outside AddressSanitizer builds. Set here, before
+# the first such program (quit_delivery below) is defined.
+set(COFFEECNC_LSAN_SUPPRESSIONS "${PROJECT_SOURCE_DIR}/src/coffeecnc/lsan_suppressions.cpp"
+  CACHE INTERNAL "Source with the LeakSanitizer suppressions of the window's libraries")
+
 add_library(coffeecnc_shell src/panel_window.cpp)
 target_include_directories(coffeecnc_shell PUBLIC include)
 target_include_directories(coffeecnc_shell SYSTEM PRIVATE ${COFFEECNC_WEBKIT_INCLUDE_DIRS})
@@ -48,12 +54,15 @@ target_link_libraries(coffeecnc_shell_test_hooks PUBLIC coffeecnc_shell
 coffeecnc_enable_analyzers(coffeecnc_shell_test_hooks)
 
 if(BUILD_TESTING AND NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
-  add_executable(coffeecnc_quit_delivery_tests ../../tests/shell/quit_delivery_tests.cpp)
+  add_executable(coffeecnc_quit_delivery_tests ../../tests/shell/quit_delivery_tests.cpp
+    ${COFFEECNC_LSAN_SUPPRESSIONS})
   target_include_directories(coffeecnc_quit_delivery_tests PRIVATE src)
   target_include_directories(coffeecnc_quit_delivery_tests SYSTEM PRIVATE ${COFFEECNC_WEBKIT_INCLUDE_DIRS})
   target_link_libraries(coffeecnc_quit_delivery_tests PRIVATE coffeecnc_shell
     coffeecnc_project_options ${COFFEECNC_WEBKIT_LINK_LIBRARIES})
   add_test(NAME quit_delivery COMMAND xvfb-run -a $<TARGET_FILE:coffeecnc_quit_delivery_tests>
     ${PROJECT_BINARY_DIR}/quit-delivery-panel)
-  set_tests_properties(quit_delivery PROPERTIES TIMEOUT 20)
+  # As tests/shell/under_xvfb.sh: without GTK's accessibility bridge, whose libdbus
+  # allocations LeakSanitizer reports at exit (docs/backend-rules.md, LeakSanitizer).
+  set_tests_properties(quit_delivery PROPERTIES TIMEOUT 20 ENVIRONMENT NO_AT_BRIDGE=1)
 endif()

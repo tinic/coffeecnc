@@ -41,8 +41,9 @@ The rules the C++ layers implement and where, and the known limits. Build and te
 | `link` is live only while the status write counter advances | `TaskHeartbeat` |
 | Only an XYZ mill with trivial kinematics, in mm or inch, with `[AXIS_*] MAX_VELOCITY` set, is accepted | `load_machine_config` |
 | Every operator message and every result other than `accepted` that is posted to the page is appended to `<data directory>/alarm-log.jsonl`, one JSON object per line, with the command a refusal answers. A thread of its own writes it: no thread that posts waits for the disk | `AlarmLog`, `run_application` |
-| The alarm log rotates before an append would take it over 512 KiB: `alarm-log.1.jsonl`, `alarm-log.2.jsonl`, at most three files. A line that does not read as a record is skipped and counted; the order is the order of the lines, not the clock | `AlarmLog` |
-| A failed append keeps up to 1000 records in memory and tries again with the next record or 5 s later, after a line break that ends a cut line; a line written twice is read once | `AlarmLog` |
+| The alarm log rotates before an append would take it over 512 KiB: `alarm-log.1.jsonl`, `alarm-log.2.jsonl`, at most three files. Only bytes of appends that worked count, so an empty file or one that only failed appends made larger is never rotated: a full disk does not push the older files out. A line that does not read as a record is skipped and counted; the order is the order of the lines, not the clock | `AlarmLog` |
+| The alarm log writes and rotates only while this process holds the data directory's lock, which the tool models take; without it the log is kept for this run only, with the reason. At the end of the run the tool-model writer stops first, the alarm log appends what waits, and only then is the lock released | `AlarmLog`, `ToolModelStore::held_location`, `ToolModelStore::stop`, `run_application` |
+| A failed append keeps up to 1000 records in memory and tries again with the next record or 5 s later, after a line break that ends a cut line; a line written twice is read once. After an append the writer removes the records it wrote by number, not by count. The reason goes to stderr outside the mutex | `AlarmLog` |
 | A page is sent `alarm_log` once after `hello`: what was recorded before that, at most 500 entries | `AlarmLog::send_snapshot` |
 
 ## Limits of the current state

@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <format>
 #include <iostream>
 #include <iterator>
 #include <set>
@@ -67,8 +68,8 @@ auto record_from(std::string_view line) -> std::optional<AlarmRecord> {
   const auto* outcome = field("outcome");
   const auto* command = field("command");
   const auto* number = field("n");
-  if (number != nullptr && (!number->is_number_unsigned() ||
-                            number->get<std::uint64_t>() > max_safe_integer))
+  if (number != nullptr &&
+      (!number->is_number_unsigned() || number->get<std::uint64_t>() > max_safe_integer))
     return std::nullopt;
   if (version == nullptr || !version->is_number_integer() || *version != record_version ||
       session == nullptr || !session->is_number_unsigned() || *session == 0 ||
@@ -135,8 +136,9 @@ auto encode_alarm_log(const AlarmLogView& view) -> std::string {
 }
 
 AlarmLog::AlarmLog(ToolModelFiles& files, std::string directory, std::string unsaved_reason,
-                   Deliver deliver)
+                   Deliver deliver, Lock lock)
     : files_(files), directory_(std::move(directory)), deliver_(std::move(deliver)),
+      lock_(std::move(lock)),
       reason_(directory_.empty() ? std::move(unsaved_reason) : std::string{}),
       thread_([this] { loop(); }) {}
 
@@ -151,6 +153,26 @@ AlarmLog::~AlarmLog() {
 
 auto AlarmLog::path(std::string_view name) const -> std::string {
   return directory_ + '/' + std::string(name);
+}
+
+auto AlarmLog::locked() -> bool {
+  std::optional<std::string> problem;
+  if (lock_) {
+    problem = lock_();
+  } else if (const auto taken = files_.lock(directory_); !taken) {
+    problem = taken.error().in_use ? "it is in use by another CoffeeCNC"
+                                   : "its lock cannot be taken: " + taken.error().reason;
+  } else {
+    own_lock_ = true;
+  }
+  if (!problem)
+    return true;
+  const std::scoped_lock lock{mutex_};
+  reason_ = std::format("The alarm log in {} is kept for this run only: {}{}", directory_, *problem,
+                        problem->ends_with('.') ? "" : ".");
+  directory_.clear();
+  pending_.clear();
+  return false;
 }
 
 void AlarmLog::load() {
@@ -223,6 +245,8 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
     text += line_of(record);
   const auto file = path(file_name);
   ToolModelFiles::Done done;
+  // Only what appends that worked wrote counts: a failed append on a full disk can make the file
+  // look larger, and rotating it would push the older files out while nothing is saved.
   if (file_bytes_ > 0 && file_bytes_ + text.size() > max_file_bytes) {
     // There is no older file before the second rotation.
     if (const auto older = files_.read(path(older_name), 0); !older || *older)
@@ -247,9 +271,8 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
     done = files_.sync_directory(directory_);
   const std::scoped_lock lock{mutex_};
   if (!done) {
-    // Part of it may be in the file: the next append ends that line first.
+    // Part of it may be in the file: the next append ends that line first. It is not counted.
     needs_line_break_ = true;
-    file_bytes_ += text.size();
     reason_ = "The alarm log could not be saved: " + done.error();
     return false;
   }
@@ -260,7 +283,7 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
 }
 
 void AlarmLog::loop() {
-  if (!directory_.empty())
+  if (!directory_.empty() && locked())
     load();
   else {
     const std::scoped_lock lock{mutex_};
@@ -293,8 +316,11 @@ void AlarmLog::loop() {
       const bool written = append(batch);
       lock.lock();
       if (written) {
-        pending_.erase(pending_.begin(),
-                       pending_.begin() + static_cast<std::ptrdiff_t>(batch.size()));
+        // By number: add() may have dropped the oldest ones meanwhile, and what it added after
+        // them was not written.
+        const auto last = batch.back().number;
+        while (!pending_.empty() && pending_.front().number <= last)
+          pending_.pop_front();
         retry_at_.reset();
       } else {
         retry_at_ = Clock::now() + retry_period;
@@ -304,9 +330,14 @@ void AlarmLog::loop() {
         }
       }
       if (reason_ != said_) {
-        if (!reason_.empty())
-          std::cerr << "coffeecnc: " << reason_ << '\n' << std::flush;
         said_ = reason_;
+        // Not under the mutex: a stderr that blocks must not block the threads that post.
+        if (!said_.empty()) {
+          auto text = "coffeecnc: " + said_ + '\n';
+          lock.unlock();
+          std::cerr << text << std::flush;
+          lock.lock();
+        }
       }
     }
     if (snapshot_due_) {
@@ -320,6 +351,10 @@ void AlarmLog::loop() {
   }
   busy_ = false;
   idle_.notify_all();
+  if (own_lock_) {
+    lock.unlock();
+    files_.unlock();
+  }
 }
 
 void AlarmLog::add(AlarmRecord entry) {
@@ -374,8 +409,8 @@ void AlarmLog::posted(PageToken page, std::span<const std::string> messages,
       AlarmRecord record;
       record.time = time != value.end() && time->is_number_integer() ? time->get<std::int64_t>()
                                                                      : unix_time.count();
-      record.level = value.value("level", std::string{}) == "info" ? MessageLevel::info
-                                                                   : MessageLevel::error;
+      record.level =
+          value.value("level", std::string{}) == "info" ? MessageLevel::info : MessageLevel::error;
       record.text = value.value("text", std::string{});
       found.emplace_back(std::nullopt, std::move(record));
     }

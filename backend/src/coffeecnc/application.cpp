@@ -586,9 +586,12 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
       window.close();
       feed.reset();
       runtime.reset();
-      models.reset();
-      // Last: what the others posted while they stopped is appended.
+      if (models)
+        models->stop();
+      // What the others posted while they stopped is appended, under the data directory's
+      // lock, which the tool models hold until they are destroyed.
       alarms.reset();
+      models.reset();
     }
   } shutdown{window, feed, runtime, models, alarms};
   // What the services post to the page, as the alarm log sees it too.
@@ -607,16 +610,23 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   int code = 0;
   try {
-    // In the machine's data directory, next to the offset history; without one, for this run
-    // only.
+    // Its writer delivers only for a command or a snapshot, after the alarm log below exists.
+    models = std::make_unique<ToolModelStore>(model_files, location, post, config->limits);
+    // In the machine's data directory, next to the offset history, under the lock the tool
+    // models hold; without one, for this run only.
     alarms = std::make_unique<AlarmLog>(
         alarm_files,
         location.availability == ToolModelAvailability::available ? location.directory : "",
         location.availability == ToolModelAvailability::available ? "" : location.reason,
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
+        },
+        [store = models.get()]() -> std::optional<std::string> {
+          const auto held = store->held_location();
+          if (held.availability == ToolModelAvailability::available)
+            return std::nullopt;
+          return held.reason;
         });
-    models = std::make_unique<ToolModelStore>(model_files, location, post, config->limits);
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
     // Next to the program progress, in the machine's data directory; without one, for this
     // session only.

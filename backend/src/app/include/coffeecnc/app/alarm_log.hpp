@@ -67,15 +67,23 @@ struct AlarmLogView {
 // (publisher thread) take the mutex briefly and return at once: no thread that posts a message
 // waits for the disk. The writer appends what waits, in the order it was posted.
 //
+// The lock. The log writes only while this process holds the data directory's lock
+// (`<directory>/lock`, the one the tool models take): `lock` says whether it does, or without
+// one the writer takes it itself. Without the lock the log is kept for this run only, with the
+// reason, and nothing in the directory is written or renamed.
+//
 // Rotation. Before an append that would take the file over max_file_bytes, the file becomes
 // `alarm-log.1.jsonl` and that one `alarm-log.2.jsonl` (the older one is removed): at most
-// three files of about max_file_bytes each.
+// three files of about max_file_bytes each. Only the bytes of appends that worked count: a
+// file that is empty, or that only failed appends made larger, is never rotated, so a full
+// disk does not push the older files out.
 //
 // Reading. At start the writer reads the three files, oldest first, each line by itself: a line
 // that is not a version 1 record (a write torn by a crash, an edit, another program's text) is
 // skipped and counted, and a record whose session and number were read before is dropped. The
-// order of the log is the order of the lines, whatever the clock said. This run's session is one higher than the highest one read. A file that does not end
-// with a line break gets one before the next record.
+// order of the log is the order of the lines, whatever the clock said. This run's session is one
+// higher than the highest one read. A file that does not end with a line break gets one before the
+// next record.
 //
 // A failed append (a full disk, a removed directory) keeps the records in memory, up to
 // max_pending (older ones are then lost and counted); the next record or retry_period later
@@ -86,6 +94,8 @@ struct AlarmLogView {
 class AlarmLog {
 public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
+  // Waits until the lock is decided: no value when this process holds it, else why not.
+  using Lock = std::function<std::optional<std::string>()>;
   using Clock = std::chrono::steady_clock;
   static constexpr std::size_t max_file_bytes = std::size_t{512} * 1024;
   static constexpr std::size_t max_entries = 500; // in a view
@@ -98,10 +108,11 @@ public:
   static constexpr std::string_view older_name = "alarm-log.1.jsonl";
   static constexpr std::string_view oldest_name = "alarm-log.2.jsonl";
 
-  // An empty directory: this run only, `unsaved_reason` says why. The files and `deliver` must
-  // outlive the log. Starts the writer, which reads the files first.
+  // An empty directory: this run only, `unsaved_reason` says why. The files, `deliver` and
+  // `lock` must outlive the log. Starts the writer, which finds the lock (with `lock`, else
+  // through `files`) and then reads the files.
   AlarmLog(ToolModelFiles& files, std::string directory, std::string unsaved_reason,
-           Deliver deliver);
+           Deliver deliver, Lock lock = {});
   // Appends what waits, once, and joins the writer.
   ~AlarmLog();
   AlarmLog(const AlarmLog&) = delete;
@@ -127,6 +138,8 @@ private:
     AlarmRecord record;
   };
   void loop();
+  // Takes or checks the lock; false: this run only.
+  auto locked() -> bool;
   void load();
   // Writes `batch` with the files as they are; false when it failed.
   auto append(const std::vector<AlarmRecord>& batch) -> bool;
@@ -135,8 +148,9 @@ private:
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
 
   ToolModelFiles& files_;
-  std::string directory_;
+  std::string directory_; // empty once the lock is not held
   Deliver deliver_;
+  Lock lock_;
   mutable std::mutex mutex_;
   std::condition_variable wake_;
   std::condition_variable idle_;
@@ -147,13 +161,16 @@ private:
   std::uint64_t skipped_{};
   std::uint64_t lost_{};
   std::uint64_t next_order_{1};
-  std::deque<Recorded> kept_;         // what a view shows, oldest first
-  std::deque<AlarmRecord> pending_;   // not on the disk yet
+  std::deque<Recorded> kept_;       // what a view shows, oldest first
+  std::deque<AlarmRecord> pending_; // not on the disk yet
   std::map<std::pair<std::uint64_t, std::uint64_t>, std::string> commands_; // by page, id
   std::optional<std::pair<PageToken, std::uint64_t>> snapshot_due_;         // page, order
   std::optional<Clock::time_point> retry_at_;
   std::string reason_;
   // Writer only.
+  bool own_lock_{}; // taken through files_
+  // Bytes of the current file that appends which worked wrote (or that were read at start);
+  // what failed appends left in it is not counted.
   std::size_t file_bytes_{};
   bool needs_line_break_{};
   std::string said_;

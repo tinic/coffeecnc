@@ -488,12 +488,25 @@ ToolModelStore::ToolModelStore(ToolModelFiles& files, ToolModelLocation location
       thread_([this]() -> void { loop(); }) {}
 
 ToolModelStore::~ToolModelStore() {
+  stop();
+  archive_.close();
+}
+
+void ToolModelStore::stop() {
+  if (!thread_.joinable())
+    return;
   {
     const std::scoped_lock lock{mutex_};
     stop_ = true;
   }
   wake_.notify_all();
   thread_.join();
+}
+
+auto ToolModelStore::held_location() -> ToolModelLocation {
+  std::unique_lock lock{mutex_};
+  opened_.wait(lock, [this]() -> bool { return held_.has_value(); });
+  return held_ ? *held_ : ToolModelLocation{};
 }
 
 auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand command)
@@ -607,6 +620,11 @@ void ToolModelStore::loop() {
   refresh_probe_tools();
   if (operator_settings_)
     operator_settings_->open(archive_.shared_location());
+  {
+    const std::scoped_lock lock{mutex_};
+    held_ = archive_.shared_location();
+  }
+  opened_.notify_all();
   const auto send = [this](PageToken page, std::vector<std::string> messages) -> void {
     {
       const std::scoped_lock lock{mutex_};
@@ -663,7 +681,6 @@ void ToolModelStore::loop() {
     messages.push_back(encode_result(next->id, reply.outcome, reply.reason));
     send(next->page, std::move(messages));
   }
-  archive_.close();
 }
 
 } // namespace coffeecnc

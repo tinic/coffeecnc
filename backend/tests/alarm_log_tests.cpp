@@ -7,17 +7,22 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace coffeecnc;
@@ -53,15 +58,14 @@ struct Fixture {
   }
   void open(std::string at = directory) {
     log.reset();
-    log = std::make_unique<AlarmLog>(files, std::move(at), "No machine identity configured",
-                                     [this](PageToken token, std::vector<std::string> messages) {
-                                       const std::scoped_lock lock{delivered_mutex};
-                                       std::ranges::transform(
-                                           messages, std::back_inserter(delivered),
-                                           [token](std::string& message) {
-                                             return std::pair{token, std::move(message)};
-                                           });
-                                     });
+    log = std::make_unique<AlarmLog>(
+        files, std::move(at), "No machine identity configured",
+        [this](PageToken token, std::vector<std::string> messages) {
+          const std::scoped_lock lock{delivered_mutex};
+          std::ranges::transform(
+              messages, std::back_inserter(delivered),
+              [token](std::string& message) { return std::pair{token, std::move(message)}; });
+        });
     log->settle();
   }
   // An operator message posted to the page.
@@ -104,8 +108,7 @@ void records_messages_and_refusals() {
   f.command(4, R"({"type":"home","axis":"x","id":4})", CommandOutcome::rejected,
             "The machine is off.");
   f.command(5, R"({"type":"pause","id":5})", CommandOutcome::accepted, "");
-  f.command(6, R"({"type":"mdi","text":"G1 X10","id":6})", CommandOutcome::failed,
-            "No feed rate.");
+  f.command(6, R"({"type":"mdi","text":"G1 X10","id":6})", CommandOutcome::failed, "No feed rate.");
   const auto saved = f.lines(file);
   require(saved.size() == 4, std::format("Four records are on the disk: {}", saved.size()));
   require(saved[0]["text"] == "Joint 0 following error" && saved[0]["level"] == "error" &&
@@ -228,12 +231,12 @@ void rotation() {
   while (f.disk.files[file].size() + 1200 <= AlarmLog::max_file_bytes)
     f.message("filler " + text);
   f.message("rotation fails " + std::string(1200, 'f'));
-  require(f.log->view().reason.find("rotated") != std::string::npos,
-          "A failed rotation is said");
+  require(f.log->view().reason.find("rotated") != std::string::npos, "A failed rotation is said");
   f.log->posted(page, std::vector{encode_message(MessageLevel::error, "next", epoch)}, epoch);
   f.log.reset(); // the last append of the run
   const auto rotated = f.lines(file);
-  require(rotated.size() == 2 && rotated[0]["text"].get<std::string>().starts_with("rotation fails") &&
+  require(rotated.size() == 2 &&
+              rotated[0]["text"].get<std::string>().starts_with("rotation fails") &&
               rotated[1]["text"] == "next" &&
               f.lines(older).back()["text"].get<std::string>().starts_with("filler"),
           "The waiting records are written once the rotation works");
@@ -245,8 +248,7 @@ void full_disk() {
   f.files.failures["append"] = 3;
   f.message("while full 1");
   auto view = f.log->view();
-  require(view.reason.find("No space left on device") != std::string::npos,
-          "A full disk is said");
+  require(view.reason.find("No space left on device") != std::string::npos, "A full disk is said");
   require(f.texts().back() == "while full 1", "The view still has what was not saved");
   f.message("while full 2"); // a new record tries again at once: fails
   // Space again: a retry or the next record writes what waited, in order.
@@ -289,6 +291,228 @@ void session_only() {
           "The view says session_only");
 }
 
+// A record line as a run writes it.
+auto record_line(const std::string& text, std::uint64_t number) -> std::string {
+  return Json{{"v", 1},           {"n", number},  {"session", 1},       {"time", epoch.count()},
+              {"level", "error"}, {"text", text}, {"outcome", nullptr}, {"command", nullptr}}
+             .dump() +
+         '\n';
+}
+
+// The current file holds a record with this text.
+auto saved_text(const FakeDisk& disk, const std::string& text) -> bool {
+  const auto found = disk.files.find(file);
+  return found != disk.files.end() &&
+         found->second.find(std::format(R"("text":"{}")", text)) != std::string::npos;
+}
+
+// Review #270, 1: the bytes of failed appends were counted, so retries on a full disk rotated
+// the files again and again, and the renames, which work on a full disk, pushed the older
+// files out.
+void full_disk_keeps_older_files() {
+  Fixture f;
+  f.log.reset();
+  f.disk.files[oldest] = record_line("oldest record", 1);
+  f.disk.files[older] = record_line("older record", 2);
+  f.disk.files[file] = record_line("current record", 3);
+  const auto kept_oldest = f.disk.files[oldest];
+  const auto kept_older = f.disk.files[older];
+  f.open();
+  f.files.failures["append"] = 1000000;
+  const std::string text(1000, 'd');
+  // Enough for the counted bytes of the failed appends to pass max_file_bytes; few enough that
+  // the halves the fake writes stay within what a start reads.
+  for (int i = 0; i < 40; ++i)
+    f.message(std::format("{} {}", i, text)); // each is a retry of all that waits: ENOSPC
+  require(f.log->view().reason.find("No space left on device") != std::string::npos,
+          "The full disk is said");
+  require(f.files.count("rename") == 0,
+          std::format("Nothing is rotated while the disk is full: {} renames",
+                      f.files.count("rename")));
+  require(f.disk.files[oldest] == kept_oldest && f.disk.files[older] == kept_older,
+          "The older files are as they were");
+  f.files.failures.clear();
+  f.message("space again");
+  f.open();
+  const auto texts = f.texts();
+  require(texts.size() == 44 && texts[0] == "oldest record" && texts[1] == "older record" &&
+              texts[2] == "current record" && texts[3].starts_with("0 ") &&
+              texts[42].starts_with("39 ") && texts[43] == "space again",
+          std::format("The whole history is kept: {} entries", texts.size()));
+}
+
+// Review #270, 2: add() dropped the oldest waiting records while a batch was written, and the
+// writer then erased as many records from the front as the batch had: new ones it never wrote.
+void batch_erase_by_number() {
+  Fixture f;
+  f.files.failures["append"] = 1000000;
+  std::vector<std::string> many;
+  many.reserve(AlarmLog::max_pending);
+  for (std::size_t i = 0; i < AlarmLog::max_pending; ++i)
+    many.push_back(encode_message(MessageLevel::error, std::format("w{}", i), epoch));
+  f.log->posted(page, many, epoch);
+  f.log->settle();
+  f.files.failures.clear();
+  bool posted = false;
+  f.files.during = [&](std::string_view step) {
+    if (step != "append" || std::exchange(posted, true))
+      return;
+    // The queue is full: each of these drops the oldest one, which is in the batch.
+    std::vector<std::string> late;
+    late.reserve(3);
+    for (int i = 0; i < 3; ++i)
+      late.push_back(encode_message(MessageLevel::error, std::format("late {}", i), epoch));
+    f.log->posted(page, late, epoch);
+  };
+  f.message("trigger");
+  f.files.during = nullptr;
+  // The failed append left a torn line: read line by line, skipping it.
+  std::istringstream stream{f.disk.files[file]};
+  std::vector<std::string> texts;
+  for (std::string line; std::getline(stream, line);)
+    if (const auto value = Json::parse(line, nullptr, false); value.is_object())
+      texts.push_back(value["text"].get<std::string>());
+  std::vector<std::string> late;
+  std::ranges::copy_if(texts, std::back_inserter(late),
+                       [](const std::string& text) { return text.starts_with("late "); });
+  require(late == std::vector<std::string>{"late 0", "late 1", "late 2"},
+          std::format("What was added during the write is written after it: {}", late.size()));
+  require(!texts.empty() && texts.back() == "late 2", "In the order it was posted");
+}
+
+// A stream buffer that blocks every write until it is opened: a stderr nobody reads.
+class BlockedStream final : public std::streambuf {
+public:
+  void open() {
+    {
+      const std::scoped_lock lock{mutex_};
+      open_ = true;
+    }
+    changed_.notify_all();
+  }
+  auto wait_for_writer(std::chrono::milliseconds limit) -> bool {
+    std::unique_lock lock{mutex_};
+    return changed_.wait_for(lock, limit, [this] { return entered_; });
+  }
+
+protected:
+  auto overflow(int_type c) -> int_type override {
+    block();
+    return traits_type::not_eof(c);
+  }
+  auto xsputn(const char_type* /*text*/, std::streamsize count) -> std::streamsize override {
+    block();
+    return count;
+  }
+
+private:
+  void block() {
+    std::unique_lock lock{mutex_};
+    entered_ = true;
+    changed_.notify_all();
+    changed_.wait(lock, [this] { return open_; });
+  }
+  std::mutex mutex_;
+  std::condition_variable changed_;
+  bool entered_{};
+  bool open_{};
+};
+
+// Review #270, 3: the reason was written to stderr under the mutex, so a blocked stderr
+// blocked every thread that posts.
+void blocked_stderr_does_not_block_posting() {
+  Fixture f;
+  BlockedStream blocked;
+  auto* const saved = std::cerr.rdbuf(&blocked);
+  f.files.failures["append"] = 1;
+  f.log->posted(page, std::vector{encode_message(MessageLevel::error, "to a full disk", epoch)},
+                epoch);
+  const bool writing = blocked.wait_for_writer(10s);
+  auto poster = std::async(std::launch::async, [&f] {
+    f.log->posted(page, std::vector{encode_message(MessageLevel::error, "meanwhile", epoch)},
+                  epoch);
+    return f.log->view().entries.size();
+  });
+  const bool returned = poster.wait_for(5s) == std::future_status::ready;
+  blocked.open();
+  poster.wait();
+  f.log->settle();
+  std::cerr.rdbuf(saved);
+  require(writing, "The writer says the reason on stderr");
+  require(returned, "Posting does not wait for a stderr that blocks");
+}
+
+// Review #270, 4: the log wrote and rotated without the data directory's lock.
+void writes_only_under_the_lock() {
+  const auto noop = [](PageToken, const std::vector<std::string>&) {};
+  const auto writes = [](const FakeToolModelFiles& files) {
+    return files.count("append") + files.count("rename");
+  };
+  FakeDisk disk;
+  disk.directories.insert(directory);
+  FakeToolModelFiles other{disk};
+  require(other.lock(directory).has_value(), "Another CoffeeCNC holds the lock");
+  FakeToolModelFiles files{disk};
+  {
+    AlarmLog log{files, directory, "", noop};
+    log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
+    log.settle();
+    const auto view = log.view();
+    require(!view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
+                view.entries.size() == 1,
+            "Without the lock the log is kept for this run only, and says why: " + view.reason);
+  }
+  require(writes(files) == 0 && !disk.files.contains(file),
+          "Nothing is written in a directory another CoffeeCNC holds");
+  other.unlock();
+  {
+    AlarmLog log{files, directory, "", noop,
+                 [] { return std::optional<std::string>{"the tool models could not lock it"}; }};
+    log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
+    log.settle();
+    require(!log.view().saved && writes(files) == 0 && files.count("lock") == 1,
+            "A lock that the caller does not hold is not taken over, and nothing is written");
+  }
+  // The application's case: the tool models hold the lock for the alarm log.
+  FakeToolModelFiles store_files{disk};
+  bool appended_unlocked = false;
+  files.during = [&](std::string_view step) {
+    if (step == "append" && !disk.locked.contains(directory))
+      appended_unlocked = true;
+  };
+  {
+    ToolModelStore store{
+        store_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
+        [](PageToken, const std::vector<std::string>&) {}};
+    AlarmLog log{files, directory, "", noop, [&store]() -> std::optional<std::string> {
+                   const auto held = store.held_location();
+                   if (held.availability == ToolModelAvailability::available)
+                     return std::nullopt;
+                   return held.reason;
+                 }};
+    log.posted(page, std::vector{encode_message(MessageLevel::error, "saved", epoch)}, epoch);
+    log.settle();
+    require(log.view().saved && saved_text(disk, "saved"), "Under the lock it is saved");
+    store.stop();
+    require(disk.locked.contains(directory), "A stopped store still holds the lock");
+    log.posted(page, std::vector{encode_message(MessageLevel::error, "at the end", epoch)}, epoch);
+  } // the log goes first: its last append
+  files.during = nullptr;
+  require(saved_text(disk, "at the end") && !appended_unlocked,
+          "The last append of the run is still under the lock");
+  require(!disk.locked.contains(directory), "The lock goes with the store");
+}
+
+// Linux: what append says on a device that is full.
+void real_enospc() {
+#ifdef __linux__
+  LocalToolModelFiles files;
+  const auto done = files.append("/dev/full", "a line\n");
+  require(!done && done.error().find("No space left on device") != std::string::npos,
+          "An append on a full device fails with ENOSPC");
+#endif
+}
+
 void real_files(const std::filesystem::path& root) {
   const auto at = root / "alarm_log_tests";
   std::filesystem::remove_all(at);
@@ -327,6 +551,11 @@ auto main(int argc, char** argv) -> int {
     rotation();
     full_disk();
     session_only();
+    full_disk_keeps_older_files();
+    batch_erase_by_number();
+    blocked_stderr_does_not_block_posting();
+    writes_only_under_the_lock();
+    real_enospc();
     real_files(argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path());
     std::cout << checks << " alarm log checks passed\n";
     return 0;

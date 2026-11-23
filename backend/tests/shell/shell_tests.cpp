@@ -2292,23 +2292,25 @@ void theme_in_settings(const Rig& rig) {
 // The language switches the panel at once, is saved for this machine, returns after a reload,
 // and is set back to English for whatever runs after it.
 void language_in_settings(const Rig& rig) {
+  const std::string actions = "[role=dialog] footer button";
   const auto open = [&]() -> bool {
     return click_when_ready(rig, "summary.app-menu-toggle", "") == "ok" &&
            click_when_ready(rig, "button.settings", "") == "ok" &&
            rig.wait_js("document.querySelectorAll('.language-option').length === 7");
   };
   const auto german = "document.documentElement.lang === 'de' && "
-                      "!__t.find('[role=dialog] footer button.go', 'Save settings')";
+                      "!!__t.find('[role=dialog] footer button', 'Einstellungen speichern')";
   const auto english = "document.documentElement.lang === 'en' && "
-                       "!!__t.find('[role=dialog] footer button.go', 'Save settings')";
+                       "!!__t.find('[role=dialog] footer button', 'Save settings')";
   check("settings_previews_german_text", open() &&
         rig.click("label.language-option", "Deutsch") == "ok" && rig.wait_js(german));
   check("settings_cancel_restores_language",
-        rig.click("[role=dialog] footer button:not(.go):not(.templates)", "") == "ok" &&
-            rig.wait_js("document.documentElement.lang === 'en' && !document.querySelector('[role=dialog]')"));
+        rig.click(actions, "Abbrechen") == "ok" &&
+            rig.wait_js("document.documentElement.lang === 'en' && "
+                        "!document.querySelector('[role=dialog]')"));
   const bool saved = open() && rig.click("label.language-option", "Deutsch") == "ok" &&
                      rig.wait_js(german) &&
-                     click_when_ready(rig, "[role=dialog] footer button.go", "") == "ok" &&
+                     click_when_ready(rig, actions, "Einstellungen speichern") == "ok" &&
                      rig.wait_js("__t.last.operator_settings?.document?.language === 'de' && "
                                  "!document.querySelector('[role=dialog]')");
   check("settings_saves_german_natively", saved);
@@ -2321,7 +2323,7 @@ void language_in_settings(const Rig& rig) {
             rig.page_live() && rig.wait_js("document.documentElement.lang === 'de'"));
   check("settings_returns_to_english",
         open() && rig.click("label.language-option", "English") == "ok" && rig.wait_js(english) &&
-            click_when_ready(rig, "[role=dialog] footer button.go", "") == "ok" &&
+            click_when_ready(rig, actions, "Save settings") == "ok" &&
             rig.wait_js("__t.last.operator_settings?.document?.language === 'en' && "
                         "!document.querySelector('[role=dialog]')"));
 }

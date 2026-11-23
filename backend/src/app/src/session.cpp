@@ -725,14 +725,15 @@ auto Session::copy_work(ProgramWriter& writer) -> std::optional<Outcome> {
     return std::nullopt;
   auto request = std::move(*copy_);
   copy_.reset();
-  if (!page_open_ || request.page != PageToken{pages_})
+  const auto page_is_current = [&] { return page_open_ && request.page == PageToken{pages_}; };
+  if (!page_is_current())
     return Outcome{};
   copying_ = true;
   lock.unlock();
   const auto result = writer.manage(request.command, "");
   lock.lock();
   copying_ = false;
-  if (!page_open_ || request.page != PageToken{pages_})
+  if (!page_is_current())
     return Outcome{};
   Outcome outcome;
   outcome.page = request.page;

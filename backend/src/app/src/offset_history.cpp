@@ -106,6 +106,24 @@ auto entry_from(const Json& value) -> HistoryEntry {
     entry.changes.push_back({parse(change.at("field"), all_fields),
                              optional_finite(change.at("before")),
                              optional_finite(change.at("after"))});
+  // A restore writes each field with the code of the target: X, Y, Z and R of a work system,
+  // X, Y and Z of G52, Z and R of a tool. A field of another target would write the wrong value.
+  const auto belongs = [target = entry.target](HistoryField field) {
+    switch (target) {
+    case HistoryTarget::wcs:
+      return field != HistoryField::length && field != HistoryField::diameter;
+    case HistoryTarget::g92:
+      return std::ranges::contains(fields, field);
+    case HistoryTarget::tool:
+      return field == HistoryField::length || field == HistoryField::diameter;
+    }
+    return false;
+  };
+  for (auto change = entry.changes.begin(); change != entry.changes.end(); ++change)
+    if (!belongs(change->field) ||
+        std::ranges::contains(std::next(change), entry.changes.end(), change->field,
+                              &HistoryChange::field))
+      throw Damaged("a change does not belong to its target");
   if (!value.at("restores").is_null())
     entry.restores = counter(value.at("restores"));
   return entry;
@@ -148,8 +166,10 @@ void OffsetHistoryStore::load() {
     const auto& saved_entries = root.at("entries");
     entries.reserve(saved_entries.size());
     std::ranges::transform(saved_entries, std::back_inserter(entries), entry_from);
+    // Newest first, each id once.
     if (entries.size() > max_entries ||
-        !std::ranges::is_sorted(entries, std::ranges::greater{}, &HistoryEntry::id))
+        std::ranges::adjacent_find(entries, std::ranges::less_equal{}, &HistoryEntry::id) !=
+            entries.end())
       throw Damaged("the entries are not in order");
     const auto next = counter(root.at("next_id"));
     if (!entries.empty() && next <= entries.front().id)

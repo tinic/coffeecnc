@@ -37,7 +37,11 @@ const examples = [
     "machine_id": "G0759",
     "tool_model_storage": 1,
     "operator_settings_storage": 1,
-    "quit_supported": true
+    "quit_supported": true,
+    "macros": [
+      { "label": "Park", "mdi": "G53 G0 Z0" },
+      { "label": "Clamp check", "mdi": "O<clamp> call" }
+    ]
   },
   {
     "type": "hello",

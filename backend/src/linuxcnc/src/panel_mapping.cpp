@@ -31,6 +31,7 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.max_spindle_rpm = config.limits.max_spindle_rpm;
   hello.fixed_setter = config.fixed_setter;
   hello.program_places = config.program_places;
+  hello.macros = config.macros;
   return hello;
 }
 

@@ -5510,11 +5510,68 @@ void probe_tool_exchange(Rig& rig) {
   static_cast<void>(rig.send(R"("type":"abort")"));
 }
 
+// [COFFEECNC] MACRO (#211): the run's INI with macros added loads, its hello carries them, a call
+// of a missing subroutine is refused, and each macro's block runs on LinuxCNC as the panel sends
+// it, an `mdi` command: a G53 move and a call of a subroutine file in PROGRAM_PREFIX.
+void macros(Rig& rig, const MachineConfig& config) {
+  const auto directory = std::filesystem::path(config.ini_file).parent_path();
+  std::ofstream(std::filesystem::path(config.program_prefix) / "coffeecnc_macro.ngc")
+      << "o<coffeecnc_macro> sub\nG53 G0 X12 Y-8\no<coffeecnc_macro> endsub\nM2\n";
+  std::ifstream in{config.ini_file};
+  const std::string original{std::istreambuf_iterator<char>(in), {}};
+  const auto with_macros = [&](std::string_view lines) -> std::string {
+    const auto file = directory / "coffeecnc_macros.ini";
+    auto text = original;
+    if (const auto at = text.find("[COFFEECNC]\n"); at != std::string::npos)
+      text.insert(at + 12, lines);
+    else
+      text += std::format("\n[COFFEECNC]\n{}", lines);
+    std::ofstream(file, std::ios::trunc) << text;
+    return file.string();
+  };
+  constexpr std::string_view lines =
+      "MACRO = Park Z | G53 G0 Z-5\nMACRO = Corner | O<Coffeecnc_Macro> call\n";
+  const auto loaded = load_machine_config(with_macros(lines));
+  const std::vector<Macro> expected{{"Park Z", "G53 G0 Z-5"},
+                                    {"Corner", "O<Coffeecnc_Macro> call"}};
+  check("macros_config", loaded && loaded->macros == expected,
+        loaded ? std::format("macros={}", loaded->macros.size()) : word(loaded.error()));
+  const auto hello = loaded ? encode_hello(to_hello(*loaded)) : Encoded{};
+  const auto wire = hello ? Json::parse(*hello).value("macros", Json()) : Json();
+  check("macros_hello",
+        wire == Json::parse(R"([{"label":"Park Z","mdi":"G53 G0 Z-5"},
+                                {"label":"Corner","mdi":"O<Coffeecnc_Macro> call"}])"),
+        word(wire.dump()));
+  const auto lost =
+      load_machine_config(with_macros(std::string(lines) + "MACRO = Lost | O<lost> call\n"));
+  check("macros_missing_subroutine_refused",
+        !lost && lost.error().find("calls O<lost>, but lost.ngc is not in") != std::string::npos,
+        lost ? "loaded" : word(lost.error()));
+
+  const auto run_macro = [&](const Macro& macro) -> bool {
+    const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", macro.mdi));
+    const bool idle = rig.pump_until(30s, [&]() -> bool { return rig.idle(); });
+    if (!result.accepted())
+      fact("macros_refused", std::format("text={} {}", word(macro.mdi), result.text()));
+    rig.pump(100ms);
+    return result.accepted() && idle;
+  };
+  const bool parked = run_macro(expected[0]);
+  check("macros_g53_runs", parked && near(rig.status().controller.axes[2].machine, -5, 0.001),
+        std::format("z={:.4f}", rig.status().controller.axes[2].machine));
+  const bool called = run_macro(expected[1]);
+  const auto after = rig.status().controller.axes;
+  check("macros_subroutine_runs",
+        called && near(after[0].machine, 12, 0.001) && near(after[1].machine, -8, 0.001),
+        std::format("x={:.4f} y={:.4f}", after[0].machine, after[1].machine));
+  std::filesystem::remove(directory / "coffeecnc_macros.ini");
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
-         bool moves_only) -> int {
+         bool moves_only, bool macros_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5607,6 +5664,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   }
   if (gantry_only) {
     gantry(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (macros_only) {
+    homing(rig);
+    macros(rig, *config);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5755,6 +5818,7 @@ auto main(int argc, char** argv) -> int {
   bool rotary_only = false;
   bool probe_interlock_only = false;
   bool moves_only = false;
+  bool macros_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5777,6 +5841,7 @@ auto main(int argc, char** argv) -> int {
     rotary_only = rotary_only || std::string_view(argv[i]) == "rotary";
     probe_interlock_only = probe_interlock_only || std::string_view(argv[i]) == "probe-interlock";
     moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
+    macros_only = macros_only || std::string_view(argv[i]) == "macros";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5788,7 +5853,7 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only, probe_interlock_only, moves_only);
+               history_only, rotary_only, probe_interlock_only, moves_only, macros_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

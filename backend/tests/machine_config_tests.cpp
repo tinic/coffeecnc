@@ -625,6 +625,74 @@ void fixed_setter_is_explicit_and_bounded() {
           "the setter rejects a search too short to reach below the reference latch");
 }
 
+// [COFFEECNC] MACRO = <label> | <MDI block> (#211), as LinuxCNC's own IniFile reads the lines.
+void macros() {
+  require(load(g0759)->macros.empty(), "no macro unless configured");
+  const auto with_macros = [](std::string_view lines) -> std::string {
+    return with(std::string(g0759), "[COFFEECNC]\n", std::format("[COFFEECNC]\n{}", lines));
+  };
+  const auto config = load(with_macros(
+      "MACRO = Park | G53 G0 Z0\nMACRO =   Probe   Z  |  G38.2 Z-10 F100 (MSG, #<_z>)  \n"
+      "MACRO = Höhe über | G0 Z5\n"));
+  require(config.has_value(), config ? "" : config.error());
+  require(config->macros == std::vector<Macro>{{"Park", "G53 G0 Z0"},
+                                               {"Probe   Z", "G38.2 Z-10 F100 (MSG, #<_z>)"},
+                                               {"Höhe über", "G0 Z5"}},
+          std::format("labels and blocks in order, trimmed, with # and ( kept: {}",
+                      config->macros.size() > 1 ? config->macros[1].mdi : std::string()));
+  const auto refused = [&](std::string_view lines, std::string_view part) -> bool {
+    const auto reason = error(with_macros(lines));
+    if (!has(reason, part))
+      throw std::runtime_error(std::format("\"{}\" gave \"{}\", not \"{}\"", lines, reason, part));
+    return true;
+  };
+  require(refused("MACRO = G53 G0 Z0\n", "has no |"), "a macro needs the bar");
+  require(refused("MACRO =  | G53 G0 Z0\n", "has no label"), "an empty label");
+  require(refused("MACRO = Park |  \n", "\"Park\" has no MDI block"), "an empty block");
+  require(refused("MACRO = 1234567890123456789012345 | G0 X0\n", "at most 24 characters"),
+          "a label of 25 characters");
+  require(load(with_macros("MACRO = 123456789012345678901234 | G0 X0\n")).has_value() &&
+              load(with_macros("MACRO = äöüäöüäöüäöüäöüäöüäöüäöü | G0 X0\n")).has_value(),
+          "24 characters, also of two bytes each");
+  require(refused(std::format("MACRO = Long | G0 X0 ({})\n", std::string(250, 'x')),
+                  "at most 254 bytes"),
+          "a block over 254 bytes");
+  require(refused("MACRO = Park | G0 Z0\nMACRO = Park | G0 Z1\n", "\"Park\" is there twice"),
+          "labels are unique");
+  std::string thirteen;
+  for (int i = 1; i <= 13; ++i)
+    thirteen += std::format("MACRO = M{} | G0 Z{}\n", i, i);
+  require(refused(thirteen, "more than 12 MACRO lines"), "at most 12 macros");
+  require(load(with_macros(thirteen.substr(0, thirteen.rfind("MACRO")))).value().macros.size() ==
+              12,
+          "12 macros");
+
+  // A named O-word call needs its file where the interpreter looks for it.
+  const auto subroutines = scratch / "macro-subs";
+  const auto programs = scratch / "macro-programs";
+  std::filesystem::create_directories(subroutines);
+  std::filesystem::create_directories(programs);
+  std::ofstream(subroutines / "clamp.ngc") << "o<clamp> sub\no<clamp> endsub\nM2\n";
+  std::ofstream(programs / "park.ngc") << "o<park> sub\no<park> endsub\nM2\n";
+  const auto search = [&](std::string_view macro) -> std::string {
+    auto text = with(std::string(g0759), "PROGRAM_PREFIX = /srv/nc_files",
+                     "PROGRAM_PREFIX = macro-programs");
+    text += "\n[RS274NGC]\nSUBROUTINE_PATH = /nonexistent: macro-subs\n";
+    return with(text, "[COFFEECNC]\n", std::format("[COFFEECNC]\nMACRO = {}\n", macro));
+  };
+  require(load(search("Clamp | O<clamp> call")).has_value(), "a call found in SUBROUTINE_PATH");
+  require(load(search("Clamp | o < Clamp > CALL [1] [2]")).has_value(),
+          "the name as the interpreter reads it: lower case, no spaces, with arguments");
+  require(load(search("Park | O<park> call")).has_value(), "a call found in PROGRAM_PREFIX");
+  require(has(error(search("Lost | O<lost> call")),
+              "MACRO \"Lost\" calls O<lost>, but lost.ngc is not in [DISPLAY] PROGRAM_PREFIX or "
+              "[RS274NGC] SUBROUTINE_PATH."),
+          "a call to a missing file is refused at start-up");
+  require(load(search("Note | G0 Z0 (O<lost> call)")).has_value() &&
+              load(search("Repeat | O100 call")).has_value(),
+          "a comment and a numbered call are LinuxCNC's to judge");
+}
+
 void manual_tool_change_is_opt_in() {
   require(!load(g0759)->manual_tool_change, "custom HAL keeps its existing tool changer by default");
   const auto in = with(std::string(g0759), "[COFFEECNC]\n", "[COFFEECNC]\nMANUAL_TOOLCHANGE = yes\n");
@@ -710,6 +778,7 @@ auto main(int argc, char** argv) -> int {
     motion_settings();
     linuxcnc_switches();
     manual_tool_change_is_opt_in();
+    macros();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

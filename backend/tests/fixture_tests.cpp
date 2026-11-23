@@ -139,6 +139,7 @@ auto encoded_messages() -> std::vector<Encoded> {
   g0759.max_spindle_override = 1.5;
   g0759.machine_id = "G0759";
   g0759.coolant = CoolantOutputs{.flood = false, .mist = false};
+  g0759.macros = {{"Park", "G53 G0 Z0"}, {"Clamp check", "O<clamp> call"}};
   messages.push_back(encode_hello(g0759));
 
   Hello demo;
@@ -385,6 +386,7 @@ auto variants(const Json& message) -> std::set<std::string> {
     add("axis_max_jog_velocity", caps.at("x") == caps.at("z") ? "equal" : "per axis");
     add("machine_id", message.at("machine_id").is_null() ? "null" : "given");
     add("tool_model_storage", message.at("tool_model_storage").dump());
+    add("macros", message.contains("macros") ? "some" : "absent");
   } else if (type == "status") {
     for (const auto* field : {"link", "machine", "mode", "interp", "program_units"})
       add(field, message.at(field).get<std::string>());
@@ -471,6 +473,8 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "hello machine_id null",
     "hello machine_id given",
     "hello tool_model_storage 1",
+    "hello macros some",
+    "hello macros absent",
     "tool_models",
     "tool_models availability available",
     "tool_models availability session_only",

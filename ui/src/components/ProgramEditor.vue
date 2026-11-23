@@ -33,13 +33,13 @@ const unavailable = computed(() => props.target.kind !== 'loaded' ? null
   : loaded.value === null ? 'The program text has not arrived yet.' : uneditableReason(loaded.value))
 const dirty = computed(() => text.value !== original.value)
 const running = computed(() => panel.status !== null && panel.status.interp !== 'idle')
-const readOnly = computed(() => unavailable.value !== null || running.value)
 const notice = computed(() => unavailable.value ?? (running.value ? 'Read-only while a program runs or is paused. Stop it to edit.' : null))
 
 // Saving under another name: always for a new program, on request for the loaded one.
 const savingAs = ref(props.target.kind === 'new')
 const name = ref(props.target.kind === 'new' ? uniqueName('program', new Set(props.target.taken)) : '')
 const saving = ref(false)
+const readOnly = computed(() => notice.value !== null || saving.value)
 const feedback = ref('')
 const size = computed(() => byteLength(text.value))
 const saveBlock = computed(() => connectionBlock(panel.link) ?? notice.value ??
@@ -94,8 +94,9 @@ function leave(): void {
   else emit('close')
 }
 function close(): void {
-  if (dirty.value && !saving.value && confirming.value === null) confirming.value = 'close'
-  else if (confirming.value === null) emit('close')
+  if (saving.value || confirming.value !== null) return
+  if (dirty.value) confirming.value = 'close'
+  else emit('close')
 }
 function startNew(): void {
   if (dirty.value) confirming.value = 'new'
@@ -299,8 +300,8 @@ onBeforeUnmount(() => { observer?.disconnect() })
 </script>
 
 <template>
-  <ModalDialog :title="title" size="wide" contained expanded @close="close">
-    <div class="program-editor">
+  <ModalDialog :title="title" size="wide" contained expanded docked :close-disabled="saving" @close="close">
+    <template #header>
       <div class="editor-tools" role="toolbar" aria-label="Editor">
         <button v-tooltip="'Undo'" class="btn square" type="button" aria-label="Undo" :disabled="!canUndo || readOnly" @click="undo"><AppIcon name="undo" /></button>
         <button v-tooltip="'Redo'" class="btn square" type="button" aria-label="Redo" :disabled="!canRedo || readOnly" @click="redo"><AppIcon name="redo" /></button>
@@ -318,6 +319,8 @@ onBeforeUnmount(() => { observer?.disconnect() })
         </span>
         <span class="where mono">Line {{ caretLine }} · {{ lineCount }} {{ lineCount === 1 ? 'line' : 'lines' }} · {{ formatBytes(size) }}</span>
       </div>
+    </template>
+    <div class="program-editor">
       <p v-if="notice" class="notice" role="status"><AppIcon name="info" />{{ notice }}</p>
       <div class="editor" :class="{ readonly: readOnly }" :style="{ '--number-width': numberWidth }">
         <div class="gutter mono" aria-hidden="true">
@@ -356,7 +359,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
         </template>
       </div>
       <span v-if="saveBlock && !notice" class="block">{{ saveBlock }}</span>
-      <button class="btn" type="button" @click="close">Cancel</button>
+      <button class="btn" type="button" :disabled="saving" @click="close">Cancel</button>
       <button v-if="loaded && !savingAs" class="btn" type="button" :disabled="saving || readOnly" @click="savingAs = true">Save as…</button>
       <button v-if="loaded && savingAs" class="btn" type="button" :disabled="saving" @click="savingAs = false">Back</button>
       <button v-tooltip="saveBlock ?? undefined" class="btn primary" type="button" :disabled="saving || saveBlock !== null || (!dirty && !savingAs)" @click="save">
@@ -374,8 +377,8 @@ onBeforeUnmount(() => { observer?.disconnect() })
 </template>
 
 <style scoped>
-.program-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
-.editor-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.program-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.editor-tools { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .find { position: relative; display: flex; align-items: center; flex: 0 1 300px; min-width: 150px; margin-left: 8px; }
 .find :deep(.icon) { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--text-dim); pointer-events: none; }
 .find input { width: 100%; padding-left: 34px; padding-right: 70px; }
@@ -383,7 +386,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
 .go { display: flex; gap: 6px; margin-left: 8px; }
 .go input { width: 84px; }
 .where { margin-left: auto; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
-.notice, .feedback { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; flex: none; }
+.notice, .feedback { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 12px; font-size: 12px; flex: none; }
 .notice { color: var(--warn); }
 .notice :deep(.icon) { width: 15px; height: 15px; flex: none; }
 .feedback { color: var(--stop); }
@@ -394,8 +397,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
   display: flex;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
+  border-block: 1px solid var(--line-strong);
   background: var(--bg-sunken);
   overflow: hidden;
   font-family: var(--mono);
@@ -452,5 +454,6 @@ onBeforeUnmount(() => { observer?.disconnect() })
 .name input { flex: 1; min-width: 0; max-width: 360px; }
 .block { align-self: center; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-dim); }
 .confirm { margin: 0; }
-@media (max-width: 1000px) { .where { display: none; } }
+@media (max-width: 1100px) { .where { display: none; } }
+@media (max-width: 920px) { .editor-tools { order: 1; flex-basis: 100%; } }
 </style>

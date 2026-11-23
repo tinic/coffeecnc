@@ -614,8 +614,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     PanelFeed::Mirror mirror;
     if (remote) {
       mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,
-                         bool has_program) -> void {
-        remote->publish(messages, records, has_program);
+                         const Status& status, bool has_program) -> void {
+        remote->publish(messages, records, status, has_program);
       };
     }
     // The `tool_models` snapshot follows the `hello` it belongs to.

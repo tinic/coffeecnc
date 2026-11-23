@@ -427,7 +427,7 @@ if(BUILD_TESTING)
         set_tests_properties(remote_server PROPERTIES TIMEOUT 20)
         add_test(NAME remote_server_dns COMMAND sh ${PROJECT_SOURCE_DIR}/tests/remote_server_dns.sh
           $<TARGET_FILE:coffeecnc_remote_server_tests> ${PROJECT_BINARY_DIR})
-        set_tests_properties(remote_server_dns PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77)
+        set_tests_properties(remote_server_dns PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 
         set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.

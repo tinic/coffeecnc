@@ -1,23 +1,26 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { theme } from '../appearance'
 import { live, panel, reported } from '../machine'
 import { isDarkTheme } from '../operator-settings'
+import { translateMessage } from '../i18n/messages'
 import { baseName } from '../units'
 import DroPanel from './DroPanel.vue'
 import LogDialog from './LogDialog.vue'
 import ProgramTab from './ProgramTab.vue'
 
+const { t } = useI18n()
 const logOpen = ref(false)
 const state = computed(() => {
   const status = reported.value
-  if (!live.value || status === null) return 'No live machine status'
-  if (status.machine === 'estop') return 'E-stop'
-  if (status.machine === 'off') return 'Machine off'
-  if (status.interp === 'paused') return 'Paused'
-  if (status.interp !== 'idle') return 'Running'
-  return 'Machine on'
+  if (!live.value || status === null) return t('status.remote.noLive')
+  if (status.machine === 'estop') return t('status.remote.estop')
+  if (status.machine === 'off') return t('status.remote.machineOff')
+  if (status.interp === 'paused') return t('status.remote.paused')
+  if (status.interp !== 'idle') return t('status.remote.running')
+  return t('status.remote.machineOn')
 })
 const file = computed(() => reported.value?.program.file)
 </script>
@@ -26,18 +29,20 @@ const file = computed(() => reported.value?.program.file)
   <div class="remote">
     <header>
       <img :src="`./branding/coffeecnc-logo-${isDarkTheme(theme) ? 'dark' : 'light'}.svg`" alt="CoffeeCNC" width="161" height="36" />
-      <span class="read-only">Read-only</span>
+      <span class="read-only">{{ t('status.remote.readOnly') }}</span>
       <strong v-if="panel.hello?.machine_name">{{ panel.hello.machine_name }}</strong>
-      <span role="status" class="machine-state" :class="{
-        stopped: live && reported?.machine === 'estop',
-        stale: !live || reported?.interp === 'paused',
-        off: live && reported?.machine === 'off',
-      }">{{ state }}</span>
-      <button class="btn" type="button" @click="logOpen = true">Message log<span v-if="panel.log.length"> · {{ panel.log.length }}</span></button>
+      <span
+        role="status" class="machine-state" :class="{
+          stopped: live && reported?.machine === 'estop',
+          stale: !live || reported?.interp === 'paused',
+          off: live && reported?.machine === 'off',
+        }"
+      >{{ state }}</span>
+      <button class="btn" type="button" @click="logOpen = true">{{ t('status.remote.messageLog') }}<span v-if="panel.log.length"> · {{ panel.log.length }}</span></button>
     </header>
     <section v-if="file" class="job">
       <h1>{{ baseName(file) }}</h1>
-      <p v-if="panel.notice" class="notice" :class="{ error: panel.notice.level === 'error' }">{{ panel.notice.text }}</p>
+      <p v-if="panel.notice" class="notice" :class="{ error: panel.notice.level === 'error' }">{{ translateMessage(panel.notice.text) }}</p>
     </section>
     <DroPanel read-only />
     <main>

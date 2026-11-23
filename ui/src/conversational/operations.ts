@@ -6,7 +6,7 @@ import { bore } from './bore'
 import { drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket } from './pocket'
-import { number, unitName, type Common, type Generated, type Unit } from './program'
+import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 
 export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket'
 
@@ -15,21 +15,25 @@ export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 
 
 export type Values = Record<string, string>
 
+/** The message key of an option's name. */
+export type OptionKey = OperationsKey<'option'> | 'common.yes' | 'common.no'
+
+// Labels, titles and notes are message keys: the dialog translates them where it shows them.
 interface FieldBase {
   key: string
-  label: string
+  label: LabelKey
   /** Shown only when this holds for the entered values. */
   when?: (values: Values) => boolean
 }
 export type Field =
   | (FieldBase & { type: 'number'; kind: NumberKind })
-  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, string])[] })
+  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[] })
 
 export interface Operation {
   id: OperationId
-  title: string
+  title: OperationsKey<'operation'>
   /** Shown above the fields: what the operation needs from the tool or the setup. */
-  note?: string
+  note?: OperationsKey<'operation'>
   fields: readonly Field[]
   defaults: (unit: Unit) => Values
   /** The generator's input from the parsed values and the common entries. */
@@ -62,15 +66,15 @@ export function unitOf(kind: NumberKind, unit: Unit): string {
   }
 }
 
-const num = (key: string, label: string, kind: NumberKind, when?: (values: Values) => boolean): Field =>
+const num = (key: string, label: LabelKey, kind: NumberKind, when?: (values: Values) => boolean): Field =>
   ({ type: 'number', key, label, kind, ...(when ? { when } : {}) })
-const yesNo = [['yes', 'Yes'], ['no', 'No']] as const
+const yesNo = [['yes', 'common.yes'], ['no', 'common.no']] as const
 
 const feeds = (plunge: boolean): Field[] => [
-  num('feed', 'Feed', 'feed'),
-  ...(plunge ? [num('plungeFeed', 'Plunge feed', 'feed')] : []),
-  num('rpm', 'Spindle speed', 'rpm'),
-  num('clearance', 'Clearance height', 'length'),
+  num('feed', 'operations.label.feed', 'feed'),
+  ...(plunge ? [num('plungeFeed', 'operations.label.plungeFeed', 'feed')] : []),
+  num('rpm', 'operations.label.spindleSpeed', 'rpm'),
+  num('clearance', 'operations.label.clearance', 'length'),
 ]
 
 /** Millimetre and inch defaults side by side. */
@@ -87,13 +91,13 @@ const circle = (values: Values): boolean => values['pattern'] === 'circle'
 export const operations: readonly Operation[] = [
   {
     id: 'facing',
-    title: 'Facing',
+    title: 'operations.operation.facing',
     fields: [
-      num('width', 'Size X', 'length'), num('height', 'Size Y', 'length'),
-      { type: 'choice', key: 'origin', label: 'X0 Y0 at', options: origins },
-      { type: 'choice', key: 'along', label: 'Passes along', options: [['x', 'X'], ['y', 'Y']] },
-      num('stepover', 'Stepover', 'percent'),
-      num('depth', 'Total depth', 'length'), num('depthPerPass', 'Depth per pass', 'length'),
+      num('width', 'operations.label.sizeX', 'length'), num('height', 'operations.label.sizeY', 'length'),
+      { type: 'choice', key: 'origin', label: 'operations.label.origin', options: origins },
+      { type: 'choice', key: 'along', label: 'operations.label.along', options: [['x', 'operations.option.x'], ['y', 'operations.option.y']] },
+      num('stepover', 'operations.label.stepover', 'percent'),
+      num('depth', 'operations.label.totalDepth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
       ...feeds(true),
     ],
     defaults: (unit) => pick(unit,
@@ -102,23 +106,23 @@ export const operations: readonly Operation[] = [
     generate: (v, common) => facing({ ...common, width: v.num('width'), height: v.num('height'),
       origin: v.text('origin') as Origin, along: v.text('along') === 'y' ? 'y' : 'x', stepover: v.num('stepover'),
       depth: v.num('depth'), depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
-    name: (v, unit) => `facing-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`,
+    name: (v, unit) => `facing-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`, // i18n-ignore
   },
   {
     id: 'drilling',
-    title: 'Hole pattern',
+    title: 'operations.operation.drilling',
     fields: [
-      { type: 'choice', key: 'pattern', label: 'Pattern', options: [['grid', 'Grid'], ['circle', 'Bolt circle']] },
-      { type: 'choice', key: 'cycle', label: 'Cycle', options: [['G81', 'G81 drill'], ['G83', 'G83 peck']] },
-      num('x', 'First hole X', 'coordinate', grid), num('y', 'First hole Y', 'coordinate', grid),
-      num('x', 'Centre X', 'coordinate', circle), num('y', 'Centre Y', 'coordinate', circle),
-      num('columns', 'Columns', 'count', grid), num('rows', 'Rows', 'count', grid),
-      num('spacingX', 'Column spacing X', 'coordinate', grid), num('spacingY', 'Row spacing Y', 'coordinate', grid),
-      num('count', 'Holes', 'count', circle), num('radius', 'Radius', 'length', circle),
-      num('startAngle', 'First hole angle', 'angle', circle),
-      num('depth', 'Hole depth', 'length'),
-      num('peck', 'Peck depth', 'length', (values) => values['cycle'] === 'G83'),
-      num('retract', 'Retract height (R)', 'length'),
+      { type: 'choice', key: 'pattern', label: 'operations.label.pattern', options: [['grid', 'operations.option.grid'], ['circle', 'operations.option.boltCircle']] },
+      { type: 'choice', key: 'cycle', label: 'operations.label.cycle', options: [['G81', 'operations.option.g81'], ['G83', 'operations.option.g83']] },
+      num('x', 'operations.label.firstHoleX', 'coordinate', grid), num('y', 'operations.label.firstHoleY', 'coordinate', grid),
+      num('x', 'operations.label.centreX', 'coordinate', circle), num('y', 'operations.label.centreY', 'coordinate', circle),
+      num('columns', 'operations.label.columns', 'count', grid), num('rows', 'operations.label.rows', 'count', grid),
+      num('spacingX', 'operations.label.columnSpacingX', 'coordinate', grid), num('spacingY', 'operations.label.rowSpacingY', 'coordinate', grid),
+      num('count', 'operations.label.holes', 'count', circle), num('radius', 'operations.label.radius', 'length', circle),
+      num('startAngle', 'operations.label.firstHoleAngle', 'angle', circle),
+      num('depth', 'operations.label.holeDepth', 'length'),
+      num('peck', 'operations.label.peckDepth', 'length', (values) => values['cycle'] === 'G83'),
+      num('retract', 'operations.label.retractHeightR', 'length'),
       ...feeds(false),
     ],
     defaults: (unit) => pick(unit,
@@ -130,18 +134,18 @@ export const operations: readonly Operation[] = [
       x: v.num('x'), y: v.num('y'), columns: v.num('columns'), rows: v.num('rows'), spacingX: v.num('spacingX'),
       spacingY: v.num('spacingY'), count: v.num('count'), radius: v.num('radius'), startAngle: v.num('startAngle'),
       cycle: v.text('cycle') === 'G83' ? 'G83' : 'G81', peck: v.num('peck'), depth: v.num('depth'), retract: v.num('retract') }),
-    name: (v) => v.text('pattern') === 'circle' ? `bolt-circle-${String(v.num('count'))}-holes`
-      : `drill-grid-${String(v.num('columns'))}x${String(v.num('rows'))}`,
+    name: (v) => v.text('pattern') === 'circle' ? `bolt-circle-${String(v.num('count'))}-holes` // i18n-ignore
+      : `drill-grid-${String(v.num('columns'))}x${String(v.num('rows'))}`, // i18n-ignore
   },
   {
     id: 'bore',
-    title: 'Helical bore',
+    title: 'operations.operation.bore',
     fields: [
-      num('x', 'Centre X', 'coordinate'), num('y', 'Centre Y', 'coordinate'),
-      num('diameter', 'Bore diameter', 'length'), num('depth', 'Depth', 'length'),
-      num('pitch', 'Depth per turn', 'length'),
-      { type: 'choice', key: 'finish', label: 'Finish pass', options: yesNo },
-      num('finishAllowance', 'Finish allowance', 'length', (values) => values['finish'] === 'yes'),
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('diameter', 'operations.label.boreDiameter', 'length'), num('depth', 'operations.label.depth', 'length'),
+      num('pitch', 'operations.label.depthPerTurn', 'length'),
+      { type: 'choice', key: 'finish', label: 'operations.label.finishPass', options: yesNo },
+      num('finishAllowance', 'operations.label.finishAllowance', 'length', (values) => values['finish'] === 'yes'),
       ...feeds(true),
     ],
     defaults: (unit) => pick(unit,
@@ -150,16 +154,16 @@ export const operations: readonly Operation[] = [
     generate: (v, common) => bore({ ...common, x: v.num('x'), y: v.num('y'), diameter: v.num('diameter'),
       depth: v.num('depth'), pitch: v.num('pitch'), finish: v.text('finish') === 'yes',
       finishAllowance: v.num('finishAllowance'), plungeFeed: v.num('plungeFeed') }),
-    name: (v, unit) => `bore-${size(v.num('diameter'), unit)}`,
+    name: (v, unit) => `bore-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
   {
     id: 'circular-pocket',
-    title: 'Circular pocket',
-    note: 'Plunges straight down at the centre: use an end mill that cuts at its centre.',
+    title: 'operations.operation.circularPocket',
+    note: 'operations.operation.centreCutting',
     fields: [
-      num('x', 'Centre X', 'coordinate'), num('y', 'Centre Y', 'coordinate'),
-      num('diameter', 'Pocket diameter', 'length'), num('stepover', 'Stepover', 'percent'),
-      num('depth', 'Depth', 'length'), num('depthPerPass', 'Depth per pass', 'length'),
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('diameter', 'operations.label.pocketDiameter', 'length'), num('stepover', 'operations.label.stepover', 'percent'),
+      num('depth', 'operations.label.depth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
       ...feeds(true),
     ],
     defaults: (unit) => pick(unit,
@@ -167,17 +171,17 @@ export const operations: readonly Operation[] = [
       { x: 0, y: 0, diameter: 1.25, stepover: 40, depth: 0.2, depthPerPass: 0.04, ...speeds.inch }),
     generate: (v, common) => circularPocket({ ...common, x: v.num('x'), y: v.num('y'), diameter: v.num('diameter'),
       stepover: v.num('stepover'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
-    name: (v, unit) => `circular-pocket-${size(v.num('diameter'), unit)}`,
+    name: (v, unit) => `circular-pocket-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
   {
     id: 'rectangular-pocket',
-    title: 'Rectangular pocket',
-    note: 'Plunges straight down at the centre: use an end mill that cuts at its centre.',
+    title: 'operations.operation.rectangularPocket',
+    note: 'operations.operation.centreCutting',
     fields: [
-      num('x', 'Centre X', 'coordinate'), num('y', 'Centre Y', 'coordinate'),
-      num('width', 'Size X', 'length'), num('height', 'Size Y', 'length'),
-      num('cornerRadius', 'Corner radius', 'length'), num('stepover', 'Stepover', 'percent'),
-      num('depth', 'Depth', 'length'), num('depthPerPass', 'Depth per pass', 'length'),
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('width', 'operations.label.sizeX', 'length'), num('height', 'operations.label.sizeY', 'length'),
+      num('cornerRadius', 'operations.label.cornerRadius', 'length'), num('stepover', 'operations.label.stepover', 'percent'),
+      num('depth', 'operations.label.depth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
       ...feeds(true),
     ],
     defaults: (unit) => pick(unit,
@@ -186,7 +190,7 @@ export const operations: readonly Operation[] = [
     generate: (v, common) => rectangularPocket({ ...common, x: v.num('x'), y: v.num('y'), width: v.num('width'),
       height: v.num('height'), cornerRadius: v.num('cornerRadius'), stepover: v.num('stepover'), depth: v.num('depth'),
       depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
-    name: (v, unit) => `rectangular-pocket-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`,
+    name: (v, unit) => `rectangular-pocket-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`, // i18n-ignore
   },
 ]
 
@@ -207,11 +211,11 @@ export function parse(operation: Operation, values: Values, unit: Unit): Parsed 
   }
 }
 
-/** `base.ngc`, or `base-2.ngc` and so on when that name is taken. */
+/** `base.ngc`, or `base-2.ngc` and so on when that name is taken. */ // i18n-ignore
 export function uniqueName(base: string, taken: ReadonlySet<string>): string {
   const clean = base.replace(/[^A-Za-z0-9._-]+/g, '-')
   for (let n = 1; ; n += 1) {
-    const name = n === 1 ? `${clean}.ngc` : `${clean}-${String(n)}.ngc`
+    const name = n === 1 ? `${clean}.ngc` : `${clean}-${String(n)}.ngc` // i18n-ignore
     if (!taken.has(name)) return name
   }
 }

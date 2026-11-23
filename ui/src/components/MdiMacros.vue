@@ -3,13 +3,16 @@
 // as one MDI block after a confirmation that shows it, under the rules of a typed block, and its
 // result goes to the MDI history. Nothing shows when the machine has no macros.
 import { computed, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+import { translateMessage } from '../i18n/messages'
 import { mdiBlock, panel, send } from '../machine'
 import type { Macro } from '../protocol'
 import { vTooltip } from '../tooltip'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
+const { t } = useI18n()
 const macros = computed(() => panel.hello?.macros ?? [])
 const open = shallowRef(false)
 const chosen = shallowRef<Macro | null>(null)
@@ -31,10 +34,10 @@ function run(): void {
 
 <template>
   <template v-if="macros.length > 0">
-    <button v-tooltip="'Run a configured MDI macro'" class="btn" type="button" aria-haspopup="dialog" @click="open = true">
-      <AppIcon name="list" />Macros
+    <button v-tooltip="t('manual.macros.tip')" class="btn" type="button" aria-haspopup="dialog" @click="open = true">
+      <AppIcon name="list" />{{ t('manual.macros.title') }}
     </button>
-    <ModalDialog v-if="open && chosen === null" title="Macros" size="small" fresh-gesture @close="close">
+    <ModalDialog v-if="open && chosen === null" :title="t('manual.macros.title')" size="small" fresh-gesture @close="close">
       <div class="macros">
         <button
           v-for="macro in macros"
@@ -48,13 +51,13 @@ function run(): void {
         </button>
       </div>
     </ModalDialog>
-    <ModalDialog v-if="open && chosen !== null" :title="`Run ${chosen.label}?`" size="small" fresh-gesture @close="close">
+    <ModalDialog v-if="open && chosen !== null" :title="t('manual.macros.runTitle', { label: chosen.label })" size="small" fresh-gesture @close="close">
       <p class="block mono">{{ chosen.mdi }}</p>
-      <p v-if="mdiBlock !== null" class="refusal" role="alert">{{ mdiBlock }}</p>
-      <p v-else>Runs as one MDI command. The result shows in the MDI history.</p>
+      <p v-if="mdiBlock !== null" class="refusal" role="alert">{{ translateMessage(mdiBlock) }}</p>
+      <p v-else>{{ t('manual.macros.hint') }}</p>
       <template #footer>
-        <button class="btn wide" type="button" @click="close">Cancel</button>
-        <button v-tooltip="mdiBlock ?? 'Run this macro'" class="btn primary wide" type="button" :aria-disabled="mdiBlock !== null" @click="run">Run</button>
+        <button class="btn wide" type="button" @click="close">{{ t('common.cancel') }}</button>
+        <button v-tooltip="mdiBlock !== null ? translateMessage(mdiBlock) : t('manual.macros.runTip')" class="btn primary wide" type="button" :aria-disabled="mdiBlock !== null" @click="run">{{ t('manual.macros.run') }}</button>
       </template>
     </ModalDialog>
   </template>

@@ -8,6 +8,9 @@ namespace coffeecnc {
 namespace {
 constexpr std::string_view file_name = "operator-settings.json";
 constexpr std::string_view temporary_name = "operator-settings.json.tmp";
+// The panel language, apart from the settings file (encode_panel_language_file).
+constexpr std::string_view language_name = "panel-language.json";
+constexpr std::string_view language_temporary_name = "panel-language.json.tmp";
 } // namespace
 
 OperatorSettingsArchive::OperatorSettingsArchive(ToolModelFiles& files, const Limits& limits)
@@ -35,7 +38,35 @@ void OperatorSettingsArchive::open(ToolModelLocation location) {
   }
   show(read());
 }
+// The language file is optional: missing, unreadable or damaged, the panel is in English.
+auto OperatorSettingsArchive::read_language() const -> PanelLanguage {
+  const auto result = files_.read(path(language_name), max_panel_language_bytes);
+  if (!result || !*result || (*result)->more)
+    return PanelLanguage::en;
+  return decode_panel_language_file((*result)->bytes, location_.machine_id.value_or(""))
+      .value_or(PanelLanguage::en);
+}
 auto OperatorSettingsArchive::read() const -> OperatorSettings {
+  auto settings = read_settings();
+  if (settings.document)
+    settings.document->language = read_language();
+  return settings;
+}
+auto OperatorSettingsArchive::replace(std::string_view name, std::string_view temporary,
+                                      const std::string& text) -> ToolModelFiles::Done {
+  const auto temporary_path = path(temporary);
+  auto step = files_.open_temporary(temporary_path);
+  if (step)
+    step = files_.write(text);
+  if (step)
+    step = files_.sync();
+  if (step)
+    step = files_.rename(temporary_path, path(name));
+  if (!step)
+    files_.discard(temporary_path);
+  return step;
+}
+auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto file = path(file_name);
   const auto result = files_.read(file, max_operator_settings_bytes);
   if (!result)
@@ -82,18 +113,21 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});
   if (!text)
     return {CommandOutcome::rejected, text.error(), false};
-  const auto temporary = path(temporary_name);
-  auto step = files_.open_temporary(temporary);
-  if (step)
-    step = files_.write(*text);
-  if (step)
-    step = files_.sync();
-  if (step)
-    step = files_.rename(temporary, path(file_name));
-  if (!step) {
-    files_.discard(temporary);
+  if (const auto step = replace(file_name, temporary_name, *text); !step)
     return {CommandOutcome::failed,
             "Settings were not saved: " + step.error() + ". The saved file is unchanged.", false};
+  // Only a change of language writes the language file, after the settings file.
+  if (next.document->language != settings_.document->language) {
+    const auto language = encode_panel_language_file(command.machine_id, next.document->language);
+    const auto step = language ? replace(language_name, language_temporary_name, *language)
+                               : ToolModelFiles::Done{std::unexpected(language.error())};
+    if (!step) {
+      show(read());
+      return {CommandOutcome::failed,
+              "The save outcome is uncertain: " + step.error() +
+                  ". Displayed settings were read back from disk.",
+              true};
+    }
   }
   if (const auto durable = files_.sync_directory(location_.directory); !durable) {
     show(read());

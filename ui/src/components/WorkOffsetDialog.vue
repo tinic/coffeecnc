@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { mdiBlock, panel, send } from '../machine'
 import { vNumeric } from '../numeric-input'
 import type { Vec3 } from '../protocol'
@@ -9,7 +11,9 @@ import ModalDialog from './ModalDialog.vue'
 
 const props = defineProps<{ wcs: number }>()
 const emit = defineEmits<{ close: [] }>()
+const { t } = useI18n()
 const unit = panel.unit
+const unitName = unit === 'inch' ? 'in' : 'mm'
 const hello = panel.hello
 const axes = ['X', 'Y', 'Z'] as const
 function current(wcs: number): Vec3 | null {
@@ -28,19 +32,24 @@ const parsed = computed((): Vec3 | null => {
     ? original[index] ?? null : parseLength(text, unit))
   return numbers.every((value) => value !== null && Number.isFinite(value)) ? numbers as Vec3 : null
 })
-const block = computed(() => mdiBlock.value ?? (panel.status?.link !== 'live' || panel.link !== 'live'
-  ? 'Wait for current machine status.' : panel.hello !== hello ? 'The connection changed. Reopen this editor.'
-    : !equal(current(props.wcs), original) ? 'These origins changed. Reopen this editor to use their current values.' : null))
-interface Review { kind: 'Set' | 'Copy' | 'Clear'; wcs: number; before: Vec3 | null; target: Vec3 }
+const block = computed(() => mdiBlock.value !== null ? translateMessage(mdiBlock.value)
+  : panel.status?.link !== 'live' || panel.link !== 'live' ? t('probe.workOffset.waitStatus')
+    : panel.hello !== hello ? t('probe.workOffset.connectionChanged')
+      : !equal(current(props.wcs), original) ? t('probe.workOffset.originsChanged') : null)
+interface Review { kind: 'set' | 'copy' | 'clear'; wcs: number; before: Vec3 | null; target: Vec3 }
 const review = ref<Review | null>(null)
 const reviewBlock = computed(() => block.value ?? (review.value !== null && !equal(current(review.value.wcs), review.value.before)
-  ? 'The destination origins changed. Go back and review them again.' : null))
-const reviewTitle = computed(() => review.value === null ? '' :
-  `${review.value.kind === 'Copy' ? 'Copy XYZ to' : review.value.kind === 'Clear' ? 'Clear XYZ in' : 'Set XYZ in'} ${wcsName(review.value.wcs)}?`)
+  ? t('probe.workOffset.destinationChanged') : null))
+const reviewTitle = computed(() => {
+  if (review.value === null) return ''
+  const wcs = wcsName(review.value.wcs)
+  return review.value.kind === 'copy' ? t('probe.workOffset.copyTitle', { wcs })
+    : review.value.kind === 'clear' ? t('probe.workOffset.clearTitle', { wcs }) : t('probe.workOffset.setTitle', { wcs })
+})
 function prepare(kind: Review['kind']): void {
-  const target: Vec3 | null = kind === 'Clear' ? [0, 0, 0] : parsed.value
+  const target: Vec3 | null = kind === 'clear' ? [0, 0, 0] : parsed.value
   if (block.value !== null || target === null) return
-  const wcs = kind === 'Copy' ? destination.value : props.wcs
+  const wcs = kind === 'copy' ? destination.value : props.wcs
   review.value = { kind, wcs, before: current(wcs), target: [...target] }
 }
 function confirm(): void {
@@ -56,28 +65,28 @@ watch([mdiBlock, (): number | undefined => panel.status?.offsets.wcs], () => { r
 <template>
   <ModalDialog v-if="review !== null" key="review" :title="reviewTitle" size="medium" expanded fresh-gesture @close="review = null">
     <table class="changes">
-      <thead><tr><th>Axis</th><th>Current {{ unit === 'inch' ? 'in' : 'mm' }}</th><th>New {{ unit === 'inch' ? 'in' : 'mm' }}</th></tr></thead>
-      <tbody><tr v-for="(axis, index) in axes" :key="axis"><th class="mono">{{ axis }}</th><td class="mono">{{ review.before === null ? 'Unavailable' : formatLength(review.before[index]!, unit) }}</td><td class="mono">{{ formatLength(review.target[index]!, unit) }}</td></tr></tbody>
+      <thead><tr><th>{{ t('probe.workOffset.axis') }}</th><th>{{ t('probe.workOffset.current', { unit: unitName }) }}</th><th>{{ t('probe.workOffset.new', { unit: unitName }) }}</th></tr></thead>
+      <tbody><tr v-for="(axis, index) in axes" :key="axis"><th class="mono">{{ axis }}</th><td class="mono">{{ review.before === null ? t('common.unavailable') : formatLength(review.before[index]!, unit) }}</td><td class="mono">{{ formatLength(review.target[index]!, unit) }}</td></tr></tbody>
     </table>
-    <p>Replaces {{ wcsName(review.wcs) }} XYZ origins in machine coordinates. The machine does not move. XY rotation and G92/G52 shifts stay unchanged.</p>
-    <p v-if="panel.status?.offsets.wcs === review.wcs" class="hint">{{ wcsName(review.wcs) }} is active; the work readout changes immediately.</p>
+    <p>{{ t('probe.workOffset.replaces', { wcs: wcsName(review.wcs) }) }}</p>
+    <p v-if="panel.status?.offsets.wcs === review.wcs" class="hint">{{ t('probe.workOffset.active', { wcs: wcsName(review.wcs) }) }}</p>
     <p v-if="reviewBlock" class="blocked" role="status">{{ reviewBlock }}</p>
-    <template #footer><button class="btn" type="button" @click="review = null">Back</button><button class="btn primary" type="button" :disabled="reviewBlock !== null" @click="confirm">Confirm {{ wcsName(review.wcs) }} XYZ</button></template>
+    <template #footer><button class="btn" type="button" @click="review = null">{{ t('common.back') }}</button><button class="btn primary" type="button" :disabled="reviewBlock !== null" @click="confirm">{{ t('probe.workOffset.confirm', { wcs: wcsName(review.wcs) }) }}</button></template>
   </ModalDialog>
-  <ModalDialog v-else key="edit" :title="`${wcsName(wcs)} work origins`" size="medium" expanded @close="emit('close')">
-    <p class="hint">XYZ origins in machine coordinates · {{ unit === 'inch' ? 'in' : 'mm' }}</p>
-    <p v-if="original === null" class="hint">Current origins are unavailable. Enter all three values to replace them, or close and select this system to read it first.</p>
+  <ModalDialog v-else key="edit" :title="t('probe.workOffset.title', { wcs: wcsName(wcs) })" size="medium" expanded @close="emit('close')">
+    <p class="hint">{{ t('probe.workOffset.hint', { unit: unitName }) }}</p>
+    <p v-if="original === null" class="hint">{{ t('probe.workOffset.unknown') }}</p>
     <div class="coordinates">
-      <label v-for="(axis, index) in axes" :key="axis" class="entry"><span class="mono">{{ axis }}</span><input v-model="values[index]" v-numeric :data-numeric-unit="unit" :aria-label="`${wcsName(wcs)} ${axis} origin`" class="field mono" type="text" inputmode="decimal" autocomplete="off" :placeholder="original === null ? 'Unavailable' : ''" /></label>
+      <label v-for="(axis, index) in axes" :key="axis" class="entry"><span class="mono">{{ axis }}</span><input v-model="values[index]" v-numeric :data-numeric-unit="unit" :aria-label="t('probe.workOffset.originLabel', { wcs: wcsName(wcs), axis })" class="field mono" type="text" inputmode="decimal" autocomplete="off" :placeholder="original === null ? t('common.unavailable') : ''" /></label>
     </div>
     <div class="offset-actions">
-      <button class="btn" type="button" :disabled="block !== null" @click="prepare('Clear')">Clear XYZ…</button>
+      <button class="btn" type="button" :disabled="block !== null" @click="prepare('clear')">{{ t('probe.workOffset.clear') }}</button>
       <span class="spacer"></span>
-      <label class="copy-target"><span>Copy to</span><select v-model="destination" class="field mono" aria-label="Copy destination"><option v-for="(name, index) in wcsNames" :key="name" :value="index + 1" :disabled="index + 1 === wcs">{{ name }}</option></select></label>
-      <button class="btn" type="button" :disabled="block !== null || parsed === null" @click="prepare('Copy')">Copy XYZ…</button>
+      <label class="copy-target"><span>{{ t('probe.workOffset.copyTo') }}</span><select v-model="destination" class="field mono" :aria-label="t('probe.workOffset.copyDestination')"><option v-for="(name, index) in wcsNames" :key="name" :value="index + 1" :disabled="index + 1 === wcs">{{ name }}</option></select></label>
+      <button class="btn" type="button" :disabled="block !== null || parsed === null" @click="prepare('copy')">{{ t('probe.workOffset.copy') }}</button>
     </div>
     <p v-if="block" class="blocked" role="status">{{ block }}</p>
-    <template #footer><button class="btn" type="button" @click="emit('close')">Cancel</button><button class="btn primary" type="button" :disabled="block !== null || parsed === null" @click="prepare('Set')">Review changes</button></template>
+    <template #footer><button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button><button class="btn primary" type="button" :disabled="block !== null || parsed === null" @click="prepare('set')">{{ t('probe.workOffset.review') }}</button></template>
   </ModalDialog>
 </template>
 

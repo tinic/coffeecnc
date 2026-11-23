@@ -4,6 +4,7 @@
 // the G-code colouring, line numbers and search marks are drawn behind and beside it, for the
 // visible lines only, so a program of 512 KiB stays responsive.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
@@ -18,9 +19,11 @@ import { baseName, formatBytes } from '../units'
 import { vTooltip } from '../tooltip'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
+import { translateMessage } from '../i18n/messages'
 
 const props = defineProps<{ target: EditorTarget }>()
 const emit = defineEmits<{ close: []; newProgram: [folder: string] }>()
+const { t } = useI18n()
 
 // The program text the editor opened, once it matches the loaded program. It stays fixed while
 // the editor is open: a save names that file and its stamp.
@@ -30,10 +33,10 @@ const text = shallowRef('')
 const folder = computed(() => loaded.value !== null ? loaded.value.file.slice(0, loaded.value.file.lastIndexOf('/')) || '/'
   : props.target.kind === 'new' ? props.target.folder : '')
 const unavailable = computed(() => props.target.kind !== 'loaded' ? null
-  : loaded.value === null ? 'The program text has not arrived yet.' : uneditableReason(loaded.value))
+  : loaded.value === null ? t('program.editor.notArrived') : uneditableReason(loaded.value))
 const dirty = computed(() => text.value !== original.value)
 const running = computed(() => panel.status !== null && panel.status.interp !== 'idle')
-const notice = computed(() => unavailable.value ?? (running.value ? 'Read-only while a program runs or is paused. Stop it to edit.' : null))
+const notice = computed(() => unavailable.value ?? (running.value ? t('program.editor.readOnlyRunning') : null))
 
 // Saving under another name: always for a new program, on request for the loaded one.
 const savingAs = ref(props.target.kind === 'new')
@@ -43,15 +46,15 @@ const readOnly = computed(() => notice.value !== null || saving.value)
 const feedback = ref('')
 const size = computed(() => byteLength(text.value))
 const saveBlock = computed(() => connectionBlock(panel.link) ?? notice.value ??
-  (text.value.trim() === '' ? 'The program is empty.' : null) ??
-  (size.value > maxProgramBytes ? 'The program is larger than 512 KiB.' : null) ??
-  (savingAs.value && !/^[^/.][^/]*$/.test(name.value.trim()) ? 'Name the file without a slash or a leading dot.' : null))
+  (text.value.trim() === '' ? t('program.editor.empty') : null) ??
+  (size.value > maxProgramBytes ? t('program.editor.tooLarge') : null) ??
+  (savingAs.value && !/^[^/.][^/]*$/.test(name.value.trim()) ? t('program.editor.badName') : null))
 const fileName = computed(() => {
   const typed = name.value.trim()
-  return typed.includes('.') ? typed : `${typed}.ngc`
+  return typed.includes('.') ? typed : `${typed}.ngc` // i18n-ignore
 })
-const title = computed(() => loaded.value !== null ? `Edit ${baseName(loaded.value.file)}`
-  : props.target.kind === 'new' ? 'New program' : 'Edit program')
+const title = computed(() => loaded.value !== null ? t('program.editor.editFile', { file: baseName(loaded.value.file) })
+  : props.target.kind === 'new' ? t('program.editor.newProgram') : t('program.editor.editProgram'))
 
 let saveRequest: CommandBody | null = null
 let openRequest: CommandBody | null = null
@@ -70,7 +73,7 @@ const removeListener = onResult((command, result) => {
     saveRequest = null
     if (result.outcome !== 'accepted') {
       saving.value = false
-      feedback.value = result.reason || 'The program was not saved.'
+      feedback.value = result.reason || t('program.editor.notSaved')
       return
     }
     // Over the loaded program the machine opened it again; a new file is opened now.
@@ -82,7 +85,7 @@ const removeListener = onResult((command, result) => {
     openRequest = null
     saving.value = false
     if (result.outcome === 'accepted') emit('close')
-    else feedback.value = `Saved, but not opened: ${result.reason || 'the machine refused it.'}`
+    else feedback.value = t('program.editor.savedNotOpened', { reason: result.reason ? translateMessage(result.reason) : t('program.editor.refused') })
   }
 })
 onBeforeUnmount(removeListener)
@@ -155,7 +158,7 @@ const rows = computed(() => lines.value.slice(first.value, last.value).map((cont
   const number = first.value + index + 1
   return { number, tokens: tokenizeGcodeLine(content), marks: marksOf(number, content) }
 }))
-const numberWidth = computed(() => `${String(Math.max(3, String(lines.value.length).length) + 2)}ch`)
+const numberWidth = computed(() => `${String(Math.max(3, String(lines.value.length).length) + 2)}ch`) // i18n-ignore
 const caretLine = computed(() => lineOf(text.value, caret.value))
 
 function state(): EditorState {
@@ -258,8 +261,8 @@ function findNext(step: 1 | -1): void {
   const at = matches.value[matchIndex.value] ?? 0
   select(at, at + query.value.length)
 }
-const matchLabel = computed(() => query.value === '' ? '' : matches.value.length === 0 ? 'No match'
-  : `${matchIndex.value < 0 ? '–' : String(matchIndex.value + 1)} of ${String(matches.value.length)}`)
+const matchLabel = computed(() => query.value === '' ? '' : matches.value.length === 0 ? t('program.editor.noMatch')
+  : t('program.editor.matchOf', { index: matchIndex.value < 0 ? '–' : String(matchIndex.value + 1), count: matches.value.length }))
 const goLine = ref('')
 function goTo(): void {
   const line = Number(goLine.value)
@@ -277,7 +280,7 @@ watch([(): ProgramText | null => panel.program, (): unknown => panel.status?.pro
   loaded.value = program
   original.value = programSource(program.lines)
   text.value = original.value
-  name.value = uniqueName(`${baseName(program.file).replace(/\.[^.]*$/, '')}-copy`, new Set([baseName(program.file)]))
+  name.value = uniqueName(`${baseName(program.file).replace(/\.[^.]*$/, '')}-copy`, new Set([baseName(program.file)])) // i18n-ignore
   void nextTick(() => {
     if (area.value === null) return
     area.value.setSelectionRange(0, 0)
@@ -302,22 +305,22 @@ onBeforeUnmount(() => { observer?.disconnect() })
 <template>
   <ModalDialog :title="title" size="wide" contained expanded docked :close-disabled="saving" @close="close">
     <template #header>
-      <div class="editor-tools" role="toolbar" aria-label="Editor">
-        <button v-tooltip="'Undo'" class="btn square" type="button" aria-label="Undo" :disabled="!canUndo || readOnly" @click="undo"><AppIcon name="undo" /></button>
-        <button v-tooltip="'Redo'" class="btn square" type="button" aria-label="Redo" :disabled="!canRedo || readOnly" @click="redo"><AppIcon name="redo" /></button>
-        <button v-tooltip="'New program'" class="btn square" type="button" aria-label="New program" :disabled="saving" @click="startNew"><AppIcon name="plus" /></button>
+      <div class="editor-tools" role="toolbar" :aria-label="t('program.editor.toolbar')">
+        <button v-tooltip="t('program.editor.undo')" class="btn square" type="button" :aria-label="t('program.editor.undo')" :disabled="!canUndo || readOnly" @click="undo"><AppIcon name="undo" /></button>
+        <button v-tooltip="t('program.editor.redo')" class="btn square" type="button" :aria-label="t('program.editor.redo')" :disabled="!canRedo || readOnly" @click="redo"><AppIcon name="redo" /></button>
+        <button v-tooltip="t('program.editor.newProgram')" class="btn square" type="button" :aria-label="t('program.editor.newProgram')" :disabled="saving" @click="startNew"><AppIcon name="plus" /></button>
         <span class="find">
           <AppIcon name="search" />
-          <input v-model="query" class="field mono" type="search" aria-label="Find" placeholder="Find" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
+          <input v-model="query" class="field mono" type="search" :aria-label="t('program.editor.find')" :placeholder="t('program.editor.find')" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
           <span class="count mono" role="status">{{ matchLabel }}</span>
         </span>
-        <button v-tooltip="'Previous match'" class="btn square" type="button" aria-label="Previous match" :disabled="matches.length === 0" @click="findNext(-1)"><AppIcon name="up" /></button>
-        <button v-tooltip="'Next match'" class="btn square" type="button" aria-label="Next match" :disabled="matches.length === 0" @click="findNext(1)"><AppIcon name="down" /></button>
+        <button v-tooltip="t('program.editor.previousMatch')" class="btn square" type="button" :aria-label="t('program.editor.previousMatch')" :disabled="matches.length === 0" @click="findNext(-1)"><AppIcon name="up" /></button>
+        <button v-tooltip="t('program.editor.nextMatch')" class="btn square" type="button" :aria-label="t('program.editor.nextMatch')" :disabled="matches.length === 0" @click="findNext(1)"><AppIcon name="down" /></button>
         <span class="go">
-          <input v-model="goLine" class="field mono" type="text" inputmode="numeric" aria-label="Go to line" placeholder="Line" autocomplete="off" @keydown.enter.prevent="goTo" />
-          <button class="btn" type="button" :disabled="goLine === ''" @click="goTo">Go</button>
+          <input v-model="goLine" class="field mono" type="text" inputmode="numeric" :aria-label="t('program.editor.goToLine')" :placeholder="t('program.editor.line')" autocomplete="off" @keydown.enter.prevent="goTo" />
+          <button class="btn" type="button" :disabled="goLine === ''" @click="goTo">{{ t('program.editor.go') }}</button>
         </span>
-        <span class="where mono">Line {{ caretLine }} · {{ lineCount }} {{ lineCount === 1 ? 'line' : 'lines' }} · {{ formatBytes(size) }}</span>
+        <span class="where mono">{{ t('program.editor.where', { line: caretLine, lines: t('program.editor.lineCount', lineCount), size: formatBytes(size) }) }}</span>
       </div>
     </template>
     <div class="program-editor">
@@ -340,18 +343,18 @@ onBeforeUnmount(() => { observer?.disconnect() })
             </div>
           </div>
           <textarea
-            ref="area" :value="text" class="area" aria-label="Program text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"
+            ref="area" :value="text" class="area" :aria-label="t('program.editor.programText')" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"
             :readonly="readOnly" @beforeinput="beforeInput" @input="input" @keydown="keydown" @scroll="sync" @select="sync" @keyup="sync" @pointerup="sync"
           ></textarea>
         </div>
       </div>
-      <p v-if="feedback" class="feedback" role="alert">{{ feedback }}</p>
+      <p v-if="feedback" class="feedback" role="alert">{{ translateMessage(feedback) }}</p>
     </div>
     <template #footer>
       <div class="file">
         <label v-if="savingAs" class="name">
-          <span>Save as</span>
-          <input v-model="name" class="field mono" type="text" aria-label="File name" autocomplete="off" spellcheck="false" :disabled="saving" />
+          <span>{{ t('program.editor.saveAsLabel') }}</span>
+          <input v-model="name" class="field mono" type="text" :aria-label="t('program.editor.fileName')" autocomplete="off" spellcheck="false" :disabled="saving" />
         </label>
         <template v-else-if="loaded">
           <strong class="mono">{{ baseName(loaded.file) }}</strong>
@@ -359,19 +362,19 @@ onBeforeUnmount(() => { observer?.disconnect() })
         </template>
       </div>
       <span v-if="saveBlock && !notice" class="block">{{ saveBlock }}</span>
-      <button class="btn" type="button" :disabled="saving" @click="close">Cancel</button>
-      <button v-if="loaded && !savingAs" class="btn" type="button" :disabled="saving || readOnly" @click="savingAs = true">Save as…</button>
-      <button v-if="loaded && savingAs" class="btn" type="button" :disabled="saving" @click="savingAs = false">Back</button>
+      <button class="btn" type="button" :disabled="saving" @click="close">{{ t('common.cancel') }}</button>
+      <button v-if="loaded && !savingAs" class="btn" type="button" :disabled="saving || readOnly" @click="savingAs = true">{{ t('program.editor.saveAs') }}</button>
+      <button v-if="loaded && savingAs" class="btn" type="button" :disabled="saving" @click="savingAs = false">{{ t('common.back') }}</button>
       <button v-tooltip="saveBlock ?? undefined" class="btn primary" type="button" :disabled="saving || saveBlock !== null || (!dirty && !savingAs)" @click="save">
-        {{ saving ? 'Saving…' : savingAs || !loaded ? 'Save and open' : 'Save and reopen' }}
+        {{ saving ? t('common.saving') : savingAs || !loaded ? t('program.editor.saveAndOpen') : t('program.editor.saveAndReopen') }}
       </button>
     </template>
   </ModalDialog>
-  <ModalDialog v-if="confirming" title="Discard changes?" size="small" expanded @close="confirming = null">
-    <p class="confirm">The changes to {{ loaded ? baseName(loaded.file) : 'the new program' }} are not saved.</p>
+  <ModalDialog v-if="confirming" :title="t('program.editor.discardTitle')" size="small" expanded @close="confirming = null">
+    <p class="confirm">{{ loaded ? t('program.editor.unsavedFile', { file: baseName(loaded.file) }) : t('program.editor.unsavedNew') }}</p>
     <template #footer>
-      <button class="btn" type="button" @click="confirming = null">Keep editing</button>
-      <button class="btn primary" type="button" @click="leave">Discard changes</button>
+      <button class="btn" type="button" @click="confirming = null">{{ t('program.editor.keepEditing') }}</button>
+      <button class="btn primary" type="button" @click="leave">{{ t('program.editor.discard') }}</button>
     </template>
   </ModalDialog>
 </template>

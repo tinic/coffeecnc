@@ -3,6 +3,7 @@
 
 import { ref } from 'vue'
 
+import { t } from './i18n'
 import type { ProgramText } from './protocol'
 
 /** The longest program text `save_program` writes (the backend's max_saved_program_bytes). */
@@ -25,10 +26,10 @@ export function byteLength(text: string): number {
 
 /** Why this program cannot be edited here, or null. */
 export function uneditableReason(program: ProgramText): string | null {
-  if (program.truncated === true) return 'The program is larger than the panel shows; it cannot be edited here.'
+  if (program.truncated === true) return t('program.editorModel.truncated')
   if (program.lines.some((line) => line.includes('�')))
-    return 'The program holds bytes that are not UTF-8 text; saving would change them.'
-  if (byteLength(programSource(program.lines)) > maxProgramBytes) return 'The program is larger than 512 KiB; it cannot be edited here.'
+    return t('program.editorModel.notUtf8')
+  if (byteLength(programSource(program.lines)) > maxProgramBytes) return t('program.editorModel.tooLarge')
   return null
 }
 

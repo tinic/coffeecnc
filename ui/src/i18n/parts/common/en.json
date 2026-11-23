@@ -1,0 +1,20 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "apply": "Apply",
+    "save": "Save",
+    "back": "Back",
+    "delete": "Delete",
+    "remove": "Remove",
+    "edit": "Edit",
+    "more": "More",
+    "default": "Default",
+    "unavailable": "Unavailable",
+    "stale": "stale",
+    "yes": "Yes",
+    "no": "No",
+    "off": "Off",
+    "saving": "Saving…"
+  }
+}

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { live, onResult, panel, send } from '../machine'
 import type { CommandBody } from '../protocol'
 import ModalDialog from './ModalDialog.vue'
 
+const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 const openedHello = panel.hello
 const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -11,11 +14,12 @@ const cancel = useTemplateRef<HTMLButtonElement>('cancel')
 const request = shallowRef<CommandBody | null>(null)
 const accepted = ref(false)
 const error = ref('')
+const unconfirmed = ref(false)
 const blocked = computed(() => {
-  if (panel.hello !== openedHello) return 'The connection changed. Close this dialog and try again.'
-  if (panel.hello?.quit_supported !== true) return 'This backend does not support quitting from the panel.'
-  if (!live.value || panel.status === null) return 'Waiting for a live machine connection.'
-  if (panel.status.interp !== 'idle') return 'Stop the program before quitting.'
+  if (panel.hello !== openedHello) return t('status.quit.connectionChanged')
+  if (panel.hello?.quit_supported !== true) return t('status.quit.unsupported')
+  if (!live.value || panel.status === null) return t('status.quit.waitingLive')
+  if (panel.status.interp !== 'idle') return t('status.quit.stopProgram')
   return null
 })
 function close(): void {
@@ -24,6 +28,7 @@ function close(): void {
 function confirm(): void {
   if (blocked.value || request.value || accepted.value) return
   error.value = ''
+  unconfirmed.value = false
   // Install before sending: the browser simulator answers synchronously.
   const command: CommandBody = { type: 'quit' }
   request.value = command
@@ -35,7 +40,8 @@ const removeResultListener = onResult((command, result) => {
   if (result.outcome === 'accepted') {
     accepted.value = true
   } else {
-    error.value = result.reason || 'Quit was not confirmed. CoffeeCNC may still be running.'
+    error.value = result.reason
+    unconfirmed.value = result.reason === ''
   }
 })
 onMounted(() => { cancel.value?.focus({ preventScroll: true }) })
@@ -46,16 +52,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ModalDialog title="Quit CoffeeCNC?" size="small" fresh-gesture @close="close">
-    <p class="effect">LinuxCNC shuts down; the machine is switched off.</p>
-    <p v-if="panel.simulated" class="note">Browser simulator: the simulated machine switches off. This browser stays open.</p>
-    <p v-if="error" class="failure" role="alert">{{ error }}</p>
-    <p v-if="accepted" class="feedback" role="status">{{ panel.simulated ? 'Simulated quit completed. This browser stays open.' : 'Quit request accepted. Waiting for CoffeeCNC to close…' }}</p>
-    <p v-else-if="request" class="feedback" role="status">Waiting for the quit request to be confirmed…</p>
+  <ModalDialog :title="t('status.quit.title')" size="small" fresh-gesture @close="close">
+    <p class="effect">{{ t('status.quit.effect') }}</p>
+    <p v-if="panel.simulated" class="note">{{ t('status.quit.simulatorNote') }}</p>
+    <p v-if="error || unconfirmed" class="failure" role="alert">{{ error ? translateMessage(error) : t('status.quit.notConfirmed') }}</p>
+    <p v-if="accepted" class="feedback" role="status">{{ panel.simulated ? t('status.quit.simulatedDone') : t('status.quit.accepted') }}</p>
+    <p v-else-if="request" class="feedback" role="status">{{ t('status.quit.waiting') }}</p>
     <p v-else-if="blocked" class="note" role="status">{{ blocked }}</p>
     <template #footer>
-      <button ref="cancel" class="btn" type="button" :disabled="request !== null" @click="close">{{ accepted ? 'Dismiss' : 'Cancel' }}</button>
-      <button class="btn danger" type="button" :disabled="blocked !== null || request !== null || accepted" @click="confirm">Quit CoffeeCNC</button>
+      <button ref="cancel" class="btn" type="button" :disabled="request !== null" @click="close">{{ accepted ? t('status.quit.dismiss') : t('common.cancel') }}</button>
+      <button class="btn danger" type="button" :disabled="blocked !== null || request !== null || accepted" @click="confirm">{{ t('status.quit.quit') }}</button>
     </template>
   </ModalDialog>
 </template>

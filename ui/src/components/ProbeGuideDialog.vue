@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import type { FixedSetterLimits } from '../protocol'
-import { angleChoices, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
+import { angleChoiceLabel, angleChoices, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import ModalDialog from './ModalDialog.vue'
@@ -15,6 +17,7 @@ const props = defineProps<{
   startBlocked?: string | null
 }>()
 const emit = defineEmits<{ start: [value: number, angle: AngleEdge]; close: [] }>()
+const { t } = useI18n()
 const angle = ref<AngleEdge>('y_plus')
 const input = computed(() => guideInput(props.target))
 const text = ref(input.value?.initial ?? '')
@@ -30,7 +33,7 @@ const valid = computed(() => {
 const material = computed(() => !['teach', 'measure', 'check'].includes(props.target.kind))
 const outside = computed(() => ['corner', 'boss', 'ball', 'ridge'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
-const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches // i18n-ignore
 const playing = ref(!reduced)
 const active = ref(0)
 const stage = useTemplateRef<{ seek: (index: number, settle: boolean) => void }>('stage')
@@ -59,57 +62,57 @@ function start(): void {
         <div class="timeline">
           <span class="phase-count mono">{{ active + 1 }} / {{ plan.steps.length }}</span>
           <span class="phase-name">{{ step?.label }}</span>
-          <button class="btn" type="button" aria-label="Previous move" :disabled="active === 0" @click="select(active - 1)">‹</button>
-          <button v-if="graphicsAvailable" class="btn play" type="button" @click="playing = !playing">{{ playing ? 'Pause' : 'Play' }}</button>
-          <button class="btn" type="button" aria-label="Next move" :disabled="active + 1 >= plan.steps.length" @click="select(active + 1)">›</button>
+          <button class="btn" type="button" :aria-label="t('probe.guideDialog.previous')" :disabled="active === 0" @click="select(active - 1)">‹</button>
+          <button v-if="graphicsAvailable" class="btn play" type="button" @click="playing = !playing">{{ playing ? t('probe.guideDialog.pause') : t('probe.guideDialog.play') }}</button>
+          <button class="btn" type="button" :aria-label="t('probe.guideDialog.next')" :disabled="active + 1 >= plan.steps.length" @click="select(active + 1)">›</button>
         </div>
       </div>
-      <section class="guide-instructions" aria-label="Probe setup">
+      <section class="guide-instructions" :aria-label="t('probe.guideDialog.setup')">
         <div class="instruction">
-          <h3>Jog here first</h3>
+          <h3>{{ t('probe.guideDialog.jogFirst') }}</h3>
           <p>{{ plan.setup }}</p>
         </div>
-        <div v-if="target.kind === 'angle'" class="edge-choice" role="group" aria-label="Edge to measure">
+        <div v-if="target.kind === 'angle'" class="edge-choice" role="group" :aria-label="t('probe.guideDialog.edgeChoice')">
           <button
             v-for="choice in angleChoices" :key="choice.travel" class="btn" type="button"
             :aria-pressed="angle === choice.travel" @click="angle = choice.travel"
           >
-            {{ choice.label }}
+            {{ angleChoiceLabel(choice.travel) }}
           </button>
         </div>
         <label v-if="input" class="dimension">
-          <span>{{ input.label }} (mm)</span>
+          <span>{{ t('probe.guideDialog.inputLabel', { label: input.label }) }}</span>
           <input
             v-model="text" v-numeric type="text" class="field mono" inputmode="decimal" autocomplete="off"
-            data-numeric-unit="mm" data-numeric-action="Set value" :aria-label="input.label"
+            data-numeric-unit="mm" :data-numeric-action="t('probe.guideDialog.setValue')" :aria-label="input.label"
           />
-          <small>{{ input.min }}–{{ input.max }} mm{{ input.signed ? ' in either direction' : '' }}</small>
+          <small>{{ input.signed ? t('probe.guideDialog.rangeSigned', { min: input.min, max: input.max }) : t('probe.guideDialog.range', { min: input.min, max: input.max }) }}</small>
         </label>
         <dl v-if="travel || limits" class="limits">
-          <template v-if="travel"><dt>Search travel</dt><dd>{{ travel }} mm max</dd></template>
-          <template v-if="limits"><dt>Search feed</dt><dd>{{ limits.feed_mm_min }} mm/min</dd></template>
+          <template v-if="travel"><dt>{{ t('probe.guideDialog.searchTravel') }}</dt><dd>{{ t('probe.guideDialog.travelMax', { value: travel }) }}</dd></template>
+          <template v-if="limits"><dt>{{ t('probe.guideDialog.searchFeed') }}</dt><dd>{{ t('probe.guideDialog.feedValue', { value: limits.feed_mm_min }) }}</dd></template>
           <template v-if="limits?.latch_feed_mm_min">
-            <dt>Latch feed</dt><dd>{{ limits.latch_feed_mm_min }} mm/min</dd>
-            <dt>Latch backoff</dt><dd>{{ limits.latch_backoff_mm }} mm</dd>
+            <dt>{{ t('probe.guideDialog.latchFeed') }}</dt><dd>{{ t('probe.guideDialog.feedValue', { value: limits.latch_feed_mm_min }) }}</dd>
+            <dt>{{ t('probe.guideDialog.latchBackoff') }}</dt><dd>{{ limits.latch_backoff_mm }} mm</dd>
           </template>
-          <template v-if="!material && limits"><dt>Setter XY tolerance</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
-          <template v-if="!material && limits?.clearance_mm"><dt>Retract clearance</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
-          <template v-if="outside"><dt>Traverse clearance</dt><dd>{{ limits?.material_geometry?.clearance_mm ?? 5 }} mm above top min</dd></template>
-          <template v-if="outside"><dt>Ball centre at contact</dt><dd>{{ limits?.material_geometry?.depth_mm ?? 2 }} mm below top</dd></template>
+          <template v-if="!material && limits"><dt>{{ t('probe.guideDialog.setterTolerance') }}</dt><dd>{{ limits.xy_tolerance_mm }} mm</dd></template>
+          <template v-if="!material && limits?.clearance_mm"><dt>{{ t('probe.guideDialog.retractClearance') }}</dt><dd>{{ limits.clearance_mm }} mm</dd></template>
+          <template v-if="outside"><dt>{{ t('probe.guideDialog.traverseClearance') }}</dt><dd>{{ t('probe.guideDialog.aboveTop', { value: limits?.material_geometry?.clearance_mm ?? 5 }) }}</dd></template>
+          <template v-if="outside"><dt>{{ t('probe.guideDialog.ballCentre') }}</dt><dd>{{ t('probe.guideDialog.belowTop', { value: limits?.material_geometry?.depth_mm ?? 2 }) }}</dd></template>
         </dl>
         <div class="guide-result">
-          <h3>Result<span v-if="tool && !material" class="result-tool mono">T{{ tool }}</span></h3>
+          <h3>{{ t('probe.guideDialog.result') }}<span v-if="tool && !material" class="result-tool mono">T{{ tool }}</span></h3>
           <p>{{ plan.result }}</p>
           <p v-if="target.kind === 'check' && limits?.check_tolerance_mm" class="check-tolerance">
-            Length tolerance <strong class="mono">±{{ limits.check_tolerance_mm }} mm</strong>
+            {{ t('probe.guideDialog.lengthTolerance') }} <strong class="mono">±{{ limits.check_tolerance_mm }} mm</strong>
           </p>
         </div>
       </section>
     </div>
     <template #footer>
-      <p v-if="startBlocked" class="start-block" role="status">{{ startBlocked }}</p>
-      <button class="btn" type="button" @click="emit('close')">Cancel</button>
-      <button class="btn primary start-probe" type="button" :disabled="!valid || !!startBlocked" @click="start">{{ target.kind === 'check' ? 'Start check' : 'Start probe' }}</button>
+      <p v-if="startBlocked" class="start-block" role="status">{{ translateMessage(startBlocked) }}</p>
+      <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
+      <button class="btn primary start-probe" type="button" :disabled="!valid || !!startBlocked" @click="start">{{ target.kind === 'check' ? t('probe.guideDialog.startCheck') : t('probe.guideDialog.startProbe') }}</button>
     </template>
   </ModalDialog>
 </template>

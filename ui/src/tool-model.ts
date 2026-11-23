@@ -1,17 +1,23 @@
+import { t } from './i18n'
 import type { Tool } from './protocol'
 import { holderProfile, type ToolHolder } from './tool-holder'
 
 export const toolFamilies = [
-  { id: 'end-mill', name: 'Flat end mill' },
-  { id: 'ball-mill', name: 'Ball-nose end mill' },
-  { id: 'drill', name: 'Drill' },
-  { id: 'spot-drill', name: 'Spot drill' },
-  { id: 'chamfer', name: 'Chamfer mill' },
-  { id: 'face-mill', name: 'Face mill' },
-  { id: 'generic', name: 'Generic cylinder' },
-  { id: 'touch-probe', name: 'Touch probe' },
+  { id: 'end-mill' }, { id: 'ball-mill' }, { id: 'drill' }, { id: 'spot-drill' },
+  { id: 'chamfer' }, { id: 'face-mill' }, { id: 'generic' }, { id: 'touch-probe' },
 ] as const
 export type ToolFamily = typeof toolFamilies[number]['id']
+
+const familyNames = {
+  'end-mill': 'tools.family.endMill', 'ball-mill': 'tools.family.ballMill', drill: 'tools.family.drill',
+  'spot-drill': 'tools.family.spotDrill', chamfer: 'tools.family.chamfer', 'face-mill': 'tools.family.faceMill',
+  generic: 'tools.family.generic', 'touch-probe': 'tools.family.touchProbe',
+} as const
+
+/** The family's name in the panel's language. */
+export function toolFamilyName(family: ToolFamily): string {
+  return t(familyNames[family])
+}
 type CutterFamily = Exclude<ToolFamily, 'touch-probe'>
 
 /** Physical envelope in mm; never LinuxCNC's tool-length (Z) offset. */
@@ -72,20 +78,20 @@ export function pointedTool(family: ToolFamily): boolean {
 export function toolDimensionError(family: ToolFamily, d: ToolDimensions): string | null {
   if (family === 'touch-probe') {
     if (!('bodyDiameter' in d) || ![d.diameter, d.shankDiameter, d.bodyDiameter, d.bodyLength, d.stylusLength].every(validLength)) {
-      return 'Dimensions must be between 0.001 and 10,000 mm.'
+      return t('tools.model.dimensionRange')
     }
     return null
   }
-  if (!('cuttingLength' in d)) return 'Cutter dimensions are required.'
+  if (!('cuttingLength' in d)) return t('tools.model.cutterRequired')
   const lengths = [d.diameter, d.cuttingLength, d.shankDiameter, d.overallLength, d.stickout]
-  if (!lengths.every(validLength)) return 'Dimensions must be between 0.001 and 10,000 mm.'
-  if (!Number.isFinite(d.tipAngle) || d.tipAngle < 1 || d.tipAngle > 179) return 'Included tip angle must be between 1° and 179°.'
+  if (!lengths.every(validLength)) return t('tools.model.dimensionRange')
+  if (!Number.isFinite(d.tipAngle) || d.tipAngle < 1 || d.tipAngle > 179) return t('tools.model.tipAngleRange')
   if (d.cuttingLength > d.stickout || d.stickout > d.overallLength || d.cuttingLength >= d.overallLength) {
-    return 'Cutting length must fit within stick-out, and stick-out within overall length. Leave some shank above the cutting section.'
+    return t('tools.model.lengthOrder')
   }
-  if (family === 'ball-mill' && d.cuttingLength < d.diameter / 2) return 'Cutting length must include the full ball radius.'
+  if (family === 'ball-mill' && d.cuttingLength < d.diameter / 2) return t('tools.model.ballRadius')
   if (pointedTool(family) && d.diameter / 2 / Math.tan(d.tipAngle * Math.PI / 360) > d.cuttingLength) {
-    return 'The pointed tip does not fit within the cutting length at this diameter and angle.'
+    return t('tools.model.pointedTip')
   }
   return null
 }

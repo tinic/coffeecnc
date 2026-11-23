@@ -2,6 +2,8 @@
 // on older WebKitGTK versions; readonly and prevented touch defaults also inhibit the OSK.
 import { ref, shallowRef, watch, type ObjectDirective } from 'vue'
 
+import { t } from './i18n'
+
 export const touchInput = ref(false)
 interface NumericEntry {
   key: number
@@ -74,7 +76,7 @@ export const vNumeric: ObjectDirective<HTMLInputElement, 'inline' | 'integer' | 
       if (binding.value === 'inline' || numericEntry.value?.target === input) return
       numericEntry.value = {
         key: ++nextEntry, target: input, initial: input.value,
-        label: input.getAttribute('aria-label') ?? input.labels?.[0]?.textContent.trim() ?? 'Number',
+        label: input.getAttribute('aria-label') ?? input.labels?.[0]?.textContent.trim() ?? t('status.number.number'),
         integer: binding.value === 'integer' || inputMode === 'numeric',
         ...(input.dataset['numericUnit'] ? { unit: input.dataset['numericUnit'] } : {}),
         ...(input.dataset['numericEffect'] ? { effect: input.dataset['numericEffect'] } : {}),
@@ -142,7 +144,7 @@ export const vFreshGesture: ObjectDirective<HTMLElement, boolean | undefined> = 
     if (!binding.value) return
     let pressed: Element | null = null
     const control = (event: Event): Element | null => event.target instanceof Element
-      ? event.target.closest('button, input[data-native-text-input]') : null
+      ? event.target.closest('button, input[data-native-text-input]') : null // i18n-ignore: selector
     const start = (event: Event): void => {
       const target = control(event)
       if (event.type === 'pointerdown' && touchInput.value && (event as PointerEvent).pointerType === 'mouse') {

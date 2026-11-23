@@ -1,4 +1,6 @@
 import { reactive, watch } from 'vue'
+import { t } from './i18n'
+import { translateMessage } from './i18n/messages'
 import type { CommandBody, Hello, Tool } from './protocol'
 import type { Panel, PanelState } from './store'
 import type { ToolHolder } from './tool-holder'
@@ -65,7 +67,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       ? matchingToolModelAssignments(snapshot.document, panel.toolTable.tools) : new Map()
   }
   stops.push(watch(() => panel.hello, (hello) => {
-    if (pending !== null) finish(fail('The machine connection changed. This draft was not confirmed saved.'))
+    if (pending !== null) finish(fail(t('tools.modelState.connectionChangedDraft')))
     state.assignments.clear()
     fixtureModels.clear()
     waitingForFixtureTools = hasDemoProbeFixture(panel.simulated, hello)
@@ -77,10 +79,10 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (hello === null) state.storage = 'loading'
     else if (capability === undefined) {
       state.storage = 'session_only'
-      state.storageReason = 'This backend does not support saved tool models. Changes last until this page closes.'
+      state.storageReason = t('tools.modelState.backendNoStorage')
     } else if (capability !== 1 || !(hello.machine_id === null || validMachineId(hello.machine_id))) {
       state.storage = 'unavailable'
-      state.storageReason = 'The machine did not provide a valid tool model storage identity.'
+      state.storageReason = t('tools.modelState.invalidIdentity')
     } else state.storage = 'loading'
   }, { immediate: true, flush: 'sync' }))
   stops.push(watch(() => panel.toolModels, (snapshot) => {
@@ -127,29 +129,29 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
       const reason = result.outcome === 'timed_out'
-        ? 'No save confirmation. The write may still finish; wait for refreshed settings or reload CoffeeCNC before retrying.'
-        : result.reason || 'Tool model settings could not be saved.'
+        ? t('tools.modelState.noConfirmation')
+        : result.reason || t('tools.modelState.couldNotSave')
       finish(fail(reason))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true
-      finish(fail('The save result arrived without updated settings. Reload CoffeeCNC to verify the saved values.'))
+      finish(fail(t('tools.modelState.noUpdatedSettings')))
     } else {
       state.storageError = ''
-      state.saved = `Tool models saved for ${pending.command.machine_id}.`
+      state.saved = t('tools.modelState.savedFor', { machine: pending.command.machine_id })
       finish({ saved: true, reason: '' })
     }
   }))
 
   function context(): ModelEditContext { return { hello: panel.hello, revision: state.revision } }
   function block(edit: ModelEditContext): string | null {
-    if (panel.hello !== edit.hello) return 'The machine connection changed. Close this editor and reopen it.'
-    if (state.saving) return 'A tool model save is already in progress.'
-    if (state.uncertain) return state.storageError
-    if (state.storage === 'loading') return 'Waiting for tool model settings.'
-    if (state.storage === 'unavailable') return state.storageReason || 'Tool model storage is unavailable.'
+    if (panel.hello !== edit.hello) return t('tools.modelState.connectionChanged')
+    if (state.saving) return t('tools.modelState.inProgress')
+    if (state.uncertain) return translateMessage(state.storageError)
+    if (state.storage === 'loading') return t('tools.modelState.waiting')
+    if (state.storage === 'unavailable') return translateMessage(state.storageReason) || t('tools.modelState.unavailable')
     if (state.storage === 'available' && state.revision !== edit.revision) {
-      return 'Saved settings changed while this editor was open. Close and reopen it to review the current values.'
+      return t('tools.modelState.settingsChanged')
     }
     return null
   }
@@ -159,14 +161,14 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       // Install before send: a local bridge refusal may deliver its result synchronously.
       pending = { command, context: edit, resolve }
       try { connection.send(command) }
-      catch { finish(fail('The tool model save could not be sent.')) }
+      catch { finish(fail(t('tools.modelState.couldNotSend'))) }
     })
   }
   function saveDefaults(value: ToolDefaults, edit: ModelEditContext): Promise<ModelSaveResult> {
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
     const document = decodeToolModelDocument({ version: 1, defaults: value, assignments: [] })
-    if (document === null) return Promise.resolve(fail('Tool model defaults contain invalid dimensions.'))
+    if (document === null) return Promise.resolve(fail(t('tools.modelState.invalidDefaults')))
     if (state.storage === 'available' && panel.toolModels?.availability === 'available') {
       return write({ type: 'set_tool_model_defaults', machine_id: panel.toolModels.machine_id,
         base_revision: panel.toolModels.revision, defaults: document.defaults }, edit)
@@ -175,9 +177,9 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     state.storageError = ''
     if (state.storage === 'browser') {
       try { browserStorage().setItem(storageKey, JSON.stringify({ version: 1, defaults: document.defaults })) }
-      catch { return Promise.resolve(fail('Browser storage is unavailable. These defaults last only until this page closes.')) }
+      catch { return Promise.resolve(fail(t('tools.modelState.browserStorageUnavailable'))) }
     }
-    state.saved = state.storage === 'browser' ? 'Tool defaults saved in this browser.' : 'Tool defaults applied for this page session.'
+    state.saved = state.storage === 'browser' ? t('tools.modelState.defaultsSavedBrowser') : t('tools.modelState.defaultsApplied')
     return Promise.resolve({ saved: true, reason: '' })
   }
   function saveAssignment(tool: Tool, family: ToolFamily | null, overrides: ToolOverrides,
@@ -185,21 +187,21 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
     if (family === 'touch-probe' && !panel.simulated && state.storage !== 'available')
-      return Promise.resolve(fail('Touch probes require saved tool models for this machine.'))
+      return Promise.resolve(fail(t('tools.modelState.probeNeedsStorage')))
     const binding = toolModelBinding(tool)
     if (binding === null) return Promise.resolve(fail(tool.number <= 0
-      ? 'Choose a numbered tool to save its preview shape.'
-      : 'This tool has incomplete details. Close and reopen its editor before saving the preview shape.'))
+      ? t('tools.modelState.chooseNumbered')
+      : t('tools.modelState.incomplete')))
     if (!panel.toolTable?.tools.some((row) => toolIdentity(row) === toolIdentity(tool)) ||
       !panel.simulated && panel.link !== 'live') {
-      return Promise.resolve(fail('A current matching tool table is required. Reopen this editor when the machine connection is live.'))
+      return Promise.resolve(fail(t('tools.modelState.tableRequired')))
     }
     const chosen = family === null ? undefined : holder === undefined ? state.assignments.get(tool.number)?.holder : holder ?? undefined
     const holderField = chosen === undefined ? {} : { holder: chosen }
     const document = decodeToolModelDocument({ version: 1, defaults: state.defaults,
       assignments: family === null ? [] : [{ tool: binding, family, overrides, ...holderField }] })
     if (document === null || family === null && Object.keys(overrides).length !== 0) {
-      return Promise.resolve(fail('The tool model assignment contains invalid dimensions.'))
+      return Promise.resolve(fail(t('tools.modelState.invalidAssignment')))
     }
     if (state.storage === 'available' && panel.toolModels?.availability === 'available') {
       return write({ type: 'set_tool_model_assignment', machine_id: panel.toolModels.machine_id,
@@ -209,12 +211,12 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (family === null) state.assignments.delete(tool.number)
     else state.assignments.set(tool.number, { identity: toolIdentity(tool), family, overrides: { ...overrides }, ...holderField })
     state.storageError = ''
-    state.saved = 'Tool model applied for this page session.'
+    state.saved = t('tools.modelState.applied')
     return Promise.resolve({ saved: true, reason: '' })
   }
   return { state, context, block, saveDefaults, saveAssignment,
     dispose: (): void => {
       for (const stop of stops) stop()
-      if (pending !== null) finish(fail('This settings view closed before save confirmation.'))
+      if (pending !== null) finish(fail(t('tools.modelState.viewClosed')))
     } }
 }

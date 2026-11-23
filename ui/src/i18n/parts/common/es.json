@@ -1,0 +1,20 @@
+{
+  "common": {
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "apply": "Aplicar",
+    "save": "Guardar",
+    "back": "Atrás",
+    "delete": "Eliminar",
+    "remove": "Quitar",
+    "edit": "Editar",
+    "more": "Más",
+    "default": "Predeterminado",
+    "unavailable": "No disponible",
+    "stale": "desactualizado",
+    "yes": "Sí",
+    "no": "No",
+    "off": "Apagado",
+    "saving": "Guardando…"
+  }
+}

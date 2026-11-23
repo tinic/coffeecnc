@@ -4,6 +4,7 @@
 // each intermediate value came back). A release back at the machine's value fires no change event,
 // so the finger lifting also ends the drag; a cancelled drag asks for nothing.
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { send } from '../machine'
 import { formatPercent } from '../units'
@@ -17,6 +18,13 @@ const props = defineProps<{
   max: number
   disabled: boolean
 }>()
+
+const { t } = useI18n()
+const resetLabels = {
+  feed: 'manual.override.resetFeed',
+  rapid: 'manual.override.resetRapid',
+  spindle: 'manual.override.resetSpindle',
+} as const
 
 /** The percent under the finger while dragging; null when the slider shows the machine. */
 const dragging = ref<number | null>(null)
@@ -50,7 +58,7 @@ function reset(): void {
       <span class="value mono">
         {{ dragging !== null ? formatPercent(dragging / 100) : value === null ? '—' : formatPercent(value) }}
       </span>
-      <button class="reset" type="button" :aria-label="`Reset ${label.toLowerCase()} to 100%`" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="reset">Reset 100%</button>
+      <button class="reset" type="button" :aria-label="t(resetLabels[which])" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="reset">{{ t('manual.override.reset') }}</button>
     </div>
     <div class="row">
       <input

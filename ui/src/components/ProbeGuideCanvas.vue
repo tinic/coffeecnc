@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   Box3, BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, GridHelper, Group,
   LatheGeometry, Line, LineBasicMaterial, Mesh,
@@ -17,6 +18,7 @@ import { ToolMesh } from '../tool-mesh'
 
 const props = defineProps<{ plan: ProbeGuidePlan; playing: boolean; ruby: boolean }>()
 const emit = defineEmits<{ step: [index: number]; unavailable: [] }>()
+const { t } = useI18n()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const failed = ref(false)
 const scene = new Scene()
@@ -338,10 +340,10 @@ onBeforeUnmount(() => {
 <template>
   <div class="guide-canvas">
     <canvas
-      ref="canvas" aria-label="3D probe motion: drag to rotate"
+      ref="canvas" :aria-label="t('probe.guideCanvas.label')"
       @pointerdown="down" @pointermove="move" @pointerup="drag = null" @pointercancel="drag = null" @lostpointercapture="drag = null"
     ></canvas>
-    <p v-if="failed" class="unavailable">3D preview unavailable. Follow the jog and cycle instructions.</p>
+    <p v-if="failed" class="unavailable">{{ t('probe.guideCanvas.unavailable') }}</p>
   </div>
 </template>
 

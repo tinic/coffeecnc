@@ -1,14 +1,15 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { ProbeDirection } from '../protocol'
 
-
+const { t } = useI18n()
 // `travel` is one face's probe travel; a corner lights the travels of both of its faces.
 const props = defineProps<{ travel: ProbeDirection | null; corner?: readonly ProbeDirection[] | null }>()
 const lit = (direction: ProbeDirection): boolean => props.travel === direction || (props.corner?.includes(direction) ?? false)
 </script>
 
 <template>
-  <figure class="workpiece" aria-label="Workpiece viewed from above. The arrows point toward the edge as the probe moves.">
+  <figure class="workpiece" :aria-label="t('probe.diagram.label')">
     <div class="approach back" :class="{ active: lit('y_minus') }">
       <span>Y+</span><i aria-hidden="true">↓</i>
     </div>
@@ -17,7 +18,7 @@ const lit = (direction: ProbeDirection): boolean => props.travel === direction |
     </div>
     <div class="part" :class="[travel, ...(corner ?? [])]">
       <span class="top-contact" aria-hidden="true"></span>
-      <span>Z top</span>
+      <span>{{ t('probe.surface.zTop') }}</span>
     </div>
     <div class="approach right" :class="{ active: lit('x_minus') }">
       <i aria-hidden="true">←</i><span>X+</span>

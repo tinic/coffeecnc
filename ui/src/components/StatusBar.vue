@@ -2,15 +2,18 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { theme, themePreview } from '../appearance'
 import { alternateTheme, isDarkTheme, themeLabels } from '../operator-settings'
 import { machineBlock } from '../machine-block'
 import { dismissNotice, live, onResult, panel, reported, send, toggleTheme } from '../machine'
-import type { CommandBody, Hello, Status } from '../protocol'
+import type { CommandBody, Hello, InterpState, Status, TaskMode } from '../protocol'
 import { baseName, formatLength } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
+const { t } = useI18n()
 const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
@@ -24,7 +27,7 @@ function openAppDialog(dialog: 'quit' | 'settings'): void {
 }
 type PowerCommand = Extract<CommandBody, { type: 'set_machine' }>
 const pendingPower = shallowRef<{ command: PowerCommand; hello: Hello | null; before: Status | null; accepted: boolean } | null>(null)
-const powerLabel = computed(() => status.value?.machine === 'estop' ? 'Reset E-stop' : status.value?.machine === 'on' ? 'Machine off' : 'Machine on')
+const powerLabel = computed(() => t(status.value?.machine === 'estop' ? 'status.statusBar.resetEstop' : status.value?.machine === 'on' ? 'status.statusBar.machineOff' : 'status.statusBar.machineOn'))
 const powerTarget = computed(() => status.value?.machine === 'off' ? 'on' : 'off')
 const powerBlocked = computed(() => pendingPower.value !== null || !live.value || status.value === null)
 function power(state: 'on' | 'off'): void {
@@ -53,19 +56,19 @@ watch([pendingPower, (): Status | null => panel.status, (): Hello | null => pane
   }
 }, { flush: 'sync' })
 const tabs = computed(() => {
-  const entries: [Tab, string][] = [['manual', 'Manual'], ['program', 'Machine'], ['tools', 'Tools']]
+  const entries: [Tab, string][] = [['manual', t('status.statusBar.tabManual')], ['program', t('status.statusBar.tabMachine')], ['tools', t('status.statusBar.tabTools')]]
   if (panel.hello?.fixed_setter?.material_travel_mm && panel.hello.touch_probe_tool)
-    entries.push(['probe', 'Touch off'])
+    entries.push(['probe', t('status.statusBar.tabTouchOff')])
   return entries
 })
 const linkLabel = computed(() => {
   switch (panel.link) {
-    case 'live': return panel.simulated ? '3-axis mill · Simulator' : panel.hello?.machine_name ?? 'Connected'
-    case 'connecting': return 'Waiting for connection'
-    case 'silent': return 'No status updates'
-    case 'stale': return 'Status is stale'
-    case 'down': return 'Disconnected'
-    case 'incompatible': return 'Protocol mismatch'
+    case 'live': return panel.simulated ? t('status.statusBar.simulator') : panel.hello?.machine_name ?? t('status.statusBar.connected')
+    case 'connecting': return t('status.statusBar.connecting')
+    case 'silent': return t('status.statusBar.silent')
+    case 'stale': return t('status.statusBar.stale')
+    case 'down': return t('status.statusBar.down')
+    case 'incompatible': return t('status.statusBar.incompatible')
   }
 })
 const liftedAfterStop = computed(() => live.value && status.value?.machine === 'on' &&
@@ -75,7 +78,7 @@ const machineMessage = computed(() => {
   const z = status.value?.paused_z
   if (liftedAfterStop.value && z) {
     const lift = `${formatLength(z.offset, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
-    return `Z is still lifted ${lift}. Switch machine power off and on to clear the offset at this height.`
+    return t('status.statusBar.liftedAfterStop', { lift })
   }
   const reason = machineReason.value
   const s = status.value
@@ -83,30 +86,34 @@ const machineMessage = computed(() => {
   // With matching program text the Machine footer already describes AUTO execution.
   const inFooter = panel.tab === 'program' && s?.mode === 'auto' &&
     program?.file === s.program.file && program.revision === s.program.revision
-  if (reason === 'Program paused' && panel.tab === 'program' && z?.reason)
-    return inFooter ? z.reason : `${reason} · ${z.reason}`
-  if (inFooter && (reason === 'Program paused' || reason === 'Program running')) return null
+  const pausedText = t('status.machineBlock.programPaused')
+  if (reason === pausedText && panel.tab === 'program' && z?.reason)
+    return inFooter ? translateMessage(z.reason) : `${reason} · ${translateMessage(z.reason)}`
+  if (inFooter && (reason === pausedText || reason === t('status.machineBlock.programRunning'))) return null
   return reason
 })
-const notice = computed(() => panel.notice?.text === machineMessage.value ? null : panel.notice)
+const notice = computed(() => panel.notice && translateMessage(panel.notice.text) === machineMessage.value ? null : panel.notice)
 const state = computed(() => ({
-  label: machineReason.value ?? 'Machine idle',
+  label: machineReason.value ?? t('status.statusBar.idle'),
   tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineReason.value ? 'warn' : 'go',
 }))
 const title = computed(() => {
-  if (panel.tab === 'manual') return 'Manual setup'
-  if (panel.tab === 'tools') return 'Tools & offsets'
-  if (panel.tab === 'probe') return 'Material touch-off'
+  if (panel.tab === 'manual') return t('status.statusBar.titleManual')
+  if (panel.tab === 'tools') return t('status.statusBar.titleTools')
+  if (panel.tab === 'probe') return t('status.statusBar.titleProbe')
   const file = status.value?.program.file
-  if (!file) return 'No program loaded'
+  if (!file) return t('status.statusBar.noProgram')
   const name = baseName(file).replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
   return name.charAt(0).toUpperCase() + name.slice(1)
 })
 const subtitle = computed(() => {
   if (panel.tab !== 'program') return ''
   const s = status.value
-  return s?.program.file ? `${baseName(s.program.file)} · Program in ${s.program_units}` : ''
+  return s?.program.file ? t('status.statusBar.subtitle', { file: baseName(s.program.file), units: s.program_units }) : ''
 })
+const modeLabels = { manual: 'status.statusBar.modeManual', mdi: 'status.statusBar.modeMdi', auto: 'status.statusBar.modeAuto' } as const satisfies Record<TaskMode, string>
+const interpLabels = { idle: 'status.statusBar.interpIdle', reading: 'status.statusBar.interpReading', paused: 'status.statusBar.interpPaused', waiting: 'status.statusBar.interpWaiting' } as const satisfies Record<InterpState, string>
+const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar.waitingOff', estop: 'status.statusBar.waitingEstop' } as const satisfies Record<PowerCommand['state'], string>
 </script>
 
 <template>
@@ -115,50 +122,50 @@ const subtitle = computed(() => {
       <img v-show="!isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
       <img v-show="isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
     </div>
-    <nav class="em-nav" aria-label="Workspace">
+    <nav class="em-nav" :aria-label="t('status.statusBar.workspace')">
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
-      <button class="theme" type="button" :disabled="themePreview !== null" :aria-label="`Switch to ${themeLabels[alternateTheme(theme)]} theme`" @click="toggleTheme()">◐</button>
+      <button class="theme" type="button" :disabled="themePreview !== null" :aria-label="t('status.statusBar.switchTheme', { theme: t(themeLabels[alternateTheme(theme)]) })" @click="toggleTheme()">◐</button>
     </div>
   </header>
   <section class="jobbar">
     <div class="job">
-      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="'Edit program'" class="open" type="button" aria-label="Edit program" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
+      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="t('status.statusBar.openProgram')" class="open" type="button" :aria-label="t('status.statusBar.openProgram')" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="t('status.statusBar.newOperation')" class="open" type="button" :aria-label="t('status.statusBar.newOperation')" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="t('status.statusBar.editProgram')" class="open" type="button" :aria-label="t('status.statusBar.editProgram')" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">
-      <button class="estop" type="button" aria-label="Assert software E-stop" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />E-STOP</button>
+      <button class="estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
       <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
       <details ref="menu" v-popover class="state-menu">
-        <summary v-tooltip="'App menu'" class="app-menu-toggle" aria-label="App menu"><AppIcon name="menu" /></summary>
+        <summary v-tooltip="t('status.statusBar.appMenu')" class="app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
         <div class="popover">
-          <h3>Machine</h3>
-          <div class="fact"><span>State</span><span class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}</span></div>
-          <div class="fact"><span>Connection</span><span>{{ linkLabel }}</span></div>
-          <div class="fact"><span>Task</span><span>{{ status?.mode ?? '—' }} · {{ status?.interp ?? '—' }}</span></div>
-          <div class="fact"><span>Active codes</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
-          <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>XY rotation</span><span>{{ status.offsets.rotation_xy }}°</span></div>
-          <p v-if="pendingPower" class="notice" role="status">Waiting for machine {{ pendingPower.command.state }} confirmation…</p>
+          <h3>{{ t('status.statusBar.machine') }}</h3>
+          <div class="fact"><span>{{ t('status.statusBar.state') }}</span><span class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}</span></div>
+          <div class="fact"><span>{{ t('status.statusBar.connection') }}</span><span>{{ linkLabel }}</span></div>
+          <div class="fact"><span>{{ t('status.statusBar.task') }}</span><span>{{ status ? t(modeLabels[status.mode]) : '—' }} · {{ status ? t(interpLabels[status.interp]) : '—' }}</span></div>
+          <div class="fact"><span>{{ t('status.statusBar.activeCodes') }}</span><span class="modal-codes mono">{{ status?.active_codes.join(' ') ?? '—' }}</span></div>
+          <div v-if="status && status.offsets.rotation_xy !== 0" class="fact"><span>{{ t('status.statusBar.xyRotation') }}</span><span>{{ status.offsets.rotation_xy }}°</span></div>
+          <p v-if="pendingPower" class="notice" role="status">{{ t(waitingLabels[pendingPower.command.state]) }}</p>
           <div class="application-actions">
-            <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />Settings</button>
-            <button class="btn quit" type="button" @click="openAppDialog('quit')"><AppIcon name="power" />Quit CoffeeCNC…</button>
+            <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />{{ t('status.statusBar.settings') }}</button>
+            <button class="btn quit" type="button" @click="openAppDialog('quit')"><AppIcon name="power" />{{ t('status.statusBar.quit') }}</button>
           </div>
         </div>
       </details>
     </div>
   </section>
-  <section class="message-area" aria-label="Machine messages">
+  <section class="message-area" :aria-label="t('status.statusBar.messages')">
     <div class="message-band" :class="notice?.level ?? (liftedAfterStop ? 'lift-warning' : machineMessage ? 'machine-message' : 'empty')">
       <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
-        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ notice.context }} · </strong>{{ notice.text }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
-        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ notice.text }}</template></p>
+        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
+        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text) }}</template></p>
       </div>
-      <button class="message-log" type="button" @click="emit('log')">Message log · <span class="log-count mono">{{ panel.log.length }}</span></button>
-      <button v-if="notice" v-tooltip="'Dismiss this message; keep it in the message log'" class="dismiss" type="button" @click="dismissNotice">Dismiss</button>
+      <button class="message-log" type="button" @click="emit('log')">{{ t('status.statusBar.messageLog') }} · <span class="log-count mono">{{ panel.log.length }}</span></button>
+      <button v-if="notice" v-tooltip="t('status.statusBar.dismissTip')" class="dismiss" type="button" @click="dismissNotice">{{ t('status.statusBar.dismiss') }}</button>
     </div>
   </section>
 </template>

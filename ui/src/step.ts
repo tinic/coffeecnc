@@ -1,7 +1,9 @@
 // Optional page-local display attachments. Nothing in this module sends a controller command.
 import { computed, markRaw, reactive, watch } from 'vue'
 import { live, panel } from './machine'
-import { frameOf, importTimeoutMs, maxStepBytes, modelBlock, type ImportReply, type ModelBinding, type ModelGeometry, type Placement } from './step-model'
+import { t } from './i18n'
+import { modelBlock } from './step-block'
+import { frameOf, importTimeoutMs, maxStepBytes, type ImportReply, type ModelBinding, type ModelGeometry, type Placement } from './step-model'
 
 interface Attachment { name: string; note: string; geometry: ModelGeometry; binding: ModelBinding }
 interface PartState {
@@ -14,7 +16,16 @@ export const part = reactive<PartState>({
 })
 export const partBlock = computed(() => part.attachment === null ? '' : modelBlock(part.attachment.binding, panel.status, panel.preview, live.value))
 export const showPart = computed(() => part.attachment !== null && part.visible && partBlock.value === '')
-const withProgram = 'Loaded with the program'
+// Notes are kept in English as identifiers; `partNote` gives the operator's text.
+const withProgram = 'Loaded with the program' // i18n-ignore
+export const sampleNote = 'Sample geometry; not a matched model for this program' // i18n-ignore
+
+/** An attachment's note in the panel's language. */
+export function partNote(note: string): string {
+  if (note === withProgram) return t('program.step.withProgram')
+  if (note === sampleNote) return t('program.step.sample')
+  return note
+}
 let generation = 0
 /** The note of the import in progress. */
 let importing = ''
@@ -42,7 +53,7 @@ watch([(): unknown => panel.status?.program.file, (): unknown => panel.status?.p
     const attached = (part.attachment !== null && part.attachment.note !== withProgram) ||
       (part.loading && importing !== withProgram)
     removePart()
-    if (attached) part.error = 'Part model removed because the program changed'
+    if (attached) part.error = t('program.step.removed')
   }
   void loadProgramPart()
 })
@@ -67,22 +78,22 @@ export async function loadProgramPart(fetcher: typeof fetch = fetch): Promise<vo
   if (panel.status?.program.file !== file || panel.status.program.revision !== revision ||
     part.attachment !== null || part.loading) return
   const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '')
-  await importPart(new File([bytes], `${base}.step`), withProgram)
+  await importPart(new File([bytes], `${base}.step`), withProgram) // i18n-ignore
 }
 
 export async function importPart(file: File, note = ''): Promise<void> {
   cancelImport()
   part.error = ''
   const status = panel.status
-  if (!live.value || !status?.program.file) { part.error = 'Load a program before attaching a part model'; return }
+  if (!live.value || !status?.program.file) { part.error = t('program.step.loadProgram'); return }
   if (!/\.(step|stp)$/i.test(file.name) || file.size === 0 || file.size > maxStepBytes) {
-    part.error = 'Choose a .step or .stp file up to 25 MB'; return
+    part.error = t('program.step.badFile'); return
   }
   const binding: ModelBinding = { file: status.program.file, revision: status.program.revision, frame: frameOf(status.offsets) }
   const request = generation
   importing = note
   part.loading = true
-  timer = setTimeout(() => { cancelImport(); part.error = 'STEP import exceeded 30 seconds; try a smaller model' }, importTimeoutMs)
+  timer = setTimeout(() => { cancelImport(); part.error = t('program.step.timeout') }, importTimeoutMs)
   try {
     const bytes = await file.arrayBuffer()
     if (request !== generation) return
@@ -100,13 +111,13 @@ export async function importPart(file: File, note = ''): Promise<void> {
     worker.onerror = (): void => {
       if (request !== generation) return
       cancelImport()
-      part.error = 'Could not load the STEP importer; the previous model and toolpath are unchanged'
+      part.error = t('program.step.importerFailed')
     }
     worker.postMessage(bytes, [bytes])
   } catch (error) {
     if (request !== generation) return
     cancelImport()
-    part.error = error instanceof Error ? error.message : 'Could not read this STEP file'
+    part.error = error instanceof Error ? error.message : t('program.step.unreadable')
   }
 }
 

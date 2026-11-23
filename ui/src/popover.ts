@@ -10,7 +10,7 @@ export const vPopover: ObjectDirective<HTMLDetailsElement> = {
       if (menu.open && !event.composedPath().includes(menu)) menu.open = false
     }
     const escape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || !menu.open) return
+      if (event.key !== 'Escape' || !menu.open) return // i18n-ignore: key name
       menu.open = false
       event.preventDefault()
       event.stopPropagation()

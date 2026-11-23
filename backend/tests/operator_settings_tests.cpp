@@ -13,6 +13,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <set>
 #include <utility>
 #include <unistd.h>
 
@@ -29,8 +30,13 @@ void require(bool condition, std::string_view why) {
 const Limits limits{1000, 1.2, .5, 1.2, 3000};
 const ToolModelLocation location{"G0759", ToolModelAvailability::available, "", "/settings/G0759"};
 const std::string file = location.directory + "/operator-settings.json";
+const std::string language_path = location.directory + "/panel-language.json";
+const std::initializer_list<std::pair<PanelLanguage, std::string>> languages{
+    {PanelLanguage::en, "en"}, {PanelLanguage::fr, "fr"}, {PanelLanguage::de, "de"},
+    {PanelLanguage::es, "es"}, {PanelLanguage::pt, "pt"}, {PanelLanguage::zh, "zh"},
+    {PanelLanguage::ja, "ja"}};
 auto command(std::uint64_t revision = 0) -> SetOperatorSettings {
-  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, {}, {}, {}}};
+  return {"G0759", revision, {StartupUnits::inch, {9, 1}, 1800, 88.9, 6.35, ProgramLayout::text, PanelTheme::dark, PanelLanguage::en, {}, {}, {}}};
 }
 void documents_and_limits() {
   const OperatorSettingsFile value{"G0759", 1, command().document};
@@ -52,7 +58,30 @@ void documents_and_limits() {
     require(body.at("theme") == name && requested_theme && requested_theme->theme == theme,
             "The native settings command accepts the palette name");
   }
+  for (const auto& [language, name] : languages) {
+    auto spoken = value;
+    spoken.document.language = language;
+    const auto saved_language = encode_operator_settings_file(spoken);
+    require(saved_language && !Json::parse(*saved_language).at("document").contains("language"),
+            "The settings file leaves the language to its own file");
+    const auto snapshot = encode_operator_settings(
+        {"G0759", 1, ToolModelAvailability::available, "", spoken.document});
+    const auto body = Json::parse(snapshot.value_or("{}")).at("document");
+    const auto requested_language = decode_operator_preferences(body.dump());
+    require(body.at("language") == name && requested_language &&
+                *requested_language == spoken.document,
+            "The protocol carries and accepts the language code " + name);
+    const auto own_file = encode_panel_language_file("G0759", language);
+    require(own_file && decode_panel_language_file(*own_file, "G0759") == language &&
+                !decode_panel_language_file(*own_file, "OtherMill"),
+            "The language file round trips " + name + " for its own machine only");
+  }
+  for (const auto* damaged : {"", "{}", "[]", R"({"machine_id":"G0759","language":"tlh"})",
+                              R"({"machine_id":"G0759","language":7})",
+                              R"({"machine_id":"G0759","language":"de","x":1})"})
+    require(!decode_panel_language_file(damaged, "G0759"), "A damaged language file is refused");
   auto legacy = Json::parse(*encoded);
+  legacy["document"].erase("language");
   legacy["document"].erase("tool_reference_height");
   legacy["document"].erase("program_layout");
   legacy["document"].erase("theme");
@@ -61,16 +90,18 @@ void documents_and_limits() {
   expected.tool_reference_height = 0;
   expected.program_layout = ProgramLayout::path;
   expected.theme = PanelTheme::light;
+  expected.language = PanelLanguage::en;
   require(upgraded && upgraded->document == expected,
           "Earlier v1 documents retain their preferences and default the new fields");
 
   auto invalid_presentation = Json::parse(*encoded);
   invalid_presentation["document"]["program_layout"] = false;
   invalid_presentation["document"]["theme"] = "sepia";
+  invalid_presentation["document"]["language"] = "tlh";
   const auto normalized = decode_operator_settings_file(invalid_presentation.dump());
   expected.tool_reference_height = value.document.tool_reference_height;
   require(normalized && normalized->document == expected,
-          "Invalid view and theme fall back independently of other preferences");
+          "Invalid view, theme and language fall back independently of other preferences");
   for (const auto& height : {Json(-1), Json("6.35"), Json(nullptr), Json(1e10)}) {
     auto invalid = Json::parse(*encoded);
     invalid["document"]["tool_reference_height"] = height;
@@ -203,6 +234,7 @@ void damaged_requests() {
   auto older = document;
   older.erase("program_layout");
   older.erase("theme");
+  older.erase("language");
   older.erase("tool_reference_height");
   require(decode_operator_preferences(older.dump()).has_value(),
           "A save request may still omit the optional fields");
@@ -218,7 +250,9 @@ void damaged_requests() {
            {"recent_programs", Json("/a.ngc")},
            {"program_layout", Json(false)},
            {"program_layout", Json("sideways")},
-           {"theme", Json("sepia")}}) {
+           {"theme", Json("sepia")},
+           {"language", Json("tlh")},
+           {"language", Json(7)}}) {
     auto invalid = document;
     invalid[field] = damaged;
     const auto decoded = decode_operator_preferences(invalid.dump());
@@ -434,6 +468,97 @@ void host_file_restart() {
     owner.close();
   }
 }
+// What the settings reader of 0.1.3 (and every earlier release) accepts: exactly these fields in
+// the file and in its document, else the whole file is "not usable" and the settings unavailable.
+// Every file this version writes, in any language, must stay inside them, so that a downgrade
+// keeps the operator's settings.
+void readable_by_previous_version(const std::string& text, std::string_view why) {
+  const std::set<std::string> envelope{"machine_id", "revision", "document"};
+  const std::set<std::string> required{"version", "startup_units", "enabled_wcs",
+                                       "default_spindle_rpm", "default_jog_velocity"};
+  const std::set<std::string> optional{"tool_reference_height", "program_layout", "theme",
+                                       "recent_programs", "saved_positions", "go_to_safe_z"};
+  const auto json = Json::parse(text);
+  std::set<std::string> keys;
+  for (const auto& [key, ignored] : json.items())
+    keys.insert(key);
+  bool fits = keys == envelope && json.at("document").at("version") == 1;
+  for (const auto& name : required)
+    fits = fits && json.at("document").contains(name);
+  for (const auto& [key, ignored] : json.at("document").items())
+    fits = fits && (required.contains(key) || optional.contains(key));
+  require(fits, why);
+}
+void separate_language_file() {
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  ToolModelArchive owner{files, location};
+  owner.open();
+  OperatorSettingsArchive archive{files, limits};
+  archive.open(owner.shared_location());
+  require(archive.settings().document->language == PanelLanguage::en, "English by default");
+  std::uint64_t revision = 0;
+  for (const auto& [language, name] : languages) {
+    auto chosen = command(revision);
+    chosen.document.language = language;
+    require(archive.apply(chosen).outcome == CommandOutcome::accepted, "Language " + name + " saved");
+    revision = archive.settings().revision;
+    readable_by_previous_version(disk.files.at(file),
+                                 "The previous version reads the settings saved with " + name);
+    OperatorSettingsArchive restarted{files, limits};
+    restarted.open(owner.shared_location());
+    require(restarted.settings() == archive.settings() &&
+                restarted.settings().document->language == language,
+            "A restart restores the language " + name);
+  }
+  const auto chosen = disk.files.at(language_path);
+  // Opening a program saves the recent list: the language file is not written again.
+  auto recent = command(revision);
+  recent.document.language = PanelLanguage::ja;
+  recent.document.recent_programs = {"/home/cnc/nc_files/two.ngc"};
+  files.calls.clear();
+  require(archive.apply(recent).outcome == CommandOutcome::accepted, "Recent program saved");
+  require(std::ranges::none_of(files.calls,
+                               [](const std::string& call) -> bool {
+                                 return call.find("panel-language.json.tmp") != std::string::npos;
+                               }) &&
+              disk.files.at(language_path) == chosen,
+          "A save that keeps the language leaves the language file alone");
+  readable_by_previous_version(disk.files.at(file), "The previous version reads the recent list");
+  // A downgrade then saves the settings without the language: the language returns on upgrade.
+  auto older = Json::parse(disk.files.at(file));
+  older["revision"] = older["revision"].get<std::uint64_t>() + 1;
+  older["document"]["theme"] = "harbor";
+  disk.files[file] = older.dump();
+  OperatorSettingsArchive upgraded{files, limits};
+  upgraded.open(owner.shared_location());
+  require(upgraded.settings().document->theme == PanelTheme::harbor &&
+              upgraded.settings().document->language == PanelLanguage::ja,
+          "After a downgrade and upgrade, the settings and the language both remain");
+  for (const auto& damaged :
+       {std::string("corrupt"), std::string(R"({"machine_id":"OtherMill","language":"de"})")}) {
+    disk.files[language_path] = damaged;
+    OperatorSettingsArchive restarted{files, limits};
+    restarted.open(owner.shared_location());
+    require(restarted.settings().availability == ToolModelAvailability::available &&
+                restarted.settings().document->language == PanelLanguage::en &&
+                restarted.settings().document->theme == PanelTheme::harbor,
+            "A damaged language file gives English and keeps the other settings");
+  }
+  // A failed language write after the settings file was replaced: uncertain, read back.
+  disk.files[language_path] = chosen;
+  OperatorSettingsArchive failing{files, limits};
+  failing.open(owner.shared_location());
+  files.failures["rename " + language_path + ".tmp " + language_path] = 1;
+  auto german = command(failing.settings().revision);
+  german.document.language = PanelLanguage::de;
+  const auto reply = failing.apply(german);
+  require(reply.outcome == CommandOutcome::failed && reply.snapshot &&
+              reply.reason.find("uncertain") != std::string::npos &&
+              failing.settings().document->language == PanelLanguage::ja &&
+              disk.files.at(language_path) == chosen,
+          "A failed language write reports uncertainty and shows the language on disk");
+}
 } // namespace
 auto main() -> int {
   try {
@@ -445,6 +570,7 @@ auto main() -> int {
     archive_and_restart();
     failures();
     writer_delivery();
+    separate_language_file();
     host_file_restart();
     std::cout << checks << " operator settings checks passed\n";
     return 0;

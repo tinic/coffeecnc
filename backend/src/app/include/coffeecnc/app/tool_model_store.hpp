@@ -229,6 +229,10 @@ public:
 
 private:
   [[nodiscard]] auto read() const -> OperatorSettings;
+  [[nodiscard]] auto read_settings() const -> OperatorSettings;
+  [[nodiscard]] auto read_language() const -> PanelLanguage;
+  [[nodiscard]] auto replace(std::string_view name, std::string_view temporary,
+                             const std::string& text) -> ToolModelFiles::Done;
   [[nodiscard]] auto unavailable(std::string reason) const -> OperatorSettings;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
   void show(OperatorSettings settings);

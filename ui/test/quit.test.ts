@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import QuitDialog from '../src/components/QuitDialog.vue'
+import { setLanguage } from '../src/i18n'
 import { panel } from '../src/machine'
-import type { FromMachine, Status, ToMachine } from '../src/protocol'
+import type { FromMachine, RefusalMessage, Status, ToMachine } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
 import { rig } from './harness'
 
@@ -26,10 +27,10 @@ function button(label: string): HTMLButtonElement {
   if (!found) throw new Error(`Missing button ${label}`)
   return found.element
 }
-function result(outcome: 'accepted' | 'rejected' | 'failed' | 'timed_out', reason = ''): void {
+function result(outcome: 'accepted' | 'rejected' | 'failed' | 'timed_out', reason = '', refusal?: RefusalMessage): void {
   const command = wire.send.mock.calls.at(-1)?.[0]
   if (!command) throw new Error('No command')
-  wire.receive({ type: 'result', id: command.id, outcome, reason })
+  wire.receive({ type: 'result', id: command.id, outcome, reason, ...(refusal === undefined ? {} : { refusal }) })
 }
 beforeEach(() => {
   wire.send.mockReset()
@@ -92,6 +93,15 @@ describe('quit confirmation', () => {
     expect(wire.send).toHaveBeenCalledTimes(1)
     expect(button('Cancel').disabled).toBe(false)
   })
+  it('updates an existing refusal when the panel language changes', async () => {
+    open(); button('Quit CoffeeCNC').click()
+    result('rejected', 'The old fallback.', { key: 'messages.policy.stopBeforeQuit', params: {} })
+    await nextTick()
+    expect(wrapper?.get('[role="alert"]').text()).toBe('Stop the program before quitting.')
+    await setLanguage('de')
+    await nextTick()
+    expect(wrapper?.get('[role="alert"]').text()).toBe('Stoppen Sie das Programm vor dem Beenden.')
+  })
   it('handles a synchronous simulator response distinctly', async () => {
     wire.receive({ ...hello }); wire.receive(status)
     panel.simulated = true
@@ -126,7 +136,8 @@ describe('simulated shutdown', () => {
     if (scene === 'mdi') r.send({ type: 'mdi', text: 'G1 X50 F100' })
     else { r.load('G1 X100 F100\nM2'); r.send({ type: 'run' }); if (scene === 'paused') r.send({ type: 'pause' }) }
     const before = r.status().interp
-    expect(r.send({ type: 'quit' })).toMatchObject({ outcome: 'rejected', reason: 'Stop the program before quitting.' })
+    expect(r.send({ type: 'quit' })).toMatchObject({ outcome: 'rejected', reason: 'Stop the program before quitting.',
+      refusal: { key: 'messages.policy.stopBeforeQuit', params: {} } })
     expect(r.status().interp).toBe(before)
     expect(r.status().machine).toBe('on')
   })

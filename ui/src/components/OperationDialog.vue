@@ -136,13 +136,13 @@ function addToJob(): void {
   const { result, base, tool, clearance } = generated.value
   if (saving.value || 'errors' in result) return
   job.value = [...job.value, { id: nextOperation++, title: operation.value.title, base, tool, clearance, text: result.text }]
-  feedback.value = ''
+  feedback.value = null
 }
 
 function removeFromJob(id: number): void {
   job.value = job.value.filter((op) => op.id !== id)
   if (!job.value.length) reviewing.value = false
-  feedback.value = ''
+  feedback.value = null
 }
 
 // The program directory and the names in it, so a new program never takes an existing name.
@@ -161,7 +161,7 @@ const fileName = computed(() => {
 })
 
 const saving = ref(false)
-const feedback = ref('')
+const feedback = shallowRef<(() => string) | null>(null)
 let saveRequest: CommandBody | null = null
 const block = computed(() => connectionBlock(panel.link) ??
   (panel.status !== null && panel.status.interp !== 'idle' ? t('operations.dialog.stopProgram') : null))
@@ -172,7 +172,7 @@ function create(): void {
   if ((job.value.length && !reviewing.value) || saving.value || 'errors' in result || outputErrors.value.length
     || folder === undefined || block.value !== null) return
   saving.value = true
-  feedback.value = ''
+  feedback.value = null
   const path = `${folder === '/' ? '' : folder}/${fileName.value}`
   saveRequest = { type: 'save_program', path, text: result.text }
   send(saveRequest)
@@ -183,13 +183,13 @@ const removeListener = onResult((command, result) => {
     listing = null
     if (result.outcome === 'accepted' && panel.directory !== null) {
       directory.value = panel.directory
-      feedback.value = ''
-    } else feedback.value = result.reason ? translateMessage(result.reason, result.refusal) : t('operations.dialog.directoryUnreadable')
+      feedback.value = null
+    } else feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('operations.dialog.directoryUnreadable')
   } else if (command === saveRequest) {
     saveRequest = null
     saving.value = false
     if (result.outcome !== 'accepted') {
-      feedback.value = result.reason ? translateMessage(result.reason, result.refusal) : t('operations.dialog.notSaved')
+      feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('operations.dialog.notSaved')
       return
     }
     // Saved: open it as the current program; Program check and the preview follow.
@@ -325,7 +325,7 @@ const fieldGroups = computed(() => {
     <ul v-if="errors.length" class="errors" role="alert">
       <li v-for="error in errors" :key="error">{{ error }}</li>
     </ul>
-    <p v-else-if="feedback || block" class="errors" role="status">{{ feedback || (block && translateMessage(block)) }}</p>
+    <p v-else-if="feedback || block" class="errors" role="status">{{ feedback?.() || (block && translateMessage(block)) }}</p>
     <template #footer>
       <div class="file">
         <template v-if="directory">

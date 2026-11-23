@@ -1,6 +1,7 @@
 // Text that arrives in English from the native backend (command refusals and failures, settings
 // and storage reasons, operator messages) and from the panel's own store and browser simulator.
-// The protocol carries it as English sentences, so the panel translates it where it is shown:
+// The protocol carries English fallback text and can also give command refusals a key and
+// parameters. The panel translates at the place the message is shown:
 // `parts/messages/en.json` (panel store, simulator, command refusals) and `parts/backend/en.json`
 // (native storage, files, preview, LinuxCNC adapter) hold each known sentence, with `{name}`
 // for its variable parts, and the matching key gives the translation. Text that matches no sentence, for example LinuxCNC's

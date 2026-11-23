@@ -2,7 +2,7 @@
 // the next block goes out only when the previous one has arrived at its target. A panel Stop
 // cancels the remaining blocks before the stopped position comes back from the controller.
 
-import { reactive, watch } from 'vue'
+import { reactive, shallowRef, watch } from 'vue'
 
 import { arrived, arrivalToleranceMm, moveToleranceMm, type GoToMove } from './manual-moves'
 import { t } from './i18n'
@@ -37,7 +37,12 @@ export function createMoveSequence(deps: {
   /** Why no further move may go out (connection, power), or null. */
   block: () => string | null
 }): MoveSequence {
-  const state = reactive<MoveSequenceState>({ running: false, step: 0, total: 0, error: '' })
+  const error = shallowRef<string | (() => string)>('')
+  const state = reactive<MoveSequenceState>({
+    running: false, step: 0, total: 0,
+    get error() { return typeof error.value === 'function' ? error.value() : error.value },
+    set error(value: string) { error.value = value },
+  })
   let moves: readonly GoToMove[] = []
   let command: CommandBody | null = null
   let beforeMove: Status | null = null
@@ -45,9 +50,9 @@ export function createMoveSequence(deps: {
   let busy = false
   let idleStatuses = 0
 
-  function end(reason: string): void {
+  function end(reason: string | (() => string)): void {
     state.running = false
-    state.error = reason
+    error.value = reason
     command = null
   }
 
@@ -66,7 +71,7 @@ export function createMoveSequence(deps: {
 
   const stopResults = deps.onResult((sent, result) => {
     if (sent !== command || !state.running) return
-    if (result.outcome !== 'accepted') { end(translateMessage(result.reason, result.refusal) || t('manual.sequence.refused')); return }
+    if (result.outcome !== 'accepted') { end(() => translateMessage(result.reason, result.refusal) || t('manual.sequence.refused')); return }
     accepted = true
     observe(deps.status())
   })

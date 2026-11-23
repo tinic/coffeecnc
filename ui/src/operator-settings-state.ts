@@ -1,8 +1,9 @@
-import { reactive, ref, watch, type Ref } from 'vue'
+import { reactive, ref, shallowRef, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, decodeTheme, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
 import { decodeLanguage, t, type Language } from './i18n'
+import { translateMessage } from './i18n/messages'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
@@ -16,7 +17,7 @@ export interface SettingsResult { saved: boolean; reason: string }
 export interface SettingsState {
   storage: 'loading' | 'browser' | 'available' | 'session_only' | 'unavailable'
   reason: string
-  error: string
+  readonly error: string
   revision: number | null
   saving: boolean
   uncertain: boolean
@@ -50,8 +51,9 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   browserStorage: () => Pick<Storage, 'getItem' | 'setItem'> = () => localStorage,
   presentation?: StartupPresentation): OperatorSettingsController {
   const viewer = presentation?.viewer === true
+  const error = shallowRef<(() => string) | null>(null)
   const state = reactive<SettingsState>({ storage: panel.simulated || viewer ? 'browser' : 'loading', reason: '',
-    error: '', revision: null, saving: false, uncertain: false })
+    revision: null, saving: false, uncertain: false, get error() { return error.value?.() ?? '' } })
   if (panel.simulated) {
     try {
       const saved: unknown = JSON.parse(browserStorage().getItem(storageKey) ?? 'null')
@@ -85,7 +87,11 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   let initialJog = panel.jogVelocity
   let pending: { command: SaveCommand; context: SettingsContext; resolve: (value: SettingsResult) => void } | null = null
   const stops: (() => void)[] = []
-  function fail(reason: string): SettingsResult { state.error = reason; return { saved: false, reason } }
+  function fail(reason: string | (() => string)): SettingsResult {
+    const text = typeof reason === 'function' ? reason : (): string => reason
+    error.value = text
+    return { saved: false, get reason(): string { return text() } }
+  }
   function finish(value: SettingsResult): void {
     const request = pending; pending = null; state.saving = false; request?.resolve(value)
   }
@@ -105,7 +111,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   }
   stops.push(watch(() => panel.hello, (hello) => {
     if (pending !== null) finish(fail(t('status.settingsState.draftUnconfirmed')))
-    state.error = ''; state.reason = ''; state.uncertain = false; state.revision = null
+    error.value = null; state.reason = ''; state.uncertain = false; state.revision = null
     if (hello === null) { state.storage = viewer ? 'browser' : 'loading'; return }
     if (machineId !== hello.machine_id) {
       if (machineId !== undefined) {
@@ -145,13 +151,13 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (command !== pending?.command) return
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
-      finish(fail(state.uncertain ? t('status.settingsState.noConfirmation')
-        : result.reason || t('status.settingsState.saveFailed')))
+      finish(fail(() => result.outcome === 'timed_out' ? t('status.settingsState.noConfirmation')
+        : translateMessage(result.reason, result.refusal) || t('status.settingsState.saveFailed')))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true
       finish(fail(t('status.settingsState.noUpdatedSettings')))
-    } else { state.error = ''; finish({ saved: true, reason: '' }) }
+    } else { error.value = null; finish({ saved: true, reason: '' }) }
   }))
   function context(): SettingsContext { return { hello: panel.hello, revision: state.revision } }
   function block(edit: SettingsContext): string | null {
@@ -173,7 +179,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       Object.assign(panel.preferences, appearance)
       try { browserStorage().setItem(viewerKey, JSON.stringify(appearance)) }
       catch { return Promise.resolve(fail(t('status.settingsState.browserStorage'))) }
-      state.error = ''
+      error.value = null
       return Promise.resolve({ saved: true, reason: '' })
     }
     // The decoder drops a damaged list; a save must never drop the operator's positions that way.
@@ -188,7 +194,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (state.storage === 'available' && panel.operatorSettings?.availability === 'available') {
       const command: SaveCommand = { type: 'set_operator_settings', machine_id: panel.operatorSettings.machine_id,
         base_revision: panel.operatorSettings.revision, document }
-      state.saving = true; state.error = ''
+      state.saving = true; error.value = null
       return new Promise((resolve) => {
         pending = { command, context: edit, resolve }
         try { connection.send(command) } catch { finish(fail(t('status.settingsState.sendFailed'))) }
@@ -203,7 +209,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       catch { return Promise.resolve(fail(t('status.settingsState.browserStorage'))) }
     }
     panel.preferences = document
-    state.error = ''
+    error.value = null
     return Promise.resolve({ saved: true, reason: '' })
   }
   function flushPresentation(): void {

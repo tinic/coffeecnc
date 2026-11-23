@@ -19,16 +19,16 @@ const { t } = useI18n()
 const status = reported
 const plan = shallowRef<RestartPlan | null>(props.prepared ?? null)
 const request = shallowRef<CommandBody | null>(null)
-const failure = ref('')
+const failure = shallowRef<(() => string) | null>(null)
 const started = ref(false)
 const lineText = computed(() => panel.program?.lines[props.line - 1]?.trim() ?? '')
 
 function planRestart(): void {
   const context = status.value?.preview_context
   plan.value = null
-  failure.value = ''
+  failure.value = null
   if (context === undefined) {
-    failure.value = t('program.restartDialog.waitingStatus')
+    failure.value = (): string => t('program.restartDialog.waitingStatus')
     return
   }
   const command: CommandBody = { type: 'plan_restart', line: props.line, preview_context: context }
@@ -44,7 +44,7 @@ function close(): void {
 
 function start(): void {
   if (plan.value === null || startBlock.value !== null) return
-  failure.value = ''
+  failure.value = null
   const command: CommandBody = { type: 'start_restart', plan_id: plan.value.plan_id }
   request.value = command
   send(command)
@@ -54,20 +54,20 @@ const removeListener = onResult((command, result) => {
   if (command !== request.value) return
   request.value = null
   if (result.outcome !== 'accepted') {
-    failure.value = translateMessage(result.reason, result.refusal) || t('program.restartDialog.notConfirmed')
+    failure.value = (): string => translateMessage(result.reason, result.refusal) || t('program.restartDialog.notConfirmed')
     if (command.type === 'start_restart') {
       plan.value = null
       // No answer does not mean nothing moves: stop what the machine may still be doing.
       if (result.outcome === 'timed_out') {
         send({ type: 'abort' })
-        failure.value = t('program.restartDialog.notConfirmedStopped')
+        failure.value = (): string => t('program.restartDialog.notConfirmedStopped')
       }
     }
     return
   }
   if (command.type === 'plan_restart') {
     plan.value = result.restart ?? null
-    if (plan.value === null) failure.value = t('program.restartDialog.noPlan')
+    if (plan.value === null) failure.value = (): string => t('program.restartDialog.noPlan')
   } else {
     started.value = true
     emit('close')
@@ -87,7 +87,7 @@ const startBlock = computed((): string | null => {
   const shared = machineBlock(panel)
   if (shared !== null) return shared
   if (request.value !== null) return request.value.type === 'plan_restart' ? t('program.restartDialog.planning') : t('program.restartDialog.starting')
-  if (plan.value === null) return failure.value ? translateMessage(failure.value) : t('program.restartDialog.planning')
+  if (plan.value === null) return failure.value?.() ?? t('program.restartDialog.planning')
   return null
 })
 
@@ -145,7 +145,7 @@ const steps = computed((): string[] => {
 <template>
   <ModalDialog :title="t('program.restartDialog.title', { line })" size="large" fresh-gesture @close="close">
     <p class="context"><span v-if="section">{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
-    <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ translateMessage(failure) }}</p>
+    <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ failure() }}</p>
     <p v-else-if="plan === null" class="note" role="status">{{ t('program.restartDialog.planningRestart') }}</p>
     <div v-if="plan" class="plan">
       <dl class="state">

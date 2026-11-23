@@ -57,7 +57,7 @@ const { line: feedback, allow } = useCardFeedback(
     : localBlock.value ?? (!teaching.value && !state.value?.calibration ? teachFirst.value : null),
   [machineReason, localBlock, checkBlock, tool, pending],
 )
-const error = shallowRef<string | null>(null)
+const error = shallowRef<(() => string) | null>(null)
 // An idle update can arrive alongside a failed cycle result. Keep the result through that
 // transition, and clear it when the machine or loaded tool changes.
 watch([(): unknown => panel.hello, (): string => panel.link, (): string | undefined => status.value?.machine,
@@ -78,7 +78,7 @@ const summary = computed(() => {
 const line = computed((): SetterStatusLine => {
   if (running.value) return { text: pending.value?.action === 'check' ? t('tools.setter.checking') : t('tools.setter.touching'), level: 'busy' }
   if (feedback.value.level === 'blocked') return feedback.value
-  if (error.value !== null) return { text: translateMessage(error.value), level: 'blocked' }
+  if (error.value !== null) return { text: error.value(), level: 'blocked' }
   if (summary.value) return { text: summary.value, level: 'done' }
   return feedback.value
 })
@@ -138,7 +138,7 @@ const removeListener = onResult((command, result) => {
   if (result.outcome !== 'accepted') {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
     if (motion) {
-      error.value = translateMessage(result.reason, result.refusal) || (command.action === 'check'
+      error.value = (): string => translateMessage(result.reason, result.refusal) || (command.action === 'check'
         ? t('tools.setter.checkNotConfirmed') : t('tools.setter.measureNotConfirmed'))
       refresh()
     }

@@ -42,7 +42,8 @@ describe('reference-mark homing', () => {
     r.sim.enableReferenceMarks()
     r.send({ type: 'set_machine', state: 'off' })
     r.send({ type: 'set_machine', state: 'on' })
-    expect(r.send({ type: 'home', axis: 'y' })).toMatchObject({ outcome: 'rejected', reason: crossMarkFirst('Y') })
+    expect(r.send({ type: 'home', axis: 'y' })).toMatchObject({ outcome: 'rejected', reason: crossMarkFirst('Y'),
+      refusal: { key: 'messages.policy.crossReferenceMark', params: { axis: 'Y' } } })
     expect(r.send({ type: 'home', axis: 'all' })).toMatchObject({ outcome: 'rejected', reason: crossMarkFirst('X') })
     expect(crossMarkFirst('Z')).toBe('Move Z across its reference mark first: homing cannot find it yet.')
     r.sim.advance(200)

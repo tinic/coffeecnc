@@ -3,7 +3,7 @@
 // probe, the spindle and the machine's own configured signals, live while the view is open; and
 // the HAL tools, each as a window of its own. Opening the view asks the machine for readings,
 // closing it ends them: HAL is read only while someone looks.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { alarms, groups, shown, stateTips, type Shown } from '../diagnostics'
@@ -20,13 +20,14 @@ const emit = defineEmits<{ close: [] }>()
 const staleMs = 1000
 
 const starting = ref<HalToolName | null>(null)
-const refusal = ref<string | null>(null)
+const refused = shallowRef<(() => string) | null>(null)
+const refusal = computed(() => refused.value?.() ?? '')
 let request: CommandBody | null = null
 const removeListener = onResult((command, result) => {
   if (command !== request) return
   request = null
   starting.value = null
-  refusal.value = result.outcome === 'accepted' ? null : translateMessage(result.reason, result.refusal)
+  refused.value = result.outcome === 'accepted' ? null : (): string => translateMessage(result.reason, result.refusal)
 })
 
 const now = ref(Date.now())
@@ -108,7 +109,7 @@ const tools = computed(() => toolNames.map((tool) => {
 }))
 function launch(tool: HalToolName): void {
   if (starting.value !== null) return
-  refusal.value = null
+  refused.value = null
   starting.value = tool
   const command: CommandBody = { type: 'launch_hal_tool', tool }
   // Before send: the browser simulator answers at once.
@@ -194,7 +195,7 @@ function toolState(tool: { available: boolean; open: boolean; known: boolean }):
         >
           <span class="mono">{{ tool.tool }}</span><span class="tool-state">{{ starting === tool.tool ? t('status.diagnostics.tools.starting') : toolState(tool) }}</span>
         </button>
-        <p v-if="refusal" class="refusal" role="alert">{{ translateMessage(refusal) }}</p>
+        <p v-if="refusal" class="refusal" role="alert">{{ refusal }}</p>
         <p v-else class="hint">{{ t('status.diagnostics.tools.hint') }}</p>
       </div>
     </template>

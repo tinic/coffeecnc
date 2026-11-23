@@ -235,6 +235,7 @@
       "title": "Werkstücknullpunkte von {wcs}",
       "hint": "XYZ-Nullpunkte in Maschinenkoordinaten · {unit}",
       "unknown": "Die aktuellen Nullpunkte sind nicht verfügbar. Geben Sie alle drei Werte ein, um sie zu ersetzen, oder schließen Sie und wählen Sie dieses System zuerst an, um es zu lesen.",
+      "unconfirmed": "Diese Nullpunkte wurden vor dem letzten G-Code-Lauf von LinuxCNC gelesen und können sich seitdem geändert haben. Wählen Sie dieses System, um seine aktuellen Werte zu lesen.",
       "originLabel": "{wcs} Nullpunkt {axis}",
       "clear": "XYZ löschen…",
       "copyTo": "Kopieren nach",

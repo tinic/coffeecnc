@@ -17,6 +17,7 @@
 //   limit          program stopped by a soft limit
 //   stale          as running, then the link goes silent
 //   probe          T99 above simulated stock, or pre-positioned by the setup parameter
+//   offsets        several work systems set, then a program in auto mode that wrote G56
 
 import type { Status, ToMachine } from '../protocol'
 import { programDirectory, samplesDirectory } from './files'
@@ -42,6 +43,7 @@ export const sceneNames = [
   'stale',
   'probe',
   'history',
+  'offsets',
 ] as const
 
 export type SceneName = (typeof sceneNames)[number]
@@ -221,6 +223,19 @@ export function applyScene(sim: SimMachine, name: string, setup = 'top'): void {
       d.idle()
       d.send({ type: 'restore_offset', entry: 1 })
       break
+    case 'offsets': {
+      // Work offsets in several systems, then a program that writes G56 and ends in auto mode:
+      // the inactive systems are shown as possibly out of date until the mode leaves auto.
+      d.homed()
+      d.send({ type: 'set_work_offset', wcs: 2, offset: [120, 80, -45] })
+      d.send({ type: 'set_work_offset', wcs: 4, offset: [310, 40, -52.5] })
+      const program = `${programDirectory}/fixture-g56.ngc`
+      d.send({ type: 'save_program', path: program, text: 'G10 L2 P3 X210 Y95 Z-50\nM2\n' })
+      d.open(program)
+      d.send({ type: 'run' })
+      d.idle()
+      break
+    }
   }
   sim.quiet = false
 }

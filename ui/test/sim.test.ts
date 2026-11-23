@@ -663,6 +663,25 @@ describe('the built-in programs', () => {
 })
 
 describe('offsets and tools', () => {
+  it('marks inactive systems not current after a program until the mode leaves auto, as the native adapter', () => {
+    const r = rig(); r.home()
+    const systems = (): { wcs: number; current?: boolean; offset: number[] }[] => {
+      const table = r.out.findLast((message) => message.type === 'work_offsets')
+      return table?.type === 'work_offsets' ? table.systems : []
+    }
+    r.send({ type: 'set_work_offset', wcs: 3, offset: [1, 2, 3] })
+    expect(systems().map((system) => system.current)).toEqual(Array(9).fill(true))
+    r.load('G10 L2 P3 X5\nG1 X10 F600\nM2')
+    r.send({ type: 'run' })
+    r.sim.advance(200)
+    expect(systems().map((system) => system.current)).toEqual([true, false, false, false, false, false, false, false, false])
+    r.finish()
+    expect(r.status().mode).toBe('auto')
+    expect(systems()[2]).toMatchObject({ current: false, offset: [5, 2, 3] })
+    r.send({ type: 'mdi', text: 'G54' }); r.finish()
+    expect(systems().map((system) => system.current)).toEqual(Array(9).fill(true))
+  })
+
   it('edits, copies and clears explicit XYZ origins without moving or changing modal context', () => {
     const r = rig(); r.home()
     r.send({ type: 'mdi', text: 'G10 L2 P2 R15' }); r.finish()
@@ -696,6 +715,7 @@ describe('offsets and tools', () => {
     expect(offsets?.type === 'work_offsets' ? offsets.systems[0] : null).toEqual({
       wcs: 1,
       available: true,
+      current: true,
       offset: [200, 60, -62.5],
       rotation_xy: 0,
     })

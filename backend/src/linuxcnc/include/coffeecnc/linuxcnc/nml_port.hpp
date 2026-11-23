@@ -101,6 +101,45 @@ struct BreakpointSource {
   mutable std::atomic<bool> marker_seen{};
 };
 
+// The interpreter's parameter file as a source of the inactive work systems. LinuxCNC writes
+// the file (atomically: a new file, then a rename) whenever task synchronises its interpreter:
+// on EMC_TASK_PLAN_SYNCH, a change to MDI or auto mode, an abort, E-stop, machine off and exit.
+// An MDI block or a program does not write it (2.9.4: emcTaskPlanExecute(cmd, line) has no
+// synch; tests/sim/work_offset_facts.py). So the file is current only when nothing was
+// interpreted after the last synch. The parties:
+//
+//   publisher  asks for a synch (`synch_wanted`) when activity has been seen since the last one
+//   status     counts `activity`: every status sample with the interpreter not idle or MDI
+//              queued, and every sample whose echoed serial number is none this port wrote
+//              recently (another client's command)
+//   worker     counts its own `gcode_writes` (MDI blocks, run, step, resume); sends the synch
+//              from idle_maintenance when task can take it, and publishes `synched`
+//
+// The publisher then shows the file as current while both counters are what they were when
+// the synch was sent. See NmlPanelSource.
+struct SynchPoint {
+  std::uint64_t count{};    // the synchs this port had completed, this one included
+  std::uint64_t activity{}; // NmlLoads::activity when it was sent
+  std::uint64_t gcode{};    // NmlLoads::gcode_writes when it was sent
+};
+
+// The serial numbers of the last commands this port wrote, and whether a write is under way:
+// what the status thread tells another client's command by. Thread-safe.
+class WrittenSerials {
+public:
+  static constexpr std::size_t kept = 16;
+  void begin();
+  void wrote(int serial);
+  // A write is under way, or `echo` is one of the kept serial numbers.
+  [[nodiscard]] auto ours(int echo) const -> bool;
+
+private:
+  mutable std::mutex mutex_;
+  std::array<int, kept> serials_{};
+  std::size_t count_{};
+  bool writing_{};
+};
+
 struct NmlLoads {
   std::atomic<std::uint64_t> programs{};    // open_program accepted
   // An MDI block accepted (mdi, select_wcs, touch_off, tool_touch_off): task's line counters
@@ -110,6 +149,12 @@ struct NmlLoads {
   std::atomic<std::uint64_t> tool_tables{}; // the tool table loaded after set_tool, remove_tool
   std::atomic<std::uint64_t> aborts{};
   std::atomic<std::shared_ptr<const BreakpointSource>> breakpoint{};
+  // The parameter file's freshness; see SynchPoint.
+  std::atomic<std::uint64_t> activity{};
+  std::atomic<std::uint64_t> gcode_writes{};
+  std::atomic<std::uint64_t> synch_wanted{}; // the synch number asked for
+  std::atomic<std::shared_ptr<const SynchPoint>> synched{};
+  WrittenSerials serials;
 };
 
 struct FixedSetterMove {
@@ -307,6 +352,9 @@ private:
                                    std::optional<std::string_view> execution_path = {})
       -> ActionResult;
   void finish_breakpoint(const Wanted& wanted);
+  // From idle_maintenance: an EMC_TASK_PLAN_SYNCH when the publisher asks for one
+  // (NmlLoads::synch_wanted) and task can take it; see SynchPoint.
+  void synch_parameters(const Wanted& wanted);
   [[nodiscard]] auto move_paused_z(double distance, bool returning, const Wanted& wanted,
                                    bool stop_spindle = false) -> ActionResult;
   [[nodiscard]] auto hold_paused_spindle(const NmlStatus& start, const Wanted& wanted)

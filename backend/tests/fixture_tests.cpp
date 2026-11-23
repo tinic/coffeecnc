@@ -242,16 +242,16 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   WorkOffsets offsets;
   offsets.revision = 5;
-  for (auto& system : offsets.systems)
-    system.available = true;
-  offsets.systems.at(1) = {{100, 100, -100}, 15, true};
-  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90, true};
-  offsets.systems.at(8) = {{1, 2, 3}, 0, true};
+  offsets.systems.fill({{0, 0, 0}, 0, true, true});
+  offsets.systems.at(1) = {{100, 100, -100}, 15, true, true};
+  // Read before the interpreter ran something: possibly changed since.
+  offsets.systems.at(2) = {{-12.5, 0.125, 0}, -90, true, false};
+  offsets.systems.at(8) = {{1, 2, 3}, 0, true, true};
   messages.push_back(encode_work_offsets(offsets));
-  // As a controller adapter fills it: only the active system is known.
+  // Only the active system is known: no parameter file.
   WorkOffsets active_only;
   active_only.revision = 6;
-  active_only.systems.at(1) = {{100, 100, -100}, 15, true};
+  active_only.systems.at(1) = {{100, 100, -100}, 15, true, true};
   messages.push_back(encode_work_offsets(active_only));
 
   messages.push_back(encode_program(
@@ -414,8 +414,10 @@ auto variants(const Json& message) -> std::set<std::string> {
         add("overrides", assignment.at("overrides").empty() ? "empty" : "some");
     }
   } else if (type == "work_offsets") {
-    for (const auto& system : message.at("systems"))
+    for (const auto& system : message.at("systems")) {
       add("available", system.at("available").get<bool>() ? "true" : "false");
+      add("current", system.at("current").get<bool>() ? "true" : "false");
+    }
   } else if (type == "program") {
     add("truncated", message.at("truncated").get<bool>() ? "true" : "false");
   } else if (type == "preview") {

@@ -31,9 +31,19 @@ namespace coffeecnc {
 //                 PanelReading::accepted_tools carries the rows for the preview context. The
 //                 prepared tool is resolved in the loaded table and the preview is computed
 //                 from the raw table: neither is affected
-//   work offsets  the active system only, from the status. The interpreter's parameter file is
-//                 not read: it is what LinuxCNC saved last, not what is in force (see
-//                 docs/linuxcnc-interface.md)
+//   work offsets  the active system from the status. The others from [RS274NGC]
+//                 PARAMETER_FILE (parameter_work_systems), read again when the file is
+//                 replaced and after every synch the port reports (NmlLoads::synched). LinuxCNC
+//                 writes the file only when task synchronises the interpreter, not after an
+//                 MDI block or a program (see SynchPoint). An inactive system is `current`
+//                 while: the link is live; the file was read after the last synch; activity
+//                 and gcode_writes are what they were when that synch was sent; and the
+//                 reading shows the interpreter idle with no MDI queued. Else it is shown as
+//                 not current and a synch is asked for (synch_wanted), which the port sends
+//                 when task can take it: not while the machine is on in auto mode, so after a
+//                 program the inactive systems stay not current until task leaves auto mode.
+//                 Without the file (not configured, not there, not readable) the inactive
+//                 systems are not available
 //   program       the text of the file task has open, through `programs`. It is read once per
 //                 load: when task names another file, and when the port reports that LinuxCNC
 //                 accepted an open_program (NmlLoads::programs), also of the same file
@@ -130,7 +140,7 @@ public:
   // The mailbox and `loads` must outlive the source. `tools` may be empty: no table is then
   // shown. `loads` may be null. `clock` is for tests.
   NmlPanelSource(const MachineConfig& config, const NmlStatusMailbox& mailbox, ToolReader tools,
-                 ProgramReader programs, const NmlLoads* loads,
+                 ProgramReader programs, NmlLoads* loads,
                  std::function<Clock::time_point()> clock = Clock::now);
   ~NmlPanelSource() override;
   NmlPanelSource(const NmlPanelSource&) = delete;

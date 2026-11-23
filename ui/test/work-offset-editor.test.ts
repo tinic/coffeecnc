@@ -94,6 +94,15 @@ describe('confirmed work origins', () => {
     await press('Confirm G55 XYZ')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_work_offset', wcs: 2, offset: [1, 2, 3] })
   })
+  it('says when the origins shown may be out of date, and still edits them', async () => {
+    origin(1).current = false
+    await open(2)
+    expect(view().get('.hint.unconfirmed').text()).toContain('may have changed since')
+    expect(view().findAll('input').map((field) => (field.element as HTMLInputElement).value)).toEqual(['25.4', '-50.8', '3.5'])
+    origin(1).current = true
+    await nextTick()
+    expect(view().find('.hint.unconfirmed').exists()).toBe(false)
+  })
   it('retains exact unedited origins in inches across encoder feedback and status replacement', async () => {
     panel.unit = 'inch'; origin(0).offset = [1.234567891, -2.345678912, 3.456789123]
     await open(); await press('Review changes')

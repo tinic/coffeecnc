@@ -6,6 +6,7 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include <array>
 #include <cstdint>
 #include <format>
 #include <fstream>
@@ -14,6 +15,9 @@
 #include <string>
 #include <utility>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 namespace coffeecnc {
 
 struct NmlPanelSource::Impl {
@@ -21,7 +25,7 @@ struct NmlPanelSource::Impl {
   const NmlStatusMailbox& mailbox;
   ToolReader tools;
   ProgramReader programs;
-  const NmlLoads* loads;
+  NmlLoads* loads;
   std::optional<int> observed_abort;
   std::uint64_t task_aborts{};
   std::function<Clock::time_point()> clock;
@@ -72,8 +76,20 @@ struct NmlPanelSource::Impl {
   Lines lines;
   std::uint64_t mdi_blocks_seen{};
 
+  // The interpreter's parameter file as read last; see read_parameters.
+  struct Stamp {
+    ino_t inode{};
+    std::int64_t modified{}; // nanoseconds
+    off_t size{};
+    friend auto operator==(const Stamp&, const Stamp&) -> bool = default;
+  };
+  std::optional<Stamp> parameters_stamp;
+  std::uint64_t parameters_synch{}; // the synch it was read after
+  std::array<std::optional<WorkSystem>, 9> saved_systems{};
+  bool saved_current{};
+
   Impl(MachineConfig machine, const NmlStatusMailbox& readings, ToolReader tool_reader,
-       ProgramReader program_reader, const NmlLoads* counted,
+       ProgramReader program_reader, NmlLoads* counted,
        std::function<Clock::time_point()> time)
       : config(std::move(machine)), mailbox(readings), tools(std::move(tool_reader)),
         programs(std::move(program_reader)), loads(counted), clock(std::move(time)) {}
@@ -232,6 +248,45 @@ struct NmlPanelSource::Impl {
     lines.motion = lines.motion_moved ? now.second : 0;
   }
 
+  // The inactive work systems, from the interpreter's parameter file; see the header.
+  void read_parameters(const NmlStatus& status) {
+    saved_current = false;
+    if (config.parameter_file.empty())
+      return;
+    // The synch first, then the file: a file read after the synch is at least that new.
+    const auto point = loads != nullptr ? loads->synched.load() : nullptr;
+    const std::uint64_t synch = point ? point->count : 0;
+    struct stat info{};
+    if (::stat(config.parameter_file.c_str(), &info) != 0) {
+      parameters_stamp.reset();
+      saved_systems = {};
+      return;
+    }
+    const Stamp stamp{.inode = info.st_ino,
+                      .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
+                                  info.st_mtim.tv_nsec,
+                      .size = info.st_size};
+    if (stamp != parameters_stamp || synch != parameters_synch) {
+      const auto text = read_text_file(config.parameter_file, max_parameter_file_bytes);
+      if (text) {
+        saved_systems = parameter_work_systems(*text, config.millimetres_per_unit);
+        parameters_stamp = stamp;
+        parameters_synch = synch;
+      } else {
+        saved_systems = {};
+        parameters_stamp.reset();
+      }
+    }
+    if (loads == nullptr || status.controller.link != Link::live || !parameters_stamp)
+      return;
+    saved_current = point && parameters_synch == synch &&
+                    loads->activity.load() == point->activity &&
+                    loads->gcode_writes.load() == point->gcode &&
+                    status.controller.interp == InterpState::idle && status.queued_mdi == 0;
+    if (!saved_current && loads->synch_wanted.load() <= synch)
+      loads->synch_wanted.store(synch + 1);
+  }
+
   void read_program(const NmlStatus& status, std::vector<ControllerMessage>& messages) {
     if (status.controller.link == Link::down)
       return; // Nothing is known: what was read last stays.
@@ -261,7 +316,7 @@ struct NmlPanelSource::Impl {
 };
 
 NmlPanelSource::NmlPanelSource(const MachineConfig& config, const NmlStatusMailbox& mailbox,
-                               ToolReader tools, ProgramReader programs, const NmlLoads* loads,
+                               ToolReader tools, ProgramReader programs, NmlLoads* loads,
                                std::function<Clock::time_point()> clock)
     : impl_(std::make_unique<Impl>(config, mailbox, std::move(tools), std::move(programs), loads,
                                    std::move(clock))) {}
@@ -328,7 +383,8 @@ auto NmlPanelSource::read() -> PanelReading {
   }
   reading.program_aborts = impl_->task_aborts + (impl_->loads ? impl_->loads->aborts.load() : 0);
   reading.program_failed = status.task_failed;
-  reading.work_systems = to_work_systems(status);
+  impl_->read_parameters(status);
+  reading.work_systems = to_work_systems(status, impl_->saved_systems, impl_->saved_current);
   reading.program = loaded ? impl_->program : nullptr;
   return reading;
 }

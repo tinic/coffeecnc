@@ -172,7 +172,7 @@ public:
   // Where the runtime's status thread leaves its readings, and what the port counts: what the
   // executable's panel source is made on.
   const NmlStatusMailbox* mailbox{};
-  const NmlLoads* loads{};
+  NmlLoads* loads{};
   std::unique_ptr<Runtime> runtime;
   PreviewWorker* restart_preview{};
   PreviewEngine* restart_engine{};
@@ -5277,6 +5277,108 @@ void offset_history(Rig& rig) {
   rig.start();
 }
 
+// The inactive work systems from LinuxCNC's parameter file: how soon a value is shown as
+// current after the panel's G10 L2 of an inactive system, a touch-off in another system, the
+// panel's MDI line and another client's MDI; and that after a program in auto mode it is shown,
+// not current, until task leaves auto mode.
+void work_offsets(Rig& rig) {
+  NmlPanelSource source{rig.config, *rig.mailbox, {}, {}, rig.loads};
+  std::array<WorkSystem, 9> shown{};
+  // Reads as the publisher does, every 50 ms, until `done`; how long that took.
+  const auto watch = [&](std::chrono::milliseconds timeout,
+                         const std::function<bool()>& done) -> std::optional<double> {
+    const auto start = Clock::now();
+    auto next = start;
+    const bool reached = rig.pump_until(timeout, [&]() -> bool {
+      if (Clock::now() < next)
+        return false;
+      next = Clock::now() + 50ms;
+      shown = source.read().work_systems;
+      return done();
+    });
+    return reached ? std::optional<double>{milliseconds(Clock::now() - start)} : std::nullopt;
+  };
+  const auto row = [&](int wcs) -> const WorkSystem& {
+    return shown.at(static_cast<std::size_t>(wcs) - 1);
+  };
+  const auto current = [&](int wcs, double x) -> bool {
+    return row(wcs).available && row(wcs).current && near(row(wcs).offset[0], x, 0.001);
+  };
+  const auto took = [](const std::optional<double>& time) -> std::string {
+    return time ? std::format("{:.0f}ms", *time) : std::string("never");
+  };
+  const auto settle = [&]() -> void { rig.pump_until(5s, [&]() -> bool { return rig.idle(); }); };
+  const auto text = [&](int wcs) -> std::string {
+    return std::format("G5{}x={:.4f} available={} current={}", wcs + 3, row(wcs).offset[0],
+                       row(wcs).available, row(wcs).current);
+  };
+
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54")"));
+  settle();
+  auto time = watch(3s, [&]() -> bool {
+    return std::ranges::all_of(shown, [](const WorkSystem& s) { return s.available && s.current; });
+  });
+  check("wcs_inactive_current_after_a_synch", time.has_value(), took(time));
+
+  const auto set = rig.send(R"("type":"set_work_offset","wcs":2,"offset":[11,12,13])");
+  time = watch(3s, [&]() -> bool {
+    return current(2, 11) && near(row(2).offset[1], 12, 0.001) && near(row(2).offset[2], 13, 0.001);
+  });
+  check("wcs_panel_g10_l2_inactive_current", set.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", set.outcome, took(time), text(2)));
+
+  // A touch-off in G56, then back to G54: G56 is shown with the value LinuxCNC had for it.
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":3)"));
+  settle();
+  const auto touch = rig.send(R"("type":"touch_off","axis":"x","value":5)");
+  settle();
+  const double touched = rig.status().g5x[0];
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":1)"));
+  settle();
+  time = watch(3s, [&]() -> bool { return current(3, touched); });
+  check("wcs_touch_off_in_another_system_current",
+        touch.outcome == "accepted" && rig.status().wcs == 1 && time.has_value(),
+        std::format("{} {} live={:.4f} {}", touch.outcome, took(time), touched, text(3)));
+
+  const auto typed = rig.send(R"("type":"mdi","text":"G10 L2 P4 X21")");
+  time = watch(3s, [&]() -> bool { return current(4, 21); });
+  check("wcs_panel_mdi_current", typed.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", typed.outcome, took(time), text(4)));
+
+  const auto printed = all_output_of(
+      "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MDI); "
+      "c.wait_complete(); c.mdi(\"G10 L2 P5 X31\"); c.wait_complete(); print(\"outside=sent\")'");
+  time = watch(5s, [&]() -> bool { return current(5, 31); });
+  check("wcs_other_client_mdi_current",
+        printed.find("outside=sent") != std::string::npos && time.has_value(),
+        std::format("printed={} {} {}", word(printed), took(time), text(5)));
+
+  // A program, run by another client, that ends in auto mode with M2.
+  const auto program = rig.config.program_prefix + "/coffeecnc_wcs.ngc";
+  {
+    std::ofstream out{program};
+    out << "G21\nG10 L2 P6 X41\nM2\n";
+  }
+  const auto ran = all_output_of(std::format(
+      "python3 -c 'import linuxcnc, time; s = linuxcnc.stat(); c = linuxcnc.command(); "
+      "c.mode(linuxcnc.MODE_AUTO); c.wait_complete(); c.program_open(\"{}\"); c.wait_complete(); "
+      "c.auto(linuxcnc.AUTO_RUN, 0); c.wait_complete(); time.sleep(0.2); s.poll(); "
+      "[time.sleep(0.01) or s.poll() for _ in range(500) if s.interp_state != linuxcnc.INTERP_IDLE]; "
+      "s.poll(); print(\"ran=\" + str(s.interp_state == linuxcnc.INTERP_IDLE and s.task_mode == "
+      "linuxcnc.MODE_AUTO))'",
+      program));
+  static_cast<void>(watch(1500ms, []() -> bool { return false; }));
+  const bool held = row(6).available && !row(6).current;
+  check("wcs_not_current_after_a_program_in_auto", ran.find("ran=True") != std::string::npos && held,
+        std::format("printed={} {}", word(ran), text(6)));
+  const auto leave = rig.send(R"("type":"mdi","text":"G54")");
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_program_value_current_once_task_leaves_auto",
+        leave.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", leave.outcome, took(time), text(6)));
+  settle();
+}
+
 void rotary_readouts(Rig& rig) {
   const auto all = rig.send(R"("type":"home","axis":"all")");
   const bool homed = rig.pump_until(25s, [&] {
@@ -5583,7 +5685,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
-         bool moves_only, bool macros_only) -> int {
+         bool moves_only, bool macros_only, bool wcs_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5637,7 +5739,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   auto port = NmlPort::connect(*config, &shared, &loads);
   check("nml_connect", port.has_value(), port ? config->nml_file : port.error());
   // One status channel for the runtime's status thread, one for this thread.
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   auto view = NmlStatusReader::connect(*config, &shared);
   check("nml_status_readers", reader.has_value() && view.has_value(),
@@ -5688,6 +5790,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   if (moves_only) {
     homing(rig);
     machine_moves(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (wcs_only) {
+    homing(rig);
+    work_offsets(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5831,6 +5939,7 @@ auto main(int argc, char** argv) -> int {
   bool probe_interlock_only = false;
   bool moves_only = false;
   bool macros_only = false;
+  bool wcs_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5854,6 +5963,7 @@ auto main(int argc, char** argv) -> int {
     probe_interlock_only = probe_interlock_only || std::string_view(argv[i]) == "probe-interlock";
     moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
     macros_only = macros_only || std::string_view(argv[i]) == "macros";
+    wcs_only = wcs_only || std::string_view(argv[i]) == "work-offsets";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5865,7 +5975,8 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only, probe_interlock_only, moves_only, macros_only);
+               history_only, rotary_only, probe_interlock_only, moves_only, macros_only,
+               wcs_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

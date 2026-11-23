@@ -1,11 +1,14 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace coffeecnc {
@@ -158,12 +161,73 @@ auto to_panel_status(const NmlStatus& reading, const MachineConfig& config,
   return status;
 }
 
-auto to_work_systems(const NmlStatus& reading) -> std::array<WorkSystem, 9> {
+auto parameter_work_systems(std::string_view text, double millimetres_per_unit)
+    -> std::array<std::optional<WorkSystem>, 9> {
+  std::array<std::optional<WorkSystem>, 9> systems{};
+  if (text.size() > max_parameter_file_bytes)
+    return systems;
+  constexpr int first = 5221;
+  constexpr int last = first + (20 * 8) + 9;
+  const auto blank = [](char c) -> bool { return c == ' ' || c == '\t' || c == '\r'; };
+  std::map<int, double> values;
+  while (!text.empty()) {
+    const auto end = text.find('\n');
+    auto line = text.substr(0, end);
+    text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+    const auto skip = [&]() -> void {
+      while (!line.empty() && blank(line.front()))
+        line.remove_prefix(1);
+    };
+    skip();
+    int number = 0;
+    const auto [after_number, number_error] =
+        std::from_chars(line.data(), line.data() + line.size(), number);
+    if (number_error != std::errc{} || number < first || number > last)
+      continue;
+    line.remove_prefix(static_cast<std::size_t>(after_number - line.data()));
+    if (line.empty() || !blank(line.front()))
+      continue;
+    skip();
+    double value = 0;
+    const auto [after_value, value_error] =
+        std::from_chars(line.data(), line.data() + line.size(), value);
+    if (value_error != std::errc{} || !std::isfinite(value))
+      continue;
+    values[number] = value;
+  }
+  for (std::size_t i = 0; i < systems.size(); ++i) {
+    const int base = first + (20 * static_cast<int>(i));
+    const std::array numbers{base, base + 1, base + 2, base + 9};
+    if (!std::ranges::all_of(numbers, [&](int n) -> bool { return values.contains(n); }))
+      continue;
+    systems.at(i) = WorkSystem{.offset = {values.at(base) * millimetres_per_unit,
+                                          values.at(base + 1) * millimetres_per_unit,
+                                          values.at(base + 2) * millimetres_per_unit},
+                               .rotation_xy = values.at(base + 9),
+                               .available = true,
+                               .current = false};
+  }
+  return systems;
+}
+
+auto to_work_systems(const NmlStatus& reading,
+                     const std::array<std::optional<WorkSystem>, 9>& saved, bool saved_current)
+    -> std::array<WorkSystem, 9> {
   std::array<WorkSystem, 9> systems{};
-  if (reading.controller.link != Link::down && reading.wcs >= 1 &&
-      static_cast<std::size_t>(reading.wcs) <= systems.size())
-    systems.at(static_cast<std::size_t>(reading.wcs) - 1) = {reading.g5x, reading.rotation_xy,
-                                                             true};
+  if (reading.controller.link == Link::down)
+    return systems;
+  const bool live = reading.controller.link == Link::live;
+  for (std::size_t i = 0; i < systems.size(); ++i)
+    if (const auto& known = saved.at(i))
+      systems.at(i) = {.offset = known->offset,
+                       .rotation_xy = known->rotation_xy,
+                       .available = true,
+                       .current = live && saved_current};
+  if (reading.wcs >= 1 && static_cast<std::size_t>(reading.wcs) <= systems.size())
+    systems.at(static_cast<std::size_t>(reading.wcs) - 1) = {.offset = reading.g5x,
+                                                             .rotation_xy = reading.rotation_xy,
+                                                             .available = true,
+                                                             .current = live};
   return systems;
 }
 

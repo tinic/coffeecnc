@@ -9,6 +9,7 @@
 #include <coffeecnc/linuxcnc/panel_mapping.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -20,6 +21,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -48,7 +50,7 @@ void write(const std::filesystem::path& file, std::string_view text) {
 }
 
 // A mill with the G0759's values.
-auto machine() -> MachineConfig {
+auto machine(std::string parameter_file = {}) -> MachineConfig {
   return MachineConfig{
       .ini_file = "/machine/mill.ini",
       .directory = "/machine",
@@ -59,7 +61,7 @@ auto machine() -> MachineConfig {
       .jog_increments = {5, 1, 0.5},
       .limits = Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false},
       .tool_table = (scratch / "tool.tbl").string(),
-      .parameter_file = {},
+      .parameter_file = std::move(parameter_file),
       .postgui_halfile = {},
       .program_prefix = scratch.string(),
       .machine_id = {},
@@ -252,13 +254,13 @@ void work_systems() {
       right = right && systems.at(i) == (i == active ? expected : WorkSystem{{}, 0, false});
     return right;
   };
-  require(only(1, WorkSystem{{10, 10, 5}, 15, true}),
+  require(only(1, WorkSystem{{10, 10, 5}, 15, true, true}),
           "The active system is available with the status's offset and rotation; the other "
           "eight are not available and hold zeros");
   s.wcs = 9;
   s.g5x = {1, 2, 3};
   s.rotation_xy = 0;
-  require(only(8, WorkSystem{{1, 2, 3}, 0, true}), "G59.3 is system 9");
+  require(only(8, WorkSystem{{1, 2, 3}, 0, true, true}), "G59.3 is system 9");
   s.wcs = 0;
   require(only(9, {}), "An index outside 1 to 9 names no system");
 }
@@ -284,11 +286,62 @@ void tool_comments() {
   require(!with_tool("", replacement, 1), "A long formatted row never reaches the tool table");
 }
 
+void parameter_file_systems() {
+  // As LinuxCNC writes it (%d\t%f), with what it never writes but could be in a file by hand.
+  std::string text = "5161\t1.000000\n";
+  const auto system = [&](int wcs, double x, double y, double z, double r) -> void {
+    const int base = 5201 + (20 * wcs);
+    text += std::format("{}\t{:f}\n{}\t{:f}\n{}\t{:f}\n{}\t0.000000\n{}\t{:f}\n", base, x, base + 1,
+                        y, base + 2, z, base + 3, base + 9, r);
+  };
+  system(1, 10, 20, -30, 0);
+  system(2, -1.5, 0.25, 4, 15);
+  text += "5261  7\n5262 8\n5263\t9\n"; // G56 without its rotation
+  text += "5281\t1\n5282\t2\n5283\tnan\n5290\t0\n"; // G57 Z not a number
+  text += "junk\n5301 1 trailing\n5301\n";
+  system(9, 1, 2, 3, -90);
+  const auto systems = parameter_work_systems(text, 1);
+  require(systems.at(0) == WorkSystem{{10, 20, -30}, 0, true, false} &&
+              systems.at(1) == WorkSystem{{-1.5, 0.25, 4}, 15, true, false} &&
+              systems.at(8) == WorkSystem{{1, 2, 3}, -90, true, false},
+          "G54, G55 and G59.3 from 5221 + 20 (n - 1): X, Y, Z and the rotation in +9");
+  require(!systems.at(2) && !systems.at(3) && !systems.at(4),
+          "A system with a parameter missing or not finite is not there");
+  const auto inch = parameter_work_systems(text, 25.4);
+  require(inch.at(1) && std::abs(inch.at(1)->offset[0] + 38.1) < 1e-9 &&
+              inch.at(1)->rotation_xy == 15,
+          "Machine units to millimetres; the rotation stays in degrees");
+  require(std::ranges::none_of(parameter_work_systems("", 1), [](const auto& s) { return s.has_value(); }),
+          "An empty file has no system");
+  require(std::ranges::none_of(parameter_work_systems(text + std::string(max_parameter_file_bytes, ' '), 1),
+                               [](const auto& s) { return s.has_value(); }),
+          "A text over the bound is not read");
+
+  auto s = reading();
+  s.wcs = 2;
+  auto shown = to_work_systems(s, systems, true);
+  require(shown.at(1) == WorkSystem{{10, 10, 5}, 15, true, true} &&
+              shown.at(0) == WorkSystem{{10, 20, -30}, 0, true, true} &&
+              shown.at(2) == WorkSystem{{}, 0, false, false},
+          "The active system from the status, the others from the file, current as told");
+  shown = to_work_systems(s, systems, false);
+  require(shown.at(0) == WorkSystem{{10, 20, -30}, 0, true, false} && shown.at(1).current,
+          "A saved value not known to be current is marked so; the active one stays current");
+  s.controller.link = Link::stale;
+  shown = to_work_systems(s, systems, true);
+  require(!shown.at(0).current && !shown.at(1).current && shown.at(0).available,
+          "On a stale link nothing is current");
+  s.controller.link = Link::down;
+  require(std::ranges::none_of(to_work_systems(s, systems, true),
+                               [](const WorkSystem& w) { return w.available; }),
+          "Link down: nothing is available");
+}
+
 // The source on a mailbox, a loaded table and load counts of the test's own.
 struct Rig {
-  MachineConfig config{machine()};
-  NmlStatusMailbox mailbox;
+  MachineConfig config;
   NmlLoads loads;
+  NmlStatusMailbox mailbox{&loads};
   std::optional<std::vector<LoadedTool>> loaded{std::vector<LoadedTool>{
       {1, {1, 1, 50, 6, ""}}, {2, {2, 2, 40, 3, ""}}}};
   NmlPanelSource::Clock::time_point now{NmlPanelSource::Clock::time_point{} + 1h};
@@ -308,7 +361,9 @@ struct Rig {
       },
       &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 
-  Rig() { write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n"); }
+  explicit Rig(std::string parameter_file = {}) : config{machine(std::move(parameter_file))} {
+    write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");
+  }
   // One publishing period: time passes, the status thread has read `s` again, the source reads.
   auto step(const NmlStatus& s) -> PanelReading {
     now += 50ms;
@@ -349,9 +404,9 @@ void source_status_and_age() {
   require(r.status.link == Link::live && r.status.tool.prepared == 2 &&
               r.status.axes[0].machine == 12.5,
           "A fresh reading is live and mapped with the loaded table");
-  require(r.work_systems[1] == WorkSystem{{10, 10, 5}, 15, true} &&
+  require(r.work_systems[1] == WorkSystem{{10, 10, 5}, 15, true, true} &&
               r.work_systems[0] == WorkSystem{{}, 0, false},
-          "Only the active work system is available");
+          "Without a parameter file only the active work system is available, and current");
 
   rig.now += 100ms;
   require(rig.source.read().status.link == Link::live, "A reading 100 ms old is still live");
@@ -366,6 +421,96 @@ void source_status_and_age() {
   r = rig.step(NmlStatus{});
   require(r.status.link == Link::down && !r.status.program.file,
           "A reading without a status is link down");
+}
+
+// The inactive systems from the parameter file, and when they count as current: the port's
+// part (the synch, its counters) and the status thread's (activity) are played by the test.
+void source_inactive_systems() {
+  const auto file = scratch / "sim.var";
+  const auto saved = [&](double g56_x) -> void {
+    std::string text;
+    for (int wcs = 1; wcs <= 9; ++wcs) {
+      const int base = 5201 + (20 * wcs);
+      text += std::format("{}\t{:f}\n{}\t0.000000\n{}\t0.000000\n{}\t0.000000\n", base,
+                          wcs == 3 ? g56_x : wcs, base + 1, base + 2, base + 9);
+    }
+    // As LinuxCNC replaces it: a new file renamed over the old one.
+    write(file.string() + ".new", text);
+    std::filesystem::rename(file.string() + ".new", file);
+  };
+  saved(3);
+  Rig rig{file.string()};
+  // An idle MDI reading of this port's own command.
+  auto idle = rig.status();
+  idle.controller.mode = TaskMode::mdi;
+  idle.controller.interp = InterpState::idle;
+  idle.echo_serial = 41;
+  rig.loads.serials.begin();
+  rig.loads.serials.wrote(41);
+  const auto synched = [&]() -> void {
+    const auto done = rig.loads.synched.load();
+    rig.loads.synched.store(std::make_shared<const SynchPoint>(
+        SynchPoint{(done ? done->count : 0) + 1, rig.loads.activity.load(),
+                   rig.loads.gcode_writes.load()}));
+  };
+
+  auto r = rig.step(idle);
+  require(r.work_systems[2] == WorkSystem{{3, 0, 0}, 0, true, false} &&
+              r.work_systems[1] == WorkSystem{{10, 10, 5}, 15, true, true},
+          "Before a synch the inactive systems are shown from the file, not current");
+  require(rig.loads.synch_wanted.load() == 1, "and the first synch is asked for");
+
+  synched();
+  r = rig.step(idle);
+  require(r.work_systems[2].current && r.work_systems[8] == WorkSystem{{9, 0, 0}, 0, true, true},
+          "After the synch, with nothing run since, they are current");
+  require(rig.loads.synch_wanted.load() == 1, "and no other synch is asked for");
+
+  ++rig.loads.gcode_writes; // the port sends an MDI block: G10 L2 P3 X33
+  r = rig.step(idle);
+  require(!r.work_systems[2].current && r.work_systems[2].offset[0] == 3 &&
+              rig.loads.synch_wanted.load() == 2,
+          "A block of the port's own makes them not current, and a synch is asked for");
+  saved(33);
+  synched();
+  r = rig.step(idle);
+  require(r.work_systems[2] == WorkSystem{{33, 0, 0}, 0, true, true},
+          "The file read after that synch is current again");
+
+  auto foreign = idle;
+  foreign.echo_serial = 7; // another client's command
+  static_cast<void>(rig.step(foreign));
+  r = rig.step(idle);
+  require(!r.work_systems[2].current && rig.loads.synch_wanted.load() == 3,
+          "A command of another client, seen by the status thread, makes them not current");
+  synched();
+  require(rig.step(idle).work_systems[2].current, "until the next synch");
+
+  auto running = idle;
+  running.controller.mode = TaskMode::automatic;
+  running.controller.interp = InterpState::reading;
+  r = rig.step(running);
+  require(!r.work_systems[2].current && r.work_systems[2].available,
+          "While the interpreter runs they are not current");
+  auto ended = running;
+  ended.controller.interp = InterpState::idle;
+  saved(44); // task's own write, at the end of the run
+  r = rig.step(ended);
+  require(r.work_systems[2] == WorkSystem{{44, 0, 0}, 0, true, false},
+          "A file task writes of its own is shown, and still not current without a synch");
+  synched();
+  require(rig.step(ended).work_systems[2].current, "The synch after the run makes it current");
+
+  auto stale = idle;
+  stale.controller.link = Link::stale;
+  r = rig.step(stale);
+  require(r.work_systems[2].available && !r.work_systems[2].current,
+          "On a stale link the last values are kept, not current");
+
+  std::filesystem::remove(file);
+  r = rig.step(idle);
+  require(!r.work_systems[2].available && r.work_systems[1].available,
+          "Without the file the inactive systems are not available");
 }
 
 // The age that counts is the one at the end of the call, after every read.
@@ -991,9 +1136,11 @@ auto main(int argc, char** argv) -> int {
     waits();
     no_program_and_no_status();
     work_systems();
+    parameter_file_systems();
     tool_comments();
     touched_off_marks();
     source_status_and_age();
+    source_inactive_systems();
     source_observes_task_abort();
     source_ages_the_status_after_its_reads();
     source_program_loads();

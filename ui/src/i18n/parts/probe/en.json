@@ -235,6 +235,7 @@
       "title": "{wcs} work origins",
       "hint": "XYZ origins in machine coordinates · {unit}",
       "unknown": "Current origins are unavailable. Enter all three values to replace them, or close and select this system to read it first.",
+      "unconfirmed": "These origins were read before LinuxCNC last ran G-code and may have changed since. Select this system to read its current values.",
       "originLabel": "{wcs} {axis} origin",
       "clear": "Clear XYZ…",
       "copyTo": "Copy to",

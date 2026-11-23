@@ -212,6 +212,8 @@ export class SimMachine {
   private toolsKey = ''
   private toolRevision = 0
   private offsetsKey = ''
+  /** A program ran and the mode has not left auto since. */
+  private ranInAuto = false
   private offsetsRevision = 0
   private previewKey = ''
   private previewBlockDelete = false
@@ -240,7 +242,7 @@ export class SimMachine {
     this.modal.offsets[0] = [150, 60, -160]
     this.modal.offsets[1] = [150, 160, -160]
     this.toolsKey = JSON.stringify(this.modal.tools)
-    this.offsetsKey = JSON.stringify([this.modal.offsets, this.modal.rotations])
+    this.offsetsKey = JSON.stringify([this.modal.offsets, this.modal.rotations, this.modal.wcs, true])
     this.syncModal()
     this.checkPreview()
   }
@@ -458,8 +460,20 @@ export class SimMachine {
     })
   }
 
+  /**
+   * As the native adapter reads them from LinuxCNC's parameter file: an inactive system is
+   * current only once the interpreter was synchronised after the last thing it ran, which
+   * LinuxCNC refuses in auto mode. So after a program it is not current until the mode
+   * leaves auto; the active system always is.
+   */
+  private inactiveCurrent(): boolean {
+    if (this.exec?.source === 'program') this.ranInAuto = true
+    else if (this.mode !== 'auto') this.ranInAuto = false
+    return this.exec === null && !this.ranInAuto
+  }
+
   private checkOffsets(): void {
-    const key = JSON.stringify([this.modal.offsets, this.modal.rotations])
+    const key = JSON.stringify([this.modal.offsets, this.modal.rotations, this.modal.wcs, this.inactiveCurrent()])
     if (key !== this.offsetsKey) {
       this.offsetsKey = key
       this.offsetsRevision += 1
@@ -485,6 +499,7 @@ export class SimMachine {
       systems: this.modal.offsets.map((offset, index) => ({
         wcs: index + 1,
         available: true,
+        current: index + 1 === this.modal.wcs || this.inactiveCurrent(),
         offset: [...offset],
         rotation_xy: this.modal.rotations[index] ?? 0,
       })),

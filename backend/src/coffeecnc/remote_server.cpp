@@ -321,8 +321,8 @@ private:
   // Input that pongs do not explain. Beast skips empty non-final fragments without completing a
   // read, and they reset its idle timeout. One control frame can still be arriving, but not for
   // longer than partial_input_timeout.
-  [[nodiscard]] auto sent_input() -> bool {
-    const auto unexplained = ws_->next_layer().rate_policy().received() - input_start_ - pong_bytes_;
+  [[nodiscard]] auto sent_input(const websocket::stream<Stream>& viewer) -> bool {
+    const auto unexplained = viewer.next_layer().rate_policy().received() - input_start_ - pong_bytes_;
     if (unexplained == 0) {
       partial_since_.reset();
       return false;
@@ -330,15 +330,16 @@ private:
     const auto now = std::chrono::steady_clock::now();
     if (!partial_since_)
       partial_since_ = now;
-    return unexplained > max_partial_control || now - *partial_since_ > partial_input_timeout;
+    return unexplained > max_partial_control ||
+           now - partial_since_.value_or(now) > partial_input_timeout;
   }
 
   void send() {
     if (closed_ || !ws_)
       return;
-    if (sent_input())
-      return close();
     auto& viewer = *ws_;
+    if (sent_input(viewer))
+      return close();
     next_ = owner_.latest.load();
     for (std::size_t i = 0; next_ && i < next_->size(); ++i) {
       const auto& record = (*next_)[i];

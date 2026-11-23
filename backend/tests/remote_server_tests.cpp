@@ -82,9 +82,10 @@ auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
   throw std::runtime_error("The current status did not arrive.");
 }
 
-// True if the server ends the connection within two seconds. The viewer reads all updates
+// True if the server ends the connection within `wait`. The viewer reads all updates
 // meanwhile, so a connection that stays open is a live viewer, not a slow one.
-auto server_closes(net::io_context& io, Viewer& viewer) -> bool {
+auto server_closes(net::io_context& io, Viewer& viewer,
+                   std::chrono::steady_clock::duration wait = 2s) -> bool {
   beast::flat_buffer buffer;
   bool closed = false;
   std::function<void()> next = [&] {
@@ -99,7 +100,7 @@ auto server_closes(net::io_context& io, Viewer& viewer) -> bool {
   };
   next();
   io.restart();
-  io.run_for(2s);
+  io.run_for(wait);
   const bool by_server = closed;
   if (!by_server) {
     boost::system::error_code ignored;
@@ -139,6 +140,14 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
     connect(ping, port, host);
     ping.ping({});
     require(server_closes(io, ping), "A client ping closes the read-only socket.");
+  }
+  {
+    // The first byte of a pong header, then nothing: the rest of a frame is due within 2 s.
+    Viewer stalled{io};
+    connect(stalled, port, host);
+    constexpr std::array<unsigned char, 1> header{0x8a};
+    net::write(stalled.next_layer(), net::buffer(header));
+    require(server_closes(io, stalled, 4s), "A partial frame that stalls closes the socket.");
   }
   {
     // A viewer that only answers keep-alives stays connected.

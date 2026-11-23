@@ -15,6 +15,7 @@
 #include <iterator>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <tuple>
@@ -82,6 +83,8 @@ using Stream = beast::basic_stream<tcp, net::any_io_executor, InboundBytes>;
 constexpr std::size_t client_control_header = 6;
 // A control frame that is still arriving, at most 125 payload bytes.
 constexpr std::size_t max_partial_control = client_control_header + 125;
+// How long part of a frame may wait for the rest. TCP can split a pong or a close.
+constexpr auto partial_input_timeout = 2s;
 
 
 auto local_ipv4_addresses() -> std::vector<address_v4> {
@@ -316,10 +319,18 @@ private:
   }
 
   // Input that pongs do not explain. Beast skips empty non-final fragments without completing a
-  // read, and they reset its idle timeout. One control frame can still be arriving.
-  [[nodiscard]] auto sent_input() const -> bool {
-    return ws_->next_layer().rate_policy().received() - input_start_ >
-           pong_bytes_ + max_partial_control;
+  // read, and they reset its idle timeout. One control frame can still be arriving, but not for
+  // longer than partial_input_timeout.
+  [[nodiscard]] auto sent_input() -> bool {
+    const auto unexplained = ws_->next_layer().rate_policy().received() - input_start_ - pong_bytes_;
+    if (unexplained == 0) {
+      partial_since_.reset();
+      return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (!partial_since_)
+      partial_since_ = now;
+    return unexplained > max_partial_control || now - *partial_since_ > partial_input_timeout;
   }
 
   void send() {
@@ -392,6 +403,7 @@ private:
   http::request_parser<http::empty_body> request_;
   std::optional<websocket::stream<Stream>> ws_;
   std::size_t input_start_{}, pong_bytes_{};
+  std::optional<std::chrono::steady_clock::time_point> partial_since_;
   std::array<std::weak_ptr<const std::string>, record_count> sent_;
   std::shared_ptr<const Snapshot> next_;
   std::vector<Record> writing_;

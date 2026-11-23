@@ -1017,7 +1017,8 @@ void directory_listing() {
                                                         {"kind", "file"},
                                                         {"bytes", 9},
                                                         {"modified", 1700000123456}}}},
-                                                     {"truncated", false}},
+                                                     {"truncated", false},
+                                                     {"writable", true}},
           "A null path lists the program directory: " + listed.messages.at(0));
   require(Json::parse(listed.messages.at(1)) ==
               Json{{"type", "result"}, {"id", 2}, {"outcome", "accepted"}, {"reason", ""}},
@@ -2621,6 +2622,45 @@ void editor_saves_over_the_loaded_program() {
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }
 
+void uploads_do_not_replace_the_running_program() {
+  constexpr auto part = "/home/cnc/nc_files/part.ngc";
+  constexpr auto other = "/home/cnc/nc_files/other.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  port.state.program_file = part;
+  FakeFileSystem files;
+  files.file(part, "M2\n");
+  const ProgramStore programs{files, program_directory};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs};
+  const auto clock = [] { return at(0ms); };
+  int published = 0;
+  const auto publish = [&](std::string path) {
+    auto queued = session.publish_program(std::move(path), [&]() -> std::expected<void, std::string> {
+      ++published;
+      return {};
+    });
+    require(session.work(clock).status == WorkStatus::done, "The worker takes up publication");
+    return queued.get();
+  };
+
+  require(!publish(part), "An offline controller cannot verify a replacement");
+  for (const auto interp : {InterpState::reading, InterpState::paused}) {
+    port.state.interp = interp;
+    session.observe(port.state, clock().monotonic);
+    require(!publish(part), "The loaded file is protected during execution and pause");
+  }
+  port.state.interp = InterpState::idle;
+  port.state.requested_tool = 2;
+  session.observe(port.state, clock().monotonic);
+  require(!publish(part) && published == 0, "The loaded file is protected while an M6 waits");
+  require(publish(other).has_value(), "Another file can be replaced during a run");
+  port.state.requested_tool.reset();
+  session.observe(port.state, clock().monotonic);
+  require(publish(part).has_value() && published == 2 && port.calls.empty(),
+          "An idle replacement publishes on disk without commanding LinuxCNC");
+}
+
 } // namespace
 
 // A failing run prints the seed of its random sequence; pass it as the only argument to repeat.
@@ -2630,6 +2670,7 @@ auto main(int argc, char** argv) -> int {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
     editor_saves_over_the_loaded_program();
+    uploads_do_not_replace_the_running_program();
     controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();

@@ -1,6 +1,7 @@
 #include "remote_server.hpp"
 
 #include <coffeecnc/app/panel_assets.hpp>
+#include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/core/remote_hosts.hpp>
 
 #include "viewer_boost.hpp"
@@ -55,6 +56,7 @@ constexpr std::uint64_t max_step_bytes = 25uz * 1024 * 1024; // UI importer limi
 constexpr auto io_timeout = 5s;
 constexpr auto interval = 75ms;
 constexpr auto host_refresh = 5s;
+constexpr std::string_view upload_path = "/program-upload";
 
 using Record = std::shared_ptr<const std::string>;
 
@@ -158,13 +160,15 @@ auto dns_search_domains() -> std::vector<std::string> {
   return domains;
 }
 
-auto viewer_hello(const std::string& message) -> std::string {
+auto viewer_hello(const std::string& message, bool upload) -> std::string {
   auto hello = nlohmann::json::parse(message);
   hello.erase("program_places");
   hello.erase("macros");
   hello.erase("operator_settings_storage");
   hello.erase("tool_model_storage");
   hello.erase("quit_supported");
+  if (upload)
+    hello["program_upload"] = true;
   return hello.dump();
 }
 
@@ -173,8 +177,10 @@ auto viewer_hello(const std::string& message) -> std::string {
 struct RemoteServer::Impl {
   class Client;
 
-  Impl(const std::string& directory, std::uint16_t port, std::span<const std::string> aliases);
+  Impl(const std::string& directory, std::uint16_t port, std::span<const std::string> aliases,
+       Upload receive);
   ~Impl();
+  void stop();
   void accept();
   void discover_hosts(const std::string& name);
   void refresh_hosts(const std::string& name);
@@ -200,6 +206,9 @@ struct RemoteServer::Impl {
   }
 
   const std::string ui_directory;
+  const Upload upload;
+  std::optional<net::thread_pool> upload_worker;
+  bool upload_active{};
   Snapshot staged{};
   std::atomic<std::shared_ptr<const Snapshot>> latest{};
   std::mutex events_mutex;
@@ -227,21 +236,25 @@ public:
         deadline_(socket_.get_executor()) {
     ++owner_.clients;
     request_.header_limit(8192);
-    request_.body_limit(0);
+    request_.body_limit(ProgramStore::max_program_bytes);
   }
 
   ~Client() {
     if (ws_)
       --owner_.viewers;
+    if (uploading_)
+      owner_.upload_active = false;
     --owner_.clients;
   }
 
   void start() {
     socket_.expires_after(io_timeout);
-    http::async_read(socket_, request_buffer_, request_,
+    http::async_read_header(socket_, request_buffer_, request_,
       [self = shared_from_this()](Error error, std::size_t) -> void {
         if (!error)
           self->serve();
+        else if (error == http::error::body_limit)
+          self->refuse(http::status::payload_too_large);
       });
   }
 
@@ -330,8 +343,12 @@ private:
     const std::string_view target = request.target();
     if (!host_allowed(host) || !target.starts_with('/') || target.starts_with("//"))
       return refuse(http::status::forbidden);
+    if (request.method() == http::verb::post && target == upload_path && owner_.upload_worker)
+      return begin_upload(host);
     if (request.method() != http::verb::get && request.method() != http::verb::head)
       return refuse(http::status::method_not_allowed);
+    if (!request_.is_done())
+      return refuse(http::status::bad_request);
     const auto path = target.substr(0, target.find('?'));
     if (path == "/feed") {
       if (target == path && websocket::is_upgrade(request) &&
@@ -359,6 +376,60 @@ private:
     if (error)
       return refuse(http::status::not_found);
     return send_file(std::move(file), asset->content_type, host);
+  }
+
+  void upload_reply(http::status status, std::string reason = {}) {
+    http::response<http::string_body> response{status, request_.get().version()};
+    response.set(http::field::content_type, "application/json");
+    response.body() = nlohmann::json{{"reason", std::move(reason)}}.dump();
+    response.prepare_payload();
+    respond(std::move(response));
+  }
+
+  void begin_upload(std::string_view host) {
+    const auto& request = request_.get();
+    if (request[http::field::origin] != "http://" + std::string(host))
+      return upload_reply(http::status::forbidden, "Upload from the CoffeeCNC LAN screen.");
+    if (request[http::field::content_type] != "application/octet-stream")
+      return upload_reply(http::status::unsupported_media_type);
+    auto name = program_upload_name(request["X-CoffeeCNC-Filename"]);
+    if (!name || request_.is_done())
+      return upload_reply(http::status::bad_request, "Choose a program file to upload.");
+    if (owner_.upload_active)
+      return upload_reply(http::status::service_unavailable, "Another program upload is in progress.");
+    owner_.upload_active = uploading_ = true;
+    const bool replace = request["X-CoffeeCNC-Replace"] == "1";
+    socket_.expires_after(io_timeout);
+    http::async_read(socket_, request_buffer_, request_,
+      [self = shared_from_this(), name = std::move(*name), replace](Error error, std::size_t) -> void {
+        if (error == http::error::body_limit)
+          return self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
+        if (!error)
+          self->write_upload(name, replace);
+      });
+  }
+
+  void write_upload(const std::string& name, bool replace) {
+    auto& body = request_.get().body();
+    if (body.empty() || body.find('\0') != std::string::npos)
+      return upload_reply(http::status::bad_request, "The upload must be a program text file.");
+    net::post(*owner_.upload_worker, [self = shared_from_this(), name, replace,
+                                     bytes = std::move(body)]() -> void {
+      auto status = http::status::created;
+      std::string reason;
+      try {
+        if (auto saved = self->owner_.upload(name, bytes, replace); !saved) {
+          status = http::status::conflict;
+          reason = std::move(saved.error());
+        }
+      } catch (const std::exception&) {
+        status = http::status::internal_server_error;
+        reason = "The upload could not be saved.";
+      }
+      net::post(self->owner_.io, [self, status, reason = std::move(reason)]() mutable -> void {
+        self->upload_reply(status, std::move(reason));
+      });
+    });
   }
 
   void serve_part(std::string_view target, std::string_view host) {
@@ -528,7 +599,7 @@ private:
   Stream socket_;
   net::steady_timer tick_, deadline_;
   beast::flat_buffer request_buffer_{8192}, discard_{1024};
-  http::request_parser<http::empty_body> request_;
+  http::request_parser<http::string_body> request_;
   std::optional<websocket::stream<Stream>> ws_;
   std::size_t input_start_{}, pong_bytes_{};
   std::optional<std::chrono::steady_clock::time_point> partial_since_;
@@ -538,11 +609,14 @@ private:
   std::vector<net::const_buffer> buffers_;
   std::uint64_t last_event_{};
   bool closed_{};
+  bool uploading_{};
 };
 
 RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port,
-                         std::span<const std::string> aliases)
-    : ui_directory(directory) {
+                         std::span<const std::string> aliases, Upload receive)
+    : ui_directory(directory), upload(std::move(receive)) {
+  if (upload)
+    upload_worker.emplace(1);
   Error error;
   std::ignore = listener.open(tcp::v6(), error);
   if (!error)
@@ -578,9 +652,15 @@ RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port,
   });
 }
 
-RemoteServer::Impl::~Impl() {
+RemoteServer::Impl::~Impl() { stop(); }
+
+void RemoteServer::Impl::stop() {
+  if (!thread.joinable())
+    return;
   io.stop();
   thread.join();
+  if (upload_worker)
+    upload_worker->join();
 }
 
 void RemoteServer::Impl::discover_hosts(const std::string& name) {
@@ -659,10 +739,11 @@ void RemoteServer::Impl::accept() {
 }
 
 RemoteServer::RemoteServer(const std::string& ui_directory, std::uint16_t port,
-                           std::span<const std::string> aliases)
-    : impl_(std::make_unique<Impl>(ui_directory, port, aliases)) {}
+                           std::span<const std::string> aliases, Upload upload)
+    : impl_(std::make_unique<Impl>(ui_directory, port, aliases, std::move(upload))) {}
 RemoteServer::~RemoteServer() = default;
 auto RemoteServer::port() const -> std::uint16_t { return impl_->listening_port; }
+void RemoteServer::stop() { impl_->stop(); }
 
 void RemoteServer::publish(std::span<const std::string> messages,
                            std::span<const PanelRecord> records, const Status& status,
@@ -681,7 +762,7 @@ void RemoteServer::publish(std::span<const std::string> messages,
           slot.reset();
         } else if (record == PanelRecord::hello) {
           if (!slot)
-            slot = std::make_shared<const std::string>(viewer_hello(text));
+            slot = std::make_shared<const std::string>(viewer_hello(text, static_cast<bool>(impl_->upload)));
         } else {
           slot = std::make_shared<const std::string>(text);
         }

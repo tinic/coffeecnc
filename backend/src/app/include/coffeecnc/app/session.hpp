@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -249,6 +250,12 @@ public:
   // Any thread; does not wait for the controller.
   [[nodiscard]] auto loaded_program() const -> std::string;
 
+  // A disk worker has already written and synchronized a temporary program. Send only its
+  // atomic publication through the controller worker, serialized against program start.
+  using Publication = std::function<std::expected<void, std::string>()>;
+  [[nodiscard]] auto publish_program(std::string path, Publication publish)
+      -> std::future<std::expected<void, std::string>>;
+
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
   [[nodiscard]] auto control(Instant now, const ControlInput& input) -> bool;
@@ -312,6 +319,12 @@ private:
     // A stop that is carried out even if its page is gone.
     bool stop{};
   };
+  struct ProgramPublication {
+    std::string path;
+    Publication publish;
+    std::promise<std::expected<void, std::string>> result;
+  };
+  void publish_program(ProgramPublication& request, const Clock& clock);
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
   struct Stage {
     StageKind kind{StageKind::reply};
@@ -430,6 +443,7 @@ private:
   const CommandPolicy policy_;
   std::deque<Queued> stops_;
   std::deque<Queued> requests_;
+  std::optional<ProgramPublication> publication_;
   ControllerState status_;
   std::array<AxisJog, 3> jog_{};
   // Consecutive control periods that found the level low, up to settled_periods.

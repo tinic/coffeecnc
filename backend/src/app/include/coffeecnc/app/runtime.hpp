@@ -83,6 +83,10 @@ public:
   // Session::loaded_program.
   [[nodiscard]] auto loaded_program() const -> std::string;
 
+  // Waits on the disk worker, never on the network or panel thread.
+  [[nodiscard]] auto publish_program(const std::string& path, const Session::Publication& publish)
+      -> std::expected<void, std::string>;
+
   // Since the start or the last call of reset_timing.
   [[nodiscard]] auto timing() const -> Timing;
   void reset_timing();

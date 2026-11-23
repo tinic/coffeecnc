@@ -59,6 +59,7 @@ export interface Hello {
   touch_probe_tool?: number
   /** Program browser shortcuts (program directory, home, USB media); absent on older peers. */
   program_places?: { name: string; path: string }[]
+  program_upload?: boolean
   /**
    * `[COFFEECNC] MACRO = <label> | <MDI block>` in INI order, at most 12; absent when none is
    * configured. Each runs as one `mdi` command, under the same rules as a typed block.
@@ -509,6 +510,8 @@ export interface Directory {
   entries: DirectoryEntry[]
   /** True when the listing omits entries because a resource limit was reached. */
   truncated?: boolean
+  /** The panel may manage local files in this directory. */
+  writable?: boolean
 }
 
 export type FromMachine =
@@ -587,6 +590,10 @@ export interface ListDirectory extends CommandBase {
   /** Null for the program directory ([DISPLAY] PROGRAM_PREFIX). */
   path: string | null
 }
+export type ManageProgramFile = CommandBase & { type: 'manage_program_file'; path: string } & (
+  | { operation: 'create_folder' | 'copy' | 'remove' }
+  | { operation: 'rename'; name: string }
+)
 export interface OpenProgram extends CommandBase {
   type: 'open_program'
   path: string
@@ -798,6 +805,7 @@ export type ToMachine =
   | JogStopAll
   | Mdi
   | ListDirectory
+  | ManageProgramFile
   | OpenProgram
   | Run
   | Pause

@@ -581,10 +581,17 @@ void simulation_profiles() {
 
 void remote_viewer_port() {
   const auto defaults = load(g0759);
-  require(defaults && defaults->remote_port == 0, "The LAN viewer is off by default");
+  require(defaults && defaults->remote_port == 0 && !defaults->remote_upload,
+          "The LAN viewer and uploads are off by default");
   const auto enabled = with(std::string(g0759), "[COFFEECNC]\n", "[COFFEECNC]\nREMOTE_PORT = 8787\n");
   const auto viewer = load(enabled);
-  require(viewer && viewer->remote_port == 8787, "The enabled LAN viewer reads the configured port");
+  require(viewer && viewer->remote_port == 8787 && !viewer->remote_upload,
+          "The enabled LAN viewer reads the configured port with uploads off");
+  const auto uploads = load(with(enabled, "REMOTE_PORT = 8787", "REMOTE_PORT = 8787\nREMOTE_UPLOAD = yes"));
+  require(uploads && uploads->remote_upload, "Upload requires its own opt-in");
+  const auto invalid_upload = load(with(enabled, "REMOTE_PORT = 8787",
+                                        "REMOTE_PORT = 8787\nREMOTE_UPLOAD = open"));
+  require(!invalid_upload && has(invalid_upload.error(), "REMOTE_UPLOAD"), "Upload accepts a yes/no setting");
   const auto zero = load(with(enabled, "REMOTE_PORT = 8787", "REMOTE_PORT = 0"));
   require(zero && zero->remote_port == 0, "A zero port also disables the LAN viewer");
   for (const auto* invalid : {"-1", "65536", "3.5", "open"}) {

@@ -3,18 +3,42 @@
 #include <coffeecnc/core/command_policy.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <cctype>
 #include <cstddef>
+#include <cstdio>
 #include <format>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace coffeecnc {
 namespace {
 
 constexpr auto changed_program = "The program file changed since it was opened. Open it again to edit it.";
+constexpr std::size_t max_copy_bytes = 32uz * 1024 * 1024;
+
+auto incoming_temporary_name() -> std::string {
+  static std::atomic<unsigned long> sequence{};
+  return std::format(".coffeecnc-import-{}-{}", ::getpid(), sequence.fetch_add(1));
+}
+
+auto rename_file(const std::string& from, const std::string& to) -> ToolModelFiles::Done {
+#ifdef __APPLE__
+  const int result = ::renamex_np(from.c_str(), to.c_str(), RENAME_EXCL);
+#else
+  const int result = ::renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE);
+#endif
+  if (result != 0)
+    return std::unexpected(std::error_code(errno, std::generic_category()).message());
+  return {};
+}
 
 struct Span {
   std::size_t begin{};
@@ -233,15 +257,38 @@ auto ProgramWriter::create(std::string_view path, std::string_view text, bool re
     return std::unexpected(std::format("A program named {} exists already.", name));
   if (text.size() > max_saved_program_bytes)
     return std::unexpected(std::string("The program text is longer than 512 KiB."));
-  const std::string directory = slash == 0 ? "/" : target->path.substr(0, slash);
-  const std::string temporary = std::format("{}/.{}.coffeecnc-new", directory, name);
+  return write_new(std::move(*target), text, replace, std::format(".{}.coffeecnc-new", name), {});
+}
+
+auto ProgramWriter::receive(std::string_view path, std::string_view bytes, bool replace,
+                            const Publish& publish) -> std::expected<std::string, std::string> {
+  if (bytes.size() > ProgramStore::max_program_bytes)
+    return std::unexpected(std::string("The program is longer than 16 MiB."));
+  auto target = programs_.resolve_new_program(path);
+  if (!target)
+    return std::unexpected(target.error());
+  return write_new(std::move(*target), bytes, replace, incoming_temporary_name(), publish);
+}
+
+auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view bytes,
+                              bool replace, std::string temporary_name, const Publish& publish)
+    -> std::expected<std::string, std::string> {
+  const auto slash = target.path.rfind('/');
+  const std::string name = target.path.substr(slash + 1);
+  if (target.exists && !replace)
+    return std::unexpected(std::format("A program named {} exists already.", name));
+  const std::string directory = slash == 0 ? "/" : target.path.substr(0, slash);
+  const std::string temporary = std::format("{}/{}", directory, temporary_name);
+  const auto commit = [&]() -> ToolModelFiles::Done {
+    return replace ? files_.rename(temporary, target.path) : files_.link(temporary, target.path);
+  };
   auto step = files_.open_temporary(temporary);
   if (step)
-    step = files_.write(text);
+    step = files_.write(bytes);
   if (step)
     step = files_.sync();
   if (step)
-    step = replace ? files_.rename(temporary, target->path) : files_.link(temporary, target->path);
+    step = publish ? publish(target.path, commit) : commit();
   if (!step) {
     files_.discard(temporary);
     return std::unexpected("The program could not be saved: " + step.error());
@@ -250,7 +297,68 @@ auto ProgramWriter::create(std::string_view path, std::string_view text, bool re
     files_.discard(temporary);
   if (auto synced = files_.sync_directory(directory); !synced)
     return std::unexpected("The program could not be saved: " + synced.error());
-  return std::move(target->path);
+  return std::move(target.path);
+}
+
+auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view loaded)
+    -> std::expected<void, std::string> {
+  if (!programs_.has_program_directory())
+    return std::unexpected("No program directory is configured.");
+  if (command.operation == ProgramFileOperation::copy) {
+    const auto source = programs_.resolve_program(command.path);
+    if (!source)
+      return std::unexpected(source.error());
+    const auto name = std::string_view{command.path}.substr(command.path.rfind('/') + 1);
+    const auto target = programs_.resolve_new_program(name);
+    if (!target)
+      return std::unexpected(target.error());
+    const auto content = files_.read(*source, max_copy_bytes);
+    if (!content)
+      return std::unexpected(content.error());
+    const auto& file = *content;
+    if (!file)
+      return std::unexpected("The file no longer exists.");
+    if (file->more)
+      return std::unexpected("The file is longer than 32 MiB.");
+    const auto copied = write_new(*target, file->bytes, false, incoming_temporary_name(), {});
+    if (!copied)
+      return std::unexpected(copied.error());
+    return {};
+  }
+
+  const auto entry = programs_.resolve_new_program(command.path);
+  if (!entry)
+    return std::unexpected(entry.error());
+  const auto slash = entry->path.rfind('/');
+  const auto directory = slash == 0 ? "/" : entry->path.substr(0, slash);
+  if (command.operation == ProgramFileOperation::create_folder) {
+    const auto folder = files_.make_directory(entry->path);
+    if (!folder)
+      return std::unexpected(folder.error());
+    if (!folder->created)
+      return std::unexpected("A file or folder already has that name.");
+    return files_.sync_directory(directory);
+  }
+  if (!entry->exists)
+    return std::unexpected("The file or folder no longer exists.");
+  const auto contains = [&](std::string_view path) -> bool {
+    return path == entry->path || path.starts_with(entry->path + "/");
+  };
+  if (contains(loaded) || contains(programs_.resolve_program(loaded).value_or("")))
+    return std::unexpected("Open a different program before moving or deleting this item.");
+  if (command.operation == ProgramFileOperation::remove) {
+    if (::remove(entry->path.c_str()) != 0)
+      return std::unexpected(std::error_code(errno, std::generic_category()).message());
+  } else {
+    if (command.name.find_first_of("/\\") != std::string::npos)
+      return std::unexpected("Use a single file or folder name.");
+    const auto target = programs_.resolve_new_program(entry->path.substr(0, slash + 1) + command.name);
+    if (!target)
+      return std::unexpected(target.error());
+    if (auto moved = rename_file(entry->path, target->path); !moved)
+      return std::unexpected(moved.error());
+  }
+  return files_.sync_directory(directory);
 }
 
 } // namespace coffeecnc

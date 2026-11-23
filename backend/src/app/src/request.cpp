@@ -198,6 +198,18 @@ auto command(const Json& object) -> Command {
       return ListDirectory{std::nullopt};
     return ListDirectory{string(object, "path")};
   }
+  if (type == "manage_program_file") {
+    fields(object, {"id", "type", "operation", "path"}, {"name"});
+    const auto operation = choice<ProgramFileOperation>(
+        object, "operation", {{"create_folder", ProgramFileOperation::create_folder},
+                              {"copy", ProgramFileOperation::copy},
+                              {"rename", ProgramFileOperation::rename},
+                              {"remove", ProgramFileOperation::remove}});
+    if (object.contains("name") != (operation == ProgramFileOperation::rename))
+      throw InvalidRequest("A new file name is required for rename only.");
+    return ManageProgramFile{operation, string(object, "path"),
+                             object.contains("name") ? string(object, "name") : std::string{}};
+  }
   if (type == "open_program") {
     fields(object, {"id", "type", "path"});
     return OpenProgram{string(object, "path")};

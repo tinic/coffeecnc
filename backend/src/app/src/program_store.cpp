@@ -128,6 +128,10 @@ auto program_stamp(std::string_view bytes) -> std::string {
 ProgramStore::ProgramStore(const FileSystem& files, std::string root, std::string start)
     : files_(files), root_(std::move(root)), start_(std::move(start)) {}
 
+auto ProgramStore::has_program_directory() const noexcept -> bool {
+  return !start_.empty() || (!root_.empty() && root_ != "/");
+}
+
 auto ProgramStore::resolve(std::string_view path) const -> std::expected<Resolved, std::string> {
   if (root_.empty())
     return std::unexpected(std::string("No program directory is configured."));
@@ -165,6 +169,9 @@ auto ProgramStore::list(const std::optional<std::string>& path) const
 
   Directory directory;
   directory.path = where->path;
+  const auto programs = has_program_directory() ? files_.canonical(start_.empty() ? root_ : start_)
+                                                 : std::unexpected(std::string{});
+  directory.writable = programs && inside(*programs, where->path);
   if (where->path != where->root) {
     const auto slash = where->path.rfind('/');
     directory.parent = slash == 0 ? "/" : where->path.substr(0, slash);

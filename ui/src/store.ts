@@ -162,6 +162,8 @@ export function describeCommand(command: CommandBody): string {
       return `MDI ${command.text}`
     case 'list_directory':
       return 'List directory'
+    case 'manage_program_file':
+      return 'Manage program files'
     case 'open_program':
       return `Open ${command.path}`
     case 'run':

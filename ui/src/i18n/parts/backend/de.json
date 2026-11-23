@@ -1,5 +1,25 @@
 {
   "backend": {
+    "programFiles": {
+      "manage": "Programmdateien verwalten",
+      "unavailable": "Die Programmdateiverwaltung ist nicht verfügbar.",
+      "nameForRename": "Ein neuer Dateiname ist nur beim Umbenennen erforderlich.",
+      "closing": "CoffeeCNC wird geschlossen.",
+      "starting": "CoffeeCNC startet.",
+      "busy": "Ein anderes Programm wird gerade hochgeladen.",
+      "verify": "Das geladene Programm kann bei getrennter Steuerung nicht geprüft werden.",
+      "stop": "Stoppen Sie das geladene Programm, bevor Sie es ersetzen.",
+      "sameOrigin": "Laden Sie die Datei über die CoffeeCNC-LAN-Ansicht hoch.",
+      "choose": "Wählen Sie eine Programmdatei zum Hochladen.",
+      "size": "Das Programm ist größer als 16 MiB.",
+      "text": "Laden Sie ein Programm als Textdatei hoch.",
+      "uploadFailed": "Die hochgeladene Datei konnte nicht gespeichert werden.",
+      "copySize": "Die Datei ist größer als 32 MiB.",
+      "nameTaken": "Eine Datei oder ein Ordner mit diesem Namen ist bereits vorhanden.",
+      "missing": "Die Datei oder der Ordner ist nicht mehr vorhanden.",
+      "loaded": "Öffnen Sie ein anderes Programm, bevor Sie dieses Element verschieben oder löschen.",
+      "oneName": "Geben Sie nur einen Datei- oder Ordnernamen ein."
+    },
     "toolChangeMeasurement": {
       "unavailable": "Messen beim Werkzeugwechsel im Programm ist nicht verfügbar.",
       "requiresToolAndSetter": "Ein Zerspanungswerkzeug in der Werkzeugtabelle und ein fester Werkzeugtaster sind erforderlich.",

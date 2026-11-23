@@ -1,23 +1,45 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
 // Browses the machine's program directory and opens a program.
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { panel, send } from '../machine'
-import type { DirectoryEntry } from '../protocol'
+import type { DirectoryEntry, ManageProgramFile } from '../protocol'
 import { baseName, formatBytes } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
+import ProgramFileActions from './ProgramFileActions.vue'
 import { translateMessage } from '../i18n/messages'
 
 const { t } = useI18n()
 
+const props = defineProps<{ pick?: 'folder' | 'file'; title?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const directory = computed(() => panel.directory)
 // Shortcuts the machine offers: its program directory, the home folder, USB media.
 const places = computed(() => panel.hello?.program_places ?? [])
+const programs = computed(() => places.value.find((place) => place.name === 'Programs'))
+const writable = computed(() => props.pick === undefined && directory.value?.writable === true)
+const copyable = computed(() => props.pick === undefined && directory.value?.writable === false && programs.value !== undefined)
+const action = ref<{ entry: DirectoryEntry | null; directory: string; writable: boolean } | null>(null)
+const feedback = ref('')
+
+function fileActions(entry: DirectoryEntry | null): void {
+  if (directory.value === null) return
+  action.value = { entry, directory: directory.value.path, writable: writable.value }
+  feedback.value = ''
+}
+
+function changed(operation: ManageProgramFile['operation']): void {
+  const previous = action.value
+  action.value = null
+  if (operation === 'copy')
+    feedback.value = t('program.fileBrowser.copied', { name: previous?.entry?.name })
+  else if (previous !== null)
+    list(previous.directory)
+}
 
 function list(path: string | null): void {
   send({ type: 'list_directory', path })
@@ -77,6 +99,9 @@ onMounted(() => {
             <AppIcon name="up" />{{ t('program.fileBrowser.up') }}
           </button>
           <span class="mono where">{{ directory?.path ?? t('program.fileBrowser.reading') }}</span>
+          <button v-if="writable" class="btn new-folder" type="button" @click="fileActions(null)">
+            <AppIcon name="plus" />{{ t('program.fileBrowser.newFolder') }}
+          </button>
         </div>
         <div v-if="places.length > 0" class="places" :aria-label="t('program.fileBrowser.places')">
           <button
@@ -87,19 +112,30 @@ onMounted(() => {
           </button>
         </div>
         <div class="entries">
-          <button v-for="entry in directory?.entries ?? []" :key="entry.name" class="entry" type="button" @click="choose(entry)">
-            <AppIcon :name="entry.kind === 'directory' ? 'folder' : 'file'" />
-            <span class="name">{{ entry.name }}</span>
-            <span v-if="entry.kind === 'file'" class="meta mono">{{ formatBytes(entry.bytes) }}</span>
-            <span class="meta mono">{{ formatDate(entry.modified) }}</span>
-          </button>
+          <div v-for="entry in directory?.entries ?? []" :key="entry.name" class="entry-row">
+            <button class="entry" type="button" @click="choose(entry)">
+              <AppIcon :name="entry.kind === 'directory' ? 'folder' : 'file'" />
+              <span class="name">{{ entry.name }}</span>
+              <span v-if="entry.kind === 'file'" class="meta mono">{{ formatBytes(entry.bytes) }}</span>
+              <span class="meta mono">{{ formatDate(entry.modified) }}</span>
+            </button>
+            <button
+              v-if="writable || (copyable && entry.kind === 'file')" class="btn quiet square entry-actions"
+              type="button" :aria-label="t('program.fileBrowser.actions', { name: entry.name })"
+              :title="t('program.fileBrowser.actions', { name: entry.name })" @click="fileActions(entry)"
+            >
+              <span aria-hidden="true">…</span>
+            </button>
+          </div>
           <p v-if="directory !== null && directory.entries.length === 0" class="hint">{{ directory.truncated ? t('program.fileBrowser.partialEmpty') : t('program.fileBrowser.empty') }}</p>
         </div>
         <p v-if="directory?.truncated" class="hint" role="status">{{ t('program.fileBrowser.partial') }}</p>
+        <p v-if="feedback" class="hint" role="status">{{ feedback }}</p>
         <p v-if="panel.status && panel.status.interp !== 'idle'" class="blocked">{{ t('program.fileBrowser.stopFirst') }}</p>
       </section>
     </div>
   </ModalDialog>
+  <ProgramFileActions v-if="action" v-bind="action" @close="action = null" @done="changed" />
 </template>
 
 <style scoped>
@@ -120,6 +156,11 @@ onMounted(() => {
   gap: 10px;
   flex: none;
 }
+
+.new-folder { margin-left: auto; flex: none; }
+.entry-row { display: flex; align-items: center; min-width: 0; }
+.entry-row .entry { flex: 1; min-width: 0; }
+.entry-actions { flex: none; font-size: 20px; }
 
 .where {
   overflow: hidden;

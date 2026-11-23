@@ -367,6 +367,10 @@ void Session::end_page(PageToken page) {
 void Session::close() {
   const std::scoped_lock lock{mutex_};
   closing_ = true;
+  if (publication_) {
+    publication_->result.set_value(std::unexpected("CoffeeCNC is closing."));
+    publication_.reset();
+  }
   problems_.clear();
   stop_jogs();
   drop_requests();
@@ -592,6 +596,22 @@ auto Session::loaded_program() const -> std::string {
   return have_status_ ? status_.program_file : std::string{};
 }
 
+auto Session::publish_program(std::string path, Publication publish)
+    -> std::future<std::expected<void, std::string>> {
+  ProgramPublication request{std::move(path), std::move(publish), {}};
+  auto result = request.result.get_future();
+  const std::scoped_lock lock{mutex_};
+  if (closing_) {
+    request.result.set_value(std::unexpected("CoffeeCNC is closing."));
+  } else if (publication_) {
+    request.result.set_value(std::unexpected("Another program upload is in progress."));
+  } else {
+    publication_.emplace(std::move(request));
+    wake();
+  }
+  return result;
+}
+
 void Session::observe(const ControllerState& state, JogLease::Time now) {
   const std::scoped_lock lock{mutex_};
   if (state.link != Link::live || state.machine != MachineState::on ||
@@ -687,6 +707,7 @@ void Session::wait_for_work(std::chrono::milliseconds timeout) {
 
 auto Session::work(const Clock& clock) -> Work {
   std::optional<Queued> request;
+  std::optional<ProgramPublication> publication;
   std::optional<PageToken> idle_page;
   bool stopping = false;
   {
@@ -699,6 +720,8 @@ auto Session::work(const Clock& clock) -> Work {
       // A stop not tried yet goes before every request; retries take turns with them.
       stopping = true;
       retried_ = !fresh;
+    } else if (publication_) {
+      publication = std::exchange(publication_, std::nullopt);
     } else if (!requests_.empty()) {
       request = std::move(requests_.front());
       requests_.pop_front();
@@ -709,6 +732,10 @@ auto Session::work(const Clock& clock) -> Work {
   }
   if (request)
     return run(std::move(*request), clock);
+  if (publication) {
+    publish_program(*publication, clock);
+    return {WorkStatus::done, {}, false};
+  }
   if (restart_ && restart_->tool_request && !wanted(restart_->owner)) {
     restart_.reset();
     static_cast<void>(port_.abort());
@@ -741,6 +768,33 @@ auto Session::work(const Clock& clock) -> Work {
         message.error ? MessageLevel::error : MessageLevel::info, message.text, now.unix_time));
   report(result.outcome, now.unix_time);
   return result;
+}
+
+void Session::publish_program(ProgramPublication& request, const Clock& clock) {
+  const auto controller = port_.snapshot();
+  const auto observed = [&] {
+    const std::scoped_lock lock{mutex_};
+    return status(clock().monotonic);
+  }();
+  if (observed.link != Link::live) {
+    request.result.set_value(std::unexpected("Cannot verify the loaded program while the controller is offline."));
+    return;
+  }
+  const auto using_file = [&](const ControllerState& state) -> bool {
+    const bool active = state.interp != InterpState::idle || state.requested_tool ||
+                        (state.mode == TaskMode::automatic && !state.in_position);
+    if (!active || state.program_file.empty())
+      return false;
+    return state.program_file == request.path ||
+           programs_.resolve_program(state.program_file).value_or("") == request.path ||
+           (state.breakpoint_program && started_program_.source.inputs &&
+            started_program_.source.inputs->program_file == request.path);
+  };
+  if (using_file(controller) || using_file(observed)) {
+    request.result.set_value(std::unexpected("Stop the loaded program before replacing it."));
+    return;
+  }
+  request.result.set_value(request.publish());
 }
 
 auto Session::run(Queued request, const Clock& clock) -> Work {
@@ -968,6 +1022,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (restart_ && !restart_->tool_request && !std::holds_alternative<StartRestart>(command) &&
       !std::holds_alternative<PlanRestart>(command) &&
       !std::holds_alternative<ListDirectory>(command) &&
+      !std::holds_alternative<ManageProgramFile>(command) &&
       !(std::holds_alternative<SaveProgram>(command) && !std::get<SaveProgram>(command).stamp))
     restart_.reset();
   auto decision = policy_.evaluate(command, state);
@@ -1526,6 +1581,13 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           Stage step;
           step.reply = list_directory(c, step);
           return step;
+        } else if constexpr (std::is_same_v<T, ManageProgramFile>) {
+          if (program_writer_ == nullptr)
+            return answer({CommandOutcome::rejected, "Program file management is unavailable."});
+          const auto observed = loaded_program();
+          const auto result = program_writer_->manage(c, observed.empty() ? state.program_file : observed);
+          return answer(result ? Reply{CommandOutcome::accepted, ""}
+                               : Reply{CommandOutcome::failed, result.error()});
         } else if constexpr (std::is_same_v<T, SetMachine>) {
           // E-stop and power-off go out first; stops for held jogs follow.
           auto result = act(request, [&](const Wanted& still) -> ActionResult {

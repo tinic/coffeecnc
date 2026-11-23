@@ -65,6 +65,11 @@ auto Runtime::submit(PageToken page, std::string_view json, std::chrono::millise
 
 auto Runtime::loaded_program() const -> std::string { return session_.loaded_program(); }
 
+auto Runtime::publish_program(const std::string& path, const Session::Publication& publish)
+    -> std::expected<void, std::string> {
+  return session_.publish_program(path, publish).get();
+}
+
 auto Runtime::timing() const -> Timing {
   return {control_periods_.load(), std::chrono::nanoseconds{longest_control_period_.load()}};
 }

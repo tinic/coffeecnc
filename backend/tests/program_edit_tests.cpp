@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -252,12 +253,66 @@ void a_failed_save_keeps_the_program() {
   }
 }
 
+void manages_program_files(const fs::path& base) {
+  const fs::path root = base / "program_file_management";
+  fs::remove_all(root);
+  fs::create_directories(root / "Programs");
+  fs::create_directories(root / "USB");
+  const auto usb = root / "USB" / "sample.ngc";
+  const auto programs = root / "Programs";
+  const auto copied = programs / "sample.ngc";
+  const std::string bytes = "G21\r\nM2\r\n";
+  std::ofstream(usb, std::ios::binary) << bytes;
+  const LocalFileSystem files;
+  const ProgramStore store{files, root.string(), programs.string()};
+  LocalToolModelFiles writes;
+  ProgramWriter writer{store, writes};
+  using Op = ProgramFileOperation;
+
+  require(writer.manage({Op::copy, usb.string()}, "").has_value() && read(copied) == bytes,
+          "A USB program is copied byte for byte to Programs");
+  require(!writer.manage({Op::copy, usb.string()}, ""), "Copy never replaces an existing file");
+  require(!writer.manage({Op::remove, usb.string()}, "") && fs::exists(usb),
+          "The browser cannot delete from the USB source");
+  require(!writer.manage({Op::rename, copied.string(), "../away.ngc"}, ""),
+          "Rename takes a file name only");
+  require(!writer.manage({Op::remove, copied.string()}, copied.string()),
+          "The loaded file cannot be deleted");
+  require(writer.manage({Op::rename, copied.string(), "part.ngc"}, "").has_value() &&
+              read(programs / "part.ngc") == bytes && !fs::exists(copied),
+          "The program is renamed in place");
+  const auto folder = programs / "new";
+  require(writer.manage({Op::create_folder, folder.string()}, "").has_value() && fs::is_directory(folder),
+          "The new folder is created");
+  std::ofstream(folder / "kept.ngc") << bytes;
+  require(!writer.manage({Op::remove, folder.string()}, ""), "A nonempty folder cannot be deleted");
+  require(!writer.manage({Op::rename, folder.string(), "changed"}, (folder / "kept.ngc").string()),
+          "The folder containing the loaded program cannot be renamed");
+  require(writer.manage({Op::remove, (folder / "kept.ngc").string()}, "").has_value() &&
+              writer.manage({Op::remove, folder.string()}, "").has_value() && !fs::exists(folder),
+          "The file and the empty folder can be deleted");
+
+  const auto refused = writer.receive("part.ngc", "M30\n", true,
+      [](const std::string&, const ProgramWriter::Commit&) -> std::expected<void, std::string> {
+        return std::unexpected("Stop the loaded program before replacing it.");
+      });
+  require(!refused && read(programs / "part.ngc") == bytes &&
+              std::distance(fs::directory_iterator{programs}, fs::directory_iterator{}) == 1,
+          "Refusal leaves old bytes and removes the staged upload");
+  require(writer.receive("part.ngc", "M30\n", true,
+      [](const std::string&, const ProgramWriter::Commit& commit) { return commit(); }).has_value() &&
+              read(programs / "part.ngc") == "M30\n",
+          "Accepted replacement publishes the new bytes");
+  fs::remove_all(root);
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
   edits_only_feed_or_speed_numbers();
   replaces_one_line_durably(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   creates_new_programs(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
+  manages_program_files(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   saves_over_a_program_with_its_stamp(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   keeps_external_changes_during_sync();
   a_failed_save_keeps_the_program();

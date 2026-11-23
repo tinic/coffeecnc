@@ -73,7 +73,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "save_program",
     "restore_offset",
     "set_work_rotation",
-    "clear_g92"};
+    "clear_g92",
+    "manage_program_file"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};

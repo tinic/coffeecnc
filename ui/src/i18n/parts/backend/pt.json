@@ -1,5 +1,25 @@
 {
   "backend": {
+    "programFiles": {
+      "manage": "Gerir ficheiros de programa",
+      "unavailable": "A gestão de ficheiros de programa está indisponível.",
+      "nameForRename": "Só é necessário um nome novo ao mudar o nome.",
+      "closing": "O CoffeeCNC está a fechar.",
+      "starting": "O CoffeeCNC está a iniciar.",
+      "busy": "Está a ser carregado outro programa.",
+      "verify": "Não é possível verificar o programa aberto com o controlador sem ligação.",
+      "stop": "Pare o programa aberto antes de o substituir.",
+      "sameOrigin": "Carregue o ficheiro a partir do ecrã LAN do CoffeeCNC.",
+      "choose": "Selecione o ficheiro de programa a carregar.",
+      "size": "O programa excede 16 MiB.",
+      "text": "Carregue um ficheiro de programa em formato de texto.",
+      "uploadFailed": "Não foi possível guardar o ficheiro carregado.",
+      "copySize": "O ficheiro excede 32 MiB.",
+      "nameTaken": "Já existe um ficheiro ou uma pasta com esse nome.",
+      "missing": "O ficheiro ou a pasta já não existe.",
+      "loaded": "Abra outro programa antes de mover ou eliminar este item.",
+      "oneName": "Introduza apenas um nome de ficheiro ou de pasta."
+    },
     "toolChangeMeasurement": {
       "unavailable": "A medição durante uma troca de ferramenta do programa não está disponível.",
       "requiresToolAndSetter": "É necessária uma ferramenta de corte na tabela e um apalpador fixo.",

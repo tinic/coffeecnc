@@ -95,6 +95,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         // telemetry: the adapter still has to attempt the stop and report its actual outcome.
         if constexpr (std::is_same_v<T, Ready> || std::is_same_v<T, ListDirectory>)
           return allow();
+        if constexpr (std::is_same_v<T, ManageProgramFile>)
+          return allow();
         if constexpr (std::is_same_v<T, Abort> || std::is_same_v<T, JogStopAll>)
           return allow();
         // A new file: nothing of the machine's state decides about it. Replacing the loaded

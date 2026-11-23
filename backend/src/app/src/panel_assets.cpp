@@ -95,6 +95,16 @@ auto content_type_of(std::string_view file) -> std::string_view {
 
 auto is_panel_url(std::string_view url) -> bool { return path_of(url).has_value(); }
 
+auto program_upload_name(std::string_view encoded) -> std::optional<std::string> {
+  auto name = unescaped(encoded);
+  if (!name || name->empty() || name->front() == '.' ||
+      std::ranges::any_of(*name, [](unsigned char c) -> bool {
+        return c == '/' || c == '\\' || c < 0x20 || c == 0x7f;
+      }))
+    return {};
+  return name;
+}
+
 auto resolve_program_part(std::string_view url, std::string_view loaded, ProgramPartLinks links)
     -> std::optional<std::string> {
   if (path_of(url) != program_part_path)

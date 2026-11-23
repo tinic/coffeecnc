@@ -86,6 +86,8 @@ struct MachineConfig {
   std::optional<int> touch_probe_tool{};
   // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
   std::uint16_t remote_port{};
+  // [COFFEECNC] REMOTE_UPLOAD, off by default even when the LAN viewer is enabled.
+  bool remote_upload{};
   // [TRAJ] LINEAR_UNITS: the unit of every length in EMC_STAT and in jog commands.
   LengthUnit machine_units;
   // The only axes accepted: X, Y, Z, in the order of every per-axis array.

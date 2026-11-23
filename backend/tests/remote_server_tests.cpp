@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -60,6 +61,53 @@ auto get(net::io_context& io, std::uint16_t port, http::verb method, const char*
 }
 
 using Viewer = websocket::stream<tcp::socket>;
+
+auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
+            const std::string& origin, const std::string& name, bool replace = false)
+    -> http::status {
+  tcp::socket socket{io};
+  socket.connect({net::ip::address_v4::loopback(), port});
+  http::request<http::string_body> request{http::verb::post, "/program-upload", 11};
+  request.set(http::field::host, host);
+  request.set(http::field::origin, origin);
+  request.set(http::field::content_type, "application/octet-stream");
+  request.set("X-CoffeeCNC-Filename", name);
+  request.set("X-CoffeeCNC-Replace", replace ? "1" : "0");
+  request.body() = "G21\r\nM2\r\n";
+  request.prepare_payload();
+  http::write(socket, request);
+  beast::flat_buffer buffer;
+  http::response<http::string_body> response;
+  http::read(socket, buffer, response);
+  return response.result();
+}
+
+void program_uploads(const std::string& assets) {
+  std::atomic<int> calls{};
+  RemoteServer server{assets, 0, {}, [&](std::string_view name, std::string_view bytes, bool replace)
+      -> std::expected<void, std::string> {
+    ++calls;
+    if (name != "Plate 2.ngc" || bytes != "G21\r\nM2\r\n" || replace)
+      return std::unexpected("The upload was refused.");
+    return {};
+  }};
+  const auto host = "127.0.0.1:" + std::to_string(server.port());
+  net::io_context io;
+  require(upload(io, server.port(), host, "http://other.example", "Plate%202.ngc") ==
+              http::status::forbidden &&
+          upload(io, server.port(), "other.example", "http://other.example", "Plate%202.ngc") ==
+              http::status::forbidden,
+          "Foreign origins and hosts cannot post a program");
+  require(upload(io, server.port(), host, "http://" + host, "..%2Fpart.ngc") ==
+              http::status::bad_request && calls == 0,
+          "An uploaded filename cannot name a path");
+  require(upload(io, server.port(), host, "http://" + host, "Plate%202.ngc") ==
+              http::status::created && calls == 1,
+          "The opted-in route sends the original bytes and decoded name to the disk writer");
+  require(upload(io, server.port(), host, "http://" + host, "Plate%202.ngc", true) ==
+              http::status::conflict && calls == 2,
+          "A writer refusal is reported to the browser");
+}
 
 void connect(Viewer& viewer, std::uint16_t port, const std::string& host,
              const net::ip::address& address = net::ip::address_v4::loopback()) {
@@ -191,6 +239,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto assets = root / "remote-server-assets";
   std::filesystem::create_directories(assets);
   std::ofstream(assets / "index.html") << "<title>Remote test panel</title>";
+  program_uploads(assets.string());
   std::ofstream(root / "remote-server-private.txt") << "outside the panel";
   const std::array aliases{std::string{"shop.mill.example"}, std::string{"Friendly.Example."}};
   RemoteServer server{assets.string(), 0, aliases};
@@ -200,6 +249,8 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto host = "127.0.0.1" + suffix;
   const auto alias = aliases.front() + suffix;
   net::io_context io;
+  require(upload(io, port, host, "http://" + host, "sample.ngc") == http::status::method_not_allowed,
+          "The default viewer has no upload route");
   const auto ipv6 = net::ip::address_v6::loopback();
   const auto host6 = "[::1]" + suffix;
   boost::system::error_code ipv6_unavailable;

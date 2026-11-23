@@ -141,10 +141,10 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">
-      <button class="estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
+      <button class="btn estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
       <button class="btn power-control" :class="{ go: status?.machine === 'off', warning: status?.machine === 'estop' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
       <details ref="menu" v-popover class="state-menu">
-        <summary v-tooltip="t('status.statusBar.appMenu')" class="btn square app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
+        <summary v-tooltip="t('status.statusBar.appMenu')" class="btn app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
         <div class="popover">
           <h3>{{ t('status.statusBar.machine') }}</h3>
           <div class="fact"><span>{{ t('status.statusBar.state') }}</span><span class="state-pill" :class="state.tone"><i class="dot"></i>{{ state.label }}</span></div>
@@ -181,7 +181,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
 .em-nav { display: flex; padding: 3px; gap: 3px; border-radius: 10px; background: var(--bg-sunken); }
-.em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: 7px; background: none; font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
+.em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: var(--control-radius); font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
 .em-nav button:hover { background: var(--control-hover); }
 .em-nav button:active { background: var(--control-active); transition-duration: 0s; }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
@@ -189,8 +189,8 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { font-size: var(--type-lg); }
-.estop { display: flex; align-items: center; justify-content: center; gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; border: 2px solid #941822; border-radius: 9px; box-shadow: inset 0 -2px 0 #74131b; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
-.estop:hover { background: #a51924; }.estop:active { box-shadow: none; transform: translateY(1px); }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.estop { --button-edge: #74131b; gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; color: #fff; font-size: 17px; font-weight: 700; }
+.estop:hover:not(:disabled) { background: #a51924; }.estop:active:not(:disabled) { background: #941822; }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .estop :deep(svg) { width: 22px; height: 22px; }
 .machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: var(--type-md); }
 .jobbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; gap: 20px; }
@@ -199,7 +199,7 @@ h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.3
 .subtitle { margin: 5px 0 0; font-size: var(--type-sm); color: var(--text-dim); }
 .job-action { margin: -6px -4px; }
 .state-menu { position: relative; flex: none; }
-.app-menu-toggle { width: 48px; height: 48px; }
+.app-menu-toggle { width: 48px; height: 48px; padding: 0; }
 .app-menu-toggle :deep(svg) { width: 24px; height: 24px; }
 .state-pill { display: inline-flex; align-items: center; gap: 8px; }
 .state-pill.warn .dot { background: var(--warn); }.state-pill.stop { color: var(--stop); }.state-pill.stop .dot { background: var(--stop); }

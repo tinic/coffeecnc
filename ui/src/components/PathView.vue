@@ -632,7 +632,7 @@ onBeforeUnmount(() => {
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--cut-sample); }.legend .rapid { height: 0; border-top: 1px dashed var(--rapid-sample); background: none; }
 .legend label { display: flex; align-items: center; gap: 4px; min-height: var(--touch); cursor: pointer; }
 .views { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: auto; }
-.views .choice { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
+.views .choice { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: var(--control-radius); color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
 .views .choice:hover { background: var(--control-hover); }
 .views .choice:active { background: var(--control-active); }
 .travel-control { padding-inline: 9px; }

@@ -60,7 +60,7 @@ function reset(): void {
       <span class="value mono">
         {{ dragging !== null ? formatPercent(dragging / 100) : value === null ? '—' : formatPercent(value) }}
       </span>
-      <button class="reset" type="button" :aria-label="t(resetLabels[which])" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="reset">{{ t('manual.override.reset') }}</button>
+      <button class="btn reset" type="button" :aria-label="t(resetLabels[which])" :disabled="disabled || value === null || value === 1 || min > 1 || max < 1" @click="reset">{{ t('manual.override.reset') }}</button>
     </div>
     <div class="row">
       <input
@@ -105,8 +105,7 @@ function reset(): void {
   font-size: 12px;
   font-weight: 500;
 }
-.reset { grid-column: 4; grid-row: 1; min-height: 44px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--control); color: var(--text); font-size: 11px; cursor: pointer; }
-.reset:disabled { color: var(--text-faint); cursor: default; }.reset:hover:not(:disabled) { background: var(--accent-soft); }
+.reset { grid-column: 4; grid-row: 1; padding: 0 6px; font-size: var(--type-sm); }
 
 .off .value {
   color: var(--text-faint);

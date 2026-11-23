@@ -1011,7 +1011,7 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
   if (ended && rcs == RCS_DONE) {
     auto done_point = point;
     done_point.file = file_stamp(impl_->config.parameter_file);
-    loads->synched.store(std::make_shared<const SynchPoint>(std::move(done_point)));
+    loads->synched.store(std::make_shared<const SynchPoint>(done_point));
   }
   else
     impl_->synch_retry = Clock::now() + synch_retry_period;

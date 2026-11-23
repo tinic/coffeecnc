@@ -32,8 +32,9 @@ export function drawPreviewGrid(context: CanvasRenderingContext2D, camera: Camer
   context.strokeStyle = dark ? '#9cbbd0' : '#59788e'
   context.lineWidth = 1
   const fade = Math.min(1, (elevation - 0.1) / 0.26)
+  const gridOpacity = dark ? 0.16 : 0.22
   for (const major of [false, true]) {
-    context.globalAlpha = fade * (major ? 0.16 : 0.08)
+    context.globalAlpha = fade * gridOpacity * (major ? 1 : 0.5)
     context.beginPath()
     for (let x = x0; x <= x1; x++) if ((x % 5 === 0) === major) line(x, y0, x, y1)
     for (let y = y0; y <= y1; y++) if ((y % 5 === 0) === major) line(x0, y, x1, y)

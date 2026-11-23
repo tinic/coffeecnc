@@ -2339,6 +2339,53 @@ void offset_history() {
   rig.expect(std::format(R"("type":"restore_offset","entry":{})", zero.id), "rejected",
              "Wait for the interpreter and motion to become idle.");
   rig.acted({}, "A refused restore sends nothing");
+  rig.port.state.interp = InterpState::idle;
+
+  // The XY rotation from the offset editor: of an inactive system as written, of the active one
+  // as the status shows it; restored with G10 L2 R.
+  rig.accepted(R"("type":"set_work_rotation","wcs":4,"rotation_xy":30)");
+  rig.acted({"mdi G10 L2 P4 R30"}, "The rotation of an inactive system");
+  const auto rotated = newest();
+  require(rotated.source == HistorySource::work_offset_table && rotated.number == 4 &&
+              rotated.changes.size() == 1 && rotated.changes[0].field == HistoryField::rotation_xy &&
+              !rotated.changes[0].before && rotated.changes[0].after == 30,
+          "A rotation of an inactive system is recorded when it is written");
+  rig.clock += 10s;
+  auto turned = machine({10, 10, -21}, end_mill(50, 6));
+  observe(turned);
+  turned.status.offsets.rotation_xy = 15;
+  applies("mdi", turned);
+  rig.accepted(R"("type":"set_work_rotation","wcs":1,"rotation_xy":15)");
+  rig.acted({"mdi G10 L2 P1 R15"}, "The rotation of the active system");
+  const auto active_rotation = newest();
+  require(active_rotation.source == HistorySource::work_offset_table &&
+              active_rotation.number == 1 && active_rotation.changes.size() == 1 &&
+              active_rotation.changes[0].before == 0 && active_rotation.changes[0].after == 15,
+          "A rotation of the active system is recorded from the status");
+  applies("mdi", machine({10, 10, -21}, end_mill(50, 6)));
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", active_rotation.id));
+  rig.acted({"mdi G10 L2 P1 R0"}, "A rotation is restored with G10 L2 R");
+
+  // The G92/G52 clear: one entry of the offset editor, undone with G52.
+  rig.clock += 10s;
+  auto shift = machine({10, 10, -21}, end_mill(50, 6));
+  shift.status.offsets.g92 = {4, 9, 0};
+  observe(shift);
+  auto cleared = shift;
+  cleared.status.offsets.g92 = {0, 0, 0};
+  applies("mdi", cleared);
+  rig.accepted(R"("type":"clear_g92")");
+  rig.acted({"mdi G92.1"}, "G92.1 clears the shift");
+  const auto clear = newest();
+  require(clear.source == HistorySource::work_offset_table && clear.target == HistoryTarget::g92 &&
+              clear.changes.size() == 2 && clear.changes[0].before == 4 &&
+              clear.changes[0].after == 0 && clear.changes[1].before == 9,
+          "A clear of the shift is recorded with what it cleared");
+  applies("mdi", shift);
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", clear.id));
+  rig.acted({"mdi G52 X[4+0/[#5210+[1 AND [#5213 EQ 0]"
+             " AND [#5214 EQ 0] AND [#5215 EQ 0] AND [#5216 EQ 0]]]] Y9"},
+            "and undone with G52");
 
   Rig plain;
   plain.expect(R"("type":"restore_offset","entry":1)", "rejected",

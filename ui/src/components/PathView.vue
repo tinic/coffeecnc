@@ -333,6 +333,10 @@ const colours = {
   dark: { travel: '#7f95a7', rapid: '#8b9dae', executed: '#84bbff', marker: '#ffbd61', outdated: '#8996a3',
     picked: '#ff8a4c', halo: '#1c242d', axes: ['#f28c87', '#83cea4', '#91b8ff'] },
 } as const
+const legendInk = computed(() => {
+  const dark = isDarkTheme(theme.value)
+  return { '--cut-sample': toolColour(0, dark), '--rapid-sample': colours[dark ? 'dark' : 'light'].rapid }
+})
 
 function drawGrid(): void {
   const element = grid.value
@@ -601,18 +605,18 @@ onBeforeUnmount(() => {
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
-      <div class="legend">
+      <div class="legend" :style="legendInk">
         <span v-if="probeFixture">{{ t('program.pathView.simulatedFixtures') }}</span>
         <span v-if="!probeFixture || drawn"><i class="feed"></i>{{ t('program.pathView.cut') }}</span>
         <span v-if="!probeFixture || drawn"><i class="rapid"></i>{{ t('program.pathView.rapid') }}</span>
         <label v-if="toolBody"><input v-model="showTool" type="checkbox" />{{ t('program.pathView.tool') }}</label>
       </div>
       <div class="views">
-        <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
-        <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
-        <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
-        <button v-tooltip="t('program.pathView.fit')" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
-        <button v-tooltip="t('program.pathView.travelTooltip')" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
+        <button v-tooltip="t('program.pathView.fit')" class="tone-control" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button v-tooltip="t('program.pathView.travelTooltip')" class="tone-control" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
         <slot />
       </div>
     </div>
@@ -620,15 +624,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.viewport { position: relative; height: calc(100% - 42px); background: var(--preview-backdrop); }
-.work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 22%, transparent 74%); }
+.pathview { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.viewport { position: relative; flex: 1; min-height: 0; background: var(--preview-backdrop); }
+.work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 28%, transparent 83%); }
 .toolpath-canvas { position: relative; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
-.scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }
-.legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
-.legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-.views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
-.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: 11px; color: var(--text-dim); }
+.scene-bottom { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; min-height: 52px; padding: 4px 12px; color: var(--text-dim); font-size: var(--type-sm); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--cut-sample); }.legend .rapid { height: 0; border-top: 1px dashed var(--rapid-sample); background: none; }
+.legend label { display: flex; align-items: center; gap: 4px; min-height: var(--touch); cursor: pointer; }
+.views { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: auto; }
+.views button { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
+.views button:hover { background: var(--control-hover); }
+.views button:active { background: var(--control-active); }
+.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); font-weight: 650; }
+.views :deep(svg) { display: block; width: 16px; height: 16px; }
+.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: var(--type-sm); color: var(--text-dim); }
 .banners { top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .preview-banner { bottom: 12px; }
 .banners span, .preview-banner { padding: 5px 8px; border-radius: 6px; background: var(--panel); }

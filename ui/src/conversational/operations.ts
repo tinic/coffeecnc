@@ -5,7 +5,7 @@ import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
 import { drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
-import { circularPocket, rectangularPocket } from './pocket'
+import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
 
@@ -28,13 +28,13 @@ interface FieldBase {
 }
 export type Field =
   | (FieldBase & { type: 'number'; kind: NumberKind })
-  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[] })
+  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[]; select?: boolean })
 
 export interface Operation {
   id: OperationId
   title: OperationsKey<'operation'>
   /** Shown above the fields: what the operation needs from the tool or the setup. */
-  note?: OperationsKey<'operation'>
+  note?: (values: Values) => OperationsKey<'operation'>
   fields: readonly Field[]
   defaults: (unit: Unit) => Values
   /** The generator's input from the parsed values and the common entries. */
@@ -71,9 +71,9 @@ const num = (key: string, label: LabelKey, kind: NumberKind, when?: (values: Val
   ({ type: 'number', key, label, kind, ...(when ? { when } : {}) })
 const yesNo = [['yes', 'common.yes'], ['no', 'common.no']] as const
 
-const feeds = (plunge: boolean): Field[] => [
+const feeds = (plunge: boolean, label: LabelKey = 'operations.label.plungeFeed'): Field[] => [
   num('feed', 'operations.label.feed', 'feed'),
-  ...(plunge ? [num('plungeFeed', 'operations.label.plungeFeed', 'feed')] : []),
+  ...(plunge ? [num('plungeFeed', label, 'feed')] : []),
   num('rpm', 'operations.label.spindleSpeed', 'rpm'),
   num('clearance', 'operations.label.clearance', 'length'),
 ]
@@ -89,6 +89,35 @@ const size = (value: number, unit: Unit): string => `${number(value, unit)}${uni
 const grid = (values: Values): boolean => values['pattern'] === 'grid'
 const circle = (values: Values): boolean => values['pattern'] === 'circle'
 const slotClosed = (values: Values): boolean => values['ends'] === 'closed'
+
+const inclinedEntry = (values: Values): boolean => values['entry'] === 'helix' || values['entry'] === 'ramp'
+const pocketNote = (values: Values): OperationsKey<'operation'> =>
+  inclinedEntry(values) ? 'operations.operation.inclinedEntry' : 'operations.operation.centreCutting'
+const pocketDefaults = { entry: 'plunge', entryAngle: 3, walls: 'size', coolant: 'off' }
+const pocketFields: Field[] = [
+  { type: 'choice', key: 'entry', label: 'operations.label.pocketEntry', select: true,
+    options: [['plunge', 'operations.option.plunge'], ['helix', 'operations.option.helix'], ['ramp', 'operations.option.ramp']] },
+  num('entryAngle', 'operations.label.entryAngle', 'angle', inclinedEntry),
+  { type: 'choice', key: 'walls', label: 'operations.label.pocketWalls', select: true,
+    options: [['size', 'operations.option.toSize'], ['leave', 'operations.option.leaveStock'], ['finish', 'operations.option.finishWalls']] },
+  num('wallStock', 'operations.label.wallStock', 'length', (values) => values['walls'] === 'leave' || values['walls'] === 'finish'),
+  { type: 'choice', key: 'coolant', label: 'operations.label.pocketCoolant',
+    options: [['off', 'operations.option.coolantOff'], ['flood', 'operations.option.coolantFlood'],
+      ['mist', 'operations.option.coolantMist'], ['both', 'operations.option.coolantBoth']] },
+]
+
+function pocketOptions(v: Parsed): PocketOptions {
+  const entry = v.text('entry')
+  const coolant = v.text('coolant')
+  const walls = v.text('walls')
+  return {
+    entry: entry === 'helix' || entry === 'ramp' ? entry : 'plunge',
+    entryAngle: v.num('entryAngle'),
+    wallStock: walls === 'leave' || walls === 'finish' ? v.num('wallStock') : 0,
+    finish: walls === 'finish',
+    coolant: coolant === 'flood' || coolant === 'mist' || coolant === 'both' ? coolant : 'off',
+  }
+}
 
 export const operations: readonly Operation[] = [
   {
@@ -161,35 +190,35 @@ export const operations: readonly Operation[] = [
   {
     id: 'circular-pocket',
     title: 'operations.operation.circularPocket',
-    note: 'operations.operation.centreCutting',
+    note: pocketNote,
     fields: [
       num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
       num('diameter', 'operations.label.pocketDiameter', 'length'), num('stepover', 'operations.label.stepover', 'percent'),
       num('depth', 'operations.label.depth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
-      ...feeds(true),
+      ...feeds(true, 'operations.label.entryFeed'), ...pocketFields,
     ],
     defaults: (unit) => pick(unit,
-      { x: 0, y: 0, diameter: 30, stepover: 40, depth: 5, depthPerPass: 1, ...speeds.mm },
-      { x: 0, y: 0, diameter: 1.25, stepover: 40, depth: 0.2, depthPerPass: 0.04, ...speeds.inch }),
-    generate: (v, common) => circularPocket({ ...common, x: v.num('x'), y: v.num('y'), diameter: v.num('diameter'),
+      { x: 0, y: 0, diameter: 30, stepover: 40, depth: 5, depthPerPass: 1, wallStock: 0.2, ...pocketDefaults, ...speeds.mm },
+      { x: 0, y: 0, diameter: 1.25, stepover: 40, depth: 0.2, depthPerPass: 0.04, wallStock: 0.008, ...pocketDefaults, ...speeds.inch }),
+    generate: (v, common) => circularPocket({ ...common, ...pocketOptions(v), x: v.num('x'), y: v.num('y'), diameter: v.num('diameter'),
       stepover: v.num('stepover'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
     name: (v, unit) => `circular-pocket-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
   {
     id: 'rectangular-pocket',
     title: 'operations.operation.rectangularPocket',
-    note: 'operations.operation.centreCutting',
+    note: pocketNote,
     fields: [
       num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
       num('width', 'operations.label.sizeX', 'length'), num('height', 'operations.label.sizeY', 'length'),
       num('cornerRadius', 'operations.label.cornerRadius', 'length'), num('stepover', 'operations.label.stepover', 'percent'),
       num('depth', 'operations.label.depth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
-      ...feeds(true),
+      ...feeds(true, 'operations.label.entryFeed'), ...pocketFields,
     ],
     defaults: (unit) => pick(unit,
-      { x: 0, y: 0, width: 40, height: 30, cornerRadius: 0, stepover: 40, depth: 5, depthPerPass: 1, ...speeds.mm },
-      { x: 0, y: 0, width: 1.5, height: 1.25, cornerRadius: 0, stepover: 40, depth: 0.2, depthPerPass: 0.04, ...speeds.inch }),
-    generate: (v, common) => rectangularPocket({ ...common, x: v.num('x'), y: v.num('y'), width: v.num('width'),
+      { x: 0, y: 0, width: 40, height: 30, cornerRadius: 0, stepover: 40, depth: 5, depthPerPass: 1, wallStock: 0.2, ...pocketDefaults, ...speeds.mm },
+      { x: 0, y: 0, width: 1.5, height: 1.25, cornerRadius: 0, stepover: 40, depth: 0.2, depthPerPass: 0.04, wallStock: 0.008, ...pocketDefaults, ...speeds.inch }),
+    generate: (v, common) => rectangularPocket({ ...common, ...pocketOptions(v), x: v.num('x'), y: v.num('y'), width: v.num('width'),
       height: v.num('height'), cornerRadius: v.num('cornerRadius'), stepover: v.num('stepover'), depth: v.num('depth'),
       depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
     name: (v, unit) => `rectangular-pocket-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`, // i18n-ignore

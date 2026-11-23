@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
       "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
       "job": "Auftrag",
@@ -19,6 +20,7 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
       "facing": "Planfräsen",
       "drilling": "Bohrbild",
       "bore": "Helix-Ausdrehen",
@@ -29,6 +31,12 @@
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
+      "entryFeed": "Eintauchvorschub",
+      "pocketEntry": "Eintauchmethode",
+      "entryAngle": "Maximaler Eintauchwinkel",
+      "pocketWalls": "Wände",
+      "wallStock": "Wandaufmaß",
+      "pocketCoolant": "Kühlmittel",
       "sizeX": "Größe X",
       "sizeY": "Größe Y",
       "origin": "Lage von X0 Y0",
@@ -77,6 +85,16 @@
       "boltCircleRadius": "Lochkreisradius"
     },
     "option": {
+      "plunge": "Senkrecht",
+      "helix": "Helix",
+      "ramp": "Lineare Rampe",
+      "toSize": "Auf Maß",
+      "leaveStock": "Aufmaß stehen lassen",
+      "finishWalls": "Jede Ebene schlichten",
+      "coolantOff": "Aus",
+      "coolantFlood": "Flut",
+      "coolantMist": "Nebel",
+      "coolantBoth": "Nebel und Flut",
       "lowerLeft": "Ecke unten links",
       "lowerRight": "Ecke unten rechts",
       "upperLeft": "Ecke oben links",
@@ -96,6 +114,12 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "wallStockNonnegative": "Das Wandaufmaß muss null oder größer sein.",
+      "wallStockPrecision": "Das Wandaufmaß ist für die Koordinatengenauigkeit des Programms zu klein.",
+      "entryAngle": "Der Eintauchwinkel muss größer als 0° und kleiner als 90° sein.",
+      "entryPrecision": "Die Eintauchbahn oder der Winkel ist für die Koordinatengenauigkeit des Programms zu klein.",
+      "pocketTooManyMoves": "Die Tasche würde zu viele Bewegungen erzeugen. Vergrößern Sie die Zustellung, den Bahnabstand oder den Eintauchwinkel.",
+      "wallStockFits": "Das Wandaufmaß lässt zu wenig Platz für das Werkzeug.",
       "jobToolChangeHeight": "Stellen Sie die sichere Z-Höhe für „Anfahren“ über die Freifahrhöhe aller Vorgänge, bevor Sie einen Auftrag mit Werkzeugwechseln speichern.",
       "invalidJob": "Der Auftrag konnte nicht zusammengestellt werden.",
       "jobTooLarge": "Das Programm überschreitet die Speichergrenze von 512 KiB.",

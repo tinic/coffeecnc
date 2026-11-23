@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
       "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
       "job": "作业",
@@ -19,6 +20,7 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
       "facing": "平面铣",
       "drilling": "孔阵列",
       "bore": "螺旋镗孔",
@@ -29,6 +31,12 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "entryFeed": "切入进给",
+      "pocketEntry": "切入方式",
+      "entryAngle": "最大切入角",
+      "pocketWalls": "侧壁",
+      "wallStock": "侧壁余量",
+      "pocketCoolant": "冷却液",
       "sizeX": "X 尺寸",
       "sizeY": "Y 尺寸",
       "origin": "X0 Y0 位置",
@@ -77,6 +85,16 @@
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
+      "plunge": "垂直下刀",
+      "helix": "螺旋切入",
+      "ramp": "直线斜坡",
+      "toSize": "加工至尺寸",
+      "leaveStock": "保留余量",
+      "finishWalls": "逐层精加工",
+      "coolantOff": "关",
+      "coolantFlood": "浇注",
+      "coolantMist": "雾化",
+      "coolantBoth": "雾化和浇注",
       "lowerLeft": "左下角",
       "lowerRight": "右下角",
       "upperLeft": "左上角",
@@ -96,6 +114,12 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "wallStockNonnegative": "侧壁余量必须大于或等于零。",
+      "wallStockPrecision": "侧壁余量小于程序坐标精度。",
+      "entryAngle": "切入角必须大于 0° 且小于 90°。",
+      "entryPrecision": "切入路径或角度小于程序坐标精度。",
+      "pocketTooManyMoves": "型腔将产生过多运动。请增大每刀深度、步距或切入角。",
+      "wallStockFits": "保留侧壁余量后，刀具空间不足。",
       "jobToolChangeHeight": "保存包含换刀的作业前，请将“前往”的安全 Z 设在所有操作的退让高度之上。",
       "invalidJob": "无法组合此作业。",
       "jobTooLarge": "程序超过 512 KiB 保存上限。",

@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometry, entry and walls",
       "reviewJob": "Review job",
       "toolChangeHeight": "Tool changes at machine Z {z} {unit}",
       "job": "Job",
@@ -19,6 +20,7 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "inclinedEntry": "Use an end mill rated for the selected entry.",
       "facing": "Facing",
       "drilling": "Hole pattern",
       "bore": "Helical bore",
@@ -29,6 +31,12 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "entryFeed": "Entry feed",
+      "pocketEntry": "Entry",
+      "entryAngle": "Maximum entry angle",
+      "pocketWalls": "Walls",
+      "wallStock": "Wall stock",
+      "pocketCoolant": "Coolant",
       "sizeX": "Size X",
       "sizeY": "Size Y",
       "origin": "X0 Y0 at",
@@ -77,6 +85,16 @@
       "boltCircleRadius": "Bolt circle radius"
     },
     "option": {
+      "plunge": "Plunge",
+      "helix": "Helical",
+      "ramp": "Linear ramp",
+      "toSize": "To size",
+      "leaveStock": "Leave stock",
+      "finishWalls": "Finish each layer",
+      "coolantOff": "Off",
+      "coolantFlood": "Flood",
+      "coolantMist": "Mist",
+      "coolantBoth": "Mist and flood",
       "lowerLeft": "Lower-left corner",
       "lowerRight": "Lower-right corner",
       "upperLeft": "Upper-left corner",
@@ -96,6 +114,12 @@
       "g83": "G83 peck"
     },
     "check": {
+      "wallStockNonnegative": "Wall stock must be zero or greater.",
+      "wallStockPrecision": "Wall stock is too small for this program’s coordinate precision.",
+      "entryAngle": "The entry angle must be greater than 0° and less than 90°.",
+      "entryPrecision": "The entry path or angle is too small for this program’s coordinate precision.",
+      "pocketTooManyMoves": "The pocket would produce too many moves. Increase the depth per pass, stepover, or entry angle.",
+      "wallStockFits": "Wall stock leaves too little room for the tool.",
       "jobToolChangeHeight": "Set Safe Z for Go to above every operation’s clearance before saving a job with tool changes.",
       "invalidJob": "The job could not be assembled.",
       "jobTooLarge": "The program exceeds the 512 KiB save limit.",

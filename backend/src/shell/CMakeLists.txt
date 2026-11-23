@@ -28,11 +28,11 @@ endif()
 message(STATUS "Shell: WebKitGTK ${COFFEECNC_WEBKIT_webkit2gtk-4.1_VERSION}, "
   "GTK ${COFFEECNC_WEBKIT_gtk+-3.0_VERSION}")
 
-# LeakSanitizer's suppressions are looked up in the executable: the file is a source of every
-# program that opens the window, and is empty outside AddressSanitizer builds. Set here, before
-# the first such program (quit_delivery below) is defined.
-set(COFFEECNC_LSAN_SUPPRESSIONS "${PROJECT_SOURCE_DIR}/src/coffeecnc/lsan_suppressions.cpp"
-  CACHE INTERNAL "Source with the LeakSanitizer suppressions of the window's libraries")
+# LeakSanitizer's and ThreadSanitizer's suppressions are looked up in the executable: the file
+# is a source of every program that opens the window, and is empty outside those builds. Set
+# here, before the first such program (quit_delivery below) is defined.
+set(COFFEECNC_SANITIZER_SUPPRESSIONS "${CMAKE_CURRENT_SOURCE_DIR}/sanitizer_suppressions.cpp"
+  CACHE INTERNAL "Source with the sanitizer suppressions of the window's libraries")
 
 add_library(coffeecnc_shell src/panel_window.cpp)
 target_include_directories(coffeecnc_shell PUBLIC include)
@@ -53,9 +53,9 @@ target_link_libraries(coffeecnc_shell_test_hooks PUBLIC coffeecnc_shell
   PRIVATE coffeecnc_project_options ${COFFEECNC_WEBKIT_LINK_LIBRARIES})
 coffeecnc_enable_analyzers(coffeecnc_shell_test_hooks)
 
-if(BUILD_TESTING AND NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
+if(BUILD_TESTING)
   add_executable(coffeecnc_quit_delivery_tests ../../tests/shell/quit_delivery_tests.cpp
-    ${COFFEECNC_LSAN_SUPPRESSIONS})
+    ${COFFEECNC_SANITIZER_SUPPRESSIONS})
   target_include_directories(coffeecnc_quit_delivery_tests PRIVATE src)
   target_include_directories(coffeecnc_quit_delivery_tests SYSTEM PRIVATE ${COFFEECNC_WEBKIT_INCLUDE_DIRS})
   target_link_libraries(coffeecnc_quit_delivery_tests PRIVATE coffeecnc_shell

@@ -39,8 +39,8 @@ target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linux
   PRIVATE coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
-# COFFEECNC_LSAN_SUPPRESSIONS: set in src/shell, a source of every program that opens the window.
-add_executable(coffeecnc main.cpp ${COFFEECNC_LSAN_SUPPRESSIONS})
+# COFFEECNC_SANITIZER_SUPPRESSIONS: set in src/shell, a source of every program that opens the window.
+add_executable(coffeecnc main.cpp ${COFFEECNC_SANITIZER_SUPPRESSIONS})
 target_link_libraries(coffeecnc PRIVATE coffeecnc_application coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc)
 

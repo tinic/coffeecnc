@@ -414,7 +414,7 @@ if(BUILD_TESTING)
         # The application with the real panel in its window, as LinuxCNC's DISPLAY program on a
         # display of its own (Xvfb): the test drives the page and watches LinuxCNC.
         add_executable(coffeecnc_shell_tests tests/shell/shell_tests.cpp
-          ${COFFEECNC_LSAN_SUPPRESSIONS})
+          ${COFFEECNC_SANITIZER_SUPPRESSIONS})
         target_compile_definitions(coffeecnc_shell_tests PRIVATE
           COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
           COFFEECNC_SOURCE_UI_DIRECTORY="${PROJECT_SOURCE_DIR}/../ui/dist"
@@ -423,17 +423,9 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_shell_tests PRIVATE coffeecnc_application
           coffeecnc_shell_test_hooks coffeecnc_project_options nlohmann_json::nlohmann_json)
         coffeecnc_enable_analyzers(coffeecnc_shell_tests)
-        # Not registered under ThreadSanitizer: with the GUI the tests are UNQUALIFIED there, not
-        # passing. GLib, GIO, GTK, WebKit and JavaScriptCore are not instrumented, and
-        # ThreadSanitizer reports data races between their own threads. Run by hand at 4588b3b
-        # (logs and the distinct stacks in build/sim-history/4588b3b/tsan-gui/): 133 reports in
-        # the mm shell test, 140 in the inch one, 76 in the start-up test. In every one the top
-        # frame of both accesses is in libglib-2.0, libgio-2.0, libjavascriptcoregtk-4.1,
-        # libwebkit2gtk-4.1, libfontconfig, libpangoft2 or libc: no report has an access-origin
-        # stack in CoffeeCNC code. (At ca88a0a 119 reports had one; they went when data began to
-        # cross to the GTK thread through the shell's own queue.) Each of these programs then
-        # exits 66 on the reports. All 202 checks of each shell test passed in those runs. No
-        # suppression is in place. The programs still build with the preset.
+        # Under ThreadSanitizer the window's programs ignore what GLib, GTK and WebKitGTK do
+        # in the runtime's interceptors (src/shell/sanitizer_suppressions.cpp): those libraries
+        # are not instrumented. Every access of CoffeeCNC's code is checked.
         # `cmake --install` into a prefix below the build directory: the layout, the one HAL
         # fragment, nothing else installed.
         set(installed ${PROJECT_BINARY_DIR}/installed)
@@ -453,8 +445,9 @@ if(BUILD_TESTING)
           list(APPEND installed_programs package:${installed}/package/root/usr/bin/coffeecnc)
         endif()
         # The build tree's GUI tests need the fallbacks: the test program is not installed.
-        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS AND COFFEECNC_DEVELOPMENT_PATHS)
-          add_executable(coffeecnc_quit_application_tests tests/shell/quit_application_tests.cpp)
+        if(COFFEECNC_DEVELOPMENT_PATHS)
+          add_executable(coffeecnc_quit_application_tests tests/shell/quit_application_tests.cpp
+            ${COFFEECNC_SANITIZER_SUPPRESSIONS})
           target_include_directories(coffeecnc_quit_application_tests PRIVATE src/coffeecnc src/shell/src)
           target_include_directories(coffeecnc_quit_application_tests SYSTEM PRIVATE
             $<TARGET_PROPERTY:coffeecnc_shell,INCLUDE_DIRECTORIES>)
@@ -530,24 +523,22 @@ if(BUILD_TESTING)
             RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500 FIXTURES_REQUIRED panel
             SKIP_RETURN_CODE 77)
         endif()
-        if(NOT "thread" IN_LIST COFFEECNC_SANITIZERS)
-          # The INSTALLED executable as the DISPLAY program, from the prefix and from the
-          # unpacked package: no --ui, no COFFEECNC_* setting. It names the installed panel and
-          # the installed helper, a program's preview becomes ready, and SIGTERM ends it and
-          # LinuxCNC with no process left (run.sh).
-          foreach(entry IN LISTS installed_programs)
-            string(REGEX MATCH "^[a-z]+" tree ${entry})
-            string(REGEX REPLACE "^[a-z]+:" "" program ${entry})
-            add_test(NAME linuxcnc_installed_${tree}_start
-              COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
-              -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_installed_${tree}_start
-              ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
-              --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh,installed ${program})
-            set_tests_properties(linuxcnc_installed_${tree}_start PROPERTIES LABELS linuxcnc
-              RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500
-              FIXTURES_REQUIRED installed_${tree})
-          endforeach()
-        endif()
+        # The INSTALLED executable as the DISPLAY program, from the prefix and from the
+        # unpacked package: no --ui, no COFFEECNC_* setting. It names the installed panel and
+        # the installed helper, a program's preview becomes ready, and SIGTERM ends it and
+        # LinuxCNC with no process left (run.sh).
+        foreach(entry IN LISTS installed_programs)
+          string(REGEX MATCH "^[a-z]+" tree ${entry})
+          string(REGEX REPLACE "^[a-z]+:" "" program ${entry})
+          add_test(NAME linuxcnc_installed_${tree}_start
+            COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_installed_${tree}_start
+            ${PROJECT_SOURCE_DIR}/tests/shell/under_xvfb.sh --terminate-after=6
+            --check=${PROJECT_SOURCE_DIR}/tests/shell/running_checks.sh,installed ${program})
+          set_tests_properties(linuxcnc_installed_${tree}_start PROPERTIES LABELS linuxcnc
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 500
+            FIXTURES_REQUIRED installed_${tree})
+        endforeach()
       endif()
     endif()
   endif()

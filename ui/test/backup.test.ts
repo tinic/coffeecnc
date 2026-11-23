@@ -47,12 +47,13 @@ describe('the simulator', () => {
     expect(result(checked).outcome).toBe('accepted')
     const summary = checked.find((m): m is RestoreSummary => m.type === 'restore_summary')
     expect(summary?.files.map((file) => [file.role, file.change])).toEqual([
-      ['ini', 'same'], ['hal', 'same'], ['tool_table', 'changed'], ['parameters', 'same']])
+      ['ini', 'same'], ['hal', 'same'], ['tool_table', 'changed'], ['parameters', 'at_exit']])
     expect(result(run({ id: 4, type: 'restore', path, token: 'wrong' })).reason)
       .toBe('The backup file changed after it was checked. Check it again.')
     expect(result(run({ id: 5, type: 'restore', path, token: summary?.token ?? '' })).outcome).toBe('accepted')
     const again = run({ id: 6, type: 'check_restore', path }).find((m): m is RestoreSummary => m.type === 'restore_summary')
-    expect(again?.files.every((file) => file.change === 'same')).toBe(true)
+    // The work offsets are compared when LinuxCNC stops, so they are never "same" beforehand.
+    expect(again?.files.every((file) => file.change === (file.role === 'parameters' ? 'at_exit' : 'same'))).toBe(true)
   })
 
   it('refuses a restore while the machine is on or the file is not a backup', () => {

@@ -285,8 +285,11 @@
       "change": {
         "new": "新規",
         "changed": "変更あり",
-        "same": "同じ"
-      }
+        "same": "同じ",
+        "at_exit": "LinuxCNC 停止時"
+      },
+      "symlink": "リンク: ファイルがリンクを置き換えます",
+      "atExitNote": "LinuxCNC は停止時にワークオフセット (.var) を書き込みます。その後で比較して書き込みます。"
     }
   }
 }

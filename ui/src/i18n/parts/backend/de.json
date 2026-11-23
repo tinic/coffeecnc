@@ -599,7 +599,17 @@
       "damaged": "Das Archiv ist beschädigt: {detail}",
       "notRegular": "{name} ist keine normale Datei: Das Archiv wird abgelehnt.",
       "unknownError": "unbekannter Fehler",
-      "notPutBack": " Sie konnte nicht zurückgeschrieben werden: {detail}"
+      "notPutBack": "Die Wiederherstellung wurde nicht abgeschlossen: {detail} Diese Dateien konnten nicht zurückgesetzt werden: {files}. Die Dateien von vor der Wiederherstellung sind in {path}.",
+      "busy": "Der Datenordner wird verwendet: das Ergebnis der letzten Wiederherstellung wird beim nächsten Start gezeigt.",
+      "alreadyRestored": "Die Sicherung wurde wiederhergestellt: alle Dateien enthielten bereits den Inhalt der Sicherung.",
+      "interrupted": "Eine Wiederherstellung wurde beim Schreiben der Dateien unterbrochen: einige Dateien können aus der Sicherung sein, andere nicht. Die Dateien von vor der Wiederherstellung sind in {path}: stellen Sie diese Sicherung wieder her, um zurückzukehren.",
+      "noMachine": "Diese Sicherung nennt keine Maschine; diese Maschine ist {machine}. Sie wird nicht wiederhergestellt.",
+      "halNotNamed": "{name} ist keine HAL-Datei, die die INI-Datei nennt: das Archiv wird abgelehnt.",
+      "unreachable": "{name} kann nicht wiederhergestellt werden: {detail}. Das Archiv wird abgelehnt.",
+      "changedAfter": "{path} hat sich geändert, nachdem die Wiederherstellung vorbereitet wurde: nichts wurde geschrieben.",
+      "notMarked": "der Beginn der Wiederherstellung konnte nicht vermerkt werden: {detail}",
+      "readHere": "{path} kann hier nicht gelesen werden",
+      "writeHere": "{path} kann hier nicht geschrieben werden"
     }
   }
 }

@@ -1,5 +1,6 @@
 #include <coffeecnc/app/backup_archive.hpp>
 #include <coffeecnc/app/machine_data.hpp>
+#include <coffeecnc/app/restore_helper.hpp>
 #include <coffeecnc/core/command_policy.hpp>
 
 #include "fake_tool_model_files.hpp"
@@ -10,13 +11,24 @@
 
 #include <algorithm>
 #include <chrono>
+#include <expected>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -42,6 +54,13 @@ constexpr auto data = "/home/cnc/.local/share/coffeecnc/G0759";
 constexpr auto usb = "/media/cnc/STICK";
 constexpr auto now = 1795000000000ms; // 2026-11-18 11:06:40 UTC
 
+auto in_data(std::string_view name) -> std::string {
+  return std::string(data) + '/' + std::string(name);
+}
+auto in_staging(std::string_view name) -> std::string {
+  return in_data("restore/") + std::string(name);
+}
+
 auto paths(std::string machine = "G0759") -> MachineDataPaths {
   return {std::move(machine),
           ini,
@@ -56,21 +75,24 @@ struct Fixture {
   FakeDisk disk;
   FakeToolModelFiles files{disk};
   std::unique_ptr<MachineData> machine;
+  int pauses = 0;
 
   Fixture() {
     disk.directories.insert({config, std::string(config) + "/hal", data, usb});
-    disk.files[ini] = "[EMC]\nMACHINE = G0759\n";
+    disk.files[ini] = "[EMC]\nMACHINE = G0759\n[HAL]\nHALFILE = g0759.hal\n";
     disk.files[hal] = "loadrt trivkins\n";
     disk.files[custom] = "net estop-loop iocontrol.0.user-enable-out\n";
     disk.files[postgui] = "net spindle coffeecnc.spindle-rpm\n";
     disk.files[tools] = "T1 P1 Z48.2 D6 ;End mill\n";
     disk.files[var] = "5221\t10.000000\n5222\t20.000000\n";
-    disk.files[std::string(data) + "/tool-models.json"] = R"({"version":1})";
-    disk.files[std::string(data) + "/offset-history.json"] = R"({"version":1,"entries":[]})";
+    disk.files[in_data("tool-models.json")] = R"({"version":1})";
+    disk.files[in_data("offset-history.json")] = R"({"version":1,"entries":[]})";
     open();
   }
   void open(MachineDataPaths given = paths()) {
-    machine = std::make_unique<MachineData>(files, std::move(given), [] { return now; });
+    machine = std::make_unique<MachineData>(
+        files, std::move(given), [] { return now; },
+        [this](std::chrono::milliseconds) { ++pauses; });
   }
   // The `backup_written` message of a backup to the stick.
   auto backup() -> Json {
@@ -88,8 +110,18 @@ struct Fixture {
   }
   [[nodiscard]] auto change_of(const Json& summary, const std::string& name) const -> std::string {
     const auto& listed = summary["files"];
-    const auto found = std::ranges::find_if(listed, [&](const Json& file) { return file["name"] == name; });
+    const auto found =
+        std::ranges::find_if(listed, [&](const Json& file) { return file["name"] == name; });
     return found == listed.end() ? "absent" : (*found)["change"].get<std::string>();
+  }
+  // Stages a restore of the backup at `path`; it must quit.
+  void stage(const std::string& path) {
+    const auto done = machine->restore(path, summary(path)["token"], [] { return std::string{}; });
+    require(done.outcome == CommandOutcome::accepted && done.quit && machine->staged(),
+            "A restore is staged: " + done.reason);
+  }
+  [[nodiscard]] auto plan() const -> Json {
+    return Json::parse(disk.files.at(in_staging("plan.json")));
   }
 };
 
@@ -175,6 +207,45 @@ void backup_contents() {
           "A backup that cannot be written fails");
 }
 
+// Review #274, 10: a symbolic link of a configuration file made the backup fail. It is backed
+// up by its content, the manifest says it was a link, and the summary says the restore
+// replaces the link by the file.
+void symlinked_configuration() {
+  Fixture f;
+  const std::string shared = "/home/cnc/shared/g0759.ini";
+  f.disk.files[shared] = f.disk.files[ini];
+  f.disk.files.erase(ini);
+  f.disk.links[ini] = shared;
+  f.disk.files["/home/cnc/shared/tool.tbl"] = f.disk.files[tools];
+  f.disk.files.erase(tools);
+  f.disk.links[tools] = "/home/cnc/shared/tool.tbl";
+  const auto written = f.backup();
+  const std::string path = written["path"];
+  const auto entries = read_archive(f.disk.files.at(path));
+  require(entries && std::ranges::any_of(*entries,
+                                         [&](const ArchiveEntry& entry) {
+                                           return entry.name == "config/g0759.ini" &&
+                                                  entry.bytes == f.disk.files[shared];
+                                         }),
+          "A linked INI file is backed up by its content");
+  const auto manifest = Json::parse(entries->front().bytes);
+  const auto listed = std::ranges::find_if(
+      manifest["files"], [](const Json& file) { return file["name"] == "tool-table/tool.tbl"; });
+  require(listed != manifest["files"].end() && (*listed)["symlink"] == true,
+          "The manifest says the tool table was a link");
+  const auto summary = f.summary(path);
+  for (const auto& file : summary["files"])
+    require(file["symlink"] == (file["target"] == ini || file["target"] == tools),
+            "The summary says which targets are links: " + file.dump());
+  // The restore replaces the link; where it pointed is not written.
+  f.disk.files["/home/cnc/shared/tool.tbl"] = "T1 P1 Z99\n";
+  f.stage(path);
+  require(apply_staged_restore(f.files, data, now + 60s).has_value(), "The helper writes");
+  require(!f.disk.links.contains(tools) && f.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n" &&
+              f.disk.files["/home/cnc/shared/tool.tbl"] == "T1 P1 Z99\n",
+          "The link is replaced by the file; its target is left as it is");
+}
+
 void check_and_changes() {
   Fixture f;
   const std::string path = f.backup()["path"];
@@ -183,7 +254,8 @@ void check_and_changes() {
               summary["files"].size() == 8 && summary["token"].get<std::string>().size() == 16,
           "The summary has the machine, the time, every file and a token");
   for (const auto& file : summary["files"])
-    require(file["change"] == "same", "Right after the backup every file is the same");
+    require(file["change"] == (file["role"] == "parameters" ? "at_exit" : "same"),
+            "Right after the backup every file is the same; the .var is compared at exit");
   f.disk.files[tools] = "T1 P1 Z50 D6 ;End mill\n";
   f.disk.files.erase(custom);
   summary = f.summary(path);
@@ -213,17 +285,20 @@ void check_and_changes() {
           "A tool table with nowhere to go is refused");
 }
 
-// A crafted archive: a manifest that lists `name` with `role`, and that entry.
-auto crafted(const std::string& role, const std::string& name) -> std::string {
-  const Json manifest{{"format", "coffeecnc-backup"},
-                      {"version", 1},
-                      {"machine_id", "G0759"},
-                      {"created", 1},
-                      {"files",
-                       {{{"role", "ini"}, {"name", "config/g0759.ini"}},
-                        {{"role", role}, {"name", name}}}}};
+// A crafted archive: a manifest of `machine` that lists `name` with `role`, that entry, and an
+// INI file with `ini_text`.
+auto crafted(const std::string& role, const std::string& name,
+             const std::string& ini_text = "[EMC]\n", const Json& machine = Json("G0759"))
+    -> std::string {
+  const Json manifest{
+      {"format", "coffeecnc-backup"},
+      {"version", 1},
+      {"machine_id", machine},
+      {"created", 1},
+      {"files",
+       {{{"role", "ini"}, {"name", "config/g0759.ini"}}, {{"role", role}, {"name", name}}}}};
   return *write_archive({{"coffeecnc-backup.json", manifest.dump(), 0},
-                         {"config/g0759.ini", "[EMC]\n", 0},
+                         {"config/g0759.ini", ini_text, 0},
                          {name, "owned\n", 0}});
 }
 
@@ -264,10 +339,93 @@ void path_traversal() {
   f.disk.files[path] = with_link("config/g0759.hal", "/etc/passwd");
   require(f.check(path).reason.find("not a regular file") != std::string::npos,
           "A symbolic link is refused: " + f.check(path).reason);
-  f.disk.files[path] = *write_archive({{"coffeecnc-backup.json", "{}", 0}, {"a", "1", 0}, {"a", "2", 0}});
+  f.disk.files[path] =
+      *write_archive({{"coffeecnc-backup.json", "{}", 0}, {"a", "1", 0}, {"a", "2", 0}});
   require(f.check(path).outcome == CommandOutcome::rejected, "A name twice is refused");
   f.disk.files.erase(path);
   require(f.disk.files == before, "Nothing was written by any of them");
+}
+
+// Review #274, 4: the hal role took any plain path below the configuration folder (scripts, the
+// .var, the tool table), and a symbolically linked subfolder led out of it.
+void hal_role_is_bounded() {
+  Fixture f;
+  const std::string path = std::string(usb) + "/evil.tar.gz";
+  const auto refused = [&](const std::string& archive, const std::string& what) {
+    f.disk.files[path] = archive;
+    const auto done = f.check(path);
+    require(done.outcome == CommandOutcome::rejected, "Refused: " + what);
+    return done.reason;
+  };
+  // Named by neither INI file.
+  auto reason = refused(crafted("hal", "config/scripts/run.hal"), "a HAL file no INI names");
+  require(reason == "config/scripts/run.hal is not a HAL file the INI file names: the archive is "
+                    "refused.",
+          "It says why: " + reason);
+  // Named by the archive's INI, but the .var file, the tool table, a script.
+  for (const auto* name : {"g0759.var", "tool.tbl", "start.sh"})
+    refused(
+        crafted("hal", std::format("config/{}", name), std::format("[HAL]\nHALFILE = {}\n", name)),
+        std::format("the archive's INI names {} as a HAL file", name));
+  // Named by the archive's INI, a HAL file: allowed, with its arguments cut off.
+  f.disk.files[path] =
+      crafted("hal", "config/extra.tcl", "[HAL]\n# a comment\nHALFILE = extra.tcl -arg 1\n");
+  require(f.check(path).outcome == CommandOutcome::accepted,
+          "A HAL file the archive's INI names is restored: " + f.check(path).reason);
+  // This machine's own HAL file, but its subfolder is a symbolic link out of the folder.
+  const std::string backup = f.backup()["path"];
+  f.disk.links[std::string(config) + "/hal"] = "/etc/coffeecnc-outside";
+  f.disk.files["/etc/coffeecnc-outside/custom.hal"] = "outside\n";
+  f.disk.files[path] = f.disk.files[backup];
+  reason = refused(f.disk.files[path], "a HAL file reached through a linked subfolder");
+  require(reason.find("symbolic link") != std::string::npos &&
+              reason.find("custom.hal") != std::string::npos,
+          "It says the link: " + reason);
+  // Linked after the restore was prepared: the helper does not write through it either.
+  f.disk.links.erase(std::string(config) + "/hal");
+  f.disk.files.erase(custom);
+  f.stage(backup);
+  f.disk.links[std::string(config) + "/hal"] = "/etc/coffeecnc-outside";
+  require(!apply_staged_restore(f.files, data, now + 60s).has_value(), "The helper refuses");
+  require(f.disk.files["/etc/coffeecnc-outside/custom.hal"] == "outside\n" &&
+              !f.disk.files.contains("/etc/coffeecnc-outside/custom.hal.coffeecnc-tmp"),
+          "Nothing is written outside the configuration folder");
+}
+
+// Review #274, 5: a backup without a machine ID restored onto any machine, and the pre-restore
+// copy was written without one.
+void machine_id_required() {
+  Fixture f;
+  const std::string path = std::string(usb) + "/nobody.tar.gz";
+  f.disk.files[path] = crafted("data", "data/tool-models.json", "[EMC]\n", Json(nullptr));
+  const auto done = f.check(path);
+  require(done.outcome == CommandOutcome::rejected &&
+              done.reason == "This backup does not name its machine; this machine is G0759. It "
+                             "is not restored.",
+          "A backup without a machine ID is refused on a machine with one: " + done.reason);
+  // The pre-restore copy names this machine, so it restores here and nowhere else.
+  const std::string backup = f.backup()["path"];
+  f.disk.files[tools] = "changed\n";
+  f.stage(backup);
+  require(f.plan()["machine_id"] == "G0759", "The plan names the machine");
+  const auto applied = apply_staged_restore(f.files, data, now + 60s);
+  require(applied.has_value(), "Applied");
+  const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
+  const auto saved = read_archive(f.disk.files.at(copy));
+  require(saved && Json::parse(saved->front().bytes)["machine_id"] == "G0759",
+          "The pre-restore copy names this machine");
+  f.open(paths("BENCH"));
+  require(f.check(copy).outcome == CommandOutcome::rejected, "and is refused on another one");
+  // A plan of another machine's data folder is refused by the helper.
+  f.open();
+  f.disk.files[tools] = "changed again\n";
+  f.stage(backup);
+  auto plan = f.plan();
+  plan["machine_id"] = "BENCH";
+  f.disk.files[in_staging("plan.json")] = plan.dump();
+  require(!apply_staged_restore(f.files, data, now + 120s).has_value() &&
+              f.disk.files[tools] == "changed again\n",
+          "A plan of another machine is not written");
 }
 
 void refusal_states() {
@@ -325,13 +483,11 @@ void restore_and_apply() {
   f.disk.files[tools] = "T1 P1 Z99 D6\n";
   f.disk.files[var] = "5221\t0\n";
   f.disk.files.erase(custom);
-  const std::string token = f.summary(path)["token"];
-  const auto done = f.machine->restore(path, token, allow);
-  require(done.outcome == CommandOutcome::accepted && done.quit && f.machine->staged(),
-          "A restore is staged and quits: " + done.reason);
+  f.disk.file_modes[tools] = 0640;
+  f.disk.groups[tools] = 27;
+  f.stage(path);
   require(f.disk.files[tools] == "T1 P1 Z99 D6\n", "Nothing is written while LinuxCNC runs");
-  const auto plan = Json::parse(f.disk.files.at(std::string(data) + "/restore/plan.json"));
-  require(plan["files"].size() == 3, "Only the three files that change are staged");
+  require(f.plan()["files"].size() == 3, "Only the three files that change are staged");
   // LinuxCNC writes its .var as it stops: the helper comes after that.
   f.disk.files[var] = "5221\t0\n5222\t0\n";
   const auto applied = apply_staged_restore(f.files, data, now + 60s);
@@ -339,16 +495,23 @@ void restore_and_apply() {
   require(f.disk.files[tools] == original_tools && f.disk.files[var] == original_var &&
               f.disk.files.contains(custom),
           "The tool table, the .var and the HAL file are the backup's");
-  const auto copy = std::string(data) + "/pre-restore-20261118-110740.tar.gz";
+  require(f.disk.file_modes[tools] == 0640 && f.disk.groups[tools] == 27 &&
+              f.disk.file_modes[custom] == 0644,
+          "Review #274, 10: a replaced file keeps its mode and group; a new one is 0644");
+  const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
   const auto saved = read_archive(f.disk.files.at(copy));
-  require(saved && saved->size() == 4, "The files before the restore are kept as a backup, with the INI file");
-  require(std::ranges::any_of(*saved, [](const ArchiveEntry& e) {
-            return e.name == "parameters/g0759.var" && e.bytes == "5221\t0\n5222\t0\n";
-          }),
+  require(saved && saved->size() == 4,
+          "The files before the restore are kept as a backup, with the INI file");
+  require(std::ranges::any_of(*saved,
+                              [](const ArchiveEntry& e) {
+                                return e.name == "parameters/g0759.var" &&
+                                       e.bytes == "5221\t0\n5222\t0\n";
+                              }),
           "The pre-restore copy has the .var as LinuxCNC left it");
-  require(!f.disk.files.contains(std::string(data) + "/restore/plan.json") &&
-              !f.disk.files.contains(std::string(data) + "/restore/0.staged"),
-          "The plan and the staged copies are removed");
+  require(!f.disk.files.contains(in_staging("plan.json")) &&
+              !f.disk.files.contains(in_staging("0.staged")) &&
+              !f.disk.files.contains(in_staging("applying.json")),
+          "The plan, the marker and the staged copies are removed");
   require(apply_staged_restore(f.files, data, now).value_or(99) == 0, "A second run does nothing");
   f.open();
   const auto notice = f.machine->take_notice();
@@ -360,63 +523,433 @@ void restore_and_apply() {
   // The pre-restore copy is a backup the panel can restore.
   const auto back = f.summary(copy);
   require(back["files"].size() == 3, "The copy checks (the HAL file was new, so it is not in it)");
-  // Nothing changed: nothing staged, no quit.
-  f.open();
+  // Without a .var file, nothing that changes: nothing staged, no quit.
+  auto bare = paths();
+  bare.parameter_file.clear();
+  f.open(bare);
   const std::string again = f.backup()["path"];
   const auto same = f.machine->restore(again, f.summary(again)["token"], allow);
   require(same.outcome == CommandOutcome::accepted && !same.quit && !f.machine->staged(),
           "A restore that changes nothing does not quit");
 }
 
+// Review #274, 2: a .var file that was the same when the restore was prepared was not staged,
+// and LinuxCNC writes its offsets from memory as it stops: the backup's offsets were lost.
+void var_decided_after_exit() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  const auto backed_up = f.disk.files[var];
+  f.stage(path); // every file is the same now
+  const auto plan = f.plan();
+  require(plan["files"].size() == 1 && plan["files"][0]["role"] == "parameters",
+          "The .var file is staged although it is the same now");
+  f.disk.files[var] = "5221\t99\n"; // what LinuxCNC held in memory
+  const auto applied = apply_staged_restore(f.files, data, now + 60s);
+  require(applied && *applied == 1 && f.disk.files[var] == backed_up,
+          "The helper writes the backup's .var after LinuxCNC has written its own");
+  // And not when LinuxCNC left it as the backup has it.
+  f.open();
+  f.stage(path);
+  const auto untouched = apply_staged_restore(f.files, data, now + 120s);
+  require(untouched && *untouched == 0, "A .var that is the backup's at exit is not written");
+  f.open();
+  const auto notice = f.machine->take_notice();
+  require(notice && notice->second == "The backup was restored: every file already held what "
+                                      "the backup holds.",
+          "and the next start says so: " + (notice ? notice->second : std::string{}));
+}
+
+// Review #274, 3: a restore whose quit was not delivered stayed staged, and the next normal exit
+// wrote it from old data. The plan goes; a target changed after the plan is not written.
+void abandoned_and_changed_targets() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now tools\n";
+  f.stage(path);
+  f.machine->abandon_restore();
+  require(!f.machine->staged() && !f.disk.files.contains(in_staging("plan.json")) &&
+              !f.disk.files.contains(in_staging("0.staged")),
+          "An abandoned restore leaves no plan and no copy");
+  require(apply_staged_restore(f.files, data, now + 60s).value_or(99) == 0 &&
+              f.disk.files[tools] == "now tools\n",
+          "A later exit writes nothing");
+  // A target the operator changed after the plan: refused, nothing written.
+  f.stage(path);
+  f.disk.files[tools] = "edited after the check\n";
+  f.disk.files[var] = "LinuxCNC's own\n"; // the .var may change
+  const auto applied = apply_staged_restore(f.files, data, now + 60s);
+  require(!applied && applied.error() == std::string(tools) +
+                                             " changed after the restore was prepared: nothing "
+                                             "was written.",
+          "The helper refuses a changed target: " + (applied ? std::string{} : applied.error()));
+  require(f.disk.files[tools] == "edited after the check\n" &&
+              f.disk.files[var] == "LinuxCNC's own\n",
+          "Nothing is written");
+}
+
 void partial_write_failure() {
   Fixture f;
   const std::string path = f.backup()["path"];
-  const auto backup_tools = f.disk.files[tools];
   f.disk.files[tools] = "now tools\n";
   f.disk.files[var] = "now var\n";
   f.disk.files.erase(custom);
-  const auto done = f.machine->restore(path, f.summary(path)["token"], allow);
-  require(done.quit, "Staged");
-  const auto plan = Json::parse(f.disk.files.at(std::string(data) + "/restore/plan.json"));
+  f.stage(path);
+  const auto plan = f.plan();
   // The second file of the plan cannot be put in place: the disk is full.
-  const std::string second = plan["files"][1]["to"];
-  f.files.failures["rename " + second + ".coffeecnc-tmp " + second] = 1;
+  const auto second = plan["files"][1]["root"].get<std::string>() + '/' +
+                      plan["files"][1]["relative"].get<std::string>();
+  f.files.failures["replace " + second] = 1;
   const auto applied = apply_staged_restore(f.files, data, now);
   require(!applied && applied.error().find(second) != std::string::npos,
           "The helper fails, naming the file");
   require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "now var\n" &&
               !f.disk.files.contains(custom),
           "The file written before it is put back; a new one is removed");
-  require(!f.disk.files.contains(second + ".coffeecnc-tmp"), "No temporary file is left");
-  require(!f.disk.files.contains(std::string(data) + "/restore/plan.json"),
-          "The plan is not tried again");
+  require(!f.disk.files.contains(in_staging("plan.json")), "The plan is not tried again");
   f.open();
   const auto notice = f.machine->take_notice();
   require(notice && notice->first == MessageLevel::error &&
-              notice->second.starts_with("The restore was not completed:"),
+              notice->second.starts_with("The restore was not completed:") &&
+              notice->second.ends_with("The files are as they were."),
           "The next run says it failed");
-  static_cast<void>(backup_tools);
   // A plan the helper never got to.
-  const auto staged = f.machine->restore(path, f.summary(path)["token"], allow);
-  require(staged.quit, "Staged again");
+  f.stage(path);
   f.open();
   const auto left = f.machine->take_notice();
   require(left && left->second.starts_with("A restore was prepared but not written"),
           "A plan left at the next start is reported and discarded");
-  require(!f.disk.files.contains(std::string(data) + "/restore/plan.json"), "It is discarded");
+  require(!f.disk.files.contains(in_staging("plan.json")) &&
+              !f.disk.files.contains(in_staging("0.staged")),
+          "It is discarded, with its copies");
+}
+
+// Review #274, 8: a rename that worked, followed by a failed directory fsync, was not counted,
+// so the rollback skipped that file; and the notice said "as they were" when a file could not
+// be put back.
+void rollback_counts_renamed_files() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now tools\n";
+  f.disk.files[var] = "now var\n";
+  f.stage(path);
+  const auto plan = f.plan();
+  const auto target = [&](std::size_t i) {
+    return plan["files"][i]["root"].get<std::string>() + '/' +
+           plan["files"][i]["relative"].get<std::string>();
+  };
+  // The first is replaced, but its folder cannot be synchronised.
+  f.files.failures["replace_sync " + target(0)] = 1;
+  require(!apply_staged_restore(f.files, data, now).has_value(), "The helper fails");
+  require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "now var\n",
+          "The renamed file is put back too");
+  f.open();
+  auto notice = f.machine->take_notice();
+  require(notice && notice->second.ends_with("The files are as they were."),
+          "Every file was put back: the notice says so");
+  // The second fails, and the first cannot be put back.
+  f.stage(path);
+  bool second_failed = false;
+  f.files.during = [&](std::string_view step) {
+    if (step == "replace" && !second_failed && f.files.calls.back() == "replace " + target(1)) {
+      second_failed = true;
+      f.files.failures["replace " + target(1)] = 1;
+      f.files.failures["replace " + target(0)] = 1; // the put-back
+    }
+  };
+  require(!apply_staged_restore(f.files, data, now + 60s).has_value(), "The helper fails again");
+  f.files.during = nullptr;
+  f.open();
+  notice = f.machine->take_notice();
+  const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
+  require(notice && notice->first == MessageLevel::error &&
+              notice->second.find("These files could not be put back: " + target(0)) !=
+                  std::string::npos &&
+              notice->second.find(copy) != std::string::npos &&
+              notice->second.find("as they were") == std::string::npos,
+          "The notice names what was not put back and the copy: " +
+              (notice ? notice->second : std::string{}));
+}
+
+struct Crash {};
+
+// Review #274, 1: a crash or a power loss in the apply loop left mixed files, and the next
+// start said nothing was changed. Every file system call of the helper is a crash point.
+void crash_points() {
+  int tested = 0;
+  for (int crash_at = 1;; ++crash_at) {
+    Fixture f;
+    const std::string path = f.backup()["path"];
+    f.disk.files[tools] = "now tools\n";
+    f.disk.files[var] = "now var\n";
+    f.disk.files.erase(custom);
+    f.stage(path);
+    const std::map<std::string, std::optional<std::string>> before{
+        {tools, f.disk.files[tools]}, {var, f.disk.files[var]}, {custom, std::nullopt}};
+    int calls = 0;
+    bool crashed = false;
+    f.files.during = [&](std::string_view) {
+      if (++calls == crash_at) {
+        crashed = true;
+        throw Crash{};
+      }
+    };
+    try {
+      const auto applied = apply_staged_restore(f.files, data, now + 60s);
+      require(applied.has_value(), "The helper writes when nothing stops it");
+    } catch (const Crash&) {
+      require(crashed, "The crash is this test's");
+    }
+    f.files.during = nullptr;
+    if (!crashed)
+      break;
+    ++tested;
+    const bool changed = std::ranges::any_of(before, [&](const auto& file) {
+      const auto found = f.disk.files.find(file.first);
+      const auto now_held = found == f.disk.files.end() ? std::optional<std::string>{}
+                                                        : std::optional<std::string>{found->second};
+      return now_held != file.second;
+    });
+    f.open(); // the next start
+    const auto notice = f.machine->take_notice();
+    const auto at = std::format("crash at call {}", crash_at);
+    require(notice.has_value(), at + ": the next start says what came of it");
+    require(!changed || notice->second.find("Nothing was changed") == std::string::npos,
+            at + ": files changed, and the notice does not say otherwise: " + notice->second);
+    if (notice->second.starts_with("A restore was interrupted")) {
+      const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
+      require(notice->second.find(copy) != std::string::npos && f.disk.files.contains(copy),
+              at + ": the notice names the copy from before the restore");
+      require(f.summary(copy)["files"].size() >= 1, at + ": and it can be restored");
+    }
+    require(!f.disk.files.contains(in_staging("plan.json")) &&
+                !f.disk.files.contains(in_staging("applying.json")),
+            at + ": nothing is left for a later start");
+  }
+  require(tested > 10, std::format("Every call is a crash point: {}", tested));
+}
+
+// Review #274, 9: the start-up check read and removed the helper's files without the data
+// folder's lock.
+void start_check_under_lock() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now\n";
+  f.stage(path);
+  FakeToolModelFiles helper{f.disk};
+  require(helper.lock(data).has_value(), "A helper holds the lock");
+  f.pauses = 0;
+  f.open();
+  const auto notice = f.machine->take_notice();
+  require(f.pauses > 0 && notice &&
+              notice->second == "The data folder is in use: what came of the last restore is "
+                                "shown at the next start.",
+          "The start waits for the lock, then says it is in use");
+  require(f.disk.files.contains(in_staging("plan.json")), "and leaves the helper's files alone");
+  helper.unlock();
+  f.open();
+  require(f.machine->take_notice().has_value() && !f.disk.files.contains(in_staging("plan.json")),
+          "With the lock it reads and removes them");
+  require(!f.disk.locked.contains(data), "and releases the lock");
+}
+
+class FakeHost final : public RestoreHost {
+public:
+  std::function<bool(long)> parent_alive = [](long) { return false; };
+  std::function<std::optional<std::string>()> running = [] { return std::optional<std::string>{}; };
+  std::chrono::milliseconds clock{};
+  auto alive(long pid) -> bool override { return parent_alive(pid); }
+  auto linuxcnc_running() -> std::optional<std::string> override { return running(); }
+  void pause(std::chrono::milliseconds period) override { clock += period; }
+  auto elapsed() -> std::chrono::milliseconds override { return clock; }
+  auto now() -> std::chrono::milliseconds override { return 1795000000000ms + clock; }
+};
+
+// Review #274, 6: the helper waited only for its parent, not at all when that was PID 1, and
+// wrote while a LinuxCNC that started meanwhile read the files.
+void helper_waits_for_linuxcnc() {
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now\n";
+  f.stage(path);
+  FakeHost host;
+  auto outcome = run_restore_helper(f.files, data, 1, host);
+  require(outcome.code == 1 && outcome.line.starts_with("restore=not_written reason=the parent "
+                                                        "process is 1"),
+          "A parent of PID 1 is refused: " + outcome.line);
+  require(f.disk.files[tools] == "now\n" && f.disk.files.contains(in_staging("plan.json")),
+          "Nothing is written; the plan is left for the next start to report");
+  // The parent is gone, but LinuxCNC still runs: it waits, then gives up.
+  host.running = [] { return std::optional<std::string>{"milltask (pid 4242) runs"}; };
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  require(outcome.code == 1 && host.clock > restore_helper_wait &&
+              outcome.line == "restore=not_written reason=LinuxCNC did not stop (milltask (pid "
+                              "4242) runs)",
+          "While LinuxCNC runs nothing is written: " + outcome.line);
+  require(f.disk.files[tools] == "now\n", "Nothing is written");
+  // LinuxCNC stops a little later.
+  host.clock = {};
+  host.running = [&host] {
+    return host.clock < 1s ? std::optional<std::string>{"/tmp/linuxcnc.lock exists"}
+                           : std::optional<std::string>{};
+  };
+  bool asked_parent = false;
+  host.parent_alive = [&](long pid) {
+    asked_parent = pid == 4000;
+    return host.clock < 400ms;
+  };
+  // and starts again while the copy from before the restore is written.
+  bool restarted = false;
+  f.files.during = [&](std::string_view step) {
+    if (step == "open_temporary" && f.files.calls.back().find("pre-restore") != std::string::npos)
+      restarted = true;
+  };
+  const auto running_after = host.running;
+  host.running = [&] {
+    return restarted ? std::optional<std::string>{"rtapi_app (pid 77) runs"} : running_after();
+  };
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  f.files.during = nullptr;
+  require(asked_parent && outcome.code == 1 &&
+              outcome.line.find("LinuxCNC runs again") != std::string::npos &&
+              f.disk.files[tools] == "now\n",
+          "A LinuxCNC that starts meanwhile stops the write: " + outcome.line);
+  require(!f.disk.locked.contains(data), "The helper releases the lock");
+  // And with LinuxCNC stopped for good it writes.
+  f.open();
+  f.stage(path);
+  host.running = [] { return std::optional<std::string>{}; };
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  require(outcome.code == 0 && outcome.line == "restore=written files=1",
+          "It writes once LinuxCNC has stopped: " + outcome.line);
+}
+
+// A file that read_beneath found; the check fails when it did not.
+auto found(const std::expected<std::optional<ToolModelFiles::Found>, std::string>& read)
+    -> ToolModelFiles::Found {
+  require(read.has_value(), "The file is read: " + (read ? std::string{} : read.error()));
+  const auto& file = *read;
+  require(file.has_value(), "The file exists");
+  return file.value_or(ToolModelFiles::Found{});
+}
+
+// Real files below `root`: a directory made for the test.
+auto write_real(const std::filesystem::path& path, const std::string& bytes) -> void {
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream{path, std::ios::binary} << bytes;
+}
+auto read_real(const std::filesystem::path& path) -> std::string {
+  std::ifstream in{path, std::ios::binary | std::ios::ate};
+  const auto size = static_cast<std::streamoff>(in.tellg());
+  std::string bytes(size > 0 ? static_cast<std::size_t>(size) : 0, '\0');
+  in.seekg(0);
+  in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  return bytes;
+}
+
+// The local file system: a linked subfolder is refused (review #274, 4), modes are kept
+// (review #274, 10), a link is replaced and not followed.
+void real_files(const std::filesystem::path& base) {
+  const auto root = base / "machine_data_tests";
+  std::filesystem::remove_all(root);
+  const auto configs = root / "configs";
+  const auto outside = root / "outside";
+  write_real(configs / "machine.hal", "net a b\n");
+  write_real(outside / "custom.hal", "outside\n");
+  write_real(outside / "shared.tbl", "T1\n");
+  std::filesystem::create_directory_symlink(outside, configs / "hal");
+  std::filesystem::create_symlink(outside / "shared.tbl", configs / "tool.tbl");
+  require(::chmod((configs / "machine.hal").c_str(), 0640) == 0, "The test's file has mode 0640");
+  LocalToolModelFiles files;
+  const auto dir = configs.string();
+  auto read = files.read_beneath(dir, "hal/custom.hal", 100);
+  require(!read && read.error().find("symbolic link") != std::string::npos,
+          "A file through a linked subfolder is not read: " +
+              (read ? std::string{} : read.error()));
+  auto replaced = files.replace_beneath(dir, "hal/custom.hal", "written\n", 0644, std::nullopt);
+  require(!replaced && !replaced.error().renamed &&
+              read_real(outside / "custom.hal") == "outside\n" &&
+              !std::filesystem::exists(outside / "custom.hal.coffeecnc-tmp"),
+          "Nothing is written through a linked subfolder");
+  require(!files.remove_beneath(dir, "hal/custom.hal") &&
+              std::filesystem::exists(outside / "custom.hal"),
+          "Nothing is removed through it");
+  require(!files.read_beneath(dir, "../outside/custom.hal", 100), "`..` is refused");
+  // The mode and the group are kept.
+  const auto held = found(files.read_beneath(dir, "machine.hal", 100));
+  require(held.mode == 0640 && !held.symlink && held.group == ::getegid(),
+          "The mode and group are read");
+  require(files.replace_beneath(dir, "machine.hal", "net c d\n", held.mode, held.group)
+              .has_value(),
+          "A file is replaced");
+  struct stat info{};
+  require(::stat((configs / "machine.hal").c_str(), &info) == 0 && (info.st_mode & 07777) == 0640 &&
+              read_real(configs / "machine.hal") == "net c d\n",
+          "with its mode");
+  // A linked tool table is read through the link, and replaced, not followed.
+  const auto linked = found(files.read_beneath(dir, "tool.tbl", 100));
+  require(linked.symlink && linked.content.bytes == "T1\n", "A link is read by its content");
+  require(
+      files.replace_beneath(dir, "tool.tbl", "T2\n", linked.mode, std::nullopt).has_value() &&
+          !std::filesystem::is_symlink(configs / "tool.tbl") &&
+          read_real(configs / "tool.tbl") == "T2\n" && read_real(outside / "shared.tbl") == "T1\n",
+      "The link is replaced by the file; its target is unchanged");
+  require(files.remove_beneath(dir, "tool.tbl").has_value() &&
+              !std::filesystem::exists(configs / "tool.tbl"),
+          "A file is removed");
+  std::filesystem::remove_all(root);
+}
+
+// Review #274, 7: the helper inherited the descriptors of CoffeeCNC that are not close-on-exec
+// (asio's sockets: the LAN screen's port stayed taken).
+void spawn_closes_descriptors(const std::filesystem::path& base) {
+  const auto out = base / "machine_data_spawn.txt";
+  std::filesystem::remove(out);
+  const int inherited = ::open("/dev/null", O_RDONLY); // not close-on-exec
+  require(inherited >= 0 && ::dup2(inherited, 57) == 57, "A descriptor that is not close-on-exec");
+  const auto child = spawn_detached(
+      {"/bin/sh", "-c",
+       std::format("if [ -e /proc/self/fd/57 ]; then echo open; else echo closed; fi > '{}'; "
+                   "cut -d ' ' -f 6 /proc/$$/stat >> '{}'",
+                   out.string(), out.string())});
+  require(child.has_value(), "The child starts");
+  int status = 0;
+  require(::waitpid(static_cast<pid_t>(*child), &status, 0) == *child, "and ends");
+  static_cast<void>(::close(57));
+  static_cast<void>(::close(inherited));
+  std::istringstream said{read_real(out)};
+  std::string fd;
+  std::string session;
+  std::getline(said, fd);
+  std::getline(said, session);
+  require(fd == "closed", "The child has no descriptor of this process but 0, 1, 2: " + fd);
+  require(session == std::to_string(*child), "The child leads a session of its own: " + session);
+  std::filesystem::remove(out);
 }
 
 } // namespace
 
-auto main() -> int {
+auto main(int argc, char** argv) -> int {
   try {
+    const auto base =
+        argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path();
     archive_round_trip();
     backup_contents();
+    symlinked_configuration();
     check_and_changes();
     path_traversal();
+    hal_role_is_bounded();
+    machine_id_required();
     refusal_states();
     restore_and_apply();
+    var_decided_after_exit();
+    abandoned_and_changed_targets();
     partial_write_failure();
+    rollback_counts_renamed_files();
+    crash_points();
+    start_check_under_lock();
+    helper_waits_for_linuxcnc();
+    real_files(base);
+    spawn_closes_descriptors(base);
     std::cout << checks << " machine data checks passed\n";
     return 0;
   } catch (const std::exception& error) {

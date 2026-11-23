@@ -599,7 +599,17 @@
       "damaged": "O arquivo está danificado: {detail}",
       "notRegular": "{name} não é um ficheiro normal: o arquivo é recusado.",
       "unknownError": "erro desconhecido",
-      "notPutBack": " Não foi possível repor: {detail}"
+      "notPutBack": "O restauro não foi concluído: {detail} Estes ficheiros não puderam ser repostos: {files}. Os ficheiros de antes do restauro estão em {path}.",
+      "busy": "A pasta de dados está em uso: o resultado do último restauro é mostrado no próximo arranque.",
+      "alreadyRestored": "A cópia foi restaurada: todos os ficheiros já tinham o conteúdo da cópia.",
+      "interrupted": "Um restauro foi interrompido enquanto escrevia os ficheiros: alguns ficheiros podem ser da cópia e outros não. Os ficheiros de antes do restauro estão em {path}: restaure essa cópia para voltar atrás.",
+      "noMachine": "Esta cópia não indica a sua máquina; esta máquina é {machine}. Não é restaurada.",
+      "halNotNamed": "{name} não é um ficheiro HAL indicado pelo ficheiro INI: o arquivo é recusado.",
+      "unreachable": "{name} não pode ser restaurado: {detail}. O arquivo é recusado.",
+      "changedAfter": "{path} mudou depois de o restauro ser preparado: nada foi escrito.",
+      "notMarked": "não foi possível registar o início do restauro: {detail}",
+      "readHere": "{path} não pode ser lido aqui",
+      "writeHere": "{path} não pode ser escrito aqui"
     }
   }
 }

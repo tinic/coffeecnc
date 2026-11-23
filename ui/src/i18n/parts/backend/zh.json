@@ -599,7 +599,17 @@
       "damaged": "归档已损坏：{detail}",
       "notRegular": "{name} 不是普通文件：已拒绝该归档。",
       "unknownError": "未知错误",
-      "notPutBack": " 无法恢复原内容：{detail}"
+      "notPutBack": "恢复未完成：{detail} 这些文件无法还原：{files}。恢复前的文件在 {path}。",
+      "busy": "数据文件夹正在使用：上次恢复的结果将在下次启动时显示。",
+      "alreadyRestored": "备份已恢复：每个文件都已是备份中的内容。",
+      "interrupted": "恢复在写入文件时被中断：部分文件可能来自备份，另一些则不是。恢复前的文件在 {path}：恢复该备份即可回到之前的状态。",
+      "noMachine": "此备份未注明其机器；本机为 {machine}。不予恢复。",
+      "halNotNamed": "{name} 不是 INI 文件指定的 HAL 文件：拒绝该归档。",
+      "unreachable": "{name} 无法恢复：{detail}。拒绝该归档。",
+      "changedAfter": "{path} 在准备恢复后已更改：未写入任何内容。",
+      "notMarked": "无法记录恢复已开始：{detail}",
+      "readHere": "此处无法读取 {path}",
+      "writeHere": "此处无法写入 {path}"
     }
   }
 }

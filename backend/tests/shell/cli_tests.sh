@@ -235,25 +235,47 @@ said " preview_helper=$alone/bin/coffeecnc-preview\$" && ! said 'coffeecnc: No p
 check installed_helper_beside_the_executable_is_used $? "$(detail)"
 
 # --apply-restore: the helper a restore leaves behind waits for the process it is told (the
-# linuxcnc script), then writes the staged file and keeps the one it replaces.
+# linuxcnc script) and for LinuxCNC to stop, then writes the staged file and keeps the one it
+# replaces. The data folder is named by the machine ID the plan carries.
 data="$work/restore-data"
 rm -rf "$data" && mkdir -p "$data/restore" "$work/restore-config" || exit 125
-echo 'T1 P1 Z10 ;now' >"$work/restore-config/tool.tbl"
+now=$'T1 P1 Z10 ;now\n'
+printf '%s' "$now" >"$work/restore-config/tool.tbl"
 echo 'T1 P1 Z48.2 ;backup' >"$data/restore/0.staged"
-printf '{"version":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","to":"%s"}]}\n' \
-  "$data/restore/0.staged" "$work/restore-config/tool.tbl" >"$data/restore/plan.json"
-sleep 2 &
-waited=$!
-start=$(date +%s)
-run --apply-restore "$data" --after "$waited"
-end=$(date +%s)
-[ "$code" = 0 ] && said 'coffeecnc: restore=written files=1' && [ $((end - start)) -ge 1 ] &&
-  grep -q 'Z48.2 ;backup' "$work/restore-config/tool.tbl" && [ ! -e "$data/restore/plan.json" ] &&
-  grep -q '"ok":true' "$data/restore/result.json" && ls "$data"/pre-restore-*.tar.gz >/dev/null 2>&1
-check apply_restore_waits_and_writes $? "$(detail)_waited_$((end - start))s"
-run --apply-restore "$data" --after "$waited"
-[ "$code" = 0 ] && said 'coffeecnc: restore=written files=0'
-check apply_restore_without_a_plan_does_nothing $? "$(detail)"
+# FNV-1a, 64 bits, of what the target holds when the restore is prepared (bash wraps at 2^64).
+fnv() {
+  local hash=-3750763034362895579 i byte
+  for ((i = 0; i < ${#1}; i++)); do
+    printf -v byte '%d' "'${1:i:1}"
+    hash=$(((hash ^ byte) * 1099511628211))
+  done
+  printf '%016x' "$hash"
+}
+printf '{"version":2,"machine_id":"restore-data","source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
+  "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
+# Review #274, 6: a parent of PID 1 tells nothing about LinuxCNC: refused, the plan is left.
+run --apply-restore "$data" --after 1
+[ "$code" = 1 ] && said 'coffeecnc: restore=not_written reason=the parent process is 1' &&
+  [ -e "$data/restore/plan.json" ] && grep -q ';now' "$work/restore-config/tool.tbl"
+check apply_restore_refuses_parent_pid_1 $? "$(detail)"
+# The helper also waits for every LinuxCNC on the host: with one running (another checkout's
+# simulation) the write is not tested here.
+if pgrep -x milltask >/dev/null || pgrep -x rtapi_app >/dev/null || [ -e /tmp/linuxcnc.lock ]; then
+  echo "fact=apply_restore_write_not_tested reason=linuxcnc_runs_on_this_host"
+else
+  sleep 2 &
+  waited=$!
+  start=$(date +%s)
+  run --apply-restore "$data" --after "$waited"
+  end=$(date +%s)
+  [ "$code" = 0 ] && said 'coffeecnc: restore=written files=1' && [ $((end - start)) -ge 1 ] &&
+    grep -q 'Z48.2 ;backup' "$work/restore-config/tool.tbl" && [ ! -e "$data/restore/plan.json" ] &&
+    grep -q '"ok":true' "$data/restore/result.json" && ls "$data"/pre-restore-*.tar.gz >/dev/null 2>&1
+  check apply_restore_waits_and_writes $? "$(detail)_waited_$((end - start))s"
+  run --apply-restore "$data" --after "$waited"
+  [ "$code" = 0 ] && said 'coffeecnc: restore=written files=0'
+  check apply_restore_without_a_plan_does_nothing $? "$(detail)"
+fi
 run --apply-restore "$data"
 [ "$code" = 1 ] && said 'usage: coffeecnc --apply-restore'
 check apply_restore_usage $? "$(detail)"

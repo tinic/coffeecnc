@@ -946,10 +946,10 @@ export class SimMachine {
         type: 'restore_summary', path, token: stamp, machine_id: null,
         created: typeof saved.created === 'number' ? saved.created : 0,
         files: [
-          { role: 'ini', name: 'config/sim.ini', target: `${config}/sim.ini`, change: 'same', bytes: 2048 },
-          { role: 'hal', name: 'config/sim.hal', target: `${config}/sim.hal`, change: 'same', bytes: 1024 },
-          { role: 'tool_table', name: 'tool-table/sim.tbl', target: `${config}/sim.tbl`, change: change(saved.tools, now.tools), bytes: saved.tools.length },
-          { role: 'parameters', name: 'parameters/sim.var', target: `${config}/sim.var`, change: change(saved.parameters, now.parameters), bytes: saved.parameters.length },
+          { role: 'ini', name: 'config/sim.ini', target: `${config}/sim.ini`, change: 'same', bytes: 2048, symlink: false },
+          { role: 'hal', name: 'config/sim.hal', target: `${config}/sim.hal`, change: 'same', bytes: 1024, symlink: false },
+          { role: 'tool_table', name: 'tool-table/sim.tbl', target: `${config}/sim.tbl`, change: change(saved.tools, now.tools), bytes: saved.tools.length, symlink: false },
+          { role: 'parameters', name: 'parameters/sim.var', target: `${config}/sim.var`, change: 'at_exit', bytes: saved.parameters.length, symlink: false },
         ],
       })
       return null

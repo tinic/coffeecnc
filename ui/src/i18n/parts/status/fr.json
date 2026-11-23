@@ -285,8 +285,11 @@
       "change": {
         "new": "Nouveau",
         "changed": "Modifié",
-        "same": "Identique"
-      }
+        "same": "Identique",
+        "at_exit": "À l'arrêt de LinuxCNC"
+      },
+      "symlink": "un lien : le fichier remplace le lien",
+      "atExitNote": "LinuxCNC écrit les décalages d'origine (.var) à son arrêt ; ils sont comparés et écrits ensuite."
     }
   }
 }

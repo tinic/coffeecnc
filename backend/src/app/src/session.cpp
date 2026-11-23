@@ -806,12 +806,23 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (!stop_waits)
     flush_stops();
   const auto now = clock();
-  const std::scoped_lock lock{mutex_};
+  std::unique_lock lock{mutex_};
+  const bool shown = page_open_ && request.page == PageToken{pages_};
+  const bool quits =
+      shown && step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+  // A restore staged for an exit that does not come now (the page ended, a stop came first) is
+  // dropped: a later exit must not write it.
+  if (step.quit && !quits && machine_data_ != nullptr &&
+      std::holds_alternative<RestoreBackup>(request.command)) {
+    lock.unlock();
+    machine_data_->abandon_restore();
+    lock.lock();
+  }
   if (!page_open_)
     return result;
   result.outcome.page = PageToken{pages_};
   if (request.page == result.outcome.page) {
-    result.quit = step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+    result.quit = quits;
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(

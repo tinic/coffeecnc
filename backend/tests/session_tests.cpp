@@ -1,3 +1,4 @@
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/session.hpp>
@@ -317,8 +318,9 @@ struct Rig {
   std::chrono::milliseconds clock{};
 
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
-               ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr)
-      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history),
+               ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr,
+               MachineDataService* machine_data = nullptr)
+      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, machine_data),
         page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
@@ -2195,6 +2197,62 @@ void quit() {
   }
 }
 
+// A restore that stages its files and asks to quit, as MachineData does.
+class FakeMachineData final : public MachineDataService {
+public:
+  std::function<void()> during; // inside restore, before it answers
+  int staged = 0;
+  int abandoned = 0;
+  auto backup(const std::string&) -> MachineDataAnswer override { return {}; }
+  auto check_restore(const std::string&) -> MachineDataAnswer override { return {}; }
+  auto restore(const std::string&, const std::string&, const std::function<std::string()>&)
+      -> MachineDataAnswer override {
+    if (during)
+      during();
+    ++staged;
+    return {CommandOutcome::accepted, "", {}, true};
+  }
+  void abandon_restore() override { ++abandoned; }
+};
+
+// Review #274, 3: a staged restore whose quit was not delivered (the page ended or was replaced,
+// an abort came first) stayed staged, and the next normal exit wrote it from old data.
+void restore_quit_not_delivered() {
+  constexpr auto restore = R"("type":"restore","path":"/media/cnc/STICK/b.tar.gz","token":"0123456789abcdef")";
+  {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    rig.accepted(restore);
+    require(rig.driver.quit && data.staged == 1 && data.abandoned == 0,
+            "A delivered quit keeps the restore staged for the exit");
+  }
+  for (const bool replace_page : {false, true}) {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    data.during = [&]() -> void {
+      rig.session.end_page(rig.page);
+      if (replace_page)
+        rig.page = rig.session.begin_page();
+    };
+    require(rig.send(restore).messages.empty(), "An ended page gets no result");
+    require(!rig.driver.quit && data.staged == 1 && data.abandoned == 1,
+            "The quit is not delivered: the staged restore is abandoned");
+  }
+  {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    data.during = [&]() -> void {
+      static_cast<void>(rig.session.submit(rig.page, R"({"id":99,"type":"abort"})", at(0ms)));
+    };
+    static_cast<void>(rig.send(restore));
+    require(!rig.driver.quit && data.abandoned == 1,
+            "An abort before the quit: the staged restore is abandoned");
+  }
+}
+
 void new_page() {
   Rig rig;
   rig.accepted(hold_x);
@@ -2657,6 +2715,7 @@ auto main(int argc, char** argv) -> int {
     lease_expiry();
     lost_machine_cancels_jogs();
     quit();
+    restore_quit_not_delivered();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

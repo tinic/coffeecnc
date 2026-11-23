@@ -599,7 +599,17 @@
       "damaged": "L’archive est endommagée : {detail}",
       "notRegular": "{name} n’est pas un fichier ordinaire : l’archive est refusée.",
       "unknownError": "erreur inconnue",
-      "notPutBack": " Elle n’a pas pu être remise : {detail}"
+      "notPutBack": "La restauration n'est pas terminée : {detail} Ces fichiers n'ont pas pu être remis en place : {files}. Les fichiers d'avant la restauration sont dans {path}.",
+      "busy": "Le dossier de données est utilisé : le résultat de la dernière restauration est affiché au prochain démarrage.",
+      "alreadyRestored": "La sauvegarde a été restaurée : chaque fichier contenait déjà le contenu de la sauvegarde.",
+      "interrupted": "Une restauration a été interrompue pendant l'écriture des fichiers : certains fichiers peuvent venir de la sauvegarde et d'autres non. Les fichiers d'avant la restauration sont dans {path} : restaurez cette sauvegarde pour revenir en arrière.",
+      "noMachine": "Cette sauvegarde n'indique pas sa machine ; cette machine est {machine}. Elle n'est pas restaurée.",
+      "halNotNamed": "{name} n'est pas un fichier HAL que le fichier INI nomme : l'archive est refusée.",
+      "unreachable": "{name} ne peut pas être restauré : {detail}. L'archive est refusée.",
+      "changedAfter": "{path} a changé après la préparation de la restauration : rien n'a été écrit.",
+      "notMarked": "le début de la restauration n'a pas pu être noté : {detail}",
+      "readHere": "{path} ne peut pas être lu ici",
+      "writeHere": "{path} ne peut pas être écrit ici"
     }
   }
 }

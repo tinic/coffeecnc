@@ -41,8 +41,13 @@ function roleName(role: BackupRole): string {
   return names[role]
 }
 function changeName(change: RestoreSummary['files'][number]['change']): string {
-  return change === 'new' ? t('status.backup.change.new') : change === 'changed' ? t('status.backup.change.changed') : t('status.backup.change.same')
+  const names: Record<RestoreSummary['files'][number]['change'], string> = {
+    new: t('status.backup.change.new'), changed: t('status.backup.change.changed'),
+    same: t('status.backup.change.same'), at_exit: t('status.backup.change.at_exit'),
+  }
+  return names[change]
 }
+const decidedAtExit = computed(() => summary.value?.files.some((file) => file.change === 'at_exit') ?? false)
 
 function run(command: CommandBody): void {
   error.value = ''
@@ -122,11 +127,15 @@ onBeforeUnmount(removeResultListener)
             <tbody>
               <tr v-for="file in summary.files" :key="file.name" :class="file.change">
                 <td>{{ roleName(file.role) }}</td>
-                <td class="mono target">{{ file.target }}</td>
+                <td class="mono target">
+                  {{ file.target }}
+                  <span v-if="file.symlink" class="link">({{ t('status.backup.symlink') }})</span>
+                </td>
                 <td class="change">{{ changeName(file.change) }}</td>
               </tr>
             </tbody>
           </table>
+          <p v-if="decidedAtExit" class="note">{{ t('status.backup.atExitNote') }}</p>
           <p v-if="changes.length === 0" class="note">{{ t('status.backup.nothingChanges') }}</p>
           <p v-else class="warning">
             {{ t('status.backup.restoreEffect') }}
@@ -171,5 +180,6 @@ p { margin: 0; line-height: 1.5; }
 .target { overflow-wrap: anywhere; color: var(--text-dim); font-size: 12px; }
 .change { white-space: nowrap; text-align: right; }
 .changed .change, .new .change { color: var(--warn); font-weight: 600; }
+.link { color: var(--warn); font-family: inherit; }
 @media (max-width: 900px) { .sections { grid-template-columns: 1fr; } }
 </style>

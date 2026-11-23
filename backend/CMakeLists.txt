@@ -107,7 +107,7 @@ if(BUILD_TESTING)
       target_link_libraries(coffeecnc_machine_data_tests PRIVATE coffeecnc_backup
         coffeecnc_project_options nlohmann_json::nlohmann_json LibArchive::LibArchive)
       coffeecnc_enable_analyzers(coffeecnc_machine_data_tests)
-      add_test(NAME machine_data COMMAND coffeecnc_machine_data_tests)
+      add_test(NAME machine_data COMMAND coffeecnc_machine_data_tests ${PROJECT_BINARY_DIR})
     endif()
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
@@ -319,6 +319,19 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> macros)
       set_tests_properties(linuxcnc_macros_mm PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
+      # A restore staged while LinuxCNC runs, written by the helper after LinuxCNC has stopped
+      # and written its .var file, and reported by the next start (#252).
+      if(TARGET coffeecnc_backup AND TARGET coffeecnc)
+        add_executable(coffeecnc_restore_sim_tests tests/sim/restore_sim_tests.cpp)
+        target_link_libraries(coffeecnc_restore_sim_tests PRIVATE coffeecnc_backup
+          coffeecnc_linuxcnc coffeecnc_project_options nlohmann_json::nlohmann_json)
+        coffeecnc_enable_analyzers(coffeecnc_restore_sim_tests)
+        add_test(NAME linuxcnc_restore COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/restore_tests.sh
+          ${PROJECT_BINARY_DIR}/sim $<TARGET_FILE:coffeecnc_restore_sim_tests>
+          $<TARGET_FILE:coffeecnc>)
+        set_tests_properties(linuxcnc_restore PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 520)
+      endif()
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
       add_test(NAME linuxcnc_edge_rotation_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

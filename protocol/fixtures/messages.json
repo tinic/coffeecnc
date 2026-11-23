@@ -1383,35 +1383,40 @@
         "name": "config/g0759.ini",
         "target": "/home/cnc/linuxcnc/configs/g0759/g0759.ini",
         "change": "same",
-        "bytes": 4012
+        "bytes": 4012,
+        "symlink": false
       },
       {
         "role": "hal",
         "name": "config/g0759.hal",
         "target": "/home/cnc/linuxcnc/configs/g0759/g0759.hal",
         "change": "changed",
-        "bytes": 2210
+        "bytes": 2210,
+        "symlink": true
       },
       {
         "role": "tool_table",
         "name": "tool-table/tool.tbl",
         "target": "/home/cnc/linuxcnc/configs/g0759/tool.tbl",
         "change": "changed",
-        "bytes": 310
+        "bytes": 310,
+        "symlink": false
       },
       {
         "role": "parameters",
         "name": "parameters/g0759.var",
         "target": "/home/cnc/linuxcnc/configs/g0759/g0759.var",
-        "change": "changed",
-        "bytes": 1882
+        "change": "at_exit",
+        "bytes": 1882,
+        "symlink": false
       },
       {
         "role": "data",
         "name": "data/tool-models.json",
         "target": "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json",
         "change": "new",
-        "bytes": 512
+        "bytes": 512,
+        "symlink": false
       }
     ]
   },
@@ -1427,7 +1432,8 @@
         "name": "config/mill.ini",
         "target": "/home/cnc/linuxcnc/configs/mill/mill.ini",
         "change": "same",
-        "bytes": 10
+        "bytes": 10,
+        "symlink": false
       }
     ]
   }

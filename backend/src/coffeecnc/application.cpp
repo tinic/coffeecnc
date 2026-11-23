@@ -3,6 +3,7 @@
 
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/machine_data.hpp>
+#include <coffeecnc/app/restore_helper.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
@@ -29,7 +30,6 @@
 #include <exception>
 #include <filesystem>
 #include <format>
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -37,10 +37,8 @@
 #include <string>
 #include <system_error>
 #include <utility>
-#include <thread>
 #include <vector>
 
-#include <csignal>
 #include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -268,7 +266,8 @@ auto unix_now() -> std::chrono::milliseconds {
 }
 
 // Starts `coffeecnc --apply-restore <directory> --after <parent>` in a session of its own, so
-// that it outlives this process and the `linuxcnc` script that started it.
+// that it outlives this process and the `linuxcnc` script that started it. It gets no
+// descriptor of this process but 0, 1 and 2: the LAN screen's socket is not kept open.
 void start_restore_helper(const std::string& directory) {
   std::error_code error;
   auto self = std::filesystem::read_symlink("/proc/self/exe", error).string();
@@ -276,26 +275,13 @@ void start_restore_helper(const std::string& directory) {
     say("A restore is staged, but the helper cannot be found. It is not written.");
     return;
   }
-  std::string option{"--apply-restore"};
-  std::string place{directory};
-  std::string after{"--after"};
-  std::string parent = std::to_string(getppid());
-  std::array<char*, 6> argv{self.data(), option.data(), place.data(), after.data(),
-                            parent.data(), nullptr};
-  posix_spawnattr_t attributes;
-  if (posix_spawnattr_init(&attributes) != 0) {
-    say("A restore is staged, but the helper cannot start. It is not written.");
-    return;
-  }
-  static_cast<void>(posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSID));
-  pid_t child{};
-  const int failed = posix_spawn(&child, argv.front(), nullptr, &attributes, argv.data(), environ);
-  posix_spawnattr_destroy(&attributes);
-  if (failed != 0)
+  const auto parent = std::to_string(getppid());
+  const auto child = spawn_detached({self, "--apply-restore", directory, "--after", parent});
+  if (!child)
     say(std::format("A restore is staged, but the helper cannot start: {}. It is not written.",
-                    std::generic_category().message(failed)));
+                    child.error()));
   else
-    say(std::format("restore helper pid={} waits for pid={}", child, parent));
+    say(std::format("restore helper pid={} waits for pid={}", *child, parent));
 }
 
 // An environment variable; empty when it is not set.
@@ -628,6 +614,23 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   int code = 0;
   try {
+    // Before the tool models take the data directory's lock: the start-up check of a restore
+    // takes it for itself, and releases it.
+    {
+      MachineDataPaths paths;
+      paths.machine_id = location.machine_id.value_or("");
+      paths.ini_file = config->ini_file;
+      paths.config_directory = config->directory;
+      if (const auto inspected = inspect_machine_ini(config->ini_file))
+        paths.hal_files = inspected->halfiles;
+      if (!config->postgui_halfile.empty())
+        paths.hal_files.push_back(config->postgui_halfile);
+      paths.tool_table = config->tool_table;
+      paths.parameter_file = config->parameter_file;
+      if (location.availability == ToolModelAvailability::available)
+        paths.data_directory = location.directory;
+      machine_data = std::make_unique<MachineData>(machine_data_files, std::move(paths), unix_now);
+    }
     models = std::make_unique<ToolModelStore>(
         model_files, location,
         [&window](PageToken page, std::vector<std::string> messages) -> void {
@@ -644,21 +647,6 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             ? ""
             : location.reason);
     program_writer.emplace(programs, edit_files);
-    {
-      MachineDataPaths paths;
-      paths.machine_id = location.machine_id.value_or("");
-      paths.ini_file = config->ini_file;
-      paths.config_directory = config->directory;
-      if (const auto inspected = inspect_machine_ini(config->ini_file))
-        paths.hal_files = inspected->halfiles;
-      if (!config->postgui_halfile.empty())
-        paths.hal_files.push_back(config->postgui_halfile);
-      paths.tool_table = config->tool_table;
-      paths.parameter_file = config->parameter_file;
-      if (location.availability == ToolModelAvailability::available)
-        paths.data_directory = location.directory;
-      machine_data = std::make_unique<MachineData>(machine_data_files, std::move(paths), unix_now);
-    }
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
@@ -703,58 +691,22 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
 }
 
 auto apply_restore(std::span<const std::string_view> arguments) -> int {
-  constexpr auto restore_wait = std::chrono::minutes{5};
-  constexpr auto poll = std::chrono::milliseconds{200};
   if (arguments.size() != 4 || arguments[2] != "--after") {
     say("usage: coffeecnc --apply-restore <data directory> --after <pid>");
     return 1;
   }
-  const std::string directory{arguments[1]};
-  pid_t parent{};
+  long parent{};
   try {
-    parent = static_cast<pid_t>(std::stol(std::string(arguments[3])));
+    parent = std::stol(std::string(arguments[3]));
   } catch (const std::exception&) {
     say("--after needs a process id.");
     return 1;
   }
-  // Alive: it exists and has not ended (a zombie has ended, whoever reaps it).
-  const auto alive = [parent]() -> bool {
-    if (parent <= 1 || (::kill(parent, 0) != 0 && errno != EPERM))
-      return false;
-    std::ifstream stat{std::format("/proc/{}/stat", parent)};
-    std::string line;
-    std::getline(stat, line);
-    const auto close = line.rfind(')');
-    return close == std::string::npos || close + 2 >= line.size() || line[close + 2] != 'Z';
-  };
-  const auto until = std::chrono::steady_clock::now() + restore_wait;
-  while (alive()) {
-    if (std::chrono::steady_clock::now() > until) {
-      say("restore=not_written reason=LinuxCNC did not stop");
-      return 1;
-    }
-    std::this_thread::sleep_for(poll);
-  }
   LocalToolModelFiles files;
-  // A CoffeeCNC started again at once holds the lock: wait for it a little, then leave the plan
-  // for that run to report.
-  for (int tries = 0;; ++tries) {
-    const auto locked = files.lock(directory);
-    if (locked)
-      break;
-    if (!locked.error().in_use || tries > 50) {
-      say(std::format("restore=not_written reason={}", locked.error().reason));
-      return 1;
-    }
-    std::this_thread::sleep_for(poll);
-  }
-  const auto applied = apply_staged_restore(files, directory, unix_now());
-  if (!applied) {
-    say(std::format("restore=failed reason={}", applied.error()));
-    return 1;
-  }
-  say(std::format("restore=written files={}", *applied));
-  return 0;
+  LocalRestoreHost host;
+  const auto outcome = run_restore_helper(files, std::string(arguments[1]), parent, host);
+  say(outcome.line);
+  return outcome.code;
 }
 
 } // namespace coffeecnc

@@ -285,8 +285,11 @@
       "change": {
         "new": "新增",
         "changed": "将更改",
-        "same": "相同"
-      }
+        "same": "相同",
+        "at_exit": "LinuxCNC 停止时"
+      },
+      "symlink": "链接：文件将替换该链接",
+      "atExitNote": "LinuxCNC 在停止时写入工件偏置 (.var)；之后再比较并写入。"
     }
   }
 }

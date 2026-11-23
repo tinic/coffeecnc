@@ -285,8 +285,11 @@
       "change": {
         "new": "Nuevo",
         "changed": "Cambia",
-        "same": "Igual"
-      }
+        "same": "Igual",
+        "at_exit": "Cuando LinuxCNC se detenga"
+      },
+      "symlink": "un enlace: el archivo sustituye al enlace",
+      "atExitNote": "LinuxCNC escribe los desplazamientos de trabajo (.var) al detenerse; se comparan y escriben después."
     }
   }
 }

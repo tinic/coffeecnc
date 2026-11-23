@@ -33,7 +33,8 @@ auto encode_restore_summary(const RestoreSummary& summary) -> std::string {
             {"name", file.name},
             {"target", file.target},
             {"change", file.change},
-            {"bytes", file.bytes}};
+            {"bytes", file.bytes},
+            {"symlink", file.symlink}};
   });
   return dump(Json{{"type", "restore_summary"},
                    {"path", summary.path},

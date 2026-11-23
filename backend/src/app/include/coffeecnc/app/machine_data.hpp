@@ -34,22 +34,27 @@ namespace coffeecnc {
 //   data        data/<name>             the machine's data folder; only data_file_names
 //
 // A HAL file is backed up only when it is a file below the INI file's folder; the others
-// ([HAL] HALFILE = LIB:..., LinuxCNC's own) are listed in the manifest as not included.
+// ([HAL] HALFILE = LIB:..., LinuxCNC's own) are listed in the manifest as not included. A
+// configuration file that is a symbolic link is backed up by its content, and the manifest
+// says it was a link.
 inline constexpr std::string_view backup_manifest_name = "coffeecnc-backup.json";
 inline constexpr std::array<std::string_view, 7> data_file_names{
-    "tool-models.json",  "operator-settings.json", "panel-language.json", "offset-history.json",
-    "alarm-log.jsonl",   "alarm-log.1.jsonl",      "alarm-log.2.jsonl"};
+    "tool-models.json", "operator-settings.json", "panel-language.json", "offset-history.json",
+    "alarm-log.jsonl",  "alarm-log.1.jsonl",      "alarm-log.2.jsonl"};
 // Below the data folder: a restore staged for when LinuxCNC has stopped, and what came of it.
 inline constexpr std::string_view restore_directory_name = "restore";
+inline constexpr std::string_view restore_plan_name = "plan.json";
+inline constexpr std::string_view restore_applying_name = "applying.json";
+inline constexpr std::string_view restore_result_name = "result.json";
 
 struct MachineDataPaths {
-  std::string machine_id;            // empty: none configured
-  std::string ini_file;              // absolute
-  std::string config_directory;      // of the INI file
+  std::string machine_id;             // empty: none configured
+  std::string ini_file;               // absolute
+  std::string config_directory;       // of the INI file
   std::vector<std::string> hal_files; // as the INI names them: HALFILE, POSTGUI_HALFILE, SHUTDOWN
-  std::string tool_table;            // absolute; empty when not configured
-  std::string parameter_file;        // absolute; empty when not configured
-  std::string data_directory;        // absolute; empty when the machine has none
+  std::string tool_table;             // absolute; empty when not configured
+  std::string parameter_file;         // absolute; empty when not configured
+  std::string data_directory;         // absolute; empty when the machine has none
 };
 
 // The `backup_written` message: where the archive was written, how many files it holds, its
@@ -66,8 +71,13 @@ struct RestoreSummaryFile {
   std::string role;   // ini, hal, tool_table, parameters, data
   std::string name;   // in the archive
   std::string target; // the file it replaces
-  std::string change; // new, changed, same
+  // new, changed, same; at_exit for the parameters: LinuxCNC writes its .var file as it stops,
+  // and the helper compares it then.
+  std::string change;
   std::size_t bytes{};
+  // The target is a symbolic link: the restore replaces the link by the file, and does not
+  // write where it points.
+  bool symlink{};
 };
 struct RestoreSummary {
   std::string path;
@@ -91,7 +101,9 @@ struct MachineDataAnswer {
 
 // Where the session sends `backup`, `check_restore` and `restore`, on its worker thread. The
 // machine state was checked by the policy before; `restore` asks `recheck` once more just
-// before it stages anything (a reason: refused).
+// before it stages anything (a reason: refused). A restore that asked to quit and whose quit
+// the session did not deliver (the page ended, an abort or an E-stop came first) is abandoned:
+// its plan is removed, and no later exit writes it.
 class MachineDataService {
 public:
   MachineDataService() = default;
@@ -101,6 +113,7 @@ public:
   [[nodiscard]] virtual auto restore(const std::string& path, const std::string& token,
                                      const std::function<std::string()>& recheck)
       -> MachineDataAnswer = 0;
+  virtual void abandon_restore() = 0;
 
 protected:
   MachineDataService(const MachineDataService&) = default;
@@ -109,32 +122,49 @@ protected:
   auto operator=(MachineDataService&&) -> MachineDataService& = default;
 };
 
-// Backup: every file of the table that exists is read (at most max_archive_entry_bytes each) and
-// written as `<directory>/coffeecnc-<machine>-<YYYYmmdd-HHMMSS>.tar.gz` (UTC) by a durable
-// replacement (temporary file, fsync, rename, fsync of the directory). Answered with `backup_written`.
+// Backup: every file of the table that exists is read (at most max_archive_entry_bytes each,
+// through a symbolic link) and written as
+// `<directory>/coffeecnc-<machine>-<YYYYmmdd-HHMMSS>.tar.gz` (UTC) by a durable replacement
+// (temporary file, fsync, rename, fsync of the directory). Answered with `backup_written`.
 //
 // Check: the archive is read whole (at most max_archive_bytes) and refused unless every entry is a
 // regular file named as the table says, listed once in a version 1 manifest of this machine
-// (or of none), with a name made of plain components (no `..`, `.`, empty, absolute, or
-// control characters), whose target is configured here and taken by no other entry. Nothing
-// is written. Answered with `restore_summary`: for each file its target and whether it is
-// new, changed or the same, and the token of this archive at this path.
+// (a manifest without a machine is refused when this machine has one), with a name made of
+// plain components (no `..`, `.`, empty, absolute, or control characters), whose target is
+// configured here and taken by no other entry. A HAL file must be one that this machine's INI
+// file or the archive's names ([HAL] HALFILE, POSTGUI_HALFILE, SHUTDOWN), end in .hal or
+// .tcl, and be reached beneath the configuration folder with no symbolic link on the way.
+// Nothing is written. Answered with `restore_summary`: for each file its target, whether it is
+// new, changed or the same, whether the target is a symbolic link, and the token of this archive
+// at this path.
 //
-// Restore: the check again, the token must be the same, then `recheck`. The files that change
-// are copied to `<data>/restore/` and a plan is written last; the answer quits the application.
-// LinuxCNC writes its .var file when it stops, and it reads the INI, HAL, tool table and .var
-// files only when it starts: apply_staged_restore writes them once it has stopped.
+// Restore: the check again, the token must be the same, then `recheck`. The files that change,
+// and the .var file always, are copied to `<data>/restore/`, and a plan is written last that
+// names this machine and, for each target, a hash of what it held. The answer quits the
+// application. LinuxCNC writes its .var file when it stops, and it reads the INI, HAL, tool
+// table and .var files only when it starts: apply_staged_restore writes them once it has
+// stopped.
+//
+// Start: under the data folder's lock (waited for a little while a helper holds it), what came
+// of a restore before this run is read and removed: a result, an interrupted write (the
+// applying marker), or a plan the helper never wrote. take_notice() says it once.
 class MachineData final : public MachineDataService {
 public:
   using Clock = std::function<std::chrono::milliseconds()>;
+  using Pause = std::function<void(std::chrono::milliseconds)>;
+  // How long the start waits for a helper that holds the data folder's lock.
+  static constexpr auto lock_wait = std::chrono::seconds{5};
+  static constexpr auto lock_poll = std::chrono::milliseconds{100};
   // The files must outlive this. Reads what a restore before this run came to (notice()).
-  MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock);
+  // `pause` waits for the lock; a sleep when none is given.
+  MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause = {});
 
   [[nodiscard]] auto backup(const std::string& directory) -> MachineDataAnswer override;
   [[nodiscard]] auto check_restore(const std::string& path) -> MachineDataAnswer override;
   [[nodiscard]] auto restore(const std::string& path, const std::string& token,
                              const std::function<std::string()>& recheck)
       -> MachineDataAnswer override;
+  void abandon_restore() override;
 
   // A restore is staged: start the helper when the application ends. Any thread.
   [[nodiscard]] auto staged() const -> bool { return staged_.load(); }
@@ -144,10 +174,14 @@ public:
 
   struct Planned {
     std::string role;
-    std::string name;   // in the archive
-    std::string target; // absolute
+    std::string name;     // in the archive
+    std::string root;     // the folder the target is resolved beneath
+    std::string relative; // the target beneath it
     std::string bytes;
-    std::string change; // new, changed, same
+    std::string change; // new, changed, same, at_exit
+    bool symlink{};
+    std::optional<std::string> held; // what the target holds now; none: it does not exist
+    [[nodiscard]] auto target() const -> std::string { return root + '/' + relative; }
   };
 
 private:
@@ -158,23 +192,32 @@ private:
     std::string token;
   };
   [[nodiscard]] auto check(const std::string& path) -> std::expected<Checked, std::string>;
+  void report_last_restore(const Pause& pause);
 
   ToolModelFiles& files_;
   MachineDataPaths paths_;
   Clock clock_;
   std::atomic<bool> staged_{};
+  std::vector<std::string> staged_files_; // worker only: the plan's copies
   std::mutex mutex_;
   std::optional<std::pair<MessageLevel, std::string>> notice_;
 };
 
-// The helper's work, after LinuxCNC has stopped: reads `<data>/restore/plan.json`, writes a
-// backup of every target as it is now to `<data>/pre-restore-<YYYYmmdd-HHMMSS>.tar.gz`, then
-// replaces each target by a durable replacement. When one fails, those already replaced are
-// written back from that copy (a target that was new is removed), and nothing is left changed
-// that can be put back. The outcome goes to `<data>/restore/result.json`, which the next run
-// shows once; the plan and the staged copies are removed. No plan: nothing, and 0.
-[[nodiscard]] auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directory,
-                                        std::chrono::milliseconds now)
+// The helper's work, after LinuxCNC has stopped: reads `<data>/restore/plan.json` and refuses
+// it unless it is of this machine and every target (but the .var file, which LinuxCNC writes
+// as it stops) holds what it held when the restore was prepared. A target that now holds the
+// backup's file is not written. Then a backup of every target that is written, as it is now,
+// to `<data>/pre-restore-<YYYYmmdd-HHMMSS>.tar.gz` (of this machine), then `may_write` (a
+// reason: nothing is written), then the applying marker that names that backup, then each
+// target by a durable replacement that keeps its mode and group. When one fails, every target
+// already renamed (also one whose directory fsync failed) is put back from that copy (a target
+// that was new is removed). The outcome goes to `<data>/restore/result.json`, which the next
+// run shows once, and says which files could not be put back; then the marker, the plan and
+// the staged copies are removed. No plan: nothing, and 0.
+[[nodiscard]] auto
+apply_staged_restore(ToolModelFiles& files, const std::string& data_directory,
+                     std::chrono::milliseconds now,
+                     const std::function<std::optional<std::string>()>& may_write = {})
     -> std::expected<std::size_t, std::string>;
 
 } // namespace coffeecnc

@@ -416,7 +416,12 @@ export interface RestoreSummary {
   machine_id: string | null
   /** Milliseconds since the Unix epoch; 0 when unknown. */
   created: number
-  files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same'; bytes: number }[]
+  /**
+   * `at_exit`: the work offsets (.var), which LinuxCNC writes as it stops; they are compared and
+   * written after that. `symlink`: the target is a symbolic link, which the restore replaces by the
+   * file (where it points is not written).
+   */
+  files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same' | 'at_exit'; bytes: number; symlink: boolean }[]
 }
 
 /** An operator error or message from LinuxCNC, or from the executable itself. */

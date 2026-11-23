@@ -599,7 +599,17 @@
       "damaged": "El archivo comprimido está dañado: {detail}",
       "notRegular": "{name} no es un archivo normal: se rechaza el archivo comprimido.",
       "unknownError": "error desconocido",
-      "notPutBack": " No se pudo volver a escribir: {detail}"
+      "notPutBack": "La restauración no se completó: {detail} Estos archivos no se pudieron devolver a su estado: {files}. Los archivos de antes de la restauración están en {path}.",
+      "busy": "La carpeta de datos está en uso: el resultado de la última restauración se muestra en el próximo inicio.",
+      "alreadyRestored": "Se restauró la copia: todos los archivos ya tenían el contenido de la copia.",
+      "interrupted": "Una restauración se interrumpió mientras escribía los archivos: algunos archivos pueden ser de la copia y otros no. Los archivos de antes de la restauración están en {path}: restaure esa copia para volver atrás.",
+      "noMachine": "Esta copia no indica su máquina; esta máquina es {machine}. No se restaura.",
+      "halNotNamed": "{name} no es un archivo HAL que nombre el archivo INI: el archivo comprimido se rechaza.",
+      "unreachable": "{name} no se puede restaurar: {detail}. El archivo comprimido se rechaza.",
+      "changedAfter": "{path} cambió después de preparar la restauración: no se escribió nada.",
+      "notMarked": "no se pudo marcar el inicio de la restauración: {detail}",
+      "readHere": "{path} no se puede leer aquí",
+      "writeHere": "{path} no se puede escribir aquí"
     }
   }
 }

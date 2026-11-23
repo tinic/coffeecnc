@@ -285,8 +285,11 @@
       "change": {
         "new": "Neu",
         "changed": "Ändert sich",
-        "same": "Gleich"
-      }
+        "same": "Gleich",
+        "at_exit": "Wenn LinuxCNC anhält"
+      },
+      "symlink": "ein Link: die Datei ersetzt den Link",
+      "atExitNote": "LinuxCNC schreibt die Nullpunktverschiebungen (.var) beim Anhalten; sie werden danach verglichen und geschrieben."
     }
   }
 }

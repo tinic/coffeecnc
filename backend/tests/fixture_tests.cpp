@@ -381,18 +381,20 @@ auto encoded_messages() -> std::vector<Encoded> {
        "3f1c8e0a9b2d4c75",
        "G0759",
        1795960920000,
-       {{"ini", "config/g0759.ini", std::string(configs) + "g0759.ini", "same", 4012},
-        {"hal", "config/g0759.hal", std::string(configs) + "g0759.hal", "changed", 2210},
-        {"tool_table", "tool-table/tool.tbl", std::string(configs) + "tool.tbl", "changed", 310},
-        {"parameters", "parameters/g0759.var", std::string(configs) + "g0759.var", "changed", 1882},
+       {{"ini", "config/g0759.ini", std::string(configs) + "g0759.ini", "same", 4012, false},
+        {"hal", "config/g0759.hal", std::string(configs) + "g0759.hal", "changed", 2210, true},
+        {"tool_table", "tool-table/tool.tbl", std::string(configs) + "tool.tbl", "changed", 310,
+         false},
+        {"parameters", "parameters/g0759.var", std::string(configs) + "g0759.var", "at_exit", 1882,
+         false},
         {"data", "data/tool-models.json",
-         "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "new", 512}}}));
+         "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "new", 512, false}}}));
   messages.emplace_back(encode_restore_summary(
       {"/home/cnc/old.tar.gz",
        "0000000000000001",
        std::nullopt,
        0,
-       {{"ini", "config/mill.ini", "/home/cnc/linuxcnc/configs/mill/mill.ini", "same", 10}}}));
+       {{"ini", "config/mill.ini", "/home/cnc/linuxcnc/configs/mill/mill.ini", "same", 10, false}}}));
   return messages;
 }
 
@@ -479,6 +481,7 @@ auto variants(const Json& message) -> std::set<std::string> {
     for (const auto& file : message.at("files")) {
       add("role", file.at("role").get<std::string>());
       add("change", file.at("change").get<std::string>());
+      add("symlink", file.at("symlink").get<bool>() ? "true" : "false");
     }
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
@@ -623,6 +626,9 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "restore_summary change same",
     "restore_summary change changed",
     "restore_summary change new",
+    "restore_summary change at_exit",
+    "restore_summary symlink true",
+    "restore_summary symlink false",
 });
 
 void every_machine_message_encodes() {

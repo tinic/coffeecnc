@@ -285,8 +285,11 @@
       "change": {
         "new": "New",
         "changed": "Changes",
-        "same": "Same"
-      }
+        "same": "Same",
+        "at_exit": "When LinuxCNC stops"
+      },
+      "symlink": "a link: the file replaces the link",
+      "atExitNote": "LinuxCNC writes the work offsets (.var) as it stops; they are compared and written after that."
     }
   }
 }

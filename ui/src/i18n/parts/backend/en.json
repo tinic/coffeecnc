@@ -599,7 +599,17 @@
       "damaged": "The archive is damaged: {detail}",
       "notRegular": "{name} is not a regular file: the archive is refused.",
       "unknownError": "unknown error",
-      "notPutBack": " It could not be put back: {detail}"
+      "notPutBack": "The restore was not completed: {detail} These files could not be put back: {files}. The files from before the restore are in {path}.",
+      "busy": "The data folder is in use: what came of the last restore is shown at the next start.",
+      "alreadyRestored": "The backup was restored: every file already held what the backup holds.",
+      "interrupted": "A restore was interrupted while it wrote the files: some files may be the backup's and others not. The files from before the restore are in {path}: restore that backup to go back.",
+      "noMachine": "This backup does not name its machine; this machine is {machine}. It is not restored.",
+      "halNotNamed": "{name} is not a HAL file the INI file names: the archive is refused.",
+      "unreachable": "{name} cannot be restored: {detail}. The archive is refused.",
+      "changedAfter": "{path} changed after the restore was prepared: nothing was written.",
+      "notMarked": "the restore could not be marked as started: {detail}",
+      "readHere": "{path} cannot be read here",
+      "writeHere": "{path} cannot be written here"
     }
   }
 }

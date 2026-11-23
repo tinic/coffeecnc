@@ -292,7 +292,7 @@ auto encode_hello(const Hello& hello) -> Encoded {
       message["fixed_setter"]["material_geometry"] = material_geometry;
     }
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
@@ -376,7 +376,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     auto rotary = Json::array();
     for (const auto& axis : status.rotary_axes) {
       const auto angle = [&](const std::optional<double>& value, std::string_view field) -> Json {
-        return value ? Json(fields.real(*value, field)) : Json(nullptr);
+        return value ? fields.real(*value, field) : Json(nullptr);
       };
       rotary.push_back({{"axis", std::string(1, axis.axis)},
                         {"homed", axis.homed},
@@ -410,7 +410,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
       break;
     }
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_tool_table(const ToolTable& table) -> Encoded {
@@ -514,7 +514,7 @@ auto encode_preview(const Preview& preview) -> Encoded {
                                    : check->travel == TravelCheck::outside ? "outside"
                                                                            : "unknown"}};
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_directory(const Directory& directory) -> Encoded {

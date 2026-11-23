@@ -74,8 +74,9 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
   if (text.empty())
     return std::nullopt;
   int tool{};
-  const auto* end = text.data() + text.size();
-  const auto [parsed, error] = std::from_chars(text.data(), end, tool);
+  const auto* begin = text.data();
+  const auto* end = begin + text.size();
+  const auto [parsed, error] = std::from_chars(begin, end, tool);
   return error == std::errc{} && parsed == end && tool >= 0 ? std::optional{tool} : std::nullopt;
 }
 
@@ -287,24 +288,14 @@ struct NmlPort::Impl {
   Gated<RCS_CMD_CHANNEL> command;
   StatusChannel status;
   Gated<NML> errors;
-  int serial{};
   // Of the action in progress: asked before every write. Null for an action that only stops
   // something. Set by begin() and used only until that action returns.
   const Wanted* wanted{};
-  // It has answered no: nothing more is written for this action.
-  bool cancelled{};
   // The types of the commands this action has written so far.
   std::vector<long> written_types;
-  // A command has been written; `serial` is its number.
-  bool written{};
   // Every write, for other threads to read.
   std::mutex trace_mutex;
   std::vector<Written> trace;
-  // The joint or axis and the jjogmode of the jog stop that is the last command written, until
-  // task echoes it.
-  std::optional<std::pair<int, int>> unanswered_stop;
-  // Space of the last jog this port may have submitted for each axis.
-  std::array<std::optional<JogSpace>, 3> jog_spaces{};
   std::vector<ControllerMessage> messages;
   // A jog-stop text read in the present collect(), not yet attributed.
   struct JogStopText {
@@ -316,16 +307,11 @@ struct NmlPort::Impl {
   std::optional<Clock::time_point> told_watchdog;
   std::optional<Clock::time_point> told_contact;
   std::filesystem::path spindle_tool_file;
-  std::optional<int> startup_tool;
-  std::optional<int> observed_tool;
-  bool unresolved_legacy_offset{};
   std::filesystem::path breakpoint_copy;
   std::string legacy_breakpoint_copy;
   std::filesystem::path breakpoint_record;
   std::shared_ptr<const BreakpointSource> breakpoint;
   Clock::time_point breakpoint_retry{};
-  bool breakpoint_reported{};
-  bool breakpoint_recovered{};
   struct SpindleHold {
     std::string file;
     int line;
@@ -333,30 +319,46 @@ struct NmlPort::Impl {
     SpindleDirection direction;
     double rpm;
     Vec3 base;
-    [[nodiscard]] auto matches(const NmlStatus& status) const -> bool {
-      const auto& c = status.controller;
+    [[nodiscard]] auto matches(const NmlStatus& reading) const -> bool {
+      const auto& c = reading.controller;
       return c.link == Link::live && c.machine == MachineState::on &&
-             c.mode == TaskMode::automatic && c.interp == InterpState::paused && status.paused &&
-             status.program_file == file && status.current_line == line &&
+             c.mode == TaskMode::automatic && c.interp == InterpState::paused && reading.paused &&
+             reading.program_file == file && reading.current_line == line &&
              c.tool_in_spindle == tool && !c.requested_tool;
     }
-    [[nodiscard]] auto at_base(const NmlStatus& status) const -> bool {
-      const auto& c = status.controller;
-      return matches(status) && status.paused_z_motion_ready && c.paused_z &&
-             !c.paused_z->displaced && status.spindle_actual_rpm && status.spindle_at_speed &&
+    [[nodiscard]] auto at_base(const NmlStatus& reading) const -> bool {
+      const auto& c = reading.controller;
+      return matches(reading) && reading.paused_z_motion_ready && c.paused_z &&
+             !c.paused_z->displaced && reading.spindle_actual_rpm && reading.spindle_at_speed &&
              std::ranges::equal(c.axes, base, [](const AxisState& axis, double expected) {
                return std::abs(axis.machine - expected) <= 0.01;
              });
     }
-    [[nodiscard]] auto at_speed(const NmlStatus& status) const -> bool {
-      return at_base(status) && status.spindle_direction == direction &&
-             std::abs(status.spindle_rpm - rpm) < 0.01 && *status.spindle_at_speed &&
-             *status.spindle_actual_rpm >= 1.0;
+    [[nodiscard]] auto at_speed(const NmlStatus& reading) const -> bool {
+      return at_base(reading) && reading.spindle_direction == direction &&
+             std::abs(reading.spindle_rpm - rpm) < 0.01 && reading.spindle_at_speed.value_or(false) &&
+             reading.spindle_actual_rpm.value_or(0) >= 1.0;
     }
   };
   std::filesystem::path spindle_hold_marker;
   std::optional<SpindleHold> spindle_hold;
   Clock::time_point spindle_hold_retry{};
+
+  int serial{};
+  std::optional<int> startup_tool;
+  std::optional<int> observed_tool;
+  // The joint or axis and the jjogmode of the jog stop that is the last command written, until
+  // task echoes it.
+  std::optional<std::pair<int, int>> unanswered_stop;
+  // It has answered no: nothing more is written for this action.
+  bool cancelled{};
+  // A command has been written; `serial` is its number.
+  bool written{};
+  bool unresolved_legacy_offset{};
+  bool breakpoint_reported{};
+  bool breakpoint_recovered{};
+  // Space of the last jog this port may have submitted for each axis.
+  std::array<std::optional<JogSpace>, 3> jog_spaces{};
 
   explicit Impl(MachineConfig machine)
       : config(std::move(machine)),
@@ -939,9 +941,10 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
            });
   };
   const auto before = status();
-  if (!impl_->startup_tool || !ready(before) || !wanted())
+  const auto& startup_tool = impl_->startup_tool;
+  if (!ready(before) || !wanted() || !startup_tool)
     return;
-  const int tool = *impl_->startup_tool;
+  const int tool = *startup_tool;
   const auto table = impl_->read_tool_table();
   const auto length = table ? tool_z(*table, tool) : std::nullopt;
   if (!length) {
@@ -1362,7 +1365,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     // stopped by enable input", which says nothing about why the cycle stopped.
     auto errors = impl_->take_errors(from);
     auto message = errors.empty() ? std::string(reason) : std::format("{} ({})", reason, errors);
-    std::cerr << "coffeecnc: fixed setter interrupted: " << message << std::endl;
+    std::cerr << "coffeecnc: fixed setter interrupted: " << message << '\n';
     return std::unexpected(std::move(message));
   };
   std::string cycle_failure; // why live_cycle() last refused, for the operator
@@ -1387,7 +1390,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     std::this_thread::sleep_for(poll_interval);
   const auto selected = interlock();
   raw = live_cycle();
-  if (raw == nullptr || !selected || *selected->probe_input || raw->motion.traj.probeval != 0 ||
+  if (raw == nullptr || !selected || selected->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0))
     return interrupt("The fixed setter is tripped or its interlock is unavailable.");
 
@@ -1458,7 +1461,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
-  if (raw == nullptr || !probe_pin || *probe_pin->probe_input || raw->motion.traj.probeval != 0 ||
+  if (raw == nullptr || !probe_pin || probe_pin->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0) ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.position)), 0))
@@ -1507,7 +1510,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     positioning = false;
     raw = live_cycle();
     const auto positioned = interlock();
-    if (raw == nullptr || !positioned || *positioned->probe_input ||
+    if (raw == nullptr || !positioned || positioned->probe_input.value_or(true) ||
         raw->motion.traj.probeval != 0 ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - search_start[2]) <=
           impl_->config.motion_tolerances.probe_backlash_mm) ||
@@ -1589,7 +1592,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw = live_cycle();
       const auto released = interlock();
       if (raw == nullptr || !released || !released_at_backoff(*raw, *released)) {
-        if (material && backoff < 0 && raw != nullptr && released && *released->probe_input)
+        if (material && backoff < 0 && raw != nullptr && released && released->probe_input.value_or(true))
           return interrupt("The probe did not release at the confirmed start. Start farther from "
                            "the workpiece before trying again.");
         return interrupt("The setter did not release before the latch pass.");
@@ -1647,7 +1650,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
             ? std::string{" (no controller status)"}
             : std::format(" (probe {}, latched {}, commanded {:+.3f} mm, measured {:+.3f} mm "
                           "from the retract)",
-                          *after_retract->probe_input ? "touching" : "clear",
+                          after_retract->probe_input.value_or(true) ? "touching" : "clear",
                           raw->motion.traj.probeval,
                           coordinate(machine_position(raw->motion.traj.position)) - retract,
                           coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
@@ -1787,12 +1790,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool boss = request.action == SetterAction::boss;
   const bool angle = request.action == SetterAction::angle;
   const bool material = is_material_probe(request.action);
-  if (material && (!impl_->config.touch_probe_tool || limits->latch_feed_mm_min <= 0 ||
-                   limits->latch_backoff_mm <= 0))
-    return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
-  if (material && tool != impl_->config.touch_probe_tool)
-    return std::unexpected(
-        std::format("Load T{} to probe material.", *impl_->config.touch_probe_tool));
+  if (material) {
+    const auto& probe_tool = impl_->config.touch_probe_tool;
+    if (!probe_tool || limits->latch_feed_mm_min <= 0 || limits->latch_backoff_mm <= 0)
+      return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
+    if (tool != *probe_tool)
+      return std::unexpected(std::format("Load T{} to probe material.", *probe_tool));
+  }
   if (tool <= 0 || request.tool != tool)
     return std::unexpected("The confirmed tool must be in the spindle.");
   if (checking && tool == impl_->config.touch_probe_tool)
@@ -3075,7 +3079,7 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
     ~Permit() { hal.stop_paused_z(); }
   } permit{*hal};
 
-  const auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.");
+  auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.");
   const auto safe = [&](const NmlStatus& now) {
     return wanted() && now.controller.paused_z && now.paused_z_feedback &&
            now.paused_z_interlock.empty() && now.program_file == start.program_file &&
@@ -3194,7 +3198,7 @@ void NmlPort::recover_paused_spindle(const Wanted& wanted) {
     impl_->finish_spindle_hold();
     return;
   }
-  if (impl_->spindle_hold && impl_->spindle_hold->matches(now))
+  if (const auto& hold = impl_->spindle_hold; hold && hold->matches(now))
     return;
   impl_->spindle_recovery();
   if (now.controller.spindle_active && Clock::now() >= impl_->spindle_hold_retry) {

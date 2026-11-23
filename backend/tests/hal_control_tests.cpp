@@ -210,7 +210,6 @@ void threads_share_it() {
   require(raised > 0, "Confirmations were applied");
 }
 
-} // namespace
 
 // What the control thread noted about the jog-stop level and the watchdog.
 void jog_stop_history_is_noted() {
@@ -241,6 +240,8 @@ void jog_stop_history_is_noted() {
   require(history.watchdog_tripped == at(20ms) && history.read_at == at(30ms),
           "the last trip is kept once the watchdog is ok again");
 }
+
+} // namespace
 
 auto main() -> int {
   try {

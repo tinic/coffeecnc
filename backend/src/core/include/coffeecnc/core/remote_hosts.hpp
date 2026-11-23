@@ -26,7 +26,10 @@ namespace coffeecnc {
     } else {
       const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
       if ((!alpha && !(c >= '0' && c <= '9') && c != '-') ||
-          (length == 0 && c == '-') || ++length > 63)
+          (length == 0 && c == '-'))
+        return std::nullopt;
+      ++length;
+      if (length > 63)
         return std::nullopt;
     }
     name.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);

@@ -44,7 +44,7 @@ public:
   // writer, and its one CommandResult comes from there, unless its page ends first.
   [[nodiscard]] virtual auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<std::string> = 0;
-  [[nodiscard]] virtual auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings)
+  [[nodiscard]] virtual auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&&)
       -> std::optional<std::string> {
     return "Operator settings storage is not part of this session.";
   }

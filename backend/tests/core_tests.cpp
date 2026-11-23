@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 using namespace coffeecnc;
 using namespace std::chrono_literals;
@@ -181,6 +182,7 @@ void work_origin_gates() {
     case 5: s.axes[2].homing = true; break;
     case 6: s.axes[2].homed = false; break;
     case 7: s.axes[2].enabled = false; break;
+    default: std::unreachable();
     }
     require(!policy.evaluate(command, s).allowed, "Work origin write respects execution gates");
   }
@@ -454,7 +456,6 @@ void task_heartbeat() {
           "an advance since a reading seconds ago may be seconds old");
   require(heartbeat.observe(11, start + 5s + 10ms) == Link::live, "the next reading settles it");
 }
-} // namespace
 
 // An E-stop request is answered by the state reported after it, in these words.
 void estop_request_results() {
@@ -558,6 +559,8 @@ void jog_stop_attribution() {
               watchdog_stop_text.find("Jog aborted") == std::string_view::npos,
           "the watchdog text is CoffeeCNC's own");
 }
+
+} // namespace
 
 auto main() -> int {
   try {

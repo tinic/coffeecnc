@@ -163,7 +163,7 @@ struct ProgramBreakpoint {
   friend auto operator==(const ProgramBreakpoint&, const ProgramBreakpoint&) -> bool = default;
 };
 
-enum class ProgramCycle { idle, running, completed };
+enum class ProgramCycle : std::uint8_t { idle, running, completed };
 
 struct ProgramStatus {
   std::optional<std::string> file; // path of the loaded program

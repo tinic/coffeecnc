@@ -417,8 +417,8 @@ void axes_and_joints() {
 void tool_model_settings() {
   constexpr std::string_view own = "MAX_SPINDLE_RPM = 1500\n";
   const auto none = load(g0759);
-  require(none && none->machine_id && none->machine_id->starts_with("G0759-shaped-") &&
-              valid_machine_id(*none->machine_id) && !none->data_directory,
+  const auto id = none ? none->machine_id.value_or("") : std::string{};
+  require(none && id.starts_with("G0759-shaped-") && valid_machine_id(id) && !none->data_directory,
           "without an explicit ID the machine name supplies it");
   const auto other_file = scratch / "other-machine.ini";
   std::filesystem::copy_file(none->ini_file, other_file, std::filesystem::copy_options::overwrite_existing);
@@ -427,7 +427,7 @@ void tool_model_settings() {
           "different profiles with the same machine name use different data folders");
   const auto normalized = load(with(std::string(g0759), "MACHINE = G0759-shaped",
                                     "MACHINE = Toolroom mill / 7"));
-  require(normalized && normalized->machine_id && normalized->machine_id->starts_with("Toolroom-mill-7-"),
+  require(normalized && normalized->machine_id.value_or("").starts_with("Toolroom-mill-7-"),
           "filesystem separators and spaces in the name become a single hyphen");
   const auto both = load(with(std::string(g0759), own,
                               "MAX_SPINDLE_RPM = 1500\nMACHINE_ID = Mill_7-a\n"
@@ -489,7 +489,7 @@ void shipped_example() {
   require(wired && wired->signals.spindle_rpm && wired->signals.spindle_at_speed &&
               wired->signals.probe,
           "the example's signals set to yes");
-  require(config->machine_id && config->machine_id->starts_with("G0759-shaped-") &&
+  require(config->machine_id.value_or("").starts_with("G0759-shaped-") &&
               !config->data_directory,
           "the example uses the machine name and default data root");
   // Its two commented-out keys, taken into use, are the identity it documents.
@@ -539,7 +539,7 @@ void simulation_profiles() {
                 config->home_all_configured && config->jog_increments.empty() &&
                 !config->signals.spindle_rpm && !config->signals.probe,
             std::format("the {} simulation INI is accepted as before", units));
-    require(config->machine_id && config->machine_id->starts_with("CoffeeCNC-sim-") &&
+    require(config->machine_id.value_or("").starts_with("CoffeeCNC-sim-") &&
                 !config->data_directory,
             std::format("the {} simulation derives its data identity from the machine name", units));
   }
@@ -610,13 +610,14 @@ void fixed_setter_is_explicit_and_bounded() {
                             "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n"
                             "SETTER_XY_TOLERANCE_MM = 0.5\n");
   const auto setter = load(enabled);
-  require(setter && setter->fixed_setter && near(setter->fixed_setter->travel_mm, 4) &&
-              near(setter->fixed_setter->feed_mm_min, 30) &&
-              near(setter->fixed_setter->check_tolerance_mm, 0.1),
+  const auto setter_limits = setter ? setter->fixed_setter : std::nullopt;
+  require(setter_limits && near(setter_limits->travel_mm, 4) &&
+              near(setter_limits->feed_mm_min, 30) && near(setter_limits->check_tolerance_mm, 0.1),
           "the configured fixed setter carries canonical travel and feed ceilings");
   const auto check = load(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
                                "SETTER_MAX_TRAVEL_MM = 4\nSETTER_CHECK_TOLERANCE_MM = 0.04"));
-  require(check && check->fixed_setter && near(check->fixed_setter->check_tolerance_mm, 0.04),
+  const auto check_limits = check ? check->fixed_setter : std::nullopt;
+  require(check_limits && near(check_limits->check_tolerance_mm, 0.04),
           "the tool check tolerance is configurable in millimetres");
   require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
                           "SETTER_MAX_TRAVEL_MM = 4\nSETTER_CHECK_TOLERANCE_MM = 0")),
@@ -634,14 +635,13 @@ void fixed_setter_is_explicit_and_bounded() {
                              "SETTER_MAX_TRAVEL_MM = 90\nSETTER_CLEARANCE_MM = 80\n"
                              "SETTER_SEARCH_FEED_MM_MIN = 300\nSETTER_LATCH_FEED_MM_MIN = 25");
   const auto current = load(two_pass);
-  require(current && current->fixed_setter &&
-              *current->fixed_setter == FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1},
+  require(current && current->fixed_setter == FixedSetterLimits{90, 300, 98, 0.5, 80, 25, 1},
           "two-pass setter reads the clearance and both feeds");
   const auto geometry = load(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90",
       "SETTER_MAX_TRAVEL_MM = 90\nTOUCH_PROBE_CORNER_REACH_MM = 9\n"
       "TOUCH_PROBE_CORNER_MARGIN_MM = 4\nTOUCH_PROBE_CLEARANCE_MM = 6\nTOUCH_PROBE_DEPTH_MM = 3"));
-  require(geometry && geometry->fixed_setter &&
-              geometry->fixed_setter->material_geometry == MaterialProbeGeometry{9, 4, 6, 3},
+  const auto geometry_limits = geometry ? geometry->fixed_setter : std::nullopt;
+  require(geometry_limits && geometry_limits->material_geometry == MaterialProbeGeometry{9, 4, 6, 3},
           "the configured external probe approach supplies all four distances");
   require(has(error(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90", "SETTER_MAX_TRAVEL_MM = 30")),
               "search must reach below"),

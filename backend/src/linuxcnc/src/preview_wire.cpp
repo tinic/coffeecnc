@@ -93,7 +93,7 @@ auto read_check(std::string_view line, std::optional<HelperOutput::ProgramFacts>
       return false;
     if (frame.available && !bounds(line, frame.bounds.emplace()))
       return false;
-    check->frames.push_back(std::move(frame));
+    check->frames.push_back(frame);
   } else if (type == "machine") {
     if (check->machine || !bounds(line, check->machine.emplace()))
       return false;

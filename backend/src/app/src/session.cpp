@@ -1088,8 +1088,10 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   if (!source.inputs || !source.program_snapshot ||
       source.inputs->program_file != state.program_file) {
     const auto shown = preview_->latest();
-    if (shown && shown->context == command.preview_context && shown->error)
-      return answer({CommandOutcome::rejected, shown->error->text});
+    if (shown && shown->context == command.preview_context) {
+      if (const auto& error = shown->error)
+        return answer({CommandOutcome::rejected, error->text});
+    }
     return answer({CommandOutcome::rejected, "Wait for an up-to-date program preview."});
   }
   auto inputs = *source.inputs;
@@ -1152,29 +1154,30 @@ auto Session::start_restart(Queued& request, StartRestart command) -> Stage {
   if (!restart_ || restart_->tool_request || restart_->plan.plan_id != command.plan_id ||
       !wanted(restart_->owner))
     return answer({CommandOutcome::rejected, "Choose a line and review the restart plan again."});
-  auto restart = std::exchange(restart_, std::nullopt);
-  if (preview_->restart_source(restart->context).inputs != restart->source.inputs)
+  auto restart = std::move(*restart_);
+  restart_.reset();
+  if (preview_->restart_source(restart.context).inputs != restart.source.inputs)
     return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
-  auto check = restart->plan.point;
-  check.clearance_z = restart->programmed_clearance;
-  if (auto reason = port_.validate_restart(check, *restart->source.inputs); !reason.empty())
+  auto check = restart.plan.point;
+  check.clearance_z = restart.programmed_clearance;
+  if (auto reason = port_.validate_restart(check, *restart.source.inputs); !reason.empty())
     return answer({CommandOutcome::rejected, std::move(reason)});
-  if (check.clearance_z > restart->plan.point.clearance_z + 1e-6)
+  if (check.clearance_z > restart.plan.point.clearance_z + 1e-6)
     return answer({CommandOutcome::rejected, "The required clearance changed. Review a new plan."});
   cancel_jogs(nullptr);
   if (!wanted(request))
     return cancelled();
-  auto result = send_restart(request, *restart, false);
+  auto result = send_restart(request, restart, false);
   if (result.kind != StageKind::reply || result.reply.outcome != CommandOutcome::accepted ||
-      !restart->plan.needs_tool_change)
+      !restart.plan.needs_tool_change)
     return result;
   const auto pending = port_.snapshot();
-  if (pending.requested_tool != restart->plan.point.tool || !wanted(request)) {
+  if (pending.requested_tool != restart.plan.point.tool || !wanted(request)) {
     static_cast<void>(port_.abort());
     return answer({CommandOutcome::failed, "Restart stopped before the tool change was confirmed."});
   }
-  restart->owner = request;
-  restart->tool_request = pending.tool_request;
+  restart.owner = request;
+  restart.tool_request = pending.tool_request;
   restart_ = std::move(restart);
   return result;
 }
@@ -1613,11 +1616,12 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
         unstored += std::format(" AND [#{} EQ 0]", 5211 + i);
     block = "G52";
     for (std::size_t i = 0; i < 3; ++i) {
-      if (!values.at(i))
+      const auto& offset = values.at(i);
+      if (!offset)
         continue;
-      auto value = length(*values.at(i), state);
+      auto value = length(*offset, state);
       if (!unstored.empty())
-        value = "[" + value + "+0/[#5210+[1" + std::exchange(unstored, {}) + "]]]";
+        value = std::format("[{}+0/[#5210+[1{}]]]", value, std::exchange(unstored, {}));
       block += std::string(" ") + "XYZ"[i] + value;
     }
     break;

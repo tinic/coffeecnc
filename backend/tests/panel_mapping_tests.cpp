@@ -54,21 +54,21 @@ auto machine() -> MachineConfig {
       .directory = "/machine",
       .machine_name = "G0759",
       .nml_file = "/machine/linuxcnc.nml",
-      .machine_units = LengthUnit::mm,
       .millimetres_per_unit = 1,
-      .axes = {Axis::x, Axis::y, Axis::z},
       .travel = {Travel{-1000, 1000}, Travel{-500, 500}, Travel{-300, 10}},
       .jog_increments = {5, 1, 0.5},
       .limits = Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false},
-      .home_all_configured = false,
-      .signals = {},
       .tool_table = (scratch / "tool.tbl").string(),
       .parameter_file = {},
       .postgui_halfile = {},
       .program_prefix = scratch.string(),
       .machine_id = {},
-      .coolant = {},
       .data_directory = {},
+      .machine_units = LengthUnit::mm,
+      .axes = {Axis::x, Axis::y, Axis::z},
+      .home_all_configured = false,
+      .signals = {},
+      .coolant = {},
   };
 }
 
@@ -875,7 +875,6 @@ void source_without_a_tool_table() {
   require(rig.step().messages.empty(), "Once");
 }
 
-} // namespace
 
 // What `halcmd -s show` prints on the G0759 decides which coolant outputs the panel offers.
 void coolant_wiring() {
@@ -917,11 +916,11 @@ void touched_off_marks() {
   require(!parse_touched_off(""), "an empty file is no record");
   require(!parse_touched_off("reference 19.05\nX1 2\n"), "a line without a T word is refused");
   require(!parse_touched_off("reference 19.05\nT0 2\n"), "tool 0 is refused");
-  const std::string table = "T1 P1 Z19.051667 D6.35 ;\nT98 P98 Z19.05 D6.35\nT99 P99 Z53.185 D2 ;\n";
-  const auto marks = restored_touched_off(table, 98, saved);
+  const std::string table_text = "T1 P1 Z19.051667 D6.35 ;\nT98 P98 Z19.05 D6.35\nT99 P99 Z53.185 D2 ;\n";
+  const auto marks = restored_touched_off(table_text, 98, saved);
   require(marks == std::map<int, double>{{1, 19.051667}, {98, 19.05}, {99, 53.185}},
           "after a restart, the teach restores every unchanged tool");
-  require(still_touched_off(table, marks) == std::vector<int>{1, 98, 99}, "all stay marked");
+  require(still_touched_off(table_text, marks) == std::vector<int>{1, 98, 99}, "all stay marked");
   const std::string edited = "T1 P1 Z20 D6.35 ;\nT98 P98 Z19.05 D6.35\nT99 P99 Z53.185 D2 ;\n";
   require(still_touched_off(edited, marks) == std::vector<int>{98, 99},
           "a tool whose length changed by another path loses its mark");
@@ -932,7 +931,7 @@ void touched_off_marks() {
   const std::string new_reference = "T1 P1 Z19.051667 D6.35 ;\nT98 P98 Z19.2 D6.35\n";
   require(restored_touched_off(new_reference, 98, saved) == std::map<int, double>{{98, 19.2}},
           "a changed reference length voids every saved mark");
-  require(restored_touched_off(table, 98, std::nullopt) == std::map<int, double>{{98, 19.05}},
+  require(restored_touched_off(table_text, 98, std::nullopt) == std::map<int, double>{{98, 19.05}},
           "without a file only the reference tool is marked");
   const std::string removed = "T98 P98 Z19.05 D6.35\n";
   require(restored_touched_off(removed, 98, saved) == std::map<int, double>{{98, 19.05}},
@@ -975,6 +974,8 @@ void rotary_readouts() {
               !invalid.rotary_axes[0].dtg,
           "unavailable angular scale produces no reading");
 }
+
+} // namespace
 
 auto main(int argc, char** argv) -> int {
   try {

@@ -498,7 +498,7 @@ auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand comma
 }
 
 auto ToolModelStore::submit_operator_settings(PageToken page, RequestId id,
-                                              SetOperatorSettings command)
+                                              SetOperatorSettings&& command)
     -> std::optional<std::string> {
   if (!operator_settings_)
     return "Operator settings storage is not part of this session.";

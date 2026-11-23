@@ -712,9 +712,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       // Relative to the directory of the INI file, like every other path in it.
       .nml_file =
           absolute(directory, ini.text("EMC", "NML_FILE").value_or(std::string(default_nml_file))),
-      .machine_units = scale == 1 ? LengthUnit::mm : LengthUnit::inch,
       .millimetres_per_unit = scale,
-      .axes = {Axis::x, Axis::y, Axis::z},
       .axis_joints = {std::move(joints->at(0)), std::move(joints->at(1)),
                       std::move(joints->at(2))},
       .rotary_joints = {std::move(joints->at(3)), std::move(joints->at(4)),
@@ -722,27 +720,29 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .travel = travel,
       .jog_increments = std::move(*increments),
       .limits = limits,
-      .home_all_configured = home_all,
-      .home_axis_configured = home_axis,
-      .signals = signals,
       .tool_table = path("EMCIO", "TOOL_TABLE"),
       .parameter_file = path("RS274NGC", "PARAMETER_FILE"),
       .postgui_halfile = path("HAL", "POSTGUI_HALFILE"),
-      .manual_tool_change = *manual_tool_change,
       .program_prefix = path("DISPLAY", "PROGRAM_PREFIX"),
       .machine_id = std::move(machine_id),
-      .coolant = std::nullopt,
       .data_directory = ini.text("COFFEECNC", "DATA_DIRECTORY"),
       .fixed_setter = setter,
-      .touch_probe_tool = probe_tool,
-      .remember_spindle_tool =
-          !linuxcnc_switch(ini.text("EMCIO", "RANDOM_TOOLCHANGER").value_or("")) &&
-          ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
       .paused_z = paused_z,
       .motion_tolerances = tolerances,
       .macros = std::move(*configured_macros),
-      .remote_port = static_cast<std::uint16_t>(remote_port),
       .remote_hosts = std::move(remote_hosts),
+      .touch_probe_tool = probe_tool,
+      .remote_port = static_cast<std::uint16_t>(remote_port),
+      .machine_units = scale == 1 ? LengthUnit::mm : LengthUnit::inch,
+      .axes = {Axis::x, Axis::y, Axis::z},
+      .home_all_configured = home_all,
+      .home_axis_configured = home_axis,
+      .manual_tool_change = *manual_tool_change,
+      .remember_spindle_tool =
+          !linuxcnc_switch(ini.text("EMCIO", "RANDOM_TOOLCHANGER").value_or("")) &&
+          ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
+      .signals = signals,
+      .coolant = std::nullopt,
   };
 }
 

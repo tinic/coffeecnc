@@ -485,7 +485,7 @@ public:
   };
   std::vector<Submitted> submitted;
   std::vector<SetOperatorSettings> operator_submitted;
-  auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings command)
+  auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&& command)
       -> std::optional<std::string> override {
     operator_submitted.push_back(std::move(command));
     return refusal;

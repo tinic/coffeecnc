@@ -40,14 +40,15 @@ auto OperatorSettingsArchive::read() const -> OperatorSettings {
   const auto result = files_.read(file, max_operator_settings_bytes);
   if (!result)
     return unavailable(file + " cannot be read: " + result.error());
-  if (!*result) {
+  const auto& content = *result;
+  if (!content) {
     OperatorPreferences defaults;
     defaults.default_jog_velocity = std::min(600.0, limits_.max_jog_velocity);
     return {location_.machine_id, 0, ToolModelAvailability::available, location_.reason, defaults};
   }
-  if ((*result)->more)
+  if (content->more)
     return unavailable(file + " exceeds 16 KiB. The file was left alone.");
-  const auto saved = decode_operator_settings_file((*result)->bytes);
+  const auto saved = decode_operator_settings_file(content->bytes);
   if (!saved)
     return unavailable(file + " is not usable: " + saved.error() + " The file was left alone.");
   if (saved->machine_id != location_.machine_id)

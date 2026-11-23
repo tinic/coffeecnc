@@ -259,14 +259,15 @@ void archive_and_restart() {
   owner.open();
   OperatorSettingsArchive archive{files, limits};
   archive.open(owner.shared_location());
-  require(archive.settings().revision == 0 &&
-              archive.settings().document->default_jog_velocity == 600,
+  const auto defaults = archive.settings();
+  require(defaults.revision == 0 && defaults.document && defaults.document->default_jog_velocity == 600,
           "Missing file gives factory defaults without writing a file");
   require(!disk.files.contains(file), "No file until explicit save");
   require(archive.apply(command()).outcome == CommandOutcome::accepted,
           "Save accepted after durable replacement");
-  require(archive.settings().revision == 1 &&
-              archive.settings().document->enabled_wcs == std::vector<int>{1, 9},
+  const auto saved_settings = archive.settings();
+  require(saved_settings.revision == 1 && saved_settings.document &&
+              saved_settings.document->enabled_wcs == std::vector<int>{1, 9},
           "New revision and sorted shortcuts");
   require(disk.files.at(location.directory + "/tool-models.json") == "corrupt models",
           "Operator save leaves a corrupt tool-model file alone");
@@ -425,9 +426,10 @@ void host_file_restart() {
     owner.open();
     OperatorSettingsArchive settings{files, limits};
     settings.open(owner.shared_location());
-    require(settings.settings().revision == 1 &&
-                settings.settings().document->startup_units == StartupUnits::inch &&
-                settings.settings().document->default_jog_velocity == 88.9,
+    const auto restored = settings.settings();
+    require(restored.revision == 1 && restored.document &&
+                restored.document->startup_units == StartupUnits::inch &&
+                restored.document->default_jog_velocity == 88.9,
             "A fresh file handle and archive restore saved preferences");
     owner.close();
   }

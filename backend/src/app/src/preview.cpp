@@ -88,7 +88,7 @@ void PreviewWorker::loop() {
     if (stop_)
       return;
     if (wanted_) {
-      const auto request = std::move(*wanted_);
+      auto request = std::move(*wanted_);
       wanted_.reset();
       waiting_ = false;
       lock.unlock();

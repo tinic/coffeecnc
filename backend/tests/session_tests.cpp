@@ -1191,6 +1191,11 @@ void composed_mdi() {
   rig.port.script["mdi"] = {{}, {ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"tool_touch_off","value":1)", "timed_out", "LinuxCNC did not answer.");
   rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "Both blocks belong to the one result");
+  // #277: an accepted command has no reason, even when a step of it came back with words.
+  rig.port.script["mdi"] = {{ActionStatus::accepted, "LinuxCNC did not acknowledge the command."},
+                            {}};
+  rig.accepted(R"("type":"tool_touch_off","value":1)");
+  rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "An accepted result carries no step's reason");
 
   rig.expect(R"("type":"touch_off","axis":"x","value":1e300)", "rejected",
              "MDI requires one block of at most 254 bytes.");

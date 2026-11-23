@@ -1123,7 +1123,9 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
       return evidence(now) && now->task.state == EMC_TASK_STATE_ESTOP;
     }));
     // What a failed step took out of the message queue for its reason is the operator's again.
-    if (!accepted(sent) && !sent.reason.empty())
+    // A step that timed out took nothing out of it: its reason is this port's own words, and the
+    // result below says what became of the request.
+    if (sent.status == ActionStatus::failed && !sent.reason.empty())
       impl_->messages.push_back({true, sent.reason});
     const EMC_STAT* now = impl_->stat();
     const Link link = impl_->status.link();

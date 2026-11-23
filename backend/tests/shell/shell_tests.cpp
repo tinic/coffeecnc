@@ -407,6 +407,13 @@ void first_page(const Rig& rig) {
   rig.snapshot("estop");
 }
 
+// The sim wires the panel watchdog's hold to motion.jog-inhibit.
+auto wait_for_panel_frames(const Rig& rig) -> bool {
+  return rig.wait(5s, []() -> bool {
+    return output_of("halcmd getp motion.jog-inhibit") == "FALSE";
+  });
+}
+
 void power_on(const Rig& rig) {
   // Power is directly accessible without opening a menu. Reset does not power on.
   check("panel_power_outside_menu", rig.js(R"(
@@ -414,11 +421,8 @@ void power_on(const Rig& rig) {
     return !!b && !b.closest('details') && !document.querySelector('details.state-menu').open;
   )") == true);
   // A new page receives live LinuxCNC status before the watchdog has seen fresh frames.
-  // The sim wires the watchdog hold to motion.jog-inhibit. Wait for its release before
-  // sending a power command, including the reset after platform() reloads the page.
-  const bool frames_ready = rig.wait(5s, []() -> bool {
-    return output_of("halcmd getp motion.jog-inhibit") == "FALSE";
-  });
+  // Wait for its release before sending a power command, including after a page reload.
+  const bool frames_ready = wait_for_panel_frames(rig);
   check("panel_fresh_frames_before_estop_reset", frames_ready);
   if (!frames_ready)
     throw Failure("the panel watchdog did not release after the page loaded");
@@ -1828,18 +1832,13 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   const auto directory_count = rig.js("return __t.counts.directory ?? 0;").get<std::size_t>();
   // WebGL work and snapshots can trip the panel-frame watchdog while LinuxCNC still reports
   // a live link. Even read-only directory requests need fresh frames.
-  const auto frames_ready = [&]() -> bool {
-    return rig.wait(5s, []() -> bool {
-      return output_of("halcmd getp motion.jog-inhibit") == "FALSE";
-    });
-  };
   const auto folder = Json(rig.config.program_prefix).dump();
   const bool listed =
-      frames_ready() && rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
+      wait_for_panel_frames(rig) && rig.click("button[aria-label=\"Open program\"]", "") == "ok" &&
       rig.wait_js(std::format("(__t.counts.directory ?? 0) > {} && __t.last.directory.path === {} && "
                               "!!__t.find('.entries button.entry', 'probe.ngc')",
                               directory_count, folder));
-  const bool ready_to_open = listed && frames_ready();
+  const bool ready_to_open = listed && wait_for_panel_frames(rig);
   const auto click = ready_to_open ? rig.js(R"(
     const sent = __t.sent.length;
     const click = __t.click('.entries button.entry', 'probe.ngc');
@@ -1983,14 +1982,14 @@ auto open_shape_templates(const Rig& rig) -> bool {
 }
 
 // The positions, among the messages the page received, of the first snapshot at `revision`
-// and of the result of the last command of `type` the page sent: [snapshot, result, outcome].
+// and of the result of the last command of `type` the page sent, followed by the reply and request.
 auto save_order(const Rig& rig, std::string_view type, int revision) -> Json {
   return rig.js(std::format(R"(
     const sent = __t.sent.filter((m) => m && m.type === '{}').pop();
-    if (!sent) return [-1, -1, 'not sent', null];
+    if (!sent) return [-1, -1, null, null];
     const snapshot = __t.received.findIndex((m) => m.type === 'tool_models' && m.revision === {});
     const result = __t.received.findIndex((m) => m.type === 'result' && m.id === sent.id);
-    return [snapshot, result, result < 0 ? 'no result' : __t.received[result].outcome, sent];)",
+    return [snapshot, result, __t.received[result] ?? null, sent];)",
                             type, revision));
 }
 
@@ -2029,7 +2028,10 @@ void tool_models_saved(const Rig& rig) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 100));
     return [before, input.value];)");
-  const auto saving = click_when_ready(rig, "section.dialog button.primary", "Save defaults");
+  // The 3D preview can stall frame delivery while its editor opens or updates.
+  const auto saving = wait_for_panel_frames(rig)
+                          ? click_when_ready(rig, "section.dialog button.primary", "Save defaults")
+                          : "Panel frames did not recover";
   const bool saved = rig.wait_js("__t.last.tool_models.revision === 1 && "
                                  "!!document.querySelector('.settings-grid')",
                                  15s);
@@ -2037,9 +2039,10 @@ void tool_models_saved(const Rig& rig) {
   check("tool_models_defaults_saved_by_the_editor",
         typed == Json::array({"35", "36.5"}) && saving == "ok" && saved &&
             order.at(0).get<int>() >= 0 && order.at(0).get<int>() < order.at(1).get<int>() &&
-            order.at(2) == "accepted" && order.at(3).at("base_revision") == 0 &&
+            order.at(2).value("outcome", "") == "accepted" &&
+            order.at(3).at("base_revision") == 0 &&
             order.at(3).at("machine_id") == "shell-mill",
-        std::format("typed={} click={} snapshot_at={} result_at={} outcome={} errors={}",
+        std::format("typed={} click={} snapshot_at={} result_at={} reply={} errors={}",
                     typed.dump(), saving, order.at(0).dump(), order.at(1).dump(),
                     order.at(2).dump(), rig.errors()));
   auto on_disk = Json::parse(contents(file), nullptr, false);
@@ -2062,8 +2065,9 @@ void tool_models_saved(const Rig& rig) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 100));
     return select.value;)");
-  const auto assigning =
-      click_when_ready(rig, "section.dialog button.primary", "Save tool");
+  const auto assigning = wait_for_panel_frames(rig)
+                             ? click_when_ready(rig, "section.dialog button.primary", "Save tool")
+                             : "Panel frames did not recover";
   const bool assigned =
       rig.wait_js("__t.last.tool_models.revision === 2 && !document.querySelector('.tool-fields')",
                   15s);
@@ -2076,9 +2080,10 @@ void tool_models_saved(const Rig& rig) {
                      {"comment", row.at("comment")}};
   check("tool_models_assignment_saved_by_the_editor",
         chosen == "touch-probe" && assigning == "ok" && assigned && order.at(0).get<int>() >= 0 &&
-            order.at(0).get<int>() < order.at(1).get<int>() && order.at(2) == "accepted" &&
+            order.at(0).get<int>() < order.at(1).get<int>() &&
+            order.at(2).value("outcome", "") == "accepted" &&
             order.at(3).at("base_revision") == 1 && order.at(3).at("tool") == binding,
-        std::format("click={} snapshot_at={} result_at={} outcome={} sent={} errors={}", assigning,
+        std::format("click={} snapshot_at={} result_at={} reply={} sent={} errors={}", assigning,
                     order.at(0).dump(), order.at(1).dump(), order.at(2).dump(),
                     word(order.at(3).dump()), rig.errors()));
   on_disk = Json::parse(contents(file), nullptr, false);

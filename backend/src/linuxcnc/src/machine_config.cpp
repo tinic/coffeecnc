@@ -541,13 +541,15 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     return std::unexpected(
         std::string("[DISPLAY] or [TRAJ] MAX_LINEAR_VELOCITY is required for jogging."));
   const double jog_ceiling = *jog * scale * seconds_per_minute;
+  std::array<double, 3> axis_velocity{};
   std::array<double, 3> axis_jog{};
   for (std::size_t i = 0; i < axis_jog.size(); ++i) {
     const auto velocity = ini.real(sections[i], "MAX_VELOCITY");
     if (!velocity || *velocity <= 0)
       return std::unexpected(
           std::format("[{}] MAX_VELOCITY is required for jogging.", sections[i]));
-    axis_jog[i] = std::min(*velocity * scale * seconds_per_minute, jog_ceiling);
+    axis_velocity[i] = *velocity * scale * seconds_per_minute;
+    axis_jog[i] = std::min(axis_velocity[i], jog_ceiling);
   }
   auto increments =
       parse_jog_increments(ini.text("DISPLAY", "INCREMENTS").value_or(std::string()), scale);
@@ -585,7 +587,12 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     if (ceiling < 1 || ceiling > *rpm || turns <= 0)
       return std::unexpected("Set both [COFFEECNC] RIGID_TAP_MAX_RPM and RIGID_TAP_REVERSAL_TURNS "
                              "to positive values within the machine spindle ceiling.");
-    rigid_tap = RigidTapLimits{ceiling, turns};
+    const double trajectory = ini.real("TRAJ", "MAX_LINEAR_VELOCITY").value_or(0) *
+                              scale * seconds_per_minute;
+    const double z_feed = std::min(axis_velocity[2], trajectory > 0 ? trajectory : axis_velocity[2]);
+    if (!std::isfinite(z_feed) || z_feed <= 0)
+      return std::unexpected("Rigid tapping requires a finite positive Z velocity ceiling.");
+    rigid_tap = RigidTapLimits{ceiling, turns, z_feed};
   }
   const auto homing = homing_required(ini);
   if (!homing)

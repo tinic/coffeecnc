@@ -368,6 +368,7 @@ const mGroups: Readonly<Record<number, string>> = {
   7: 'mist',
   8: 'flood',
   9: 'coolant off',
+  51: 'spindle override',
   70: 'modal state',
   72: 'modal state',
 }
@@ -609,6 +610,12 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     m.spindle = 'reverse'
   } else if (block.m.includes(5)) {
     m.spindle = 'stopped'
+  }
+  if (block.m.includes(51)) {
+    // The simulator has no live spindle override. Consume the programmed switch.
+    const override = word('P')
+    if (override !== undefined && override !== 0 && override !== 1)
+      throw new InterpError(line, 'M51 needs P0 or P1')
   }
   if (block.m.includes(7)) {
     m.mist = true

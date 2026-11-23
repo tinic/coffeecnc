@@ -138,7 +138,7 @@ describe('new operation dialog', () => {
     machineStatus()
     await open()
     expect(wrapper?.findAll('button').some((candidate) => candidate.text() === 'Rigid tapping')).toBe(false)
-    wire.receive({ ...machine, rigid_tap: { max_rpm: 300, reversal_turns: 1 } })
+    wire.receive({ ...machine, rigid_tap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 } })
     wire.receive(table)
     await nextTick()
     button('Rigid tapping').click()

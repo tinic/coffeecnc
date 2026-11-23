@@ -173,8 +173,9 @@ auto write_request(const HelperRequest& request) -> std::string {
   line("max_points", std::format("{}", request.max_points));
   line("chord_tolerance", std::format("{}", request.chord_tolerance));
   if (request.rigid_tap)
-    line("rigid_tap", std::format("{} {}", request.rigid_tap->max_rpm,
-                                   request.rigid_tap->reversal_turns));
+    line("rigid_tap", std::format("{} {} {}", request.rigid_tap->max_rpm,
+                                   request.rigid_tap->reversal_turns,
+                                   request.rigid_tap->max_z_feed_mm_min));
   if (request.restart_line)
     line("restart_line", std::format("{}", *request.restart_line));
   for (const auto& code : request.codes)
@@ -247,7 +248,9 @@ auto parse_request(std::string_view text) -> std::expected<HelperRequest, std::s
     else if (key == "rigid_tap") {
       RigidTapLimits tapping{};
       good = !request.rigid_tap && number(line, tapping.max_rpm) && tapping.max_rpm >= 1 &&
-             number(line, tapping.reversal_turns) && tapping.reversal_turns > 0 && word(line).empty();
+             number(line, tapping.reversal_turns) && tapping.reversal_turns > 0 &&
+             number(line, tapping.max_z_feed_mm_min) && tapping.max_z_feed_mm_min > 0 &&
+             word(line).empty();
       request.rigid_tap = tapping;
     } else if (key == "restart_line") {
       int target = 0;

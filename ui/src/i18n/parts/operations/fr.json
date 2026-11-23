@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "Les limites de taraudage rigide ne sont pas configurées sur cette machine.",
+      "tapZFeed": "Le pas × la vitesse dépasse la limite d’avance en Z de {feed}. Réduisez la vitesse de la broche.",
       "tapRpm": "Réglez la vitesse de taraudage entre 1 et {rpm} tr/min.",
       "tapPilotDepth": "La partie cylindrique du trou doit être plus profonde que {depth}.",
       "tapClearance": "Réglez le dégagement à au moins {height} pour l’inversion au retour.",

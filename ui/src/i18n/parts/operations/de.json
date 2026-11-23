@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "Für diese Maschine sind keine Grenzen für synchrones Gewindebohren konfiguriert.",
+      "tapZFeed": "Steigung × Drehzahl überschreitet den Z-Vorschubgrenzwert von {feed}. Spindeldrehzahl senken.",
       "tapRpm": "Drehzahl zwischen 1 und {rpm} U/min einstellen.",
       "tapPilotDepth": "Der zylindrische Teil der Vorbohrung muss tiefer als {depth} sein.",
       "tapClearance": "Für die Rücklaufumkehr eine Freihöhe von mindestens {height} einstellen.",

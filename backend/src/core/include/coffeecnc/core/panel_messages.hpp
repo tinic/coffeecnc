@@ -52,6 +52,7 @@ struct Macro {
 struct RigidTapLimits {
   double max_rpm;
   double reversal_turns;
+  double max_z_feed_mm_min;
   friend auto operator==(const RigidTapLimits&, const RigidTapLimits&) -> bool = default;
 };
 

@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "This machine has no configured rigid tapping limits.",
+      "tapZFeed": "Pitch × rpm exceeds the Z feed limit of {feed}. Reduce the spindle speed.",
       "tapRpm": "Set the rigid tapping speed between 1 and {rpm} rpm.",
       "tapPilotDepth": "The straight part of the pilot hole must be deeper than {depth}.",
       "tapClearance": "Set clearance to at least {height} for the return reversal.",

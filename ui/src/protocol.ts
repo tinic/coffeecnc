@@ -41,6 +41,7 @@ export type FeedMode = 'per_minute' | 'inverse_time' | 'per_revolution'
 export interface RigidTapLimits {
   max_rpm: number
   reversal_turns: number
+  max_z_feed_mm_min: number
 }
 
 /** Sent once after the panel's `ready`: what does not change while the machine runs. */

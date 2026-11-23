@@ -241,8 +241,13 @@ void rigid_tapping_limits() {
   };
   require(!load(std::string(g0759)).value().rigid_tap, "Rigid tapping is absent by default");
   const auto configured = load(make("RIGID_TAP_MAX_RPM = 300\nRIGID_TAP_REVERSAL_TURNS = 1.2\n"));
-  require(configured && configured->rigid_tap == RigidTapLimits{300, 1.2},
-          "Both tapping limits enable the capability");
+  require(configured && configured->rigid_tap == RigidTapLimits{300, 1.2, 750},
+          "Both tapping limits enable the capability with the Z-axis feed ceiling");
+  const auto capped = load(with(make("RIGID_TAP_MAX_RPM = 300\nRIGID_TAP_REVERSAL_TURNS = 1.2\n"),
+                                "MAX_LINEAR_VELOCITY = 25.00\n",
+                                "MAX_LINEAR_VELOCITY = 10.00\n"));
+  require(capped && capped->rigid_tap == RigidTapLimits{300, 1.2, 600},
+          "The trajectory ceiling can further limit tapping feed");
   require(has(error(make("RIGID_TAP_MAX_RPM = 300\n")), "REVERSAL_TURNS"),
           "The reversal allowance cannot be omitted");
   require(has(error(make("RIGID_TAP_MAX_RPM = 1600\nRIGID_TAP_REVERSAL_TURNS = 1\n")),

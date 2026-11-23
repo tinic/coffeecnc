@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "此机床尚未配置刚性攻丝限值。",
+      "tapZFeed": "螺距 × 转速超过 Z 轴进给上限 {feed}。请降低主轴转速。",
       "tapRpm": "请将攻丝转速设为 1 至 {rpm} rpm。",
       "tapPilotDepth": "底孔直筒段深度必须大于 {depth}。",
       "tapClearance": "回程反转所需的安全高度至少为 {height}。",

@@ -351,15 +351,15 @@ function errors(generated: Generated): string[] {
 }
 
 describe('rigid tapping', () => {
-  const setup = { ...mm, rpm: 300, rigidTap: { max_rpm: 300, reversal_turns: 1 }, pattern: 'grid',
+  const setup = { ...mm, rpm: 300, rigidTap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 }, pattern: 'grid',
     x: 4, y: 3, columns: 2, rows: 1, spacingX: 10, spacingY: 0, count: NaN, radius: NaN, startAngle: NaN,
     depth: 4, pitch: 1, pilotDepth: 7, retract: 2 } as const satisfies RigidTapping
 
   it('prepositions XY, taps only Z and rapids to clearance only after the synchronized return', () => {
     const program = text(rigidTapping(setup))
     expect(program).toContain('G90 G94 G97')
-    expect(program).toContain('S300 M3\nG0 Z5\nG0 X4 Y3\nG0 Z2\nG33.1 Z-4 K1\nG0 Z5\nG0 X14 Y3')
-    expect(program).toContain('G33.1 Z-4 K1\nG0 Z5\nM5\nM2')
+    expect(program).toContain('S300 M3\nG0 Z5\nM51 P0\nG0 X4 Y3\nG0 Z2\nG33.1 Z-4 K1\nG0 Z5\nG0 X14 Y3')
+    expect(program).toContain('G33.1 Z-4 K1\nG0 Z5\nM51 P1\nM5\nM2')
     const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
     expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
   })
@@ -371,6 +371,8 @@ describe('rigid tapping', () => {
     const { rigidTap, ...unqualified } = setup
     expect(errors(rigidTapping(unqualified))[0]).toContain('no configured rigid tapping limits')
     expect(errors(rigidTapping({ ...setup, rpm: rigidTap.max_rpm + 1 }))[0]).toContain('300 rpm')
+    expect(errors(rigidTapping({ ...setup, pitch: 3 }))[0]).toContain('750 mm/min')
+    expect(errors(rigidTapping({ ...imperial, pitch: 0.12 }))[0]).toContain('29.53 in/min')
     expect(errors(rigidTapping({ ...setup, pilotDepth: 4.7 }))[0]).toContain('deeper than 5 mm')
     expect(errors(rigidTapping({ ...setup, clearance: 2.5 }))[0]).toContain('at least 3 mm')
   })
@@ -781,7 +783,7 @@ describe('dialog entries', () => {
         const parsed = parse(op, op.defaults(unit), unit)
         const generated = op.generate(parsed, { unit, tool: { number: 2, diameter: unit === 'inch' ? 0.25 : 6, comment: '' },
           rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance'),
-          rigidTap: { max_rpm: 300, reversal_turns: 1 } })
+          rigidTap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 } })
         expect(errors(generated), `${op.id} ${unit}`).toEqual([])
       }
   })

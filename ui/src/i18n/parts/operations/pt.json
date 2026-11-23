@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "Esta máquina não tem limites de roscagem rígida configurados.",
+      "tapZFeed": "Passo × rotação excede o limite de avanço em Z de {feed}. Reduza a rotação do fuso.",
       "tapRpm": "Defina a velocidade de roscagem entre 1 e {rpm} rpm.",
       "tapPilotDepth": "A parte cilíndrica do furo tem de ser mais profunda do que {depth}.",
       "tapClearance": "Defina uma altura livre de pelo menos {height} para a inversão no retorno.",

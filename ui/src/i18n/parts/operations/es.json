@@ -151,6 +151,7 @@
     },
     "check": {
       "tapUnavailable": "Esta máquina no tiene límites de roscado rígido configurados.",
+      "tapZFeed": "El paso × las rpm supera el límite de avance en Z de {feed}. Reduzca la velocidad del husillo.",
       "tapRpm": "Ajusta la velocidad de roscado entre 1 y {rpm} rpm.",
       "tapPilotDepth": "El tramo cilíndrico del agujero debe tener más de {depth} de profundidad.",
       "tapClearance": "Ajusta una altura libre de al menos {height} para la inversión de salida.",

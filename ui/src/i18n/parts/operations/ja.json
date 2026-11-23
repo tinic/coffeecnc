@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "面取りカッターを選択",
       "chooseFinishTool": "リーマまたはボーリング工具を選択",
       "pocketOptions": "寸法、進入、側面",
       "reviewJob": "ジョブを確認",
@@ -22,6 +23,8 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "chamfer": "面取り",
+      "chamferSetup": "上面を Z0 に設定し、工具テーブルには最大切削径を入力してください。面取り幅は上面で測ります。",
       "holeFinishing": "リーマ / ボーリング",
       "holeFinishingSetup": "下穴を使用し、工具が設定した深さまで送りで進入し、退避できることを確認してください。",
       "contour": "輪郭",
@@ -39,6 +42,11 @@
       "threadMillSetup": "単山ねじ切りカッターと下穴を使用します。刃部と首部が穴に干渉しないことを確認し、工具中心での送り速度を入力してください。 ねじ深さは工具先端の Z 位置です。刃の高さを考慮してください。"
     },
     "label": {
+      "chamferWidth": "面取り幅",
+      "chamferIncludedAngle": "工具の先端角",
+      "chamferTipDiameter": "先端径",
+      "chamferTipBelow": "面取り下端からの突出量",
+      "chamferOpeningDepth": "加工済みの深さ",
       "boreDwell": "底面での停止時間",
       "profileShape": "形状",
       "profileSide": "切削側",
@@ -144,6 +152,13 @@
       "threadLeft": "左ねじ"
     },
     "check": {
+      "chamferAngle": "先端角は 0° より大きく 180° 未満にしてください。",
+      "chamferTip": "先端径はゼロ、またはカッター径より小さくしてください。",
+      "chamferPrecision": "面取り幅、先端深さ、退避高さ、送り速度、主軸回転数がプログラムの精度に収まるか確認してください。",
+      "chamferTooWide": "上面が残るように面取り幅を設定してください。",
+      "chamferCutter": "必要な切削径が工具の最大切削径を超えています。",
+      "chamferOpeningDepth": "開口部は {depth} より深い位置まで空いている必要があります。",
+      "chamferRoom": "穴またはポケットが小さすぎて、カッターが進入できません。",
       "profilePrecision": "寸法と送りを確認してください。各パスはプログラムの精度で表現できる値とし、最大 2,000 パスにしてください。",
       "profileCorner": "角の半径は 0 以上かつ短い辺の半分未満にしてください。",
       "profileInsideCorner": "内側の角の半径は工具半径（{radius}）より大きくしてください。",

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { bore } from '../src/conversational/bore'
+import { chamfer, type Chamfer } from '../src/conversational/chamfer'
 import { contour, type Contour } from '../src/conversational/contour'
 import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
@@ -414,6 +415,44 @@ describe('contours', () => {
       'The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.')
     expect(errors(contour({ ...circular, shape: 'rectangle', inside: true, width: 40, height: 35, corner: 4 }))).toContain(
       'An inside corner radius must be greater than the cutter radius (5).')
+  })
+})
+
+describe('chamfers', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const outside = { ...mm, tool: { ...mm.tool, diameter: 6 }, x: 0, y: 0, inside: false,
+    shape: 'rectangle', width: 40, height: 30, corner: 0, chamferWidth: 1, includedAngle: 90,
+    tipDiameter: 0, tipBelow: 0.5, openingDepth: NaN, entryFeed: 60, feed: 150 } as const satisfies Chamfer
+  const inside = { ...inch, x: 0.5, y: -0.25, inside: true, shape: 'circle', diameter: 1,
+    chamferWidth: 0.04, includedAngle: 90, tipDiameter: 0.04, tipBelow: 0.02,
+    openingDepth: 0.2, entryFeed: 2.4, feed: 6 } as const satisfies Chamfer
+
+  it('rolls into a metric outside rectangle and rounds the tool path around sharp corners', () => {
+    const program = text(chamfer(outside))
+    expect(program).toContain('G0 X1.001 Y-16.501\nG1 Z-1.5 F60\nG3 X0 Y-15.5 I-1.001 J0 F150')
+    expect(program).toContain('G1 X-20 Y-15.5\nG2 X-20.5 Y-15 I0 J0.5')
+    expect(program).toContain('G3 X-1.001 Y-16.501 I0 J-1.001\nG0 Z5')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('accounts for a flat tip and enters a circular hole from its centre', () => {
+    const program = text(chamfer(inside))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.5 Y-0.25\nG1 Z-0.06 F2.4\nG3 X0.5 Y-0.71 I0 J-0.23 F6')
+    expect(program).toContain('G3 X0.5 Y-0.71 I0 J0.46\nG3 X0.5 Y-0.25 I0 J0.23')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('offsets an inside rounded rectangle and checks the opening and cutter geometry', () => {
+    const rounded = { ...outside, inside: true, corner: 3, openingDepth: 8 }
+    expect(text(chamfer(rounded))).toContain('G3 X19.5 Y-12 I0 J2.5')
+    expect(errors(chamfer({ ...rounded, corner: 0 }))[0]).toContain('inside corner radius')
+    expect(errors(chamfer({ ...inside, openingDepth: 0.05 }))[0]).toContain('deeper than 0.06 in')
+    expect(errors(chamfer({ ...inside, diameter: 0.12 }))[0]).toContain('too small')
+    expect(errors(chamfer({ ...outside, tipDiameter: 4 }))[0]).toContain('maximum cutting diameter')
   })
 })
 

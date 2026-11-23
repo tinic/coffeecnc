@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Selecionar uma fresa de chanfrar",
       "chooseFinishTool": "Selecionar um alargador ou uma ferramenta de mandrilar",
       "pocketOptions": "Geometria, entrada e paredes",
       "reviewJob": "Rever trabalho",
@@ -22,6 +23,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "chamfer": "Chanfro",
+      "chamferSetup": "Defina Z0 na face superior e use o diâmetro máximo de corte na tabela de ferramentas. A largura do chanfro é medida na face superior.",
       "holeFinishing": "Alargamento / mandrilagem",
       "holeFinishingSetup": "Use furos pré-perfurados e verifique se a ferramenta consegue avançar até à profundidade programada e sair dela.",
       "contour": "Contorno",
@@ -39,6 +42,11 @@
       "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta. A profundidade da rosca define o Z da ponta. Tenha em conta a altura do dente."
     },
     "label": {
+      "chamferWidth": "Largura do chanfro",
+      "chamferIncludedAngle": "Ângulo incluído",
+      "chamferTipDiameter": "Diâmetro da ponta",
+      "chamferTipBelow": "Ponta abaixo do chanfro",
+      "chamferOpeningDepth": "Profundidade pré-maquinada",
       "boreDwell": "Pausa no fundo",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
@@ -144,6 +152,13 @@
       "threadLeft": "À esquerda"
     },
     "check": {
+      "chamferAngle": "O ângulo incluído tem de ser maior que 0° e menor que 180°.",
+      "chamferTip": "O diâmetro da ponta tem de ser zero ou menor que o da fresa.",
+      "chamferPrecision": "Verifique a largura, a profundidade da ponta, a altura livre, os avanços e a rotação em relação à precisão do programa.",
+      "chamferTooWide": "O chanfro tem de deixar espaço na face superior.",
+      "chamferCutter": "O corte necessário excede o diâmetro máximo de corte da fresa.",
+      "chamferOpeningDepth": "A abertura tem de estar livre a uma profundidade superior a {depth}.",
+      "chamferRoom": "O furo ou a cavidade são demasiado pequenos para a fresa e a sua entrada.",
       "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
       "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
       "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",

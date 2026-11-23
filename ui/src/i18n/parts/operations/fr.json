@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Choisir une fraise à chanfreiner",
       "chooseFinishTool": "Choisir un alésoir ou un outil à aléser",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
@@ -22,6 +23,8 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "chamfer": "Chanfrein",
+      "chamferSetup": "Réglez Z0 sur la face supérieure et utilisez le diamètre de coupe maximal dans la table d’outils. La largeur du chanfrein se mesure sur la face supérieure.",
       "holeFinishing": "Alésage",
       "holeFinishingSetup": "Utilisez des trous prépercés et vérifiez que l’outil peut descendre à la profondeur programmée et remonter en avance.",
       "contour": "Contour",
@@ -39,6 +42,11 @@
       "threadMillSetup": "Utilisez une fraise à fileter à profil unique et un trou prépercé. Vérifiez le dégagement de la fraise et de son col. Saisissez l’avance au centre de l’outil. La profondeur définit le Z de la pointe. Tenez compte de la hauteur de la dent."
     },
     "label": {
+      "chamferWidth": "Largeur du chanfrein",
+      "chamferIncludedAngle": "Angle au sommet",
+      "chamferTipDiameter": "Diamètre de la pointe",
+      "chamferTipBelow": "Pointe sous le chanfrein",
+      "chamferOpeningDepth": "Profondeur préusinée",
       "boreDwell": "Temporisation au fond",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
@@ -144,6 +152,13 @@
       "threadLeft": "À gauche"
     },
     "check": {
+      "chamferAngle": "L’angle au sommet doit être supérieur à 0° et inférieur à 180°.",
+      "chamferTip": "Le diamètre de la pointe doit être nul ou inférieur à celui de la fraise.",
+      "chamferPrecision": "Vérifiez la largeur, la profondeur de pointe, le dégagement, les avances et la vitesse selon la précision du programme.",
+      "chamferTooWide": "Le chanfrein doit laisser de la place sur la face supérieure.",
+      "chamferCutter": "La coupe demandée dépasse le diamètre de coupe maximal de la fraise.",
+      "chamferOpeningDepth": "L’ouverture doit être dégagée au-delà de {depth}.",
+      "chamferRoom": "Le trou ou la poche sont trop petits pour la fraise et son entrée.",
       "profilePrecision": "Vérifiez les dimensions et les avances. Chaque passe doit respecter la précision du programme. Maximum 2 000 passes.",
       "profileCorner": "Le rayon de coin doit être positif ou nul et inférieur à la moitié du plus petit côté.",
       "profileInsideCorner": "Le rayon d’un coin intérieur doit dépasser le rayon de l’outil ({radius}).",

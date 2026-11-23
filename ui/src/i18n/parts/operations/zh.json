@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "选择倒角铣刀",
       "chooseFinishTool": "选择铰刀或镗刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
@@ -22,6 +23,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "chamfer": "倒角",
+      "chamferSetup": "将顶面设为 Z0，刀具表中使用铣刀的最大切削直径。倒角宽度在顶面上测量。",
       "holeFinishing": "铰孔 / 镗孔",
       "holeFinishingSetup": "使用预钻孔，并确认刀具能够以进给速度到达设定深度并退出。",
       "contour": "轮廓",
@@ -39,6 +42,11 @@
       "threadMillSetup": "使用单齿螺纹铣刀和预钻底孔。确认刀刃和刀颈可以在孔内通过。输入刀具中心的进给速度。 螺纹深度设定刀尖的 Z 位置。请留出刀齿高度。"
     },
     "label": {
+      "chamferWidth": "倒角宽度",
+      "chamferIncludedAngle": "刀具夹角",
+      "chamferTipDiameter": "刀尖直径",
+      "chamferTipBelow": "刀尖低于倒角底边",
+      "chamferOpeningDepth": "预加工深度",
       "boreDwell": "孔底暂停",
       "profileShape": "形状",
       "profileSide": "切削侧",
@@ -144,6 +152,13 @@
       "threadLeft": "左旋"
     },
     "check": {
+      "chamferAngle": "刀具夹角必须大于 0° 且小于 180°。",
+      "chamferTip": "刀尖直径必须为零或小于铣刀直径。",
+      "chamferPrecision": "请按程序精度检查倒角宽度、刀尖深度、安全高度、进给速度和主轴转速。",
+      "chamferTooWide": "倒角后必须保留顶面。",
+      "chamferCutter": "所需切削直径超过铣刀最大切削直径。",
+      "chamferOpeningDepth": "开口的无障碍深度必须大于 {depth}。",
+      "chamferRoom": "孔或型腔太小，铣刀无法进入。",
       "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
       "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
       "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",

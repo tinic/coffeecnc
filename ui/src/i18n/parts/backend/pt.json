@@ -169,7 +169,12 @@
       "noSettingsStorage": "O armazenamento das definições do operador não faz parte desta sessão.",
       "tooManySettingsChanges": "Há demasiadas alterações das definições em espera.",
       "settingsPageEnded": "Esta página de definições terminou.",
-      "tooManyChanges": "Há demasiadas alterações dos modelos da ferramenta em espera."
+      "tooManyChanges": "Há demasiadas alterações dos modelos da ferramenta em espera.",
+      "fileNotOpenedAppend": "não é possível abrir o ficheiro: {error}",
+      "fileNotWritten": "não é possível escrever o ficheiro: {error}",
+      "fileNotSynchronised": "não é possível sincronizar o ficheiro: {error}",
+      "fileNotClosed": "não é possível fechar o ficheiro: {error}",
+      "appendUnsupported": "não é possível acrescentar a {path} aqui"
     },
     "offsetHistory": {
       "nameNotString": "um nome não é uma cadeia de texto",
@@ -575,6 +580,15 @@
     "jogStop": {
       "watchdog": "Jog parado pelo watchdog HAL: o sinal de vida do CoffeeCNC parou durante mais tempo do que o limite do watchdog.",
       "probeContact": "Jog parado: contacto do apalpador"
+    },
+    "alarmLog": {
+      "cannotRead": "Não é possível ler o registo de alarmes {file}: {detail}",
+      "notRotated": "Não foi possível rodar o registo de alarmes: {detail}",
+      "notSaved": "Não foi possível guardar o registo de alarmes: {detail}",
+      "entriesLost": "Não foi possível guardar algumas entradas do registo de alarmes.",
+      "keptForRun": "O registo de alarmes em {directory} é mantido apenas nesta execução: {detail}",
+      "inUse": "está em uso por outro CoffeeCNC.",
+      "notLocked": "o seu bloqueio não pode ser obtido: {detail}."
     },
     "halDiagnostics": {
       "notInstalled": "{name} não está instalado: não está no caminho de pesquisa ({path}).",

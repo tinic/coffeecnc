@@ -169,7 +169,12 @@
       "noSettingsStorage": "此会话不包含操作员设置存储。",
       "tooManySettingsChanges": "等待中的设置更改过多。",
       "settingsPageEnded": "此设置页面已结束。",
-      "tooManyChanges": "等待中的刀具模型更改过多。"
+      "tooManyChanges": "等待中的刀具模型更改过多。",
+      "fileNotOpenedAppend": "无法打开文件：{error}",
+      "fileNotWritten": "无法写入文件：{error}",
+      "fileNotSynchronised": "无法同步文件：{error}",
+      "fileNotClosed": "无法关闭文件：{error}",
+      "appendUnsupported": "此处无法向 {path} 追加内容"
     },
     "offsetHistory": {
       "nameNotString": "某个名称不是字符串",
@@ -575,6 +580,15 @@
     "jogStop": {
       "watchdog": "点动被 HAL 看门狗停止：CoffeeCNC 的心跳中断时间超过了看门狗超时。",
       "probeContact": "点动已停止：探针接触"
+    },
+    "alarmLog": {
+      "cannotRead": "无法读取报警日志 {file}：{detail}",
+      "notRotated": "无法轮换报警日志：{detail}",
+      "notSaved": "无法保存报警日志：{detail}",
+      "entriesLost": "部分报警日志条目无法保存。",
+      "keptForRun": "{directory} 中的报警日志仅在本次运行中保留：{detail}",
+      "inUse": "另一个 CoffeeCNC 正在使用它。",
+      "notLocked": "无法获取其锁：{detail}。"
     },
     "halDiagnostics": {
       "notInstalled": "{name} 未安装：它不在搜索路径中（{path}）。",

@@ -169,7 +169,12 @@
       "noSettingsStorage": "Der Speicher für Bedienereinstellungen gehört nicht zu dieser Sitzung.",
       "tooManySettingsChanges": "Zu viele Einstellungsänderungen warten.",
       "settingsPageEnded": "Diese Einstellungsseite ist beendet.",
-      "tooManyChanges": "Zu viele Werkzeugmodell-Änderungen warten."
+      "tooManyChanges": "Zu viele Werkzeugmodell-Änderungen warten.",
+      "fileNotOpenedAppend": "die Datei kann nicht geöffnet werden: {error}",
+      "fileNotWritten": "die Datei kann nicht geschrieben werden: {error}",
+      "fileNotSynchronised": "die Datei kann nicht synchronisiert werden: {error}",
+      "fileNotClosed": "die Datei kann nicht geschlossen werden: {error}",
+      "appendUnsupported": "an {path} kann hier nicht angehängt werden"
     },
     "offsetHistory": {
       "nameNotString": "ein Name ist keine Zeichenkette",
@@ -575,6 +580,15 @@
     "jogStop": {
       "watchdog": "Tippen durch den HAL-Watchdog gestoppt: Der Heartbeat von CoffeeCNC stand länger still als das Watchdog-Timeout.",
       "probeContact": "Tippen gestoppt: Tasterkontakt"
+    },
+    "alarmLog": {
+      "cannotRead": "Das Alarmprotokoll {file} kann nicht gelesen werden: {detail}",
+      "notRotated": "Das Alarmprotokoll konnte nicht rotiert werden: {detail}",
+      "notSaved": "Das Alarmprotokoll konnte nicht gespeichert werden: {detail}",
+      "entriesLost": "Einige Einträge des Alarmprotokolls konnten nicht gespeichert werden.",
+      "keptForRun": "Das Alarmprotokoll in {directory} wird nur für diesen Lauf geführt: {detail}",
+      "inUse": "es wird von einem anderen CoffeeCNC verwendet.",
+      "notLocked": "seine Sperre kann nicht gesetzt werden: {detail}."
     },
     "halDiagnostics": {
       "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",

@@ -218,7 +218,13 @@
       "faultStale": "Meldet veraltet",
       "faultStaleTip": "LinuxCNC schreibt seinen Status nicht mehr; der letzte kommt weiter an.",
       "faultDown": "Meldet getrennt",
-      "faultDownTip": "Keine Verbindung zu LinuxCNC; Platzhalterstatus."
+      "faultDownTip": "Keine Verbindung zu LinuxCNC; Platzhalterstatus.",
+      "sinceLoad": "Diese Sitzung",
+      "noneSinceLoad": "In dieser Sitzung noch keine Meldungen.",
+      "beforeLoad": "Diese Sitzung, vor dem Neuladen der Bedienoberfläche",
+      "earlierRun": "Frühere Sitzung, {time}",
+      "notSaved": "Dieses Protokoll wird nicht gespeichert: {reason}",
+      "skipped": "{count} beschädigte Zeile des gespeicherten Protokolls wurde übersprungen. | {count} beschädigte Zeilen des gespeicherten Protokolls wurden übersprungen."
     },
     "quit": {
       "title": "CoffeeCNC beenden?",

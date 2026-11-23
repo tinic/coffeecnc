@@ -169,7 +169,12 @@
       "noSettingsStorage": "El almacenamiento de ajustes del operador no forma parte de esta sesión.",
       "tooManySettingsChanges": "Hay demasiados cambios de ajustes en espera.",
       "settingsPageEnded": "Esta página de ajustes ha finalizado.",
-      "tooManyChanges": "Hay demasiados cambios de modelos de herramienta en espera."
+      "tooManyChanges": "Hay demasiados cambios de modelos de herramienta en espera.",
+      "fileNotOpenedAppend": "no se puede abrir el archivo: {error}",
+      "fileNotWritten": "no se puede escribir el archivo: {error}",
+      "fileNotSynchronised": "no se puede sincronizar el archivo: {error}",
+      "fileNotClosed": "no se puede cerrar el archivo: {error}",
+      "appendUnsupported": "no se puede añadir a {path} aquí"
     },
     "offsetHistory": {
       "nameNotString": "un nombre no es una cadena",
@@ -575,6 +580,15 @@
     "jogStop": {
       "watchdog": "Jog detenido por el watchdog de HAL: el latido de CoffeeCNC se detuvo durante más tiempo que el límite del watchdog.",
       "probeContact": "Jog detenido: contacto del palpador"
+    },
+    "alarmLog": {
+      "cannotRead": "No se puede leer el registro de alarmas {file}: {detail}",
+      "notRotated": "No se pudo rotar el registro de alarmas: {detail}",
+      "notSaved": "No se pudo guardar el registro de alarmas: {detail}",
+      "entriesLost": "No se pudieron guardar algunas entradas del registro de alarmas.",
+      "keptForRun": "El registro de alarmas en {directory} se guarda solo durante esta ejecución: {detail}",
+      "inUse": "lo usa otro CoffeeCNC.",
+      "notLocked": "no se puede tomar su bloqueo: {detail}."
     },
     "halDiagnostics": {
       "notInstalled": "{name} no está instalado: no está en la ruta de búsqueda ({path}).",

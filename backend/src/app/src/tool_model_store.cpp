@@ -264,6 +264,29 @@ void LocalToolModelFiles::discard(const std::string& path) {
   static_cast<void>(::unlink(path.c_str()));
 }
 
+auto LocalToolModelFiles::append(const std::string& path, std::string_view bytes) -> Done {
+  int opened =
+      ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, file_mode);
+  if (opened < 0)
+    return failure("the file cannot be opened");
+  const auto done = [&]() -> Done {
+    while (!bytes.empty()) {
+      const auto written = ::write(opened, bytes.data(), bytes.size());
+      if (written < 0 && errno == EINTR)
+        continue;
+      if (written < 0)
+        return failure("the file cannot be written");
+      bytes.remove_prefix(static_cast<std::size_t>(written));
+    }
+    if (::fsync(opened) != 0)
+      return failure("the file cannot be synchronised");
+    return {};
+  }();
+  if (!close_descriptor(opened) && done)
+    return failure("the file cannot be closed");
+  return done;
+}
+
 ToolModelArchive::ToolModelArchive(ToolModelFiles& files, ToolModelLocation location)
     : files_(files), location_(std::move(location)) {
   show({location_.machine_id,
@@ -465,12 +488,25 @@ ToolModelStore::ToolModelStore(ToolModelFiles& files, ToolModelLocation location
       thread_([this]() -> void { loop(); }) {}
 
 ToolModelStore::~ToolModelStore() {
+  stop();
+  archive_.close();
+}
+
+void ToolModelStore::stop() {
+  if (!thread_.joinable())
+    return;
   {
     const std::scoped_lock lock{mutex_};
     stop_ = true;
   }
   wake_.notify_all();
   thread_.join();
+}
+
+auto ToolModelStore::held_location() -> ToolModelLocation {
+  std::unique_lock lock{mutex_};
+  opened_.wait(lock, [this]() -> bool { return held_.has_value(); });
+  return held_ ? *held_ : ToolModelLocation{};
 }
 
 auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand command)
@@ -584,6 +620,11 @@ void ToolModelStore::loop() {
   refresh_probe_tools();
   if (operator_settings_)
     operator_settings_->open(archive_.shared_location());
+  {
+    const std::scoped_lock lock{mutex_};
+    held_ = archive_.shared_location();
+  }
+  opened_.notify_all();
   const auto send = [this](PageToken page, std::vector<std::string> messages) -> void {
     {
       const std::scoped_lock lock{mutex_};
@@ -640,7 +681,6 @@ void ToolModelStore::loop() {
     messages.push_back(encode_result(next->id, reply.outcome, reply.reason));
     send(next->page, std::move(messages));
   }
-  archive_.close();
 }
 
 } // namespace coffeecnc

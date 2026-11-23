@@ -218,7 +218,13 @@
       "faultStale": "报告过时",
       "faultStaleTip": "LinuxCNC 已停止写入状态；最后一条状态持续到达。",
       "faultDown": "报告断开",
-      "faultDownTip": "未连接到 LinuxCNC；占位状态。"
+      "faultDownTip": "未连接到 LinuxCNC；占位状态。",
+      "sinceLoad": "本次会话",
+      "noneSinceLoad": "本次会话暂无消息。",
+      "beforeLoad": "本次会话，面板重新加载之前",
+      "earlierRun": "以前的会话，{time}",
+      "notSaved": "此日志不会保存：{reason}",
+      "skipped": "已跳过已保存日志中 {count} 行损坏的内容。"
     },
     "quit": {
       "title": "退出 CoffeeCNC？",

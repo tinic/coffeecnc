@@ -1351,6 +1351,27 @@ const examples = [
     "entries": []
   },
   {
+    "type": "alarm_log",
+    "storage": "saved",
+    "reason": "",
+    "session": 3,
+    "skipped": 1,
+    "entries": [
+      { "session": 1, "time": 1700000000000, "level": "error", "text": "Joint 2 following error", "outcome": null, "command": null },
+      { "session": 2, "time": 1700000100000, "level": "info", "text": "Program loaded", "outcome": null, "command": null },
+      { "session": 2, "time": 1700000105000, "level": "error", "text": "The machine is off.", "outcome": "rejected",
+        "command": { "type": "home", "axis": "x" } }
+    ]
+  },
+  {
+    "type": "alarm_log",
+    "storage": "session_only",
+    "reason": "No machine identity configured",
+    "session": 1,
+    "skipped": 0,
+    "entries": []
+  },
+  {
     "type": "diagnostics",
     "inputs": [
       { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },
@@ -1373,7 +1394,7 @@ const examples = [
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
   hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
-  preview: true, message: true, result: true, directory: true, offset_history: true, diagnostics: true,
+  preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, diagnostics: true,
 }
 
 describe('protocol/fixtures/messages.json', () => {

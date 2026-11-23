@@ -104,6 +104,12 @@ public:
   [[nodiscard]] virtual auto sync_directory(const std::string& directory) -> Done = 0;
   // Closes the temporary file if it is open and removes it. Failure is not reported.
   virtual void discard(const std::string& path) = 0;
+  // Appends to the regular file, made with mode 0600 when it is missing, and fsyncs it. A
+  // failure can leave part of the bytes in the file. The temporary file is not touched.
+  [[nodiscard]] virtual auto append(const std::string& path, std::string_view bytes) -> Done {
+    static_cast<void>(bytes);
+    return std::unexpected(path + " cannot be appended to here");
+  }
 
 protected:
   ToolModelFiles(const ToolModelFiles&) = default;
@@ -133,6 +139,7 @@ public:
   [[nodiscard]] auto link(const std::string& from, const std::string& to) -> Done override;
   [[nodiscard]] auto sync_directory(const std::string& directory) -> Done override;
   void discard(const std::string& path) override;
+  [[nodiscard]] auto append(const std::string& path, std::string_view bytes) -> Done override;
 
 private:
   int lock_{-1};
@@ -273,7 +280,7 @@ public:
   // The files must outlive the store. Starts the thread, which opens the archive.
   ToolModelStore(ToolModelFiles& files, ToolModelLocation location, Deliver deliver,
                  std::optional<Limits> operator_limits = std::nullopt);
-  // The command being written is finished; those waiting are dropped; the lock is released.
+  // stop(), then the lock is released.
   ~ToolModelStore() override;
   ToolModelStore(const ToolModelStore&) = delete;
   auto operator=(const ToolModelStore&) -> ToolModelStore& = delete;
@@ -290,6 +297,12 @@ public:
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
   // writer gets to them are one snapshot, for the page of the last.
   void send_snapshot(PageToken page);
+  // Waits until the writer has opened the archive. `available` with the directory: this process
+  // holds the data directory's lock, until the store is destroyed. Otherwise why it does not.
+  [[nodiscard]] auto held_location() -> ToolModelLocation;
+  // Stops the writer as the destructor does, but the lock is held until destruction: what
+  // others write in the data directory at the end of the run is still under it.
+  void stop();
 
 private:
   struct Pending {
@@ -312,6 +325,8 @@ private:
   bool probe_catalog_ready_{};
   std::optional<int> changing_probe_;
   std::optional<PageToken> snapshot_due_;
+  std::optional<ToolModelLocation> held_; // set once the archive is opened
+  std::condition_variable opened_;
   // Every page up to this one has ended.
   std::uint64_t ended_through_{};
   bool stop_{};

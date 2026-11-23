@@ -169,7 +169,12 @@
       "noSettingsStorage": "Le stockage des réglages opérateur ne fait pas partie de cette session.",
       "tooManySettingsChanges": "Trop de modifications de réglages sont en attente.",
       "settingsPageEnded": "Cette page de réglages est terminée.",
-      "tooManyChanges": "Trop de modifications de modèles d’outil sont en attente."
+      "tooManyChanges": "Trop de modifications de modèles d’outil sont en attente.",
+      "fileNotOpenedAppend": "le fichier ne peut pas être ouvert : {error}",
+      "fileNotWritten": "le fichier ne peut pas être écrit : {error}",
+      "fileNotSynchronised": "le fichier ne peut pas être synchronisé : {error}",
+      "fileNotClosed": "le fichier ne peut pas être fermé : {error}",
+      "appendUnsupported": "impossible d’ajouter à {path} ici"
     },
     "offsetHistory": {
       "nameNotString": "un nom n’est pas une chaîne",
@@ -575,6 +580,15 @@
     "jogStop": {
       "watchdog": "Jog arrêté par le chien de garde HAL : le signal de vie de CoffeeCNC s’est interrompu plus longtemps que le délai du chien de garde.",
       "probeContact": "Jog arrêté : contact du palpeur"
+    },
+    "alarmLog": {
+      "cannotRead": "Le journal des alarmes {file} ne peut pas être lu : {detail}",
+      "notRotated": "Le journal des alarmes n’a pas pu être archivé : {detail}",
+      "notSaved": "Le journal des alarmes n’a pas pu être enregistré : {detail}",
+      "entriesLost": "Certaines entrées du journal des alarmes n’ont pas pu être enregistrées.",
+      "keptForRun": "Le journal des alarmes dans {directory} est conservé pour cette exécution seulement : {detail}",
+      "inUse": "il est utilisé par un autre CoffeeCNC.",
+      "notLocked": "son verrou ne peut pas être pris : {detail}."
     },
     "halDiagnostics": {
       "notInstalled": "{name} n’est pas installé : il n’est pas dans le chemin de recherche ({path}).",

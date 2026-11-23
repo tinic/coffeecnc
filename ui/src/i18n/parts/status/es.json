@@ -218,7 +218,13 @@
       "faultStale": "Informa desactualizado",
       "faultStaleTip": "LinuxCNC dejó de escribir su estado; el último sigue llegando.",
       "faultDown": "Informa desconectado",
-      "faultDownTip": "Sin conexión con LinuxCNC; estado de relleno."
+      "faultDownTip": "Sin conexión con LinuxCNC; estado de relleno.",
+      "sinceLoad": "Esta sesión",
+      "noneSinceLoad": "Todavía no hay mensajes en esta sesión.",
+      "beforeLoad": "Esta sesión, antes de recargar el panel",
+      "earlierRun": "Sesión anterior, {time}",
+      "notSaved": "Este registro no se guarda: {reason}",
+      "skipped": "Se omitió {count} línea dañada del registro guardado. | Se omitieron {count} líneas dañadas del registro guardado."
     },
     "quit": {
       "title": "¿Salir de CoffeeCNC?",

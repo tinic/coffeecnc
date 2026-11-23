@@ -218,7 +218,13 @@
       "faultStale": "Reports stale",
       "faultStaleTip": "LinuxCNC stopped writing its status; the last one keeps arriving.",
       "faultDown": "Reports down",
-      "faultDownTip": "No connection to LinuxCNC; placeholder status."
+      "faultDownTip": "No connection to LinuxCNC; placeholder status.",
+      "sinceLoad": "This session",
+      "noneSinceLoad": "No messages in this session yet.",
+      "beforeLoad": "This session, before the panel was reloaded",
+      "earlierRun": "Earlier session, {time}",
+      "notSaved": "This log is not saved: {reason}",
+      "skipped": "{count} damaged line of the saved log was skipped. | {count} damaged lines of the saved log were skipped."
     },
     "quit": {
       "title": "Quit CoffeeCNC?",

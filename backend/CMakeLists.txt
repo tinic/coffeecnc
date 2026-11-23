@@ -102,6 +102,11 @@ if(BUILD_TESTING)
       coffeecnc_project_options nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_offset_history_tests)
     add_test(NAME offset_history COMMAND coffeecnc_offset_history_tests)
+    add_executable(coffeecnc_alarm_log_tests tests/alarm_log_tests.cpp)
+    target_link_libraries(coffeecnc_alarm_log_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_alarm_log_tests)
+    add_test(NAME alarm_log COMMAND coffeecnc_alarm_log_tests ${PROJECT_BINARY_DIR})
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)

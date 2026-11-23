@@ -218,7 +218,13 @@
       "faultStale": "Indica desatualizado",
       "faultStaleTip": "O LinuxCNC deixou de escrever o seu estado; o último continua a chegar.",
       "faultDown": "Indica desligado",
-      "faultDownTip": "Sem ligação ao LinuxCNC; estado de substituição."
+      "faultDownTip": "Sem ligação ao LinuxCNC; estado de substituição.",
+      "sinceLoad": "Esta sessão",
+      "noneSinceLoad": "Ainda sem mensagens nesta sessão.",
+      "beforeLoad": "Esta sessão, antes de o painel ser recarregado",
+      "earlierRun": "Sessão anterior, {time}",
+      "notSaved": "Este registo não é guardado: {reason}",
+      "skipped": "Foi ignorada {count} linha danificada do registo guardado. | Foram ignoradas {count} linhas danificadas do registo guardado."
     },
     "quit": {
       "title": "Sair do CoffeeCNC?",

@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "寸法、進入、側面",
       "reviewJob": "ジョブを確認",
       "toolChangeHeight": "工具交換位置は機械座標の Z {z} {unit}",
       "job": "ジョブ",
@@ -19,6 +20,7 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "inclinedEntry": "選択した進入方法に対応したエンドミルを使用してください。",
       "facing": "正面削り",
       "drilling": "穴パターン",
       "bore": "ヘリカル中ぐり",
@@ -27,6 +29,12 @@
       "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
     },
     "label": {
+      "entryFeed": "進入送り速度",
+      "pocketEntry": "進入方法",
+      "entryAngle": "最大進入角度",
+      "pocketWalls": "側面",
+      "wallStock": "側面の取り代",
+      "pocketCoolant": "クーラント",
       "sizeX": "X サイズ",
       "sizeY": "Y サイズ",
       "origin": "X0 Y0 の位置",
@@ -68,6 +76,16 @@
       "boltCircleRadius": "ボルト円半径"
     },
     "option": {
+      "plunge": "垂直",
+      "helix": "ヘリカル",
+      "ramp": "直線ランプ",
+      "toSize": "寸法どおり",
+      "leaveStock": "取り代を残す",
+      "finishWalls": "各層を仕上げる",
+      "coolantOff": "オフ",
+      "coolantFlood": "フラッド",
+      "coolantMist": "ミスト",
+      "coolantBoth": "ミストとフラッド",
       "lowerLeft": "左下コーナー",
       "lowerRight": "右下コーナー",
       "upperLeft": "左上コーナー",
@@ -81,6 +99,12 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "wallStockNonnegative": "側面の取り代は 0 以上にしてください。",
+      "wallStockPrecision": "側面の取り代がプログラムの座標精度に対して小さすぎます。",
+      "entryAngle": "進入角度は 0° より大きく 90° 未満にしてください。",
+      "entryPrecision": "進入経路または角度がプログラムの座標精度に対して小さすぎます。",
+      "pocketTooManyMoves": "ポケットの動作数が多すぎます。切り込み深さ、ステップオーバー、または進入角度を大きくしてください。",
+      "wallStockFits": "側面の取り代が大きく、工具が入りません。",
       "jobToolChangeHeight": "工具交換を含むジョブを保存する前に、「移動」の安全 Z をすべての工程の退避高さより上に設定してください。",
       "invalidJob": "ジョブを組み立てられませんでした。",
       "jobTooLarge": "プログラムが保存上限の 512 KiB を超えています。",

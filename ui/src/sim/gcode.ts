@@ -4,7 +4,7 @@
 // Supported subset:
 //   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40, G53,
 //   G80 G81 G83 (absolute distance mode; X Y Z R Q, sticky Z R Q) G98 G99,
-//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91, G92, G92.1, G94,
+//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91 G91.1, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
 //   block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
@@ -321,6 +321,7 @@ const gGroups: Readonly<Record<number, string>> = {
   593: 'coordinate system',
   900: 'distance mode',
   910: 'distance mode',
+  911: 'arc distance mode',
   940: 'feed mode',
 }
 

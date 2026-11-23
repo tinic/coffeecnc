@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometría, entrada y paredes",
       "reviewJob": "Revisar trabajo",
       "toolChangeHeight": "Cambios de herramienta en Z de máquina {z} {unit}",
       "job": "Trabajo",
@@ -19,6 +20,7 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "inclinedEntry": "Utilice una fresa de extremo apta para la entrada seleccionada.",
       "facing": "Planeado",
       "drilling": "Patrón de taladros",
       "bore": "Mandrinado helicoidal",
@@ -27,6 +29,12 @@
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
+      "entryFeed": "Avance de entrada",
+      "pocketEntry": "Entrada",
+      "entryAngle": "Ángulo máximo de entrada",
+      "pocketWalls": "Paredes",
+      "wallStock": "Sobrematerial en paredes",
+      "pocketCoolant": "Refrigerante",
       "sizeX": "Tamaño X",
       "sizeY": "Tamaño Y",
       "origin": "X0 Y0 en",
@@ -68,6 +76,16 @@
       "boltCircleRadius": "Radio del círculo de taladros"
     },
     "option": {
+      "plunge": "Penetración vertical",
+      "helix": "Helicoidal",
+      "ramp": "Rampa lineal",
+      "toSize": "A medida",
+      "leaveStock": "Dejar sobrematerial",
+      "finishWalls": "Acabar cada capa",
+      "coolantOff": "Apagado",
+      "coolantFlood": "Inundación",
+      "coolantMist": "Neblina",
+      "coolantBoth": "Neblina e inundación",
       "lowerLeft": "Esquina inferior izquierda",
       "lowerRight": "Esquina inferior derecha",
       "upperLeft": "Esquina superior izquierda",
@@ -81,6 +99,12 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "wallStockNonnegative": "El sobrematerial en las paredes debe ser cero o mayor.",
+      "wallStockPrecision": "El sobrematerial en las paredes es demasiado pequeño para la precisión de coordenadas del programa.",
+      "entryAngle": "El ángulo de entrada debe ser mayor que 0° y menor que 90°.",
+      "entryPrecision": "La trayectoria o el ángulo de entrada es demasiado pequeño para la precisión de coordenadas del programa.",
+      "pocketTooManyMoves": "La cavidad generaría demasiados movimientos. Aumente la profundidad por pasada, el paso lateral o el ángulo de entrada.",
+      "wallStockFits": "El sobrematerial en las paredes deja muy poco espacio para la herramienta.",
       "jobToolChangeHeight": "Ajusta la Z segura para «Ir a» por encima de la altura libre de todas las operaciones antes de guardar un trabajo con cambios de herramienta.",
       "invalidJob": "No se pudo preparar el trabajo.",
       "jobTooLarge": "El programa supera el límite de guardado de 512 KiB.",

@@ -189,7 +189,7 @@ watch([axes, touchBlock], () => {
 .axis-group { display: flex; align-items: center; border-left: 1px solid var(--line); }
 .axis { display: flex; height: 56px; align-items: center; justify-content: flex-end; gap: 9px; width: 11.4ch; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: 500 var(--type-dro)/1.2 var(--mono); cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-menu-toggle { font-size: var(--type-lg); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .popover .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
-.axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:active:not(:disabled, .remote-axis) { background: var(--control-active); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .letter { flex: none; }
 /* A sign slot and muted zero padding hold the digits in place through zero and across decades. */
 .reading { position: relative; display: flex; flex: none; flex-direction: column; inline-size: calc(9ch - .225em); text-align: right; }

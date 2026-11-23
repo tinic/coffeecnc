@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions">
+    <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions bar-surface">
       <button v-tooltip="picked ? t('program.ncText.clearSelection') : t('program.ncText.dismissActions')" class="btn clear-line" type="button" :aria-label="picked ? t('program.ncText.clearSelected') : t('program.ncText.dismissActions')" @click="closeActions">
         <AppIcon name="close" />
       </button>
@@ -479,7 +479,7 @@ onBeforeUnmount(() => {
 
 .row.picked {
   background: var(--accent-soft);
-  box-shadow: inset 4px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .row.picked .number {
@@ -498,9 +498,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  padding: 6px 16px 10px;
-  border-top: 2px solid var(--accent);
-  background: var(--panel-raised);
+  padding: 8px 16px 10px;
 }
 .line-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }
@@ -524,8 +522,9 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 16px;
   bottom: 12px;
-  --button-edge: var(--accent);
-  background: var(--panel-raised);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
 }
 .follow-count { width: 7ch; min-width: 7ch; text-align: right; }
 </style>

@@ -590,7 +590,7 @@ function coolant(which: 'flood' | 'mist'): void {
             v-for="entry in panel.mdi"
             :key="entry.id"
             v-tooltip="t('manual.tab.copyToEntry')"
-            class="entry"
+            class="entry list-row"
             type="button"
             :class="entry.outcome"
             @click="mdiText = entry.text"
@@ -825,9 +825,6 @@ function coolant(which: 'flood' | 'mist'): void {
   cursor: pointer;
 }
 
-.entry:hover {
-  background: var(--control);
-}
 
 .entry .result {
   flex: 1;

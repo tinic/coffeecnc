@@ -157,7 +157,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="tap(tool)">
+            <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool, 'tinted-band': tool.number === loaded || tool.number === selectedTool }" @click="tap(tool)">
               <td class="num mono">
                 <button class="tool-number" type="button" :aria-label="t('tools.tab.selectTool', { number: tool.number })" :aria-pressed="tool.number === selectedTool" @click.stop="tap(tool)">{{ toolLabel(tool.number) }}</button>
               </td>
@@ -201,7 +201,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, unconfirmed: system.unconfirmed, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
+            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, 'tinted-band': system.active, unconfirmed: system.unconfirmed, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
               <td v-tooltip="offsetHint(system)" class="mono" :aria-label="offsetHint(system)">{{ wcsName(system.wcs) }}</td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
@@ -351,10 +351,6 @@ td.comment {
 
 tr.loaded td {
   background: var(--go-soft);
-}
-
-tr.loaded:not(.selected) td:first-child {
-  box-shadow: inset 3px 0 var(--go);
 }
 
 .actions {

@@ -311,9 +311,9 @@ async function showFailure(): Promise<void> {
             </button>
             <button class="btn picked-close" type="button" :aria-label="t('program.ncText.clearSelected')" @click="pickedLine = 0"><AppIcon name="close" /></button>
           </div>
-          <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
+          <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic tinted-band" role="status">
             <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
-            <button v-if="failureLine > 0" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
+            <button v-if="failureLine > 0" class="btn show-line" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
           <div v-if="stoppedAt" class="stopped-at" role="status">
@@ -345,7 +345,7 @@ async function showFailure(): Promise<void> {
           <div class="panel-head"><h2>{{ t('program.tab.toolSequence') }}</h2></div>
           <div class="sections">
             <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
-              <button class="section" type="button" :aria-pressed="selectedSection === index" @click="selected = index">
+              <button class="section list-row" type="button" :aria-pressed="selectedSection === index" @click="selected = index">
                 <span class="section-number mono">{{ index + 1 }}</span>
                 <span class="section-text"><strong>{{ section.tool === 0 ? t('program.tab.noTool') : findTool(section.tool)?.comment || t('program.tab.toolN', { n: section.tool }) }}</strong><small>T{{ section.tool }} · {{ t('program.tab.linesRange', { first: section.first, last: section.last }) }}<template v-if="sectionTimes[index] !== undefined"> · {{ formatDuration(sectionTimes[index] ?? 0) }}</template></small></span>
               </button>
@@ -383,7 +383,7 @@ async function showFailure(): Promise<void> {
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: var(--type-body); font-weight: 600; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
 .program-check, .breakpoint-chip { min-height: var(--touch); padding: 5px 10px; white-space: nowrap; font-size: var(--type-sm); }
-.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); box-shadow: inset 0 -2px var(--warn); opacity: 1; }
+.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -400,7 +400,7 @@ async function showFailure(): Promise<void> {
 .panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: var(--type-md); font-weight: 600; letter-spacing: -.15px; }
 .sections { display: flex; flex-direction: column; gap: 5px; margin: 0 -8px 14px; }
 .section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; min-height: var(--touch); padding: 0 10px; font-size: var(--type-sm); }
-.section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; text-align: left; }
 .section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-sunken); color: var(--text-dim); font-size: var(--type-sm); flex: none; }
 .section[aria-pressed=true] .section-number { background: var(--panel); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 3px; }.section-text strong { font-weight: 600; font-size: var(--type-body); }.section-text small { font-size: var(--type-sm); color: var(--text-dim); }
 .context-note, .quiet { margin: 15px 0 0; font-size: var(--type-sm); color: var(--text-dim); }
@@ -409,15 +409,15 @@ async function showFailure(): Promise<void> {
 .status-row > .mono { font-size: var(--type-sm); color: var(--text-dim); }
 .line-count { text-align: right; }
 .run-time { text-align: center; }
-.failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure .show-line { flex: none; min-height: 36px; padding-inline: 10px; font-size: var(--type-sm); }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .preview-diagnostic { position: absolute; z-index: 1; inset: 8px 16px auto; margin: 0; pointer-events: none; }
-.failure.preview-diagnostic { border: 1px solid var(--stop); border-radius: 9px; background: var(--stop-soft); }
+.failure.preview-diagnostic { border-radius: 9px; background: var(--stop-soft); }
 .preview-diagnostic button { pointer-events: auto; }
 /* The stop hint shares the bottom of the view with transient code actions. */
-.stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px; border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
 /* A tapped move's line, over the top right of the preview, where nothing else is drawn. */
-.picked-line { position: absolute; z-index: 1; top: 10px; right: 16px; display: flex; gap: 4px; max-width: min(60%, 520px); padding: 4px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.picked-line { position: absolute; z-index: 1; top: 10px; right: 16px; display: flex; gap: 4px; max-width: min(60%, 520px); padding: 4px; border-radius: 10px; background: var(--panel-raised); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .picked-line .btn { height: 36px; }
 .picked-open { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 10px; font-size: 12px; }
 .picked-open strong { flex: none; font-weight: 600; color: var(--accent); }

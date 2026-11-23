@@ -10,6 +10,7 @@ import { computed, defineAsyncComponent, type ComputedRef, onBeforeUnmount, onMo
 
 import { live, panel } from '../machine'
 import { theme } from '../appearance'
+import { isDarkTheme } from '../operator-settings'
 import {
   boxCorners,
   boxEdges,
@@ -310,7 +311,7 @@ function drawGrid(): void {
   if (frame === null) return
   const plane: Vec3 = [frame.origin[0], frame.origin[1], probeFixture.value
     ? demoFixture.top - demoFixture.stockHeight : frame.origin[2]]
-  drawPreviewGrid(context, camera.value, plane, frame.angle, width, height, theme.value === 'dark')
+  drawPreviewGrid(context, camera.value, plane, frame.angle, width, height, isDarkTheme(theme.value))
 }
 watch([camera, size, theme, probeFixture, (): number | undefined => workFrame.value?.angle,
   (): number | undefined => workFrame.value?.origin[0], (): number | undefined => workFrame.value?.origin[1],
@@ -334,11 +335,11 @@ function draw(): void {
   context.lineCap = 'round'
   const cam = camera.value
   const at = (p: Vec3): Screen => project(cam, p, width, height)
-  const palette = colours[theme.value]
+  const palette = colours[isDarkTheme(theme.value) ? 'dark' : 'light']
 
   if (probeFixture.value) {
     const [x, y] = at(demoFixture.setter)
-    context.fillStyle = theme.value === 'dark' ? '#e5bd70' : '#845614'
+    context.fillStyle = isDarkTheme(theme.value) ? '#e5bd70' : '#845614'
     context.font = '600 12px system-ui, sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
@@ -385,7 +386,7 @@ function draw(): void {
             context.lineTo(x, y)
           }
         }
-        const colour = fresh ? toolColour(tools.value.indexOf(segment.tool), theme.value === 'dark') : palette.outdated
+        const colour = fresh ? toolColour(tools.value.indexOf(segment.tool), isDarkTheme(theme.value)) : palette.outdated
         if (kind === 'rapid') {
           context.setLineDash([2, 5])
           context.strokeStyle = fresh ? palette.rapid : palette.outdated

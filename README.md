@@ -58,7 +58,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 ![Running a program with the toolpath preview](ui/screenshots/machine-running-light.png)
 
 - Open an NC program and look at the interpreter-generated toolpath before you run it. See [preview](docs/preview.md). Recently opened programs are listed first in **Open program**.
-- The code list colors G-code by meaning, in both light and dark themes, and follows the running line.
+- The code list colors G-code by meaning and follows the running line. Choose Light, Dark, Sandstone or Harbor under Settings → Theme.
 - The tool sequence lists each section, its tool, its lines and its estimated time. The status line shows the run state, cycle time and program line. The time tooltip includes the last run time and part count.
 - **Program check** lists the tools and their lengths, the work extents and lowest Z, feed and spindle ranges and the program units. Errors block Cycle start; warnings need a confirmation.
 - **Restart** from any line or tool section. The restart sheet shows the state at that line and the approach: Z to clearance, the tool change if needed, X and Y, spindle and coolant, then a slow feed down. After a Stop, an E-stop or a power loss, the Machine tab offers **Restart there** at the line where the program stopped.

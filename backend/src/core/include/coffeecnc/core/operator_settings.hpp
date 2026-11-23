@@ -12,7 +12,7 @@ namespace coffeecnc {
 
 enum class StartupUnits : std::uint8_t { machine, mm, inch };
 enum class ProgramLayout : std::uint8_t { path, text, split };
-enum class PanelTheme : std::uint8_t { light, dark };
+enum class PanelTheme : std::uint8_t { light, dark, sandstone, harbor };
 
 // A machine position the operator saved in Manual; the panel moves there only on request.
 struct SavedPosition {

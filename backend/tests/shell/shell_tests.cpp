@@ -2180,6 +2180,34 @@ void restored_probe_spindle_guard(const Rig& rig) {
 }
 
 // What a run of this program does: everything, or one half of the tool-model scenario.
+void theme_in_settings(const Rig& rig) {
+  const auto opening = rig.js("return document.documentElement.dataset.theme;");
+  const auto open = [&]() -> bool {
+    return rig.click("summary.app-menu-toggle", "") == "ok" &&
+           rig.click("button.settings", "Settings") == "ok" &&
+           rig.wait_js("document.querySelectorAll('.theme-option').length === 4");
+  };
+  const auto sand = "document.documentElement.dataset.theme === 'sandstone'";
+  const auto harbor = "document.documentElement.dataset.theme === 'harbor'";
+  check("settings_previews_sandstone", open() &&
+        rig.click("label.theme-option", "Sandstone") == "ok" && rig.wait_js(sand));
+  check("settings_cancel_restores_theme", rig.click("[role=dialog] footer button", "Cancel") == "ok" &&
+        rig.wait_js(std::format("document.documentElement.dataset.theme === {}", opening.dump())));
+  const bool saved = open() && rig.click("label.theme-option", "Harbor") == "ok" &&
+                     rig.wait_js(harbor) &&
+                     click_when_ready(rig, "[role=dialog] footer button", "Save settings") == "ok" &&
+                     rig.wait_js("__t.last.operator_settings?.document?.theme === 'harbor' && "
+                                 "!document.querySelector('[role=dialog]')");
+  check("settings_saves_harbor_natively", saved);
+  if (!saved)
+    return;
+  const auto page = rig.hooks.state().page;
+  rig.hooks.reload();
+  check("settings_restores_saved_palette_after_reload",
+        rig.wait(10s, [&]() -> bool { return rig.hooks.state().page != page; }) &&
+            rig.page_live() && rig.wait_js(harbor));
+}
+
 enum class Scenario : std::uint8_t { everything, tool_models_first_run, tool_models_second_run };
 
 void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario) {
@@ -2255,6 +2283,7 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     status_gaps(rig, "platform");
     estop(rig);
     status_gaps(rig, "estop");
+    theme_in_settings(rig);
     const auto state = hooks.state();
     check("no_request_off_the_scheme_at_end", state.foreign_resources.empty(),
           state.foreign_resources.empty() ? std::format("resources={}", state.resources.size())

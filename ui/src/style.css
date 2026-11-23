@@ -3,7 +3,7 @@
 @font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBM-Plex-Mono-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 
 /* Surface, type and spacing values from the original CoffeeCNC concept. */
-:root {
+:root, .theme-sample {
   color-scheme: light;
   --bg: #f5f6f7; --bg-sunken: #edf0f2; --panel: #fff; --panel-raised: #fff;
   --preview-backdrop: radial-gradient(ellipse at 47% 33%, #fafcfd, #e8edf1 78%, #e2e9ef);
@@ -11,7 +11,7 @@
   --control: #fff; --control-hover: #f1f4f7; --control-active: #e8edf0;
   --line: #dce1e5; --line-strong: #dce1e5;
   --text: #20272c; --text-dim: #68747d; --text-faint: #85919a;
-  --accent: #377ef2; --accent-soft: #edf3fe;
+  --accent: #377ef2; --accent-soft: #edf3fe; --on-accent: #fff;
   --go: #187957; --go-soft: #e8f5ef; --warn: #966518; --warn-soft: #fff5df;
   --stop: #ba393d; --stop-soft: #fff0f0;
   --gcode-rapid: #495b6a; --gcode-cut: #1e5ca7; --gcode-modal: #5a4ca0; --gcode-x: #8f3d4c;
@@ -24,7 +24,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
 }
-:root[data-theme='dark'] {
+:is(:root, .theme-sample):is([data-theme='dark'], [data-theme='harbor']) {
   color-scheme: dark;
   --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;
   --preview-backdrop: radial-gradient(ellipse at 46% 32%, #303943, #1c242d 75%, #171e26);
@@ -38,6 +38,30 @@
   --gcode-tool: #dfbf9a; --gcode-spindle: #98d2d1; --gcode-stop: #ff9a9f; --gcode-comment: #abb6c1;
   --gcode-message: #bbc6ce; --gcode-flow: #bdbdec; --gcode-parameter: #b4bed7; --gcode-expression: #cfb6d3;
   --warn: #e4b466; --warn-soft: #3b3222; --stop: #f28d8d; --stop-soft: #412b2e;
+}
+
+:is(:root, .theme-sample)[data-theme='sandstone'] {
+  --bg: #f5e8d2; --bg-sunken: #f2e5cf; --panel: #fff7e9; --panel-raised: #fff9ee;
+  --preview-backdrop: radial-gradient(ellipse at 46% 34%, #fff7e9, #e9d8b9 80%, #e1cca8);
+  --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #fffaf1, #e9d9bc 82%, #e4cfae);
+  --control: #fff8eb; --control-hover: #f9edd8; --control-active: #eedec4;
+  --line: #ddc9a9; --line-strong: #cbb38d;
+  --text: #30271f; --text-dim: #635242; --text-faint: #77614e;
+  --accent: #58428f; --accent-soft: #ede3f2;
+  --go: #236947; --go-soft: #e1edda; --warn: #825515; --warn-soft: #f9e8c0;
+  --stop: #a6323b; --stop-soft: #f9e2df;
+}
+
+:is(:root, .theme-sample)[data-theme='harbor'] {
+  --bg: #101e2d; --bg-sunken: #122234; --panel: #1a2e42; --panel-raised: #213951;
+  --preview-backdrop: radial-gradient(ellipse at 47% 34%, #27445d, #142c40 80%, #102437);
+  --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #355470, #1b354c 80%, #12293c);
+  --control: #1c3349; --control-hover: #25445d; --control-active: #2e4f69;
+  --line: #34526c; --line-strong: #476581;
+  --text: #eef7ff; --text-dim: #b2cadc; --text-faint: #91adc4;
+  --accent: #7dc0ff; --accent-soft: #234765; --on-accent: #102237;
+  --go: #8de1b7; --go-soft: #21463e; --warn: #ffd18c; --warn-soft: #4c3928;
+  --stop: #ff9e9e; --stop-soft: #48293c;
 }
 
 *,
@@ -129,7 +153,7 @@ input:focus-visible {
 .btn.primary:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn.go:not(:disabled) {

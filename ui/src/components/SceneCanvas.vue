@@ -5,6 +5,7 @@ import {
   LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshStandardMaterial, OrthographicCamera, Scene, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
+import { isDarkTheme } from '../operator-settings'
 import { syncModelCamera } from '../model-camera'
 import { boxCorners, type Camera } from '../pathview'
 import { lightPreview, PreviewReflections } from '../preview-lighting'
@@ -103,7 +104,7 @@ function draw(): void {
   toolMesh.group.visible = props.tool !== null
   if (props.tool !== null) {
     toolMesh.group.position.set(...props.tool.tip)
-    toolMesh.setTheme(theme.value === 'dark')
+    toolMesh.setTheme(isDarkTheme(theme.value))
     const bounds = toolPreviewBounds(props.tool)
     corners.push(...boxCorners(bounds.min, bounds.max))
   }
@@ -118,7 +119,7 @@ function draw(): void {
     material.opacity = part.opacity
   })
   lines.forEach((material) => {
-    material.color.set(theme.value === 'dark' ? '#c9d7e0' : '#33485b')
+    material.color.set(isDarkTheme(theme.value) ? '#c9d7e0' : '#33485b')
     material.opacity = part.opacity * 0.34
   })
   const ratio = Math.min(window.devicePixelRatio, 2)

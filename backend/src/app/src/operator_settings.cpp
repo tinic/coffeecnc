@@ -90,6 +90,8 @@ auto theme_name(PanelTheme value) -> std::string_view {
   switch (value) {
   case PanelTheme::light: return "light";
   case PanelTheme::dark: return "dark";
+  case PanelTheme::sandstone: return "sandstone";
+  case PanelTheme::harbor: return "harbor";
   }
   return "";
 }
@@ -179,6 +181,10 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
   if (const auto theme = value.find("theme"); theme != value.end()) {
     if (*theme == "dark")
       document.theme = PanelTheme::dark;
+    else if (*theme == "sandstone")
+      document.theme = PanelTheme::sandstone;
+    else if (*theme == "harbor")
+      document.theme = PanelTheme::harbor;
     else if (*theme != "light")
       fall_back("Invalid panel presentation.");
   }

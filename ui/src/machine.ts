@@ -3,8 +3,8 @@
 
 import { computed, watch, type ComputedRef } from 'vue'
 
-import { theme, themeOverride } from './appearance'
-import { decodeProgramLayout } from './operator-settings'
+import { themeOverride, themePreference } from './appearance'
+import { alternateTheme, decodeProgramLayout } from './operator-settings'
 import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
 import { connectionBlock, machineBlock } from './machine-block'
@@ -16,14 +16,14 @@ const instance = createPanel({ transport: createTransport() })
 
 export const panel: PanelState = instance.state
 export const operatorSettings = createOperatorSettingsState(panel, instance, undefined, {
-  theme, themeOverride,
+  theme: themePreference, themeOverride,
   layoutOverride: decodeProgramLayout(new URLSearchParams(window.location.search).get('layout')),
 })
 
 export const chooseProgramLayout = operatorSettings.chooseProgramLayout
 
 export function toggleTheme(): void {
-  operatorSettings.chooseTheme(theme.value === 'light' ? 'dark' : 'light')
+  operatorSettings.chooseTheme(alternateTheme(themePreference.value))
 }
 
 export function send(command: CommandBody): number {

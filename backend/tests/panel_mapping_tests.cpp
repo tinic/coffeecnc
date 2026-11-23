@@ -308,8 +308,9 @@ void parameter_file_systems() {
   require(!systems.at(2) && !systems.at(3) && !systems.at(4),
           "A system with a parameter missing or not finite is not there");
   const auto inch = parameter_work_systems(text, 25.4);
-  require(inch.at(1) && std::abs(inch.at(1)->offset[0] + 38.1) < 1e-9 &&
-              inch.at(1)->rotation_xy == 15,
+  const auto& g55 = inch.at(1);
+  require(g55.has_value() && std::abs(g55.value_or(WorkSystem{}).offset[0] + 38.1) < 1e-9 &&
+              g55.value_or(WorkSystem{}).rotation_xy == 15,
           "Machine units to millimetres; the rotation stays in degrees");
   require(std::ranges::none_of(parameter_work_systems("", 1), [](const auto& s) { return s.has_value(); }),
           "An empty file has no system");

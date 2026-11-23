@@ -5393,9 +5393,9 @@ void work_offsets(Rig& rig) {
         std::format("printed={} {} {}", word(printed), took(time), text(5)));
 
   // A program, run by another client, that ends in auto mode with M2.
-  const auto program = rig.config.program_prefix + "/coffeecnc_wcs.ngc";
+  const auto written = rig.config.program_prefix + "/coffeecnc_wcs.ngc";
   {
-    std::ofstream out{program};
+    std::ofstream out{written};
     out << "G21\nG10 L2 P6 X41\nM2\n";
   }
   const auto ran = all_output_of(std::format(
@@ -5405,7 +5405,7 @@ void work_offsets(Rig& rig) {
       "[time.sleep(0.01) or s.poll() for _ in range(500) if s.interp_state != linuxcnc.INTERP_IDLE]; "
       "s.poll(); print(\"ran=\" + str(s.interp_state == linuxcnc.INTERP_IDLE and s.task_mode == "
       "linuxcnc.MODE_AUTO))'",
-      program));
+      written));
   static_cast<void>(watch(1500ms, []() -> bool { return false; }));
   const bool held = row(6).available && !row(6).current;
   check("wcs_not_current_after_a_program_in_auto", ran.find("ran=True") != std::string::npos && held,

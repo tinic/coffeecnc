@@ -2,6 +2,7 @@ import { createApp, watch } from 'vue'
 
 import App from './App.vue'
 import { languageReady, theme, themeOverride } from './appearance'
+import { isRemoteScreen } from './bridge'
 import { i18n } from './i18n'
 import { operatorSettings, panel, start } from './machine'
 import { preventPageZoom } from './page-zoom'
@@ -10,7 +11,7 @@ import './style.css'
 preventPageZoom()
 const app = createApp(App)
 app.use(i18n)
-if (!panel.simulated && themeOverride === null) {
+if (!panel.simulated && !isRemoteScreen() && themeOverride === null) {
   // Keep the native panel empty until its per-machine theme and language arrive. Limit the wait
   // so an unavailable settings service never prevents the operator from using the panel.
   document.documentElement.dataset['theme'] = 'dark'

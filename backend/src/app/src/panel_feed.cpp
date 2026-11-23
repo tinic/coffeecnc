@@ -248,7 +248,7 @@ void PanelFeed::loop() {
       if (messages) {
         reported.clear();
         if (mirror_)
-          mirror_(*messages, records, reading.program != nullptr);
+          mirror_(*messages, records, reading.program.get(), reading.status.link);
         if (page) {
           deliver_(*page, std::move(*messages));
           if (std::exchange(snapshots_owed, false) && snapshots_sent_)

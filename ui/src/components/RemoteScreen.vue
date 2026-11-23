@@ -2,17 +2,29 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { theme } from '../appearance'
-import { live, panel, reported } from '../machine'
-import { isDarkTheme } from '../operator-settings'
+import { panelLanguage, theme } from '../appearance'
+import { decodeLanguage, languageNames, languages } from '../i18n'
+import { live, operatorSettings, panel, reported } from '../machine'
+import { decodeTheme, isDarkTheme, panelThemes, themeLabels } from '../operator-settings'
 import { translateMessage } from '../i18n/messages'
 import { baseName } from '../units'
+import AppIcon from './AppIcon.vue'
 import DroPanel from './DroPanel.vue'
 import LogDialog from './LogDialog.vue'
+import ModalDialog from './ModalDialog.vue'
 import ProgramTab from './ProgramTab.vue'
 
 const { t } = useI18n()
 const logOpen = ref(false)
+const settingsOpen = ref(false)
+function chooseTheme(event: Event): void {
+  const next = decodeTheme((event.target as HTMLSelectElement).value)
+  if (next !== null) operatorSettings.chooseTheme(next)
+}
+function chooseLanguage(event: Event): void {
+  const next = decodeLanguage((event.target as HTMLSelectElement).value)
+  if (next !== null) operatorSettings.chooseLanguage(next)
+}
 const state = computed(() => {
   const status = reported.value
   if (!live.value || status === null) return t('status.remote.noLive')
@@ -39,6 +51,7 @@ const file = computed(() => reported.value?.program.file)
         }"
       >{{ state }}</span>
       <button class="btn" type="button" @click="logOpen = true">{{ t('status.remote.messageLog') }}<span v-if="panel.log.length"> · {{ panel.log.length }}</span></button>
+      <button class="btn square" type="button" :aria-label="t('status.settings.title')" aria-haspopup="dialog" @click="settingsOpen = true"><AppIcon name="settings" /></button>
     </header>
     <!-- E-stop, errors and other notices show also with no program loaded. -->
     <section v-if="file || panel.notice" class="job">
@@ -51,6 +64,20 @@ const file = computed(() => reported.value?.program.file)
       <div id="dialogs"></div>
       <div id="workspace-dialogs"></div>
       <LogDialog v-if="logOpen" @close="logOpen = false" />
+      <ModalDialog v-if="settingsOpen" :title="t('status.settings.title')" size="small" @close="settingsOpen = false">
+        <label class="viewer-setting">
+          <span>{{ t('status.settings.theme') }}</span>
+          <select :value="theme" class="field" @change="chooseTheme">
+            <option v-for="option in panelThemes" :key="option" :value="option">{{ t(themeLabels[option]) }}</option>
+          </select>
+        </label>
+        <label class="viewer-setting">
+          <span>{{ t('status.settings.language') }}</span>
+          <select :value="panelLanguage" class="field" @change="chooseLanguage">
+            <option v-for="option in languages" :key="option" :value="option">{{ languageNames[option] }}</option>
+          </select>
+        </label>
+      </ModalDialog>
     </main>
   </div>
 </template>
@@ -60,6 +87,9 @@ const file = computed(() => reported.value?.program.file)
 header { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 8px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
 header img { object-fit: contain; object-position: left center; flex: none; }
 header strong { font-weight: 600; }
+header .square { flex: none; }
+.viewer-setting { display: grid; gap: 6px; }
+.viewer-setting select { min-height: 44px; }
 .read-only { color: var(--text-dim); white-space: nowrap; }
 .machine-state { padding: 6px 10px; margin-left: auto; border-radius: 6px; background: var(--go-soft); color: var(--go); font-weight: 600; }
 .machine-state.stopped { background: var(--stop-soft); color: var(--stop); }

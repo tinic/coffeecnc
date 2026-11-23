@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -35,9 +36,11 @@ void require(bool condition, const char* why) {
 }
 
 auto get(net::io_context& io, std::uint16_t port, http::verb method, const char* path,
-         const std::string& host, const std::string& origin = {}) -> http::response<http::string_body> {
+         const std::string& host, const std::string& origin = {},
+         const net::ip::address& address = net::ip::address_v4::loopback())
+    -> http::response<http::string_body> {
   tcp::socket tcp_socket{io};
-  tcp_socket.connect({net::ip::address_v4::loopback(), port});
+  tcp_socket.connect({address, port});
   http::request<http::empty_body> request{method, path, 11};
   request.set(http::field::host, host);
   if (!origin.empty()) {
@@ -57,8 +60,9 @@ auto get(net::io_context& io, std::uint16_t port, http::verb method, const char*
 
 using Viewer = websocket::stream<tcp::socket>;
 
-void connect(Viewer& viewer, std::uint16_t port, const std::string& host) {
-  viewer.next_layer().connect({net::ip::address_v4::loopback(), port});
+void connect(Viewer& viewer, std::uint16_t port, const std::string& host,
+             const net::ip::address& address = net::ip::address_v4::loopback()) {
+  viewer.next_layer().connect({address, port});
   viewer.set_option(websocket::stream_base::decorator([&](websocket::request_type& request) -> void {
     request.set(http::field::origin, "http://" + host);
   }));
@@ -159,7 +163,7 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
 }
 
 void test(const std::filesystem::path& root, std::string_view discovered,
-          std::string_view nonlocal) {
+          std::string_view nonlocal, std::string_view loopback_v6, std::string_view delayed) {
   const auto assets = root / "remote-server-assets";
   std::filesystem::create_directories(assets);
   std::ofstream(assets / "index.html") << "<title>Remote test panel</title>";
@@ -172,6 +176,13 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto host = "127.0.0.1" + suffix;
   const auto alias = aliases.front() + suffix;
   net::io_context io;
+  const auto ipv6 = net::ip::address_v6::loopback();
+  const auto host6 = "[::1]" + suffix;
+  boost::system::error_code ipv6_unavailable;
+  tcp::acceptor ipv6_probe{io};
+  ipv6_probe.open(tcp::v6(), ipv6_unavailable);
+  if (!ipv6_unavailable)
+    ipv6_probe.bind({ipv6, 0}, ipv6_unavailable);
   const auto home = get(io, port, http::verb::get, "/", host);
   require(home.result() == http::status::temporary_redirect && home[http::field::location] == "/view",
           "The root redirects to the viewer entry.");
@@ -187,6 +198,19 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   for (const auto& name : {alias, "FRIENDLY.Example." + suffix, "localhost" + suffix})
     require(get(io, port, http::verb::get, "/view", name).result() == http::status::ok,
             "A configured alias or the loopback hostname can open the viewer.");
+  if (!ipv6_unavailable) {
+    for (const auto& name : {host6, "[0:0:0:0:0:0:0:1]" + suffix, "localhost" + suffix, alias})
+      require(get(io, port, http::verb::get, "/view", name, {}, ipv6).result() == http::status::ok,
+              "IPv6 accepts its numeric endpoint and the same allowed local names.");
+    for (const auto& name : {"[::2]" + suffix, "::1" + suffix, "external.example" + suffix,
+                             "[::1%25lo]" + suffix, "[::1]:" + std::to_string(port + 1)})
+      require(get(io, port, http::verb::get, "/view", name, {}, ipv6).result() ==
+                  http::status::forbidden,
+              "IPv6 requires a matching endpoint and a valid Host.");
+    require(get(io, port, http::verb::get, "/feed", host6, "http://" + host, ipv6).result() ==
+                http::status::forbidden,
+            "IPv6 feed still requires the requesting browser origin.");
+  }
 
   std::array<char, 256> hostname{};
   require(gethostname(hostname.data(), hostname.size() - 1) == 0, "Read the system hostname.");
@@ -204,19 +228,40 @@ void test(const std::filesystem::path& root, std::string_view discovered,
               http::status::forbidden,
           "A separately allowed alias does not grant cross-origin feed access.");
 
+  const auto wait_for_host = [&](std::string_view name, http::status expected,
+                                 std::chrono::steady_clock::duration wait) -> bool {
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    const auto authority = std::string(name) + suffix;
+    do {
+      if (get(io, port, http::verb::get, "/view", authority).result() == expected)
+        return true;
+      std::this_thread::sleep_for(30ms);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+  };
   // A DNS fixture can supply two search results, one local and one on a different machine.
   if (!discovered.empty()) {
-    const auto deadline = std::chrono::steady_clock::now() + 3s;
-    auto status = http::status::forbidden;
-    do {
-      status = get(io, port, http::verb::get, "/view", std::string(discovered) + suffix).result();
-      if (status != http::status::ok)
-        std::this_thread::sleep_for(30ms);
-    } while (status != http::status::ok && std::chrono::steady_clock::now() < deadline);
-    require(status == http::status::ok, "A DNS search name that resolves locally is allowed.");
+    require(wait_for_host(discovered, http::status::ok, 3s),
+            "A DNS search name that resolves locally is allowed.");
     require(get(io, port, http::verb::get, "/view", std::string(nonlocal) + suffix).result() ==
                 http::status::forbidden,
             "A DNS search name that resolves off-machine is rejected.");
+  }
+  if (!loopback_v6.empty() && !ipv6_unavailable)
+    require(wait_for_host(loopback_v6, http::status::ok, 3s),
+            "A DNS search name with a local IPv6 address is allowed.");
+  if (!delayed.empty()) {
+    require(wait_for_host(delayed, http::status::forbidden, 1s),
+            "The address-change fixture starts with the name unapproved.");
+    // The DNS script enables this case only in a private network namespace.
+    require(std::system("ip address add 192.0.2.39/32 dev lo") == 0,
+            "Assign the delayed IPv4 address.");
+    require(wait_for_host(delayed, http::status::ok, 8s),
+            "The server allows the new local DNS address without a restart.");
+    require(std::system("ip address del 192.0.2.39/32 dev lo") == 0,
+            "Withdraw the delayed IPv4 address.");
+    require(wait_for_host(delayed, http::status::forbidden, 8s),
+            "The server retires the discovery after the local address is gone.");
   }
   require(get(io, port, http::verb::get, "/feed", host, "http://external.example").result() ==
               http::status::forbidden,
@@ -233,7 +278,46 @@ void test(const std::filesystem::path& root, std::string_view discovered,
       std::string(R"({"type":"preview","context":7})"),
       std::string(R"({"type":"status","seq":1,"preview_context":7})"),
       std::string(R"({"type":"message","text":"First message"})")};
-  server.publish(initial, records, true);
+  const auto job = assets.parent_path() / "plate.ngc";
+  std::ofstream(job) << "M2";
+  std::ofstream(job.parent_path() / "plate.stp") << "ISO-10303-21;";
+  // The sample test directories contain ordinary absolute paths.
+  const auto part_url = "/program-part?revision=7&program=" + job.string();
+  auto part = [&]() { return get(io, port, http::verb::get, part_url.c_str(), host); };
+  require(part().result() == http::status::not_found, "No model is available before publication.");
+  const coffeecnc::ProgramText program{.revision = 7, .file = job.string(), .lines = {"M2"}, .stamp = ""};
+  server.publish(initial, records, &program, coffeecnc::Link::live);
+  const auto model = part();
+  require(model.result() == http::status::ok && model.body() == "ISO-10303-21;" &&
+              model[http::field::content_type] == "model/step",
+          "The viewer downloads the live program's sibling STEP file.");
+  const auto model_head = get(io, port, http::verb::head, part_url.c_str(), host);
+  require(model_head.result() == http::status::ok && model_head.body().empty() &&
+              model_head[http::field::content_length] == "13",
+          "The viewer can inspect a STEP response without downloading the file.");
+  require(get(io, port, http::verb::post, part_url.c_str(), host).result() ==
+              http::status::method_not_allowed,
+          "The model route is read-only.");
+  const auto obsolete = "/program-part?revision=6&program=" + job.string();
+  const auto other_part = "/program-part?revision=7&program=" + (job.parent_path() / "other.ngc").string();
+  std::ofstream(job.parent_path() / "other.ngc") << "M2";
+  std::ofstream(job.parent_path() / "other.step") << "ISO-10303-21;";
+  for (const auto& path : {obsolete, other_part})
+    require(get(io, port, http::verb::get, path.c_str(), host).result() == http::status::not_found,
+            "The model route requires both the published path and revision.");
+  std::filesystem::remove(job.parent_path() / "plate.stp");
+  const auto sibling = job.parent_path() / "plate.step";
+  std::filesystem::remove(sibling);
+  std::filesystem::create_symlink(job.parent_path() / "remote-server-private.txt", sibling);
+  require(part().result() == http::status::not_found, "The LAN route skips linked STEP files.");
+  std::filesystem::remove(sibling);
+  std::ofstream(sibling) << 'x';
+  std::filesystem::resize_file(sibling, 25uz * 1024 * 1024 + 1);
+  require(part().result() == http::status::payload_too_large, "The LAN route caps model size.");
+  std::ofstream(sibling, std::ios::trunc) << "ISO-10303-21;";
+  server.publish({}, {}, &program, coffeecnc::Link::stale);
+  require(part().result() == http::status::not_found, "Stale controller status withdraws the model.");
+  server.publish({}, {}, &program, coffeecnc::Link::live);
   const std::array runtime{
       std::string(R"({"type":"result","text":"not a notification"})"),
       std::string(R"({"type":"message","text":"Controller message"})")};
@@ -249,6 +333,11 @@ void test(const std::filesystem::path& root, std::string_view discovered,
               snapshot.at(3).at("preview_context") == 7 &&
               snapshot.at(5).at("text") == "Controller message",
           "Both viewers receive the same coherent snapshot and only read-only notifications.");
+  if (!ipv6_unavailable) {
+    Viewer viewer6{io};
+    connect(viewer6, port, host6, ipv6);
+    require(read(viewer6) == snapshot, "The IPv6 socket receives the same read-only snapshot.");
+  }
 
   constexpr std::string_view input = R"({"type":"set_machine","state":"on","id":9})";
   first.write(net::buffer(input));
@@ -266,7 +355,8 @@ void test(const std::filesystem::path& root, std::string_view discovered,
       std::string(R"({"type":"status","seq":2,"preview_context":8})")};
   constexpr std::array update{PanelRecord::preview, PanelRecord::status};
   const auto before = std::chrono::steady_clock::now();
-  server.publish(large, update, false);
+  server.publish(large, update, nullptr, coffeecnc::Link::live);
+  require(part().result() == http::status::not_found, "Closing the program withdraws its model.");
   const auto latest = wait_for(second, "seq", 2);
   require(std::chrono::steady_clock::now() - before < 4s && latest.at(0).at("context") == 8,
           "A fast viewer still gets a coherent update while another viewer cannot read it.");
@@ -282,7 +372,8 @@ void test(const std::filesystem::path& root, std::string_view discovered,
 auto main(int argc, char** argv) -> int {
   try {
     test(argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path(),
-         argc == 4 ? argv[2] : "", argc == 4 ? argv[3] : "");
+         argc > 2 ? argv[2] : "", argc > 3 ? argv[3] : "", argc > 4 ? argv[4] : "",
+         argc > 5 ? argv[5] : "");
     std::cout << "remote_server: all passed\n";
     return 0;
   } catch (const std::exception& error) {

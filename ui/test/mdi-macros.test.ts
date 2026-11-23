@@ -15,6 +15,7 @@ const wire = vi.hoisted(() => ({
   send: vi.fn<(command: ToMachine) => void>(),
 }))
 vi.mock('../src/bridge', () => ({
+  isRemoteScreen: (): boolean => false,
   createTransport: (): Transport => ({ simulated: false, send: wire.send,
     listen: (listener: (message: FromMachine) => void): void => { wire.receive = listener } }),
 }))

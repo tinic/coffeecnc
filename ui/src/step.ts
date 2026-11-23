@@ -1,5 +1,6 @@
 // Optional page-local display attachments. Nothing in this module sends a controller command.
 import { computed, markRaw, reactive, watch } from 'vue'
+import { isRemoteScreen } from './bridge'
 import { live, panel } from './machine'
 import { t } from './i18n'
 import { modelBlock } from './step-block'
@@ -47,7 +48,12 @@ export function removePart(): void {
   part.placed = false
 }
 
-watch([(): unknown => panel.status?.program.file, (): unknown => panel.status?.program.revision], () => {
+watch([
+  (): unknown => panel.status?.program.file,
+  (): unknown => panel.status?.program.revision,
+  (): unknown => isRemoteScreen() ? panel.hello : null,
+  (): boolean => !isRemoteScreen() || live.value,
+], () => {
   if (part.attachment !== null || part.loading) {
     // A model loaded with the program goes with it; only one the operator attached is reported.
     const attached = (part.attachment !== null && part.attachment.note !== withProgram) ||
@@ -67,15 +73,21 @@ export function programPartUrl(file: string): string {
 export async function loadProgramPart(fetcher: typeof fetch = fetch): Promise<void> {
   const file = panel.status?.program.file
   const revision = panel.status?.program.revision
+  const remote = isRemoteScreen()
+  const hello = panel.hello
   if (!file || panel.simulated || !live.value) return
   let bytes: ArrayBuffer
   try {
-    const response = await fetcher(programPartUrl(file))
+    const url = remote
+      ? `/program-part?revision=${String(revision ?? 0)}&program=${encodeURIComponent(file)}`
+      : programPartUrl(file)
+    const response = await fetcher(url)
     if (!response.ok) return
     bytes = await response.arrayBuffer()
   } catch { return }
   // Only for the program it was asked for, and never over a model the operator attached since.
-  if (panel.status?.program.file !== file || panel.status.program.revision !== revision ||
+  if (!live.value || (remote && panel.hello !== hello) ||
+    panel.status?.program.file !== file || panel.status.program.revision !== revision ||
     part.attachment !== null || part.loading) return
   const base = file.slice(file.lastIndexOf('/') + 1).replace(/\.[^.]*$/, '')
   await importPart(new File([bytes], `${base}.step`), withProgram) // i18n-ignore

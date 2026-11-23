@@ -206,6 +206,24 @@ describe('translateMessage', () => {
       .toBe('Le mouvement circulaire en MDI dépasserait la limite négative de X')
   })
 
+  it('translates the phrases native fills into a sentence, and keeps its data', async () => {
+    await setLanguage('de')
+    // nml_port.cpp withdraw: the commands sent, joined by ", ", and the one not sent.
+    expect(translateMessage('Cancelled after this was sent: the homing command, flood on. Not sent: mist on.'))
+      .toBe('Abgebrochen, nachdem dies gesendet wurde: der Referenzfahrtbefehl, Flutkühlung ein. Nicht gesendet: Sprühnebel ein.')
+    expect(translateMessage('Could not position XY for the setter (timed out).'))
+      .toBe('XY konnte nicht für den Werkzeuglängensensor positioniert werden (Zeitüberschreitung).')
+    // `latched` is the probe value: a number, not a phrase.
+    expect(translateMessage('The probe did not release at the retract position (probe touching, latched 1, commanded +0.500 mm, measured +0.400 mm from the retract).'))
+      .toBe('Der Messtaster war an der Rückzugsposition nicht frei (Taster berührt, Latch 1, Soll +0.500 mm, gemessen +0.400 mm vom Rückzug).')
+    // tool_models.cpp: `object` is a phrase ("The file") or a JSON member name, kept as it is.
+    expect(translateMessage('The file must be an object.')).toBe('Die Datei muss ein Objekt sein.')
+    expect(translateMessage('document lacks the field version.')).toBe('document: Das Feld version fehlt.')
+    await setLanguage('ja')
+    expect(translateMessage('Cancelled after this was sent: the homing command, flood on. Not sent: mist on.'))
+      .toBe('原点復帰コマンド、フラッドオン の送信後にキャンセルされました。未送信：ミストオン。')
+  })
+
   it('passes unknown text unchanged', async () => {
     await setLanguage('fr')
     expect(translateMessage('joint 0 following error')).toBe('joint 0 following error')

@@ -390,6 +390,9 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     }
     message["rotary_axes"] = std::move(rotary);
   }
+  if (motion.velocity_limit)
+    message["motion"]["velocity_limit"] =
+        fields.real(*motion.velocity_limit, "motion.velocity_limit");
   if (const auto& z = status.paused_z) {
     message["paused_z"] = {{"offset", fields.real(z->offset, "paused_z.offset")},
                            {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},

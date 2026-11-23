@@ -395,6 +395,23 @@ describe('program execution', () => {
     expect(r.status().axes[0]?.machine).toBeCloseTo((rapidVelocity * 0.25) / 60, 0)
   })
 
+  it('caps both rapid and feed independently of their overrides', () => {
+    const r = rig()
+    r.home()
+    r.load('G53 G0 X20\nG53 G1 X40 F1800\nM2')
+    expect(r.send({ type: 'set_override', which: 'velocity_limit', value: 0.1 }).outcome).toBe('accepted')
+    expect(r.send({ type: 'set_override', which: 'velocity_limit', value: 1.1 }).outcome).toBe('rejected')
+    r.send({ type: 'run' })
+    r.sim.advance(1000)
+    expect(r.status().motion).toMatchObject({ velocity: 600, velocity_limit: 0.1, rapid_override: 1, feed_override: 1 })
+    r.sim.advance(1500)
+    expect(r.status().program.motion_line).toBe(2)
+    expect(r.status().motion.velocity).toBe(600)
+    r.send({ type: 'set_override', which: 'velocity_limit', value: 1 })
+    r.sim.advance(100)
+    expect(r.status().motion.velocity).toBe(1800)
+  })
+
   it('pauses, resumes and aborts', () => {
     const r = rig()
     r.home()

@@ -15,6 +15,7 @@
     "yes": "はい",
     "no": "いいえ",
     "off": "オフ",
-    "saving": "保存中…"
+    "saving": "保存中…",
+    "listSeparator": "、"
   }
 }

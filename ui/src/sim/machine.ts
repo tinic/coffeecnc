@@ -14,6 +14,7 @@ import type {
   MachineState,
   Preview,
   RestartPlan,
+  SetOverride,
   Status,
   TaskMode,
   ToMachine,
@@ -29,7 +30,7 @@ import { SimProbe, type ProbePlan } from './probe'
 import { SimOffsetHistory } from './offset-history'
 import { fieldAxis } from '../offset-history'
 import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
-import { inspectProbeCode, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
+import { mdiProbeBlock, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
 import {
   InterpError,
   activeCodes,
@@ -137,6 +138,8 @@ interface Rejection {
 
 /** The longest program text `save_program` writes, as natively. */
 const maxSavedProgramBytes = 512 * 1024
+/** The longest MDI block, as natively (session.cpp max_mdi_bytes). */
+const maxMdiBytes = 254
 
 function reject(reason: string): Rejection {
   return { outcome: 'rejected', reason }
@@ -187,7 +190,7 @@ export class SimMachine {
   private readonly jogs: [JogState | null, JogState | null, JogState | null] = [null, null, null]
   private exec: Exec | null = null
   private velocity = 0
-  private readonly overrides = { feed: 1, rapid: 1, spindle: 1 }
+  private readonly overrides = { feed: 1, rapid: 1, spindle: 1, velocity_limit: 1 }
   private program: { file: string; lines: string[]; revision: number; stamp: string } | null = null
   /** Where the program last stopped before its end, for that program revision. */
   private stoppedAt: { revision: number; line: number; tool: number } | null = null
@@ -387,6 +390,7 @@ export class SimMachine {
         programmed_feed: m.feed,
         feed_override: this.overrides.feed,
         rapid_override: this.overrides.rapid,
+        velocity_limit: this.overrides.velocity_limit,
         in_position: this.inPosition(),
       },
       spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle,
@@ -660,10 +664,11 @@ export class SimMachine {
   /** Moves along the active polyline; returns the time left over, or -1 while it is not done. */
   private advanceMove(active: Extract<Active, { kind: 'move' }>, ms: number): number {
     const op = active.op
-    const speed =
+    const requested =
       op.motion === 'rapid'
         ? rapidVelocity * (this.pendingProbe ? 1 : this.overrides.rapid)
         : Math.min(rapidVelocity, op.feed * (this.pendingProbe ? 1 : this.overrides.feed))
+    const speed = Math.min(requested, rapidVelocity * this.overrides.velocity_limit)
     if (speed <= 0) {
       return -1
     }
@@ -926,9 +931,11 @@ export class SimMachine {
   private execute(command: Exclude<ToMachine, FixedSetter>): Rejection | null {
     switch (command.type) {
       case 'set_tool_model_defaults':
-      case 'set_operator_settings':
       case 'set_tool_model_assignment':
         return reject('Native tool model storage is unavailable in the browser simulator')
+      case 'set_operator_settings':
+        // As Session without tool model storage, which also holds the operator settings.
+        return reject('Operator settings storage is not part of this session.')
       case 'ready':
         this.emit(this.configuration)
         this.sendTools()
@@ -961,6 +968,8 @@ export class SimMachine {
         this.stopJogs()
         return null
       case 'mdi':
+        // As command_policy.cpp valid_text: LinuxCNC's LINELEN is 255 with the terminator.
+        if (!validMdiText(command.text)) return reject('MDI requires one nonempty block of at most 254 bytes.')
         return this.probeCode(command.text) ?? this.mdi(command.text)
       case 'list_directory': {
         const listing = listDirectory(this.files, command.path)
@@ -1036,7 +1045,7 @@ export class SimMachine {
         if (blocked !== null) {
           return blocked
         }
-        if (this.probe && this.toolInSpindle === demoProbe) return reject('Remove the touch probe before starting the spindle.')
+        if (this.probe && this.toolInSpindle === demoProbe) return reject(probeLoadedReason)
         if (!(command.rpm > 0)) {
           return reject('Spindle speed must be above zero')
         }
@@ -1340,15 +1349,10 @@ export class SimMachine {
   private probeCode(mdi?: string): Rejection | null {
     if (!this.probe) return null
     if (mdi !== undefined) {
-      const block = inspectProbeCode(mdi)
-      if (block.relabelsTool && (block.changesTool || block.refusal !== ''))
-        return reject('Separate M61 from tool changes and spindle commands.')
-    }
-    if (this.toolInSpindle !== demoProbe) return null
-    if (mdi !== undefined) {
-      const reason = probeCodeBlock(mdi)
+      const reason = mdiProbeBlock(mdi, this.toolInSpindle === demoProbe)
       return reason === '' ? null : reject(reason)
     }
+    if (this.toolInSpindle !== demoProbe) return null
     if (this.modal.spindle !== 'stopped') return reject(probeLoadedReason)
     if (this.exec?.source === 'mdi') return reject(probeCodeUnknown)
     for (const line of this.program?.lines ?? []) {
@@ -1638,7 +1642,7 @@ export class SimMachine {
     return null
   }
 
-  private setOverride(which: 'feed' | 'rapid' | 'spindle', value: number): Rejection | null {
+  private setOverride(which: SetOverride['which'], value: number): Rejection | null {
     if (!Number.isFinite(value)) {
       return reject('Override value is not a number')
     }
@@ -1647,6 +1651,9 @@ export class SimMachine {
       this.overrides.feed = clamp(0, hello.max_feed_override)
     } else if (which === 'rapid') {
       this.overrides.rapid = clamp(0, 1)
+    } else if (which === 'velocity_limit') {
+      if (value < 0 || value > 1) return reject('Maximum velocity limit is out of range.')
+      this.overrides.velocity_limit = value
     } else {
       this.overrides.spindle = clamp(hello.min_spindle_override, hello.max_spindle_override)
     }
@@ -1712,6 +1719,11 @@ function historySource(command: ToMachine): HistorySource | null {
   if (command.type === 'tool_touch_off') return 'tool_touch_off'
   if (command.type === 'set_tool' || command.type === 'remove_tool') return 'tool_table'
   return command.type === 'mdi' ? 'mdi' : null
+}
+
+/** One nonblank block of at most 254 bytes, without a line break or NUL (command_policy.cpp valid_text). */
+function validMdiText(text: string): boolean {
+  return /[^ \t]/.test(text) && new TextEncoder().encode(text).length <= maxMdiBytes && !/[\r\n\0]/.test(text)
 }
 
 function blankStatus(): Status {

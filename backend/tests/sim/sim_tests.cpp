@@ -2919,6 +2919,45 @@ void g0759_limits(Rig& rig) {
         rig.send(std::format(R"("type":"set_override","which":"{}","value":1)", which)));
 }
 
+void velocity_limit(Rig& rig) {
+  constexpr double fraction = 0.1;
+  const double maximum = rig.config.limits.max_trajectory_velocity.value_or(0);
+  check("velocity_limit_configured", near(maximum, 3000), std::to_string(maximum));
+  const auto set = [&](double value) {
+    return rig.send(std::format(R"("type":"set_override","which":"velocity_limit","value":{})", value));
+  };
+  const auto lowered = set(fraction);
+  const bool applied = rig.pump_until(2s, [&] {
+    return near(rig.status().velocity_limit.value_or(-1), fraction, 1e-6);
+  });
+  const auto excessive = set(1.01);
+  check("velocity_limit_applied_and_bounded",
+        lowered.accepted() && applied && excessive.outcome == "rejected", lowered.text());
+  if (!applied)
+    return;
+
+  const auto file = rig.config.program_prefix + "/coffeecnc_velocity_limit.ngc";
+  std::ofstream{file} << "G21 G90 G49\nG53 G0 X25\nG53 G1 X50 F1500\nM2\n";
+  const auto open = rig.send(std::format(R"("type":"open_program","path":{})", Json(file).dump()));
+  const auto started = rig.send(R"("type":"run")");
+  const auto at_cap = [&](int line) {
+    return rig.pump_until(8s, [&] {
+      const auto status = rig.status();
+      return status.motion_line == line && near(status.velocity, fraction * maximum, 2);
+    });
+  };
+  check("velocity_limit_caps_rapid", open.accepted() && started.accepted() && at_cap(2), started.text());
+  check("velocity_limit_caps_feed", started.accepted() && at_cap(3));
+  const auto reset = set(1);
+  check("velocity_limit_reset_is_reported", reset.accepted() && rig.pump_until(2s, [&] {
+    return near(rig.status().velocity_limit.value_or(-1), 1, 1e-6);
+  }), reset.text());
+  check("velocity_limit_program_finishes", rig.pump_until(8s, [&] {
+    return rig.idle() && near(rig.status().commanded_position[0], 50, 0.02);
+  }));
+  static_cast<void>(rig.send(R"("type":"abort")"));
+}
+
 // A program on the unhomed machine, with a change to a tool the table gives no length.
 void g0759_program(Rig& rig) {
   const std::string file = rig.config.program_prefix + "/coffeecnc_g0759.ngc";
@@ -5796,7 +5835,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
-         bool moves_only, bool macros_only, bool cam_only) -> int {
+         bool moves_only, bool macros_only, bool velocity_only, bool cam_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5876,6 +5915,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (velocity_only) {
+    homing(rig);
+    velocity_limit(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (probe_interlock_only) {
     homing(rig);
     probe_tool_exchange(rig);
@@ -6049,6 +6094,7 @@ auto main(int argc, char** argv) -> int {
   bool probe_interlock_only = false;
   bool moves_only = false;
   bool macros_only = false;
+  bool velocity_only = false;
   bool cam_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
@@ -6073,6 +6119,7 @@ auto main(int argc, char** argv) -> int {
     probe_interlock_only = probe_interlock_only || std::string_view(argv[i]) == "probe-interlock";
     moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
     macros_only = macros_only || std::string_view(argv[i]) == "macros";
+    velocity_only = velocity_only || std::string_view(argv[i]) == "velocity-limit";
     cam_only = cam_only || std::string_view(argv[i]) == "cam-programs";
   }
   if (models_only && !ini_file.empty())
@@ -6085,7 +6132,7 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only, probe_interlock_only, moves_only, macros_only,
+               history_only, rotary_only, probe_interlock_only, moves_only, macros_only, velocity_only,
                cam_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());

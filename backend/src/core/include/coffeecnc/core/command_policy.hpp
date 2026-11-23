@@ -22,7 +22,7 @@ enum class MachineState : std::uint8_t { estop, off, on };
 enum class TaskMode : std::uint8_t { manual, mdi, automatic };
 enum class InterpState : std::uint8_t { idle, reading, paused, waiting };
 enum class SpindleDirection : std::uint8_t { stopped, forward, reverse };
-enum class Override : std::uint8_t { feed, rapid, spindle };
+enum class Override : std::uint8_t { feed, rapid, spindle, velocity_limit };
 enum class ProgramOption : std::uint8_t { optional_stop, block_delete };
 enum class JogSpace : std::uint8_t { joint, axis };
 
@@ -115,6 +115,8 @@ struct Limits {
   // configured to accept them ([TRAJ] NO_FORCE_HOMING): MDI, run, single block, work coordinate
   // selection and touch-off are then allowed unhomed. Jog rules do not depend on it.
   bool homing_required;
+  // The controller's configured linear trajectory ceiling in mm/min, when available.
+  std::optional<double> max_trajectory_velocity{};
   // Joints (motors) that drive X, Y, Z: 2 for the Y of a gantry. Before homing jogs move joints,
   // and an axis with more than one is not jogged then: one motor alone would rack it.
   std::array<int, 3> axis_motors{1, 1, 1};

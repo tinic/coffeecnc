@@ -135,6 +135,28 @@ describe('MDI macros', () => {
     expect(panel.mdi).toEqual([])
   })
 
+  it('gives the native touch-probe refusal in the confirmation, before Run', async () => {
+    status.tool = { ...status.tool, in_spindle: 99 }
+    peer({ touch_probe_tool: 99 }, [{ label: 'Spindle', mdi: 'S1000 M3' }, { label: 'Park', mdi: 'G53 G0 Z0' }]); view()
+    await tap('Macros'); await tap('Spindle')
+    expect(wrapper?.get('.refusal').text()).toBe('A touch probe is loaded')
+    expect(button('Run').getAttribute('aria-disabled')).toBe('true')
+    await tap('Run')
+    expect(sent()).toEqual([])
+    await tap('Cancel'); await tap('Macros'); await tap('Park')
+    expect(wrapper?.find('.refusal').exists()).toBe(false)
+    await tap('Run')
+    expect(sent()).toEqual([expect.objectContaining({ type: 'mdi', text: 'G53 G0 Z0' })])
+  })
+
+  it('refuses an M61 mixed with a spindle command with any tool, as native', async () => {
+    peer({}, [{ label: 'Relabel', mdi: 'M61 Q1 M3' }]); view()
+    await tap('Macros'); await tap('Relabel')
+    expect(wrapper?.get('.refusal').text()).toBe('Separate M61 from tool changes and spindle commands.')
+    await tap('Run')
+    expect(sent()).toEqual([])
+  })
+
   it('runs unhomed where the machine does not require homing', async () => {
     status.axes = status.axes.map((axis) => ({ ...axis, homed: false }))
     peer({ homing_required: false }); view()

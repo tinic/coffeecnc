@@ -40,8 +40,9 @@ const file = computed(() => reported.value?.program.file)
       >{{ state }}</span>
       <button class="btn" type="button" @click="logOpen = true">{{ t('status.remote.messageLog') }}<span v-if="panel.log.length"> · {{ panel.log.length }}</span></button>
     </header>
-    <section v-if="file" class="job">
-      <h1>{{ baseName(file) }}</h1>
+    <!-- E-stop, errors and other notices show also with no program loaded. -->
+    <section v-if="file || panel.notice" class="job">
+      <h1 v-if="file">{{ baseName(file) }}</h1>
       <p v-if="panel.notice" class="notice" :class="{ error: panel.notice.level === 'error' }">{{ translateMessage(panel.notice.text) }}</p>
     </section>
     <DroPanel read-only />

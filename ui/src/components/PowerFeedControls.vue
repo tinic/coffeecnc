@@ -68,7 +68,7 @@ function plan(axis: AxisLetter, direction: -1 | 1): ReturnType<typeof powerFeedP
   return powerFeedPlan(
     { status: panel.status, machineBlock: mdiBlock.value, probeLoaded: touchProbeLoaded.value },
     // [AXIS_*] MAX_VELOCITY limits a feed move as much as a jog.
-    { axis, direction, feed: powerFeed.feed, maxFeed: axisJogVelocity(panel.hello, axis, maxFeed.value),
+    { axis, direction, feed: powerFeed.feed, maxFeed: axisJogVelocity(panel.hello, axis, maxFeed.value), unit: unit.value,
       extent: powerFeed.extent === 'limit' ? { kind: 'limit' } : { kind: 'distance', distance: powerFeed.distance } },
   )
 }

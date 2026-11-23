@@ -169,6 +169,7 @@
       "resetFeed": "Repor o ajuste do avanço a 100%",
       "resetSpindle": "Repor o ajuste da árvore a 100%",
       "resetRapid": "Repor o ajuste do rápido a 100%",
+      "resetVelocityLimit": "Restaurar a velocidade máxima",
       "reset": "Repor 100%"
     },
     "workSystems": {
@@ -197,7 +198,7 @@
       "enterFeed": "Introduza um avanço superior a zero",
       "feedAboveMax": "O avanço excede o máximo da máquina",
       "enterDistance": "Introduza uma distância superior a zero",
-      "room": "{direction} tem {room} mm até ao limite de software",
+      "room": "{direction} tem {room} {unit} até ao limite de software",
       "atLimit": "{axis} está no limite de software",
       "zNoSoftLimits": "Z não tem limites de software",
       "safeZRange": "O Z de segurança tem de estar dentro dos limites de software de Z, de {min} a {max} {unit}",

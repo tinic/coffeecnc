@@ -2295,7 +2295,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     if (ball) {
       // Both faces of the gauge from outside: the ball centres touch one effective diameter
-      // closer together than the gauge is wide.
+      // further apart than the gauge is wide.
       const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
       if (!left)
         return std::unexpected("Left face: " + left.error());
@@ -2307,7 +2307,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!right)
         return std::unexpected("Right face: " + right.error());
       const double centres = (*right + radius) - (*left - radius);
-      const double diameter = request.gauge_width_mm - centres;
+      const double diameter = centres - request.gauge_width_mm;
       if (!std::isfinite(diameter) || diameter <= 0 || std::abs(diameter - 2 * radius) > 0.5)
         return std::unexpected(std::format(
             "Measured ball diameter {:.3f} mm is more than 0.5 mm from the table's {:.3f} mm. "
@@ -3324,6 +3324,16 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
   case Override::rapid: {
     EMC_TRAJ_SET_RAPID_SCALE message;
     message.scale = value;
+    return impl_->pass(message, from);
+  }
+  case Override::velocity_limit: {
+    const auto maximum = impl_->config.limits.max_trajectory_velocity;
+    if (!maximum)
+      return failed("Maximum velocity control is unavailable on this machine.");
+    if (!std::isfinite(value) || value < 0 || value > 1)
+      return failed("Maximum velocity limit is out of range.");
+    EMC_TRAJ_SET_MAX_VELOCITY message;
+    message.velocity = value * *maximum / 60 / impl_->config.millimetres_per_unit;
     return impl_->pass(message, from);
   }
   case Override::spindle:

@@ -219,6 +219,11 @@ if(BUILD_TESTING)
         # One LinuxCNC per host at a time.
         set_tests_properties(linuxcnc_sim_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 700)
+        add_test(NAME linuxcnc_velocity_limit_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 65 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_velocity_limit_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> velocity-limit)
+        set_tests_properties(linuxcnc_velocity_limit_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 395)
         add_test(NAME linuxcnc_tool_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 45 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_tool_probe_${units}
           ${PROJECT_SOURCE_DIR}/tests/sim/tool_probe_facts.py)

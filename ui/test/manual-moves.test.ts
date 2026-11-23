@@ -16,7 +16,7 @@ function status(change: Partial<Status> = {}): Status {
 }
 const live = (s: Status = status()): MoveContext => ({ status: s, machineBlock: null })
 const feed = (change: Partial<PowerFeedRequest> = {}): PowerFeedRequest =>
-  ({ axis: 'x', direction: 1, extent: { kind: 'limit' }, feed: 300, maxFeed: 6000, ...change })
+  ({ axis: 'x', direction: 1, extent: { kind: 'limit' }, feed: 300, maxFeed: 6000, unit: 'mm', ...change })
 const moved = (s: Status, at: Partial<Record<'x' | 'y' | 'z', number>>, interp: Status['interp'] = 'idle'): Status =>
   ({ ...s, interp, axes: s.axes.map((axis) => ({ ...axis, machine: at[axis.axis] ?? axis.machine })) })
 
@@ -35,6 +35,9 @@ describe('power feed target', () => {
     expect(exact.ok && exact.plan.target).toBe(249.5)
     expect(powerFeedPlan(live(), feed({ axis: 'y', extent: { kind: 'distance', distance: 199.6 } })))
       .toEqual({ ok: false, reason: 'Y+ has 199.500 mm before the soft limit' })
+    // The room is in the display unit, as the distance typed.
+    expect(powerFeedPlan(live(), feed({ axis: 'y', unit: 'inch', extent: { kind: 'distance', distance: 199.6 } })))
+      .toEqual({ ok: false, reason: 'Y+ has 7.8543 in before the soft limit' })
     expect(powerFeedPlan(live(), feed({ extent: { kind: 'distance', distance: 0 } })))
       .toEqual({ ok: false, reason: 'Enter a distance above zero' })
   })

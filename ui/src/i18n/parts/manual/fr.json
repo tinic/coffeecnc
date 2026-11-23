@@ -169,6 +169,7 @@
       "resetFeed": "Remettre la correction d’avance à 100 %",
       "resetSpindle": "Remettre la correction de broche à 100 %",
       "resetRapid": "Remettre la correction de rapide à 100 %",
+      "resetVelocityLimit": "Rétablir la vitesse maximale",
       "reset": "Remettre 100 %"
     },
     "workSystems": {
@@ -197,7 +198,7 @@
       "enterFeed": "Saisissez une avance supérieure à zéro",
       "feedAboveMax": "L’avance dépasse le maximum de la machine",
       "enterDistance": "Saisissez une distance supérieure à zéro",
-      "room": "{direction} dispose de {room} mm avant la limite logicielle",
+      "room": "{direction} dispose de {room} {unit} avant la limite logicielle",
       "atLimit": "{axis} est à sa limite logicielle",
       "zNoSoftLimits": "Z n’a pas de limites logicielles",
       "safeZRange": "Le Z de sécurité doit être dans les limites logicielles de Z, de {min} à {max} {unit}",

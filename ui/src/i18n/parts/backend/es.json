@@ -574,6 +574,13 @@
       "keptForRun": "El registro de alarmas en {directory} se guarda solo durante esta ejecución: {detail}",
       "inUse": "lo usa otro CoffeeCNC.",
       "notLocked": "no se puede tomar su bloqueo: {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} no está instalado: no está en la ruta de búsqueda ({path}).",
+      "alreadyOpen": "{name} ya está abierto.",
+      "notStarted": "No se pudo iniciar {name}.",
+      "notStartedBecause": "No se pudo iniciar {name}: {error}.",
+      "cannotStart": "Las herramientas HAL no se pueden iniciar aquí."
     }
   }
 }

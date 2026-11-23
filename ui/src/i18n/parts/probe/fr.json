@@ -235,6 +235,7 @@
       "title": "Origines pièce de {wcs}",
       "hint": "Origines XYZ en coordonnées machine · {unit}",
       "unknown": "Les origines actuelles sont indisponibles. Saisissez les trois valeurs pour les remplacer, ou fermez et sélectionnez d’abord ce système pour le lire.",
+      "unconfirmed": "Ces origines ont été lues avant la dernière exécution de G-code par LinuxCNC et ont pu changer depuis. Sélectionnez ce système pour lire ses valeurs actuelles.",
       "originLabel": "Origine {axis} de {wcs}",
       "clear": "Effacer XYZ…",
       "copyTo": "Copier vers",

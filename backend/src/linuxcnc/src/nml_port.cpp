@@ -45,8 +45,46 @@
 #include <rcs.hh>
 #include <stat_msg.hh>
 
+#include <sys/stat.h>
+
 namespace coffeecnc {
+
+auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
+  struct stat info{};
+  if (path.empty() || ::stat(path.c_str(), &info) != 0)
+    return std::nullopt;
+  return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
+                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
+                               std::int64_t{info.st_mtim.tv_nsec},
+                   .size = std::int64_t{info.st_size}};
+}
+
+void WrittenSerials::begin() {
+  const std::scoped_lock lock{mutex_};
+  writing_ = true;
+}
+
+void WrittenSerials::wrote(int serial) {
+  const std::scoped_lock lock{mutex_};
+  writing_ = false;
+  serials_.at(count_++ % kept) = serial;
+}
+
+auto WrittenSerials::ours(int echo) const -> bool {
+  const std::scoped_lock lock{mutex_};
+  return writing_ || std::ranges::contains(std::span(serials_).first(std::min(count_, kept)), echo);
+}
+
 namespace {
+
+// How long a synch that failed waits before it is tried again.
+constexpr auto synch_retry_period = std::chrono::seconds{1};
+
+// Commands that make the interpreter run G-code, and so may change its parameters.
+auto runs_gcode(long type) -> bool {
+  return type == EMC_TASK_PLAN_EXECUTE_TYPE || type == EMC_TASK_PLAN_RUN_TYPE ||
+         type == EMC_TASK_PLAN_STEP_TYPE || type == EMC_TASK_PLAN_RESUME_TYPE;
+}
 
 auto load_touched(const std::string& file) -> std::optional<TouchedOff> {
   std::ifstream in(file);
@@ -347,6 +385,7 @@ struct NmlPort::Impl {
   Clock::time_point spindle_hold_retry{};
 
   int serial{};
+  std::chrono::steady_clock::time_point synch_retry{};
   std::optional<int> startup_tool;
   std::optional<int> observed_tool;
   // The joint or axis and the jjogmode of the jog stop that is the last command written, until
@@ -644,8 +683,17 @@ struct NmlPort::Impl {
   // moment, since the session is not kept locked while this thread writes. Once write() of
   // libnml has begun the command is committed.
   [[nodiscard]] auto write(RCS_CMD_MSG& message) -> ActionResult {
+    // Counted before the write: a status that shows the block executing may come before
+    // the write returns. Counted also when the write is withdrawn or fails: more is harmless.
+    if (loads != nullptr) {
+      if (runs_gcode(message.type))
+        ++loads->gcode_writes;
+      loads->serials.begin();
+    }
     const int wrote = command.call(
         [&](RCS_CMD_CHANNEL& channel) -> int { return still() ? channel.write(&message) : 0; });
+    if (loads != nullptr)
+      loads->serials.wrote(message.serial_number);
     if (cancelled)
       return withdraw(message.type);
     if (wrote != 0)
@@ -896,7 +944,8 @@ auto NmlPort::types() -> Types {
           EMC_COOLANT_FLOOD_ON_TYPE,
           EMC_COOLANT_MIST_ON_TYPE,
           EMC_TOOL_LOAD_TOOL_TABLE_TYPE,
-          EMC_TASK_ABORT_TYPE};
+          EMC_TASK_ABORT_TYPE,
+          EMC_TASK_PLAN_SYNCH_TYPE};
 }
 
 NmlGateHold::NmlGateHold() : lock_(nml_gate()) {}
@@ -919,7 +968,57 @@ auto NmlPort::take_messages() -> std::vector<ControllerMessage> {
   return std::exchange(impl_->messages, {});
 }
 
+void NmlPort::synch_parameters(const Wanted& wanted) {
+  auto* loads = impl_->loads;
+  if (loads == nullptr)
+    return;
+  const auto done = loads->synched.load();
+  const std::uint64_t completed = done ? done->count : 0;
+  if (loads->synch_wanted.load() <= completed || Clock::now() < impl_->synch_retry)
+    return;
+  // Taken before the status is judged: what is counted after this is activity after the synch.
+  const SynchPoint point{completed + 1, loads->activity.load(), loads->gcode_writes.load()};
+  const auto now = status();
+  const auto& state = now.controller;
+  // Task refuses the synch, with an operator error, while the machine is on in auto mode.
+  if (state.link != Link::live || state.interp != InterpState::idle || now.queued_mdi != 0 ||
+      now.task_executing ||
+      (state.machine == MachineState::on && state.mode == TaskMode::automatic) || !wanted())
+    return;
+  static_cast<void>(impl_->begin(&wanted));
+  const Impl::Scope scope{*impl_};
+  EMC_TASK_PLAN_SYNCH message;
+  if (!accepted(impl_->write(message))) {
+    impl_->synch_retry = Clock::now() + synch_retry_period;
+    return;
+  }
+  // The wait gives way to every request and stop the session queues meanwhile (`wanted` turns
+  // false): those never wait behind a synch. The synch then is not counted and is asked for
+  // again. Done means written: task saves the file before it reports the synch done.
+  int rcs = RCS_EXEC;
+  const bool ended = until(completion_timeout, [&]() -> bool {
+    impl_->collect();
+    if (!wanted())
+      return true;
+    const EMC_STAT* s = impl_->stat();
+    if (s == nullptr || s->echo_serial_number != impl_->serial)
+      return false;
+    rcs = s->status;
+    return rcs != RCS_EXEC;
+  });
+  if (!wanted())
+    return;
+  if (ended && rcs == RCS_DONE) {
+    auto done_point = point;
+    done_point.file = file_stamp(impl_->config.parameter_file);
+    loads->synched.store(std::make_shared<const SynchPoint>(done_point));
+  }
+  else
+    impl_->synch_retry = Clock::now() + synch_retry_period;
+}
+
 void NmlPort::idle_maintenance(const Wanted& wanted) {
+  synch_parameters(wanted);
   if (impl_->hal && impl_->hal->paused_spindle.load() != PausedSpindle::none)
     recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {

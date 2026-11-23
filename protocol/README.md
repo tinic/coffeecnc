@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 38 cases and the native fixture 37, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 40 cases and the native fixture 38, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -96,9 +96,11 @@ The browser simulator supports policy-only capability overrides for tests. They 
 
 `work_offsets.systems[].available` is an additive optional boolean. New senders explicitly supply it for every one of the nine systems. False means `offset` and `rotation_xy` are finite placeholders, not coordinates: the panel displays dashes and Unavailable, and these fields must not enter preview calculations. An omitted field retains the older complete-table semantics. A real zero with `available: true` remains a known coordinate.
 
-The agreed mapping for the first native shell reports only the active system as available, from the controller's current G5x offset and XY rotation. It marks every inactive system unavailable; it does not substitute saved parameter-file values or issue hidden MDI queries. A change of availability increments the work-offset revision. Status still carries the active offsets independently. A preview must remain unavailable until all state it requires is established.
+`work_offsets.systems[].current` is an additive optional boolean. False means a known value that the controller may have changed since it was read: the panel shows it in italics and says so. An omitted field means current. A system that is not available is never current.
 
-The operator can select an unavailable system through the existing MDI controls to observe its active values; receiving an unavailable row never issues that command automatically. Stale/silent readings are labeled as history, while down/incompatible/connecting values are withheld. Invalid or duplicate rows are also withheld. The browser simulator knows its full internal table and emits explicit true for all nine entries.
+The native shell reports the active system from the controller's current G5x offset and XY rotation, always current on a live link. It reports the inactive systems from LinuxCNC's parameter file (`[RS274NGC] PARAMETER_FILE`), current only when the file was read after an interpreter synch that CoffeeCNC sent with nothing run since; see `docs/backend-rules.md`. It issues no MDI queries. Without the file the inactive systems are unavailable. A change of a value, of availability or of `current` increments the work-offset revision; `current` is no preview input. Status still carries the active offsets independently. A preview must remain unavailable until all state it requires is established.
+
+The operator can select an unavailable system through the existing MDI controls to observe its active values; receiving an unavailable row never issues that command automatically. Stale/silent readings are labeled as history, while down/incompatible/connecting values are withheld. Invalid or duplicate rows are also withheld. The browser simulator knows its full internal table and emits explicit `available: true` for all nine entries. Like the native shell it marks the inactive ones `current: false` while something runs, and after a program until the mode leaves auto.
 
 ## Program text and directory completeness
 
@@ -156,3 +158,15 @@ and `wcs`. After confirmation, send `fixed_setter` with `action: "apply_angle"`,
 the measurement ID and the probe tool. The controller accepts the measurement
 once, in the same operator session and work frame. The applied result reports
 the verified rotation in `setter.edge_angle`.
+
+## HAL diagnostics
+
+`hello.diagnostics: true` enables two additive v1 commands and one message. Absent or false: the panel offers no diagnostics view. The LAN screen's hello never carries it.
+
+| Command | Fields | Answer |
+| --- | --- | --- |
+| `watch_diagnostics` | `on` (boolean) | `accepted` at once, in every machine state. While `on`, the page is sent `diagnostics` about ten times a second; `on: false` or the end of the page stops it. One page at a time |
+| `launch_hal_tool` | `tool`: `halshow`, `halmeter` or `halscope` | `accepted` when the program was started; `rejected` with the reason when it is not installed, already open or could not start |
+
+`diagnostics` has `inputs`, one per row in order, and `tools`. An input has `role` (`min_limit`, `max_limit`, `home_switch`, `amp_fault`, `estop_chain`, `estop_request`, `probe`, `spindle_on`, `spindle_at_speed`, `spindle_speed_out`, `spindle_speed_in`, `spindle_fault`, `configured`), `name` (the HAL pin or signal), `kind` (`pin` or `signal`), `state` (`missing`, `unwired`, `undriven`, `live`) and `value` (boolean, number or null). Joint rows add `joint` and, where the joint moves a known axis, `axis`; configured rows add `label`. `spindle.0.speed-in` is in revolutions per second. A tool has `tool`, `available` (installed) and `open` (started by CoffeeCNC and not ended).
+

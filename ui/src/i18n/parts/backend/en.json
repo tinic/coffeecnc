@@ -574,6 +574,13 @@
       "keptForRun": "The alarm log in {directory} is kept for this run only: {detail}",
       "inUse": "it is in use by another CoffeeCNC.",
       "notLocked": "its lock cannot be taken: {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} is not installed: it is not in the search path ({path}).",
+      "alreadyOpen": "{name} is already open.",
+      "notStarted": "{name} could not be started.",
+      "notStartedBecause": "{name} could not be started: {error}.",
+      "cannotStart": "HAL tools cannot be started here."
     }
   }
 }

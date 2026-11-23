@@ -574,6 +574,13 @@
       "keptForRun": "{directory} のアラームログはこの実行中のみ保持されます: {detail}",
       "inUse": "別の CoffeeCNC が使用中です。",
       "notLocked": "ロックを取得できません: {detail}。"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} はインストールされていません。検索パス（{path}）にありません。",
+      "alreadyOpen": "{name} はすでに開いています。",
+      "notStarted": "{name} を起動できませんでした。",
+      "notStartedBecause": "{name} を起動できませんでした：{error}。",
+      "cannotStart": "ここでは HAL ツールを起動できません。"
     }
   }
 }

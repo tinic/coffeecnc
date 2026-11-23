@@ -26,6 +26,8 @@ function current(wcs: number): Vec3 | null {
 function equal(a: Vec3 | null, b: Vec3 | null): boolean {
   return a === null || b === null ? a === b : a.every((value, index) => value === b[index])
 }
+const unconfirmed = computed(() => workOffsetRows(panel.workOffsets, panel.status, panel.link)
+  .find((candidate) => candidate.wcs === props.wcs)?.unconfirmed ?? false)
 const original = current(props.wcs)
 const initial = original?.map((value) => String(Number(toDisplay(value, unit).toFixed(6)))) ?? ['', '', '']
 const values = ref([...initial])
@@ -155,6 +157,7 @@ watch([mdiBlock, (): number | undefined => panel.status?.offsets.wcs], () => { r
   <ModalDialog v-else key="edit" :title="t('probe.workOffset.title', { wcs: wcsName(wcs) })" size="medium" expanded @close="emit('close')">
     <p class="hint">{{ t('probe.workOffset.hint', { unit: unitName }) }}</p>
     <p v-if="original === null" class="hint">{{ t('probe.workOffset.unknown') }}</p>
+    <p v-else-if="unconfirmed" class="hint unconfirmed" role="status">{{ t('probe.workOffset.unconfirmed') }}</p>
     <div class="coordinates">
       <label v-for="(axis, index) in axes" :key="axis" class="entry"><span class="mono">{{ axis }}</span><input v-model="values[index]" v-numeric :data-numeric-unit="unit" :aria-label="t('probe.workOffset.originLabel', { wcs: wcsName(wcs), axis })" class="field mono" type="text" inputmode="decimal" autocomplete="off" :placeholder="original === null ? t('common.unavailable') : ''" /></label>
     </div>
@@ -183,6 +186,7 @@ watch([mdiBlock, (): number | undefined => panel.status?.offsets.wcs], () => { r
 
 <style scoped>
 p { margin: 0; line-height: 1.45; }
+.hint.unconfirmed { color: var(--warn); }
 .coordinates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .entry { display: flex; flex-direction: column; gap: 8px; font-size: 18px; }.entry input { width: 100%; min-width: 0; min-height: 48px; font-size: 20px; }
 .offset-actions, .copy-target { display: flex; align-items: center; gap: 8px; }.offset-actions { padding-top: 12px; border-top: 1px solid var(--line); }.copy-target { font-size: 13px; }.copy-target select { min-height: 44px; }

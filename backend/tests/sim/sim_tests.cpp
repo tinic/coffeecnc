@@ -8,6 +8,7 @@
 // Output: one `check=<name> result=pass|fail detail=<text>` line per check, `fact=` lines with
 // observations for the record, and `exit=<code>` last. Exit code 0 only when every check passed.
 
+#include <coffeecnc/app/diagnostics_feed.hpp>
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/offset_history.hpp>
@@ -21,6 +22,7 @@
 #include <coffeecnc/app/tool_models.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
+#include <coffeecnc/linuxcnc/hal_diagnostics.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
@@ -173,11 +175,12 @@ public:
   // Where the runtime's status thread leaves its readings, and what the port counts: what the
   // executable's panel source is made on.
   const NmlStatusMailbox* mailbox{};
-  const NmlLoads* loads{};
+  NmlLoads* loads{};
   std::unique_ptr<Runtime> runtime;
   PreviewWorker* restart_preview{};
   PreviewEngine* restart_engine{};
   ToolModelService* interlock_models{};
+  DiagnosticsService* diagnostics{};
   PageToken page;
   RequestId next_id{1};
 
@@ -191,7 +194,8 @@ public:
     runtime =
         std::make_unique<Runtime>(port, reader, control, config.limits, programs,
                                   [this](const Outcome& outcome) -> void { absorb(outcome); },
-                                  interlock_models, Runtime::Quit{}, restart_preview, restart_engine);
+                                  interlock_models, Runtime::Quit{}, restart_preview, restart_engine,
+                                  nullptr, nullptr, diagnostics);
     // The control thread arms the watchdog and lowers the level a stopped runtime left high.
     pump_until(2s, [&]() -> bool { return probe.watchdog_ok() && !probe.jog_stop(); });
     new_page();
@@ -5319,6 +5323,140 @@ void offset_history(Rig& rig) {
   rig.start();
 }
 
+// The inactive work systems from LinuxCNC's parameter file: how soon a value is shown as
+// current after the panel's G10 L2 of an inactive system, a touch-off in another system, the
+// panel's MDI line and another client's MDI; and that after a program in auto mode it is shown,
+// not current, until task leaves auto mode.
+void work_offsets(Rig& rig) {
+  NmlPanelSource source{rig.config, *rig.mailbox, {}, {}, rig.loads};
+  std::array<WorkSystem, 9> shown{};
+  // Reads as the publisher does, every 50 ms, until `done`; how long that took.
+  const auto watch = [&](std::chrono::milliseconds timeout,
+                         const std::function<bool()>& done) -> std::optional<double> {
+    const auto start = Clock::now();
+    auto next = start;
+    const bool reached = rig.pump_until(timeout, [&]() -> bool {
+      if (Clock::now() < next)
+        return false;
+      next = Clock::now() + 50ms;
+      shown = source.read().work_systems;
+      return done();
+    });
+    return reached ? std::optional<double>{milliseconds(Clock::now() - start)} : std::nullopt;
+  };
+  const auto row = [&](int wcs) -> const WorkSystem& {
+    return shown.at(static_cast<std::size_t>(wcs) - 1);
+  };
+  const auto current = [&](int wcs, double x) -> bool {
+    return row(wcs).available && row(wcs).current && near(row(wcs).offset[0], x, 0.001);
+  };
+  const auto took = [](const std::optional<double>& time) -> std::string {
+    return time ? std::format("{:.0f}ms", *time) : std::string("never");
+  };
+  const auto settle = [&]() -> void { rig.pump_until(5s, [&]() -> bool { return rig.idle(); }); };
+  const auto text = [&](int wcs) -> std::string {
+    return std::format("G5{}x={:.4f} available={} current={}", wcs + 3, row(wcs).offset[0],
+                       row(wcs).available, row(wcs).current);
+  };
+
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54")"));
+  settle();
+  auto time = watch(3s, [&]() -> bool {
+    return std::ranges::all_of(shown, [](const WorkSystem& s) { return s.available && s.current; });
+  });
+  check("wcs_inactive_current_after_a_synch", time.has_value(), took(time));
+
+  const auto set = rig.send(R"("type":"set_work_offset","wcs":2,"offset":[11,12,13])");
+  time = watch(3s, [&]() -> bool {
+    return current(2, 11) && near(row(2).offset[1], 12, 0.001) && near(row(2).offset[2], 13, 0.001);
+  });
+  check("wcs_panel_g10_l2_inactive_current", set.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", set.outcome, took(time), text(2)));
+
+  // A touch-off in G56, then back to G54: G56 is shown with the value LinuxCNC had for it.
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":3)"));
+  settle();
+  const auto touch = rig.send(R"("type":"touch_off","axis":"x","value":5)");
+  settle();
+  const double touched = rig.status().g5x[0];
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":1)"));
+  settle();
+  time = watch(3s, [&]() -> bool { return current(3, touched); });
+  check("wcs_touch_off_in_another_system_current",
+        touch.outcome == "accepted" && rig.status().wcs == 1 && time.has_value(),
+        std::format("{} {} live={:.4f} {}", touch.outcome, took(time), touched, text(3)));
+
+  const auto typed = rig.send(R"("type":"mdi","text":"G10 L2 P4 X21")");
+  time = watch(3s, [&]() -> bool { return current(4, 21); });
+  check("wcs_panel_mdi_current", typed.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", typed.outcome, took(time), text(4)));
+
+  const auto printed = all_output_of(
+      "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MDI); "
+      "c.wait_complete(); c.mdi(\"G10 L2 P5 X31\"); c.wait_complete(); print(\"outside=sent\")'");
+  time = watch(5s, [&]() -> bool { return current(5, 31); });
+  check("wcs_other_client_mdi_current",
+        printed.find("outside=sent") != std::string::npos && time.has_value(),
+        std::format("printed={} {} {}", word(printed), took(time), text(5)));
+
+  // A program, run by another client, that ends in auto mode with M2.
+  const auto written = rig.config.program_prefix + "/coffeecnc_wcs.ngc";
+  {
+    std::ofstream out{written};
+    out << "G21\nG10 L2 P6 X41\nM2\n";
+  }
+  const auto ran = all_output_of(std::format(
+      "python3 -c 'import linuxcnc, time; s = linuxcnc.stat(); c = linuxcnc.command(); "
+      "c.mode(linuxcnc.MODE_AUTO); c.wait_complete(); c.program_open(\"{}\"); c.wait_complete(); "
+      "c.auto(linuxcnc.AUTO_RUN, 0); c.wait_complete(); time.sleep(0.2); s.poll(); "
+      "[time.sleep(0.01) or s.poll() for _ in range(500) if s.interp_state != linuxcnc.INTERP_IDLE]; "
+      "s.poll(); print(\"ran=\" + str(s.interp_state == linuxcnc.INTERP_IDLE and s.task_mode == "
+      "linuxcnc.MODE_AUTO))'",
+      written));
+  static_cast<void>(watch(1500ms, []() -> bool { return false; }));
+  const bool held = row(6).available && !row(6).current;
+  check("wcs_not_current_after_a_program_in_auto", ran.find("ran=True") != std::string::npos && held,
+        std::format("printed={} {}", word(ran), text(6)));
+  const auto leave = rig.send(R"("type":"mdi","text":"G54")");
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_program_value_current_once_task_leaves_auto",
+        leave.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", leave.outcome, took(time), text(6)));
+  settle();
+
+  // A stop queued while a synch is outstanding goes out at once: task is held so that the synch
+  // stays unanswered, and the abort must not wait for its echo (1 s) or completion (3 s).
+  const auto types = NmlPort::types();
+  const auto from = rig.port.writes().size();
+  std::optional<Clock::time_point> synch_at;
+  std::optional<Clock::time_point> abort_at;
+  Clock::time_point posted{};
+  RequestId abort{};
+  {
+    const FrozenTask frozen{rig.config.ini_file};
+    const auto done = rig.loads->synched.load();
+    rig.loads->synch_wanted.store((done ? done->count : 0) + 1);
+    const auto seen = [&](long type, std::optional<Clock::time_point>& at) -> bool {
+      for (const auto& write : written_since(rig, from))
+        if (write.type == type)
+          at = write.at;
+      return at.has_value();
+    };
+    static_cast<void>(rig.pump_until(500ms, [&]() -> bool { return seen(types.synch, synch_at); }));
+    posted = Clock::now();
+    abort = rig.post(R"("type":"abort")");
+    static_cast<void>(rig.pump_until(900ms, [&]() -> bool { return seen(types.abort, abort_at); }));
+  }
+  const auto stopped = rig.await(abort, 10s);
+  const double waited = abort_at ? milliseconds(*abort_at - posted) : -1;
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_stop_does_not_wait_behind_a_synch",
+        synch_at.has_value() && abort_at.has_value() && waited < 100 && time.has_value(),
+        std::format("synch_written={} abort_written_after_ms={:.1f} abort={} current_again={}",
+                    synch_at.has_value(), waited, stopped.outcome, took(time)));
+  settle();
+}
+
 // The offset editor's XY rotation and G92/G52 clear against LinuxCNC: the blocks are taken, the
 // readout and the preview inputs follow the rotation, each edit is one history entry, Restore
 // undoes it, and a running program refuses both.
@@ -5784,11 +5922,198 @@ void macros(Rig& rig, const MachineConfig& config) {
   std::filesystem::remove(directory / "coffeecnc_macros.ini");
 }
 
+// The diagnostics view (#251) on the G0759-shaped mill: the feed the executable makes, on HAL's
+// own lookups, behind the real runtime. Switches and inputs are moved with `halcmd setp` (a pin
+// on no signal) and `halcmd sets` (a signal nothing writes), and each change must show in the
+// `diagnostics` messages the page is sent. The launcher has no HAL tools to find: no window opens.
+void diagnostics_view(Rig& rig) {
+  const auto directory = std::filesystem::path(rig.config.ini_file).parent_path();
+  auto text = read_text_file(rig.config.ini_file, std::size_t{1} << 20).value_or("");
+  constexpr std::string_view lines = "DIAGNOSTIC = Probe signal | probe-in\n"
+                                     "DIAGNOSTIC = At speed signal | spindle-at-speed\n"
+                                     "DIAGNOSTIC = E-stop chain signal | estop-out\n"
+                                     "DIAGNOSTIC = Not in this HAL | coffeecnc-no-such-signal\n";
+  if (const auto at = text.find("[COFFEECNC]\n"); at != std::string::npos)
+    text.insert(at + 12, lines);
+  const auto file = directory / "coffeecnc_diagnostics.ini";
+  std::ofstream(file, std::ios::trunc) << text;
+  const auto loaded = load_machine_config(file.string());
+  std::filesystem::remove(file);
+  check("diagnostics_config", loaded && loaded->diagnostics.size() == 4,
+        loaded ? std::format("rows={}", loaded->diagnostics.size()) : word(loaded.error()));
+  if (!loaded)
+    return;
+  const auto rows = diagnostic_inputs(*loaded);
+  HalApiLookup lookup;
+  HalToolLauncher launcher{(directory / "no-hal-tools").string(), {}};
+  PinSignals wiring;
+  std::mutex mutex;
+  std::vector<Json> received;
+  std::vector<Clock::time_point> arrived;
+  std::optional<DiagnosticsFeed> feed;
+  feed.emplace(
+      DiagnosticsFeed::Source{
+          // As the executable asks for it: halcmd_show("sig", "") in application.cpp.
+          .begin = [&]() -> void { wiring = pin_signals(all_output_of("halcmd -s show sig ''")); },
+          .read = [&]() -> Diagnostics {
+            return {read_diagnostics(rows, lookup, wiring), launcher.states()};
+          },
+          .launch = [&](HalTool tool) -> std::optional<std::string> {
+            return launcher.launch(tool);
+          }},
+      [&](PageToken, const std::vector<std::string>& messages) -> void {
+        const std::lock_guard lock{mutex};
+        for (const auto& message : messages) {
+          received.push_back(Json::parse(message));
+          arrived.push_back(Clock::now());
+        }
+      });
+  rig.stop();
+  rig.diagnostics = &*feed;
+  rig.start();
+  const auto count = [&]() -> std::size_t {
+    const std::lock_guard lock{mutex};
+    return received.size();
+  };
+  const auto latest = [&]() -> Json {
+    const std::lock_guard lock{mutex};
+    return received.empty() ? Json() : received.back();
+  };
+  const auto row = [](const Json& message, std::string_view name) -> Json {
+    if (!message.is_object())
+      return {};
+    const auto& inputs = message.at("inputs");
+    const auto found = std::ranges::find_if(
+        inputs, [&](const Json& input) -> bool { return input.at("name") == name; });
+    return found == inputs.end() ? Json() : *found;
+  };
+  const auto shown = [](const Json& input) -> std::string {
+    return input.is_null() ? std::string("none")
+                           : std::format("{}={}", input.at("state").get<std::string>(),
+                                         input.at("value").dump());
+  };
+  // The row as the page is shown it, once it has that state and value.
+  const auto until = [&](std::string_view name, std::string_view state, const Json& value) -> Json {
+    rig.pump_until(3s, [&]() -> bool {
+      const auto input = row(latest(), name);
+      return !input.is_null() && input.at("state") == state && input.at("value") == value;
+    });
+    return row(latest(), name);
+  };
+  const auto is = [](const Json& input, std::string_view state, const Json& value) -> bool {
+    return !input.is_null() && input.at("state") == state && input.at("value") == value;
+  };
+
+  rig.pump(400ms);
+  check("diagnostics_nothing_unwatched", count() == 0, std::format("messages={}", count()));
+  const auto on = rig.send(R"("type":"watch_diagnostics","on":true)");
+  check("diagnostics_watch_accepted", on.accepted(), on.text());
+  rig.pump_until(3s, [&]() -> bool { return count() > 0; });
+  const auto first = latest();
+  check("diagnostics_rows",
+        first.is_object() && first.at("inputs").size() == rows.size() && rows.size() == 24U,
+        std::format("rows={} sent={}", rows.size(),
+                    first.is_object() ? first.at("inputs").size() : 0));
+  {
+    const std::size_t from = count();
+    rig.pump(2s);
+    const std::lock_guard lock{mutex};
+    const auto sent = received.size() - from;
+    const auto span = sent > 1 ? milliseconds(arrived.back() - arrived.at(from)) / static_cast<double>(sent - 1)
+                               : 0.0;
+    check("diagnostics_about_10_hz", sent >= 14 && sent <= 24 && span > 70 && span < 140,
+          std::format("messages_in_2s={} mean_ms={:.1f}", sent, span));
+  }
+  // The machine is on: LinuxCNC's enable, and the chain that loops it back here.
+  check("diagnostics_estop_chain_live",
+        is(row(latest(), "iocontrol.0.user-enable-out"), "live", true) &&
+            is(row(latest(), "iocontrol.0.emc-enable-in"), "live", true),
+        shown(row(latest(), "iocontrol.0.emc-enable-in")));
+  check("diagnostics_unknown_signal_missing",
+        is(row(latest(), "coffeecnc-no-such-signal"), "missing", nullptr) &&
+            row(latest(), "coffeecnc-no-such-signal").at("label") == "Not in this HAL",
+        shown(row(latest(), "coffeecnc-no-such-signal")));
+  check("diagnostics_at_speed_undriven",
+        is(row(latest(), "spindle.0.at-speed"), "undriven", true) &&
+            is(row(latest(), "spindle-at-speed"), "undriven", true) &&
+            row(latest(), "spindle-at-speed").at("kind") == "signal",
+        shown(row(latest(), "spindle-at-speed")));
+
+  // Waits for the row to show `state` and `value`, and checks that it does.
+  const auto shows = [&](std::string_view check_name, std::string_view name, std::string_view state,
+                         const Json& value, bool also = true) -> Json {
+    const auto input = until(name, state, value);
+    check(check_name, also && is(input, state, value), shown(input));
+    return input;
+  };
+
+  // The probe: probe-in has no writer in this simulation; `sets` closes and opens it.
+  static_cast<void>(shows("diagnostics_probe_open", "motion.probe-input", "undriven", false));
+  const bool closed = halcmd("sets probe-in TRUE");
+  static_cast<void>(shows("diagnostics_probe_tripped", "motion.probe-input", "undriven", true,
+                          closed));
+  check("diagnostics_probe_signal_row", is(row(latest(), "probe-in"), "undriven", true) &&
+                                            row(latest(), "probe-in").at("kind") == "signal",
+        shown(row(latest(), "probe-in")));
+  static_cast<void>(halcmd("sets probe-in FALSE"));
+  static_cast<void>(shows("diagnostics_probe_released", "motion.probe-input", "undriven", false));
+
+  // A home switch on no signal: `setp` gives the pin its value.
+  static_cast<void>(shows("diagnostics_home_unwired", "joint.1.home-sw-in", "unwired", false));
+  const bool home = halcmd("setp joint.1.home-sw-in TRUE");
+  static_cast<void>(
+      shows("diagnostics_home_switch_closed", "joint.1.home-sw-in", "unwired", true, home));
+  static_cast<void>(halcmd("setp joint.1.home-sw-in FALSE"));
+  static_cast<void>(shows("diagnostics_home_switch_open", "joint.1.home-sw-in", "unwired", false));
+
+  const auto tool = rig.send(R"("type":"launch_hal_tool","tool":"halscope")");
+  check("diagnostics_missing_tool_refused",
+        tool.outcome == "rejected" && tool.reason.starts_with("halscope is not installed") &&
+            latest().at("tools").at(2) ==
+                Json::parse(R"({"tool":"halscope","available":false,"open":false})"),
+        tool.text());
+
+  // E-stop: LinuxCNC drops its enable, and the chain follows.
+  const auto estop = rig.send(R"("type":"set_machine","state":"estop")");
+  static_cast<void>(shows("diagnostics_estop_request_shown", "iocontrol.0.user-enable-out",
+                          "live", false, estop.accepted()));
+  static_cast<void>(shows("diagnostics_estop_chain_shown", "iocontrol.0.emc-enable-in", "live",
+                          false, is(row(latest(), "estop-out"), "live", false)));
+  // A limit switch, in E-stop: nothing moves when it closes.
+  const bool limit = halcmd("setp joint.0.neg-lim-sw-in TRUE");
+  const auto closed_limit =
+      shows("diagnostics_limit_switch_closed", "joint.0.neg-lim-sw-in", "unwired", true, limit);
+  check("diagnostics_limit_switch_row",
+        !closed_limit.is_null() && closed_limit.at("role") == "min_limit" &&
+            closed_limit.at("joint") == 0,
+        closed_limit.dump());
+  static_cast<void>(halcmd("setp joint.0.neg-lim-sw-in FALSE"));
+  static_cast<void>(
+      shows("diagnostics_limit_switch_open", "joint.0.neg-lim-sw-in", "unwired", false));
+
+  const auto off = rig.send(R"("type":"watch_diagnostics","on":false)");
+  const auto after_off = count();
+  rig.pump(500ms);
+  check("diagnostics_stop_when_closed", off.accepted() && count() == after_off,
+        std::format("{} more={}", off.text(), count() - after_off));
+  static_cast<void>(rig.send(R"("type":"watch_diagnostics","on":true)"));
+  rig.pump_until(2s, [&]() -> bool { return count() > after_off; });
+  rig.runtime->end_page(rig.page);
+  const auto at_end = count();
+  rig.pump(500ms);
+  check("diagnostics_stop_at_page_end", at_end > after_off && count() == at_end,
+        std::format("watched_again={} more={}", at_end - after_off, count() - at_end));
+  rig.stop();
+  rig.diagnostics = nullptr;
+  feed.reset();
+}
+
 auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restore_only,
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
-         bool moves_only, bool macros_only, bool velocity_only, bool edits_only) -> int {
+         bool moves_only, bool macros_only, bool velocity_only, bool wcs_only, bool edits_only,
+         bool diagnostics_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5842,7 +6167,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   auto port = NmlPort::connect(*config, &shared, &loads);
   check("nml_connect", port.has_value(), port ? config->nml_file : port.error());
   // One status channel for the runtime's status thread, one for this thread.
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   auto view = NmlStatusReader::connect(*config, &shared);
   check("nml_status_readers", reader.has_value() && view.has_value(),
@@ -5868,6 +6193,10 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (diagnostics_only) {
+    diagnostics_view(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (edits_only) {
     homing(rig);
     offset_edits(rig);
@@ -5905,6 +6234,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   if (moves_only) {
     homing(rig);
     machine_moves(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (wcs_only) {
+    homing(rig);
+    work_offsets(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -6049,7 +6384,9 @@ auto main(int argc, char** argv) -> int {
   bool moves_only = false;
   bool macros_only = false;
   bool velocity_only = false;
+  bool wcs_only = false;
   bool edits_only = false;
+  bool diagnostics_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -6074,7 +6411,9 @@ auto main(int argc, char** argv) -> int {
     moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
     macros_only = macros_only || std::string_view(argv[i]) == "macros";
     velocity_only = velocity_only || std::string_view(argv[i]) == "velocity-limit";
+    wcs_only = wcs_only || std::string_view(argv[i]) == "work-offsets";
     edits_only = edits_only || std::string_view(argv[i]) == "offset-edits";
+    diagnostics_only = diagnostics_only || std::string_view(argv[i]) == "diagnostics";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -6087,7 +6426,7 @@ auto main(int argc, char** argv) -> int {
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
                history_only, rotary_only, probe_interlock_only, moves_only, macros_only, velocity_only,
-               edits_only);
+               wcs_only, edits_only, diagnostics_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

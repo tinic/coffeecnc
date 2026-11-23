@@ -26,6 +26,9 @@ auto preview_inputs(const PanelReading& reading, const Vec3& rest_position) -> P
   inputs.program_file = status.program.file;
   inputs.program_revision = status.program.revision;
   inputs.systems = reading.work_systems;
+  // Whether a value is known to be current is no input of a preview: only the value is.
+  for (auto& system : inputs.systems)
+    system.current = false;
   inputs.g92 = status.offsets.g92;
   // A table withheld from the panel is still the machine's table.
   inputs.tools = reading.accepted_tools.value_or(reading.tool_table.tools);

@@ -116,6 +116,7 @@ const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, p
 function offsetHint(system: WorkOffsetRow): string | undefined {
   if (system.offset === null) return t('tools.tab.offsetsUnavailable', { system: wcsName(system.wcs) })
   if (system.stale) return t('tools.tab.offsetsStale', { system: wcsName(system.wcs) })
+  if (system.unconfirmed) return t('tools.tab.offsetsUnconfirmed', { system: wcsName(system.wcs) })
   return undefined
 }
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
@@ -184,6 +185,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
         <h2>{{ t('tools.tab.workOffsets') }}</h2>
         <span class="hint">{{ t('tools.tab.workOffsetsHint', { unit }) }}</span>
         <span v-if="systems.some(system => system.stale)" class="offset-history">{{ t('tools.tab.lastReported') }}</span>
+        <span v-else-if="systems.some(system => system.unconfirmed)" v-tooltip="t('tools.tab.unconfirmedHint')" class="offset-history unconfirmed-note">{{ t('tools.tab.unconfirmed') }}</span>
         <button v-if="panel.offsetHistory" v-tooltip="t('tools.tab.historyHint')" class="btn history" type="button" @click="historyFilter = 'all'"><AppIcon name="history" /><span>{{ t('tools.tab.history') }}</span></button>
       </div>
       <div class="scroll">
@@ -199,7 +201,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
+            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, unconfirmed: system.unconfirmed, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
               <td v-tooltip="offsetHint(system)" class="mono" :aria-label="offsetHint(system)">{{ wcsName(system.wcs) }}</td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
@@ -374,6 +376,8 @@ tr.loaded td {
 }
 
 .offsets th, .offsets td { padding-left: 4px; padding-right: 4px; }
+.offset-row.unconfirmed td.num { color: var(--text-dim); font-style: italic; }
+.unconfirmed-note { cursor: help; }
 
 
 .entry {

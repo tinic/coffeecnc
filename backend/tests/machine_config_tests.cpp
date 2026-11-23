@@ -2,6 +2,7 @@
 // INI files tests/sim/run.sh assembles for its profiles. No LinuxCNC is started.
 //   coffeecnc_machine_config_tests <tests/sim/run.sh> <scratch directory> <coffeecnc.ini.example>
 
+#include <coffeecnc/linuxcnc/hal_diagnostics.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 #include <coffeecnc/core/text_file.hpp>
 
@@ -651,6 +652,101 @@ void fixed_setter_is_explicit_and_bounded() {
           "the setter rejects a search too short to reach below the reference latch");
 }
 
+// [COFFEECNC] DIAGNOSTIC = <label> | <HAL signal or pin> (#251), and the rows of the view.
+void diagnostics() {
+  const auto plain = load(g0759);
+  require(plain && plain->diagnostics.empty(), "no configured row unless configured");
+  const auto rows = diagnostic_inputs(*plain);
+  require(rows.size() == 3 * 4 + 8, std::format("four rows per joint and eight more: {}", rows.size()));
+  require(rows.front() == DiagnosticInput{.role = DiagnosticRole::min_limit,
+                                          .joint = 0, .axis = 'x',
+                                          .name = "joint.0.neg-lim-sw-in"} &&
+              rows.at(5) == DiagnosticInput{.role = DiagnosticRole::max_limit,
+                                            .joint = 1, .axis = 'y',
+                                            .name = "joint.1.pos-lim-sw-in"} &&
+              rows.at(10) == DiagnosticInput{.role = DiagnosticRole::home_switch,
+                                             .joint = 2, .axis = 'z',
+                                             .name = "joint.2.home-sw-in"} &&
+              rows.at(12) == DiagnosticInput{.role = DiagnosticRole::estop_chain,
+                                             .name = "iocontrol.0.emc-enable-in"} &&
+              rows.at(14) == DiagnosticInput{.role = DiagnosticRole::probe,
+                                             .name = "motion.probe-input"} &&
+              rows.back() == DiagnosticInput{.role = DiagnosticRole::spindle_fault,
+                                             .name = "spindle.0.amp-fault-in"},
+          "LinuxCNC's own pins, in order");
+
+  const auto with_rows = [](std::string_view lines) -> std::string {
+    return with(std::string(g0759), "[COFFEECNC]\n", std::format("[COFFEECNC]\n{}", lines));
+  };
+  const auto config = load(with_rows(
+      "DIAGNOSTIC = E-stop button (input-16) | estop-ext\n"
+      "DIAGNOSTIC =   Setter contact   |   setter-tripped  \n"
+      "DIAGNOSTIC = VFD Modbus-Fehler über | svd-ps_vfd.modbus-errors\n"));
+  require(config.has_value(), config ? "" : config.error());
+  require(config->diagnostics ==
+              std::vector<DiagnosticSignal>{{"E-stop button (input-16)", "estop-ext"},
+                                            {"Setter contact", "setter-tripped"},
+                                            {"VFD Modbus-Fehler über", "svd-ps_vfd.modbus-errors"}},
+          "labels and names in order, trimmed");
+  const auto configured = diagnostic_inputs(*config);
+  require(configured.size() == rows.size() + 3 &&
+              configured.back() == DiagnosticInput{.role = DiagnosticRole::configured,
+                                                    .label = "VFD Modbus-Fehler über",
+                                                    .name = "svd-ps_vfd.modbus-errors"},
+          "the configured rows come last");
+  const auto refused = [&](std::string_view lines, std::string_view part) -> bool {
+    const auto reason = error(with_rows(lines));
+    if (!has(reason, part))
+      throw std::runtime_error(std::format("\"{}\" gave \"{}\", not \"{}\"", lines, reason, part));
+    return true;
+  };
+  require(refused("DIAGNOSTIC = estop-ext\n", "has no |"), "a row needs the bar");
+  require(refused("DIAGNOSTIC =  | estop-ext\n", "has no label"), "an empty label");
+  require(refused("DIAGNOSTIC = E-stop |  \n", "\"E-stop\" has no HAL signal or pin"),
+          "an empty name");
+  require(refused("DIAGNOSTIC = E-stop | estop ext\n", "\"estop ext\" is not a HAL name"),
+          "a name is one word");
+  require(refused(std::format("DIAGNOSTIC = Long | {}\n", std::string(48, 'n')),
+                  "is not a HAL name (one word of at most 47 characters)"),
+          "a name of 48 characters is longer than HAL takes");
+  require(load(with_rows(std::format("DIAGNOSTIC = Long | {}\n", std::string(47, 'n'))))
+              .has_value(),
+          "47 characters");
+  require(refused(std::format("DIAGNOSTIC = {} | estop-ext\n", std::string(33, 'l')),
+                  "at most 32 characters"),
+          "a label of 33 characters");
+  require(load(with_rows(std::format("DIAGNOSTIC = {} | estop-ext\n", std::string(32, 'l'))))
+              .has_value(),
+          "a label of 32 characters");
+  require(refused("DIAGNOSTIC = E-stop | a\nDIAGNOSTIC = E-stop | b\n", "\"E-stop\" is there twice"),
+          "labels are unique");
+  // The lines docs/machines/g0759.md gives for the machine's INI file.
+  const auto machine = load(with_rows("DIAGNOSTIC = E-stop button (input-16) | estop-ext\n"
+                                      "DIAGNOSTIC = Setter overtravel (input-17) | setter-ok\n"
+                                      "DIAGNOSTIC = E-stop inputs together | estop-ok\n"
+                                      "DIAGNOSTIC = Setter contact (input-19) | setter-tripped\n"
+                                      "DIAGNOSTIC = Ruby probe (input-18) | ruby-tripped\n"
+                                      "DIAGNOSTIC = Probe routed to ruby | probe-route-ruby\n"
+                                      "DIAGNOSTIC = Setter selected | probe-setter-selected\n"
+                                      "DIAGNOSTIC = Probe-cycle permit | probe-motion-permitted\n"
+                                      "DIAGNOSTIC = VFD at speed | svd-ps_vfd.at-speed\n"
+                                      "DIAGNOSTIC = VFD Modbus errors | svd-ps_vfd.modbus-errors\n"
+                                      "DIAGNOSTIC = VFD frequency | svd-ps_vfd.freq-fb\n"
+                                      "DIAGNOSTIC = VFD current | svd-ps_vfd.output-current\n"));
+  require(machine && machine->diagnostics.size() == 12 &&
+              machine->diagnostics.at(3) ==
+                  DiagnosticSignal{"Setter contact (input-19)", "setter-tripped"},
+          machine ? "the G0759's twelve rows" : machine.error());
+  std::string seventeen;
+  for (int i = 1; i <= 17; ++i)
+    seventeen += std::format("DIAGNOSTIC = Row {} | signal-{}\n", i, i);
+  require(refused(seventeen, "more than 16 DIAGNOSTIC lines"), "at most 16 rows");
+  require(load(with_rows(seventeen.substr(0, seventeen.rfind("DIAGNOSTIC"))))
+                  .value()
+                  .diagnostics.size() == 16,
+          "16 rows");
+}
+
 // [COFFEECNC] MACRO = <label> | <MDI block> (#211), as LinuxCNC's own IniFile reads the lines.
 void macros() {
   require(load(g0759)->macros.empty(), "no macro unless configured");
@@ -825,6 +921,7 @@ auto main(int argc, char** argv) -> int {
     linuxcnc_switches();
     manual_tool_change_is_opt_in();
     macros();
+    diagnostics();
     std::cout << checks << " machine configuration checks passed\n";
     return 0;
   } catch (const std::exception& error) {

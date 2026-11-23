@@ -149,6 +149,12 @@ if(BUILD_TESTING)
       nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_session_tests)
     add_test(NAME session_lifecycle COMMAND coffeecnc_session_tests)
+    # The diagnostics view (#251): its wire text and the feed that reads only while watched.
+    add_executable(coffeecnc_diagnostics_tests tests/diagnostics_tests.cpp)
+    target_link_libraries(coffeecnc_diagnostics_tests PRIVATE coffeecnc_app
+      coffeecnc_project_options nlohmann_json::nlohmann_json)
+    coffeecnc_enable_analyzers(coffeecnc_diagnostics_tests)
+    add_test(NAME diagnostics_feed COMMAND coffeecnc_diagnostics_tests)
     add_executable(coffeecnc_runtime_tests tests/runtime_tests.cpp)
     target_link_libraries(coffeecnc_runtime_tests PRIVATE coffeecnc_app coffeecnc_project_options
       nlohmann_json::nlohmann_json)
@@ -179,6 +185,14 @@ if(BUILD_TESTING)
         coffeecnc_project_options)
       coffeecnc_enable_analyzers(coffeecnc_hal_control_tests)
       add_test(NAME hal_control COMMAND coffeecnc_hal_control_tests)
+      # The diagnostics view's HAL readings on a lookup of the test's own, and the HAL tool
+      # launcher on programs the test writes. No HAL runs.
+      add_executable(coffeecnc_hal_diagnostics_tests tests/hal_diagnostics_tests.cpp)
+      target_link_libraries(coffeecnc_hal_diagnostics_tests PRIVATE coffeecnc_linuxcnc
+        coffeecnc_project_options)
+      coffeecnc_enable_analyzers(coffeecnc_hal_diagnostics_tests)
+      add_test(NAME hal_diagnostics COMMAND coffeecnc_hal_diagnostics_tests
+        ${PROJECT_BINARY_DIR})
       if(TARGET coffeecnc_preview)
         # The preview engine with the real helper and LinuxCNC's interpreter on programs the
         # test writes. No LinuxCNC runs.
@@ -275,6 +289,18 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
         set_tests_properties(linuxcnc_offset_history_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # The inactive work systems from the parameter file, and when they are current.
+        add_test(NAME linuxcnc_work_offsets_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_work_offsets_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> work-offsets)
+        set_tests_properties(linuxcnc_work_offsets_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # When LinuxCNC writes the parameter file: the facts the reading above relies on.
+        add_test(NAME linuxcnc_parameter_file_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 90 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_parameter_file_${units}
+          ${PROJECT_SOURCE_DIR}/tests/sim/work_offset_facts.py)
+        set_tests_properties(linuxcnc_parameter_file_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 420)
         # The offset editor's XY rotation and G92/G52 clear, with history and refusals.
         add_test(NAME linuxcnc_offset_edits_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_edits_${units}
@@ -315,6 +341,12 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_fixed_setter_tests> edge-rotation)
       set_tests_properties(linuxcnc_edge_rotation_g0759 linuxcnc_edge_rotation_inch PROPERTIES
         LABELS linuxcnc RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+      # The HAL diagnostics view (#251): limit, home, probe and E-stop rows follow halcmd.
+      add_test(NAME linuxcnc_diagnostics_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p g0759 -t 60 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_diagnostics_g0759
+        $<TARGET_FILE:coffeecnc_sim_tests> g0759 diagnostics)
+      set_tests_properties(linuxcnc_diagnostics_g0759 PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
       add_test(NAME linuxcnc_sim_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_g0759
         $<TARGET_FILE:coffeecnc_sim_tests> g0759)

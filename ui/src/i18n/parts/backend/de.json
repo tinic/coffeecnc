@@ -574,6 +574,13 @@
       "keptForRun": "Das Alarmprotokoll in {directory} wird nur für diesen Lauf geführt: {detail}",
       "inUse": "es wird von einem anderen CoffeeCNC verwendet.",
       "notLocked": "seine Sperre kann nicht gesetzt werden: {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",
+      "alreadyOpen": "{name} ist bereits geöffnet.",
+      "notStarted": "{name} konnte nicht gestartet werden.",
+      "notStartedBecause": "{name} konnte nicht gestartet werden: {error}.",
+      "cannotStart": "HAL-Werkzeuge können hier nicht gestartet werden."
     }
   }
 }

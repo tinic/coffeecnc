@@ -31,13 +31,22 @@ struct TimedStatus {
 // the publisher takes the panel's status from here and never calls a reader. The time tells an
 // old reading from a new one (see TimedStatus for what it guarantees). Thread-safe; its mutex is
 // held for a copy only.
+//
+// With `loads`, every reading put here that shows the interpreter at work (not idle, or MDI
+// queued) or another client's command (an echoed serial number that is none of the port's
+// recent ones, NmlLoads::serials) counts one NmlLoads::activity: the parameter file may no
+// longer be current. Readings are a status period (5 ms) apart: a command of another client
+// that task takes up and finishes between two of them, with a command of the port's after it,
+// is not seen. A link that is not live counts nothing.
 class NmlStatusMailbox {
 public:
+  explicit NmlStatusMailbox(NmlLoads* loads = nullptr) : loads_(loads) {}
   void put(const NmlStatus& status, std::chrono::steady_clock::time_point read_at);
   // Nothing before the first reading.
   [[nodiscard]] auto latest() const -> std::optional<TimedStatus>;
 
 private:
+  NmlLoads* loads_;
   mutable std::mutex mutex_;
   std::optional<TimedStatus> latest_;
 };

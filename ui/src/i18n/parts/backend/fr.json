@@ -574,6 +574,13 @@
       "keptForRun": "Le journal des alarmes dans {directory} est conservé pour cette exécution seulement : {detail}",
       "inUse": "il est utilisé par un autre CoffeeCNC.",
       "notLocked": "son verrou ne peut pas être pris : {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} n’est pas installé : il n’est pas dans le chemin de recherche ({path}).",
+      "alreadyOpen": "{name} est déjà ouvert.",
+      "notStarted": "{name} n’a pas pu être démarré.",
+      "notStartedBecause": "{name} n’a pas pu être démarré : {error}.",
+      "cannotStart": "Les outils HAL ne peuvent pas être démarrés ici."
     }
   }
 }

@@ -30,6 +30,8 @@ const sources = import.meta.glob<string>([
   '../../backend/src/app/src/preview.cpp',
   '../../backend/src/app/src/status_publisher.cpp',
   '../../backend/src/app/src/runtime.cpp',
+  '../../backend/src/app/src/diagnostics_feed.cpp',
+  '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/linuxcnc/src/nml_status.cpp',
@@ -230,7 +232,7 @@ describe('backend sentences', () => {
   const files = Object.entries(sources).map(([path, raw]) => [path.split('/').at(-1) ?? path, raw] as const)
 
   it('reads every listed source', () => {
-    expect(files.length).toBe(21)
+    expect(files.length).toBe(23)
   })
 
   for (const [file, raw] of files) {

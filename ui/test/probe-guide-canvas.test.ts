@@ -61,4 +61,19 @@ describe('probe guide canvas', () => {
     runFrames(64)
     expect(frames).toEqual([])
   })
+
+  it('draws nothing and asks for no frames once unmounted mid-animation (#279)', () => {
+    const plan = probeGuide({ kind: 'teach' }, undefined, 'y_plus', null)
+    wrapper = mount(ProbeGuideCanvas, { props: { plan, playing: true, ruby: false } })
+    expect(runFrames(16)).toBe(1)
+    expect(frames).toHaveLength(1)
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    wrapper.unmount(); wrapper = null
+    expect(cancel).toHaveBeenCalledWith(frames.length)
+    // The mocked cancel leaves the frame queued, as a frame already dispatched would be.
+    const before = renders.count
+    runFrames(32)
+    expect(renders.count).toBe(before)
+    expect(frames).toEqual([])
+  })
 })

@@ -18,6 +18,9 @@ const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultL
 // fixture is alive, so its dependency imports cannot outlive the test environment.
 beforeAll(async () => { await import('../src/components/ToolModelCanvas.vue') })
 
+// The WebGL chunks must not load in the background (#279).
+vi.mock('../src/components/ProbeGuideCanvas.vue', () => import('./canvas-stub'))
+vi.mock('../src/components/ToolModelCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel

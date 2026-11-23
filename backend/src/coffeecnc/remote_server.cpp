@@ -165,6 +165,7 @@ auto viewer_hello(const std::string& message) -> std::string {
   hello.erase("operator_settings_storage");
   hello.erase("tool_model_storage");
   hello.erase("quit_supported");
+  hello.erase("diagnostics");
   return hello.dump();
 }
 

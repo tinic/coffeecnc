@@ -60,6 +60,8 @@ struct Hello {
   std::array<std::optional<double>, 3> axis_max_jog_velocity{};
   // The machine refuses programs and MDI until its axes are homed.
   bool homing_required{};
+  // `watch_diagnostics` and `launch_hal_tool` are served. Sent only when true.
+  bool diagnostics{};
   double max_feed_override{};
   double min_spindle_override{};
   double max_spindle_override{};
@@ -236,6 +238,10 @@ struct WorkSystem {
   // Whether offset and rotation are known. False: they are placeholders, zero, and not to be
   // shown. Always sent.
   bool available{};
+  // Whether a known value is known to be the one in force: the active system on a live link,
+  // and an inactive one read from the interpreter after the last thing it ran. False for a
+  // value the interpreter may have changed since it was read. Always sent.
+  bool current{};
   friend auto operator==(const WorkSystem&, const WorkSystem&) -> bool = default;
 };
 

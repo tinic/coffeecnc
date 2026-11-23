@@ -12,10 +12,12 @@ import { vTooltip } from '../tooltip'
 // down, and the keyboard jogs only while this workspace is shown, no dialog is open and no field
 // has the focus.
 import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useCardFeedback } from '../card-feedback'
 import { homingMessage, powerBlock } from '../machine-block'
 import { openDialogs } from '../dialogs'
+import { translateMessage } from '../i18n/messages'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import { JogHold, Keys, Touches, capturedPress } from '../jogHold'
@@ -37,6 +39,15 @@ import type { SetterStatusLine } from '../setter-state'
 
 type JogKey = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
 const props = defineProps<{ touchOff?: boolean }>()
+const { t } = useI18n()
+
+/** Machine and backend reasons arrive in English; the panel's own text is already translated. */
+function reason(text: string | null): string | null {
+  return text === null ? null : translateMessage(text)
+}
+function shownLine(line: SetterStatusLine): SetterStatusLine {
+  return { ...line, text: translateMessage(line.text) }
+}
 
 const jogs: Readonly<Record<JogKey, { axis: AxisLetter; direction: -1 | 1 }>> = {
   'x+': { axis: 'x', direction: 1 },
@@ -63,16 +74,16 @@ const activeOffset = computed(() => workOffsetRows(panel.workOffsets ?? null, st
   .find((system) => system.wcs === status.value?.offsets.wcs))
 const held = reactive(new Set<JogKey>())
 const increments = computed(() => displayJogIncrements(panel.hello, unit.value))
-const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? `Choose a step in ${unit.value === 'inch' ? 'inches' : 'millimeters'}` : null)
-const jogMachineBlock = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
+const stepUnavailable = computed(() => panel.jogIncrement !== null && !increments.value.includes(panel.jogIncrement) ? unit.value === 'inch' ? t('manual.tab.chooseStepInches') : t('manual.tab.chooseStepMillimeters') : null)
+const jogMachineBlock = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage() : null))
 const jogUnavailable = computed(() => jogMachineBlock.value ?? stepUnavailable.value)
 const materialProbeTool = computed(() => panel.hello?.fixed_setter?.material_travel_mm
   ? panel.hello.touch_probe_tool : undefined)
 
 const motionModes = [
-  ['jog', 'Jog', 'Jog while held, or by a step. Keyboard: arrows X/Y, Page Up/Down Z.'],
-  ['feed', 'Power feed', 'Feed one axis to the soft limit or a set distance'],
-  ['positions', 'Positions', 'Save machine positions and go back to them'],
+  ['jog', 'manual.tab.modeJog', 'manual.tab.modeJogTip'],
+  ['feed', 'manual.tab.modeFeed', 'manual.tab.modeFeedTip'],
+  ['positions', 'manual.tab.modePositions', 'manual.tab.modePositionsTip'],
 ] as const
 type MotionMode = (typeof motionModes)[number][0]
 const motionMode = ref<MotionMode>(manualMotion.mode)
@@ -267,7 +278,7 @@ function setJogVelocity(event: Event): void {
 
 function jogBlock(key: JogKey): string | null {
   if (jogUnavailable.value !== null) return jogUnavailable.value
-  return axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) > 0 ? null : 'Configured jog speed is unavailable'
+  return axisJogVelocity(panel.hello, jogs[key].axis, panel.jogVelocity) > 0 ? null : t('manual.tab.jogSpeedUnavailable')
 }
 const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])
   .map((axis) => ({ axis, speed: axisJogVelocity(panel.hello, axis, panel.jogVelocity) }))
@@ -275,7 +286,7 @@ const limitedSpeeds = computed(() => (panel.hello?.axes ?? [])
   .map(({ axis, speed }) => `${axis.toUpperCase()} ${formatVelocity(speed, unit.value)} ${velocityUnit(unit.value)}`).join(' · '))
 
 const { line: jogLine, allow: allowJog } = useCardFeedback(
-  () => limitedSpeeds.value ? `Axis limits: ${limitedSpeeds.value}` : '',
+  () => limitedSpeeds.value ? t('manual.tab.axisLimits', { limits: limitedSpeeds.value }) : '',
   () => stepUnavailable.value,
   [jogMachineBlock, stepUnavailable, (): number => panel.jogVelocity, (): unknown => panel.hello],
 )
@@ -295,16 +306,16 @@ function jogLabel(key: JogKey): string {
 // crossed it, by a jog or by hand with the machine off.
 function markBlock(axis: AxisStatus): string | null {
   return axis.reference_mark === false && !axis.homing
-    ? `Move ${axis.axis.toUpperCase()} across its reference mark first`
+    ? t('manual.tab.crossMarkFirst', { axis: axis.axis.toUpperCase() })
     : null
 }
 const marksBlock = computed(() => axes.value.map(markBlock).find((reason) => reason !== null) ?? null)
 
 function homeState(axis: AxisStatus): string {
-  if (axis.homing) return 'homing'
-  if (axis.homed) return 'homed'
-  if (axis.at_reference_mark === true) return 'at mark'
-  return axis.reference_mark === false ? 'find mark' : 'not homed'
+  if (axis.homing) return t('manual.tab.stateHoming')
+  if (axis.homed) return t('manual.tab.stateHomed')
+  if (axis.at_reference_mark === true) return t('manual.tab.stateAtMark')
+  return axis.reference_mark === false ? t('manual.tab.stateFindMark') : t('manual.tab.stateNotHomed')
 }
 
 function home(axis: AxisLetter | 'all'): void {
@@ -327,7 +338,7 @@ const { line: mdiLine, allow: allowMdi } = useCardFeedback(
 
 function sendMdi(): void {
   const text = mdiText.value.trim()
-  if (!allowMdi(mdiBlock.value ?? (text === '' ? 'Enter an MDI command' : null))) return
+  if (!allowMdi(mdiBlock.value ?? (text === '' ? t('manual.tab.enterMdi') : null))) return
   send({ type: 'mdi', text })
   mdiText.value = ''
   recall = -1
@@ -372,8 +383,8 @@ const rpmText = computed({
 })
 const rpm = computed(() => parseNumericExpression(rpmText.value, 'rpm'))
 const spindleLocalBlock = computed((): string | null => {
-  if (touchProbeLoaded.value) return 'A touch probe is loaded'
-  return rpm.value === null || !Number.isFinite(rpm.value) || rpm.value <= 0 ? 'Enter a spindle speed above zero' : null
+  if (touchProbeLoaded.value) return t('manual.moves.probeLoaded')
+  return rpm.value === null || !Number.isFinite(rpm.value) || rpm.value <= 0 ? t('manual.tab.enterSpindleSpeed') : null
 })
 const spindleBlock = computed(() => manualBlock.value ?? spindleLocalBlock.value)
 const coolantBlock = computed(() => powerBlock(panel))
@@ -436,12 +447,12 @@ function coolant(which: 'flood' | 'mist'): void {
   <div class="manual">
     <section class="card jog">
       <div class="jog-heading">
-        <h2 v-if="touchOff">Jog</h2>
-        <div v-else class="segmented modes" role="tablist" aria-label="Manual motion">
+        <h2 v-if="touchOff">{{ t('manual.tab.jog') }}</h2>
+        <div v-else class="segmented modes" role="tablist" :aria-label="t('manual.tab.manualMotion')">
           <button
             v-for="[value, label, tip] in motionModes"
             :key="value"
-            v-tooltip="tip"
+            v-tooltip="t(tip)"
             class="btn"
             type="button"
             role="tab"
@@ -449,7 +460,7 @@ function coolant(which: 'flood' | 'mist'): void {
             :class="{ on: mode === value }"
             @click="chooseMode(value)"
           >
-            {{ label }}
+            {{ t(label) }}
           </button>
         </div>
       </div>
@@ -458,7 +469,7 @@ function coolant(which: 'flood' | 'mist'): void {
       <MotionPad v-if="mode === 'jog'" class="jog-controls">
         <template #direction="{ jog, area, icon }">
           <button
-            v-tooltip="jogBlock(jog) ?? `Jog ${jogLabel(jog)}`"
+            v-tooltip="reason(jogBlock(jog)) ?? t('manual.tab.jogDirection', { direction: jogLabel(jog) })"
             class="btn jogbtn"
             type="button"
             :class="{ held: held.has(jog) }"
@@ -480,27 +491,27 @@ function coolant(which: 'flood' | 'mist'): void {
         </template>
         <template #stop>
           <button
-            v-tooltip="'Stop all jogging'"
+            v-tooltip="t('manual.tab.stopAllJogging')"
             class="btn danger jogbtn stopjog"
             type="button"
             @touchstart.prevent="stopTouch"
             @pointerdown="stopPointerDown"
           >
-            Stop jog
+            {{ t('manual.tab.stopJog') }}
           </button>
         </template>
         <div class="jog-parameters">
           <div class="steps">
-            <div class="step-heading"><span class="label">Step</span><span class="hint">{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
+            <div class="step-heading"><span class="label">{{ t('manual.tab.step') }}</span><span class="hint">{{ unit === 'inch' ? 'in' : 'mm' }}</span></div>
             <div class="increments">
               <button
-                v-tooltip="'Jog while the button or key is held'"
+                v-tooltip="t('manual.tab.continuousTip')"
                 class="btn"
                 type="button"
                 :class="{ on: panel.jogIncrement === null }"
                 @click="panel.jogIncrement = null"
               >
-                Continuous
+                {{ t('manual.tab.continuous') }}
               </button>
               <button
                 v-for="increment in increments"
@@ -516,7 +527,7 @@ function coolant(which: 'flood' | 'mist'): void {
           </div>
           <label class="jog-speed">
             <span class="step-heading">
-              <span class="label">Speed</span>
+              <span class="label">{{ t('manual.tab.speed') }}</span>
               <span><strong class="speed mono">{{ formatIncrement(panel.jogVelocity, unit) }}</strong> <span class="hint">{{ velocityUnit(unit) }}</span></span>
             </span>
             <input
@@ -525,7 +536,7 @@ function coolant(which: 'flood' | 'mist'): void {
               :max="panel.hello?.max_jog_velocity ?? 10"
               step="10"
               :value="panel.jogVelocity"
-              aria-label="Jog speed"
+              :aria-label="t('manual.tab.jogSpeed')"
               :aria-valuetext="`${formatIncrement(panel.jogVelocity, unit)} ${velocityUnit(unit)}`"
               @input="setJogVelocity"
             />
@@ -534,20 +545,20 @@ function coolant(which: 'flood' | 'mist'): void {
       </MotionPad>
 
       <div v-if="!touchOff" class="line homes">
-        <span class="label">Home</span>
+        <span class="label">{{ t('manual.tab.home') }}</span>
         <button
-          v-tooltip="jogMachineBlock ?? marksBlock ?? 'Home all axes using the configured sequence'"
+          v-tooltip="reason(jogMachineBlock) ?? marksBlock ?? t('manual.tab.homeAllTip')"
           class="btn"
           type="button"
           :aria-disabled="jogMachineBlock !== null || marksBlock !== null"
           @click="home('all')"
         >
-          <AppIcon name="home" />All
+          <AppIcon name="home" />{{ t('manual.tab.homeAll') }}
         </button>
         <button
           v-for="axis in axes"
           :key="axis.axis"
-          v-tooltip="jogMachineBlock ?? markBlock(axis) ?? `Home ${axis.axis.toUpperCase()}`"
+          v-tooltip="reason(jogMachineBlock) ?? markBlock(axis) ?? t('manual.tab.homeAxis', { axis: axis.axis.toUpperCase() })"
           class="btn homeaxis"
           :class="{ marked: axis.at_reference_mark === true && !axis.homed }"
           type="button"
@@ -558,19 +569,19 @@ function coolant(which: 'flood' | 'mist'): void {
           <span class="homestate" :class="{ homed: axis.homed }">{{ homeState(axis) }}</span>
         </button>
       </div>
-      <SetterStatusBand class="jog-status" :line="mode === 'jog' ? jogLine : modeLine" />
+      <SetterStatusBand class="jog-status" :line="shownLine(mode === 'jog' ? jogLine : modeLine)" />
     </section>
 
     <div class="side" :class="{ 'probe-side': touchOff }">
       <section v-if="touchOff" class="card probe-card">
         <div class="wcs-heading">
-          <h2>{{ materialProbeTool ? `Probe T${materialProbeTool}` : 'Probe' }}</h2>
+          <h2>{{ materialProbeTool ? t('manual.tab.probeTool', { tool: materialProbeTool }) : t('manual.tab.probe') }}</h2>
           <span v-if="materialProbeTool && live" class="hint" :class="{ 'probe-contact': status?.probe_input }">
-            {{ status?.probe_input === true ? 'Contact' : status?.probe_input === false ? 'Probe clear' : 'Probe input unavailable' }}
+            {{ status?.probe_input === true ? t('manual.tab.probeContact') : status?.probe_input === false ? t('manual.tab.probeClear') : t('manual.tab.probeUnavailable') }}
           </span>
         </div>
         <MaterialProbeControls v-if="materialProbeTool" :tool="materialProbeTool" />
-        <p v-else class="hint">Material probing is unavailable on this machine.</p>
+        <p v-else class="hint">{{ t('manual.tab.materialProbeUnavailable') }}</p>
       </section>
       <section v-else class="card mdi">
         <h2>MDI</h2>
@@ -578,7 +589,7 @@ function coolant(which: 'flood' | 'mist'): void {
           <button
             v-for="entry in panel.mdi"
             :key="entry.id"
-            v-tooltip="'Copy to the entry field'"
+            v-tooltip="t('manual.tab.copyToEntry')"
             class="entry"
             type="button"
             :class="entry.outcome"
@@ -586,9 +597,9 @@ function coolant(which: 'flood' | 'mist'): void {
           >
             <span class="mono text">{{ entry.text }}</span>
             <span class="result">
-              <template v-if="entry.outcome === 'pending'">sent</template>
-              <template v-else-if="entry.outcome === 'accepted'">accepted</template>
-              <template v-else>{{ entry.reason }}</template>
+              <template v-if="entry.outcome === 'pending'">{{ t('manual.tab.mdiSent') }}</template>
+              <template v-else-if="entry.outcome === 'accepted'">{{ t('manual.tab.mdiAccepted') }}</template>
+              <template v-else>{{ translateMessage(entry.reason) }}</template>
             </span>
           </button>
         </div>
@@ -597,24 +608,24 @@ function coolant(which: 'flood' | 'mist'): void {
             v-model="mdiText"
             class="field mono grow"
             type="text"
-            placeholder="G-code, for example G0 X0 Y0"
+            :placeholder="t('manual.tab.mdiPlaceholder')"
             autocomplete="off"
             autocapitalize="characters"
             spellcheck="false"
-            aria-label="MDI command"
+            :aria-label="t('manual.tab.mdiCommand')"
             @keydown.up.prevent="recallMdi(-1)"
             @keydown.down.prevent="recallMdi(1)"
           />
           <MdiMacros />
-          <button v-tooltip="mdiBlock ?? 'Run this command'" class="btn primary" type="submit" :aria-disabled="mdiBlock !== null || mdiText.trim() === ''">
-            Run
+          <button v-tooltip="reason(mdiBlock) ?? t('manual.tab.runCommandTip')" class="btn primary" type="submit" :aria-disabled="mdiBlock !== null || mdiText.trim() === ''">
+            {{ t('manual.tab.run') }}
           </button>
         </form>
-        <SetterStatusBand :line="mdiLine" />
+        <SetterStatusBand :line="shownLine(mdiLine)" />
       </section>
 
       <section v-if="!touchOff" class="card utilities">
-        <h2>{{ coolantOutputs.flood || coolantOutputs.mist ? 'Spindle and coolant' : 'Spindle' }}</h2>
+        <h2>{{ coolantOutputs.flood || coolantOutputs.mist ? t('manual.tab.spindleAndCoolant') : t('manual.tab.spindle') }}</h2>
         <div class="line">
           <input
             v-model="rpmText"
@@ -624,9 +635,9 @@ function coolant(which: 'flood' | 'mist'): void {
             inputmode="decimal"
             :disabled="manualBlock !== null"
             autocomplete="off"
-            aria-label="Spindle speed, rpm"
-            data-numeric-effect="Applies this RPM immediately if the spindle is running. When stopped, sets the speed for the next start."
-            data-numeric-action="Set RPM"
+            :aria-label="t('manual.tab.spindleSpeed')"
+            :data-numeric-effect="t('manual.tab.spindleSpeedEffect')"
+            :data-numeric-action="t('manual.tab.setRpm')"
             data-numeric-unit="rpm"
             @numeric-confirm="confirmSpindleSpeed"
             @keydown.enter.prevent="confirmSpindleSpeed"
@@ -634,34 +645,34 @@ function coolant(which: 'flood' | 'mist'): void {
             @blur="discardSpindleEdit"
           />
           <span class="hint">rpm</span>
-          <button v-tooltip="spindleBlock ?? 'Spindle reverse (M4)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :aria-disabled="spindleBlock !== null" @click="spindle('reverse')">
-            <AppIcon name="reverse" />Reverse
+          <button v-tooltip="reason(spindleBlock) ?? t('manual.tab.spindleReverseTip')" class="btn" type="button" :class="{ on: status?.spindle.direction === 'reverse' }" :aria-disabled="spindleBlock !== null" @click="spindle('reverse')">
+            <AppIcon name="reverse" />{{ t('manual.tab.reverse') }}
           </button>
-          <button v-tooltip="manualBlock ?? 'Spindle stop (M5)'" class="btn" type="button" :aria-disabled="manualBlock !== null" @click="spindleStop">
-            <AppIcon name="stop" />Stop
+          <button v-tooltip="reason(manualBlock) ?? t('manual.tab.spindleStopTip')" class="btn" type="button" :aria-disabled="manualBlock !== null" @click="spindleStop">
+            <AppIcon name="stop" />{{ t('manual.tab.stop') }}
           </button>
-          <button v-tooltip="spindleBlock ?? 'Spindle forward (M3)'" class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :aria-disabled="spindleBlock !== null" @click="spindle('forward')">
-            <AppIcon name="forward" />Forward
+          <button v-tooltip="reason(spindleBlock) ?? t('manual.tab.spindleForwardTip')" class="btn" type="button" :class="{ on: status?.spindle.direction === 'forward' }" :aria-disabled="spindleBlock !== null" @click="spindle('forward')">
+            <AppIcon name="forward" />{{ t('manual.tab.forward') }}
           </button>
         </div>
         <div v-if="coolantOutputs.flood || coolantOutputs.mist" class="line coolant">
-          <span class="label">Coolant</span>
-          <button v-if="coolantOutputs.flood" v-tooltip="coolantBlock ?? 'Flood coolant (M8)'" class="btn" type="button" :class="{ on: status?.coolant.flood }" :aria-disabled="coolantBlock !== null" @click="coolant('flood')">
-            <AppIcon name="drop" />Flood
+          <span class="label">{{ t('manual.tab.coolant') }}</span>
+          <button v-if="coolantOutputs.flood" v-tooltip="reason(coolantBlock) ?? t('manual.tab.floodTip')" class="btn" type="button" :class="{ on: status?.coolant.flood }" :aria-disabled="coolantBlock !== null" @click="coolant('flood')">
+            <AppIcon name="drop" />{{ t('manual.tab.flood') }}
           </button>
-          <button v-if="coolantOutputs.mist" v-tooltip="coolantBlock ?? 'Mist coolant (M7)'" class="btn" type="button" :class="{ on: status?.coolant.mist }" :aria-disabled="coolantBlock !== null" @click="coolant('mist')">
-            Mist
+          <button v-if="coolantOutputs.mist" v-tooltip="reason(coolantBlock) ?? t('manual.tab.mistTip')" class="btn" type="button" :class="{ on: status?.coolant.mist }" :aria-disabled="coolantBlock !== null" @click="coolant('mist')">
+            {{ t('manual.tab.mist') }}
           </button>
         </div>
         <MachineFeedback show-probe class="sensor-feedback" />
-        <SetterStatusBand class="spindle-status" :line="spindleLine" />
+        <SetterStatusBand class="spindle-status" :line="shownLine(spindleLine)" />
       </section>
 
       <section class="card work-system">
         <div class="wcs-heading">
-          <h2>Work coordinate system</h2>
-          <div class="wcs-values" aria-label="Active work system offsets">
-            <span>{{ activeOffset?.stale ? 'Last reported' : 'Offset' }} {{ status ? wcsName(status.offsets.wcs) : '—' }}</span>
+          <h2>{{ t('manual.tab.workSystem') }}</h2>
+          <div class="wcs-values" :aria-label="t('manual.tab.activeOffsets')">
+            <span>{{ activeOffset?.stale ? t('manual.tab.lastReportedOf', { wcs: status ? wcsName(status.offsets.wcs) : '—' }) : t('manual.tab.offsetOf', { wcs: status ? wcsName(status.offsets.wcs) : '—' }) }}</span>
             <span v-for="(axis, index) in ['X', 'Y', 'Z']" :key="axis">{{ axis }} <strong class="mono">{{ activeOffset?.offset ? formatLength(activeOffset.offset[index]!, unit) : '—' }}</strong></span>
             <span>{{ unit === 'inch' ? 'in' : 'mm' }}</span>
             <span v-if="activeOffset?.rotation_xy">R {{ activeOffset.rotation_xy }}°</span>

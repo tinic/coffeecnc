@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { mdiBlock, panel, send } from '../machine'
 import { visibleWorkSystems } from '../operator-settings'
 import { vPopover } from '../popover'
@@ -7,6 +9,7 @@ import { vTooltip } from '../tooltip'
 import { formatLength, wcsName } from '../units'
 import AppIcon from './AppIcon.vue'
 
+const { t } = useI18n()
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
 const systems = computed(() => visibleWorkSystems(panel.preferences.enabled_wcs, panel.status?.offsets.wcs))
 const shift = computed(() => panel.status?.offsets.g92)
@@ -20,20 +23,20 @@ function select(wcs: number): void {
 
 <template>
   <div class="work-system-controls">
-    <div class="selector" aria-label="Work coordinate systems">
-      <button v-for="wcs in systems.primary" :key="wcs" v-tooltip="mdiBlock ?? `Make ${wcsName(wcs)} active. The machine does not move.`" class="btn mono" :class="{ on: panel.status?.offsets.wcs === wcs }" type="button" :aria-pressed="panel.status?.offsets.wcs === wcs" :disabled="mdiBlock !== null" @click="select(wcs)">{{ wcsName(wcs) }}</button>
+    <div class="selector" :aria-label="t('manual.workSystems.group')">
+      <button v-for="wcs in systems.primary" :key="wcs" v-tooltip="mdiBlock !== null ? translateMessage(mdiBlock) : t('manual.workSystems.makeActive', { wcs: wcsName(wcs) })" class="btn mono" :class="{ on: panel.status?.offsets.wcs === wcs }" type="button" :aria-pressed="panel.status?.offsets.wcs === wcs" :disabled="mdiBlock !== null" @click="select(wcs)">{{ wcsName(wcs) }}</button>
       <details v-if="systems.more.length" ref="menu" v-popover class="more">
-        <summary class="btn" aria-label="More work systems">More<AppIcon name="up" /></summary>
+        <summary class="btn" :aria-label="t('manual.workSystems.more')">{{ t('common.more') }}<AppIcon name="up" /></summary>
         <div class="popover more-systems"><button v-for="wcs in systems.more" :key="wcs" class="btn mono" type="button" :disabled="mdiBlock !== null" @click="select(wcs)">{{ wcsName(wcs) }}</button></div>
       </details>
     </div>
     <details v-if="shifted" v-popover class="shift">
-      <summary>G92 / G52 shift active<AppIcon name="info" /></summary>
+      <summary>{{ t('manual.workSystems.shiftActive') }}<AppIcon name="info" /></summary>
       <div class="popover shift-details">
-        <h3>Additional coordinate shift</h3>
+        <h3>{{ t('manual.workSystems.shiftTitle') }}</h3>
         <div class="shift-values"><span v-for="(value, index) in shift" :key="index">{{ ['X', 'Y', 'Z'][index] }} <strong class="mono">{{ formatLength(value, panel.unit) }}</strong></span><span>{{ panel.unit === 'inch' ? 'in' : 'mm' }}</span></div>
-        <p>This shift applies to every work coordinate system. G92 and G52 share these offset values in LinuxCNC.</p>
-        <p>Zero and Half adjust the selected work offset and leave this shift in place. LinuxCNC may retain it after a restart.</p>
+        <p>{{ t('manual.workSystems.shiftAll') }}</p>
+        <p>{{ t('manual.workSystems.shiftKept') }}</p>
       </div>
     </details>
   </div>

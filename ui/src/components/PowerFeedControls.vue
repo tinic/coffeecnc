@@ -9,8 +9,10 @@ export const powerFeed = reactive<{ extent: 'limit' | 'distance'; distance: numb
 // Power feed: one feed move along one axis in machine coordinates, to just inside the soft limit
 // or a set distance. A tap on a direction shows the target and feed; Start feed sends the MDI.
 import { computed, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useCardFeedback } from '../card-feedback'
+import { translateMessage } from '../i18n/messages'
 import { mdiBlock, panel, send } from '../machine'
 import { axisJogVelocity } from '../machine-capabilities'
 import { limitMarginMm, powerFeedPlan, type PowerFeedPlan } from '../manual-moves'
@@ -26,6 +28,7 @@ import ModalDialog from './ModalDialog.vue'
 import MotionPad from './MotionPad.vue'
 
 const emit = defineEmits<{ line: [SetterStatusLine] }>()
+const { t } = useI18n()
 
 const unit = computed(() => panel.unit)
 const unitName = computed(() => unit.value === 'inch' ? 'in' : 'mm')
@@ -58,8 +61,8 @@ function commitFeed(): void {
   feedText.value = shown(powerFeed.feed, 1)
 }
 
-const probeBlock = computed(() => touchProbeLoaded.value ? 'A touch probe is loaded' : null)
-const block = computed(() => mdiBlock.value ?? probeBlock.value)
+const probeBlock = computed(() => touchProbeLoaded.value ? t('manual.moves.probeLoaded') : null)
+const block = computed(() => mdiBlock.value !== null ? translateMessage(mdiBlock.value) : probeBlock.value)
 
 function plan(axis: AxisLetter, direction: -1 | 1): ReturnType<typeof powerFeedPlan> {
   return powerFeedPlan(
@@ -70,9 +73,12 @@ function plan(axis: AxisLetter, direction: -1 | 1): ReturnType<typeof powerFeedP
   )
 }
 
-const extentText = computed(() => powerFeed.extent === 'limit'
-  ? 'to the soft limit'
-  : `${formatLength(powerFeed.distance, unit.value)} ${unitName.value}`)
+function feedTip(axis: AxisLetter, direction: -1 | 1): string {
+  const name = directionLabel(axis, direction)
+  return powerFeed.extent === 'limit'
+    ? t('manual.powerFeed.tipLimit', { direction: name })
+    : t('manual.powerFeed.tipDistance', { direction: name, distance: `${formatLength(powerFeed.distance, unit.value)} ${unitName.value}` })
+}
 const { line, allow } = useCardFeedback(
   () => '',
   () => block.value,
@@ -95,7 +101,7 @@ function start(): void {
   // The machine may have changed while the confirmation was open; send only what was shown.
   const planned = plan(shownPlan.axis, shownPlan.direction)
   if (!allow(planned.ok ? null : planned.reason) || !planned.ok) return
-  if (planned.plan.text !== shownPlan.text) { allow('The machine moved. Tap the direction again'); return }
+  if (planned.plan.text !== shownPlan.text) { allow(t('manual.powerFeed.machineMoved')); return }
   send({ type: 'mdi', text: planned.plan.text })
 }
 
@@ -108,7 +114,7 @@ function stop(): void {
   <MotionPad class="feed-controls">
     <template #direction="{ axis, direction, area, icon }">
       <button
-        v-tooltip="block ?? `Power feed ${directionLabel(axis, direction)} ${extentText}`"
+        v-tooltip="block ?? feedTip(axis, direction)"
         class="btn jogbtn"
         type="button"
         :style="{ gridArea: area }"
@@ -120,22 +126,22 @@ function stop(): void {
       </button>
     </template>
     <template #stop>
-      <button v-tooltip="'Stop the feed (same as Stop)'" class="btn danger jogbtn stopfeed" type="button" @click="stop">
-        Stop feed
+      <button v-tooltip="t('manual.powerFeed.stopFeedTip')" class="btn danger jogbtn stopfeed" type="button" @click="stop">
+        {{ t('manual.powerFeed.stopFeed') }}
       </button>
     </template>
 
     <div class="extent">
-      <div class="choices" role="group" aria-label="Feed extent">
-        <button v-tooltip="`Stop ${limitMarginMm} mm inside the soft limit`" class="btn" type="button" :class="{ on: powerFeed.extent === 'limit' }" :aria-pressed="powerFeed.extent === 'limit'" @click="powerFeed.extent = 'limit'">
-          To limit
+      <div class="choices" role="group" :aria-label="t('manual.powerFeed.extent')">
+        <button v-tooltip="t('manual.powerFeed.toLimitTip', { margin: limitMarginMm })" class="btn" type="button" :class="{ on: powerFeed.extent === 'limit' }" :aria-pressed="powerFeed.extent === 'limit'" @click="powerFeed.extent = 'limit'">
+          {{ t('manual.powerFeed.toLimit') }}
         </button>
-        <button v-tooltip="'Feed a set distance'" class="btn" type="button" :class="{ on: powerFeed.extent === 'distance' }" :aria-pressed="powerFeed.extent === 'distance'" @click="powerFeed.extent = 'distance'">
-          Distance
+        <button v-tooltip="t('manual.powerFeed.distanceTip')" class="btn" type="button" :class="{ on: powerFeed.extent === 'distance' }" :aria-pressed="powerFeed.extent === 'distance'" @click="powerFeed.extent = 'distance'">
+          {{ t('manual.powerFeed.distance') }}
         </button>
       </div>
       <label class="entry">
-        <span class="label">Feed</span>
+        <span class="label">{{ t('manual.powerFeed.feed') }}</span>
         <input
           v-model="feedText"
           v-numeric
@@ -143,16 +149,16 @@ function stop(): void {
           type="text"
           inputmode="decimal"
           autocomplete="off"
-          aria-label="Power feed rate"
+          :aria-label="t('manual.powerFeed.feedRate')"
           :data-numeric-unit="unit"
-          data-numeric-effect="Feed per minute of the next power feed."
+          :data-numeric-effect="t('manual.powerFeed.feedEffect')"
           @change="commitFeed"
           @keydown.enter.prevent="commitFeed"
         />
         <span class="hint">{{ velocityUnit(unit) }}</span>
       </label>
       <label class="entry" :class="{ hidden: powerFeed.extent !== 'distance' }">
-        <span class="label">Travel</span>
+        <span class="label">{{ t('manual.powerFeed.travel') }}</span>
         <input
           v-model="distanceText"
           v-numeric
@@ -160,10 +166,10 @@ function stop(): void {
           type="text"
           inputmode="decimal"
           autocomplete="off"
-          aria-label="Power feed distance"
+          :aria-label="t('manual.powerFeed.distanceLabel')"
           :disabled="powerFeed.extent !== 'distance'"
           :data-numeric-unit="unit"
-          data-numeric-effect="Distance of the next power feed."
+          :data-numeric-effect="t('manual.powerFeed.distanceEffect')"
           @change="commitDistance"
           @keydown.enter.prevent="commitDistance"
         />
@@ -172,13 +178,13 @@ function stop(): void {
     </div>
   </MotionPad>
 
-  <ModalDialog v-if="confirm" :title="`Power feed ${directionLabel(confirm.axis, confirm.direction)}?`" size="small" fresh-gesture @close="confirm = null">
+  <ModalDialog v-if="confirm" :title="t('manual.powerFeed.confirmTitle', { direction: directionLabel(confirm.axis, confirm.direction) })" size="small" fresh-gesture @close="confirm = null">
     <p class="coordinate mono">{{ confirm.axis.toUpperCase() }} {{ formatLength(confirm.start, unit) }} → {{ formatLength(confirm.target, unit) }} {{ unitName }}</p>
     <p class="coordinate mono">F {{ formatVelocity(confirm.feed, unit) }} {{ velocityUnit(unit) }}</p>
-    <p>Machine coordinates. {{ powerFeed.extent === 'limit' ? `Stops ${limitMarginMm} mm inside the soft limit.` : 'Stays inside the soft limits.' }}</p>
+    <p>{{ powerFeed.extent === 'limit' ? t('manual.powerFeed.confirmLimit', { margin: limitMarginMm }) : t('manual.powerFeed.confirmDistance') }}</p>
     <template #footer>
-      <button class="btn wide" type="button" @click="confirm = null">Cancel</button>
-      <button class="btn primary wide" type="button" @click="start">Start feed</button>
+      <button class="btn wide" type="button" @click="confirm = null">{{ t('common.cancel') }}</button>
+      <button class="btn primary wide" type="button" @click="start">{{ t('manual.powerFeed.start') }}</button>
     </template>
   </ModalDialog>
 </template>

@@ -4,6 +4,7 @@
 
 import type { AxisLetter, AxisStatus, LengthUnit, Status, Vec3 } from './protocol'
 import { maxPositionNameBytes, maxSavedPositions, validPositionName, type SavedPosition } from './operator-settings'
+import { t } from './i18n'
 import { mmPerInch } from './units'
 
 /** A power feed stops this far inside the soft limit; a Go to lifts Z to this far below Z max. */
@@ -90,14 +91,14 @@ function limitsKnown(axis: AxisStatus): boolean {
 function movableAxes(context: MoveContext, axes: readonly AxisLetter[]): { status: Status; axes: AxisStatus[] } | string {
   if (context.machineBlock !== null) return context.machineBlock
   const status = context.status
-  if (status === null) return 'No status from the machine yet'
+  if (status === null) return t('manual.moves.noStatus')
   const found: AxisStatus[] = []
   for (const name of axes) {
     const axis = axisStatus(status, name)
-    if (axis === undefined) return `This machine has no ${letter(name)} axis`
+    if (axis === undefined) return t('manual.moves.noAxis', { axis: letter(name) })
     // Soft limits apply only to a homed axis, so they cannot keep an unhomed move inside.
-    if (!axis.homed) return `Home ${letter(name)} first`
-    if (!limitsKnown(axis)) return `${letter(name)} has no soft limits`
+    if (!axis.homed) return t('manual.moves.homeFirst', { axis: letter(name) })
+    if (!limitsKnown(axis)) return t('manual.moves.noSoftLimits', { axis: letter(name) })
     found.push(axis)
   }
   return { status, axes: found }
@@ -112,12 +113,12 @@ export function moveBlock(context: MoveContext, axes: readonly AxisLetter[]): st
 export function powerFeedPlan(context: MoveContext, request: PowerFeedRequest): Planned<PowerFeedPlan> {
   const movable = movableAxes(context, [request.axis])
   if (typeof movable === 'string') return { ok: false, reason: movable }
-  if (context.probeLoaded === true) return { ok: false, reason: 'A touch probe is loaded' }
+  if (context.probeLoaded === true) return { ok: false, reason: t('manual.moves.probeLoaded') }
   const { feed, maxFeed } = request
-  if (!Number.isFinite(feed) || feed <= 0) return { ok: false, reason: 'Enter a feed above zero' }
-  if (feed > maxFeed) return { ok: false, reason: `The feed is above the machine maximum` }
+  if (!Number.isFinite(feed) || feed <= 0) return { ok: false, reason: t('manual.moves.enterFeed') }
+  if (feed > maxFeed) return { ok: false, reason: t('manual.moves.feedAboveMax') }
   const { status, axes: [axis] } = movable
-  if (axis === undefined) return { ok: false, reason: `This machine has no ${letter(request.axis)} axis` }
+  if (axis === undefined) return { ok: false, reason: t('manual.moves.noAxis', { axis: letter(request.axis) }) }
   const name = `${letter(request.axis)}${request.direction > 0 ? '+' : '−'}`
   const end = request.direction > 0 ? axis.max_limit - limitMarginMm : axis.min_limit + limitMarginMm
   const room = (end - axis.machine) * request.direction
@@ -126,15 +127,15 @@ export function powerFeedPlan(context: MoveContext, request: PowerFeedRequest): 
     target = end
   } else {
     const distance = request.extent.distance
-    if (!Number.isFinite(distance) || distance <= 0) return { ok: false, reason: 'Enter a distance above zero' }
+    if (!Number.isFinite(distance) || distance <= 0) return { ok: false, reason: t('manual.moves.enterDistance') }
     if (distance > room) {
       return { ok: false, reason: room > moveToleranceMm
-        ? `${name} has ${number(room, 'mm')} mm before the soft limit`
-        : `${letter(request.axis)} is at its soft limit` }
+        ? t('manual.moves.room', { direction: name, room: number(room, 'mm') })
+        : t('manual.moves.atLimit', { axis: letter(request.axis) }) }
     }
     target = axis.machine + request.direction * distance
   }
-  if (room <= moveToleranceMm) return { ok: false, reason: `${letter(request.axis)} is at its soft limit` }
+  if (room <= moveToleranceMm) return { ok: false, reason: t('manual.moves.atLimit', { axis: letter(request.axis) }) }
   const unit = status.program_units
   return { ok: true, plan: {
     axis: request.axis, direction: request.direction, start: axis.machine, target, feed,
@@ -149,9 +150,9 @@ function within(axis: AxisStatus, value: number): boolean {
 /** Why `safeZ` (machine Z, mm) cannot be the safe height of Go to on this machine, or null. */
 export function safeZBlock(status: Status | null, safeZ: number, unit: LengthUnit): string | null {
   const z = status === null ? undefined : axisStatus(status, 'z')
-  if (z === undefined || !limitsKnown(z)) return 'Z has no soft limits'
+  if (z === undefined || !limitsKnown(z)) return t('manual.moves.zNoSoftLimits')
   if (!Number.isFinite(safeZ) || !within(z, safeZ)) {
-    return `Safe Z must be within the Z soft limits, ${number(z.min_limit, unit)} to ${number(z.max_limit, unit)} ${unit === 'inch' ? 'in' : 'mm'}`
+    return t('manual.moves.safeZRange', { min: number(z.min_limit, unit), max: number(z.max_limit, unit), unit: unit === 'inch' ? 'in' : 'mm' })
   }
   return null
 }
@@ -165,14 +166,14 @@ export function goToPlan(context: MoveContext, saved: Vec3, includeZ: boolean, s
   const movable = movableAxes(context, ['x', 'y', 'z'])
   if (typeof movable === 'string') return { ok: false, reason: movable }
   const { status, axes: [x, y, z] } = movable
-  if (x === undefined || y === undefined || z === undefined) return { ok: false, reason: 'This machine has no X, Y and Z axes' }
+  if (x === undefined || y === undefined || z === undefined) return { ok: false, reason: t('manual.moves.noXyz') }
   for (const [axis, value] of [[x, saved[0]], [y, saved[1]], ...(includeZ ? [[z, saved[2]] as const] : [])] as const) {
-    if (!within(axis, value)) return { ok: false, reason: `The saved ${letter(axis.axis)} is outside the soft limits` }
+    if (!within(axis, value)) return { ok: false, reason: t('manual.moves.savedOutside', { axis: letter(axis.axis) }) }
   }
   const unit = status.program_units
   const prefix = `${unitWord(unit)} G90 G53 G0`
   if (safeZSetting !== null && !within(z, safeZSetting)) {
-    return { ok: false, reason: 'The safe Z for Go to is outside the Z soft limits. Change it in Settings' }
+    return { ok: false, reason: t('manual.moves.safeZOutside') }
   }
   const safeZ = Math.max(z.machine, safeZSetting ?? z.max_limit - limitMarginMm)
   const moves: GoToMove[] = []
@@ -190,8 +191,8 @@ export function goToPlan(context: MoveContext, saved: Vec3, includeZ: boolean, s
 export function nextPositionName(positions: readonly SavedPosition[]): string {
   const names = new Set(positions.map((entry) => entry.name))
   let index = positions.length + 1
-  while (names.has(`Position ${String(index)}`)) index += 1
-  return `Position ${String(index)}`
+  while (names.has(t('manual.moves.defaultName', { n: index }))) index += 1
+  return t('manual.moves.defaultName', { n: index })
 }
 
 /**
@@ -202,19 +203,19 @@ export function nextPositionName(positions: readonly SavedPosition[]): string {
 export function chosenPositionName(text: string, fallback: string, positions: readonly SavedPosition[],
   renaming: SavedPosition | null = null): Planned<string> {
   const name = text.trim() || fallback
-  if (!validPositionName(name)) return { ok: false, reason: `Enter a name of at most ${String(maxPositionNameBytes)} bytes` }
-  if (positions.some((entry) => entry !== renaming && entry.name === name)) return { ok: false, reason: `Another position is named ${name}` }
+  if (!validPositionName(name)) return { ok: false, reason: t('manual.moves.nameTooLong', { bytes: maxPositionNameBytes }) }
+  if (positions.some((entry) => entry !== renaming && entry.name === name)) return { ok: false, reason: t('manual.moves.nameTaken', { name }) }
   return { ok: true, plan: name }
 }
 
 /** Why the present position cannot be saved, or null. */
 export function saveBlock(status: Status | null, positions: readonly SavedPosition[]): string | null {
-  if (positions.length >= maxSavedPositions) return `At most ${String(maxSavedPositions)} positions. Delete one first`
-  if (status === null) return 'No status from the machine yet'
+  if (positions.length >= maxSavedPositions) return t('manual.moves.tooMany', { count: maxSavedPositions })
+  if (status === null) return t('manual.moves.noStatus')
   for (const name of ['x', 'y', 'z'] as const) {
     const axis = axisStatus(status, name)
-    if (axis === undefined) return `This machine has no ${letter(name)} axis`
-    if (!axis.homed) return `Home ${letter(name)} first`
+    if (axis === undefined) return t('manual.moves.noAxis', { axis: letter(name) })
+    if (!axis.homed) return t('manual.moves.homeFirst', { axis: letter(name) })
   }
   return null
 }

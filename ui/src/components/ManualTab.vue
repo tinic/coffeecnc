@@ -703,8 +703,8 @@ function coolant(which: 'flood' | 'mist'): void {
   overflow-y: auto;
 }
 .jogbtn { touch-action: none; }
-.jog-parameters, .steps, .jog-speed { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.jog-parameters { gap: 10px; }
+.jog-parameters, .steps, .jog-speed { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.jog-parameters { gap: 6px; }
 .jog-speed input { width: 100%; min-height: 44px; margin: 0; }
 
 .line {
@@ -873,8 +873,9 @@ function coolant(which: 'flood' | 'mist'): void {
 .utilities .line > .label { width: auto; }
 @media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
 @media (max-height: 760px) {
-  .jog { --motion-content-height: 216px; gap: 4px; }
+  .jog { gap: 4px; padding-block: 8px; }
   .homes { gap: 4px; }
+  .homes .btn { min-height: 44px; }
   .side { gap: 6px; }.side > .card { gap: 4px; padding-block: 8px; }.history .hint { margin: 2px 8px; }.wcs-values { min-height: 18px; }
 }
 </style>

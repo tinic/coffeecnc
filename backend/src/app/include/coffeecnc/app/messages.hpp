@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_MESSAGES_HPP
 #define COFFEECNC_APP_MESSAGES_HPP
 
+#include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
 
 #include <cstdint>
@@ -32,6 +33,13 @@ using Encoded = std::expected<std::string, std::string>;
 [[nodiscard]] auto encode_directory(const Directory& directory) -> Encoded;
 // `before` and `after` of a change are `null` when the history has none; `restores` likewise.
 [[nodiscard]] auto encode_offset_history(const OffsetHistory& history) -> Encoded;
+
+// `value` is a boolean, a number or `null` (missing, or a float that is not finite); `joint`
+// is sent on the joint rows only, `label` on the configured rows only.
+[[nodiscard]] auto encode_diagnostics(const Diagnostics& diagnostics) -> Encoded;
+// The wire names of the diagnostics message.
+[[nodiscard]] auto diagnostic_name(DiagnosticRole role) -> std::string_view;
+[[nodiscard]] auto diagnostic_name(DiagnosticState state) -> std::string_view;
 
 // The wire names of the offset history, which its file shares.
 [[nodiscard]] auto history_name(HistorySource source) -> std::string_view;

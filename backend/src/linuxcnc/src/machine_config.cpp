@@ -397,6 +397,50 @@ auto macros(Ini& ini, const std::filesystem::path& file)
   return found;
 }
 
+// [COFFEECNC] DIAGNOSTIC = <label> | <HAL signal or pin>, every occurrence in order. Whether the
+// name exists is not checked here: HAL is not loaded yet, and the view says so for each row.
+auto diagnostic_signals(Ini& ini) -> std::expected<std::vector<DiagnosticSignal>, std::string> {
+  std::vector<DiagnosticSignal> found;
+  for (int occurrence = 1;; ++occurrence) {
+    const auto given = ini.text("COFFEECNC", "DIAGNOSTIC", occurrence);
+    if (!given)
+      break;
+    if (found.size() == max_diagnostics)
+      return std::unexpected(std::format(
+          "[COFFEECNC] has more than {} DIAGNOSTIC lines: remove some.", max_diagnostics));
+    const auto bar = given->find('|');
+    if (bar == std::string::npos)
+      return std::unexpected(std::format(
+          "[COFFEECNC] DIAGNOSTIC = {} has no |: write the label, then | and the HAL signal or "
+          "pin, for example DIAGNOSTIC = E-stop button | estop-ext.",
+          *given));
+    const auto label = trimmed(std::string_view(*given).substr(0, bar));
+    const auto name = trimmed(std::string_view(*given).substr(bar + 1));
+    if (label.empty())
+      return std::unexpected(
+          std::format("[COFFEECNC] DIAGNOSTIC = {} has no label before the |.", *given));
+    if (characters(label) > max_diagnostic_label || has_control(label))
+      return std::unexpected(
+          std::format("[COFFEECNC] DIAGNOSTIC label \"{}\" is too long: use at most {} characters.",
+                      label, max_diagnostic_label));
+    if (name.empty())
+      return std::unexpected(std::format(
+          "[COFFEECNC] DIAGNOSTIC \"{}\" has no HAL signal or pin after the |.", label));
+    if (name.size() > max_hal_name || has_control(name) ||
+        std::ranges::any_of(name, [](unsigned char c) -> bool { return std::isspace(c) != 0; }))
+      return std::unexpected(std::format(
+          "[COFFEECNC] DIAGNOSTIC \"{}\": \"{}\" is not a HAL name (one word of at most {} "
+          "characters).",
+          label, name, max_hal_name));
+    if (std::ranges::any_of(
+            found, [&](const DiagnosticSignal& signal) -> bool { return signal.label == label; }))
+      return std::unexpected(std::format(
+          "[COFFEECNC] DIAGNOSTIC \"{}\" is there twice: give each row its own label.", label));
+    found.push_back({std::string(label), std::string(name)});
+  }
+  return found;
+}
+
 } // namespace
 
 auto inspect_machine_ini(const std::string& ini_file)
@@ -710,6 +754,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   auto configured_macros = macros(ini, file);
   if (!configured_macros)
     return std::unexpected(std::move(configured_macros.error()));
+  auto diagnostics = diagnostic_signals(ini);
+  if (!diagnostics)
+    return std::unexpected(std::move(diagnostics.error()));
   return MachineConfig{
       .ini_file = file.string(),
       .directory = directory.string(),
@@ -735,6 +782,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .paused_z = paused_z,
       .motion_tolerances = tolerances,
       .macros = std::move(*configured_macros),
+      .diagnostics = std::move(*diagnostics),
       .remote_hosts = std::move(remote_hosts),
       .touch_probe_tool = probe_tool,
       .remote_port = static_cast<std::uint16_t>(remote_port),

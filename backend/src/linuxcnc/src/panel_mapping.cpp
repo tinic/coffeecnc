@@ -32,6 +32,8 @@ auto to_hello(const MachineConfig& config) -> Hello {
   hello.fixed_setter = config.fixed_setter;
   hello.program_places = config.program_places;
   hello.macros = config.macros;
+  // The executable reads HAL for its diagnostics view (HalDiagnostics) on every machine.
+  hello.diagnostics = true;
   return hello;
 }
 

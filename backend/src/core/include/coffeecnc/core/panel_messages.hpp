@@ -76,6 +76,8 @@ struct Hello {
   std::vector<ProgramPlace> program_places{};
   // The configured macros, in the order of the INI file. Not sent when there are none.
   std::vector<Macro> macros{};
+  // `watch_diagnostics` and `launch_hal_tool` are served. Sent only when true.
+  bool diagnostics{};
   friend auto operator==(const Hello&, const Hello&) -> bool = default;
 };
 

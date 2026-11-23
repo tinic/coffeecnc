@@ -76,6 +76,12 @@ FIXED_SETTER = no
 # else coffeecnc does not start. Without MACRO lines the panel shows no macro button.
 #MACRO = Park | G53 G0 Z0
 #MACRO = Clamp check | O<clamp> call
+# Extra rows of the HAL diagnostics view (menu, Diagnostics), after LinuxCNC's own limit, home,
+# E-stop, probe and spindle pins: DIAGNOSTIC = <label> | <HAL signal or pin>, one line for each
+# row, at most 16. A label has at most 32 characters and is unique. The name is looked up as a
+# signal first, then as a pin; the view says when HAL has neither. Reading changes nothing in HAL.
+#DIAGNOSTIC = E-stop button | estop-ext
+#DIAGNOSTIC = VFD Modbus errors | vfd.modbus-errors
 
 [HAL]
 # Run by coffeecnc with halcmd once its HAL component exists; a path relative to the INI

@@ -670,6 +670,13 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   auto machine_id = ini.text("COFFEECNC", "MACHINE_ID");
   if (!machine_id)
     machine_id = default_machine_id(name, file.string());
+  unsigned remote_port = 0;
+  if (const auto port = ini.text("COFFEECNC", "REMOTE_PORT")) {
+    const auto value = trimmed(*port);
+    const auto [end, parse_error] = std::from_chars(value.data(), value.data() + value.size(), remote_port);
+    if (parse_error != std::errc{} || end != value.data() + value.size() || remote_port > 65535)
+      return std::unexpected(std::string("[COFFEECNC] REMOTE_PORT must be an integer from 0 to 65535."));
+  }
   MotionTolerances tolerances;
   if (const auto parsed = positive_settings(ini,
           {{"PROBE_OFF_LINE_TOLERANCE_MM", &tolerances.probe_off_line_mm},
@@ -716,6 +723,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .paused_z = paused_z,
       .motion_tolerances = tolerances,
       .macros = std::move(*configured_macros),
+      .remote_port = static_cast<std::uint16_t>(remote_port),
   };
 }
 

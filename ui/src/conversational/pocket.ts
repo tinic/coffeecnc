@@ -2,6 +2,7 @@
 // the centre out to the wall, at most one stepover apart, counter-clockwise (G3, climb milling
 // inside the pocket). Plunging needs a centre-cutting end mill.
 
+import { t } from '../i18n'
 import { Checks, Program, checkCommon, feedNumber, number, steps, written, type Common, type Generated } from './program'
 
 interface Pocket extends Common {
@@ -27,11 +28,11 @@ export interface RectangularPocket extends Pocket {
 
 function checkPocket(c: Pocket, checks: Checks): void {
   checkCommon(c, checks)
-  checks.check(Number.isFinite(c.x) && Number.isFinite(c.y), 'Enter the centre X and Y.')
-  checks.positive(c.depth, 'Depth')
-  checks.positive(c.depthPerPass, 'Depth per pass')
-  checks.check(c.stepover > 0 && c.stepover <= 100, 'Stepover must be more than 0 % and at most 100 % of the tool diameter.')
-  checks.positive(c.plungeFeed, 'Plunge feed')
+  checks.check(Number.isFinite(c.x) && Number.isFinite(c.y), t('operations.check.centre'))
+  checks.positive(c.depth, 'operations.label.depth')
+  checks.positive(c.depthPerPass, 'operations.label.depthPerPass')
+  checks.check(c.stepover > 0 && c.stepover <= 100, t('operations.check.stepover'))
+  checks.positive(c.plungeFeed, 'operations.label.plungeFeed')
 }
 
 /** Every depth step: down at the centre, the rings, back to the centre. */
@@ -40,7 +41,7 @@ function layers(p: Program, c: Pocket, rings: (p: Program) => void): void {
   p.add('')
   p.rapidXY(c.x, c.y)
   for (let layer = 1; layer <= count; layer += 1) {
-    p.add(`(Layer ${String(layer)} of ${String(count)})`)
+    p.add(`(Layer ${String(layer)} of ${String(count)})`) // i18n-ignore
     p.cut(`G1 Z${p.n((-c.depth * layer) / count)}`, c.plungeFeed)
     rings(p)
     p.cut(`G1 X${p.n(c.x)} Y${p.n(c.y)}`, c.feed)
@@ -49,23 +50,23 @@ function layers(p: Program, c: Pocket, rings: (p: Program) => void): void {
 
 function depthLine(p: Program, c: Pocket): string {
   const count = steps(c.depth, c.depthPerPass)
-  return `Depth ${p.n(c.depth)} in ${String(count)} ${count === 1 ? 'layer' : 'layers'} of ${p.n(c.depth / count)}, plunge straight down at the centre at ${feedNumber(c.plungeFeed, c.unit)}: centre-cutting end mill`
+  return `Depth ${p.n(c.depth)} in ${String(count)} ${count === 1 ? 'layer' : 'layers'} of ${p.n(c.depth / count)}, plunge straight down at the centre at ${feedNumber(c.plungeFeed, c.unit)}: centre-cutting end mill` // i18n-ignore
 }
 
 export function circularPocket(c: CircularPocket): Generated {
   const checks = new Checks()
   checkPocket(c, checks)
-  checks.positive(c.diameter, 'Pocket diameter')
+  checks.positive(c.diameter, 'operations.label.pocketDiameter')
   const radius = (c.diameter - c.tool.diameter) / 2
   if (c.diameter > 0 && c.tool.diameter > 0)
-    checks.check(written(radius, c.unit) > 0, `The tool (diameter ${number(c.tool.diameter, c.unit)}) is too big for this pocket.`)
+    checks.check(written(radius, c.unit) > 0, t('operations.check.toolTooBigPocket', { diameter: number(c.tool.diameter, c.unit) }))
   if (checks.errors.length) return { errors: checks.errors }
 
   const p = new Program(c)
   const rings = steps(radius, (c.tool.diameter * c.stepover) / 100)
-  p.start('Circular pocket', [
-    `Diameter ${p.n(c.diameter)} at X${p.n(c.x)} Y${p.n(c.y)}`,
-    `${String(rings)} ${rings === 1 ? 'ring' : 'rings'} ${p.n(radius / rings)} apart, stepover ${String(c.stepover)} %, G3 climb milling`,
+  p.start('Circular pocket', [ // i18n-ignore
+    `Diameter ${p.n(c.diameter)} at X${p.n(c.x)} Y${p.n(c.y)}`, // i18n-ignore
+    `${String(rings)} ${rings === 1 ? 'ring' : 'rings'} ${p.n(radius / rings)} apart, stepover ${String(c.stepover)} %, G3 climb milling`, // i18n-ignore
     depthLine(p, c),
   ])
   layers(p, c, () => {
@@ -112,14 +113,14 @@ function loop(p: Program, c: RectangularPocket, a: number, b: number, corner: nu
 export function rectangularPocket(c: RectangularPocket): Generated {
   const checks = new Checks()
   checkPocket(c, checks)
-  checks.positive(c.width, 'Size X')
-  checks.positive(c.height, 'Size Y')
+  checks.positive(c.width, 'operations.label.sizeX')
+  checks.positive(c.height, 'operations.label.sizeY')
   const d = c.tool.diameter
   const smaller = Math.min(c.width, c.height)
-  if (smaller > 0 && d > 0) checks.check(d < smaller, `The tool (diameter ${number(d, c.unit)}) is too big for this pocket.`)
-  checks.check(c.cornerRadius >= 0 && c.cornerRadius <= smaller / 2, 'The corner radius must be from zero to half the smaller side.')
+  if (smaller > 0 && d > 0) checks.check(d < smaller, t('operations.check.toolTooBigPocket', { diameter: number(d, c.unit) }))
+  checks.check(c.cornerRadius >= 0 && c.cornerRadius <= smaller / 2, t('operations.check.cornerRadiusRange'))
   if (c.cornerRadius > 0 && d > 0)
-    checks.check(c.cornerRadius >= d / 2, `The corner radius is smaller than the tool radius (${number(d / 2, c.unit)}). Enter 0 or at least the tool radius.`)
+    checks.check(c.cornerRadius >= d / 2, t('operations.check.cornerRadiusSmall', { radius: number(d / 2, c.unit) }))
   if (checks.errors.length) return { errors: checks.errors }
 
   // Half-sizes and corner radius of the tool centre's path at the wall.
@@ -132,9 +133,9 @@ export function rectangularPocket(c: RectangularPocket): Generated {
   const spacing = (d * c.stepover) / 100
   const rings = steps(inner, r < inner ? Math.min(spacing, (d * (1 + Math.SQRT1_2)) / 2) : spacing)
   const p = new Program(c)
-  p.start('Rectangular pocket', [
-    `Size X ${p.n(c.width)} by Y ${p.n(c.height)}, corner radius ${p.n(Math.max(c.cornerRadius, d / 2))}, centre X${p.n(c.x)} Y${p.n(c.y)}`,
-    `${String(rings + 1)} loops ${p.n(inner / rings)} apart, stepover ${String(c.stepover)} %, G3 climb milling`,
+  p.start('Rectangular pocket', [ // i18n-ignore
+    `Size X ${p.n(c.width)} by Y ${p.n(c.height)}, corner radius ${p.n(Math.max(c.cornerRadius, d / 2))}, centre X${p.n(c.x)} Y${p.n(c.y)}`, // i18n-ignore
+    `${String(rings + 1)} loops ${p.n(inner / rings)} apart, stepover ${String(c.stepover)} %, G3 climb milling`, // i18n-ignore
     depthLine(p, c),
   ])
   layers(p, c, () => {

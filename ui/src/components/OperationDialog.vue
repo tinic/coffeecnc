@@ -2,6 +2,9 @@
 // A simple job without CAM: the operator picks an operation and its numbers, the panel writes
 // the program into the program directory and opens it like any other program.
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+import { translateMessage } from '../i18n/messages'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
@@ -14,6 +17,7 @@ import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 
 const emit = defineEmits<{ close: [] }>()
+const { t } = useI18n()
 
 // The program is written in the unit the panel shows, with G20 or G21 at its start. The entered
 // numbers are in that unit, so it stays fixed while the dialog is open.
@@ -84,7 +88,7 @@ const saving = ref(false)
 const feedback = ref('')
 let saveRequest: CommandBody | null = null
 const block = computed(() => connectionBlock(panel.link) ??
-  (panel.status !== null && panel.status.interp !== 'idle' ? 'Stop the program before opening a new one.' : null))
+  (panel.status !== null && panel.status.interp !== 'idle' ? t('operations.dialog.stopProgram') : null))
 
 function create(): void {
   const result = generated.value.result
@@ -103,12 +107,12 @@ const removeListener = onResult((command, result) => {
     if (result.outcome === 'accepted' && panel.directory !== null) {
       directory.value = panel.directory
       feedback.value = ''
-    } else feedback.value = result.reason || 'The program directory cannot be read.'
+    } else feedback.value = result.reason ? translateMessage(result.reason) : t('operations.dialog.directoryUnreadable')
   } else if (command === saveRequest) {
     saveRequest = null
     saving.value = false
     if (result.outcome !== 'accepted') {
-      feedback.value = result.reason || 'The program was not saved.'
+      feedback.value = result.reason ? translateMessage(result.reason) : t('operations.dialog.notSaved')
       return
     }
     // Saved: open it as the current program; Program check and the preview follow.
@@ -124,57 +128,57 @@ function numberUnit(field: Field): string {
 }
 const cutFields = new Set(['feed', 'plungeFeed', 'rpm', 'clearance'])
 const fieldGroups = computed(() => [
-  { label: 'Tool and feeds', includesTool: true, fields: fields.value.filter((field) => cutFields.has(field.key)) },
-  { label: 'Geometry', includesTool: false, fields: fields.value.filter((field) => !cutFields.has(field.key)) },
+  { label: t('operations.dialog.toolAndFeeds'), includesTool: true, fields: fields.value.filter((field) => cutFields.has(field.key)) },
+  { label: t('operations.dialog.geometry'), includesTool: false, fields: fields.value.filter((field) => !cutFields.has(field.key)) },
 ])
 </script>
 
 <template>
-  <ModalDialog title="New operation" size="wide" contained expanded @close="emit('close')">
+  <ModalDialog :title="t('operations.dialog.title')" size="wide" contained expanded @close="emit('close')">
     <div class="operation-editor">
-      <nav class="operations" aria-label="Operation">
+      <nav class="operations" :aria-label="t('operations.dialog.operations')">
         <button
           v-for="op in operations" :key="op.id" class="btn operation" type="button"
           :class="{ on: chosen === op.id }" :aria-pressed="chosen === op.id" @click="chosen = op.id"
         >
-          {{ op.title }}
+          {{ t(op.title) }}
         </button>
       </nav>
       <div class="form">
-        <p v-if="operation.note" class="operation-note">{{ operation.note }}</p>
+        <p v-if="operation.note" class="operation-note">{{ t(operation.note) }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
           <div class="fields" :class="{ cutting: group.includesTool }">
             <label v-if="group.includesTool" class="entry tool-entry">
-              <span class="label">Tool</span>
-              <select v-model.number="toolNumber" class="field" aria-label="Tool" :disabled="saving">
-                <option v-if="tools.length === 0" :value="0">No tools in the tool table</option>
+              <span class="label">{{ t('operations.dialog.tool') }}</span>
+              <select v-model.number="toolNumber" class="field" :aria-label="t('operations.dialog.tool')" :disabled="saving">
+                <option v-if="tools.length === 0" :value="0">{{ t('operations.dialog.noTools') }}</option>
                 <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
               </select>
             </label>
             <template v-for="field in group.fields" :key="`${chosen}-${field.key}-${field.label}`">
               <div v-if="field.type === 'choice'" class="entry">
-                <span class="label">{{ field.label }}</span>
-                <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="field.label" :disabled="saving">
-                  <option v-for="[value, text] in field.options" :key="value" :value="value">{{ text }}</option>
+                <span class="label">{{ t(field.label) }}</span>
+                <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
+                  <option v-for="[value, text] in field.options" :key="value" :value="value">{{ t(text) }}</option>
                 </select>
-                <div v-else class="segmented" role="group" :aria-label="field.label">
+                <div v-else class="segmented" role="group" :aria-label="t(field.label)">
                   <button
                     v-for="[value, text] in field.options" :key="value" class="btn" type="button" :disabled="saving"
                     :class="{ on: entered[field.key] === value }" :aria-pressed="entered[field.key] === value"
                     @click="entered[field.key] = value"
                   >
-                    {{ text }}
+                    {{ t(text) }}
                   </button>
                 </div>
               </div>
               <label v-else class="entry">
-                <span class="label">{{ field.label }}</span>
+                <span class="label">{{ t(field.label) }}</span>
                 <span class="number-field">
                   <input
                     v-model="entered[field.key]" v-numeric="field.kind === 'count' ? 'integer' : undefined"
                     :data-numeric-unit="numberUnit(field)" class="field mono" type="text"
-                    :aria-label="numberUnit(field) ? field.label + ', ' + numberUnit(field) : field.label"
+                    :aria-label="numberUnit(field) ? t(field.label) + ', ' + numberUnit(field) : t(field.label)"
                     :inputmode="field.kind === 'count' ? 'numeric' : 'decimal'" autocomplete="off" spellcheck="false" :disabled="saving"
                   />
                   <span v-if="numberUnit(field)" class="field-unit" aria-hidden="true">{{ numberUnit(field) }}</span>
@@ -188,7 +192,7 @@ const fieldGroups = computed(() => [
     <ul v-if="errors.length" class="errors" role="alert">
       <li v-for="error in errors" :key="error">{{ error }}</li>
     </ul>
-    <p v-else-if="feedback || block" class="errors" role="status">{{ feedback || block }}</p>
+    <p v-else-if="feedback || block" class="errors" role="status">{{ feedback || (block && translateMessage(block)) }}</p>
     <template #footer>
       <div class="file">
         <template v-if="directory">
@@ -196,9 +200,9 @@ const fieldGroups = computed(() => [
           <span v-tooltip="directory.path" class="where">{{ directory.path }}</span>
         </template>
       </div>
-      <button class="btn" type="button" @click="emit('close')">Cancel</button>
+      <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
       <button class="btn primary" type="button" :disabled="saving || errors.length > 0 || directory === null || block !== null" @click="create">
-        {{ saving ? 'Saving…' : 'Create and open' }}
+        {{ saving ? t('common.saving') : t('operations.dialog.createAndOpen') }}
       </button>
     </template>
   </ModalDialog>

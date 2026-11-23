@@ -2,7 +2,15 @@
 // numbers as they are written, and the start and end of the program. Pure functions only: the
 // dialog saves the text through the machine and opens it like any other program.
 
+import { t, type MessageSchema } from '../i18n'
+
 export type Unit = 'mm' | 'inch'
+
+type Operations = MessageSchema['operations']
+/** A message key of one group of the operations catalog, translated where it is shown. */
+export type OperationsKey<G extends keyof Operations> = `operations.${G}.${keyof Operations[G] & string}`
+/** The name of an entry, as a validation message names it. */
+export type LabelKey = OperationsKey<'label'>
 
 /** The tool from the tool table, its diameter in the program's unit. */
 export interface ToolChoice {
@@ -57,27 +65,31 @@ export function commentText(text: string): string {
   return text.replace(/[()\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-/** Collects validation errors: `check(condition, message)` records the message when false. */
+/**
+ * Collects validation errors in the panel's language: `check(condition, message)` records the
+ * message when false. Generators run again when the language changes, so the text follows it.
+ */
 export class Checks {
   readonly errors: string[] = []
   check(condition: boolean, message: string): void {
     if (!condition) this.errors.push(message)
   }
-  positive(value: number, label: string): void {
-    this.check(Number.isFinite(value) && value > 0, `${label} must be more than zero.`)
+  positive(value: number, label: LabelKey): void {
+    if (!(Number.isFinite(value) && value > 0)) this.errors.push(t('operations.check.positive', { label: t(label) }))
   }
-  count(value: number, label: string, max: number): void {
-    this.check(Number.isInteger(value) && value >= 1 && value <= max, `${label} must be a whole number from 1 to ${String(max)}.`)
+  count(value: number, label: LabelKey, max: number): void {
+    if (!(Number.isInteger(value) && value >= 1 && value <= max))
+      this.errors.push(t('operations.check.count', { label: t(label), max: String(max) }))
   }
 }
 
 /** Checks of the entries every operation has. */
 export function checkCommon(c: Common, checks: Checks): void {
-  checks.check(Number.isInteger(c.tool.number) && c.tool.number > 0, 'Choose a tool from the tool table.')
-  checks.positive(c.tool.diameter, 'The tool diameter in the tool table')
-  checks.positive(c.feed, 'Feed')
-  checks.positive(c.rpm, 'Spindle speed')
-  checks.positive(c.clearance, 'Clearance height')
+  if (!(Number.isInteger(c.tool.number) && c.tool.number > 0)) checks.errors.push(t('operations.check.chooseTool'))
+  checks.positive(c.tool.diameter, 'operations.label.toolDiameter')
+  checks.positive(c.feed, 'operations.label.feed')
+  checks.positive(c.rpm, 'operations.label.spindleSpeed')
+  checks.positive(c.clearance, 'operations.label.clearance')
 }
 
 /** How many equal steps of at most `step` make `total`: at least one. */
@@ -124,11 +136,11 @@ export class Program {
     const { unit, tool } = this.c
     const comment = commentText(tool.comment)
     this.add(
-      `(${title}, made by CoffeeCNC)`,
-      `(Units: ${unitName(unit)}. Z0 is the top of the stock.)`,
-      `(Tool: T${String(tool.number)}, diameter ${this.n(tool.diameter)}${comment ? `, ${comment}` : ''})`,
+      `(${title}, made by CoffeeCNC)`, // i18n-ignore
+      `(Units: ${unitName(unit)}. Z0 is the top of the stock.)`, // i18n-ignore
+      `(Tool: T${String(tool.number)}, diameter ${this.n(tool.diameter)}${comment ? `, ${comment}` : ''})`, // i18n-ignore
       ...details.map((line) => `(${commentText(line)})`),
-      `(Feed ${feedNumber(this.c.feed, unit)}, spindle ${String(Math.round(this.c.rpm))} rpm, clearance Z${this.n(this.c.clearance)})`,
+      `(Feed ${feedNumber(this.c.feed, unit)}, spindle ${String(Math.round(this.c.rpm))} rpm, clearance Z${this.n(this.c.clearance)})`, // i18n-ignore
       '',
       `G17 ${unit === 'inch' ? 'G20' : 'G21'} G40 G80 G90 G94`,
       `T${String(tool.number)} M6`,

@@ -307,9 +307,11 @@ function pointerUp(event: PointerEvent): void {
   const tracked = pointers.delete(event.pointerId)
   pinch = 0
   if (pointers.size > 0) return
-  const tap = tracked && event.type === 'pointerup' && gesture?.tap === true
+  const at = local(event)
+  // The release point counts too: a pointer can travel without a final pointermove.
+  const tap = tracked && event.type === 'pointerup' && gesture?.tap === true && isTap(gesture.start, at)
   gesture = null
-  if (tap) emit('pick', pickAt(local(event)))
+  if (tap) emit('pick', pickAt(at))
 }
 
 /** The source line of the move nearest to `at` on the screen, or 0. */

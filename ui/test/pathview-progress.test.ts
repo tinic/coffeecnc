@@ -150,6 +150,10 @@ describe('path view pointers', () => {
     pointer('pointerup', 2, 420, 250)
     pointer('pointerup', 1, 400, 250)
     expect(wrapper.emitted('pick')).toHaveLength(2)
+    // Released far from where it went down with no move in between: a drag, not a tap.
+    pointer('pointerdown', 1, 400, 250)
+    pointer('pointerup', 1, 480, 250)
+    expect(wrapper.emitted('pick')).toHaveLength(2)
   })
 
   it('draws the moves of highlighted lines on top', async () => {

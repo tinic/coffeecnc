@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <variant>
@@ -307,6 +308,12 @@ using Command =
                  WatchDiagnostics, LaunchHalTool, Backup, CheckRestore, RestoreBackup,
                  ManageProgramFile>;
 
+// A catalog key and its named arguments, carried alongside the English refusal.
+struct RefusalMessage {
+  std::string key;
+  std::map<std::string, std::string> params{};
+};
+
 struct Decision {
   bool allowed{};
   // The app must request and observe this mode before submitting the action.
@@ -314,6 +321,7 @@ struct Decision {
   std::string reason;
   // Joint jog before all axes home; axis jog afterward requires teleop in the adapter.
   std::optional<JogSpace> jog_space;
+  std::optional<RefusalMessage> refusal{};
 };
 
 class CommandPolicy {

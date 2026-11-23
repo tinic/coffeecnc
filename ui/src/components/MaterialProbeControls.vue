@@ -223,7 +223,7 @@ const removeListener = onResult((command, result) => {
   if (result.outcome === 'timed_out') send({ type: 'abort' })
   /** The machine's reason in the panel's language, or the fallback when it gave none. */
   const failure = (fallback: () => string): Line => ({
-    text: (): string => result.reason ? translateMessage(result.reason) : fallback(), level: 'blocked',
+    text: (): string => result.reason ? translateMessage(result.reason, result.refusal) : fallback(), level: 'blocked',
   })
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle

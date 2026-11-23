@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
 import { panel } from '../machine'
 import { vNumeric } from '../numeric-input'
 import type { Tool } from '../protocol'
@@ -20,7 +19,7 @@ const emit = defineEmits<{ close: [] }>()
 const defaultsMode = props.tool === null
 const editContext = toolModelSettings.context()
 const saving = ref(false)
-const saveError = ref('')
+const saveError = shallowRef<(() => string) | null>(null)
 let open = true
 onBeforeUnmount(() => { open = false })
 const saveBlock = computed(() => saving.value ? null : toolModelSettings.block(editContext) ??
@@ -96,7 +95,7 @@ function reset(): void { fill(factoryToolDefaults()[family.value]) }
 async function save(): Promise<void> {
   if (error.value !== null || changedTool.value || saving.value || saveBlock.value !== null) return
   saving.value = true
-  saveError.value = ''
+  saveError.value = null
   let result
   if (defaultsMode) {
     setToolDefault(draftDefaults, family.value, dimensions.value)
@@ -108,16 +107,16 @@ async function save(): Promise<void> {
   }
   saving.value = false
   if (result.saved) { if (open) emit('close') }
-  else saveError.value = result.reason
+  else saveError.value = (): string => result.reason
 }
 async function clearAssignment(): Promise<void> {
   if (props.tool === null || saving.value || changedTool.value || saveBlock.value !== null) return
   saving.value = true
-  saveError.value = ''
+  saveError.value = null
   const result = await toolModelSettings.saveAssignment(props.tool, null, {}, editContext)
   saving.value = false
   if (result.saved) { if (open) emit('close') }
-  else saveError.value = result.reason
+  else saveError.value = (): string => result.reason
 }
 </script>
 
@@ -148,7 +147,7 @@ async function clearAssignment(): Promise<void> {
       </div>
     </div>
     <p v-if="saveError || saveBlock || changedTool || error || saving" class="feedback" :class="saving ? 'hint' : 'blocked'" role="status">
-      {{ translateMessage(saveError) || saveBlock || (changedTool ? t('tools.modelDialog.tableChanged') : error) || t('tools.modelDialog.savingNote') }}
+      {{ saveError?.() || saveBlock || (changedTool ? t('tools.modelDialog.tableChanged') : error) || t('tools.modelDialog.savingNote') }}
     </p>
     <template #footer>
       <button v-if="defaultsMode" class="btn quiet" type="button" :disabled="saving" @click="reset">{{ t('tools.modelDialog.resetFamily') }}</button>

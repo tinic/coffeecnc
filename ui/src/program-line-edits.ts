@@ -38,7 +38,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
   const clipboard = shallowRef<readonly string[]>([])
   const undo = shallowRef<UndoEdit | null>(null)
   const pending = shallowRef(false)
-  const feedback = shallowRef<{ file: string; text: string; error: boolean } | null>(null)
+  const feedback = shallowRef<{ file: string; text: string | (() => string); error: boolean } | null>(null)
   const current = computed(() => {
     const program = panel.program
     const loaded = panel.status?.program
@@ -54,7 +54,11 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       (pending.value || undo.value?.saved === null ? t('program.lineEdits.reopening') : null)
   })
   const canUndo = computed(() => Boolean(undo.value?.saved))
-  const message = computed(() => feedback.value?.file === panel.status?.program.file ? feedback.value : null)
+  const message = computed(() => {
+    const entry = feedback.value
+    if (entry === null || entry.file !== panel.status?.program.file) return null
+    return { text: typeof entry.text === 'function' ? entry.text() : entry.text, error: entry.error }
+  })
 
   function dismiss(): void {
     feedback.value = null
@@ -91,7 +95,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       unsubscribe()
       pending.value = false
       if (result.outcome !== 'accepted') {
-        feedback.value = { file: program.file, text: result.reason ? translateMessage(result.reason) : t('program.lineEdits.notSaved'), error: true }
+        feedback.value = { file: program.file, text: (): string => translateMessage(result.reason, result.refusal) || t('program.lineEdits.notSaved'), error: true }
         return
       }
       if (cut !== undefined) clipboard.value = cut

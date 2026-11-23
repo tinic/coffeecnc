@@ -529,6 +529,11 @@ export interface OperatorMessage {
   time: number
 }
 
+export interface RefusalMessage {
+  key: string
+  params: Record<string, string>
+}
+
 /** Final outcome of the command with this `id`. Every command gets exactly one. */
 export interface CommandResult {
   type: 'result'
@@ -539,8 +544,10 @@ export interface CommandResult {
     | 'rejected' // not valid in the current state; nothing was sent to LinuxCNC
     | 'failed' // LinuxCNC reported an error
     | 'timed_out' // LinuxCNC did not answer
-  /** Reason for anything but `accepted`, in words for the operator. */
+  /** English fallback for a refused, failed or timed-out command. */
   reason: string
+  /** Message key and named arguments supplied for a catalogued command refusal. */
+  refusal?: RefusalMessage
   setter?: SetterState
   /** The plan of an accepted `plan_restart`. */
   restart?: RestartPlan

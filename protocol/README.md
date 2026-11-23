@@ -53,6 +53,8 @@ An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `revers
 
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
 
+A `result` with `outcome: "rejected"` may include `refusal` with a catalog `key` and `params`, an object of named string arguments. Static refusals use an empty object. The existing English `reason` remains present. A panel that recognizes the key with all expected arguments translates by key. A panel that receives an unrecognized key, invalid arguments, or no `refusal` uses `reason`. Controller errors, operator messages, and saved alarm entries use their existing text format.
+
 Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
 
 ## Machine-capability additions, 14 November 2026

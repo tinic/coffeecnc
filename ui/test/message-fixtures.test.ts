@@ -998,6 +998,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 46,
+    "outcome": "rejected",
+    "reason": "Jog velocity is above the Z axis limit of 750 mm/min.",
+    "refusal": {
+      "key": "messages.policy.jogVelocityAxisLimit",
+      "params": { "axis": "Z", "limit": "750" }
+    }
+  },
+  {
+    "type": "result",
     "id": 43,
     "outcome": "failed",
     "reason": "LinuxCNC reported an error."

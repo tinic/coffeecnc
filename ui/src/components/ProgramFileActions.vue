@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 import { onResult, send } from '../machine'
@@ -12,12 +12,12 @@ const emit = defineEmits<{ close: []; done: [operation: ManageProgramFile['opera
 const action = ref<'menu' | 'create_folder' | 'rename' | 'remove'>(props.entry ? 'menu' : 'create_folder')
 const name = ref(props.entry?.name ?? '')
 const validName = computed(() => !!name.value.trim() && !name.value.trim().startsWith('.') && !/[/\\]/.test(name.value))
-const error = ref('')
+const error = shallowRef<(() => string) | null>(null)
 const pending = ref(false)
 let request: CommandBody | null = null
 
 function begin(operation: 'rename' | 'remove'): void {
-  error.value = ''
+  error.value = null
   action.value = operation
 }
 
@@ -29,7 +29,7 @@ function apply(operation: ManageProgramFile['operation']): void {
   request = operation === 'rename'
     ? { type: 'manage_program_file', operation, path, name: name.value.trim() }
     : { type: 'manage_program_file', operation, path }
-  error.value = ''
+  error.value = null
   pending.value = true
   send(request)
 }
@@ -39,7 +39,7 @@ onBeforeUnmount(onResult((command, result) => {
   request = null
   pending.value = false
   if (result.outcome === 'accepted') emit('done', command.operation)
-  else error.value = result.reason ? translateMessage(result.reason) : t('common.unavailable')
+  else error.value = (): string => translateMessage(result.reason, result.refusal) || t('common.unavailable')
 }))
 </script>
 
@@ -71,7 +71,7 @@ onBeforeUnmount(onResult((command, result) => {
         <button class="btn danger" type="button" :disabled="pending" @click="apply('remove')">{{ t('common.delete') }}</button>
       </div>
     </template>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="error" role="alert">{{ error() }}</p>
   </ModalDialog>
 </template>
 

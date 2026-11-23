@@ -43,7 +43,7 @@ const savingAs = ref(props.target.kind === 'new')
 const name = ref(props.target.kind === 'new' ? uniqueName('program', new Set(props.target.taken)) : '')
 const saving = ref(false)
 const readOnly = computed(() => notice.value !== null || saving.value)
-const feedback = ref('')
+const feedback = shallowRef<(() => string) | null>(null)
 const size = computed(() => byteLength(text.value))
 // Over the loaded program a save needs its stamp, and every save opens a program: neither while
 // the machine is busy, as for the line edits.
@@ -64,7 +64,7 @@ let saveRequest: CommandBody | null = null
 let openRequest: CommandBody | null = null
 function save(): void {
   if (saving.value || saveBlock.value !== null || (!dirty.value && !savingAs.value)) return
-  feedback.value = ''
+  feedback.value = null
   saving.value = true
   const program = loaded.value
   saveRequest = savingAs.value || program === null
@@ -77,7 +77,7 @@ const removeListener = onResult((command, result) => {
     saveRequest = null
     if (result.outcome !== 'accepted') {
       saving.value = false
-      feedback.value = result.reason || t('program.editor.notSaved')
+      feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('program.editor.notSaved')
       return
     }
     // Over the loaded program the machine opened it again; a new file is opened now.
@@ -89,7 +89,9 @@ const removeListener = onResult((command, result) => {
     openRequest = null
     saving.value = false
     if (result.outcome === 'accepted') emit('close')
-    else feedback.value = t('program.editor.savedNotOpened', { reason: result.reason ? translateMessage(result.reason) : t('program.editor.refused') })
+    else feedback.value = (): string => t('program.editor.savedNotOpened', {
+      reason: translateMessage(result.reason, result.refusal) || t('program.editor.refused'),
+    })
   }
 })
 onBeforeUnmount(removeListener)
@@ -353,7 +355,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
           ></textarea>
         </div>
       </div>
-      <p v-if="feedback" class="feedback" role="alert">{{ translateMessage(feedback) }}</p>
+      <p v-if="feedback" class="feedback" role="alert">{{ feedback() }}</p>
     </div>
     <template #footer>
       <div class="file">

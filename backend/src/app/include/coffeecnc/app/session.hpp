@@ -311,6 +311,7 @@ private:
   struct Reply {
     CommandOutcome outcome{CommandOutcome::accepted};
     std::string reason;
+    std::optional<RefusalMessage> refusal{};
   };
   struct HeldJog {
     int direction{};
@@ -386,6 +387,7 @@ private:
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
   [[nodiscard]] static auto answer(Reply reply) -> Stage;
+  [[nodiscard]] static auto refuse(std::string reason, RefusalMessage message) -> Stage;
   [[nodiscard]] static auto cancelled(std::string partial = {}) -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;

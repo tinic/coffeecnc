@@ -332,6 +332,9 @@ void axis_jog_ceilings() {
   const auto z = policy.evaluate(Jog{Axis::z, 1, 750.5, true}, s);
   require(!z.allowed && z.reason == "Jog velocity is above the Z axis limit of 750 mm/min.",
           "a Z jog above its ceiling names the axis and the limit");
+  require(z.refusal && z.refusal->key == "messages.policy.jogVelocityAxisLimit" &&
+              z.refusal->params.at("axis") == "Z" && z.refusal->params.at("limit") == "750",
+          "The jog refusal keeps its named parameters separately from the English reason.");
   const auto step = policy.evaluate(JogStep{Axis::z, -1, 1500}, s);
   require(!step.allowed && step.reason == "Jog velocity is above the Z axis limit of 750 mm/min.",
           "a Z step above its ceiling names the axis and the limit");

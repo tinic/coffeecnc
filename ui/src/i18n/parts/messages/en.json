@@ -56,6 +56,8 @@
       "waitHoming": "Wait for homing to finish.",
       "feedOverrideRange": "Feed override is out of range.",
       "rapidOverrideRange": "Rapid override is out of range.",
+      "velocityLimitRange": "Maximum velocity limit is out of range.",
+      "velocityLimitUnavailable": "Maximum velocity control is unavailable on this machine.",
       "spindleOverrideRange": "Spindle override is out of range.",
       "unknownOverride": "Unknown override.",
       "unknownSpindleDirection": "Unknown spindle direction.",

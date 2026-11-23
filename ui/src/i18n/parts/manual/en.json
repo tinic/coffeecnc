@@ -169,6 +169,7 @@
       "resetFeed": "Reset feed override to 100%",
       "resetSpindle": "Reset spindle override to 100%",
       "resetRapid": "Reset rapid override to 100%",
+      "resetVelocityLimit": "Reset maximum velocity",
       "reset": "Reset 100%"
     },
     "workSystems": {

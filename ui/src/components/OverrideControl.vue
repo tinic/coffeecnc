@@ -7,11 +7,12 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { send } from '../machine'
+import type { SetOverride } from '../protocol'
 import { formatPercent } from '../units'
 
 const props = defineProps<{
   label: string
-  which: 'feed' | 'rapid' | 'spindle'
+  which: SetOverride['which']
   /** The override the machine reports, or null without status. */
   value: number | null
   min: number
@@ -24,6 +25,7 @@ const resetLabels = {
   feed: 'manual.override.resetFeed',
   rapid: 'manual.override.resetRapid',
   spindle: 'manual.override.resetSpindle',
+  velocity_limit: 'manual.override.resetVelocityLimit',
 } as const
 
 /** The percent under the finger while dragging; null when the slider shows the machine. */

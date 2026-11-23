@@ -336,6 +336,10 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
                        : reject("Feed override is out of range.");
           case Override::rapid:
             return between(c.value, 0, 1) ? allow() : reject("Rapid override is out of range.");
+          case Override::velocity_limit:
+            if (!limits_.max_trajectory_velocity)
+              return reject("Maximum velocity control is unavailable on this machine.");
+            return between(c.value, 0, 1) ? allow() : reject("Maximum velocity limit is out of range.");
           case Override::spindle:
             return between(c.value, limits_.min_spindle_override, limits_.max_spindle_override)
                        ? allow()

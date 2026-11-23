@@ -56,6 +56,8 @@
       "waitHoming": "请等待回零完成。",
       "feedOverrideRange": "进给倍率超出范围。",
       "rapidOverrideRange": "快速倍率超出范围。",
+      "velocityLimitRange": "最高速度限制超出范围。",
+      "velocityLimitUnavailable": "此机床不支持调节最高速度。",
       "spindleOverrideRange": "主轴倍率超出范围。",
       "unknownOverride": "未知倍率。",
       "unknownSpindleDirection": "未知的主轴旋转方向。",

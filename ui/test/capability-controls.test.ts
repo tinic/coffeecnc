@@ -284,6 +284,23 @@ describe('capability-aware controls', () => {
     await slider.trigger('change')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'feed', value: 1.5 })
   })
+  it('puts maximum velocity in the execution menu and shows the applied cap only below 100%', async () => {
+    if (!panel.status) throw new Error('Missing status')
+    delete panel.status.motion.velocity_limit
+    wrapper = mount(RunBar)
+    const selector = 'input[aria-label="Maximum velocity"]'
+    expect(wrapper.find(selector).exists()).toBe(false)
+    panel.status.motion.velocity_limit = 1
+    await nextTick()
+    expect(wrapper.find('.velocity-limit').exists()).toBe(false)
+    await wrapper.get('.popover').get(selector).setValue('40')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_override', which: 'velocity_limit', value: 0.4 })
+    expect(wrapper.find('.velocity-limit').exists()).toBe(false)
+    panel.status.motion.velocity_limit = 0.4
+    await nextTick()
+    expect(wrapper.get('.more-button').attributes('aria-label')).toBe('Maximum velocity 40 %')
+    expect(wrapper.get('.velocity-limit').text()).toBe('40 %')
+  })
   it('puts probing in its own workspace with jogging, WCS and Stop', async () => {
     wrapper = mount(WorkspaceControls)
     expect(wrapper.find('.em-nav').text()).not.toContain('Touch off')

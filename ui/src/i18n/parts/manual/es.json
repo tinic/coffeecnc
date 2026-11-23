@@ -169,6 +169,7 @@
       "resetFeed": "Restablecer el ajuste de avance al 100 %",
       "resetSpindle": "Restablecer el ajuste del husillo al 100 %",
       "resetRapid": "Restablecer el ajuste de rápido al 100 %",
+      "resetVelocityLimit": "Restablecer la velocidad máxima",
       "reset": "Al 100 %"
     },
     "workSystems": {

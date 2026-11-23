@@ -169,6 +169,7 @@
       "resetFeed": "Repor o ajuste do avanço a 100%",
       "resetSpindle": "Repor o ajuste da árvore a 100%",
       "resetRapid": "Repor o ajuste do rápido a 100%",
+      "resetVelocityLimit": "Restaurar a velocidade máxima",
       "reset": "Repor 100%"
     },
     "workSystems": {

@@ -169,6 +169,7 @@
       "resetFeed": "Vorschub-Override auf 100 % zurücksetzen",
       "resetSpindle": "Spindel-Override auf 100 % zurücksetzen",
       "resetRapid": "Eilgang-Override auf 100 % zurücksetzen",
+      "resetVelocityLimit": "Maximalgeschwindigkeit zurücksetzen",
       "reset": "Auf 100 %"
     },
     "workSystems": {

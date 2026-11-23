@@ -169,6 +169,7 @@
       "resetFeed": "Remettre la correction d’avance à 100 %",
       "resetSpindle": "Remettre la correction de broche à 100 %",
       "resetRapid": "Remettre la correction de rapide à 100 %",
+      "resetVelocityLimit": "Rétablir la vitesse maximale",
       "reset": "Remettre 100 %"
     },
     "workSystems": {

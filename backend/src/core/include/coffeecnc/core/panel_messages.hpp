@@ -124,6 +124,7 @@ struct MotionStatus {
   double feed_override{};
   double rapid_override{};
   bool in_position{true};
+  std::optional<double> velocity_limit{};
   friend auto operator==(const MotionStatus&, const MotionStatus&) -> bool = default;
 };
 

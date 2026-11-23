@@ -2,6 +2,7 @@
 // Restart a program at a line: the machine plans the state at that line without motion, the
 // operator checks it here, and Cycle start runs the tool change, the approach and the program.
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { findTool, onResult, panel, reported, send } from '../machine'
 import { machineBlock } from '../machine-block'
 import type { CommandBody, RestartPlan } from '../protocol'
@@ -9,9 +10,11 @@ import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '
 import AppIcon from './AppIcon.vue'
 import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
+import { translateMessage } from '../i18n/messages'
 
 const props = defineProps<{ line: number; section: string }>()
 const emit = defineEmits<{ close: [] }>()
+const { t } = useI18n()
 
 const status = reported
 const plan = shallowRef<RestartPlan | null>(null)
@@ -25,7 +28,7 @@ function planRestart(): void {
   plan.value = null
   failure.value = ''
   if (context === undefined) {
-    failure.value = 'Waiting for the machine status.'
+    failure.value = t('program.restartDialog.waitingStatus')
     return
   }
   const command: CommandBody = { type: 'plan_restart', line: props.line, preview_context: context }
@@ -51,20 +54,20 @@ const removeListener = onResult((command, result) => {
   if (command !== request.value) return
   request.value = null
   if (result.outcome !== 'accepted') {
-    failure.value = result.reason || 'The machine did not confirm the restart.'
+    failure.value = result.reason || t('program.restartDialog.notConfirmed')
     if (command.type === 'start_restart') {
       plan.value = null
       // No answer does not mean nothing moves: stop what the machine may still be doing.
       if (result.outcome === 'timed_out') {
         send({ type: 'abort' })
-        failure.value = 'The machine did not confirm the restart. CoffeeCNC sent Stop.'
+        failure.value = t('program.restartDialog.notConfirmedStopped')
       }
     }
     return
   }
   if (command.type === 'plan_restart') {
     plan.value = result.restart ?? null
-    if (plan.value === null) failure.value = 'The machine sent no restart plan.'
+    if (plan.value === null) failure.value = t('program.restartDialog.noPlan')
   } else {
     started.value = true
     emit('close')
@@ -81,37 +84,42 @@ onBeforeUnmount(removeListener)
 const startBlock = computed((): string | null => {
   const shared = machineBlock(panel)
   if (shared !== null) return shared
-  if (request.value !== null) return request.value.type === 'plan_restart' ? 'Planning…' : 'Starting…'
-  if (plan.value === null) return failure.value || 'Planning…'
+  if (request.value !== null) return request.value.type === 'plan_restart' ? t('program.restartDialog.planning') : t('program.restartDialog.starting')
+  if (plan.value === null) return failure.value ? translateMessage(failure.value) : t('program.restartDialog.planning')
   return null
 })
 
 const unit = computed(() => panel.unit)
 const length = (mm: number): string => `${formatLength(mm, unit.value)} ${unit.value}`
 const toolName = (tool: number): string => {
-  if (tool === 0) return 'No tool'
+  if (tool === 0) return t('program.restartDialog.noTool')
   const comment = findTool(tool)?.comment.trim()
   return comment ? `${toolLabel(tool)} · ${comment}` : toolLabel(tool)
 }
 const loaded = computed(() => {
   const tool = status.value?.tool.in_spindle ?? 0
-  return tool === 0 ? 'The spindle is empty. You load the tool at the tool change prompt.'
-    : `${toolName(tool)} is loaded. You change it at the tool change prompt.`
+  return tool === 0 ? t('program.restartDialog.spindleEmpty')
+    : t('program.restartDialog.toolLoaded', { tool: toolName(tool) })
 })
 const spindle = computed(() => {
   const p = plan.value
-  if (p === null || p.spindle_direction === 'stopped') return 'Stopped'
-  return `${String(Math.round(p.spindle_rpm))} rpm ${p.spindle_direction === 'forward' ? 'forward (M3)' : 'reverse (M4)'}`
+  if (p === null || p.spindle_direction === 'stopped') return t('program.restartDialog.stopped')
+  const rpm = String(Math.round(p.spindle_rpm))
+  return p.spindle_direction === 'forward' ? t('program.restartDialog.forward', { rpm }) : t('program.restartDialog.reverse', { rpm })
 })
 const coolant = computed(() => {
   const p = plan.value
   if (p === null) return ''
-  return [p.flood ? 'Flood' : '', p.mist ? 'Mist' : ''].filter(Boolean).join(' and ') || 'Off'
+  return p.flood && p.mist ? t('program.restartDialog.floodAndMist') : p.flood ? t('program.restartDialog.flood')
+    : p.mist ? t('program.restartDialog.mist') : t('common.off')
 })
 const modes = computed(() => {
   const p = plan.value
   if (p === null) return ''
-  return `${p.units === 'inch' ? 'Inch (G20)' : 'mm (G21)'} · ${p.plane} plane · ${p.distance_mode === 'absolute' ? 'Absolute (G90)' : 'Incremental (G91)'}`
+  return t('program.restartDialog.modes', {
+    units: p.units === 'inch' ? t('program.restartDialog.inch') : 'mm (G21)', plane: p.plane,
+    distance: p.distance_mode === 'absolute' ? t('program.restartDialog.absolute') : t('program.restartDialog.incremental'),
+  })
 })
 // The order the machine moves in, so the operator can check the way in is clear.
 const steps = computed((): string[] => {
@@ -119,48 +127,49 @@ const steps = computed((): string[] => {
   if (p === null) return []
   const [x, y, z] = p.start
   return [
-    `Rapid Z up to ${length(p.clearance_z)}`,
-    ...(p.needs_tool_change ? [`Change to ${toolName(p.tool)}, then rapid Z to ${length(p.clearance_z)} with its length`] : []),
-    `Rapid to X ${length(x)} Y ${length(y)}`,
-    ...(p.spindle_direction === 'stopped' ? [] : [`Start the spindle at ${spindle.value}`]),
-    ...(p.flood || p.mist ? [`Turn on ${coolant.value.toLowerCase()} coolant`] : []),
+    t('program.restartDialog.stepRapidUp', { z: length(p.clearance_z) }),
+    ...(p.needs_tool_change ? [t('program.restartDialog.stepChange', { tool: toolName(p.tool), z: length(p.clearance_z) })] : []),
+    t('program.restartDialog.stepRapidXY', { x: length(x), y: length(y) }),
+    ...(p.spindle_direction === 'stopped' ? [] : [t('program.restartDialog.stepSpindle', { spindle: spindle.value })]),
+    ...(p.flood && p.mist ? [t('program.restartDialog.stepFloodAndMist')] : p.flood ? [t('program.restartDialog.stepFlood')]
+      : p.mist ? [t('program.restartDialog.stepMist')] : []),
     ...(Math.abs(p.clearance_z - z) > 1e-6
-      ? [`Feed Z down to ${length(z)} at ${formatVelocity(p.approach_feed, unit.value)} ${velocityUnit(unit.value)}`] : []),
-    `Run the program from line ${String(p.line)}`,
+      ? [t('program.restartDialog.stepFeedDown', { z: length(z), feed: `${formatVelocity(p.approach_feed, unit.value)} ${velocityUnit(unit.value)}` })] : []),
+    t('program.restartDialog.stepRun', { line: p.line }),
   ]
 })
 </script>
 
 <template>
-  <ModalDialog :title="`Restart at line ${String(line)}`" size="large" fresh-gesture @close="close">
+  <ModalDialog :title="t('program.restartDialog.title', { line })" size="large" fresh-gesture @close="close">
     <p class="context"><span>{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
-    <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ failure }}</p>
-    <p v-else-if="plan === null" class="note" role="status">Planning the restart…</p>
+    <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ translateMessage(failure) }}</p>
+    <p v-else-if="plan === null" class="note" role="status">{{ t('program.restartDialog.planningRestart') }}</p>
     <div v-if="plan" class="plan">
       <dl class="state">
-        <dt>Tool</dt><dd>{{ toolName(plan.tool) }}<small v-if="plan.needs_tool_change">{{ loaded }}</small></dd>
-        <dt>Work system</dt><dd>{{ wcsName(plan.wcs) }} · {{ plan.h > 0 ? `G43 H${String(plan.h)}` : 'No length offset (G49)' }}</dd>
-        <dt>Spindle</dt><dd>{{ spindle }}</dd>
-        <dt>Coolant</dt><dd>{{ coolant }}</dd>
-        <dt>Feed</dt><dd>{{ plan.feed > 0 ? `${formatVelocity(plan.feed, unit)} ${velocityUnit(unit)}` : 'Not set' }}</dd>
-        <dt>Modes</dt><dd>{{ modes }}</dd>
+        <dt>{{ t('program.restartDialog.tool') }}</dt><dd>{{ toolName(plan.tool) }}<small v-if="plan.needs_tool_change">{{ loaded }}</small></dd>
+        <dt>{{ t('program.restartDialog.workSystem') }}</dt><dd>{{ wcsName(plan.wcs) }} · {{ plan.h > 0 ? `G43 H${String(plan.h)}` : t('program.restartDialog.noLengthOffset') }}</dd>
+        <dt>{{ t('program.restartDialog.spindle') }}</dt><dd>{{ spindle }}</dd>
+        <dt>{{ t('program.restartDialog.coolant') }}</dt><dd>{{ coolant }}</dd>
+        <dt>{{ t('program.restartDialog.feed') }}</dt><dd>{{ plan.feed > 0 ? `${formatVelocity(plan.feed, unit)} ${velocityUnit(unit)}` : t('program.restartDialog.notSet') }}</dd>
+        <dt>{{ t('program.restartDialog.modesLabel') }}</dt><dd>{{ modes }}</dd>
       </dl>
       <section>
-        <h3>Approach</h3>
+        <h3>{{ t('program.restartDialog.approach') }}</h3>
         <ol class="steps">
           <li v-for="step in steps" :key="step">{{ step }}</li>
         </ol>
-        <p class="note">Make sure the way to the start point is clear. Stop halts the restart at any step.</p>
+        <p class="note">{{ t('program.restartDialog.clearWay') }}</p>
       </section>
     </div>
     <template #footer>
-      <button class="btn" type="button" @click="close">{{ request?.type === 'start_restart' ? 'Stop' : 'Cancel' }}</button>
-      <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">Plan again</button>
+      <button class="btn" type="button" @click="close">{{ request?.type === 'start_restart' ? t('program.restartDialog.stop') : t('common.cancel') }}</button>
+      <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">{{ t('program.restartDialog.planAgain') }}</button>
       <button
-        v-tooltip="request ? undefined : startBlock ?? 'Run the approach, then the program'"
+        v-tooltip="request ? undefined : startBlock ?? t('program.restartDialog.startTooltip')"
         class="btn primary" type="button" :disabled="startBlock !== null" @click="start"
       >
-        <AppIcon name="play" />{{ request?.type === 'start_restart' ? 'Starting…' : 'Cycle start' }}
+        <AppIcon name="play" />{{ request?.type === 'start_restart' ? t('program.restartDialog.starting') : t('program.restartDialog.cycleStart') }}
       </button>
     </template>
   </ModalDialog>

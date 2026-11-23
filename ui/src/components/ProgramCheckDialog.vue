@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+import { translateMessage } from '../i18n/messages'
 import type { LengthUnit, ProgramCheck } from '../protocol'
 import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '../units'
 import AppIcon from './AppIcon.vue'
@@ -13,62 +16,63 @@ const props = defineProps<{
   breakpointLine?: number | null
 }>()
 const emit = defineEmits<{ close: []; confirm: [] }>()
+const { t } = useI18n()
 
-const rpm = (value: number): string => Math.round(value).toLocaleString('en-US')
+const rpm = (value: number): string => String(Math.round(value))
 const length = (value: number): string => formatLength(value, props.unit)
 function range(min: number, max: number, format: (value: number) => string): string {
-  return min === max ? format(min) : `${format(min)} to ${format(max)}`
+  return min === max ? format(min) : t('program.checkDialog.range', { min: format(min), max: format(max) })
 }
 </script>
 
 <template>
-  <ModalDialog title="Program check" size="medium" fresh-gesture @close="emit('close')">
-    <p v-if="changed" class="notice" role="status">The program check changed. Close and review it again before starting.</p>
-    <p v-else-if="!check" class="notice" role="status">Checking the loaded program…</p>
+  <ModalDialog :title="t('program.checkDialog.title')" size="medium" fresh-gesture @close="emit('close')">
+    <p v-if="changed" class="notice" role="status">{{ t('program.checkDialog.changed') }}</p>
+    <p v-else-if="!check" class="notice" role="status">{{ t('program.checkDialog.checking') }}</p>
     <template v-else>
-      <p v-if="breakpointLine" class="breakpoint-notice">Pause before line {{ breakpointLine }}</p>
+      <p v-if="breakpointLine" class="breakpoint-notice">{{ t('program.checkDialog.pauseBefore', { line: breakpointLine }) }}</p>
       <div v-if="check.errors.length || check.warnings.length" class="issues" :class="check.errors.length ? 'blocked' : 'review'">
         <AppIcon name="warning" />
         <div>
-          <strong>{{ check.errors.length ? 'Cycle start blocked' : 'Review before starting' }}</strong>
+          <strong>{{ check.errors.length ? t('program.checkDialog.blocked') : t('program.checkDialog.review') }}</strong>
           <ul>
-            <li v-for="issue in check.errors" :key="issue">{{ issue }}</li>
-            <li v-for="issue in check.warnings" :key="issue">{{ issue }}</li>
+            <li v-for="issue in check.errors" :key="issue">{{ translateMessage(issue) }}</li>
+            <li v-for="issue in check.warnings" :key="issue">{{ translateMessage(issue) }}</li>
           </ul>
         </div>
       </div>
       <dl class="metrics">
-        <div><dt>Machine travel</dt><dd>{{ check.travel === 'fits' ? 'Fits' : check.travel === 'outside' ? 'Outside limits' : 'Unverified' }}</dd></div>
-        <div><dt>Program units</dt><dd>{{ check.units.map((u) => u === 'mm' ? 'G21 · mm' : 'G20 · inch').join(' / ') || '—' }}</dd></div>
-        <div><dt>Feed</dt><dd class="mono">{{ check.feed ? `${range(check.feed.min, check.feed.max, (v) => formatVelocity(v, unit))} ${velocityUnit(unit)}` : '—' }}</dd></div>
-        <div><dt>Spindle</dt><dd class="mono">{{ check.spindle ? `${range(check.spindle.min, check.spindle.max, rpm)} rpm` : '—' }}<small v-if="maxRpm">Limit {{ rpm(maxRpm) }} rpm</small></dd></div>
+        <div><dt>{{ t('program.checkDialog.travel') }}</dt><dd>{{ check.travel === 'fits' ? t('program.checkDialog.fits') : check.travel === 'outside' ? t('program.checkDialog.outside') : t('program.checkDialog.unverified') }}</dd></div>
+        <div><dt>{{ t('program.checkDialog.units') }}</dt><dd>{{ check.units.map((u) => u === 'mm' ? 'G21 · mm' : 'G20 · inch').join(' / ') || '—' }}</dd></div>
+        <div><dt>{{ t('program.checkDialog.feed') }}</dt><dd class="mono">{{ check.feed ? `${range(check.feed.min, check.feed.max, (v) => formatVelocity(v, unit))} ${velocityUnit(unit)}` : '—' }}</dd></div>
+        <div><dt>{{ t('program.checkDialog.spindle') }}</dt><dd class="mono">{{ check.spindle ? range(check.spindle.min, check.spindle.max, rpm) + ' rpm' : '—' }}<small v-if="maxRpm">{{ t('program.checkDialog.limit', { rpm: rpm(maxRpm) }) }}</small></dd></div>
       </dl>
       <section v-if="check.frames.length" class="frame-list">
-        <h3>Work extents <small>{{ unit }}</small></h3>
+        <h3>{{ t('program.checkDialog.extents') }} <small>{{ unit }}</small></h3>
         <div v-for="frame in check.frames" :key="frame.wcs" class="frame">
           <strong>{{ wcsName(frame.wcs) }}</strong>
-          <span v-if="!frame.available" class="unverified">Origin unverified</span>
+          <span v-if="!frame.available" class="unverified">{{ t('program.checkDialog.originUnverified') }}</span>
           <template v-else-if="frame.bounds">
             <span><small>X</small> {{ range(frame.bounds.min[0], frame.bounds.max[0], length) }}</span>
             <span><small>Y</small> {{ range(frame.bounds.min[1], frame.bounds.max[1], length) }}</span>
-            <span><small>Lowest Z</small> {{ length(frame.bounds.min[2]) }}</span>
+            <span><small>{{ t('program.checkDialog.lowestZ') }}</small> {{ length(frame.bounds.min[2]) }}</span>
           </template>
         </div>
       </section>
       <section v-if="check.tools.length" class="tool-list">
-        <h3>Tool lengths</h3>
+        <h3>{{ t('program.checkDialog.toolLengths') }}</h3>
         <ul>
           <li v-for="tool in check.tools" :key="tool.tool" :class="{ unverified: tool.length === 'missing' }">
             <strong>{{ toolLabel(tool.tool) }}</strong>
-            {{ tool.length === 'touched_off' ? 'Touched off' : tool.length === 'table' ? 'From table' : 'Missing' }}
+            {{ tool.length === 'touched_off' ? t('program.checkDialog.touchedOff') : tool.length === 'table' ? t('program.checkDialog.fromTable') : t('program.checkDialog.missing') }}
           </li>
         </ul>
       </section>
     </template>
     <template #footer>
-      <button class="btn" type="button" @click="emit('close')">{{ canConfirm ? 'Cancel' : 'Done' }}</button>
+      <button class="btn" type="button" @click="emit('close')">{{ canConfirm ? t('common.cancel') : t('program.checkDialog.done') }}</button>
       <button v-if="canConfirm && check && !check.errors.length && !changed" class="btn primary" type="button" @click="emit('confirm')">
-        <AppIcon name="play" />{{ breakpointLine ? `Run to line ${String(breakpointLine)}` : 'Run program' }}
+        <AppIcon name="play" />{{ breakpointLine ? t('program.checkDialog.runToLine', { line: breakpointLine }) : t('program.checkDialog.run') }}
       </button>
     </template>
   </ModalDialog>

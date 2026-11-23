@@ -2,12 +2,16 @@
 import { vTooltip } from '../tooltip'
 // Browses the machine's program directory and opens a program.
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { panel, send } from '../machine'
 import type { DirectoryEntry } from '../protocol'
 import { baseName, formatBytes } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
+import { translateMessage } from '../i18n/messages'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -49,10 +53,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <ModalDialog title="Open program" :size="recent.length ? 'large' : 'medium'" :contained="recent.length > 0" @close="emit('close')">
+  <ModalDialog :title="t('program.fileBrowser.title')" :size="recent.length ? 'large' : 'medium'" :contained="recent.length > 0" @close="emit('close')">
     <div class="browser" :class="{ 'has-recent': recent.length > 0 }">
-      <section v-if="recent.length > 0" class="recent" aria-label="Recent programs">
-        <h3>Recent</h3>
+      <section v-if="recent.length > 0" class="recent" :aria-label="t('program.fileBrowser.recentPrograms')">
+        <h3>{{ t('program.fileBrowser.recent') }}</h3>
         <button v-for="path in recent" :key="path" v-tooltip="path" class="entry" type="button" @click="open(path)">
           <AppIcon name="file" />
           <span class="recent-path">
@@ -61,25 +65,25 @@ onMounted(() => {
           </span>
         </button>
       </section>
-      <section class="directory" aria-label="Program directory">
+      <section class="directory" :aria-label="t('program.fileBrowser.directory')">
         <div class="path">
           <button
-            v-tooltip="'Up one directory'"
+            v-tooltip="t('program.fileBrowser.upTooltip')"
             class="btn"
             type="button"
             :disabled="directory === null || directory.parent === null"
             @click="list(directory?.parent ?? null)"
           >
-            <AppIcon name="up" />Up
+            <AppIcon name="up" />{{ t('program.fileBrowser.up') }}
           </button>
-          <span class="mono where">{{ directory?.path ?? 'Reading directory' }}</span>
+          <span class="mono where">{{ directory?.path ?? t('program.fileBrowser.reading') }}</span>
         </div>
-        <div v-if="places.length > 0" class="places" aria-label="Places">
+        <div v-if="places.length > 0" class="places" :aria-label="t('program.fileBrowser.places')">
           <button
             v-for="place in places" :key="place.path" class="btn" type="button"
             :class="{ on: directory?.path === place.path }" @click="list(place.path)"
           >
-            {{ place.name }}
+            {{ translateMessage(place.name) }}
           </button>
         </div>
         <div class="entries">
@@ -89,10 +93,10 @@ onMounted(() => {
             <span v-if="entry.kind === 'file'" class="meta mono">{{ formatBytes(entry.bytes) }}</span>
             <span class="meta mono">{{ formatDate(entry.modified) }}</span>
           </button>
-          <p v-if="directory !== null && directory.entries.length === 0" class="hint">{{ directory.truncated ? 'No entries shown in this partial listing.' : 'This directory is empty.' }}</p>
+          <p v-if="directory !== null && directory.entries.length === 0" class="hint">{{ directory.truncated ? t('program.fileBrowser.partialEmpty') : t('program.fileBrowser.empty') }}</p>
         </div>
-        <p v-if="directory?.truncated" class="hint" role="status">Partial directory listing · Some entries are not shown.</p>
-        <p v-if="panel.status && panel.status.interp !== 'idle'" class="blocked">Stop the current program before opening another.</p>
+        <p v-if="directory?.truncated" class="hint" role="status">{{ t('program.fileBrowser.partial') }}</p>
+        <p v-if="panel.status && panel.status.interp !== 'idle'" class="blocked">{{ t('program.fileBrowser.stopFirst') }}</p>
       </section>
     </div>
   </ModalDialog>

@@ -5,9 +5,12 @@ import type { LineAction } from '../program-line-edits'
 // The program text. The executing line is highlighted and kept in view until the operator
 // scrolls; from then on the view stays where it was put, and a button offers to follow again.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { tokenizeGcodeLine } from '../gcode-syntax'
 import AppIcon from './AppIcon.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   lines: string[]
@@ -296,7 +299,7 @@ onBeforeUnmount(() => {
     >
       <div
         class="spacer"
-        :style="{ height: `${String(lines.length * rowHeight)}px`, '--code-width': `${String(codeWidth)}px` }"
+        :style="{ height: String(lines.length * rowHeight) + 'px', '--code-width': String(codeWidth) + 'px' }"
       >
         <div class="rows" :style="{ transform: `translateY(${String(first * rowHeight)}px)` }">
           <div
@@ -327,42 +330,42 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions">
-      <button v-tooltip="picked ? 'Clear selection' : 'Dismiss line actions'" class="btn clear-line" type="button" :aria-label="picked ? 'Clear selected line' : 'Dismiss line actions'" @click="closeActions">
+      <button v-tooltip="picked ? t('program.ncText.clearSelection') : t('program.ncText.dismissActions')" class="btn clear-line" type="button" :aria-label="picked ? t('program.ncText.clearSelected') : t('program.ncText.dismissActions')" @click="closeActions">
         <AppIcon name="close" />
       </button>
       <span v-if="picked > 0 && !single" class="range-label mono">{{ selectionStart }}–{{ selectionEnd }}</span>
       <span v-if="edits?.message && (picked === 0 || edits.message.error)" class="edit-feedback" :class="{ 'edit-error': edits.message.error }" :role="edits.message.error ? 'alert' : 'status'">{{ edits.message.text }}</span>
-      <button v-if="edits?.canUndo" v-tooltip="edits.block ?? 'Undo the last line edit'" class="btn undo-line" type="button" aria-label="Undo" :disabled="!!edits.block" @click="emit('undoLineEdit')">
-        <AppIcon v-if="picked > 0" name="undo" /><span v-else>Undo</span>
+      <button v-if="edits?.canUndo" v-tooltip="edits.block ?? t('program.ncText.undoTooltip')" class="btn undo-line" type="button" :aria-label="t('program.ncText.undo')" :disabled="!!edits.block" @click="emit('undoLineEdit')">
+        <AppIcon v-if="picked > 0" name="undo" /><span v-else>{{ t('program.ncText.undo') }}</span>
       </button>
       <template v-if="picked > 0 && edits">
-        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('cut')">Cut</button>
-        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('copy')">Copy</button>
-        <button v-tooltip="edits.block ?? (single ? 'Delete line' : 'Delete selected lines')" class="btn delete-line" type="button" :disabled="!!edits.block" :aria-label="single ? 'Delete line' : 'Delete selected lines'" @click="editSelection('delete')">
-          <AppIcon name="trash" /> <span v-if="!single">Delete</span>
+        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('cut')">{{ t('program.ncText.cut') }}</button>
+        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('copy')">{{ t('program.ncText.copy') }}</button>
+        <button v-tooltip="edits.block ?? (single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines'))" class="btn delete-line" type="button" :disabled="!!edits.block" :aria-label="single ? t('program.ncText.deleteLine') : t('program.ncText.deleteLines')" @click="editSelection('delete')">
+          <AppIcon name="trash" /> <span v-if="!single">{{ t('common.delete') }}</span>
         </button>
         <details v-if="single && edits.hasClipboard && !edits.block" v-popover class="insert-lines">
-          <summary class="btn">Insert</summary>
+          <summary class="btn">{{ t('program.ncText.insert') }}</summary>
           <div class="popover insert-choices">
-            <button class="btn" type="button" @click="editSelection('insert-above', $event)">Above line</button>
-            <button class="btn" type="button" @click="editSelection('insert-below', $event)">Below line</button>
+            <button class="btn" type="button" @click="editSelection('insert-above', $event)">{{ t('program.ncText.above') }}</button>
+            <button class="btn" type="button" @click="editSelection('insert-below', $event)">{{ t('program.ncText.below') }}</button>
           </div>
         </details>
       </template>
       <template v-if="single && restartable">
         <button
-          v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? 'Run from the beginning and pause before this line'"
-          class="btn primary breakpoint-action" type="button" :aria-label="`Run to line ${String(picked)}`" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); clearSelection()"
+          v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? t('program.ncText.breakpointTooltip')"
+          class="btn primary breakpoint-action" type="button" :aria-label="t('program.ncText.runToLineLabel', { line: picked })" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); clearSelection()"
         >
-          <span>Run to<span class="full-label"> line</span></span> <span class="follow-count mono">{{ picked }}</span>
+          <span class="action-label" :data-short="t('program.ncText.runTo')"><span class="full-label">{{ t('program.ncText.runToLine') }}</span></span> <span class="follow-count mono">{{ picked }}</span>
         </button>
-        <button class="btn primary restart" type="button" :aria-label="`Restart from line ${String(picked)}`" @click="emit('restart', picked)">
-          <span>Restart<span class="full-label"> from line</span></span> <span class="follow-count mono">{{ picked }}</span>
+        <button class="btn primary restart" type="button" :aria-label="t('program.ncText.restartFromLineLabel', { line: picked })" @click="emit('restart', picked)">
+          <span class="action-label" :data-short="t('program.ncText.restart')"><span class="full-label">{{ t('program.ncText.restartFromLine') }}</span></span> <span class="follow-count mono">{{ picked }}</span>
         </button>
       </template>
     </div>
     <button v-else-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
-      Follow line <span class="follow-count mono">{{ active }}</span>
+      {{ t('program.ncText.followLine') }} <span class="follow-count mono">{{ active }}</span>
     </button>
   </div>
 </template>
@@ -466,7 +469,8 @@ onBeforeUnmount(() => {
 .line-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }
 .line-actions .follow-count { width: auto; min-width: 1.5em; }
-@container (max-width: 520px) { .line-actions .full-label { display: none; } }
+/* Narrow panes show the short label, drawn from data-short. */
+@container (max-width: 520px) { .line-actions .full-label { display: none; } .line-actions .action-label::before { content: attr(data-short); } }
 .line-actions .clear-line { margin-right: auto; padding: 0; }
 .range-label, .edit-feedback { align-self: center; color: var(--text-dim); font-size: 12px; }
 .range-label + .edit-feedback { margin-left: auto; }

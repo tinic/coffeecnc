@@ -8,6 +8,7 @@ const lineEdits = createProgramLineEdits(lineEditMachine.panel, lineEditMachine)
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { allHomed, chooseProgramLayout, findTool, homingRequired, live, onResult, panel, reported, send } from '../machine'
 import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, progressAt, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
@@ -29,6 +30,9 @@ import type { CommandBody } from '../protocol'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import { machineFeedback } from '../machine-feedback'
+import { translateMessage } from '../i18n/messages'
+
+const { t } = useI18n()
 
 const status = reported
 const lineEditBar = computed(() => ({
@@ -42,19 +46,20 @@ const selected = ref<number | null>(null)
 const checkOpen = ref(false)
 const checkedPreview = computed(() => currentProgramPreview(panel.preview, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
-const checkLabel = computed(() => check.value === null ? 'Checking program'
-  : check.value.errors.length ? 'Cycle start blocked'
-  : check.value.warnings.length ? 'Review program warnings'
-  : check.value.travel === 'unknown' ? 'Physical travel unverified' : 'Program check passed')
+const checkLabel = computed(() => check.value === null ? t('program.tab.checking')
+  : check.value.errors.length ? t('program.tab.blocked')
+  : check.value.warnings.length ? t('program.tab.review')
+  : check.value.travel === 'unknown' ? t('program.tab.travelUnverified') : t('program.tab.passed'))
 const program = computed(() => panel.program)
 watch(() => panel.program?.revision, () => { selected.value = null })
 const textCurrent = computed(() => program.value !== null && status.value !== null && program.value.file === status.value.program.file && program.value.revision === status.value.program.revision)
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
-const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value ? panel.preview.error?.text : undefined)
+const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value && panel.preview.error
+  ? translateMessage(panel.preview.error.text) : undefined)
 const drawn = useDrawnPreview(panel)
 const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?.line ?? 0) : 0)
-const layouts: readonly [ProgramLayout, string][] = [['path', 'Preview'], ['text', 'Code'], ['split', 'Split']]
+const layouts = [['path', 'program.tab.layoutPreview'], ['text', 'program.tab.layoutCode'], ['split', 'program.tab.layoutSplit']] as const satisfies readonly (readonly [ProgramLayout, string])[]
 // These are tool sections reported by the interpreter, not inferred CAM operations.
 const sections = computed(() => {
   const rows: { tool: number; first: number; last: number; start: number }[] = []
@@ -73,15 +78,15 @@ const spindleText = computed(() => {
   if (!s) return ''
   const { rpm, atSpeed } = machineFeedback(s, panel.link)
   if (s.spindle.direction === 'stopped')
-    return rpm.known && (s.spindle.actual_rpm ?? 0) >= 1 ? `Spindle ${rpm.text}` : ''
-  const speed = rpm.known ? rpm.text : `${String(Math.round(s.spindle.commanded_rpm * s.spindle.override))} rpm commanded`
-  const target = atSpeed.known ? ` · ${s.spindle.at_speed ? 'at speed' : 'below speed'}` : ''
-  return `Spindle ${speed}${target}`
+    return rpm.known && (s.spindle.actual_rpm ?? 0) >= 1 ? t('program.tab.spindle', { speed: rpm.text }) : ''
+  const speed = rpm.known ? rpm.text : t('program.tab.commanded', { rpm: String(Math.round(s.spindle.commanded_rpm * s.spindle.override)) })
+  if (!atSpeed.known) return t('program.tab.spindle', { speed })
+  return s.spindle.at_speed ? t('program.tab.spindleAtSpeed', { speed }) : t('program.tab.spindleBelowSpeed', { speed })
 })
 const feedText = computed(() => {
   const s = liveTelemetry.value
   if (!s || (!programExecuting.value && s.motion.velocity === 0)) return ''
-  return `Feed ${formatVelocity(s.motion.velocity, panel.unit)} ${velocityUnit(panel.unit)}`
+  return t('program.tab.feed', { feed: `${formatVelocity(s.motion.velocity, panel.unit)} ${velocityUnit(panel.unit)}` })
 })
 // LinuxCNC can retain counters after a run, through MDI, or across a new file load.
 // Only present them as current program progress in a fresh AUTO execution context.
@@ -101,9 +106,9 @@ const lineLabel = computed(() => {
   const line = activeLine.value
   if (Number.isSafeInteger(line) && line > 0) {
     // Do not infer full-file progress from a partial prefix or an out-of-range counter.
-    return `Line ${String(line)}${!program.value.truncated && line <= count ? ` / ${String(count)}` : ''}`
+    return !program.value.truncated && line <= count ? t('program.tab.lineOf', { line, count }) : t('program.tab.line', { line })
   }
-  return `${String(count)} ${count === 1 ? 'line' : 'lines'}${program.value.truncated ? ' shown' : ''}`
+  return program.value.truncated ? t('program.tab.linesShown', count) : t('program.tab.lines', count)
 })
 const activeLine = computed(() => {
   if (!programExecuting.value) return 0
@@ -113,14 +118,14 @@ const activeLine = computed(() => {
 const runState = computed(() => {
   const s = status.value
   if (!s || !live.value || s.machine !== 'on' || s.axes.some(axis => axis.homing)) return ''
-  if (programExecuting.value && s.wait.kind === 'tool_change') return `Change tool · ${toolLabel(s.wait.tool)}`
+  if (programExecuting.value && s.wait.kind === 'tool_change') return t('program.tab.changeTool', { tool: toolLabel(s.wait.tool) })
   if (programExecuting.value && s.wait.kind === 'paused')
-    return activeLine.value ? `Paused at line ${String(activeLine.value)}` : 'Paused'
-  const tool = spindleTool.value > 0 ? ` · ${toolLabel(spindleTool.value)}` : ''
-  if (programExecuting.value) return `Running${tool}`
-  if (!s.motion.in_position) return 'Machine moving'
+    return activeLine.value ? t('program.tab.pausedAt', { line: activeLine.value }) : t('program.tab.paused')
+  const tool = spindleTool.value > 0 ? toolLabel(spindleTool.value) : ''
+  if (programExecuting.value) return tool ? t('program.tab.runningTool', { tool }) : t('program.tab.running')
+  if (!s.motion.in_position) return t('program.tab.moving')
   if (s.interp !== 'idle') return ''
-  return `Idle${tool}`
+  return tool ? t('program.tab.idleTool', { tool }) : t('program.tab.idle')
 })
 // Cycle time from the drawn preview: before the run the estimate, during it elapsed and left.
 const time = computed(() => {
@@ -142,18 +147,18 @@ const timeLabel = computed(() => {
     // Feeds scale with the override; rapids do not, so this stays an estimate.
     const override = Math.max(status.value?.motion.feed_override ?? 1, 0.05)
     const left = estimate !== null && progressLine.value > 0 ? remainingFrom(estimate, progress.value) / override : null
-    return `${formatDuration(elapsed)} elapsed${left === null ? '' : ` · ${formatDuration(left)} left`}`
+    return left === null ? t('program.tab.elapsed', { elapsed: formatDuration(elapsed) })
+      : t('program.tab.elapsedLeft', { elapsed: formatDuration(elapsed), left: formatDuration(left) })
   }
   if (estimate === null) return ''
   const changes = estimate.toolChanges
-  return `Est. ${formatDuration(estimate.total)}${changes
-    ? ` · ${String(changes)} tool ${changes === 1 ? 'change' : 'changes'}` : ''}`
+  return changes ? t('program.tab.estimateChanges', { time: formatDuration(estimate.total), changes: t('program.tab.toolChanges', changes) })
+    : t('program.tab.estimate', { time: formatDuration(estimate.total) })
 })
 const timeTooltip = computed(() => {
   if (!timeLabel.value) return undefined
-  const completed = runClock.lastSeconds === null ? '' :
-    ` · Last ${formatDuration(runClock.lastSeconds)} · ${String(runClock.parts)} ${runClock.parts === 1 ? 'part' : 'parts'}`
-  return `${timeLabel.value}${completed}`
+  if (runClock.lastSeconds === null) return timeLabel.value
+  return `${timeLabel.value} · ${t('program.tab.lastRun', { time: formatDuration(runClock.lastSeconds), parts: t('program.tab.partCount', runClock.parts) })}`
 })
 
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
@@ -162,15 +167,15 @@ const canRestart = computed(() => textCurrent.value && !programExecuting.value &
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
 const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value)?.line ?? 0)
 const breakpointBlock = computed(() => machineBlock(panel, true) ??
-  (homingRequired.value && !allHomed.value ? 'Axes are not homed' : null) ??
-  (status.value?.interp !== 'idle' || !status.value.motion.in_position ? 'Stop the program before running to a line' : null))
+  (homingRequired.value && !allHomed.value ? t('program.tab.notHomed') : null) ??
+  (status.value?.interp !== 'idle' || !status.value.motion.in_position ? t('program.tab.stopToRun') : null))
 const breakpointLines = computed(() => {
   const preview = checkedPreview.value
   return new Set(canRestart.value && preview?.state === 'ready' && preview.check
     ? preview.segments.map((segment) => segment.line) : [])
 })
 const breakpointLabel = computed(() => activeBreakpoint.value?.reached
-  ? `Paused before line ${String(breakpointLine.value)}` : `Pause before line ${String(breakpointLine.value)}`)
+  ? t('program.tab.pausedBefore', { line: breakpointLine.value }) : t('program.tab.pauseBefore', { line: breakpointLine.value }))
 function chooseBreakpoint(line: number): void {
   const loaded = status.value?.program
   const text = program.value?.lines[line - 1]
@@ -180,13 +185,13 @@ function chooseBreakpoint(line: number): void {
 const restartAt = ref<{ line: number; section: string } | null>(null)
 function sectionName(index: number): string {
   const section = sections.value[index]
-  return section === undefined ? '' : `Section ${String(index + 1)} · ${toolLabel(section.tool)}`
+  return section === undefined ? '' : t('program.tab.section', { n: index + 1, tool: toolLabel(section.tool) })
 }
 function restartLine(line: number): void {
   breakpointSelection.value = null
   let index = -1
   sections.value.forEach((section, candidate) => { if (section.first <= line) index = candidate })
-  restartAt.value = { line, section: index < 0 ? 'Before the first tool section' : sectionName(index) }
+  restartAt.value = { line, section: index < 0 ? t('program.tab.beforeFirst') : sectionName(index) }
 }
 // Where the program stopped before its end; offered only while a restart is possible.
 // The operator can dismiss it; a stop at another line, or in another load, shows again.
@@ -197,6 +202,13 @@ const stopKey = computed(() => {
   return program && hint ? `${program.file ?? ''}:${String(program.revision)}:${String(hint.line)}` : ''
 })
 const stoppedAt = computed(() => canRestart.value && stopKey.value !== dismissedStop.value ? status.value?.program.restart_hint ?? null : null)
+// The stopped-line sentence around its line number, which is shown in bold.
+const stoppedText = computed((): [string, string] => {
+  const hint = stoppedAt.value
+  if (hint === null) return ['', '']
+  const [before = '', after = ''] = t('program.tab.stoppedAt', { line: '\u0000', tool: toolLabel(hint.tool) }).split('\u0000')
+  return [before, after]
+})
 function restartSection(index: number): void {
   const section = sections.value[index]
   if (section === undefined) return
@@ -221,7 +233,7 @@ function saveRate(value: number): void {
   if (edit === null || !file || editRequest !== null) return
   const after = withRate(edit.text, edit.word, value)
   if (after === null) {
-    edit.error = 'Enter a number of zero or more.'
+    edit.error = t('program.tab.badNumber')
     return
   }
   editRequest = { type: 'edit_program', path: file, line: edit.line, old_text: edit.text, new_text: after }
@@ -231,7 +243,7 @@ const removeEditListener = onResult((command, result) => {
   if (command !== editRequest) return
   editRequest = null
   if (result.outcome === 'accepted') editing.value = null
-  else if (editing.value !== null) editing.value.error = result.reason || 'The program was not saved.'
+  else if (editing.value !== null) editing.value.error = result.reason ? translateMessage(result.reason) : t('program.tab.notSaved')
 })
 onBeforeUnmount(removeEditListener)
 
@@ -248,12 +260,12 @@ async function showFailure(): Promise<void> {
     <div class="workspace-card">
       <section class="scene">
         <header class="scene-top">
-          <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? 'NC program' : 'Toolpath preview' }}</span>
+          <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? t('program.tab.ncProgram') : t('program.tab.toolpathPreview') }}</span>
           <div class="scene-actions">
-            <div class="view-switch" aria-label="Program view"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ label }}</button></div>
+            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
           </div>
         </header>
-        <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>Partial program text · Only the first {{ program.lines.length }} lines are shown. The controller runs the full file.</span></div>
+        <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>{{ t('program.tab.partial', { count: program.lines.length }) }}</span></div>
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
             <NcText
@@ -263,20 +275,20 @@ async function showFailure(): Promise<void> {
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
               @line-edit="lineEdits.apply" @undo-line-edit="lineEdits.undoLast" @dismiss-line-edit="lineEdits.dismiss"
             />
-            <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
+            <div v-else class="empty">{{ status?.program.file ? t('program.tab.waitingText') : t('program.tab.openToBegin') }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'">
             <PartModel />
           </PathView>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
-            <AppIcon name="warning" /><span>Preview stopped: {{ failure.text }}</span>
-            <button v-if="failureLine > 0" type="button" @click="showFailure">Show line {{ failureLine }}</button>
+            <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
+            <button v-if="failureLine > 0" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
           <div v-if="stoppedAt" class="stopped-at" role="status">
-            <button class="btn dismiss-stop" type="button" aria-label="Dismiss stopped line" @click="dismissedStop = stopKey"><AppIcon name="close" /></button>
-            <span>Stopped at line <strong class="mono">{{ stoppedAt.line }}</strong> · {{ toolLabel(stoppedAt.tool) }}</span>
-            <button class="btn primary" type="button" @click="restartLine(stoppedAt.line)">Restart there</button>
+            <button class="btn dismiss-stop" type="button" :aria-label="t('program.tab.dismissStop')" @click="dismissedStop = stopKey"><AppIcon name="close" /></button>
+            <span>{{ stoppedText[0] }}<strong class="mono">{{ stoppedAt.line }}</strong>{{ stoppedText[1] }}</span>
+            <button class="btn primary" type="button" @click="restartLine(stoppedAt.line)">{{ t('program.tab.restartThere') }}</button>
           </div>
         </div>
       </section>
@@ -285,40 +297,40 @@ async function showFailure(): Promise<void> {
           <div class="program-actions">
             <button
               v-if="status?.program.file" v-tooltip="checkLabel" type="button" class="btn program-check"
-              :aria-label="`Program check · ${checkLabel}`"
+              :aria-label="t('program.tab.checkLabel', { state: checkLabel })"
               :class="{ blocked: check?.errors.length, review: check?.warnings.length, ready: check && !check.errors.length && !check.warnings.length }"
               @click="checkOpen = true"
             >
               <AppIcon :name="check?.errors.length || check?.warnings.length ? 'warning' : check ? 'check' : 'list'" />
-              Program check<span v-if="check?.warnings.length && !check.errors.length">{{ check.warnings.length }}</span>
+              {{ t('program.tab.check') }}<span v-if="check?.warnings.length && !check.errors.length">{{ check.warnings.length }}</span>
             </button>
             <button
               v-if="breakpointLine" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
-              :aria-label="activeBreakpoint ? breakpointLabel : 'Clear breakpoint'" @click="breakpointSelection = null"
+              :aria-label="activeBreakpoint ? breakpointLabel : t('program.tab.clearBreakpoint')" @click="breakpointSelection = null"
             >
               {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />
             </button>
           </div>
-          <div class="panel-head"><h2>Tool sequence</h2></div>
+          <div class="panel-head"><h2>{{ t('program.tab.toolSequence') }}</h2></div>
           <div class="sections">
             <div v-for="(section, index) in sections" :key="`${section.first}-${section.tool}`" class="section-row">
               <button class="section" type="button" :aria-pressed="selectedSection === index" @click="selected = index">
                 <span class="section-number mono">{{ index + 1 }}</span>
-                <span class="section-text"><strong>{{ section.tool === 0 ? 'No tool selected' : findTool(section.tool)?.comment || `Tool ${String(section.tool)}` }}</strong><small>T{{ section.tool }} · Lines {{ section.first }}–{{ section.last }}<template v-if="sectionTimes[index] !== undefined"> · {{ formatDuration(sectionTimes[index] ?? 0) }}</template></small></span>
+                <span class="section-text"><strong>{{ section.tool === 0 ? t('program.tab.noTool') : findTool(section.tool)?.comment || t('program.tab.toolN', { n: section.tool }) }}</strong><small>T{{ section.tool }} · {{ t('program.tab.linesRange', { first: section.first, last: section.last }) }}<template v-if="sectionTimes[index] !== undefined"> · {{ formatDuration(sectionTimes[index] ?? 0) }}</template></small></span>
               </button>
-              <button v-if="canRestart && selectedSection === index" class="btn section-restart" type="button" :aria-label="`Restart ${sectionName(index)}`" @click="restartSection(index)">Restart</button>
+              <button v-if="canRestart && selectedSection === index" class="btn section-restart" type="button" :aria-label="t('program.tab.restartSection', { section: sectionName(index) })" @click="restartSection(index)">{{ t('program.tab.restart') }}</button>
             </div>
-            <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? 'No tool sequence in this preview.' : 'Tool sequence unavailable.' }}</p>
+            <p v-if="sections.length === 0" class="quiet">{{ previewCurrent ? t('program.tab.noSequence') : t('program.tab.sequenceUnavailable') }}</p>
           </div>
         </div>
       </aside>
     </div>
     <NumberDialog
       v-if="editing" :key="`${String(editing.line)}-${String(editing.word.begin)}`"
-      :title="`Edit ${editing.word.letter === 'F' ? 'feed' : 'spindle speed'} (${editing.word.letter}) · line ${String(editing.line)}`"
-      effect="Change this value, then save and reopen the program."
-      :label="editing.word.letter === 'F' ? 'Feed' : 'Spindle speed'" :unit="rateUnit" :initial="String(editing.word.value)"
-      action="Save program" :error="editing.error" @confirm="saveRate" @close="editing = null"
+      :title="editing.word.letter === 'F' ? t('program.tab.editFeed', { line: editing.line }) : t('program.tab.editSpeed', { line: editing.line })"
+      :effect="t('program.tab.editEffect')"
+      :label="editing.word.letter === 'F' ? t('program.tab.feedLabel') : t('program.tab.speedLabel')" :unit="rateUnit" :initial="String(editing.word.value)"
+      :action="t('program.tab.saveProgram')" :error="editing.error" @confirm="saveRate" @close="editing = null"
     />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
     <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />

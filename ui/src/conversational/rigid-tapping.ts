@@ -1,6 +1,7 @@
 import { t } from '../i18n'
+import { toDisplay, velocityUnit } from '../units'
 import { checkHoleLayout, holes, type HoleLayout } from './drilling'
-import { Checks, Program, checkCommon, unitName, written, type Common, type Generated } from './program'
+import { Checks, Program, checkCommon, feedNumber, unitName, written, type Common, type Generated } from './program'
 
 export interface RigidTapping extends Common, HoleLayout {
   /** Nominal reversal point below the stock top, excluding reversal travel. */
@@ -34,10 +35,9 @@ export function rigidTapping(c: RigidTapping): Generated {
   checks.positive(c.pilotDepth, 'operations.label.tapPilotDepth')
   checks.check(rpm >= 1 && rpm <= limits.max_rpm,
     t('operations.check.tapRpm', { rpm: String(limits.max_rpm) }))
-  const unitScale = c.unit === 'inch' ? 25.4 : 1
-  const maxFeed = limits.max_z_feed_mm_min / unitScale
+  const maxFeed = toDisplay(limits.max_z_feed_mm_min, c.unit)
   checks.check(feed <= maxFeed, t('operations.check.tapZFeed', {
-    feed: `${String(Number(maxFeed.toFixed(2)))} ${unitName(c.unit)}/min`,
+    feed: `${feedNumber(maxFeed, c.unit)} ${velocityUnit(c.unit)}`,
   }))
   const reserve = pitch * limits.reversal_turns
   const grid = c.unit === 'mm' ? 1000 : 10000

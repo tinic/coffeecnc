@@ -582,7 +582,7 @@ void positions_in_mm(const Rig& rig) {
                     "__t.last.work_offsets.systems[0].current === true && "
                     // Six decimals in machine units: 0.0000254 mm on an inch machine.
                     "Math.abs(__t.last.work_offsets.systems[0].offset[0] - 5.4) < 1e-4"),
-        rig.js("return __t.last.work_offsets;").dump());
+        rig.js("return [__t.last.status.offsets, __t.last.work_offsets];").dump());
   rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
       input.value = 'G54 G10 L2 P1 X0 Y0 Z0';

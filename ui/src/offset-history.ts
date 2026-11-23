@@ -1,28 +1,29 @@
 // Words and checks for the native offset history: what an entry changed, who changed it, and
 // whether Restore can write its earlier values back.
 
+import { formatTime, language, languageTags, t } from './i18n'
 import type { HistoryEntry, HistoryField, HistorySource, LengthUnit } from './protocol'
-import { formatClock, formatLength, toolLabel, wcsName } from './units'
+import { formatLength, toolLabel, wcsName } from './units'
 
 export type HistoryFilter = 'all' | 'offsets' | 'tools'
 
-const sourceNames: Record<HistorySource, string> = {
-  touch_off: 'Touch-off',
-  zero: 'Zero',
-  half: 'Half',
-  probe: 'Probe',
-  tool_setter: 'Tool setter',
-  tool_touch_off: 'Tool length touch-off',
-  tool_table: 'Tool table edit',
-  work_offset_table: 'Work offset edit',
-  mdi: 'MDI',
-  program: 'Program',
-  restore: 'Restore',
-  outside: 'Outside the panel',
-}
+const sourceNames = {
+  touch_off: 'probe.offsetHistory.touchOff',
+  zero: 'probe.offsetHistory.zero',
+  half: 'probe.offsetHistory.half',
+  probe: 'probe.offsetHistory.probe',
+  tool_setter: 'probe.offsetHistory.toolSetter',
+  tool_touch_off: 'probe.offsetHistory.toolTouchOff',
+  tool_table: 'probe.offsetHistory.toolTable',
+  work_offset_table: 'probe.offsetHistory.workOffsetTable',
+  program: 'probe.offsetHistory.program',
+  restore: 'probe.offsetHistory.restore',
+  outside: 'probe.offsetHistory.outside',
+} as const satisfies Record<Exclude<HistorySource, 'mdi'>, string>
 
+/** Who made the change, in the panel's language. */
 export function sourceName(source: HistorySource): string {
-  return sourceNames[source]
+  return source === 'mdi' ? 'MDI' : t(sourceNames[source])
 }
 
 /** G54, G92/G52 or T3. */
@@ -37,9 +38,9 @@ export function fieldName(field: HistoryField): string {
     case 'x': return 'X'
     case 'y': return 'Y'
     case 'z': return 'Z'
-    case 'rotation_xy': return 'Rotation'
-    case 'length': return 'Length'
-    case 'diameter': return 'Diameter'
+    case 'rotation_xy': return t('probe.offsetHistory.rotation')
+    case 'length': return t('probe.offsetHistory.length')
+    case 'diameter': return t('probe.offsetHistory.diameter')
   }
 }
 
@@ -61,15 +62,15 @@ export function matchesFilter(entry: HistoryEntry, filter: HistoryFilter): boole
 
 /** Why Restore is not offered for this entry, or null. */
 export function restoreBlock(entry: HistoryEntry): string | null {
-  if (entry.changes.some((change) => change.after === null)) return 'The tool was removed'
-  if (entry.changes.some((change) => change.before === null)) return 'No earlier value is known'
+  if (entry.changes.some((change) => change.after === null)) return t('probe.offsetHistory.toolRemoved')
+  if (entry.changes.some((change) => change.before === null)) return t('probe.offsetHistory.noEarlier')
   return null
 }
 
-/** Time of day, with the date when it is not today. */
+/** Time of day, with the date when it is not today, in the panel's language. */
 export function entryTime(time: number, now: number): string {
   const at = new Date(time)
   return at.toDateString() === new Date(now).toDateString()
-    ? formatClock(time)
-    : `${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(time)}`
+    ? formatTime(time)
+    : `${at.toLocaleDateString(languageTags[language.value], { month: 'short', day: 'numeric' })} ${formatTime(time)}`
 }

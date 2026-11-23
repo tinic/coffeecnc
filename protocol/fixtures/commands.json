@@ -236,6 +236,7 @@
       "tool_reference_height": 6.35,
       "program_layout": "text",
       "theme": "dark",
+      "language": "de",
       "recent_programs": [
         "/home/cnc/nc_files/part.ngc"
       ],

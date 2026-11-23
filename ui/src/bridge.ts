@@ -84,7 +84,7 @@ function remoteTransport(): Transport {
     },
     send: (message): void => {
       if (message.type === 'ready') deliver({ type: 'result', id: message.id, outcome: 'accepted', reason: '' })
-      else deliver({ type: 'result', id: message.id, outcome: 'rejected', reason: 'The LAN screen is read-only.' })
+      else deliver({ type: 'result', id: message.id, outcome: 'rejected', reason: 'The LAN screen is read-only.' }) // i18n-ignore: protocol reason, translated where shown
     },
   }
 }
@@ -101,7 +101,7 @@ export function createTransport(): Transport {
         // A local refusal: no request reached the controller and no machine state is known.
         for (const listener of listeners) {
           listener({ type: 'result', id: message.id, outcome: 'rejected',
-            reason: 'CoffeeCNC cannot connect to its native controller. Restart the application.' })
+            reason: 'CoffeeCNC cannot connect to its native controller. Restart the application.' }) // i18n-ignore: protocol reason, translated where shown
         }
       },
     }

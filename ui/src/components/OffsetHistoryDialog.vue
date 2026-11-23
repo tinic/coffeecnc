@@ -3,7 +3,9 @@ import { vTooltip } from '../tooltip'
 // The native offset history, newest first: every change of a work offset and of a tool's
 // length or diameter, with who made it. Restore reviews the values it writes back first.
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+import { translateMessage } from '../i18n/messages'
 import { findTool, mdiBlock, panel, send } from '../machine'
 import { entryTime, fieldAxis, fieldName, fieldValue, matchesFilter, restoreBlock, sourceName, targetName, type HistoryFilter } from '../offset-history'
 import type { HistoryEntry, HistoryField } from '../protocol'
@@ -12,18 +14,23 @@ import ModalDialog from './ModalDialog.vue'
 
 const props = withDefaults(defineProps<{ filter?: HistoryFilter }>(), { filter: 'all' })
 const emit = defineEmits<{ close: [] }>()
+const { t } = useI18n()
 
 const unit = computed(() => panel.unit)
 const unitName = computed(() => unit.value === 'inch' ? 'in' : 'mm')
 const filter = ref<HistoryFilter>(props.filter)
-const filters: readonly (readonly [HistoryFilter, string])[] = [['all', 'All'], ['offsets', 'Work offsets'], ['tools', 'Tools']]
+const filters = computed((): readonly (readonly [HistoryFilter, string])[] => [
+  ['all', t('probe.history.all')], ['offsets', t('probe.history.offsets')], ['tools', t('probe.history.tools')],
+])
+const blocked = computed(() => mdiBlock.value === null ? null : translateMessage(mdiBlock.value))
 const history = computed(() => panel.offsetHistory)
 const entries = computed(() => history.value?.entries.filter((entry) => matchesFilter(entry, filter.value)) ?? [])
 const storage = computed(() => {
   const shown = history.value
   if (shown === null) return null
-  if (shown.storage === 'session_only') return `Kept for this session only${shown.reason ? `: ${shown.reason}` : ''}`
-  return shown.reason || null
+  if (shown.storage === 'session_only') return shown.reason
+    ? t('probe.history.sessionOnlyReason', { reason: translateMessage(shown.reason) }) : t('probe.history.sessionOnly')
+  return shown.reason ? translateMessage(shown.reason) : null
 })
 const now = Date.now()
 /** When the change a restore wrote back was made, while it is still in the history. */
@@ -53,20 +60,20 @@ const reviewChanges = computed(() => {
 const reviewBlock = computed(() => {
   const entry = reviewing.value
   if (entry === null) return null
-  if (!history.value?.entries.some((candidate) => candidate.id === entry.id)) return 'This entry is no longer in the history.'
-  return mdiBlock.value ?? restoreBlock(entry)
+  if (!history.value?.entries.some((candidate) => candidate.id === entry.id)) return t('probe.history.gone')
+  return blocked.value ?? restoreBlock(entry)
 })
 const reviewTitle = computed(() => {
   const entry = reviewing.value
   if (entry === null) return ''
-  return `Restore ${targetName(entry)} ${entry.changes.map((change) => fieldName(change.field)).join(', ')}?`
+  return t('probe.history.reviewTitle', { target: targetName(entry), fields: entry.changes.map((change) => fieldName(change.field)).join(', ') })
 })
 const reviewEffect = computed(() => {
   const entry = reviewing.value
   if (entry === null) return ''
-  if (entry.target === 'tool') return `Writes the earlier ${targetName(entry)} values back to the tool table (G10 L1). An applied length changes at the next G43.`
-  if (entry.target === 'g92') return 'Writes the earlier G92/G52 shift back (G52). It is added to every work system.'
-  return `Writes the earlier ${targetName(entry)} values back (G10 L2). Other axes stay unchanged.`
+  if (entry.target === 'tool') return t('probe.history.effectTool', { target: targetName(entry) })
+  if (entry.target === 'g92') return t('probe.history.effectShift')
+  return t('probe.history.effectWork', { target: targetName(entry) })
 })
 function review(entry: HistoryEntry): void {
   if (restoreBlock(entry) === null && mdiBlock.value === null) reviewing.value = entry
@@ -83,38 +90,38 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
 <template>
   <ModalDialog v-if="reviewing !== null" key="review" :title="reviewTitle" size="medium" expanded fresh-gesture @close="reviewing = null">
     <table class="changes">
-      <thead><tr><th></th><th>Now</th><th>Restored</th></tr></thead>
+      <thead><tr><th></th><th>{{ t('probe.history.now') }}</th><th>{{ t('probe.history.restored') }}</th></tr></thead>
       <tbody>
         <tr v-for="change in reviewChanges" :key="change.field">
           <th>{{ fieldName(change.field) }}</th>
-          <td class="mono">{{ change.current === null ? 'Unavailable' : fieldValue(change.field, change.current, unit) }}<span v-if="change.field !== 'rotation_xy' && change.current !== null" class="value-unit">{{ ' ' + unitName }}</span></td>
+          <td class="mono">{{ change.current === null ? t('common.unavailable') : fieldValue(change.field, change.current, unit) }}<span v-if="change.field !== 'rotation_xy' && change.current !== null" class="value-unit">{{ ' ' + unitName }}</span></td>
           <td class="mono">{{ fieldValue(change.field, change.before, unit) }}<span v-if="change.field !== 'rotation_xy'" class="value-unit">{{ ' ' + unitName }}</span></td>
         </tr>
       </tbody>
     </table>
-    <p>{{ reviewEffect }} The machine does not move.</p>
-    <p class="hint">Changed by {{ sourceName(reviewing.source) }} at {{ entryTime(reviewing.time, now) }}.</p>
+    <p>{{ reviewEffect }} {{ t('probe.history.noMotion') }}</p>
+    <p class="hint">{{ t('probe.history.changedBy', { source: sourceName(reviewing.source), time: entryTime(reviewing.time, now) }) }}</p>
     <p v-if="reviewBlock" class="blocked" role="status">{{ reviewBlock }}</p>
     <template #footer>
-      <button class="btn" type="button" @click="reviewing = null">Back</button>
-      <button class="btn primary" type="button" :disabled="reviewBlock !== null" @click="confirm">Restore {{ targetName(reviewing) }}</button>
+      <button class="btn" type="button" @click="reviewing = null">{{ t('common.back') }}</button>
+      <button class="btn primary" type="button" :disabled="reviewBlock !== null" @click="confirm">{{ t('probe.history.restoreTarget', { target: targetName(reviewing) }) }}</button>
     </template>
   </ModalDialog>
-  <ModalDialog v-else key="list" title="Offset history" size="large" expanded contained @close="emit('close')">
+  <ModalDialog v-else key="list" :title="t('probe.history.title')" size="large" expanded contained @close="emit('close')">
     <div class="bar">
-      <div class="segmented" role="group" aria-label="Show">
+      <div class="segmented" role="group" :aria-label="t('probe.history.show')">
         <button v-for="[value, label] in filters" :key="value" class="btn" type="button" :class="{ on: filter === value }" :aria-pressed="filter === value" @click="filter = value">{{ label }}</button>
       </div>
       <span v-if="storage" class="hint storage">{{ storage }}</span>
     </div>
-    <p v-if="history === null" class="hint">The machine has not sent an offset history.</p>
-    <p v-else-if="entries.length === 0" class="hint">No changes recorded yet.</p>
-    <ul v-else class="entries" aria-label="Offset changes, newest first">
+    <p v-if="history === null" class="hint">{{ t('probe.history.noHistory') }}</p>
+    <p v-else-if="entries.length === 0" class="hint">{{ t('probe.history.empty') }}</p>
+    <ul v-else class="entries" :aria-label="t('probe.history.list')">
       <li v-for="entry in entries" :key="entry.id" class="entry">
         <span class="when mono">{{ entryTime(entry.time, now) }}</span>
         <span class="what">
           <strong class="mono">{{ targetName(entry) }}</strong>
-          <span class="source" :class="{ outside: entry.source === 'outside' }">{{ sourceName(entry.source) }}<template v-if="restoredAt(entry)"> of {{ restoredAt(entry) }}</template></span>
+          <span class="source" :class="{ outside: entry.source === 'outside' }">{{ restoredAt(entry) === null ? sourceName(entry.source) : t('probe.history.sourceOf', { source: sourceName(entry.source), time: restoredAt(entry) ?? '' }) }}</span>
         </span>
         <span class="values">
           <span v-for="change in entry.changes" :key="change.field" class="change mono">
@@ -122,12 +129,12 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
             {{ fieldValue(change.field, change.before, unit) }} → {{ fieldValue(change.field, change.after, unit) }}
           </span>
         </span>
-        <button v-tooltip="restoreBlock(entry) ?? mdiBlock ?? `Write the earlier ${targetName(entry)} values back`" class="btn restore" type="button" :disabled="restoreBlock(entry) !== null || mdiBlock !== null" :aria-label="`Restore ${targetName(entry)} from ${entryTime(entry.time, now)}`" @click="review(entry)">Restore…</button>
+        <button v-tooltip="restoreBlock(entry) ?? blocked ?? t('probe.history.restoreTip', { target: targetName(entry) })" class="btn restore" type="button" :disabled="restoreBlock(entry) !== null || mdiBlock !== null" :aria-label="t('probe.history.restoreLabel', { target: targetName(entry), time: entryTime(entry.time, now) })" @click="review(entry)">{{ t('probe.history.restore') }}</button>
       </li>
     </ul>
     <template #footer>
-      <span class="hint footer-note">{{ unitName }} · degrees for rotation</span>
-      <button class="btn" type="button" @click="emit('close')">Close</button>
+      <span class="hint footer-note">{{ t('probe.history.units', { unit: unitName }) }}</span>
+      <button class="btn" type="button" @click="emit('close')">{{ t('common.close') }}</button>
     </template>
   </ModalDialog>
 </template>
@@ -138,7 +145,7 @@ p { margin: 0; line-height: 1.45; }
 .bar .btn { min-height: 44px; padding: 0 14px; font-size: 13px; }
 .storage { margin-left: auto; color: var(--warn); font-size: 12px; text-align: right; }
 .entries { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.entry { display: grid; grid-template-columns: 9ch minmax(140px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.entry { flex: none; display: grid; grid-template-columns: 9ch minmax(140px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .when { font-size: 13px; color: var(--text-dim); }
 .what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .what strong { font-size: 15px; }

@@ -7,6 +7,7 @@ import { vTooltip } from '../tooltip'
 // It is a picture only. Dragging, zooming and the view buttons change the camera and nothing
 // else; no gesture on it sends a command.
 import { computed, defineAsyncComponent, type ComputedRef, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { live, panel } from '../machine'
 import { theme } from '../appearance'
@@ -35,6 +36,9 @@ import { modelToMachine } from '../step-model'
 import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-preview'
 import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
+import { translateMessage } from '../i18n/messages'
+
+const { t } = useI18n()
 
 const modelError = ref('')
 
@@ -50,7 +54,7 @@ function unchanged<T>(get: () => T): ComputedRef<T> {
 }
 const SceneCanvas = defineAsyncComponent({
   loader: () => import('./SceneCanvas.vue'),
-  onError: (_error, _retry, fail): void => { modelError.value = '3D renderer could not load; reload the panel'; fail() },
+  onError: (_error, _retry, fail): void => { modelError.value = t('program.pathView.rendererFailed'); fail() },
 })
 const modelPoints = computed((): Vec3[] => {
   const attachment = part.attachment
@@ -92,30 +96,31 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
   const preview = panel.preview
   if (!panel.status?.program.file) return { text: '', tone: '' }
   if (preview === null) {
-    return { text: 'No preview available', tone: '' }
+    return { text: t('program.pathView.noPreview'), tone: '' }
   }
   if (preview.context !== panel.status.preview_context) {
-    return { text: 'Preview out of date', tone: 'warn' }
+    return { text: t('program.pathView.outOfDate'), tone: 'warn' }
   }
   if (preview.state === 'unavailable') {
     return {
-      text: preview.error?.text ?? 'Preview unavailable',
+      text: preview.error ? translateMessage(preview.error.text) : t('program.pathView.unavailable'),
       tone: drawn.value === null ? '' : 'warn',
     }
   }
   if (preview.state === 'pending') {
-    return { text: showComputing.value ? 'Computing preview' : '', tone: 'warn' }
+    return { text: showComputing.value ? t('program.pathView.computing') : '', tone: 'warn' }
   }
   if (!current.value) {
-    return { text: 'Preview out of date', tone: 'warn' }
+    return { text: t('program.pathView.outOfDate'), tone: 'warn' }
   }
   if (preview.state === 'failed') {
     const line = preview.error?.line ?? 0
-    const location = Number.isSafeInteger(line) && line > 0 ? ` at line ${String(line)}` : ''
-    const path = preview.segments.some((segment) => segment.points.length >= 6) ? 'partial path shown' : 'no path available'
+    const path = preview.segments.some((segment) => segment.points.length >= 6) ? t('program.pathView.partialPath') : t('program.pathView.noPath')
+    const stopped = Number.isSafeInteger(line) && line > 0
+      ? t('program.pathView.stoppedAtLine', { line, path }) : t('program.pathView.stopped', { path })
     const detail = preview.error?.text
     return {
-      text: `Preview stopped${location}: ${path}${detail ? ` · ${detail}` : ''}`,
+      text: detail ? `${stopped} · ${translateMessage(detail)}` : stopped,
       tone: 'stop',
     }
   }
@@ -133,8 +138,8 @@ const toolPositionHint = computed(() => {
   const s = panel.status
   if (!live.value || s === null || toolTip.value !== null || s.axes.some(axis => axis.homing)) return ''
   return homingRequired.value && s.axes.some(axis => !axis.homed)
-    ? 'Home the axes to show the tool position'
-    : 'Tool position unavailable'
+    ? t('program.pathView.homeForTool')
+    : t('program.pathView.toolUnavailable')
 })
 const toolBody = unchanged(() => loadedToolPreview(panel.status, live.value, panel.toolTable?.tools ?? [], toolModels.assignments,
   toolModels.defaults, homingRequired.value))
@@ -340,10 +345,10 @@ function draw(): void {
   if (probeFixture.value) {
     const [x, y] = at(demoFixture.setter)
     context.fillStyle = isDarkTheme(theme.value) ? '#e5bd70' : '#845614'
-    context.font = '600 12px system-ui, sans-serif'
+    context.font = '600 12px system-ui, sans-serif' // i18n-ignore
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    context.fillText('Tool setter', x, y + 30)
+    context.fillText(t('program.pathView.toolSetter'), x, y + 30)
   }
 
   const box = travelBox.value
@@ -420,7 +425,7 @@ function draw(): void {
     ]
     const o = at(origin)
     context.lineWidth = 2
-    context.font = '600 11px system-ui, sans-serif'
+    context.font = '600 11px system-ui, sans-serif' // i18n-ignore
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     directions.forEach((direction, index) => {
@@ -521,7 +526,7 @@ onBeforeUnmount(() => {
         :camera="camera" :width="size.width" :height="size.height"
         :tool="visibleTool" :probe-fixture="probeFixture" @error="modelError = $event"
       />
-      <canvas ref="canvas" class="toolpath-canvas" aria-label="Toolpath, part and loaded tool preview" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @lostpointercapture="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
+      <canvas ref="canvas" class="toolpath-canvas" :aria-label="t('program.pathView.canvasLabel')" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerUp" @lostpointercapture="pointerUp" @wheel.prevent="wheel" @contextmenu.prevent></canvas>
       <div v-if="toolPositionHint || modelError || (live && part.attachment && partBlock)" class="banners">
         <span v-if="toolPositionHint" class="warn">{{ toolPositionHint }}</span>
         <span v-if="modelError || (live && part.attachment && partBlock)" class="warn">{{ modelError || partBlock }}</span>
@@ -530,17 +535,17 @@ onBeforeUnmount(() => {
     </div>
     <div class="scene-bottom">
       <div class="legend">
-        <span v-if="probeFixture">Simulated fixtures</span>
-        <span v-if="!probeFixture || drawn"><i class="feed"></i>Cut</span>
-        <span v-if="!probeFixture || drawn"><i class="rapid"></i>Rapid</span>
-        <label v-if="toolBody"><input v-model="showTool" type="checkbox" />Tool</label>
+        <span v-if="probeFixture">{{ t('program.pathView.simulatedFixtures') }}</span>
+        <span v-if="!probeFixture || drawn"><i class="feed"></i>{{ t('program.pathView.cut') }}</span>
+        <span v-if="!probeFixture || drawn"><i class="rapid"></i>{{ t('program.pathView.rapid') }}</span>
+        <label v-if="toolBody"><input v-model="showTool" type="checkbox" />{{ t('program.pathView.tool') }}</label>
       </div>
       <div class="views">
-        <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">Iso</button>
-        <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">Top</button>
-        <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">Front</button>
-        <button v-tooltip="'Fit toolpath and visible models'" type="button" aria-label="Fit toolpath and visible models" @click="fitButton('path')"><AppIcon name="fit" /></button>
-        <button v-tooltip="'Show and fit machine travel'" type="button" @click="fitButton('machine')">Travel</button>
+        <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
+        <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
+        <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
+        <button v-tooltip="t('program.pathView.fit')" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button v-tooltip="t('program.pathView.travelTooltip')" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
         <slot />
       </div>
     </div>

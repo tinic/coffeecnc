@@ -81,4 +81,8 @@ set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/tinic/coffeecnc")
 # halcmd is run as a program, so that package is named here.
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "linuxcnc-uspace (= ${linuxcnc_version})")
+# The panel's Chinese and Japanese text needs CJK fonts, which a GNOME install may not have
+# (Droid Sans Fallback alone gives Japanese the Chinese forms of Han characters). apt installs
+# recommended packages by default; without them the other five languages are unaffected.
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "fonts-noto-cjk")
 include(CPack)

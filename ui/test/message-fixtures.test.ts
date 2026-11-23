@@ -1183,6 +1183,7 @@ const examples = [
       "tool_reference_height": 6.35,
       "program_layout": "split",
       "theme": "dark",
+      "language": "ja",
       "recent_programs": [
         "/home/cnc/nc_files/air/03-pocket.ngc"
       ],

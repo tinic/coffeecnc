@@ -2,8 +2,10 @@
 // Saved positions: the present machine position under a name, kept per machine in the operator
 // settings. Go to lifts Z to a safe height, moves X and Y, and lowers Z only when asked.
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useCardFeedback } from '../card-feedback'
+import { translateMessage } from '../i18n/messages'
 import { mdiBlock, onResult, operatorSettings, panel, send } from '../machine'
 import { powerBlock } from '../machine-block'
 import { chosenPositionName, goToPlan, machinePosition, nextPositionName, saveBlock, type GoToPlan } from '../manual-moves'
@@ -16,6 +18,7 @@ import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
 const emit = defineEmits<{ line: [SetterStatusLine] }>()
+const { t } = useI18n()
 
 const unit = computed(() => panel.unit)
 const unitName = computed(() => unit.value === 'inch' ? 'in' : 'mm')
@@ -31,12 +34,13 @@ onBeforeUnmount(() => {
 })
 
 const saving = ref(false)
-const goToBlock = computed(() => sequence.state.running ? 'Go to is moving' : mdiBlock.value)
-const addBlock = computed(() => saving.value ? 'Saving…' : mdiBlock.value ?? saveBlock(panel.status, positions.value))
+const machineBlock = computed(() => mdiBlock.value === null ? null : translateMessage(mdiBlock.value))
+const goToBlock = computed(() => sequence.state.running ? t('manual.positions.goToMoving') : machineBlock.value)
+const addBlock = computed(() => saving.value ? t('common.saving') : machineBlock.value ?? saveBlock(panel.status, positions.value))
 
 const target = shallowRef<SavedPosition | null>(null)
 const progress = computed(() => sequence.state.running && target.value
-  ? `Go to ${target.value.name}: move ${String(sequence.state.step + 1)} of ${String(sequence.state.total)}` : '')
+  ? t('manual.positions.progress', { name: target.value.name, step: sequence.state.step + 1, total: sequence.state.total }) : '')
 const { line, allow } = useCardFeedback(
   () => '',
   () => null,
@@ -44,12 +48,12 @@ const { line, allow } = useCardFeedback(
 )
 const arrivedAt = ref('')
 watch(() => sequence.state.running, (running) => {
-  arrivedAt.value = !running && sequence.state.error === '' && target.value ? `At ${target.value.name}` : ''
+  arrivedAt.value = !running && sequence.state.error === '' && target.value ? t('manual.positions.arrived', { name: target.value.name }) : ''
 })
 const shownLine = computed((): SetterStatusLine => {
   if (progress.value) return { text: progress.value, level: 'busy' }
   if (line.value.level === 'blocked') return line.value
-  if (sequence.state.error) return { text: sequence.state.error, level: 'blocked' }
+  if (sequence.state.error) return { text: translateMessage(sequence.state.error), level: 'blocked' }
   return arrivedAt.value && line.value.text === '' ? { text: arrivedAt.value, level: 'done' } : line.value
 })
 watch(shownLine, (value) => { emit('line', value) }, { immediate: true })
@@ -65,7 +69,7 @@ async function store(next: SavedPosition[]): Promise<void> {
   saving.value = true
   const result = await operatorSettings.save({ ...panel.preferences, saved_positions: next }, operatorSettings.context())
   saving.value = false
-  if (!result.saved) allow(result.reason || 'The positions could not be saved')
+  if (!result.saved) allow(result.reason ? translateMessage(result.reason) : t('manual.positions.saveFailed'))
 }
 
 // ---- save and rename ---------------------------------------------------------------------------
@@ -75,7 +79,7 @@ const draft = shallowRef<{ fallback: string; position: SavedPosition['position']
 const draftName = ref('')
 const chosenName = computed(() => draft.value === null ? null
   : chosenPositionName(draftName.value, draft.value.fallback, positions.value, draft.value.renaming))
-const nameBlock = computed(() => saving.value ? 'Saving…' : chosenName.value?.ok === false ? chosenName.value.reason : null)
+const nameBlock = computed(() => saving.value ? t('common.saving') : chosenName.value?.ok === false ? chosenName.value.reason : null)
 
 function openSave(): void {
   if (!act(addBlock.value) || panel.status === null) return
@@ -85,7 +89,7 @@ function openSave(): void {
 }
 
 function openRename(entry: SavedPosition): void {
-  if (!act(saving.value ? 'Saving…' : null)) return
+  if (!act(saving.value ? t('common.saving') : null)) return
   draft.value = { fallback: entry.name, position: entry.position, renaming: entry }
   draftName.value = entry.name
 }
@@ -116,7 +120,7 @@ const removal = shallowRef<SavedPosition | null>(null)
 function confirmDelete(): void {
   const entry = removal.value
   removal.value = null
-  if (entry === null || !act(saving.value ? 'Saving…' : null)) return
+  if (entry === null || !act(saving.value ? t('common.saving') : null)) return
   void store(positions.value.filter((candidate) => candidate !== entry))
 }
 
@@ -125,14 +129,14 @@ function confirmDelete(): void {
 const includeZ = ref(true)
 const goTo = computed((): GoToPlan | string | null => {
   if (target.value === null) return null
-  const planned = goToPlan({ status: panel.status, machineBlock: mdiBlock.value }, target.value.position, includeZ.value,
+  const planned = goToPlan({ status: panel.status, machineBlock: machineBlock.value }, target.value.position, includeZ.value,
     panel.preferences.go_to_safe_z)
   return planned.ok ? planned.plan : planned.reason
 })
 const confirming = ref(false)
 watch(() => panel.motionStopRequest, () => {
   confirming.value = false
-  sequence.cancel('Go to stopped')
+  sequence.cancel(t('manual.positions.goToStopped'))
 }, { flush: 'sync' })
 
 function openGoTo(entry: SavedPosition): void {
@@ -161,10 +165,10 @@ const steps = computed(() => {
   if (planned === null || typeof planned === 'string') return []
   return planned.moves.map((move) => {
     const { x, y, z } = move.target
-    const text = x !== undefined && y !== undefined ? `Move X Y to X ${signed(x)}  Y ${signed(y)}`
+    const text = x !== undefined && y !== undefined ? t('manual.positions.stepXY', { x: signed(x), y: signed(y) })
       : z !== undefined && z === planned.safeZ && move === planned.moves[0]
-        ? panel.preferences.go_to_safe_z === null ? `Lift Z to the top of travel (safe Z) ${signed(z)}` : `Lift Z to safe Z ${signed(z)}`
-        : `${z !== undefined && z > planned.safeZ ? 'Raise' : 'Lower'} Z to the saved ${signed(z ?? 0)}`
+        ? panel.preferences.go_to_safe_z === null ? t('manual.positions.stepLiftTop', { z: signed(z) }) : t('manual.positions.stepLift', { z: signed(z) })
+        : z !== undefined && z > planned.safeZ ? t('manual.positions.stepRaise', { z: signed(z) }) : t('manual.positions.stepLower', { z: signed(z ?? 0) })
     return { key: move.text, text }
   })
 })
@@ -173,85 +177,85 @@ const steps = computed(() => {
 <template>
   <div class="positions">
     <div class="list">
-      <table v-if="positions.length" aria-label="Saved machine positions">
+      <table v-if="positions.length" :aria-label="t('manual.positions.table')">
         <thead>
           <tr>
-            <th scope="col">Name</th>
+            <th scope="col">{{ t('manual.positions.name') }}</th>
             <th v-for="axis in ['X', 'Y', 'Z']" :key="axis" scope="col" class="axis-col">{{ axis }}</th>
-            <th scope="col" class="go-col" aria-label="Move"></th>
-            <th scope="col" class="delete-col" aria-label="Delete"></th>
+            <th scope="col" class="go-col" :aria-label="t('manual.positions.move')"></th>
+            <th scope="col" class="delete-col" :aria-label="t('common.delete')"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="entry in positions" :key="`${entry.name}:${entry.position.join(',')}`" class="row">
             <th scope="row" class="name">
-              <button v-tooltip="saving ? 'Saving…' : `Rename ${entry.name}`" class="btn quiet rename" type="button" :aria-label="`Rename ${entry.name}`" :aria-disabled="saving" @click="openRename(entry)">
+              <button v-tooltip="saving ? t('common.saving') : t('manual.positions.rename', { name: entry.name })" class="btn quiet rename" type="button" :aria-label="t('manual.positions.rename', { name: entry.name })" :aria-disabled="saving" @click="openRename(entry)">
                 <span class="text">{{ entry.name }}</span><AppIcon name="edit" />
               </button>
             </th>
             <td v-for="(value, index) in entry.position" :key="index" class="coord mono">{{ length(value) }}</td>
             <td class="go-col">
-              <button v-tooltip="goToBlock ?? `Go to ${entry.name}`" class="btn" type="button" :aria-disabled="goToBlock !== null" @click="openGoTo(entry)">Go to</button>
+              <button v-tooltip="goToBlock ?? t('manual.positions.goTo', { name: entry.name })" class="btn" type="button" :aria-disabled="goToBlock !== null" @click="openGoTo(entry)">{{ t('manual.positions.goToButton') }}</button>
             </td>
             <td class="delete-col">
-              <button v-tooltip="saving ? 'Saving…' : `Delete ${entry.name}`" class="btn square quiet" type="button" :aria-label="`Delete ${entry.name}`" :aria-disabled="saving" @click="saving || (removal = entry)">
+              <button v-tooltip="saving ? t('common.saving') : t('manual.positions.deleteNamed', { name: entry.name })" class="btn square quiet" type="button" :aria-label="t('manual.positions.deleteNamed', { name: entry.name })" :aria-disabled="saving" @click="saving || (removal = entry)">
                 <AppIcon name="trash" />
               </button>
             </td>
           </tr>
         </tbody>
       </table>
-      <p v-else class="empty hint">No saved positions</p>
+      <p v-else class="empty hint">{{ t('manual.positions.empty') }}</p>
     </div>
     <div class="line">
-      <button v-tooltip="addBlock ?? 'Save the present machine position'" class="btn" type="button" :aria-disabled="addBlock !== null" @click="openSave">
-        <AppIcon name="plus" />Save position
+      <button v-tooltip="addBlock ?? t('manual.positions.saveTip')" class="btn" type="button" :aria-disabled="addBlock !== null" @click="openSave">
+        <AppIcon name="plus" />{{ t('manual.positions.save') }}
       </button>
-      <span class="hint">Machine coordinates · {{ unitName }}</span>
+      <span class="hint">{{ t('manual.positions.machineCoordinates', { unit: unitName }) }}</span>
     </div>
   </div>
 
-  <ModalDialog v-if="draft" :title="draft.renaming ? `Rename ${draft.renaming.name}` : 'Save position'" size="small" expanded fresh-gesture @close="draft = null">
+  <ModalDialog v-if="draft" :title="draft.renaming ? t('manual.positions.rename', { name: draft.renaming.name }) : t('manual.positions.save')" size="small" expanded fresh-gesture @close="draft = null">
     <input
       v-model="draftName" class="field name-field" type="text" inputmode="text" enterkeyhint="done"
-      autocomplete="off" spellcheck="false" aria-label="Position name" data-native-text-input
+      autocomplete="off" spellcheck="false" :aria-label="t('manual.positions.positionName')" data-native-text-input
       :placeholder="draft.fallback" :maxlength="maxPositionNameBytes"
       @keydown.enter="confirmNameOnEnter"
     />
     <p class="coordinate mono">X {{ length(draft.position[0]) }}  Y {{ length(draft.position[1]) }}  Z {{ length(draft.position[2]) }} {{ unitName }}</p>
-    <p v-if="nameBlock && nameBlock !== 'Saving…'" class="refusal" role="alert">{{ nameBlock }}</p>
-    <p v-else>Machine coordinates, saved for this machine. An empty name saves as {{ draft.fallback }}.</p>
+    <p v-if="nameBlock && !saving" class="refusal" role="alert">{{ nameBlock }}</p>
+    <p v-else>{{ t('manual.positions.nameHint', { name: draft.fallback }) }}</p>
     <template #footer>
-      <button class="btn wide" type="button" @click="draft = null">Cancel</button>
-      <button v-tooltip="nameBlock ?? (draft.renaming ? 'Save the new name' : 'Save this position')" class="btn primary wide" type="button" :aria-disabled="nameBlock !== null" @click="confirmName">Save</button>
+      <button class="btn wide" type="button" @click="draft = null">{{ t('common.cancel') }}</button>
+      <button v-tooltip="nameBlock ?? (draft.renaming ? t('manual.positions.saveNameTip') : t('manual.positions.savePositionTip'))" class="btn primary wide" type="button" :aria-disabled="nameBlock !== null" @click="confirmName">{{ t('common.save') }}</button>
     </template>
   </ModalDialog>
 
-  <ModalDialog v-if="removal" :title="`Delete ${removal.name}?`" size="small" fresh-gesture @close="removal = null">
+  <ModalDialog v-if="removal" :title="t('manual.positions.deleteTitle', { name: removal.name })" size="small" fresh-gesture @close="removal = null">
     <p class="coordinate mono">X {{ length(removal.position[0]) }}  Y {{ length(removal.position[1]) }}  Z {{ length(removal.position[2]) }} {{ unitName }}</p>
     <template #footer>
-      <button class="btn wide" type="button" @click="removal = null">Cancel</button>
-      <button class="btn danger wide" type="button" @click="confirmDelete">Delete</button>
+      <button class="btn wide" type="button" @click="removal = null">{{ t('common.cancel') }}</button>
+      <button class="btn danger wide" type="button" @click="confirmDelete">{{ t('common.delete') }}</button>
     </template>
   </ModalDialog>
 
-  <ModalDialog v-if="confirming && target" :title="`Go to ${target.name}?`" size="medium" fresh-gesture @close="confirming = false">
+  <ModalDialog v-if="confirming && target" :title="t('manual.positions.goToTitle', { name: target.name })" size="medium" fresh-gesture @close="confirming = false">
     <ol v-if="steps.length > 0" class="steps">
       <li v-for="step in steps" :key="step.key" class="mono">{{ step.text }}</li>
     </ol>
     <p v-else-if="typeof goTo === 'string'" class="refusal">{{ goTo }}</p>
-    <p v-else>The machine is already at this position.</p>
+    <p v-else>{{ t('manual.positions.alreadyThere') }}</p>
     <div class="z-choice">
-      <span class="label">Z at the end</span>
-      <div class="segmented" role="group" aria-label="Z at the end">
-        <button class="btn" type="button" :class="{ on: !includeZ }" :aria-pressed="!includeZ" @click="includeZ = false">Stays at safe height</button>
-        <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">{{ goTo && typeof goTo !== 'string' && target.position[2] > goTo.safeZ ? 'Up' : 'Down' }} to saved Z {{ length(target.position[2]) }}</button>
+      <span class="label">{{ t('manual.positions.zAtEnd') }}</span>
+      <div class="segmented" role="group" :aria-label="t('manual.positions.zAtEnd')">
+        <button class="btn" type="button" :class="{ on: !includeZ }" :aria-pressed="!includeZ" @click="includeZ = false">{{ t('manual.positions.staysSafe') }}</button>
+        <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">{{ goTo && typeof goTo !== 'string' && target.position[2] > goTo.safeZ ? t('manual.positions.upToSaved', { z: length(target.position[2]) }) : t('manual.positions.downToSaved', { z: length(target.position[2]) }) }}</button>
       </div>
     </div>
-    <p>Rapid moves in machine coordinates, {{ unitName }}. Z first goes up to a safe height.</p>
+    <p>{{ t('manual.positions.rapidNote', { unit: unitName }) }}</p>
     <template #footer>
-      <button class="btn wide" type="button" @click="confirming = false">Cancel</button>
-      <button class="btn primary wide" type="button" :aria-disabled="steps.length === 0" @click="steps.length > 0 && startGoTo()">Go to</button>
+      <button class="btn wide" type="button" @click="confirming = false">{{ t('common.cancel') }}</button>
+      <button class="btn primary wide" type="button" :aria-disabled="steps.length === 0" @click="steps.length > 0 && startGoTo()">{{ t('manual.positions.goToButton') }}</button>
     </template>
   </ModalDialog>
 </template>

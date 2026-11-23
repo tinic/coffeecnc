@@ -3,12 +3,13 @@
 
 import { computed, watch, type ComputedRef } from 'vue'
 
-import { themeOverride, themePreference } from './appearance'
+import { languageOverride, languagePreference, themeOverride, themePreference } from './appearance'
 import { alternateTheme, decodeProgramLayout } from './operator-settings'
 import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport, isRemoteScreen } from './bridge'
 import { connectionBlock, machineBlock } from './machine-block'
 import { requiresHoming } from './machine-capabilities'
+import { t } from './i18n'
 import type { AxisStatus, CommandBody, RotaryAxisStatus, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
 
@@ -16,7 +17,7 @@ const instance = createPanel({ transport: createTransport() })
 
 export const panel: PanelState = instance.state
 export const operatorSettings = createOperatorSettingsState(panel, instance, undefined, {
-  theme: themePreference, themeOverride,
+  theme: themePreference, themeOverride, language: languagePreference, languageOverride,
   layoutOverride: decodeProgramLayout(new URLSearchParams(window.location.search).get('layout')),
 })
 
@@ -93,5 +94,5 @@ export const manualBlock: ComputedRef<string | null> = computed(() => machineBlo
 
 /** Why MDI, touch-off and coordinate system selection are unavailable, or null. */
 export const mdiBlock: ComputedRef<string | null> = computed(() =>
-  manualBlock.value ?? (!homingRequired.value || allHomed.value ? null : 'Axes are not homed'),
+  manualBlock.value ?? (!homingRequired.value || allHomed.value ? null : t('status.machineBlock.axesNotHomed')),
 )

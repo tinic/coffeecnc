@@ -2,6 +2,7 @@
 // feed, one full turn per pitch, then once around the flat bottom at the feed. A finish pass leaves `finishAllowance` on
 // the wall on the way down and cuts it in a helix back up.
 
+import { t } from '../i18n'
 import { Checks, Program, checkCommon, feedNumber, number, steps, written, type Common, type Generated } from './program'
 
 export interface Bore extends Common {
@@ -20,30 +21,30 @@ export interface Bore extends Common {
 export function bore(b: Bore): Generated {
   const checks = new Checks()
   checkCommon(b, checks)
-  checks.check(Number.isFinite(b.x) && Number.isFinite(b.y), 'Enter the centre X and Y.')
-  checks.positive(b.diameter, 'Bore diameter')
-  checks.positive(b.depth, 'Depth')
-  checks.positive(b.pitch, 'Helix pitch')
-  checks.positive(b.plungeFeed, 'Plunge feed')
+  checks.check(Number.isFinite(b.x) && Number.isFinite(b.y), t('operations.check.centre'))
+  checks.positive(b.diameter, 'operations.label.boreDiameter')
+  checks.positive(b.depth, 'operations.label.depth')
+  checks.positive(b.pitch, 'operations.label.helixPitch')
+  checks.positive(b.plungeFeed, 'operations.label.plungeFeed')
   const tool = b.tool.diameter
   const radius = (b.diameter - tool) / 2
   if (b.diameter > 0 && tool > 0) {
-    checks.check(written(radius, b.unit) > 0, `The tool (diameter ${number(tool, b.unit)}) is too big for this bore.`)
-    checks.check(b.diameter <= 2 * tool, 'The bore is more than twice the tool diameter: a core would stay in the middle. Use a circular pocket.')
+    checks.check(written(radius, b.unit) > 0, t('operations.check.toolTooBigBore', { diameter: number(tool, b.unit) }))
+    checks.check(b.diameter <= 2 * tool, t('operations.check.boreTooBig'))
   }
   if (b.finish) {
-    checks.positive(b.finishAllowance, 'Finish allowance')
-    checks.check(!(written(radius, b.unit) > 0) || written(radius - b.finishAllowance, b.unit) > 0, 'The finish allowance must be less than half the difference of bore and tool diameter.')
+    checks.positive(b.finishAllowance, 'operations.label.finishAllowance')
+    checks.check(!(written(radius, b.unit) > 0) || written(radius - b.finishAllowance, b.unit) > 0, t('operations.check.finishAllowance'))
   }
   if (checks.errors.length) return { errors: checks.errors }
 
   const p = new Program(b)
   const turns = steps(b.depth, b.pitch)
   const rough = b.finish ? radius - b.finishAllowance : radius
-  p.start('Helical bore', [
-    `Bore diameter ${p.n(b.diameter)} at X${p.n(b.x)} Y${p.n(b.y)}, depth ${p.n(b.depth)}`,
-    `Helix of ${String(turns)} ${turns === 1 ? 'turn' : 'turns'}, ${p.n(b.depth / turns)} per turn, G3 climb milling, plunge feed ${feedNumber(b.plungeFeed, b.unit)}`,
-    ...(b.finish ? [`Finish pass: ${p.n(b.finishAllowance)} left on the wall, cut in a helix back up`] : []),
+  p.start('Helical bore', [ // i18n-ignore
+    `Bore diameter ${p.n(b.diameter)} at X${p.n(b.x)} Y${p.n(b.y)}, depth ${p.n(b.depth)}`, // i18n-ignore
+    `Helix of ${String(turns)} ${turns === 1 ? 'turn' : 'turns'}, ${p.n(b.depth / turns)} per turn, G3 climb milling, plunge feed ${feedNumber(b.plungeFeed, b.unit)}`, // i18n-ignore
+    ...(b.finish ? [`Finish pass: ${p.n(b.finishAllowance)} left on the wall, cut in a helix back up`] : []), // i18n-ignore
   ])
   const circle = (r: number, z?: number, feed = b.feed): void => {
     p.cut(`G3 X${p.n(b.x + r)} Y${p.n(b.y)}${z === undefined ? '' : ` Z${p.n(z)}`} I${p.n(-r)} J0`, feed)
@@ -52,10 +53,10 @@ export function bore(b: Bore): Generated {
   p.rapidXY(b.x + rough, b.y)
   p.cut('G1 Z0', b.plungeFeed)
   for (let turn = 1; turn <= turns; turn += 1) circle(rough, (-b.depth * turn) / turns, b.plungeFeed)
-  p.add('(Flat bottom)')
+  p.add('(Flat bottom)') // i18n-ignore
   circle(rough)
   if (b.finish) {
-    p.add('(Finish pass)')
+    p.add('(Finish pass)') // i18n-ignore
     p.cut(`G1 X${p.n(b.x + radius)}`, b.feed)
     circle(radius)
     for (let turn = turns - 1; turn >= 0; turn -= 1) circle(radius, (-b.depth * turn) / turns)

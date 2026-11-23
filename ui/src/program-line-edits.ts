@@ -1,5 +1,7 @@
 import { computed, shallowRef, watch, type ComputedRef, type ShallowRef } from 'vue'
 
+import { t } from './i18n'
+import { translateMessage } from './i18n/messages'
 import { connectionBlock } from './machine-block'
 import { byteLength, maxProgramBytes, programSource, uneditableReason } from './program-editor'
 import type { CommandBody, ProgramText } from './protocol'
@@ -44,7 +46,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
   })
   const fileBlock = computed(() => {
     const program = current.value
-    return program === null ? 'Wait for the loaded program text.' : !program.stamp ? 'Open the program again before editing.' : uneditableReason(program)
+    return program === null ? t('program.lineEdits.waitText') : !program.stamp ? t('program.lineEdits.reopen') : uneditableReason(program)
   })
   const block = computed(() => {
     const status = panel.status
@@ -52,8 +54,8 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       (status?.interp !== 'idle' || !status.motion.in_position ||
         status.wait.kind === 'tool_change' || status.axes.some((axis) => axis.homing) ||
         status.rotary_axes?.some((axis) => axis.homing) || status.program.breakpoint
-        ? 'Stop the program before editing.' : null) ??
-      (pending.value || undo.value?.saved === null ? 'Waiting for the program to reopen.' : null)
+        ? t('program.lineEdits.stopFirst') : null) ??
+      (pending.value || undo.value?.saved === null ? t('program.lineEdits.reopening') : null)
   })
   const canUndo = computed(() => Boolean(undo.value?.saved))
   const message = computed(() => feedback.value?.file === panel.status?.program.file ? feedback.value : null)
@@ -82,7 +84,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
 
   function save(program: ProgramText, text: string, success: string, nextUndo: UndoEdit | null, cut?: string[]): void {
     if (text.trim() === '' || byteLength(text) > maxProgramBytes) {
-      feedback.value = { file: program.file, text: text.trim() === '' ? 'The program would be empty.' : 'The program would exceed 512 KiB.', error: true }
+      feedback.value = { file: program.file, text: text.trim() === '' ? t('program.lineEdits.wouldBeEmpty') : t('program.lineEdits.wouldExceed'), error: true }
       return
     }
     const command: CommandBody = { type: 'save_program', path: program.file, stamp: program.stamp, text }
@@ -93,7 +95,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       unsubscribe()
       pending.value = false
       if (result.outcome !== 'accepted') {
-        feedback.value = { file: program.file, text: result.reason || 'The program was not saved.', error: true }
+        feedback.value = { file: program.file, text: result.reason ? translateMessage(result.reason) : t('program.lineEdits.notSaved'), error: true }
         return
       }
       if (cut !== undefined) clipboard.value = cut
@@ -109,10 +111,11 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
     if (block.value !== null || program === null ||
       !Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first || last > program.lines.length) return
     const selected = program.lines.slice(first - 1, last)
-    const label = first === last ? `Line ${String(first)}` : `Lines ${String(first)}–${String(last)}`
+    const single = first === last
     if (action === 'copy') {
       clipboard.value = selected
-      feedback.value = { file: program.file, text: `${label} copied`, error: false }
+      feedback.value = { file: program.file, text: single ? t('program.lineEdits.lineCopied', { line: first })
+        : t('program.lineEdits.linesCopied', { first, last }), error: false }
       return
     }
     let lines: readonly string[]
@@ -126,7 +129,9 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
     }
     const before = programSource(program.lines)
     const after = programSource(lines)
-    const success = inserting ? 'Lines inserted' : `${label} ${action === 'cut' ? 'cut' : 'deleted'}`
+    const success = inserting ? t('program.lineEdits.inserted')
+      : action === 'cut' ? single ? t('program.lineEdits.lineCut', { line: first }) : t('program.lineEdits.linesCut', { first, last })
+      : single ? t('program.lineEdits.lineDeleted', { line: first }) : t('program.lineEdits.linesDeleted', { first, last })
     save(program, after, success, { file: program.file, oldRevision: program.revision, before, after, saved: null },
       action === 'cut' ? selected : undefined)
   }
@@ -136,7 +141,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
     const edit = undo.value
     if (block.value !== null || program === null || !edit?.saved ||
       program.file !== edit.file || program.revision !== edit.saved.revision || program.stamp !== edit.saved.stamp) return
-    save(program, edit.before, 'Edit undone', null)
+    save(program, edit.before, t('program.lineEdits.undone'), null)
   }
 
   return {

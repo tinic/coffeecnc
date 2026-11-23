@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { t } from './i18n'
 import { onResult, panel, send } from './machine'
 import { createToolModelState } from './tool-model-state'
 import type { SavedToolModelAssignment } from './tool-model-settings'
@@ -19,7 +20,7 @@ export const touchProbeLoaded = computed(() => {
 
 // The name shown for a tool without a description: the machine's special tools have one.
 export function defaultToolName(number: number): string {
-  if (number === panel.hello?.fixed_setter?.reference_tool) return 'Setter reference tool'
-  if (number === panel.hello?.touch_probe_tool || savedProbe(number) !== undefined) return 'Touch probe'
+  if (number === panel.hello?.fixed_setter?.reference_tool) return t('tools.shared.setterReference')
+  if (number === panel.hello?.touch_probe_tool || savedProbe(number) !== undefined) return t('tools.family.touchProbe')
   return ''
 }

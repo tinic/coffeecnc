@@ -1,34 +1,54 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import { homingMessage } from '../machine-block'
-import type { CommandBody } from '../protocol'
+import type { CommandBody, ProbeDirection } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { formatLength, wcsName } from '../units'
 import SetterStatusBand from './SetterStatusBand.vue'
 import WorkpieceProbeDiagram from './WorkpieceProbeDiagram.vue'
 import ProbeGuideDialog from './ProbeGuideDialog.vue'
-import { angleChoices, type AngleEdge, type MaterialGuideTarget } from '../probe-guide'
+import type { AngleEdge, MaterialGuideTarget } from '../probe-guide'
 import ModalDialog from './ModalDialog.vue'
 import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
+const { t } = useI18n()
 type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' | 'apply_angle' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
-  { label: 'Z top', travel: 'z_top', surface: 'top surface', approach: '−Z' },
-  { label: 'X−', travel: 'x_plus', surface: 'left edge', approach: '+X' },
-  { label: 'X+', travel: 'x_minus', surface: 'right edge', approach: '−X' },
-  { label: 'Y−', travel: 'y_plus', surface: 'front edge', approach: '+Y' },
-  { label: 'Y+', travel: 'y_minus', surface: 'back edge', approach: '−Y' },
+  { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
+  { key: 'left', label: 'X−', travel: 'x_plus', approach: '+X' },
+  { key: 'right', label: 'X+', travel: 'x_minus', approach: '−X' },
+  { key: 'front', label: 'Y−', travel: 'y_plus', approach: '+Y' },
+  { key: 'back', label: 'Y+', travel: 'y_minus', approach: '−Y' },
 ] as const
+const surfaceText = {
+  zTop: { tip: 'probe.materialProbe.surfaceTip.zTop', busy: 'probe.materialProbe.surfaceBusy.zTop', done: 'probe.materialProbe.surfaceDone.zTop' },
+  left: { tip: 'probe.materialProbe.surfaceTip.left', busy: 'probe.materialProbe.surfaceBusy.left', done: 'probe.materialProbe.surfaceDone.left' },
+  right: { tip: 'probe.materialProbe.surfaceTip.right', busy: 'probe.materialProbe.surfaceBusy.right', done: 'probe.materialProbe.surfaceDone.right' },
+  front: { tip: 'probe.materialProbe.surfaceTip.front', busy: 'probe.materialProbe.surfaceBusy.front', done: 'probe.materialProbe.surfaceDone.front' },
+  back: { tip: 'probe.materialProbe.surfaceTip.back', busy: 'probe.materialProbe.surfaceBusy.back', done: 'probe.materialProbe.surfaceDone.back' },
+} as const
+const surfaceOf = (direction: ProbeDirection): typeof surfaces[number] =>
+  surfaces.find((entry) => entry.travel === direction) ?? surfaces[0]
 // A corner probes the two faces that meet there; its name follows the edge buttons.
 const corners = [
-  { label: 'X− Y−', name: 'front-left corner', x: 'x_plus', y: 'y_plus' },
-  { label: 'X+ Y−', name: 'front-right corner', x: 'x_minus', y: 'y_plus' },
-  { label: 'X− Y+', name: 'back-left corner', x: 'x_plus', y: 'y_minus' },
-  { label: 'X+ Y+', name: 'back-right corner', x: 'x_minus', y: 'y_minus' },
+  { label: 'X− Y−', key: 'frontLeft', x: 'x_plus', y: 'y_plus' },
+  { label: 'X+ Y−', key: 'frontRight', x: 'x_minus', y: 'y_plus' },
+  { label: 'X− Y+', key: 'backLeft', x: 'x_plus', y: 'y_minus' },
+  { label: 'X+ Y+', key: 'backRight', x: 'x_minus', y: 'y_minus' },
 ] as const
+const cornerText = {
+  frontLeft: { tip: 'probe.materialProbe.cornerTip.frontLeft', busy: 'probe.materialProbe.cornerBusy.frontLeft', done: 'probe.materialProbe.cornerDone.frontLeft' },
+  frontRight: { tip: 'probe.materialProbe.cornerTip.frontRight', busy: 'probe.materialProbe.cornerBusy.frontRight', done: 'probe.materialProbe.cornerDone.frontRight' },
+  backLeft: { tip: 'probe.materialProbe.cornerTip.backLeft', busy: 'probe.materialProbe.cornerBusy.backLeft', done: 'probe.materialProbe.cornerDone.backLeft' },
+  backRight: { tip: 'probe.materialProbe.cornerTip.backRight', busy: 'probe.materialProbe.cornerBusy.backRight', done: 'probe.materialProbe.cornerDone.backRight' },
+} as const
+const cornerOf = (x: string, y: string): typeof corners[number] =>
+  corners.find((entry) => entry.x === x && entry.y === y) ?? corners[0]
 const insideCorners = [
   { label: 'X− Y−', x: 'x_minus', y: 'y_minus' },
   { label: 'X+ Y−', x: 'x_plus', y: 'y_minus' },
@@ -37,20 +57,20 @@ const insideCorners = [
 ] as const
 const featureAxes = ['x', 'y'] as const
 const narrowFeatures = ['slot', 'ridge'] as const
+
+/** A status line whose text is made when it is shown, so it follows a language change. */
+interface Line { text: () => string; level: SetterStatusLine['level'] }
 const pending = shallowRef<Request | null>(null)
 const pendingCorner = computed(() => pending.value?.action === 'corner' ? [pending.value.x_direction, pending.value.y_direction] : null)
-const hint: SetterStatusLine = {
-  text: '',
-  level: 'info',
-}
-const line = shallowRef(hint)
+const hint: Line = { text: (): string => '', level: 'info' }
+const line = shallowRef<Line>(hint)
 const cycleFailed = shallowRef(false)
 const toolBlock = computed(() => panel.link === 'live' && panel.status !== null &&
   (panel.status.tool.in_spindle !== props.tool || panel.status.wait.kind === 'tool_change')
-  ? `Load T${String(props.tool)} to probe material.` : null)
+  ? t('probe.materialProbe.loadTool', { tool: String(props.tool) }) : null)
 const displayLine = computed((): SetterStatusLine => line.value === hint && toolBlock.value !== null
-  ? { text: toolBlock.value, level: 'info' } : line.value)
-const machineReason = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage : null))
+  ? { text: toolBlock.value, level: 'info' } : { text: line.value.text(), level: line.value.level })
+const machineReason = computed(() => manualBlock.value ?? (homingActive.value ? homingMessage() : null))
 const spindleStopped = computed(() => {
   const spindle = panel.status?.spindle
   return spindle?.direction === 'stopped' && typeof spindle.actual_rpm === 'number' &&
@@ -104,7 +124,7 @@ function applyRotation(): void {
   askingRotation.value = false
   const request = { type: 'fixed_setter', action: 'apply_angle', measurement_id: offer.id, tool: props.tool } as const
   pending.value = request
-  line.value = { text: `Setting ${wcsName(offer.wcs)} rotation…`, level: 'busy' }
+  line.value = { text: (): string => t('probe.materialProbe.settingRotation', { wcs: wcsName(offer.wcs) }), level: 'busy' }
   send(request)
 }
 
@@ -115,67 +135,77 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
   askingRotation.value = false
   const status = panel.status
   const [x, y, z] = ['x', 'y', 'z'].map((axis) => status?.axes.find((entry) => entry.axis === axis)?.machine)
-  let reason = machineReason.value
+  const machine = machineReason.value
+  let reason: (() => string) | null = machine === null ? null : (): string => translateMessage(machine)
   if (reason === null && (status?.tool.in_spindle !== props.tool || status.wait.kind === 'tool_change'))
-    reason = toolBlock.value ?? `Load T${String(props.tool)} to probe material.`
+    reason = (): string => t('probe.materialProbe.loadTool', { tool: String(props.tool) })
   if (reason === null && !spindleStopped.value)
-    reason = 'Wait for the spindle to stop.'
-  if (reason === null && !status?.motion.in_position) reason = 'Wait for the axes to stop.'
+    reason = (): string => t('probe.materialProbe.waitSpindle')
+  if (reason === null && !status?.motion.in_position) reason = (): string => t('probe.materialProbe.waitAxes')
   if (reason === null && !touchedOff(props.tool)) {
-    const name = `T${String(props.tool)}`
+    const tool = `T${String(props.tool)}`
     if (target.kind === 'surface' && target.direction === 'z_top')
-      reason = `Touch off ${name} at the tool setter before probing Z.`
+      reason = (): string => t('probe.materialProbe.touchOffZTop', { tool })
     if (target.kind === 'corner')
-      reason = `Touch off ${name} and probe Z top before probing a corner.`
-    if (target.kind === 'boss' || target.kind === 'ridge' || target.kind === 'ball')
-      reason = `Touch off ${name} and probe Z top on the ${target.kind === 'ball' ? 'gauge' : target.kind} first.`
+      reason = (): string => t('probe.materialProbe.touchOffCorner', { tool })
+    if (target.kind === 'boss') reason = (): string => t('probe.materialProbe.touchOffBoss', { tool })
+    if (target.kind === 'ridge') reason = (): string => t('probe.materialProbe.touchOffRidge', { tool })
+    if (target.kind === 'ball') reason = (): string => t('probe.materialProbe.touchOffGauge', { tool })
   }
   if (reason !== null || x === undefined || y === undefined || z === undefined || ![x, y, z].every(Number.isFinite)) {
-    line.value = { text: reason ?? 'Waiting for the machine position.', level: 'blocked' }
+    line.value = { text: reason ?? ((): string => t('probe.materialProbe.waitPosition')), level: 'blocked' }
     return
   }
   const position = { type: 'fixed_setter', tool: props.tool, x, y, z } as const
   let request: Request
-  let activity: string
+  let busy: () => string
   switch (target.kind) {
-    case 'surface':
+    case 'surface': {
       request = { ...position, action: 'material', direction: target.direction }
-      activity = surfaces.find(entry => entry.travel === target.direction)?.surface ?? 'surface'
+      const key = surfaceText[surfaceOf(target.direction).key].busy
+      busy = (): string => t(key)
       break
+    }
     case 'corner':
-    case 'inside_corner':
+    case 'inside_corner': {
       request = { ...position, action: target.kind, x_direction: target.x, y_direction: target.y }
-      activity = target.kind === 'inside_corner' ? 'the inside corner'
-        : `the ${corners.find(entry => entry.x === target.x && entry.y === target.y)?.name ?? 'corner'}`
+      const key = target.kind === 'inside_corner' ? 'probe.materialProbe.insideCornerBusy'
+        : cornerText[cornerOf(target.x, target.y).key].busy
+      busy = (): string => t(key)
       break
+    }
     case 'angle':
       request = { ...position, action: 'angle', direction: angle, spacing: size }
-      activity = `the ${angleChoices.find(entry => entry.travel === angle)?.name.toLowerCase() ?? 'selected'} edge at two points`
+      busy = angle === 'y_plus' ? (): string => t('probe.materialProbe.angleFrontBusy') : (): string => t('probe.materialProbe.angleLeftBusy')
       break
     case 'ball':
       request = { ...position, action: 'ball', gauge_width: size }
-      activity = 'both sides of the gauge'
+      busy = (): string => t('probe.materialProbe.ballBusy')
       break
     case 'boss':
       request = { ...position, action: 'boss', diameter: size }
-      activity = 'the boss sides'
+      busy = (): string => t('probe.materialProbe.bossBusy')
       break
     case 'bore':
     case 'pocket':
       request = { ...position, action: target.kind }
-      activity = `the ${target.kind} walls`
+      busy = target.kind === 'bore' ? (): string => t('probe.materialProbe.boreBusy') : (): string => t('probe.materialProbe.pocketBusy')
       break
-    case 'slot':
+    case 'slot': {
       request = { ...position, action: 'slot', axis: target.axis }
-      activity = `the slot across ${target.axis.toUpperCase()}`
+      const axis = target.axis.toUpperCase()
+      busy = (): string => t('probe.materialProbe.slotBusy', { axis })
       break
-    case 'ridge':
+    }
+    case 'ridge': {
       request = { ...position, action: 'ridge', axis: target.axis, width: size }
-      activity = `the ridge across ${target.axis.toUpperCase()}`
+      const axis = target.axis.toUpperCase()
+      busy = (): string => t('probe.materialProbe.ridgeBusy', { axis })
       break
+    }
   }
   pending.value = request
-  line.value = { text: `Probing ${activity}…`, level: 'busy' }
+  line.value = { text: busy, level: 'busy' }
   send(request)
 }
 
@@ -190,65 +220,77 @@ const removeListener = onResult((command, result) => {
   pending.value = null
   cycleFailed.value = result.outcome !== 'accepted'
   if (result.outcome === 'timed_out') send({ type: 'abort' })
+  /** The machine's reason in the panel's language, or the fallback when it gave none. */
+  const failure = (fallback: () => string): Line => ({
+    text: (): string => result.reason ? translateMessage(result.reason) : fallback(), level: 'blocked',
+  })
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle
     edgeRotation.value = null
     if (result.outcome === 'accepted' && degrees !== undefined) {
       setterState.value = result.setter ?? null
-      line.value = { text: `Work rotation set to ${degreesText(degrees)}.`, level: 'done' }
+      line.value = { text: (): string => t('probe.materialProbe.rotationSet', { degrees: degreesText(degrees) }), level: 'done' }
     } else {
-      line.value = { text: result.reason || 'The machine did not confirm the rotation.', level: 'blocked' }
+      line.value = failure((): string => t('probe.materialProbe.noRotation'))
     }
     return
   }
   if (request.action === 'angle') {
     const degrees = result.setter?.edge_angle
     if (result.outcome !== 'accepted' || degrees === undefined) {
-      line.value = { text: result.reason || 'The machine did not report the edge angle.', level: 'blocked' }
+      line.value = failure((): string => t('probe.materialProbe.noAngle'))
       return
     }
     if (result.setter) setterState.value = result.setter
     const rise = Math.tan(degrees * Math.PI / 180) * request.spacing
-    const face = angleChoices.find((entry) => entry.travel === request.direction)?.name ?? 'Measured'
     const offer = result.setter?.edge_rotation
     if (offer) edgeRotation.value = { id: offer.measurement_id, wcs: offer.wcs, degrees, frame: frame.value }
-    line.value = { text: `${face} edge turns ${degreesText(degrees)} (${Math.abs(rise).toFixed(3)} mm over ${String(Math.abs(request.spacing))} mm).`, level: 'done' }
+    const values = { degrees: degreesText(degrees), rise: Math.abs(rise).toFixed(3), spacing: String(Math.abs(request.spacing)) }
+    line.value = request.direction === 'y_plus'
+      ? { text: (): string => t('probe.materialProbe.angleFrontDone', values), level: 'done' }
+      : { text: (): string => t('probe.materialProbe.angleLeftDone', values), level: 'done' }
     return
   }
   if (request.action === 'bore' || request.action === 'boss') {
     const measured = result.setter?.center_diameter
     if (result.outcome !== 'accepted' || measured === undefined || !result.setter?.material) {
-      line.value = { text: result.reason || 'The machine did not confirm the work origin.', level: 'blocked' }
+      line.value = failure((): string => t('probe.materialProbe.noOrigin'))
       return
     }
     setterState.value = result.setter
-    line.value = { text: `${wcsName(result.setter.material.wcs)} X0 Y0 set at the ${request.action} centre, Ø ${measured.toFixed(3)} mm.`, level: 'done' }
+    const values = { wcs: wcsName(result.setter.material.wcs), diameter: measured.toFixed(3) }
+    line.value = request.action === 'bore'
+      ? { text: (): string => t('probe.materialProbe.boreDone', values), level: 'done' }
+      : { text: (): string => t('probe.materialProbe.bossDone', values), level: 'done' }
     return
   }
   if (request.action === 'ball') {
     const measured = result.setter?.ball_diameter
     if (result.outcome !== 'accepted' || measured === undefined) {
-      line.value = { text: result.reason || 'The machine did not confirm the ball diameter.', level: 'blocked' }
+      line.value = failure((): string => t('probe.materialProbe.noBall'))
       return
     }
     if (result.setter) setterState.value = result.setter
-      line.value = { text: `T${String(props.tool)} ball Ø${measured.toFixed(3)} mm saved to the tool table.`, level: 'done' }
+    const values = { tool: String(props.tool), diameter: measured.toFixed(3) }
+    line.value = { text: (): string => t('probe.materialProbe.ballDone', values), level: 'done' }
     return
   }
   const material = result.setter?.material
   if (result.outcome !== 'accepted' || !material) {
-    line.value = { text: result.reason || 'The machine did not confirm the work origin.', level: 'blocked' }
+    line.value = failure((): string => t('probe.materialProbe.noOrigin'))
     return
   }
   if (result.setter) setterState.value = result.setter
+  const wcs = wcsName(material.wcs)
   if (request.action === 'corner') {
-    const corner = corners.find((entry) => entry.x === request.x_direction && entry.y === request.y_direction)
-    line.value = { text: `${wcsName(material.wcs)} X0 Y0 set at the ${corner?.label ?? ''} ${corner?.name ?? 'corner'}.`, level: 'done' }
+    const corner = cornerOf(request.x_direction, request.y_direction)
+    const key = cornerText[corner.key].done
+    line.value = { text: (): string => t(key, { wcs, corner: corner.label }), level: 'done' }
     return
   }
   if (request.action === 'inside_corner') {
-    const corner = insideCorners.find(entry => entry.x === request.x_direction && entry.y === request.y_direction)
-    line.value = { text: `${wcsName(material.wcs)} X0 Y0 set at the ${corner?.label ?? ''} inside corner.`, level: 'done' }
+    const corner = insideCorners.find(entry => entry.x === request.x_direction && entry.y === request.y_direction)?.label ?? ''
+    line.value = { text: (): string => t('probe.materialProbe.insideCornerDone', { wcs, corner }), level: 'done' }
     return
   }
   if (request.action === 'pocket' || request.action === 'slot' || request.action === 'ridge') {
@@ -256,18 +298,21 @@ const removeListener = onResult((command, result) => {
     const format = (value: number): string => `${formatLength(value, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
     const width = request.action === 'pocket' ? undefined : size?.[request.axis]
     const span = request.action === 'pocket' && size?.x !== undefined && size.y !== undefined
-      ? `X ${format(size.x)} × Y ${format(size.y)}` : width !== undefined ? format(width) : null
+      ? 'X ' + format(size.x) + ' × Y ' + format(size.y) : width !== undefined ? format(width) : null
     if (!span) {
-      line.value = { text: 'The machine did not report the measured width.', level: 'blocked' }
+      line.value = { text: (): string => t('probe.materialProbe.noWidth'), level: 'blocked' }
       return
     }
-    const axes = material.axis === 'XY' ? 'X0 Y0' : `${material.axis}0`
-    line.value = { text: `${wcsName(material.wcs)} ${axes} set at the ${request.action} centre · ${span}`, level: 'done' }
+    const values = { wcs, axes: material.axis === 'XY' ? 'X0 Y0' : `${material.axis}0`, span }
+    const key = request.action === 'pocket' ? 'probe.materialProbe.pocketDone'
+      : request.action === 'slot' ? 'probe.materialProbe.slotDone' : 'probe.materialProbe.ridgeDone'
+    line.value = { text: (): string => t(key, values), level: 'done' }
     return
   }
-  const surface = surfaces.find((entry) => entry.travel === request.direction)
-  const face = request.direction === 'z_top' ? 'the top surface' : `the ${surface?.label ?? ''} ${surface?.surface ?? 'edge'}`
-  line.value = { text: `${wcsName(material.wcs)} ${material.axis}0 set at ${face}.`, level: 'done' }
+  const surface = surfaceOf(request.direction)
+  const key = surfaceText[surface.key].done
+  const values = { wcs, axis: material.axis, edge: surface.label ?? '' }
+  line.value = { text: (): string => t(key, values), level: 'done' }
 })
 watch([
   (): unknown => panel.hello, (): string => panel.link, (): string | undefined => panel.status?.machine,
@@ -289,16 +334,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="material-probe" aria-label="Material probe">
+  <section class="material-probe" :aria-label="t('probe.materialProbe.region')">
     <div class="probe-layout">
       <div class="probe-actions">
         <button
           v-for="face in surfaces" :key="face.travel"
-          v-tooltip="`Probe the ${face.surface}. Travel ${face.approach}.`"
+          v-tooltip="t(surfaceText[face.key].tip, { approach: face.approach })"
           type="button" class="btn" :class="{ on: pending?.action === 'material' && pending.direction === face.travel }"
           @click="openGuide({ kind: 'surface', direction: face.travel })"
         >
-          {{ face.label }}
+          {{ face.label ?? t('probe.surface.zTop') }}
         </button>
       </div>
       <WorkpieceProbeDiagram :travel="pending?.action === 'material' ? pending.direction : null" :corner="pendingCorner" />
@@ -308,39 +353,39 @@ onBeforeUnmount(() => {
         class="btn" type="button" aria-haspopup="dialog" :class="{ on: featureActive }"
         @click="pending === null && (choosingFeature = true)"
       >
-        Features…
+        {{ t('probe.materialProbe.features') }}
       </button>
       <button
-        v-tooltip="'Measure the ball on a gauge of known width: probe Z top on the gauge, jog the ball over its middle, then enter the width.'"
+        v-tooltip="t('probe.materialProbe.calibrateTip')"
         type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
       >
-        Calibrate ball…
+        {{ t('probe.materialProbe.calibrate') }}
       </button>
     </div>
     <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
-        <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">Apply rotation…</button>
+        <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">{{ t('probe.materialProbe.applyRotationMenu') }}</button>
       </template>
     </SetterStatusBand>
     <ProbeGuideDialog
       v-if="guide" :target="guide" :limits="panel.hello?.fixed_setter" :tool="tool"
       @start="startGuide" @close="guide = null"
     />
-    <ModalDialog v-if="choosingFeature" title="Probe a feature" size="medium" fresh-gesture @close="choosingFeature = false">
+    <ModalDialog v-if="choosingFeature" :title="t('probe.materialProbe.featureTitle')" size="medium" fresh-gesture @close="choosingFeature = false">
       <div class="feature-options">
         <div class="feature-types">
-          <button class="btn" type="button" @click="openGuide({ kind: 'bore' })">Bore centre</button>
-          <button class="btn" type="button" @click="openGuide({ kind: 'boss' })">Boss centre…</button>
-          <button class="btn" type="button" @click="openGuide({ kind: 'angle' })">Edge angle…</button>
-          <button v-if="extendedFeatures" class="btn" type="button" @click="openGuide({ kind: 'pocket' })">Rectangular pocket</button>
+          <button class="btn" type="button" @click="openGuide({ kind: 'bore' })">{{ t('probe.materialProbe.boreCentre') }}</button>
+          <button class="btn" type="button" @click="openGuide({ kind: 'boss' })">{{ t('probe.materialProbe.bossCentre') }}</button>
+          <button class="btn" type="button" @click="openGuide({ kind: 'angle' })">{{ t('probe.materialProbe.edgeAngle') }}</button>
+          <button v-if="extendedFeatures" class="btn" type="button" @click="openGuide({ kind: 'pocket' })">{{ t('probe.materialProbe.pocket') }}</button>
         </div>
         <div class="feature-row">
-          <span>Outside corner</span>
+          <span>{{ t('probe.materialProbe.outsideCorner') }}</span>
           <div class="feature-buttons corners">
             <button
               v-for="corner in corners" :key="corner.label"
-              v-tooltip="`Probe the ${corner.name}: X then Y face, from over the part.`"
-              class="btn" type="button" :aria-label="'Outside corner ' + corner.label"
+              v-tooltip="t(cornerText[corner.key].tip)"
+              class="btn" type="button" :aria-label="t('probe.materialProbe.outsideCornerLabel', { corner: corner.label })"
               @click="openGuide({ kind: 'corner', x: corner.x, y: corner.y })"
             >
               {{ corner.label }}
@@ -349,36 +394,37 @@ onBeforeUnmount(() => {
         </div>
         <template v-if="extendedFeatures">
           <div class="feature-row">
-            <span>Inside corner</span>
+            <span>{{ t('probe.materialProbe.insideCorner') }}</span>
             <div class="feature-buttons corners">
               <button
                 v-for="corner in insideCorners" :key="corner.label" class="btn" type="button"
-                :aria-label="'Inside corner ' + corner.label" @click="openGuide({ kind: 'inside_corner', x: corner.x, y: corner.y })"
+                :aria-label="t('probe.materialProbe.insideCornerLabel', { corner: corner.label })" @click="openGuide({ kind: 'inside_corner', x: corner.x, y: corner.y })"
               >
                 {{ corner.label }}
               </button>
             </div>
           </div>
           <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
-            <span class="feature-name">{{ kind }}</span>
+            <span class="feature-name">{{ kind === 'slot' ? t('probe.materialProbe.slot') : t('probe.materialProbe.ridge') }}</span>
             <div class="feature-buttons">
               <button
-                v-for="axis in featureAxes" :key="axis" class="btn" type="button" :aria-label="kind + ' across ' + axis.toUpperCase()"
+                v-for="axis in featureAxes" :key="axis" class="btn" type="button"
+                :aria-label="kind === 'slot' ? t('probe.materialProbe.slotAcrossLabel', { axis: axis.toUpperCase() }) : t('probe.materialProbe.ridgeAcrossLabel', { axis: axis.toUpperCase() })"
                 @click="openGuide({ kind, axis })"
               >
-                Across {{ axis.toUpperCase() }}
+                {{ t('probe.materialProbe.across', { axis: axis.toUpperCase() }) }}
               </button>
             </div>
           </div>
         </template>
       </div>
     </ModalDialog>
-    <ModalDialog v-if="askingRotation && edgeRotation" title="Apply as G5x rotation?" size="small" fresh-gesture @close="askingRotation = false">
-      <p class="rotation-effect">Rotate the {{ wcsName(edgeRotation.wcs) }} XY axes {{ degreesText(edgeRotation.degrees) }} about its stored origin.</p>
-      <p v-if="shifted" class="rotation-effect">The current G52/G92 shift stays active.</p>
+    <ModalDialog v-if="askingRotation && edgeRotation" :title="t('probe.materialProbe.rotationTitle')" size="small" fresh-gesture @close="askingRotation = false">
+      <p class="rotation-effect">{{ t('probe.materialProbe.rotationEffect', { wcs: wcsName(edgeRotation.wcs), degrees: degreesText(edgeRotation.degrees) }) }}</p>
+      <p v-if="shifted" class="rotation-effect">{{ t('probe.materialProbe.shiftStays') }}</p>
       <template #footer>
-        <button class="btn" type="button" @click="askingRotation = false">Cancel</button>
-        <button class="btn primary" type="button" :disabled="!canApplyRotation" @click="applyRotation">Apply rotation</button>
+        <button class="btn" type="button" @click="askingRotation = false">{{ t('common.cancel') }}</button>
+        <button class="btn primary" type="button" :disabled="!canApplyRotation" @click="applyRotation">{{ t('probe.materialProbe.applyRotation') }}</button>
       </template>
     </ModalDialog>
   </section>

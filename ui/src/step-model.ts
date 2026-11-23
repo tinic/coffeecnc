@@ -1,4 +1,4 @@
-import type { Offsets, Preview, Status, Vec3 } from './protocol'
+import type { Offsets, Vec3 } from './protocol'
 
 export const maxStepBytes = 25 * 1024 * 1024
 export const maxModelTriangles = 500_000
@@ -100,14 +100,4 @@ export function modelToMachine(point: Vec3, placement: Placement, frame: ModelFr
   const a = frame.rotation_xy * Math.PI / 180
   return [px * Math.cos(a) - py * Math.sin(a) + frame.g5x[0],
     px * Math.sin(a) + py * Math.cos(a) + frame.g5x[1], z2 + placement.translation[2] + frame.g92[2] + frame.g5x[2]]
-}
-
-export function modelBlock(binding: ModelBinding, status: Status | null, preview: Preview | null, live: boolean): string {
-  if (!live || status === null) return 'Part hidden: controller state is unavailable'
-  if (binding.file !== status.program.file || binding.revision !== status.program.revision) return 'Part hidden: program changed'
-  if (!sameFrame(binding.frame, status.offsets)) return 'Part hidden: work origin changed; review placement'
-  if (preview?.context !== status.preview_context || preview.state === 'pending' || preview.state === 'unavailable') {
-    return 'Part hidden: waiting for the current toolpath'
-  }
-  return ''
 }

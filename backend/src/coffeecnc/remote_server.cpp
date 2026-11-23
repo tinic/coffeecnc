@@ -1,6 +1,7 @@
 #include "remote_server.hpp"
 
 #include <coffeecnc/app/panel_assets.hpp>
+#include <coffeecnc/core/remote_hosts.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
@@ -8,6 +9,7 @@
 #include <boost/beast/websocket.hpp>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -19,6 +21,11 @@
 #include <utility>
 #include <vector>
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <resolv.h>
+#include <unistd.h>
+
 namespace coffeecnc {
 namespace {
 
@@ -26,6 +33,7 @@ namespace net = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
+using net::ip::address_v4;
 using net::ip::tcp;
 using Error = boost::system::error_code;
 using namespace std::chrono_literals;
@@ -49,6 +57,37 @@ struct Notification {
 
 auto index(PanelRecord record) -> std::size_t { return static_cast<std::size_t>(record); }
 
+
+auto local_ipv4_addresses() -> std::vector<address_v4> {
+  ifaddrs* interfaces = nullptr;
+  if (getifaddrs(&interfaces) != 0)
+    return {};
+  const std::unique_ptr<ifaddrs, decltype(&freeifaddrs)> guard{interfaces, freeifaddrs};
+  std::vector<address_v4> addresses;
+  for (auto* iface = interfaces; iface != nullptr; iface = iface->ifa_next)
+    if (iface->ifa_addr && iface->ifa_addr->sa_family == AF_INET) {
+      const auto* address = reinterpret_cast<const sockaddr_in*>(iface->ifa_addr);
+      addresses.emplace_back(ntohl(address->sin_addr.s_addr));
+    }
+  return addresses;
+}
+
+auto dns_search_domains() -> std::vector<std::string> {
+  struct ResolverState {
+    struct __res_state value {};
+    ~ResolverState() { res_nclose(&value); }
+  } configuration;
+  std::vector<std::string> domains;
+  if (res_ninit(&configuration.value) == 0)
+    for (const auto* domain : configuration.value.dnsrch) {
+      if (domain == nullptr)
+        break;
+      if (auto normalized = normalize_remote_host(domain))
+        domains.push_back(std::move(*normalized));
+    }
+  return domains;
+}
+
 auto viewer_hello(const std::string& message) -> std::string {
   auto hello = nlohmann::json::parse(message);
   hello.erase("program_places");
@@ -64,9 +103,12 @@ auto viewer_hello(const std::string& message) -> std::string {
 struct RemoteServer::Impl {
   class Client;
 
-  Impl(const std::string& directory, std::uint16_t port);
+  Impl(const std::string& directory, std::uint16_t port, std::span<const std::string> aliases);
   ~Impl();
   void accept();
+  void add_host(std::string_view name);
+  void discover_hosts();
+  void resolve_host(std::string query, bool search_candidate);
 
   void notify(const std::string& message) {
     if (message.size() > max_notification_bytes)
@@ -96,7 +138,10 @@ struct RemoteServer::Impl {
   std::uint64_t event_sequence{};
   std::size_t clients{};
   std::size_t viewers{};
+  std::vector<std::string> allowed_hosts;
+  const std::vector<address_v4> local_addresses = local_ipv4_addresses();
   net::io_context io{1};
+  tcp::resolver resolver{io};
   tcp::acceptor listener{io};
   net::steady_timer accept_retry{io};
   std::uint16_t listening_port{};
@@ -134,13 +179,19 @@ private:
     const auto local = socket_.socket().local_endpoint(error);
     if (error)
       return false;
-    const auto address = local.address().to_string();
     const auto port = ":" + std::to_string(local.port());
-    // Only the listener address or localhost on loopback. A foreign Host cannot make a browser
-    // treat this endpoint as its own origin (including an external DNS name rebound to the LAN).
-    return host == address + port || (local.port() == 80 && host == address) ||
-           (local.address().is_loopback() &&
-            (host == "localhost" + port || (local.port() == 80 && host == "localhost")));
+    if (host.ends_with(port))
+      host.remove_suffix(port.size());
+    else if (local.port() != 80)
+      return false;
+    const auto name = normalize_remote_host(host);
+    if (!name)
+      return false;
+    if (*name == "localhost")
+      return local.address().is_loopback();
+    // Never resolve the request's Host. Foreign DNS names must not be able to rebind to this origin.
+    return *name == local.address().to_string() ||
+           std::ranges::find(owner_.allowed_hosts, *name) != owner_.allowed_hosts.end();
   }
 
   template <class Body> void respond(http::response<Body> response, std::string_view host = {}) {
@@ -304,12 +355,17 @@ private:
   bool closed_{};
 };
 
-RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port) : ui_directory(directory) {
+RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port,
+                         std::span<const std::string> aliases)
+    : ui_directory(directory) {
   listener.open(tcp::v4());
   listener.set_option(tcp::acceptor::reuse_address(true));
   listener.bind({tcp::v4(), port});
   listener.listen();
   listening_port = listener.local_endpoint().port();
+  for (const auto& name : aliases)
+    add_host(name);
+  discover_hosts();
   accept();
   thread = std::thread([this]() -> void {
     try {
@@ -323,6 +379,44 @@ RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port) : ui_
 RemoteServer::Impl::~Impl() {
   io.stop();
   thread.join();
+}
+
+void RemoteServer::Impl::add_host(std::string_view name) {
+  if (auto normalized = normalize_remote_host(name);
+      normalized && std::ranges::find(allowed_hosts, *normalized) == allowed_hosts.end())
+    allowed_hosts.push_back(std::move(*normalized));
+}
+
+void RemoteServer::Impl::discover_hosts() {
+  std::array<char, 256> raw_name{};
+  if (gethostname(raw_name.data(), raw_name.size() - 1) != 0)
+    return;
+  const auto name = normalize_remote_host(raw_name.data());
+  if (!name)
+    return;
+  const auto short_name = name->substr(0, name->find('.'));
+  add_host(*name);
+  add_host(short_name);
+  add_host(short_name + ".local");
+
+  resolve_host(*name, false);
+  for (const auto& domain : dns_search_domains())
+    if (auto candidate = normalize_remote_host(short_name + "." + domain))
+      resolve_host(*candidate + ".", true);
+}
+
+void RemoteServer::Impl::resolve_host(std::string query, bool search_candidate) {
+  // Use only the OS hostname and system DNS configuration as lookup input.
+  resolver.async_resolve(tcp::v4(), query, "0", tcp::resolver::canonical_name,
+    [this, candidate = search_candidate ? query : std::string{}]
+    (Error error, const tcp::resolver::results_type& entries) -> void {
+      if (error || entries.empty() || !std::ranges::all_of(entries, [this](const auto& entry) {
+            const auto address = entry.endpoint().address().to_v4();
+            return std::ranges::find(local_addresses, address) != local_addresses.end();
+          }))
+        return;
+      add_host(candidate.empty() ? entries.begin()->host_name() : candidate);
+    });
 }
 
 void RemoteServer::Impl::accept() {
@@ -341,8 +435,9 @@ void RemoteServer::Impl::accept() {
   });
 }
 
-RemoteServer::RemoteServer(const std::string& ui_directory, std::uint16_t port)
-    : impl_(std::make_unique<Impl>(ui_directory, port)) {}
+RemoteServer::RemoteServer(const std::string& ui_directory, std::uint16_t port,
+                           std::span<const std::string> aliases)
+    : impl_(std::make_unique<Impl>(ui_directory, port, aliases)) {}
 RemoteServer::~RemoteServer() = default;
 auto RemoteServer::port() const -> std::uint16_t { return impl_->listening_port; }
 

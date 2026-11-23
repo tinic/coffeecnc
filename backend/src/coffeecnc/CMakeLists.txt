@@ -28,7 +28,7 @@ if(TARGET coffeecnc_preview)
   add_dependencies(coffeecnc_application coffeecnc_preview)
 endif()
 target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linuxcnc coffeecnc_shell
-  PRIVATE coffeecnc_project_options)
+  PRIVATE coffeecnc_project_options resolv)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
 # LeakSanitizer's suppressions are looked up in the executable: the file is a source of every

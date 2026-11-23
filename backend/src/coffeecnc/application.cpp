@@ -571,7 +571,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   } shutdown{window, feed, runtime, models};
   if (config->remote_port != 0) {
     try {
-      remote = std::make_unique<RemoteServer>(*ui, config->remote_port);
+      remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts);
       say(std::format("Read-only LAN screen on port {}.", remote->port()));
     } catch (const std::exception& error) {
       say(std::format("The LAN screen could not start: {}", error.what()));

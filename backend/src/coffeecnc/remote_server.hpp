@@ -14,7 +14,8 @@ namespace coffeecnc {
 // snapshots and notifications. No Runtime, Session, window, or controller is reachable here.
 class RemoteServer {
 public:
-  RemoteServer(const std::string& ui_directory, std::uint16_t port);
+  RemoteServer(const std::string& ui_directory, std::uint16_t port,
+               std::span<const std::string> aliases = {});
   ~RemoteServer();
   RemoteServer(const RemoteServer&) = delete;
   auto operator=(const RemoteServer&) -> RemoteServer& = delete;

@@ -311,6 +311,12 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
       set_tests_properties(linuxcnc_offset_history_rotary PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+      # G92.1 from the offset editor is refused where it would clear an A, B or C shift.
+      add_test(NAME linuxcnc_offset_edits_rotary COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -p rotary -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_edits_rotary
+        $<TARGET_FILE:coffeecnc_sim_tests> offset-edits)
+      set_tests_properties(linuxcnc_offset_edits_rotary PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
       # A gantry router: two motors on Y (COORDINATES X Y Y Z).
       add_test(NAME linuxcnc_sim_gantry COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p gantry -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_sim_gantry

@@ -72,6 +72,7 @@
       "workOffsetInvalid": "Provide G54 through G59.3 and finite XYZ offsets.",
       "rotationInvalid": "Provide G54 through G59.3 and an XY rotation from -360 to 360 degrees.",
       "finishToolChangeShift": "Finish the tool change before clearing the G92/G52 shift.",
+      "clearShiftRotary": "On a machine with A, B or C axes, clear the G92/G52 shift with G92.1 in MDI: it clears their shift too.",
       "finishToolChangeRestore": "Finish the tool change before restoring offsets.",
       "chooseHistoryEntry": "Choose an offset history entry.",
       "touchOffInvalid": "Invalid touch-off axis or value.",

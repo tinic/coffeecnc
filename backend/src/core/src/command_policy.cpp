@@ -389,6 +389,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         } else if constexpr (std::is_same_v<T, ClearG92>) {
           if (s.requested_tool)
             return reject("Finish the tool change before clearing the G92/G52 shift.");
+          // G92.1 clears the A, B and C shift as well, which the panel neither shows in the
+          // review nor records in the offset history: not offered on such a machine.
+          if (std::ranges::any_of(s.rotary_axes, [](const AxisState& a) -> bool { return a.enabled; }))
+            return reject("On a machine with A, B or C axes, clear the G92/G52 shift with G92.1 "
+                          "in MDI: it clears their shift too.");
           return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, RestoreOffset>) {
           // G10 L2, G52 or G10 L1 through MDI: the conditions of the other offset edits.

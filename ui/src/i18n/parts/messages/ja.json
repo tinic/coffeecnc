@@ -72,6 +72,7 @@
       "workOffsetInvalid": "G54 から G59.3 のいずれかと、有限の XYZ オフセットを指定してください。",
       "rotationInvalid": "G54〜G59.3 と -360〜360 度の XY 回転を指定してください。",
       "finishToolChangeShift": "G92/G52 シフトをクリアする前に工具交換を完了してください。",
+      "clearShiftRotary": "A、B、C 軸のある機械では、MDI で G92.1 を使って G92/G52 シフトをクリアしてください。これらの軸のシフトもクリアされます。",
       "finishToolChangeRestore": "オフセットを復元する前に工具交換を完了してください。",
       "chooseHistoryEntry": "オフセット履歴の項目を選択してください。",
       "touchOffInvalid": "原点設定の軸または値が無効です。",

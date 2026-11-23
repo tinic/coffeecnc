@@ -58,6 +58,8 @@ function shift(): Vec3 | null {
   return [...status.offsets.g92]
 }
 const shifted = computed(() => shift()?.some((value) => value !== 0) ?? false)
+// G92.1 clears an A, B or C shift too, which this review does not show: not offered then.
+const rotary = computed(() => (panel.status?.rotary_axes?.length ?? 0) > 0)
 interface OriginReview { kind: 'set' | 'copy' | 'clear'; wcs: number; before: Vec3 | null; target: Vec3 }
 interface RotationReview { kind: 'rotation' | 'zeroRotation'; wcs: number; before: number | null; target: number }
 interface ShiftReview { kind: 'shift'; before: Vec3; target: Vec3 }
@@ -107,7 +109,7 @@ function prepareRotation(kind: 'rotation' | 'zeroRotation'): void {
 }
 function prepareShift(): void {
   const before = shift()
-  if (block.value !== null || before === null) return
+  if (block.value !== null || before === null || rotary.value) return
   review.value = { kind: 'shift', before, target: [0, 0, 0] }
 }
 function confirm(): void {
@@ -171,8 +173,9 @@ watch([mdiBlock, (): number | undefined => panel.status?.offsets.wcs], () => { r
     <div v-if="shifted" class="offset-actions shift">
       <span class="shift-values"><span>{{ t('probe.workOffset.shift') }}</span><span class="mono shift-axes"><span v-for="(value, index) in shift() ?? []" :key="index">{{ axes[index] }} {{ formatLength(value, unit) }}</span><span>{{ unitName }}</span></span></span>
       <span class="spacer"></span>
-      <button class="btn" type="button" :disabled="block !== null" @click="prepareShift">{{ t('probe.workOffset.clearShift') }}</button>
+      <button class="btn" type="button" :disabled="block !== null || rotary" @click="prepareShift">{{ t('probe.workOffset.clearShift') }}</button>
     </div>
+    <p v-if="shifted && rotary" class="hint">{{ t('messages.policy.clearShiftRotary') }}</p>
     <p v-if="block" class="blocked" role="status">{{ block }}</p>
     <template #footer><button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button><button class="btn primary" type="button" :disabled="block !== null || parsed === null" @click="prepare('set')">{{ t('probe.workOffset.review') }}</button></template>
   </ModalDialog>

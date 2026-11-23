@@ -72,6 +72,7 @@
       "workOffsetInvalid": "Geben Sie G54 bis G59.3 und endliche XYZ-Verschiebungen an.",
       "rotationInvalid": "Geben Sie G54 bis G59.3 und eine XY-Drehung von -360 bis 360 Grad an.",
       "finishToolChangeShift": "Schließen Sie den Werkzeugwechsel ab, bevor Sie die G92/G52-Verschiebung löschen.",
+      "clearShiftRotary": "Löschen Sie auf einer Maschine mit A-, B- oder C-Achsen die G92/G52-Verschiebung mit G92.1 im MDI: Es löscht auch deren Verschiebung.",
       "finishToolChangeRestore": "Schließen Sie den Werkzeugwechsel ab, bevor Sie Verschiebungen wiederherstellen.",
       "chooseHistoryEntry": "Wählen Sie einen Eintrag aus dem Verschiebungsverlauf.",
       "touchOffInvalid": "Ungültige Achse oder ungültiger Wert für das Antasten.",

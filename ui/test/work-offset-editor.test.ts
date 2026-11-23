@@ -146,6 +146,16 @@ describe('confirmed work origins', () => {
     await press('Clear shift')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'clear_g92' })
   })
+  it('offers no shift clear on a machine with A, B or C axes, whose shift G92.1 would clear unseen', async () => {
+    status().offsets.g92 = [1, 0, 0]
+    status().rotary_axes = [{ axis: 'a', homed: true, homing: false, machine: 0, work: 0, dtg: 0, on_hard_limit: false }]
+    await open(1)
+    expect(view().findAll('button').find((item) => item.text() === 'Clear shift…')?.attributes('disabled')).toBeDefined()
+    expect(view().text()).toContain('On a machine with A, B or C axes, clear the G92/G52 shift with G92.1 in MDI')
+    await press('Clear shift…')
+    expect(view().find('.changes').exists()).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
   it('blocks the shift clear when the shift changes, and every edit while busy', async () => {
     status().offsets.g92 = [1, 0, 0]
     await open(1); await press('Clear shift…')

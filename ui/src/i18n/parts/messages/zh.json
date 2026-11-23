@@ -72,6 +72,7 @@
       "workOffsetInvalid": "请提供 G54 至 G59.3 以及有限的 XYZ 偏置。",
       "rotationInvalid": "请提供 G54 至 G59.3 以及 -360 至 360 度的 XY 旋转。",
       "finishToolChangeShift": "清除 G92/G52 偏移前请先完成换刀。",
+      "clearShiftRotary": "在带有 A、B 或 C 轴的机床上，请在 MDI 中用 G92.1 清除 G92/G52 偏移：它也会清除这些轴的偏移。",
       "finishToolChangeRestore": "恢复偏置前请先完成换刀。",
       "chooseHistoryEntry": "请选择一条偏置历史记录。",
       "touchOffInvalid": "对刀的轴或数值无效。",

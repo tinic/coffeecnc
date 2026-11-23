@@ -229,6 +229,14 @@ void rotation_and_shift_gates() {
   require(CommandPolicy{unforced}.evaluate(rotate, unhomed).allowed &&
               CommandPolicy{unforced}.evaluate(clear, unhomed).allowed,
           "Unhomed with NO_FORCE_HOMING, as the other offset edits");
+  auto rotary = ready();
+  rotary.rotary_axes[0].enabled = true;
+  rotary.rotary_axes[0].homed = true;
+  const auto refused = policy.evaluate(clear, rotary);
+  require(!refused.allowed && refused.reason.starts_with("On a machine with A, B or C axes") &&
+              policy.evaluate(rotate, rotary).allowed,
+          "G92.1 would clear an A shift the panel does not show: refused with A, B or C axes; "
+          "the rotation is not affected");
   const auto s = ready();
   require(policy.evaluate(SetWorkRotation{1, 0}, s).allowed &&
               policy.evaluate(SetWorkRotation{9, -360}, s).allowed &&

@@ -5323,6 +5323,23 @@ void offset_history(Rig& rig) {
 // readout and the preview inputs follow the rotation, each edit is one history entry, Restore
 // undoes it, and a running program refuses both.
 void offset_edits(Rig& rig) {
+  if (std::ranges::any_of(rig.config.rotary_joints, [](const auto& joints) { return !joints.empty(); })) {
+    // G92.1 would also clear an A shift the review does not show: refused, nothing is sent.
+    static_cast<void>(rig.send(R"("type":"mdi","text":"G92 X3 A10")"));
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const auto from = rig.port.writes().size();
+    const auto refused = rig.send(R"("type":"clear_g92")");
+    rig.pump(200ms);
+    const auto status = rig.status();
+    check("edits_g92_clear_refused_with_rotary_axes",
+          refused.outcome == "rejected" && refused.reason.starts_with("On a machine with A, B or C") &&
+              written_since(rig, from).empty() && !near(status.g92[0], 0),
+          std::format("{} {} writes={} g92_x={:.4f}", refused.outcome, refused.reason,
+                      written_since(rig, from).size(), status.g92[0]));
+    static_cast<void>(rig.send(R"("type":"mdi","text":"G92.1")"));
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    return;
+  }
   auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
   check("edits_tool_data", table.has_value(), table ? "tool.mmap" : table.error());
   if (!table)

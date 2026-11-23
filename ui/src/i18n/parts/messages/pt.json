@@ -72,6 +72,7 @@
       "workOffsetInvalid": "Indique um sistema entre G54 e G59.3 e deslocamentos XYZ finitos.",
       "rotationInvalid": "Indique G54 a G59.3 e uma rotação XY de -360 a 360 graus.",
       "finishToolChangeShift": "Termine a troca de ferramenta antes de limpar o deslocamento G92/G52.",
+      "clearShiftRotary": "Numa máquina com eixos A, B ou C, limpe o deslocamento G92/G52 com G92.1 em MDI: também limpa o deslocamento desses eixos.",
       "finishToolChangeRestore": "Termine a troca de ferramenta antes de restaurar deslocamentos.",
       "chooseHistoryEntry": "Escolha uma entrada do histórico de deslocamentos.",
       "touchOffInvalid": "Eixo ou valor de tomada de referência inválido.",

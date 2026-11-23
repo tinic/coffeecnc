@@ -72,6 +72,7 @@
       "workOffsetInvalid": "Indique un sistema entre G54 y G59.3 y decalajes XYZ finitos.",
       "rotationInvalid": "Indique G54 a G59.3 y una rotación XY de -360 a 360 grados.",
       "finishToolChangeShift": "Termine el cambio de herramienta antes de borrar el desplazamiento G92/G52.",
+      "clearShiftRotary": "En una máquina con ejes A, B o C, borre el desplazamiento G92/G52 con G92.1 en MDI: también borra su desplazamiento.",
       "finishToolChangeRestore": "Termine el cambio de herramienta antes de restaurar decalajes.",
       "chooseHistoryEntry": "Elija una entrada del historial de decalajes.",
       "touchOffInvalid": "Eje o valor de toma de referencia no válido.",

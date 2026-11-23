@@ -72,6 +72,7 @@
       "workOffsetInvalid": "Indiquez un système entre G54 et G59.3 et des décalages XYZ finis.",
       "rotationInvalid": "Indiquez G54 à G59.3 et une rotation XY de -360 à 360 degrés.",
       "finishToolChangeShift": "Terminez le changement d’outil avant d’effacer le décalage G92/G52.",
+      "clearShiftRotary": "Sur une machine avec des axes A, B ou C, effacez le décalage G92/G52 avec G92.1 en MDI : il efface aussi leur décalage.",
       "finishToolChangeRestore": "Terminez le changement d’outil avant de restaurer des décalages.",
       "chooseHistoryEntry": "Choisissez une entrée de l’historique des décalages.",
       "touchOffInvalid": "Axe ou valeur de prise d’origine non valide.",

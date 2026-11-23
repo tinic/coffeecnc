@@ -1271,6 +1271,43 @@ void program_edited_in_the_editor(const Rig& rig, const std::filesystem::path& p
   check("no_console_errors_after_edit", rig.js("return __t.errors.length;") == 0, rig.errors());
 }
 
+// A Code-view delete and its one-step undo run through the same stamped save as the editor.
+void inline_line_edit(const Rig& rig, const std::filesystem::path& programs) {
+  const auto file = programs / "part.ngc";
+  const auto original = contents(file);
+  const auto revision = rig.js("return __t.last.program.revision;");
+  check("inline_edit_opens_code", rig.click("button", "Code") == "ok");
+  check("inline_edit_picks_the_code_row", rig.js(R"(
+    const row = __t.all('.nc .row .text').find((element) => element.textContent === 'G1 X18');
+    if (!row) return false;
+    row.click();
+    return true;
+  )") == true);
+  check("inline_edit_deletes_single_line",
+        rig.wait_js("!!__t.find('.line-actions button', 'Delete line')") &&
+            rig.click(".line-actions button", "Delete line") == "ok");
+  const bool deleted = rig.wait_js(std::format(
+      "__t.last.program.revision > {} && !__t.last.program.lines.includes('G1 X18') && "
+      "__t.last.status.program.revision === __t.last.program.revision && "
+      "__t.last.preview.context === __t.last.status.preview_context && "
+      "__t.last.preview.state === 'ready' && __t.find('.line-actions button', 'Undo')",
+      revision.dump()));
+  check("inline_edit_reloads_before_undo", deleted && contents(file).find("G1 X18") == std::string::npos);
+  if (!deleted)
+    return;
+  const auto edited = rig.js("return [__t.last.program.revision, __t.last.program.stamp];");
+  check("inline_edit_undoes_last_delete", rig.click(".line-actions button", "Undo") == "ok" &&
+        rig.wait_js(std::format(
+            "__t.last.program.revision > {} && __t.last.program.lines.includes('G1 X18') && "
+            "__t.last.status.program.revision === __t.last.program.revision && "
+            "__t.last.preview.context === __t.last.status.preview_context && "
+            "__t.last.preview.state === 'ready' && !__t.find('.line-actions button', 'Undo')",
+            edited.at(0).dump())) && contents(file) == original);
+  const auto stamp = rig.js("return __t.sent.filter((m) => m?.type === 'save_program').at(-1)?.stamp ?? null;");
+  check("inline_undo_checks_the_edited_stamp", stamp == edited.at(1), stamp.dump());
+  static_cast<void>(rig.click(".line-actions button", "Dismiss line actions"));
+}
+
 // The paired sample of the repository: EngiWorld task 17, its two programs as they are and
 // its STEP model, in the real panel. What the preview is for each program and each active
 // work system, and what of the model is on the screen before and after its placement is
@@ -2210,6 +2247,8 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     status_gaps(rig, "program_with_tool_change");
     program_edited_in_the_editor(rig, programs);
     status_gaps(rig, "program_edited_in_the_editor");
+    inline_line_edit(rig, programs);
+    status_gaps(rig, "inline_line_edit");
     platform(rig, ui);
     status_gaps(rig, "platform");
     paired_sample(rig, programs);

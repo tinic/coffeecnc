@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
+import { vPopover } from '../popover'
+import type { LineAction } from '../program-line-edits'
 // The program text. The executing line is highlighted and kept in view until the operator
 // scrolls; from then on the view stays where it was put, and a button offers to follow again.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
@@ -21,20 +23,59 @@ const props = defineProps<{
   breakpointLine?: number
   breakpointReached?: boolean
   breakpointBlock?: string | null
+  edits?: {
+    block: string | null
+    hasClipboard: boolean
+    canUndo: boolean
+    message: { text: string; error: boolean } | null
+  }
 }>()
-const emit = defineEmits<{ restart: [line: number]; editRate: [line: number, offset: number]; breakpoint: [line: number] }>()
+const emit = defineEmits<{
+  restart: [line: number]
+  editRate: [line: number, offset: number]
+  breakpoint: [line: number]
+  lineEdit: [action: LineAction, first: number, last: number]
+  undoLineEdit: []
+  dismissLineEdit: []
+}>()
 
 /** Where each token starts in its line, so a tapped F or S word can be found again. */
 function offsetOf(tokens: readonly { text: string }[], index: number): number {
   return tokens.slice(0, index).reduce((sum, token) => sum + token.text.length, 0)
 }
 
-/** The line the operator tapped to restart from; 0 for none. */
-const picked = ref<number>(0)
-watch(() => [props.restartable, props.lines] as const, () => { picked.value = 0 })
+const anchor = ref(0)
+const picked = ref(0)
+const canEdit = computed(() => props.edits?.block === null)
+const canPick = computed(() => props.restartable || canEdit.value)
+const single = computed(() => picked.value > 0 && anchor.value === picked.value)
+const selectionStart = computed(() => Math.min(anchor.value, picked.value))
+const selectionEnd = computed(() => Math.max(anchor.value, picked.value))
+
+function clearSelection(): void {
+  anchor.value = picked.value = 0
+}
+watch(() => props.lines, clearSelection)
+watch(canPick, (value) => { if (!value) clearSelection() })
 function pick(line: number): void {
-  if (!props.restartable) return
-  picked.value = picked.value === line ? 0 : line
+  if (!canPick.value) return
+  if (single.value && picked.value === line) clearSelection()
+  else anchor.value = picked.value = line
+}
+function pickCode(event: MouseEvent, line: number): void {
+  if (event.target instanceof Element && event.target.classList.contains('editable')) return
+  if (document.getSelection()?.isCollapsed === false) return
+  pick(line)
+}
+function closeActions(): void {
+  if (picked.value > 0) clearSelection()
+  else emit('dismissLineEdit')
+}
+function editSelection(action: LineAction, event?: MouseEvent): void {
+  if (!canEdit.value || picked.value === 0) return
+  if (event?.currentTarget instanceof HTMLElement) event.currentTarget.closest('details')?.removeAttribute('open')
+  emit('lineEdit', action, selectionStart.value, selectionEnd.value)
+  if (action === 'copy') clearSelection()
 }
 
 const rowHeight = 24
@@ -47,6 +88,54 @@ const viewHeight = ref<number>(0)
 const codeWidth = ref<number>(0)
 let measureContext: CanvasRenderingContext2D | null = null
 const follow = ref<boolean>(true)
+
+// Capture only gutter gestures. Starting on the code remains native touch scrolling.
+const dragging = ref(false)
+let drag: { pointer: number; line: number; startY: number; y: number } | null = null
+let scrollFrame = 0
+function beginRange(event: PointerEvent, line: number): void {
+  const element = scroller.value
+  if (!canEdit.value || element === null || event.button !== 0 || drag !== null) return
+  element.setPointerCapture(event.pointerId)
+  drag = { pointer: event.pointerId, line, startY: event.clientY, y: event.clientY }
+}
+function updateRange(): void {
+  const element = scroller.value
+  if (drag === null || element === null) return
+  const bounds = element.getBoundingClientRect()
+  const edge = 24
+  const edgeDelta = drag.y < bounds.top + edge ? drag.y - bounds.top - edge
+    : drag.y > bounds.top + element.clientHeight - edge ? drag.y - bounds.top - element.clientHeight + edge : 0
+  const previous = element.scrollTop
+  if (edgeDelta !== 0) element.scrollTop += Math.sign(edgeDelta) * Math.min(14, Math.ceil(Math.abs(edgeDelta) / 3))
+  onScroll()
+  const y = Math.min(element.clientHeight - 1, Math.max(0, drag.y - bounds.top))
+  anchor.value = drag.line
+  picked.value = Math.min(props.lines.length, Math.floor((y + element.scrollTop) / rowHeight) + 1)
+  scrollFrame = element.scrollTop !== previous ? requestAnimationFrame(updateRange) : 0
+}
+function moveRange(event: PointerEvent): void {
+  if (drag?.pointer !== event.pointerId || !canEdit.value) return
+  drag.y = event.clientY
+  if (!dragging.value && Math.abs(drag.y - drag.startY) < 8) return
+  dragging.value = true
+  if (scrollFrame !== 0) cancelAnimationFrame(scrollFrame)
+  updateRange()
+}
+function finishRange(event: PointerEvent): void {
+  if (drag?.pointer !== event.pointerId) return
+  const line = drag.line
+  const moved = dragging.value
+  cancelRange()
+  if (event.type === 'pointerup' && !moved && canEdit.value) pick(line)
+}
+function cancelRange(): void {
+  drag = null
+  dragging.value = false
+  if (scrollFrame !== 0) cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+}
+watch(canEdit, (value) => { if (!value && drag !== null) cancelRange() })
 
 /** The line to keep in view: where motion is, or else where the interpreter is. */
 const active = computed(() => props.breakpointReached && props.breakpointLine ? props.breakpointLine
@@ -154,6 +243,7 @@ function updateViewport(): void {
   const element = scroller.value
   if (element === null) return
   viewHeight.value = element.clientHeight
+  if (dragging.value) return
   if (picked.value > 0) {
     const top = (picked.value - 1) * rowHeight
     const bottom = top + rowHeight
@@ -165,7 +255,7 @@ function updateViewport(): void {
 }
 
 watch(codeWidth, updateViewport, { flush: 'post' })
-watch(picked, updateViewport, { flush: 'post' })
+watch([picked, dragging], updateViewport, { flush: 'post' })
 
 let observer: ResizeObserver | null = null
 
@@ -183,6 +273,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelRange()
   observer?.disconnect()
 })
 </script>
@@ -197,6 +288,10 @@ onBeforeUnmount(() => {
       @wheel.passive="operatorScrolled"
       @touchmove.passive="operatorScrolled"
       @pointerdown="operatorScrolled"
+      @pointermove="moveRange"
+      @pointerup="finishRange"
+      @pointercancel="finishRange"
+      @lostpointercapture="finishRange"
       @keydown="operatorScrolled"
     >
       <div
@@ -212,35 +307,59 @@ onBeforeUnmount(() => {
               motion: row.number === motionLine,
               current: row.number === currentLine && row.number !== motionLine,
               error: row.number === errorLine,
-              picked: row.number === picked,
+              picked: row.number >= selectionStart && row.number <= selectionEnd,
               breakpoint: row.number === breakpointLine,
             }"
           >
-            <span class="number" :class="{ pickable: restartable }" @click="pick(row.number)">{{ row.number }}</span>
-            <span class="text"><span
+            <span
+              class="number" :class="{ pickable: canPick, 'range-target': canEdit }"
+              @pointerdown="beginRange($event, row.number)" @click="(!canEdit || $event.detail === 0) && pick(row.number)"
+            >{{ row.number }}</span>
+            <span class="text" :class="{ pickable: canPick }" @click="pickCode($event, row.number)"><span
               v-for="(token, index) in row.tokens"
               :key="index"
               :data-tone="token.tone ?? undefined"
-              :class="{ editable: restartable && row.number === picked && token.tone === 'rate' }"
-              @click="restartable && row.number === picked && token.tone === 'rate' && emit('editRate', row.number, offsetOf(row.tokens, index))"
+              :class="{ editable: restartable && single && row.number === picked && token.tone === 'rate' }"
+              @click="restartable && single && row.number === picked && token.tone === 'rate' && emit('editRate', row.number, offsetOf(row.tokens, index))"
             >{{ token.text }}</span></span>
           </div>
         </div>
       </div>
     </div>
-    <div v-if="restartable && picked > 0" class="line-actions">
-      <button class="btn clear-line" type="button" aria-label="Clear selected line" @click="picked = 0">
+    <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions">
+      <button v-tooltip="picked ? 'Clear selection' : 'Dismiss line actions'" class="btn clear-line" type="button" :aria-label="picked ? 'Clear selected line' : 'Dismiss line actions'" @click="closeActions">
         <AppIcon name="close" />
       </button>
-      <button
-        v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? 'Run from the beginning and pause before this line'"
-        class="btn primary breakpoint-action" type="button" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); picked = 0"
-      >
-        Run to line <span class="follow-count mono">{{ picked }}</span>
+      <span v-if="picked > 0 && !single" class="range-label mono">{{ selectionStart }}–{{ selectionEnd }}</span>
+      <span v-if="edits?.message && (picked === 0 || edits.message.error)" class="edit-feedback" :class="{ 'edit-error': edits.message.error }" :role="edits.message.error ? 'alert' : 'status'">{{ edits.message.text }}</span>
+      <button v-if="edits?.canUndo" v-tooltip="edits.block ?? 'Undo the last line edit'" class="btn undo-line" type="button" aria-label="Undo" :disabled="!!edits.block" @click="emit('undoLineEdit')">
+        <AppIcon v-if="picked > 0" name="undo" /><span v-else>Undo</span>
       </button>
-      <button class="btn primary restart" type="button" @click="emit('restart', picked)">
-        Restart from line <span class="follow-count mono">{{ picked }}</span>
-      </button>
+      <template v-if="picked > 0 && edits">
+        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('cut')">Cut</button>
+        <button v-if="!single" class="btn" type="button" :disabled="!!edits.block" @click="editSelection('copy')">Copy</button>
+        <button v-tooltip="edits.block ?? (single ? 'Delete line' : 'Delete selected lines')" class="btn delete-line" type="button" :disabled="!!edits.block" :aria-label="single ? 'Delete line' : 'Delete selected lines'" @click="editSelection('delete')">
+          <AppIcon name="trash" /> <span v-if="!single">Delete</span>
+        </button>
+        <details v-if="single && edits.hasClipboard && !edits.block" v-popover class="insert-lines">
+          <summary class="btn">Insert</summary>
+          <div class="popover insert-choices">
+            <button class="btn" type="button" @click="editSelection('insert-above', $event)">Above line</button>
+            <button class="btn" type="button" @click="editSelection('insert-below', $event)">Below line</button>
+          </div>
+        </details>
+      </template>
+      <template v-if="single && restartable">
+        <button
+          v-if="breakpointLines?.has(picked)" v-tooltip="breakpointBlock ?? 'Run from the beginning and pause before this line'"
+          class="btn primary breakpoint-action" type="button" :aria-label="`Run to line ${String(picked)}`" :disabled="!!breakpointBlock" @click="emit('breakpoint', picked); clearSelection()"
+        >
+          <span>Run to<span class="full-label"> line</span></span> <span class="follow-count mono">{{ picked }}</span>
+        </button>
+        <button class="btn primary restart" type="button" :aria-label="`Restart from line ${String(picked)}`" @click="emit('restart', picked)">
+          <span>Restart<span class="full-label"> from line</span></span> <span class="follow-count mono">{{ picked }}</span>
+        </button>
+      </template>
     </div>
     <button v-else-if="!follow && active > 0" class="btn follow" type="button" @click="followAgain">
       Follow line <span class="follow-count mono">{{ active }}</span>
@@ -251,6 +370,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .nc {
   position: relative;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -321,9 +441,8 @@ onBeforeUnmount(() => {
   text-underline-offset: 3px;
 }
 
-.number.pickable {
-  cursor: pointer;
-}
+.pickable { cursor: pointer; }
+.number.range-target { touch-action: none; cursor: ns-resize; }
 
 .row.picked {
   background: var(--accent-soft);
@@ -344,7 +463,19 @@ onBeforeUnmount(() => {
   padding: 6px 16px 10px;
   border-top: 1px solid var(--line);
 }
-.clear-line { margin-right: auto; min-width: 44px; padding: 0; }
+.line-actions .btn { padding-inline: 10px; white-space: nowrap; }
+.line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }
+.line-actions .follow-count { width: auto; min-width: 1.5em; }
+@container (max-width: 520px) { .line-actions .full-label { display: none; } }
+.line-actions .clear-line { margin-right: auto; padding: 0; }
+.range-label, .edit-feedback { align-self: center; color: var(--text-dim); font-size: 12px; }
+.range-label + .edit-feedback { margin-left: auto; }
+.edit-feedback { flex: 1; min-width: 60px; }
+.edit-error { color: var(--stop); }
+.insert-lines { position: relative; }
+.insert-lines summary { list-style: none; }
+.insert-lines summary::-webkit-details-marker { display: none; }
+.insert-choices { display: grid; gap: 4px; width: max-content; bottom: calc(100% + 6px); padding: 6px; }
 .row.breakpoint { background: var(--warn-soft); box-shadow: inset 3px 0 0 var(--warn); }
 .row.breakpoint .number { color: var(--warn); }
 

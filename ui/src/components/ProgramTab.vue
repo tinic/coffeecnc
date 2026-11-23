@@ -1,3 +1,11 @@
+<script lang="ts">
+import * as lineEditMachine from '../machine'
+import { createProgramLineEdits } from '../program-line-edits'
+
+// The clipboard and a pending save outlive a switch away from the Machine tab.
+const lineEdits = createProgramLineEdits(lineEditMachine.panel, lineEditMachine)
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { allHomed, chooseProgramLayout, findTool, homingRequired, live, onResult, panel, reported, send } from '../machine'
@@ -23,6 +31,12 @@ import SetterStatusBand from './SetterStatusBand.vue'
 import { machineFeedback } from '../machine-feedback'
 
 const status = reported
+const lineEditBar = computed(() => ({
+  block: lineEdits.block.value,
+  hasClipboard: lineEdits.hasClipboard.value,
+  canUndo: lineEdits.canUndo.value,
+  message: lineEdits.message.value,
+}))
 const text = useTemplateRef<InstanceType<typeof NcText>>('text')
 const selected = ref<number | null>(null)
 const checkOpen = ref(false)
@@ -243,10 +257,11 @@ async function showFailure(): Promise<void> {
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
             <NcText
-              v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart"
+              v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart && !lineEdits.pending.value" :edits="lineEditBar"
               :breakpoint-line="breakpointLine" :breakpoint-lines="breakpointLines" :breakpoint-reached="activeBreakpoint?.reached === true"
               :breakpoint-block="breakpointBlock"
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
+              @line-edit="lineEdits.apply" @undo-line-edit="lineEdits.undoLast" @dismiss-line-edit="lineEdits.dismiss"
             />
             <div v-else class="empty">{{ status?.program.file ? 'Waiting for program text' : 'Open a program to begin' }}</div>
           </template>

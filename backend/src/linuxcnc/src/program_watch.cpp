@@ -35,9 +35,8 @@ auto active_comment(std::string_view comment) -> std::string_view {
   return {};
 }
 
-// The side effect of one line's comments, and (separately) an expanding comment with a
-// parameter in it.
-auto comment_refusal(std::string_view line, bool side_effects_only) -> std::optional<std::string> {
+// The side effect of one line's comments: Python, or a file written.
+auto comment_refusal(std::string_view line) -> std::optional<std::string> {
   std::string start;
   for (const char c : line) {
     if (std::isspace(static_cast<unsigned char>(c)) != 0)
@@ -62,10 +61,6 @@ auto comment_refusal(std::string_view line, bool side_effects_only) -> std::opti
       return std::format("a ({}...) comment runs Python in the interpreter", word);
     if (word.starts_with("log") || word.starts_with("probe"))
       return std::format("a ({}...) comment writes a file", word);
-    if (!side_effects_only && !word.empty() && comment.find('#') != std::string_view::npos)
-      return std::format("a ({}...) comment with a parameter (#): programs with parameters are "
-                         "not previewed",
-                         word);
     i = end;
   }
   return {};
@@ -190,7 +185,7 @@ auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden> {
   for (int number = 1; !text.empty(); ++number) {
     const auto end = text.find('\n');
     const auto line = text.substr(0, end);
-    if (auto what = comment_refusal(line, true))
+    if (auto what = comment_refusal(line))
       return Forbidden{number, std::move(*what)};
     const auto block = bare_block(line);
     if (const auto found = o_word(block); found && found->name.empty())
@@ -202,63 +197,176 @@ auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden> {
   return {};
 }
 
-auto refused_block(std::string_view line) -> std::optional<std::string> {
-  // The comments first: an active one is not an ordinary comment, whatever it holds.
-  if (auto reason = comment_refusal(line, false))
-    return reason;
-  const auto block = bare_block(line);
-  std::string_view text = block;
-  if (text.find('#') != std::string_view::npos)
-    return std::string("uses a parameter (#): programs with parameters are not previewed");
+namespace {
+
+// The words of a block that is not a control (O word) block, outside expressions and named
+// parameters: a letter, and its number when one follows it literally. `computed` when the
+// value is an expression or a parameter.
+struct Word {
+  char letter{};
+  std::optional<double> value;
+  bool computed{};
+};
+
+// What follows a block's block-delete mark and line number.
+auto after_line_number(std::string_view text) -> std::string_view {
   if (!text.empty() && text.front() == '/')
     text.remove_prefix(1);
-  // A line number, then the O word of a control block; its name is not a word of G-code.
   if (text.size() > 1 && text.front() == 'n' && digit(text[1])) {
     text.remove_prefix(1);
     while (!text.empty() && (digit(text.front()) || text.front() == '.'))
       text.remove_prefix(1);
   }
-  if (text.size() > 1 && text.front() == 'o') {
-    if (text[1] == '[')
-      return std::string("a computed O word: programs with computed names are not previewed");
-    text.remove_prefix(1);
-    if (text.front() == '<') {
-      const auto end = text.find('>');
-      text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
-    } else {
-      while (!text.empty() && digit(text.front()))
-        text.remove_prefix(1);
+  return text;
+}
+
+// The words of a block, or nothing for an O word block, which has none.
+auto words_part(std::string_view block) -> std::optional<std::string_view> {
+  const auto text = after_line_number(block);
+  if (!text.empty() && text.front() == 'o')
+    return {};
+  return text;
+}
+
+auto words_of(std::string_view text) -> std::vector<Word> {
+  std::vector<Word> words;
+  int depth = 0;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const char c = text[i];
+    if (c == '[') {
+      ++depth;
+      continue;
     }
-    if (text.starts_with("call") && text.find('[') != std::string_view::npos)
-      return std::string("calls a subroutine with arguments: programs with parameters are not "
-                         "previewed");
+    if (c == ']') {
+      depth = std::max(depth - 1, 0);
+      continue;
+    }
+    if (depth > 0)
+      continue;
+    if (c == '#') {
+      // A parameter: a number, a named one in <>, or an expression (skipped above).
+      if (i + 1 < text.size() && text[i + 1] == '<') {
+        const auto end = text.find('>', i);
+        i = end == std::string_view::npos ? text.size() : end;
+      }
+      continue;
+    }
+    if (c < 'a' || c > 'z')
+      continue;
+    Word word{c, {}, false};
+    std::size_t start = i + 1;
+    if (start < text.size() && (text[start] == '+' || text[start] == '-'))
+      ++start;
+    if (start < text.size() && (text[start] == '[' || text[start] == '#')) {
+      word.computed = true;
+    } else if (start < text.size() && (digit(text[start]) || text[start] == '.')) {
+      double value = 0;
+      const auto [parsed, error] = std::from_chars(text.data() + start, text.data() + text.size(),
+                                                   value, std::chars_format::fixed);
+      if (error == std::errc{}) {
+        word.value = text[i + 1] == '-' ? -value : value;
+        i = static_cast<std::size_t>(parsed - text.data()) - 1;
+      }
+    }
+    words.push_back(word);
+  }
+  return words;
+}
+
+auto tenths_of(const Word& word) -> std::optional<long> {
+  if (!word.value || *word.value < 0 || *word.value > 999)
+    return {};
+  return std::lround(*word.value * 10);
+}
+
+} // namespace
+
+auto refused_block(std::string_view line) -> std::optional<std::string> {
+  // The comments first: an active one is not an ordinary comment, whatever it holds.
+  if (auto reason = comment_refusal(line))
+    return reason;
+  const auto block = bare_block(line);
+  // The one parameter whose value the preview's interpreter has differently by design.
+  if (block.find("#<_task>") != std::string::npos)
+    return std::string("reads the _task parameter, which is 1 on the machine and 0 in the "
+                       "preview: the program can act differently in each");
+  const auto text = words_part(block);
+  if (!text) {
+    if (after_line_number(block).starts_with("o["))
+      return std::string("a computed O word: programs with computed names are not previewed");
     return {};
   }
-  for (std::size_t i = 0; i + 1 < text.size(); ++i) {
-    if (text[i] != 'g')
+  for (const auto& word : words_of(*text)) {
+    if (word.letter != 'g')
       continue;
-    const auto start = i + 1 + static_cast<std::size_t>(text[i + 1] == '+');
-    if (start == text.size())
-      continue;
-    const char next = text[start];
-    if (next == '[')
+    if (word.computed)
       return std::string("a computed G word: which code runs is not known before it does");
-    if (!digit(next) && next != '.')
-      continue;
-    double code = 0;
-    const auto [parsed, error] =
-        std::from_chars(text.data() + start, text.data() + text.size(), code, std::chars_format::fixed);
-    if (error != std::errc{} || code > 999)
-      continue;
-    const auto end = static_cast<std::size_t>(parsed - text.data());
-    const auto tenths = std::lround(code * 10);
-    if (tenths == 280 || tenths == 300)
-      return std::format("G{} moves by a position saved in the parameter file, which is not "
-                         "the machine's present one for certain",
-                         tenths / 10);
-    if (tenths == 923)
+    if (tenths_of(word) == 923)
       return std::string("G92.3 restores an offset saved in the parameter file");
-    i = end - 1;
+  }
+  return {};
+}
+
+auto saved_position_move(std::string_view line) -> int {
+  const auto block = bare_block(line);
+  const auto text = words_part(block);
+  if (!text)
+    return 0;
+  for (const auto& word : words_of(*text)) {
+    if (word.letter != 'g')
+      continue;
+    if (const auto tenths = tenths_of(word); tenths == 280 || tenths == 300)
+      return static_cast<int>(*tenths / 10);
+  }
+  return 0;
+}
+
+auto uses_parameters(std::string_view text) -> bool {
+  while (!text.empty()) {
+    const auto end = text.find('\n');
+    if (bare_block(text.substr(0, end)).find('#') != std::string::npos)
+      return true;
+    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+  }
+  return false;
+}
+
+auto remapped_use(std::string_view line, const std::vector<std::string>& codes)
+    -> std::optional<std::string> {
+  if (codes.empty())
+    return {};
+  const auto block = bare_block(line);
+  const auto text = words_part(block);
+  if (!text)
+    return {};
+  const auto words = words_of(*text);
+  for (const auto& code : codes) {
+    if (code.empty())
+      continue;
+    const char letter = code.front();
+    std::optional<double> value;
+    if (code.size() > 1) {
+      double number = 0;
+      const auto [parsed, error] = std::from_chars(code.data() + 1, code.data() + code.size(),
+                                                   number, std::chars_format::fixed);
+      if (error != std::errc{} || parsed != code.data() + code.size())
+        continue;
+      value = number;
+    }
+    const bool used = std::ranges::any_of(words, [&](const Word& word) -> bool {
+      if (word.letter != letter)
+        return false;
+      // A computed value may be the remapped one.
+      return !value || word.computed ||
+             (word.value && std::lround(*word.value * 10) == std::lround(*value * 10));
+    });
+    if (used) {
+      std::string name = code;
+      std::ranges::transform(name, name.begin(), [](char c) {
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      });
+      return name;
+    }
   }
   return {};
 }

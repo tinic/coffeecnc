@@ -19,26 +19,35 @@ namespace coffeecnc {
 // Why the preview does not go past this line of a program, if it does not: the text of a line
 // the interpreter has read, judged before the line is executed. Pure: no LinuxCNC.
 //
-// The preview's interpreter starts with the parameters of the file LinuxCNC saved last; task's
-// holds what programs and MDI blocks have set since. Which of them a line reads, and whether
-// the line runs at all, is known only inside the interpreter, and its public interface does
-// not say. So nothing with a parameter is previewed: a line is refused when, outside its
-// comments, it has
+// Parameters are interpreted: the preview's interpreter starts with the machine's parameter
+// file (see HelperPreviewEngine for how its values are kept current and for the parameters a
+// program reads before it sets them). A line is refused when, outside its comments, it has
 //
-//   a `#`: a parameter read or assigned, numbered, named or computed; also inside a
-//   (msg, ...), (debug, ...), (print, ...) or (abort, ...) comment, which the interpreter
-//   expands. A `#` in an ordinary comment is text
 //   a comment the interpreter acts on by running Python or writing a file: (py, ...),
 //   (pyrun, ...), (pyreload), a line `;py,...`, (log, ...), (logopen, ...), (logappend, ...),
 //   (logclose), (PROBEOPEN ...), (PROBECLOSE); recognised as the interpreter does, in any
 //   case and after white space
-//   an O word call with arguments (`o100 call [5]`): they become #1 and up of the subroutine
-//   a computed O word (`o[...]`) or G word (`g[...]`)
-//   G28, G30 or G92.3: they use positions saved in the parameter file without naming one
+//   a computed O word (`o[...]`) or G word (`g[...]`, `g#1`)
+//   G92.3: it restores a G92 offset saved in the parameter file, which the live G92 replaces
+//   in the preview's copy
+//   #<_task>: 1 in task, 0 in the preview
 //
 // A line in a branch that is not taken, or in a subroutine that is never called, is read by
 // the interpreter too and is refused all the same.
 [[nodiscard]] auto refused_block(std::string_view line) -> std::optional<std::string>;
+
+// 28 or 30 when the line has G28 or G30 (a move to a position saved in the parameter file),
+// else 0. G28.1 and G30.1 save a position and are 0.
+[[nodiscard]] auto saved_position_move(std::string_view line) -> int;
+
+// Whether any line of a text uses a parameter (`#` outside comments).
+[[nodiscard]] auto uses_parameters(std::string_view text) -> bool;
+
+// The first of `codes` (as [RS274NGC] REMAP names them, lower case: "m6", "t", "g88.1") that
+// the line uses, upper case; nothing when it uses none. A computed value of the code's letter
+// (`M[#1]`) counts as a use.
+[[nodiscard]] auto remapped_use(std::string_view line, const std::vector<std::string>& codes)
+    -> std::optional<std::string>;
 
 // A comment that makes the interpreter run Python or write a file, anywhere in a text: the
 // first line that has one, from 1, and what it is. The forms, as LinuxCNC 2.9.4 recognises

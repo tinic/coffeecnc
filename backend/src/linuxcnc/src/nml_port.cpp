@@ -2783,6 +2783,14 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
   const auto s = status();
   const auto& config = impl_->config;
+  // Task skips the blocks before the line without their effect on motion, the selection of a
+  // work system among them: the line's system must be the active one already.
+  if (s.controller.link == Link::live && point.wcs >= 1 && point.wcs <= 9 && s.wcs != point.wcs) {
+    static constexpr std::array names{"G54", "G55", "G56", "G57", "G58",
+                                      "G59", "G59.1", "G59.2", "G59.3"};
+    const auto* name = names.at(static_cast<std::size_t>(point.wcs - 1));
+    return std::format("This line runs in {}. Select {}, then choose the line again.", name, name);
+  }
   if (!restart_frame(s, point, inputs))
     return "Machine power, the program or the work coordinate system changed.";
   if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||

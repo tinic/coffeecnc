@@ -181,7 +181,8 @@ if(BUILD_TESTING)
         target_link_libraries(coffeecnc_preview_engine_tests PRIVATE coffeecnc_linuxcnc
           coffeecnc_project_options)
         target_compile_definitions(coffeecnc_preview_engine_tests PRIVATE
-          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples")
+          COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+          COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam")
         coffeecnc_enable_analyzers(coffeecnc_preview_engine_tests)
         add_test(NAME preview_engine COMMAND coffeecnc_preview_engine_tests
           $<TARGET_FILE:coffeecnc_preview> ${PROJECT_BINARY_DIR})
@@ -195,6 +196,7 @@ if(BUILD_TESTING)
         ${COFFEECNC_LINUXCNC_INCLUDE_DIR} ${COFFEECNC_BOOST_INCLUDE_DIR})
       target_compile_definitions(coffeecnc_sim_tests PRIVATE ULAPI
         COFFEECNC_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/../samples"
+        COFFEECNC_CAM_SAMPLES_DIRECTORY="${PROJECT_SOURCE_DIR}/tests/cam"
         COFFEECNC_PREVIEW_HELPER_BUILT="$<$<TARGET_EXISTS:coffeecnc_preview>:$<TARGET_FILE:coffeecnc_preview>>")
       if(TARGET coffeecnc_preview)
         add_dependencies(coffeecnc_sim_tests coffeecnc_preview)
@@ -342,6 +344,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> g0759 program-breakpoint)
         set_tests_properties(linuxcnc_program_breakpoint_g0759 PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 400)
+        add_test(NAME linuxcnc_cam_programs_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -p g0759 -t 240 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_cam_programs_g0759
+          $<TARGET_FILE:coffeecnc_sim_tests> g0759 cam-programs)
+        set_tests_properties(linuxcnc_cam_programs_g0759 PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 570)
       endif()
       add_test(NAME linuxcnc_restore_spindle_tool_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
         -p g0759 -t 30 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_restore_spindle_tool_g0759

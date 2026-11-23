@@ -28,9 +28,10 @@
 // the controlled point less the tool offset in effect, in millimetres.
 //
 // The trusted path ends, with a `stop` line, at the first block whose effect depends on the
-// machine: a probe move, M66, M100 to M199, a move in a work system other than the one active
-// at the start, a tool change that moves to a saved position, and what ProgramWatch rejects
-// (any use of a parameter, G28, G30, G92.3).
+// machine: a probe move, M66, M100 to M199, a code the machine remaps, a move in a work system
+// or a G28/G30 whose values the parameter file does not hold, a global named parameter the
+// program reads and does not define, the request's `stop_line`, and what ProgramWatch rejects
+// (G92.3, #<_task>, computed G and O words).
 //
 // Only the interpreter's public interface is used: InterpBase and the canonical functions.
 //
@@ -267,14 +268,16 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
 auto may_move() -> bool {
   if (canon.halt != Halt::none)
     return false;
-  if (canon.g5x_index != canon.request.wcs) {
+  const auto index = static_cast<std::size_t>(canon.g5x_index - 1);
+  const bool known = canon.g5x_index == canon.request.wcs ||
+                     (index < 9 && (canon.request.known_systems & (1U << index)) != 0);
+  if (!known) {
     if (canon.recording)
       static_cast<void>(used_frame());
     static constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59",
                                       "G59.1", "G59.2", "G59.3"};
-    const auto index = static_cast<std::size_t>(canon.g5x_index - 1);
-    halt(Halt::stop, std::format("moves in {}: only the offsets of the work system active at the "
-                                 "start are known",
+    halt(Halt::stop, std::format("moves in {}, whose offsets are not in the machine's parameter "
+                                 "file",
                                  index < names.size() ? names.at(index) : "another work system"));
     return false;
   }
@@ -527,9 +530,11 @@ void CHANGE_TOOL(int index) {
     return;
   if (canon.restart_inherits_preparation)
     canon.restart_needs_preparation = true;
-  if (canon.request.tool_change_at_g30) {
-    halt(Halt::stop, "a tool change that moves to the saved G30 position "
-                     "([EMCIO] TOOL_CHANGE_AT_G30)");
+  // With the G30 position known, the interpreter has made the move to it already, as task's
+  // does ([EMCIO] TOOL_CHANGE_AT_G30 is in the helper's INI file then).
+  if (canon.request.tool_change_at_g30 && !canon.request.saved_g30) {
+    halt(Halt::stop, "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), "
+                     "which is not in the machine's parameter file");
     return;
   }
   // Task moves to [EMCIO] TOOL_CHANGE_POSITION first: machine coordinates of the controlled point.
@@ -859,6 +864,20 @@ auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCod
   return {};
 }
 
+// The global parameter of the interpreter's "Named parameter #<name> not defined" (LinuxCNC
+// 2.9.4, interp_namedparams.cc:185), which is also its answer for #<_ini[...]> and #<_hal[...]>
+// while INI_VARS and HAL_PIN_VARS are off, as they are here. A global (`_` first) lives on in
+// task from one program to the next; a local one does not, and is the program's own error.
+auto undefined_parameter(std::string_view error) -> std::optional<std::string> {
+  constexpr std::string_view head = "Named parameter #<_";
+  constexpr std::string_view tail = "> not defined";
+  const auto start = error.find(head);
+  const auto end = error.find(tail);
+  if (start == std::string_view::npos || end == std::string_view::npos || end < start)
+    return {};
+  return std::string(error.substr(start + head.size() - 3, end - start - head.size() + 4));
+}
+
 auto inherited_reason(const std::string& mode) -> std::string {
   return std::format("moves by the motion mode {} that was active before the program, which "
                      "the preview does not take over",
@@ -993,11 +1012,17 @@ auto run(const HelperRequest& request) -> int {
       // preview did not take over: that is the preview's end, not the program's error.
       text.fill(0);
       interp->line_text(text.data(), text.size() - 1);
+      const auto why = error_text(*interp, result);
       if (!inherited.empty() &&
           coffeecnc::motion_use(text.data()) == coffeecnc::MotionUse::inherits)
         halt(Halt::stop, inherited_reason(inherited));
+      else if (const auto name = undefined_parameter(why))
+        // Task may have it from an earlier program or MDI block: not the program's error.
+        halt(Halt::stop, std::format("reads {}, which the program does not set: its value from an "
+                                     "earlier program or MDI block is not known to the preview",
+                                     *name));
       else
-        halt(Halt::error, error_text(*interp, result));
+        halt(Halt::error, why);
       break;
     }
     // Where the interpreter is: in the program, or in a subroutine file a call led to.
@@ -1021,6 +1046,25 @@ auto run(const HelperRequest& request) -> int {
       canon.subroutine = true;
     if (const auto reason = coffeecnc::refused_block(text.data())) {
       halt(Halt::stop, *reason);
+      break;
+    }
+    if (request.stop_line == canon.line) {
+      halt(Halt::stop, "the path from here depends on a parameter (#) that the program reads "
+                       "before it sets it: its value from an earlier program or MDI block is "
+                       "not known to the preview");
+      break;
+    }
+    if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped)) {
+      halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
+                                   "does is not known to the preview",
+                                   *code));
+      break;
+    }
+    if (const int saved = coffeecnc::saved_position_move(text.data());
+        (saved == 28 && !request.saved_g28) || (saved == 30 && !request.saved_g30)) {
+      halt(Halt::stop, std::format("G{} moves to a position that is not in the machine's "
+                                   "parameter file",
+                                   saved));
       break;
     }
     // Until the program names a motion code, a mode that was not put in place is not known

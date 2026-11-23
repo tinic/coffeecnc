@@ -1,0 +1,30 @@
+(Three vises: one part in each of G54, G55 and G56)
+G21 G90 G17 G94 G40 G80
+G28 G91 Z0
+G90
+T1 M6
+G43 H1
+S1500 M3
+M8
+o<part> sub
+  G0 X0 Y0
+  G0 Z5
+  G1 Z-1 F300
+  G1 X20 F800
+  G1 Y10
+  G1 X0
+  G1 Y0
+  G0 Z5
+o<part> endsub
+G54
+o<part> call
+G55
+o<part> call
+G56
+o<part> call
+G54
+M9
+M5
+G28 G91 Z0
+G90
+M30

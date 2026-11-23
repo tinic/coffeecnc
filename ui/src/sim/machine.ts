@@ -975,7 +975,8 @@ export class SimMachine {
       case 'run': {
         const breakpoint = command.breakpoint
         if (breakpoint && (!Number.isSafeInteger(breakpoint.line) ||
-          command.preview_context === undefined || command.display_units === undefined || this.preview.state !== 'ready' ||
+          command.preview_context === undefined || command.display_units === undefined ||
+          !(this.preview.state === 'ready' || (this.preview.state === 'failed' && this.preview.check)) ||
           !this.preview.segments.some((segment) => segment.line === breakpoint.line)))
           return reject('Choose a motion line in a complete preview.')
         if (breakpoint && this.program?.lines[breakpoint.line - 1] !== breakpoint.text)

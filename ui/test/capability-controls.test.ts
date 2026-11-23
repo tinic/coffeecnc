@@ -492,7 +492,8 @@ describe('capability-aware controls', () => {
     if (!panel.status?.program.file) throw new Error('Missing loaded program')
     panel.hello = { ...hello, homing_required: false }
     panel.status.preview_context = 9
-    panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
+    panel.preview = { type: 'preview', context: 9, state: 'ready', bounds: null, dwells: [], error: null,
+      segments: [{ line: 5, kind: 'feed', tool: 1, feed: 900, points: [0, 0, 20, 0, 0, 2] }],
       check: { tools: [], frames: [], feed: null, spindle: null,
         units: ['mm'], travel: 'unknown', errors: [], warnings: [] } }
     wrapper = mount(RunBar)
@@ -508,6 +509,57 @@ describe('capability-aware controls', () => {
     await nextTick()
     expect(breakpointSelection.value).toBeNull()
     expect(wrapper.get('.main-action').text()).toContain('Resume')
+  })
+
+  it('keeps Run and Run to line on the path of a preview that ended early, after the review', async () => {
+    if (!panel.status?.program.file) throw new Error('Missing loaded program')
+    panel.hello = { ...hello, homing_required: false }
+    panel.status.preview_context = 9
+    const partial = 'CoffeeCNC could only check part of this program.'
+    panel.preview = { type: 'preview', context: 9, state: 'failed', bounds: null, dwells: [],
+      error: { line: 6, text: 'The preview ends at line 6: M6 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview.' },
+      segments: [{ line: 5, kind: 'feed', tool: 1, feed: 900, points: [0, 0, 20, 0, 0, 2] }],
+      check: { tools: [], frames: [], feed: null, spindle: null,
+        units: ['mm'], travel: 'unknown', errors: [], warnings: [partial] } }
+    wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
+    const action = (): ReturnType<VueWrapper['get']> => wrapper?.get('.main-action') ?? ((): never => { throw new Error('Missing RunBar') })()
+    // Run: offered, with the partial check to review first.
+    expect(action().attributes('disabled')).toBeUndefined()
+    await action().trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain(partial)
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button.primary').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9,
+      display_units: 'mm', confirmed: true })
+    vi.mocked(send).mockClear()
+
+    // Run to a line after the end of the preview: refused, with the reason.
+    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 7, text: 'G1 X5' }
+    await nextTick()
+    expect(action().attributes('disabled')).toBeDefined()
+    expect(action().attributes('aria-description')).toBe('The preview ends before this line: choose a line on the previewed path')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    // Run to a line on the previewed path: offered, after the same review.
+    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 5, text: 'G1 Z2 F900' }
+    await nextTick()
+    expect(action().text()).toContain('Run to line 5')
+    expect(wrapper.get('[role="dialog"]').text()).toContain(partial)
+    expect(send).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button.primary').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'run', preview_context: 9, display_units: 'mm',
+      confirmed: true, breakpoint: { line: 5, text: 'G1 Z2 F900' } })
+
+    // A preview that was not computed at all has no path: Run to line stays refused.
+    vi.mocked(send).mockClear()
+    breakpointSelection.value = null
+    panel.preview = { type: 'preview', context: 9, state: 'unavailable', bounds: null, dwells: [], segments: [],
+      error: { line: 0, text: 'This machine has a random tool changer: no preview is computed.' } }
+    await nextTick()
+    breakpointSelection.value = { file: panel.status.program.file, revision: panel.status.program.revision, line: 5, text: 'G1 Z2 F900' }
+    await nextTick()
+    expect(action().attributes('disabled')).toBeDefined()
+    expect(action().attributes('aria-description')).toBe('A breakpoint needs a complete program check')
+    expect(send).not.toHaveBeenCalled()
   })
 })
 

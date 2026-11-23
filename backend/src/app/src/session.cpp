@@ -1046,8 +1046,11 @@ auto Session::check_program_start(const Queued& request, const Run& command,
   if (program_check && !program_check->errors.empty())
     return program_check->errors.front();
   if (command.breakpoint) {
+    // The path up to where a preview ends is the program's own: a breakpoint on it pauses the
+    // run before anything the preview could not follow. Run itself needs the review then.
     if (!check.source.program_snapshot || !check.files_changed || !program_check ||
-        check.preview->state != PreviewState::ready)
+        (check.preview->state != PreviewState::ready &&
+         check.preview->state != PreviewState::failed))
       return "A breakpoint needs a complete program check.";
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
           return segment.line == command.breakpoint->line;

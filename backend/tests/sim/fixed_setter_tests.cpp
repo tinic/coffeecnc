@@ -738,6 +738,31 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
 }
 
 #ifdef COFFEECNC_PREVIEW_HELPER_BUILT
+// The spindle tool number can be published before the independent status reader sees idle
+// MDI. Keep the controller's real status and mailbox intact and order just those two reports
+// to the session so the handoff cannot pass by chance in the simulation.
+class M6StatusOrder final : public StatusSource {
+public:
+  explicit M6StatusOrder(StatusSource& controller) : controller_(controller) {}
+
+  auto read() -> ControllerState override {
+    auto state = controller_.read();
+    if (state.link == Link::live && state.mode == TaskMode::mdi &&
+        state.tool_in_spindle == 2 && !state.requested_tool) {
+      const auto now = HalShared::Clock::now();
+      if (!idle_after_)
+        idle_after_ = now + 200ms;
+      if (now < *idle_after_)
+        state.interp = InterpState::reading;
+    }
+    return state;
+  }
+
+private:
+  StatusSource& controller_;
+  std::optional<HalShared::Clock::time_point> idle_after_;
+};
+
 void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
                 HalShared& shared, NmlLoads& loads, const auto& mdi) {
   using Json = nlohmann::json;
@@ -784,7 +809,8 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
       }
     }
   };
-  Runtime runtime{port, **reader, control, config.limits, programs, receive, nullptr,
+  M6StatusOrder ordered_status{**reader};
+  Runtime runtime{port, ordered_status, control, config.limits, programs, receive, nullptr,
                   Runtime::Quit{}, &preview, &restart_engine};
   const auto page = runtime.begin_page();
   PanelReading reading;

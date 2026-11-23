@@ -8,7 +8,7 @@ import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
-import { number, type Generated } from '../src/conversational/program'
+import { chainOperations, number, type Generated } from '../src/conversational/program'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -353,6 +353,36 @@ describe('conversational programs', () => {
     expect(preview.error).toBeNull()
     expect(preview.state).toBe('ready')
     expect(preview.segments.some((segment) => segment.kind === 'feed')).toBe(true)
+  })
+
+  it('joins a facing and drilling operation with one program end and reaches the second toolpath', () => {
+    const face = { tool: 1, text: expected['facingMm'] ?? '' }
+    const drill = { tool: 2, text: (expected['gridMm'] ?? '').replace('T1 M6\nG43 H1', 'T2 M6\nG43 H2') }
+    const joined = text(chainOperations([face, drill], 'mm', -0.5))
+    expect(text(chainOperations([face], 'mm'))).toBe(face.text)
+    expect(errors(chainOperations([face, drill], 'mm'))).toHaveLength(1)
+    expect(joined).toContain('G0 Z5\nM5\n\nG90 G53 G0 Z-0.5\n\n(Hole pattern')
+    expect(joined.indexOf('G53')).toBeLessThan(joined.indexOf('T2 M6'))
+    expect(joined.match(/^T\d+ M6$/gm)).toEqual(['T1 M6', 'T2 M6'])
+    expect(joined.match(/^M2$/gm)).toEqual(['M2'])
+    expect(joined.endsWith('G80\nG0 Z5\nM5\nM2\n')).toBe(true)
+    const tools = [
+      { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+      { number: 2, pocket: 2, length: 40, diameter: 5, comment: '' },
+    ]
+    const preview = previewProgram(newModal(tools), splitLines(joined), false, 1)
+    expect(preview.error).toBeNull()
+    expect(preview.segments.some((segment) => segment.kind === 'feed' && segment.points.includes(-5))).toBe(true)
+  })
+
+  it('keeps one tool loaded across consecutive operations that use it', () => {
+    const face = { tool: 1, text: expected['facingMm'] ?? '' }
+    const drill = { tool: 1, text: expected['gridMm'] ?? '' }
+    const joined = text(chainOperations([face, drill], 'mm'))
+    expect(joined.match(/^T\d+ M6$/gm)).toEqual(['T1 M6'])
+    expect(joined).not.toContain('G53')
+    expect(joined).toContain('G43 H1\nS')
+    expect(joined).toContain('G98 G81')
   })
 
   it('writes numbers with the decimals of the unit and never -0', () => {

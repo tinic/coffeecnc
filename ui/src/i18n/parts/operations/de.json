@@ -1,6 +1,12 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "Auftrag prüfen",
+      "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
+      "job": "Auftrag",
+      "addToJob": "Zum Auftrag hinzufügen",
+      "createJob": "Auftrag erstellen und öffnen",
+      "removeOperation": "{name} aus dem Auftrag entfernen",
       "title": "Neue Bearbeitung",
       "operations": "Bearbeitung",
       "tool": "Werkzeug",
@@ -75,6 +81,9 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "jobToolChangeHeight": "Stellen Sie die sichere Z-Höhe für „Anfahren“ über die Freifahrhöhe aller Vorgänge, bevor Sie einen Auftrag mit Werkzeugwechseln speichern.",
+      "invalidJob": "Der Auftrag konnte nicht zusammengestellt werden.",
+      "jobTooLarge": "Das Programm überschreitet die Speichergrenze von 512 KiB.",
       "positive": "{label} muss größer als null sein.",
       "count": "{label} muss eine ganze Zahl von 1 bis {max} sein.",
       "chooseTool": "Wählen Sie ein Werkzeug aus der Werkzeugtabelle.",

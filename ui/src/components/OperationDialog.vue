@@ -1,19 +1,21 @@
 <script setup lang="ts">
-// A simple job without CAM: the operator picks an operation and its numbers, the panel writes
-// the program into the program directory and opens it like any other program.
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+// Generate one operation or queue several in the order they will run.
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { translateMessage } from '../i18n/messages'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
+import { limitMarginMm, safeZBlock } from '../manual-moves'
 import { vNumeric } from '../numeric-input'
 import { operations, parse, uniqueName, unitOf, visibleFields, type Field, type Operation, type OperationId, type Values } from '../conversational/operations'
-import type { Common, Unit } from '../conversational/program'
+import { chainOperations, unitName, written, type ChainOperation, type Common, type OperationsKey, type Unit } from '../conversational/program'
+import { byteLength, maxProgramBytes } from '../program-editor'
 import type { CommandBody, Directory } from '../protocol'
-import { toDisplay } from '../units'
+import { fromDisplay, toDisplay } from '../units'
 import { vTooltip } from '../tooltip'
+import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
 const emit = defineEmits<{ close: [] }>()
@@ -69,9 +71,71 @@ const generated = computed(() => {
     unit, rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance'),
     tool: { number: selected?.number ?? 0, diameter: selected ? toDisplay(selected.diameter, unit) : NaN, comment: selected?.comment ?? '' },
   }
-  return { result: operation.value.generate(parsed, common), base: operation.value.name(parsed, unit) }
+  return { result: operation.value.generate(parsed, common), base: operation.value.name(parsed, unit), tool: common.tool.number, clearance: common.clearance }
 })
-const errors = computed(() => 'errors' in generated.value.result ? generated.value.result.errors : [])
+
+interface JobOperation extends ChainOperation {
+  id: number
+  title: OperationsKey<'operation'>
+  base: string
+  clearance: number
+}
+const job = shallowRef<readonly JobOperation[]>([])
+const reviewing = ref(false)
+let nextOperation = 1
+const toolChangeHeight = computed((): { z: number | null } | { error: string } => {
+  const first = job.value[0]
+  if (!first || job.value.every((op) => op.tool === first.tool)) return { z: null }
+  const status = panel.status
+  const max = status?.axes.find((axis) => axis.axis === 'z')?.max_limit
+  const setting = panel.preferences.go_to_safe_z ?? (max ?? NaN) - limitMarginMm
+  const z = written(toDisplay(setting, unit), unit)
+  const machineZ = fromDisplay(z, unit)
+  const reason = safeZBlock(status, setting, unit) ?? safeZBlock(status, machineZ, unit)
+  if (reason !== null) return { error: reason }
+  const offset = status ? status.offsets.g5x[2] + status.offsets.g92[2] : NaN
+  // The program applies each tool's G43 length before moving to its work-coordinate clearance.
+  if (job.value.some((op) => {
+    const length = tools.value.find((row) => row.number === op.tool)?.length ?? NaN
+    const clearance = offset + length + fromDisplay(written(op.clearance, unit), unit)
+    return !Number.isFinite(clearance) || machineZ <= clearance + 1e-9
+  })) return { error: t('operations.check.jobToolChangeHeight') }
+  return { z }
+})
+const output = computed(() => {
+  if (!job.value.length) return generated.value.result
+  const height = toolChangeHeight.value
+  return 'error' in height ? { errors: [height.error] } : chainOperations(job.value, unit, height.z)
+})
+const outputErrors = computed(() => {
+  const result = output.value
+  if ('errors' in result) return result.errors
+  return byteLength(result.text) <= maxProgramBytes ? [] : [t('operations.check.jobTooLarge')]
+})
+const errors = computed(() => {
+  const draft = generated.value.result
+  return !reviewing.value && job.value.length && 'errors' in draft
+    ? [...outputErrors.value, ...draft.errors]
+    : outputErrors.value
+})
+
+function selectOperation(id: OperationId): void {
+  chosen.value = id
+  reviewing.value = false
+}
+
+function addToJob(): void {
+  const { result, base, tool, clearance } = generated.value
+  if (saving.value || 'errors' in result) return
+  job.value = [...job.value, { id: nextOperation++, title: operation.value.title, base, tool, clearance, text: result.text }]
+  feedback.value = ''
+}
+
+function removeFromJob(id: number): void {
+  job.value = job.value.filter((op) => op.id !== id)
+  if (!job.value.length) reviewing.value = false
+  feedback.value = ''
+}
 
 // The program directory and the names in it, so a new program never takes an existing name.
 const directory = ref<Directory | null>(null)
@@ -82,7 +146,11 @@ function list(): void {
   listing = { type: 'list_directory', path: null }
   send(listing)
 }
-const fileName = computed(() => uniqueName(generated.value.base, new Set(directory.value?.entries.map((entry) => entry.name))))
+const fileName = computed(() => {
+  const first = job.value[0]
+  const base = !first ? generated.value.base : job.value.length === 1 ? first.base : `job-${first.base}` // i18n-ignore: generated filename
+  return uniqueName(base, new Set(directory.value?.entries.map((entry) => entry.name)))
+})
 
 const saving = ref(false)
 const feedback = ref('')
@@ -91,9 +159,10 @@ const block = computed(() => connectionBlock(panel.link) ??
   (panel.status !== null && panel.status.interp !== 'idle' ? t('operations.dialog.stopProgram') : null))
 
 function create(): void {
-  const result = generated.value.result
+  const result = output.value
   const folder = directory.value?.path
-  if (saving.value || 'errors' in result || folder === undefined || block.value !== null) return
+  if ((job.value.length && !reviewing.value) || saving.value || 'errors' in result || outputErrors.value.length
+    || folder === undefined || block.value !== null) return
   saving.value = true
   feedback.value = ''
   const path = `${folder === '/' ? '' : folder}/${fileName.value}`
@@ -136,15 +205,47 @@ const fieldGroups = computed(() => [
 <template>
   <ModalDialog :title="t('operations.dialog.title')" size="wide" contained expanded @close="emit('close')">
     <div class="operation-editor">
-      <nav class="operations" :aria-label="t('operations.dialog.operations')">
+      <aside class="sidebar">
+        <nav class="operations" :aria-label="t('operations.dialog.operations')">
+          <button
+            v-for="op in operations" :key="op.id" class="btn operation" type="button"
+            :class="{ on: !reviewing && chosen === op.id }" :aria-pressed="!reviewing && chosen === op.id"
+            :disabled="saving" @click="selectOperation(op.id)"
+          >
+            {{ t(op.title) }}
+          </button>
+        </nav>
         <button
-          v-for="op in operations" :key="op.id" class="btn operation" type="button"
-          :class="{ on: chosen === op.id }" :aria-pressed="chosen === op.id" @click="chosen = op.id"
+          v-if="job.length" class="btn job-toggle" type="button" :class="{ on: reviewing }"
+          :aria-pressed="reviewing" :disabled="saving" @click="reviewing = true"
         >
-          {{ t(op.title) }}
+          {{ t('operations.dialog.job') }} <span class="mono">{{ job.length }}</span>
         </button>
-      </nav>
-      <div class="form">
+      </aside>
+      <section v-if="reviewing" class="form job" :aria-label="t('operations.dialog.job')">
+        <ol>
+          <li v-for="op in job" :key="op.id">
+            <div class="job-row">
+              <div class="job-description">
+                <strong>{{ t(op.title) }}</strong>
+                <span class="mono">T{{ op.tool }} · {{ op.base }}</span>
+              </div>
+              <button
+                v-tooltip="t('operations.dialog.removeOperation', { name: t(op.title) })"
+                class="btn quiet square" type="button" :disabled="saving"
+                :aria-label="t('operations.dialog.removeOperation', { name: t(op.title) })"
+                @click="removeFromJob(op.id)"
+              >
+                <AppIcon name="close" />
+              </button>
+            </div>
+          </li>
+        </ol>
+        <p v-if="'z' in toolChangeHeight && toolChangeHeight.z !== null" class="job-height">
+          {{ t('operations.dialog.toolChangeHeight', { z: toolChangeHeight.z, unit: unitName(unit) }) }}
+        </p>
+      </section>
+      <div v-else class="form">
         <p v-if="operation.note" class="operation-note">{{ t(operation.note) }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
@@ -201,8 +302,14 @@ const fieldGroups = computed(() => [
         </template>
       </div>
       <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
-      <button class="btn primary" type="button" :disabled="saving || errors.length > 0 || directory === null || block !== null" @click="create">
-        {{ saving ? t('common.saving') : t('operations.dialog.createAndOpen') }}
+      <button v-if="!reviewing" class="btn" type="button" :disabled="saving || 'errors' in generated.result" @click="addToJob">
+        {{ t('operations.dialog.addToJob') }}
+      </button>
+      <button v-if="job.length && !reviewing" class="btn primary" type="button" :disabled="saving" @click="reviewing = true">
+        {{ t('operations.dialog.reviewJob') }}
+      </button>
+      <button v-else class="btn primary" type="button" :disabled="saving || outputErrors.length > 0 || directory === null || block !== null" @click="create">
+        {{ saving ? t('common.saving') : job.length ? t('operations.dialog.createJob') : t('operations.dialog.createAndOpen') }}
       </button>
     </template>
   </ModalDialog>
@@ -210,8 +317,17 @@ const fieldGroups = computed(() => [
 
 <style scoped>
 .operation-editor { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; flex: 1; min-height: 0; }
-.operations { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; }
+.sidebar { min-height: 0; overflow-y: auto; }
+.operations { display: flex; flex-direction: column; gap: 6px; }
 .operation { justify-content: flex-start; min-height: 48px; }
+.job-toggle { width: 100%; min-height: 48px; margin-top: 12px; justify-content: space-between; }
+.job-description span { color: var(--text-dim); font-size: var(--type-sm); overflow-wrap: anywhere; }
+.job ol { display: grid; margin: 0; padding-left: 26px; }
+.job-height { margin: 0; color: var(--text-dim); font-size: var(--type-sm); }
+.job li { padding-left: 8px; }
+.job-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; border-bottom: 1px solid var(--line); }
+.job-description { display: grid; min-width: 0; gap: 2px; }
+.job-row .btn { flex: none; }
 .form { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }

@@ -1,6 +1,12 @@
 {
   "operations": {
     "dialog": {
+      "reviewJob": "Review job",
+      "toolChangeHeight": "Tool changes at machine Z {z} {unit}",
+      "job": "Job",
+      "addToJob": "Add to job",
+      "createJob": "Create job and open",
+      "removeOperation": "Remove {name} from job",
       "title": "New operation",
       "operations": "Operation",
       "tool": "Tool",
@@ -75,6 +81,9 @@
       "g83": "G83 peck"
     },
     "check": {
+      "jobToolChangeHeight": "Set Safe Z for Go to above every operation’s clearance before saving a job with tool changes.",
+      "invalidJob": "The job could not be assembled.",
+      "jobTooLarge": "The program exceeds the 512 KiB save limit.",
       "positive": "{label} must be more than zero.",
       "count": "{label} must be a whole number from 1 to {max}.",
       "chooseTool": "Choose a tool from the tool table.",

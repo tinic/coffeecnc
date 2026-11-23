@@ -514,6 +514,16 @@
       "restartParametersChanged": "The machine's saved parameters changed after the restart was reviewed. Choose the line again."
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc line {line}: {detail}",
+      "rigidTapUnavailable": "G33.1 rigid tapping is not configured on this machine.",
+      "rigidTapSpindle": "rigid tapping is not configured for this spindle on this machine",
+      "rigidTapDirection": "rigid tapping requires clockwise spindle rotation (M3)",
+      "rigidTapOverride": "rigid tapping requires spindle override off (M51 P0)",
+      "rigidTapRpm": "rigid tapping exceeds the configured fixed spindle limit",
+      "rigidTapZFeed": "rigid tapping exceeds the configured Z feed limit",
+      "rigidTapZOnly": "rigid tapping requires a downward Z-only move",
+      "rigidTapAllowance": "rigid tapping has no valid reversal allowance",
+      "rigidTapRestart": "Run this tapping program from the start to establish the spindle override state.",
       "cannotRead": "The program cannot be read for a preview, or is larger than {size}.",
       "endsAtLine": "The preview ends at line {line}: {detail}.",
       "tooManySubroutines": "The program calls more than {limit} different subroutines: no preview.",

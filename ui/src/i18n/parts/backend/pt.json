@@ -514,6 +514,16 @@
       "restartParametersChanged": "Os parâmetros guardados da máquina mudaram depois de o reinício ter sido revisto. Escolha a linha novamente."
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc linha {line}: {detail}",
+      "rigidTapUnavailable": "O rosqueamento rígido G33.1 não está configurado nesta máquina.",
+      "rigidTapSpindle": "O rosqueamento rígido não está configurado para este fuso",
+      "rigidTapDirection": "O rosqueamento rígido exige rotação do fuso no sentido horário (M3)",
+      "rigidTapOverride": "O rosqueamento rígido exige que o ajuste de velocidade do fuso esteja desativado (M51 P0)",
+      "rigidTapRpm": "O rosqueamento rígido excede o limite configurado de rotação fixa do fuso",
+      "rigidTapZFeed": "O rosqueamento rígido excede o limite configurado de avanço em Z",
+      "rigidTapZOnly": "O rosqueamento rígido exige um movimento descendente somente em Z",
+      "rigidTapAllowance": "O rosqueamento rígido não tem uma margem de inversão válida",
+      "rigidTapRestart": "Execute o programa de rosqueamento desde o início para configurar o ajuste de velocidade do fuso.",
       "cannotRead": "Não é possível ler o programa para a pré-visualização, ou ocupa mais de {size}.",
       "endsAtLine": "A pré-visualização termina na linha {line}: {detail}.",
       "tooManySubroutines": "O programa chama mais de {limit} sub-rotinas diferentes: sem pré-visualização.",

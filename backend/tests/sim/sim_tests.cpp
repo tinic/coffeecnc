@@ -4557,37 +4557,40 @@ void cam_programs(Rig& rig) {
           std::format("first={} {} {}", first, end.text(), PreviewOracle::join(rig.all_messages())));
   }
 
-  // Review of #276, finding 2: a G28.1 in MDI after the restart was planned. Task has it in
-  // memory only; the file has it from the next synchronisation. The restart is in MDI mode and
-  // does not switch modes: it synchronises task first and refuses before anything moves.
+  // Review of #276, finding 2: a G28.1 in MDI after the preview. Task has it in memory only;
+  // the parameter file has it from the next synchronisation, and a restart in MDI mode does
+  // not switch modes. The port's restart synchronises task first and refuses before anything
+  // moves. Driven at the port with the runtime down, so that no synch of idle maintenance
+  // makes the file current in between.
   static_cast<void>(send_mdi("G0 Z20"));
   static_cast<void>(send_mdi("G0 X0 Y0"));
-  path = load(fusion);
-  const auto stale_plan = rig.send(
-      std::format(R"("type":"plan_restart","line":12,"preview_context":{})", context));
-  const bool resaved = send_mdi("G0 X3 Y3") && send_mdi("G28.1") && send_mdi("G0 X0 Y0");
-  const auto resting = rig.status().commanded_position;
-  std::string refused_restart = "not planned";
+  rig.settle();
+  auto restart_inputs = oracle.preview(fusion).first;
+  restart_inputs.restart_line = 12;
+  const auto planned_restart = oracle.engine.compute(restart_inputs, {});
+  const auto& point = planned_restart.outcome.restart;
+  std::string refused_restart = point ? std::string("not run") : planned_restart.outcome.restart_blocked;
   bool held = false;
-  if (stale_plan.accepted()) {
-    const auto id = rig.post(std::format(R"("type":"start_restart","plan_id":{})",
-                                         stale_plan.restart.at("plan_id").get<std::uint64_t>()));
-    std::vector<Vec3> seen;
-    static_cast<void>(rig.pump_until(30s, [&] {
-      seen.push_back(rig.status().commanded_position);
-      return rig.result(id).has_value();
-    }));
-    const auto end = rig.await(id);
-    refused_restart = end.text();
-    held = !end.accepted() &&
-           end.text().find("The machine's saved parameters changed after the restart was "
-                           "reviewed.") != std::string::npos &&
-           std::ranges::all_of(seen, [&](const Vec3& point) {
-             return distance(point, resting) < 0.01;
-           });
+  if (point && planned_restart.files_changed) {
+    rig.direct([&]() -> void {
+      const auto resting = rig.port.status().commanded_position;
+      const auto saved = rig.port.mdi("G28.1", always());
+      const auto& watch = planned_restart.files_changed;
+      const Wanted files_current = [&watch]() -> bool { return !watch({}); };
+      const bool stale_unseen = files_current();
+      const auto result = rig.port.start_restart(*point, restart_inputs, false, files_current,
+                                                 always());
+      const auto after = rig.port.status().commanded_position;
+      refused_restart = std::format("saved={} unseen={} result={} moved={:.3f}", saved.reason,
+                                    stale_unseen, result.reason, distance(after, resting));
+      held = saved.status == ActionStatus::accepted && stale_unseen &&
+             result.status != ActionStatus::accepted &&
+             result.reason.find("The machine's saved parameters changed after the restart was "
+                                "reviewed.") != std::string::npos &&
+             distance(after, resting) < 0.01;
+    });
   }
-  check("cam_restart_refuses_stale_parameter_file", resaved && held, refused_restart);
-  static_cast<void>(rig.send(R"("type":"abort")"));
+  check("cam_restart_refuses_stale_parameter_file", held, refused_restart);
   rig.settle();
 
   // Finding 5: a remapped code the interpreter does not know without its remap. Without the

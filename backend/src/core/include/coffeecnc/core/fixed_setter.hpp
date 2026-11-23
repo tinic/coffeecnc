@@ -102,12 +102,15 @@ struct SetterState {
   std::optional<double> ball_diameter{};
   // After a bore or boss: its diameter, mm (the chord through the centre).
   std::optional<double> center_diameter{};
-  // After an edge angle: how far the edge turns from the machine axis, degrees, counterclockwise
-  // seen from above.
+  // After an edge angle: how far the edge turns from the active work system's axis, degrees,
+  // counterclockwise seen from above. In a rotated work system that is the turn still left.
+  // After applying it: the work rotation written.
   std::optional<double> edge_angle_deg{};
   struct EdgeRotation {
     std::uint64_t id;
     int wcs;
+    // The G5x rotation applying writes: the present rotation plus the measured angle.
+    double rotation_deg{};
   };
   // Present on a measurement that can be confirmed as a G5x rotation.
   std::optional<EdgeRotation> edge_rotation{};

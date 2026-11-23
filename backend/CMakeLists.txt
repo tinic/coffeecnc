@@ -244,6 +244,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> features)
         set_tests_properties(linuxcnc_feature_probe_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 610)
+        # Every feature cycle and the edge angle in a rotated G55: +7.5° in mm, -30° in inch.
+        add_test(NAME linuxcnc_rotated_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 360 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_rotated_probe_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> rotated)
+        set_tests_properties(linuxcnc_rotated_probe_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 690)
         add_test(NAME linuxcnc_jog_contact_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 25 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_jog_contact_${units}
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)

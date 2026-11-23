@@ -3,12 +3,14 @@ import { vTooltip } from '../tooltip'
 // A dialog over the workspace. It never covers the status bar or the run bar: stop and E-stop
 // stay reachable whatever is open.
 import { onBeforeUnmount, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { openDialogs } from '../dialogs'
 import { vFreshGesture } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 
 defineProps<{ title: string; size: 'small' | 'medium' | 'large' | 'wide'; contained?: boolean; expanded?: boolean; freshGesture?: boolean; docked?: boolean; closeDisabled?: boolean }>()
+const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 
 onMounted(() => {
@@ -26,7 +28,7 @@ onBeforeUnmount(() => {
         <header>
           <h2>{{ title }}</h2>
           <slot name="header" />
-          <button v-tooltip="'Close'" :disabled="closeDisabled" aria-label="Close" class="btn quiet square" type="button" @click="emit('close')">
+          <button v-tooltip="t('common.close')" :disabled="closeDisabled" :aria-label="t('common.close')" class="btn quiet square" type="button" @click="emit('close')">
             <AppIcon name="close" />
           </button>
         </header>

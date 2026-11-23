@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -95,6 +96,16 @@ auto theme_name(PanelTheme value) -> std::string_view {
   }
   return "";
 }
+constexpr std::array<std::pair<PanelLanguage, std::string_view>, 7> language_names{{
+    {PanelLanguage::en, "en"}, {PanelLanguage::fr, "fr"}, {PanelLanguage::de, "de"},
+    {PanelLanguage::es, "es"}, {PanelLanguage::pt, "pt"}, {PanelLanguage::zh, "zh"},
+    {PanelLanguage::ja, "ja"}}};
+auto language_name(PanelLanguage value) -> std::string_view {
+  for (const auto& [language, name] : language_names)
+    if (language == value)
+      return name;
+  return "";
+}
 void exact(const Json& value, std::initializer_list<std::string_view> required,
            std::initializer_list<std::string_view> optional = {}) {
   if (!value.is_object() ||
@@ -135,8 +146,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
   };
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
-        {"tool_reference_height", "program_layout", "theme", "recent_programs", "saved_positions",
-         "go_to_safe_z"});
+        {"tool_reference_height", "program_layout", "theme", "language", "recent_programs",
+         "saved_positions", "go_to_safe_z"});
   if (!value.at("version").is_number() || value.at("version") != 1)
     throw std::runtime_error("Settings version is not supported.");
   OperatorPreferences document;
@@ -188,6 +199,15 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     else if (*theme != "light")
       fall_back("Invalid panel presentation.");
   }
+  if (const auto language = value.find("language"); language != value.end()) {
+    const auto known = std::ranges::find_if(language_names, [&](const auto& entry) -> bool {
+      return language->is_string() && *language == entry.second;
+    });
+    if (known != language_names.end())
+      document.language = known->first;
+    else
+      fall_back("Invalid panel presentation.");
+  }
   // Like the presentation, a damaged list falls back to none without losing the other settings.
   if (const auto recent = value.find("recent_programs"); recent != value.end()) {
     if (recent->is_array() && recent->size() <= max_recent_programs &&
@@ -215,8 +235,12 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     throw std::runtime_error(error);
   return document;
 }
-auto document_json(const OperatorPreferences& document) -> Json {
-  return {{"version", 1},
+// The settings file leaves the language out: 0.1.3 and earlier read only the other fields and
+// refuse a file with one more. The language has its own file (encode_panel_language_file).
+enum class Language : std::uint8_t { include, leave_out };
+auto document_json(const OperatorPreferences& document, Language language = Language::include)
+    -> Json {
+  Json json{{"version", 1},
           {"startup_units", units(document.startup_units)},
           {"enabled_wcs", document.enabled_wcs},
           {"default_spindle_rpm", document.default_spindle_rpm},
@@ -227,6 +251,9 @@ auto document_json(const OperatorPreferences& document) -> Json {
           {"recent_programs", document.recent_programs},
           {"saved_positions", positions_json(document.saved_positions)},
           {"go_to_safe_z", document.go_to_safe_z ? Json(*document.go_to_safe_z) : Json(nullptr)}};
+  if (language == Language::include)
+    json["language"] = language_name(document.language);
+  return json;
 }
 template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
   try {
@@ -240,7 +267,8 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
 } // namespace
 
 auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
-  if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty())
+  if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty() ||
+      language_name(document.language).empty())
     return "Invalid panel presentation.";
   if (document.recent_programs.size() > max_recent_programs ||
       !std::ranges::all_of(document.recent_programs,
@@ -320,7 +348,7 @@ auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded 
     // The reader takes at most 16 KiB: a longer file would leave the settings unavailable.
     auto text = Json{{"machine_id", file.machine_id},
                      {"revision", file.revision},
-                     {"document", document_json(file.document)}}
+                     {"document", document_json(file.document, Language::leave_out)}}
                     .dump();
     if (text.size() > max_operator_settings_bytes)
       throw std::runtime_error("Settings exceed 16 KiB.");
@@ -337,6 +365,28 @@ auto decode_operator_settings_file(std::string_view text)
     if (!valid_machine_id(machine) || !revision || *revision == 0)
       throw std::runtime_error("Invalid settings file identity or revision.");
     return {machine, *revision, read_document(file.at("document"), Damaged::fall_back)};
+  });
+}
+auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language) -> Encoded {
+  return checked([&]() -> std::string {
+    if (!valid_machine_id(machine_id) || language_name(language).empty())
+      throw std::runtime_error("Invalid panel presentation.");
+    return Json{{"machine_id", machine_id}, {"language", language_name(language)}}.dump();
+  });
+}
+auto decode_panel_language_file(std::string_view text, std::string_view machine_id)
+    -> std::expected<PanelLanguage, std::string> {
+  return checked([&]() -> PanelLanguage {
+    const auto file = parse(text);
+    exact(file, {"machine_id", "language"});
+    if (file.at("machine_id") != machine_id)
+      throw std::runtime_error("Invalid settings file identity or revision.");
+    const auto known = std::ranges::find_if(language_names, [&](const auto& entry) -> bool {
+      return file.at("language").is_string() && file.at("language") == entry.second;
+    });
+    if (known == language_names.end())
+      throw std::runtime_error("Invalid panel presentation.");
+    return known->first;
   });
 }
 } // namespace coffeecnc

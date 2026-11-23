@@ -3,6 +3,8 @@ import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 
 import { allHomed, homingRequired, linkBlock, live, onResult, panel, reported, send } from '../machine'
 import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
@@ -17,6 +19,7 @@ import ModalDialog from './ModalDialog.vue'
 import OverrideControl from './OverrideControl.vue'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 
+const { t } = useI18n()
 const status = reported
 const checkedPreview = computed(() => currentProgramPreview(panel.preview ?? null, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
@@ -46,7 +49,7 @@ const zStep = computed(() => panel.unit === 'inch' ? 1.27 : 1)
 const length = (mm: number): string => `${formatLength(mm, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
 const zBlocked = computed(() => {
   const reason = pausedZ.value?.reason ?? ''
-  return linkBlock.value ?? (pendingZ.value ? 'Paused Z operation in progress' : reason === '' ? null : reason)
+  return linkBlock.value ?? (pendingZ.value ? t('status.runBar.pausedZBusy') : reason === '' ? null : translateMessage(reason))
 })
 const up = computed(() => Math.min(zStep.value, (pausedZ.value?.max_lift ?? 0) - (pausedZ.value?.offset ?? 0)))
 const down = computed(() => Math.min(zStep.value, pausedZ.value?.offset ?? 0))
@@ -82,22 +85,22 @@ const probeWithSpindle = computed(() => {
   const spindle = status.value?.spindle
   return touchProbeLoaded.value && spindle !== undefined &&
     (spindle.direction !== 'stopped' || Math.abs(spindle.actual_rpm ?? 0) >= 1)
-    ? 'A touch probe is loaded' : null
+    ? t('status.runBar.probeLoaded') : null
 })
 
 /** Why a program cannot be started, or null. The machine checks again; this only explains. */
 const startBlock = computed((): string | null => {
   const shared = machineBlock(panel, true)
   if (shared !== null) return shared
-  if (homingRequired.value && !allHomed.value) return 'Axes are not homed'
-  if (!status.value?.program.file) return 'No program loaded'
+  if (homingRequired.value && !allHomed.value) return t('status.machineBlock.axesNotHomed')
+  if (!status.value?.program.file) return t('status.runBar.noProgram')
   return probeWithSpindle.value
 })
 
 const runBlock = computed(() => startBlock.value ?? interpreterBlock(status.value) ??
-  (activeBreakpoint.value ? 'Reopening the original program' : null) ??
-  ((panel.preview || breakpoint.value) && check.value === null ? 'Checking program' : null) ??
-  (breakpoint.value && checkedPreview.value?.state !== 'ready' ? 'A breakpoint needs a complete program check' : null))
+  (activeBreakpoint.value ? t('status.runBar.reopening') : null) ??
+  ((panel.preview || breakpoint.value) && check.value === null ? t('status.runBar.checking') : null) ??
+  (breakpoint.value && checkedPreview.value?.state !== 'ready' ? t('status.runBar.breakpointCheck') : null))
 
 const pauseBlock = computed((): string | null => {
   const s = status.value
@@ -105,37 +108,37 @@ const pauseBlock = computed((): string | null => {
     return linkBlock.value ?? connectionBlock('connecting')
   }
   if (s.interp === 'idle') {
-    return 'Nothing is running'
+    return t('status.runBar.nothingRunning')
   }
-  return toolChange.value ? 'Waiting for the tool change' : null
+  return toolChange.value ? t('status.runBar.waitingToolChange') : null
 })
 
 const stepBlock = computed((): string | null => {
-  if (spindleConfirm.value !== null) return 'Dismiss the spindle confirmation before continuing'
+  if (spindleConfirm.value !== null) return t('status.runBar.dismissSpindleConfirm')
   if (startBlock.value !== null) {
     return startBlock.value
   }
-  if (pausedZ.value?.spindle === 'recover') return 'Press Stop to recover the interrupted spindle hold'
-  if (pausedZ.value?.spindle === 'restore') return 'Use Resume to restore the program spindle'
-  if (pausedZ.value?.displaced) return 'Use Resume to return Z before continuing'
-  if (activeBreakpoint.value) return 'Use Resume to continue the breakpoint run'
-  return toolChange.value ? 'Waiting for the tool change' : null
+  if (pausedZ.value?.spindle === 'recover') return t('status.runBar.recoverSpindle')
+  if (pausedZ.value?.spindle === 'restore') return t('status.runBar.restoreSpindle')
+  if (pausedZ.value?.displaced) return t('status.runBar.returnZFirst')
+  if (activeBreakpoint.value) return t('status.runBar.continueBreakpoint')
+  return toolChange.value ? t('status.runBar.waitingToolChange') : null
 })
 
 const primary = computed(() => {
   if (paused.value) return {
     label: pendingZ.value?.type === 'resume'
-      ? pausedZ.value?.spindle === 'restore' && !pausedZ.value.displaced ? 'Restoring spindle…' : 'Returning Z…'
-      : pausedZ.value?.displaced ? 'Return Z & resume'
-      : pausedZ.value?.spindle === 'restore' ? 'Restore spindle & resume' : 'Resume',
+      ? pausedZ.value?.spindle === 'restore' && !pausedZ.value.displaced ? t('status.runBar.restoringSpindle') : t('status.runBar.returningZ')
+      : pausedZ.value?.displaced ? t('status.runBar.returnZResume')
+      : pausedZ.value?.spindle === 'restore' ? t('status.runBar.restoreSpindleResume') : t('status.runBar.resume'),
     icon: 'play' as const, type: 'resume' as const,
     blocked: linkBlock.value ?? probeWithSpindle.value ??
       (pendingZ.value || pausedZ.value?.displaced || pausedZ.value?.spindle === 'recover' ||
         pausedZ.value?.spindle === 'restore' ? zBlocked.value : null),
   }
   if (programRunning.value || status.value?.mode === 'mdi' && status.value.interp !== 'idle')
-    return { label: 'Feed hold', icon: 'pause' as const, type: 'pause' as const, blocked: pauseBlock.value }
-  const label = breakpoint.value ? `Run to line ${String(breakpoint.value.line)}` : 'Cycle start'
+    return { label: t('status.runBar.feedHold'), icon: 'pause' as const, type: 'pause' as const, blocked: pauseBlock.value }
+  const label = breakpoint.value ? t('status.runBar.runToLine', { line: String(breakpoint.value.line) }) : t('status.runBar.cycleStart')
   return { label, icon: 'play' as const, type: 'run' as const, blocked: runBlock.value }
 })
 function primaryAction(): void {
@@ -186,49 +189,49 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 
 <template>
   <footer class="runbar" :class="{ 'touch-off': touchOff }">
-    <OverrideControl v-if="!touchOff" label="Feed override" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
-    <div v-if="showZ" v-tooltip="zBlocked" class="paused-z" role="group" aria-label="Paused Z lift">
+    <OverrideControl v-if="!touchOff" :label="t('status.runBar.feedOverride')" which="feed" :value="status?.motion.feed_override ?? null" :min="0" :max="panel.hello?.max_feed_override ?? 1" :disabled="!live" />
+    <div v-if="showZ" v-tooltip="zBlocked" class="paused-z" role="group" :aria-label="t('status.runBar.pausedZLift')">
       <div class="paused-z-reading">
-        <span>Z lift</span>
+        <span>{{ t('status.runBar.zLift') }}</span>
         <strong class="mono">{{ length(pausedZ?.offset ?? 0) }}</strong>
       </div>
       <button
-        v-tooltip="zBlocked ?? (down > 0 ? `Lower Z by ${length(down)}` : 'At the paused Z position')" class="btn" type="button"
-        aria-label="Lower paused Z"
+        v-tooltip="zBlocked ?? (down > 0 ? t('status.runBar.lowerBy', { length: length(down) }) : t('status.runBar.atPausedZ'))" class="btn" type="button"
+        :aria-label="t('status.runBar.lowerPausedZ')"
         :disabled="zBlocked !== null || down <= 0" @click="jogPausedZ(-down)"
       >
         −Z
       </button>
       <button
-        v-tooltip="canStopSpindle ? 'Stop the spindle and lift Z' : zBlocked ?? (up > 0 ? `Lift Z by ${length(up)}` : 'At the Z lift limit')" class="btn" type="button"
-        aria-label="Lift paused Z"
+        v-tooltip="canStopSpindle ? t('status.runBar.stopAndLift') : zBlocked ?? (up > 0 ? t('status.runBar.liftBy', { length: length(up) }) : t('status.runBar.atLiftLimit'))" class="btn" type="button"
+        :aria-label="t('status.runBar.liftPausedZ')"
         :disabled="(!canStopSpindle && zBlocked !== null) || up <= 0" @click="jogPausedZ(up)"
       >
         +Z
       </button>
     </div>
-    <OverrideControl v-else-if="!touchOff" label="Spindle override" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
+    <OverrideControl v-else-if="!touchOff" :label="t('status.runBar.spindleOverride')" which="spindle" :value="status?.spindle.override ?? null" :min="panel.hello?.min_spindle_override ?? 1" :max="panel.hello?.max_spindle_override ?? 1" :disabled="!live" />
     <div class="command-actions">
       <details v-if="!touchOff" v-popover class="more">
-        <summary class="more-button" aria-label="More execution controls">···</summary>
+        <summary class="more-button" :aria-label="t('status.runBar.moreControls')">···</summary>
         <div class="popover">
-          <h3>Execution controls</h3>
-          <OverrideControl label="Rapid override" which="rapid" :value="status?.motion.rapid_override ?? null" :min="0" :max="1" :disabled="!live" />
+          <h3>{{ t('status.runBar.executionControls') }}</h3>
+          <OverrideControl :label="t('status.runBar.rapidOverride')" which="rapid" :value="status?.motion.rapid_override ?? null" :min="0" :max="1" :disabled="!live" />
           <div class="actions">
-            <button v-tooltip="stepBlock ?? 'Execute one block, then pause'" class="btn" type="button" :disabled="stepBlock !== null" @click="send({ type: 'step' })"><AppIcon name="step" />Single block</button>
-            <button class="btn" type="button" :class="{ on: status?.program.optional_stop }" :disabled="!live" @click="option('optional_stop')">Optional stop M1</button>
-            <button class="btn" type="button" :class="{ on: status?.program.block_delete }" :disabled="!live || !!activeBreakpoint" @click="option('block_delete')">Block delete /</button>
+            <button v-tooltip="stepBlock ?? t('status.runBar.singleBlockTip')" class="btn" type="button" :disabled="stepBlock !== null" @click="send({ type: 'step' })"><AppIcon name="step" />{{ t('status.runBar.singleBlock') }}</button>
+            <button class="btn" type="button" :class="{ on: status?.program.optional_stop }" :disabled="!live" @click="option('optional_stop')">{{ t('status.runBar.optionalStop') }}</button>
+            <button class="btn" type="button" :class="{ on: status?.program.block_delete }" :disabled="!live || !!activeBreakpoint" @click="option('block_delete')">{{ t('status.runBar.blockDelete') }}</button>
           </div>
         </div>
       </details>
-      <button class="btn stop-button" type="button" aria-label="Stop program, MDI, jog and spindle" @click="closeConfirmation(); spindleConfirm = null; breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />Stop</button>
+      <button class="btn stop-button" type="button" :aria-label="t('status.runBar.stopTip')" @click="closeConfirmation(); spindleConfirm = null; breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />{{ t('status.runBar.stop') }}</button>
       <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || spindleConfirm !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
-    <ModalDialog v-if="spindleConfirm" title="Stop the spindle to lift Z?" size="small" fresh-gesture @close="spindleConfirm = null">
-      <p class="spindle-effect">Z will lift {{ length(spindleConfirm.distance) }} once the spindle stops. Resume returns Z, restarts the spindle, and waits for it to reach speed.</p>
+    <ModalDialog v-if="spindleConfirm" :title="t('status.runBar.spindleConfirmTitle')" size="small" fresh-gesture @close="spindleConfirm = null">
+      <p class="spindle-effect">{{ t('status.runBar.spindleConfirmEffect', { length: length(spindleConfirm.distance) }) }}</p>
       <template #footer>
-        <button class="btn" type="button" @click="spindleConfirm = null">Cancel</button>
-        <button class="btn primary" type="button" @click="confirmSpindleStop">Stop spindle &amp; lift</button>
+        <button class="btn" type="button" @click="spindleConfirm = null">{{ t('common.cancel') }}</button>
+        <button class="btn primary" type="button" @click="confirmSpindleStop">{{ t('status.runBar.stopSpindleLift') }}</button>
       </template>
     </ModalDialog>
     <ProgramCheckDialog

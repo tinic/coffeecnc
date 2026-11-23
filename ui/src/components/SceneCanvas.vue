@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   BufferAttribute, BufferGeometry, Color, EdgesGeometry, Group,
   LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshStandardMaterial, OrthographicCamera, Scene, WebGLRenderer,
@@ -18,6 +19,7 @@ import { buildProbeFixture } from '../sim/probe-mesh'
 
 const props = defineProps<{ camera: Camera; width: number; height: number; tool: ToolPreview | null; probeFixture: boolean }>()
 const emit = defineEmits<{ error: [message: string] }>()
+const { t } = useI18n()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
 const scene = new Scene()
 const reflections = new PreviewReflections()
@@ -132,7 +134,7 @@ function draw(): void {
   renderer.render(scene, modelCamera)
 }
 
-function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', '3D preview unavailable: graphics context lost') }
+function lost(event: Event): void { event.preventDefault(); contextLost = true; emit('error', t('program.sceneCanvas.contextLost')) }
 function restored(): void {
   contextLost = false
   if (renderer !== null) reflections.build(scene, renderer)
@@ -160,7 +162,7 @@ onMounted(() => {
     build()
     buildTool()
   } catch {
-    emit('error', '3D preview needs WebGL 2; the toolpath is still available')
+    emit('error', t('program.sceneCanvas.needsWebgl'))
   }
 })
 onBeforeUnmount(() => {

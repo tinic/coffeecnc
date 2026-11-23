@@ -10,7 +10,7 @@ export const wcsNames: readonly string[] = ['G54', 'G55', 'G56', 'G57', 'G58', '
 
 /** Name of work coordinate system 1 … 9. */
 export function wcsName(wcs: number): string {
-  return wcsNames[wcs - 1] ?? `WCS ${String(wcs)}`
+  return wcsNames[wcs - 1] ?? `WCS ${String(wcs)}` // i18n-ignore: technical
 }
 
 export function toDisplay(mm: number, unit: LengthUnit): number {
@@ -100,9 +100,9 @@ export function formatBytes(bytes: number): string {
     return `${String(bytes)} B`
   }
   if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} kB`
+    return `${(bytes / 1024).toFixed(1)} kB` // i18n-ignore: technical
   }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB` // i18n-ignore: technical
 }
 
 /** Time of day, HH:MM:SS, of a Unix time in milliseconds. */

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Box3, OrthographicCamera, Scene, Vector3, WebGLRenderer } from 'three'
 import { theme } from '../appearance'
 import { isDarkTheme } from '../operator-settings'
@@ -12,7 +13,8 @@ import { holderLabel } from '../tool-holder'
 
 const props = defineProps<{ model: ToolModel }>()
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
-const error = ref<string>('')
+const { t } = useI18n()
+const error = ref<'' | 'lost' | 'webgl'>('')
 const scene = new Scene()
 const reflections = new PreviewReflections()
 const toolMesh = new ToolMesh()
@@ -74,7 +76,7 @@ function move(event: PointerEvent): void {
   drag.x = event.clientX; drag.y = event.clientY
   draw()
 }
-function lost(event: Event): void { event.preventDefault(); contextLost = true; error.value = 'Graphics context lost. Dimensions remain editable.' }
+function lost(event: Event): void { event.preventDefault(); contextLost = true; error.value = 'lost' }
 function restored(): void {
   contextLost = false
   if (renderer !== null) reflections.build(scene, renderer)
@@ -95,7 +97,7 @@ onMounted(() => {
     resize = new ResizeObserver(draw)
     resize.observe(canvas.value)
     build()
-  } catch { error.value = '3D preview needs WebGL 2. Dimensions remain editable.' }
+  } catch { error.value = 'webgl' }
 })
 onBeforeUnmount(() => {
   resize?.disconnect()
@@ -109,12 +111,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="model-canvas">
-    <span class="caption label">Envelope preview <span class="hint">· drag to orbit</span></span>
-    <canvas ref="canvas" aria-label="Simplified 3D tool envelope" @pointerdown="down" @pointermove="move" @pointerup="drag = null" @lostpointercapture="drag = null" @pointercancel="drag = null"></canvas>
-    <p v-if="error" class="error blocked">{{ error }}</p>
-    <div v-if="model.family === 'touch-probe'" class="legend"><span class="ruby">Ruby ball</span></div>
-    <div v-else class="legend"><span class="cutting">Cutting section</span><span class="datum">Holder-face datum</span></div>
-    <p class="hint foot">{{ model.family === 'touch-probe' ? 'Ball bottom at Z = 0' : 'Tip at Z = 0' }}{{ model.holder ? ` · ${holderLabel(model.holder)}` : '' }}</p>
+    <span class="caption label">{{ t('tools.canvas.caption') }} <span class="hint">· {{ t('tools.canvas.dragHint') }}</span></span>
+    <canvas ref="canvas" :aria-label="t('tools.canvas.label')" @pointerdown="down" @pointermove="move" @pointerup="drag = null" @lostpointercapture="drag = null" @pointercancel="drag = null"></canvas>
+    <p v-if="error" class="error blocked">{{ error === 'lost' ? t('tools.canvas.contextLost') : t('tools.canvas.needsWebgl') }}</p>
+    <div v-if="model.family === 'touch-probe'" class="legend"><span class="ruby">{{ t('tools.canvas.rubyBall') }}</span></div>
+    <div v-else class="legend"><span class="cutting">{{ t('tools.canvas.cuttingSection') }}</span><span class="datum">{{ t('tools.canvas.holderDatum') }}</span></div>
+    <p class="hint foot">{{ model.family === 'touch-probe' ? t('tools.canvas.ballDatum') : t('tools.canvas.tipDatum') }}{{ model.holder ? ` · ${holderLabel(model.holder)}` : '' }}</p>
   </div>
 </template>
 

@@ -2,9 +2,13 @@ import { reactive, ref, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
+import { decodeLanguage, t, type Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
+// The language is kept apart from the settings, as on the machine (panel-language.json): earlier
+// versions refuse a settings document with a field they do not know.
+const languageKey = 'coffeecnc.panel-language.v1'
 type SaveCommand = Extract<CommandBody, { type: 'set_operator_settings' }>
 export interface SettingsContext { hello: Hello | null; revision: number | null }
 export interface SettingsResult { saved: boolean; reason: string }
@@ -21,9 +25,11 @@ interface StartupPresentation {
   theme: Ref<PanelTheme>
   layoutOverride?: ProgramLayout | null
   themeOverride?: PanelTheme | null
+  language?: Ref<Language>
+  languageOverride?: Language | null
 }
 
-type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'recent_programs'>>
+type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'language' | 'recent_programs'>>
 
 export interface OperatorSettingsController {
   state: SettingsState
@@ -33,6 +39,7 @@ export interface OperatorSettingsController {
   chooseProgramLayout: (layout: ProgramLayout) => void
   rememberProgram: (path: string) => void
   chooseTheme: (theme: PanelTheme) => void
+  chooseLanguage: (language: Language) => void
   dispose: () => void
 }
 
@@ -46,6 +53,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     try {
       const saved: unknown = JSON.parse(browserStorage().getItem(storageKey) ?? 'null')
       panel.preferences = decodeOperatorPreferences(saved) ?? defaultOperatorPreferences()
+      panel.preferences.language = decodeLanguage(browserStorage().getItem(languageKey)) ?? 'en'
     } catch { /* Browser demo can still run with session defaults. */ }
   }
   const theme = presentation?.theme ?? ref<PanelTheme>('light')
@@ -53,9 +61,13 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   const themeOverride = presentation?.themeOverride ?? null
   panel.programLayout = layoutOverride ?? panel.preferences.program_layout
   theme.value = themeOverride ?? panel.preferences.theme
+  const language = presentation?.language ?? ref<Language>('en')
+  const languageOverride = presentation?.languageOverride ?? null
+  language.value = languageOverride ?? panel.preferences.language
   let initialLayout = panel.programLayout
   let layoutChosen = false
   let themeChosen = false
+  let languageChosen = false
   let queuedPresentation: PresentationChange = {}
   let initialized = false
   let machineId: string | null | undefined
@@ -75,13 +87,14 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (!layoutChosen && panel.programLayout === initialLayout)
       panel.programLayout = layoutOverride ?? prefs.program_layout
     if (!themeChosen) theme.value = themeOverride ?? prefs.theme
+    if (!languageChosen) language.value = languageOverride ?? prefs.language
     // A delayed first snapshot must not undo an operator's intervening edits.
     if (panel.unit === initialUnit) panel.unit = prefs.startup_units === 'machine' ? hello.machine_units : prefs.startup_units
     if (panel.jogVelocity === initialJog) panel.jogVelocity = Math.min(prefs.default_jog_velocity, hello.max_jog_velocity)
     panel.startupSpindleRpm = Math.min(prefs.default_spindle_rpm, hello.max_spindle_rpm ?? Infinity)
   }
   stops.push(watch(() => panel.hello, (hello) => {
-    if (pending !== null) finish(fail('The machine connection changed. This draft was not confirmed saved.'))
+    if (pending !== null) finish(fail(t('status.settingsState.draftUnconfirmed')))
     state.error = ''; state.reason = ''; state.uncertain = false; state.revision = null
     if (hello === null) { state.storage = 'loading'; return }
     if (machineId !== hello.machine_id) {
@@ -90,6 +103,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
         queuedPresentation = {}
         layoutChosen = false
         themeChosen = false
+        languageChosen = false
         initialLayout = panel.programLayout
       }
       initialized = false
@@ -102,10 +116,10 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     panel.preferences.default_jog_velocity = Math.min(600, hello.max_jog_velocity)
     const capability: unknown = Reflect.get(hello, 'operator_settings_storage')
     if (capability === undefined) {
-      state.storage = 'session_only'; state.reason = 'This backend cannot save settings. Changes last until CoffeeCNC closes.'
+      state.storage = 'session_only'; state.reason = t('status.settingsState.cannotSave')
       applyStartup()
     } else if (capability !== 1 || !(hello.machine_id === null || validMachineId(hello.machine_id))) {
-      state.storage = 'unavailable'; state.reason = 'The machine did not provide a valid settings identity.'
+      state.storage = 'unavailable'; state.reason = t('status.settingsState.invalidIdentity')
       applyStartup()
     } else state.storage = 'loading'
   }, { immediate: true, flush: 'sync' }))
@@ -121,36 +135,36 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (command !== pending?.command) return
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
-      finish(fail(state.uncertain ? 'No save confirmation. The write may still finish; wait for refreshed settings before retrying.'
-        : result.reason || 'Settings could not be saved.'))
+      finish(fail(state.uncertain ? t('status.settingsState.noConfirmation')
+        : result.reason || t('status.settingsState.saveFailed')))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true
-      finish(fail('The save result arrived without updated settings. Reload CoffeeCNC to verify the saved values.'))
+      finish(fail(t('status.settingsState.noUpdatedSettings')))
     } else { state.error = ''; finish({ saved: true, reason: '' }) }
   }))
   function context(): SettingsContext { return { hello: panel.hello, revision: state.revision } }
   function block(edit: SettingsContext): string | null {
-    if (panel.hello !== edit.hello) return 'The connection changed. Close Settings and reopen it.'
-    if (state.saving) return 'Saving settings…'
+    if (panel.hello !== edit.hello) return t('status.settingsState.connectionChanged')
+    if (state.saving) return t('status.settingsState.saving')
     if (state.uncertain) return state.error
-    if (state.storage === 'loading') return 'Waiting for saved settings.'
-    if (state.storage === 'unavailable') return state.reason || 'Settings storage is unavailable.'
-    if (state.storage === 'available' && edit.revision !== state.revision) return 'Saved settings changed. Close Settings and reopen it.'
+    if (state.storage === 'loading') return t('status.settingsState.waiting')
+    if (state.storage === 'unavailable') return state.reason || t('status.settingsState.storageUnavailable')
+    if (state.storage === 'available' && edit.revision !== state.revision) return t('status.settingsState.savedChanged')
     return null
   }
   function save(value: OperatorPreferences, edit: SettingsContext): Promise<SettingsResult> {
     const reason = block(edit)
     if (reason !== null) return Promise.resolve(fail(reason))
     const document = decodeOperatorPreferences(value)
-    if (document === null) return Promise.resolve(fail('Check the units, work systems and speeds.'))
+    if (document === null) return Promise.resolve(fail(t('status.settingsState.checkValues')))
     // The decoder drops a damaged list; a save must never drop the operator's positions that way.
     if (document.saved_positions.length !== value.saved_positions.length) {
-      return Promise.resolve(fail('Check the saved position names and coordinates.'))
+      return Promise.resolve(fail(t('status.settingsState.checkPositions')))
     }
     if (document.default_jog_velocity > (panel.hello?.max_jog_velocity ?? Infinity) ||
       document.default_spindle_rpm > (panel.hello?.max_spindle_rpm ?? Infinity)) {
-      return Promise.resolve(fail('A default speed exceeds the configured machine limit.'))
+      return Promise.resolve(fail(t('status.settingsState.speedLimit')))
     }
     document.enabled_wcs.sort((a, b) => a - b)
     if (state.storage === 'available' && panel.operatorSettings?.availability === 'available') {
@@ -159,12 +173,16 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       state.saving = true; state.error = ''
       return new Promise((resolve) => {
         pending = { command, context: edit, resolve }
-        try { connection.send(command) } catch { finish(fail('The settings save could not be sent.')) }
+        try { connection.send(command) } catch { finish(fail(t('status.settingsState.sendFailed'))) }
       })
     }
     if (state.storage === 'browser') {
-      try { browserStorage().setItem(storageKey, JSON.stringify(document)) }
-      catch { return Promise.resolve(fail('Browser storage is unavailable. Settings were not saved.')) }
+      const { language: chosen, ...stored } = document
+      try {
+        if (chosen !== panel.preferences.language) browserStorage().setItem(languageKey, chosen)
+        browserStorage().setItem(storageKey, JSON.stringify(stored))
+      }
+      catch { return Promise.resolve(fail(t('status.settingsState.browserStorage'))) }
     }
     panel.preferences = document
     state.error = ''
@@ -175,8 +193,9 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     const patch = queuedPresentation
     queuedPresentation = {}
     if (state.storage === 'unavailable') return
-    const { program_layout: layout, theme: storedTheme, recent_programs: recent } = panel.preferences
+    const { program_layout: layout, theme: storedTheme, language: storedLanguage, recent_programs: recent } = panel.preferences
     if ((patch.program_layout ?? layout) === layout && (patch.theme ?? storedTheme) === storedTheme &&
+        (patch.language ?? storedLanguage) === storedLanguage &&
         (patch.recent_programs ?? recent).join('\n') === recent.join('\n')) return
     // Merge into the latest confirmed document so a queued choice cannot undo another save.
     void save({ ...panel.preferences, ...patch }, context())
@@ -198,6 +217,12 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     queuedPresentation.theme = value
     flushPresentation()
   }
+  function chooseLanguage(value: Language): void {
+    languageChosen = true
+    language.value = value
+    queuedPresentation.language = value
+    flushPresentation()
+  }
   stops.push(watch([
     (): SettingsState['storage'] => state.storage,
     (): boolean => state.saving,
@@ -208,8 +233,8 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (file !== null && file !== panel.preferences.recent_programs[0]) rememberProgram(file)
   }))
 
-  return { state, context, block, save, chooseProgramLayout, chooseTheme, rememberProgram, dispose: (): void => {
+  return { state, context, block, save, chooseProgramLayout, chooseTheme, chooseLanguage, rememberProgram, dispose: (): void => {
     for (const stop of stops) stop()
-    if (pending !== null) finish(fail('CoffeeCNC closed before save confirmation.'))
+    if (pending !== null) finish(fail(t('status.settingsState.closed')))
   } }
 }

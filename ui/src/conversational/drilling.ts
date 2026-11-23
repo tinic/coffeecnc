@@ -1,6 +1,7 @@
 // Hole patterns: a grid of rows and columns, or a bolt circle, drilled with G81 or with G83
 // pecks. G98 returns to the clearance height between holes, over any clamp.
 
+import { t } from '../i18n'
 import { Checks, Program, checkCommon, feedNumber, type Common, type Generated } from './program'
 
 export interface Drilling extends Common {
@@ -50,35 +51,35 @@ export function drilling(d: Drilling): Generated {
   const checks = new Checks()
   checkCommon(d, checks)
   if (d.pattern === 'grid') {
-    checks.count(d.columns, 'Columns', maxHoles)
-    checks.count(d.rows, 'Rows', maxHoles)
-    checks.check(d.columns * d.rows <= maxHoles, `At most ${String(maxHoles)} holes.`)
-    if (d.columns > 1) checks.check(d.spacingX !== 0 && Number.isFinite(d.spacingX), 'Column spacing must not be zero.')
-    if (d.rows > 1) checks.check(d.spacingY !== 0 && Number.isFinite(d.spacingY), 'Row spacing must not be zero.')
+    checks.count(d.columns, 'operations.label.columns', maxHoles)
+    checks.count(d.rows, 'operations.label.rows', maxHoles)
+    checks.check(d.columns * d.rows <= maxHoles, t('operations.check.atMostHoles', { max: String(maxHoles) }))
+    if (d.columns > 1) checks.check(d.spacingX !== 0 && Number.isFinite(d.spacingX), t('operations.check.columnSpacing'))
+    if (d.rows > 1) checks.check(d.spacingY !== 0 && Number.isFinite(d.spacingY), t('operations.check.rowSpacing'))
   } else {
-    checks.count(d.count, 'Number of holes', maxHoles)
-    checks.positive(d.radius, 'Bolt circle radius')
-    checks.check(Number.isFinite(d.startAngle), 'Enter a start angle.')
+    checks.count(d.count, 'operations.label.numberOfHoles', maxHoles)
+    checks.positive(d.radius, 'operations.label.boltCircleRadius')
+    checks.check(Number.isFinite(d.startAngle), t('operations.check.startAngle'))
   }
-  checks.check(Number.isFinite(d.x) && Number.isFinite(d.y), 'Enter X and Y.')
-  checks.positive(d.depth, 'Hole depth')
-  checks.positive(d.retract, 'Retract height')
-  checks.check(!(d.retract > d.clearance), 'The retract height must not be above the clearance height.')
-  if (d.cycle === 'G83') checks.positive(d.peck, 'Peck depth')
+  checks.check(Number.isFinite(d.x) && Number.isFinite(d.y), t('operations.check.position'))
+  checks.positive(d.depth, 'operations.label.holeDepth')
+  checks.positive(d.retract, 'operations.label.retractHeight')
+  checks.check(!(d.retract > d.clearance), t('operations.check.retractAboveClearance'))
+  if (d.cycle === 'G83') checks.positive(d.peck, 'operations.label.peckDepth')
   if (checks.errors.length) return { errors: checks.errors }
 
   const p = new Program(d)
   const points = holes(d)
   const where = d.pattern === 'grid'
-    ? `Grid of ${String(d.columns)} columns by ${String(d.rows)} rows from X${p.n(d.x)} Y${p.n(d.y)}, spacing X ${p.n(d.spacingX)} Y ${p.n(d.spacingY)}`
-    : `Bolt circle of ${String(d.count)} holes, centre X${p.n(d.x)} Y${p.n(d.y)}, radius ${p.n(d.radius)}, first hole at ${String(d.startAngle)} degrees`
-  p.start('Hole pattern', [
+    ? `Grid of ${String(d.columns)} columns by ${String(d.rows)} rows from X${p.n(d.x)} Y${p.n(d.y)}, spacing X ${p.n(d.spacingX)} Y ${p.n(d.spacingY)}` // i18n-ignore
+    : `Bolt circle of ${String(d.count)} holes, centre X${p.n(d.x)} Y${p.n(d.y)}, radius ${p.n(d.radius)}, first hole at ${String(d.startAngle)} degrees` // i18n-ignore
+  p.start('Hole pattern', [ // i18n-ignore
     where,
-    `${d.cycle === 'G83' ? `G83 peck drilling, pecks of ${p.n(d.peck)}` : 'G81 drilling'} to depth ${p.n(d.depth)}, R plane Z${p.n(d.retract)}`,
-    'G98: back to the clearance height between holes',
+    `${d.cycle === 'G83' ? `G83 peck drilling, pecks of ${p.n(d.peck)}` : 'G81 drilling'} to depth ${p.n(d.depth)}, R plane Z${p.n(d.retract)}`, // i18n-ignore
+    'G98: back to the clearance height between holes', // i18n-ignore
   ])
   const [first, ...rest] = points
-  if (first === undefined) return { errors: ['There is no hole to drill.'] }
+  if (first === undefined) return { errors: [t('operations.check.noHole')] }
   p.add('')
   p.rapidXY(first[0], first[1])
   const q = d.cycle === 'G83' ? ` Q${p.n(d.peck)}` : ''

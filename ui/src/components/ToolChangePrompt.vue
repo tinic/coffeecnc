@@ -3,12 +3,19 @@ import { vTooltip } from '../tooltip'
 // LinuxCNC is waiting for a manual tool change. The prompt covers the workspace, not the status
 // bar or the run bar: stopping stays possible.
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { findTool, linkBlock, panel, send } from '../machine'
 import { formatLength, toolLabel } from '../units'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{ tool: number }>()
+const { t } = useI18n()
+const loadKey = 'tools.change.load'
+const nowKey = 'tools.change.now'
+const spindleStates = {
+  stopped: 'tools.change.spindleStopped', forward: 'tools.change.spindleForward', reverse: 'tools.change.spindleReverse',
+} as const
 
 const row = computed(() => findTool(props.tool))
 const loaded = computed(() => panel.status?.tool.in_spindle ?? 0)
@@ -19,41 +26,41 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
 
 <template>
   <div class="scrim">
-    <section class="prompt" role="alertdialog" aria-label="Tool change">
-      <span class="label">The program is waiting for a tool change</span>
+    <section class="prompt" role="alertdialog" :aria-label="t('tools.change.title')">
+      <span class="label">{{ t('tools.change.waiting') }}</span>
       <template v-if="tool === 0">
-        <h2>Remove the tool from the spindle</h2>
-        <p class="what">The program asks for an empty spindle (T0).</p>
+        <h2>{{ t('tools.change.removeTool') }}</h2>
+        <p class="what">{{ t('tools.change.emptySpindle') }}</p>
       </template>
       <template v-else>
-        <h2>
-          Load <strong class="mono">{{ toolLabel(tool) }}</strong>
-        </h2>
-        <p v-if="row" class="what">{{ row.comment || 'No description in the tool table' }}</p>
-        <p v-else class="what missing">{{ toolLabel(tool) }} is not in the tool table.</p>
+        <i18n-t :keypath="loadKey" tag="h2" scope="global">
+          <template #tool><strong class="mono">{{ toolLabel(tool) }}</strong></template>
+        </i18n-t>
+        <p v-if="row" class="what">{{ row.comment || t('tools.change.noDescription') }}</p>
+        <p v-else class="what missing">{{ t('tools.change.notInTable', { tool: toolLabel(tool) }) }}</p>
         <p v-if="row" class="table mono">
-          Table: length {{ formatLength(row.length, unit) }} {{ unit }} · diameter {{ formatLength(row.diameter, unit) }}
-          {{ unit }}
+          {{ t('tools.change.tableValues', { length: formatLength(row.length, unit), diameter: formatLength(row.diameter, unit), unit }) }}
         </p>
       </template>
-      <p class="now">
-        In the spindle now, as LinuxCNC reports:
-        <strong v-if="loaded === 0">no tool</strong>
-        <strong v-else><span class="mono">{{ toolLabel(loaded) }}</span> {{ loadedRow?.comment }}</strong>
-        · spindle {{ spindle === 'stopped' ? 'stopped' : `running ${spindle}` }}
-      </p>
+      <i18n-t :keypath="nowKey" tag="p" class="now" scope="global">
+        <template #tool>
+          <strong v-if="loaded === 0">{{ t('tools.change.noTool') }}</strong>
+          <strong v-else><span class="mono">{{ toolLabel(loaded) }}</span> {{ loadedRow?.comment }}</strong>
+        </template>
+        <template #spindle>{{ t(spindleStates[spindle]) }}</template>
+      </i18n-t>
       <button
-        v-tooltip="linkBlock ?? 'Tell LinuxCNC the tool change is done. The program continues.'"
+        v-tooltip="linkBlock ?? t('tools.change.confirmHint')"
         class="btn primary confirm"
         type="button"
         :disabled="linkBlock !== null"
         @click="send({ type: 'tool_changed' })"
       >
-        <AppIcon name="check" />{{ tool === 0 ? 'Spindle is empty' : 'Tool is in the spindle' }}
+        <AppIcon name="check" />{{ tool === 0 ? t('tools.change.spindleEmpty') : t('tools.change.toolInSpindle') }}
       </button>
       <p class="hint">
-        <template v-if="linkBlock">{{ linkBlock }}: the change cannot be confirmed.</template>
-        <template v-else>The program continues at once when you confirm. Stop, in the run bar, ends the program instead.</template>
+        <template v-if="linkBlock">{{ t('tools.change.cannotConfirm', { reason: linkBlock }) }}</template>
+        <template v-else>{{ t('tools.change.continueNote') }}</template>
       </p>
     </section>
   </div>

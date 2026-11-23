@@ -23,5 +23,14 @@ struct OperatorSettingsFile {
 [[nodiscard]] auto decode_operator_settings_file(std::string_view text)
     -> std::expected<OperatorSettingsFile, std::string>;
 
+// The panel language is kept in its own small file, `{machine_id, language}`, next to the settings
+// file: the settings file stays in the shape that earlier versions read, so that a downgrade keeps
+// the operator's settings. A missing or damaged language file means English.
+inline constexpr std::size_t max_panel_language_bytes = 1024;
+[[nodiscard]] auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language)
+    -> Encoded;
+[[nodiscard]] auto decode_panel_language_file(std::string_view text, std::string_view machine_id)
+    -> std::expected<PanelLanguage, std::string>;
+
 } // namespace coffeecnc
 #endif

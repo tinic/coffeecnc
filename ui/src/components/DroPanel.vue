@@ -2,7 +2,9 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { startDialog } from '../dialogs'
+import { translateMessage } from '../i18n/messages'
 import { axes, live, mdiBlock, panel, reported, rotaryAxes, send } from '../machine'
 import type { AxisLetter, AxisStatus, RotaryAxisStatus } from '../protocol'
 import { formatLength, fromDisplay, wcsName } from '../units'
@@ -10,36 +12,43 @@ import AppIcon from './AppIcon.vue'
 import NumberDialog from './NumberDialog.vue'
 import CoordinateConfirm from './CoordinateConfirm.vue'
 
+const { t } = useI18n()
 const props = defineProps<{ readOnly?: boolean }>()
 const basis = ref<'work' | 'machine' | 'dtg'>('work')
 const unit = computed(() => panel.unit)
 const wcs = computed(() => wcsName(reported.value?.offsets.wcs ?? 1))
 const touching = ref<{ key: number; axis: AxisLetter; initial: string; millimeters: number } | null>(null)
-const quick = ref<{ axis: AxisLetter; operation: 'Zero' | 'Half' } | null>(null)
+const quick = ref<{ axis: AxisLetter; operation: 'zero' | 'half' } | null>(null)
 const quickValues = computed(() => {
   const draft = quick.value
   const current = axes.value.find((axis) => axis.axis === draft?.axis)?.work
   if (!draft || current === undefined || !Number.isFinite(current)) return null
-  return { current, target: draft.operation === 'Half' ? current / 2 : 0 }
+  return { current, target: draft.operation === 'half' ? current / 2 : 0 }
 })
-const basisLabel = computed(() => basis.value === 'work' ? `Work · ${wcs.value}` : basis.value === 'machine' ? 'Machine' : 'To go')
-const nextBasisLabel = computed(() => basis.value === 'work' ? 'Machine' : basis.value === 'machine' ? 'To go' : 'Work')
+const basisLabel = computed(() => basis.value === 'work' ? t('manual.dro.basisWork', { wcs: wcs.value })
+  : basis.value === 'machine' ? t('manual.dro.basisMachine') : t('manual.dro.basisToGo'))
+const nextBasisLabel = computed(() => basis.value === 'work' ? t('manual.dro.basisMachine')
+  : basis.value === 'machine' ? t('manual.dro.basisToGo') : t('manual.dro.nextWork'))
+const switchTip = computed(() => basis.value === 'work' ? t('manual.dro.switchToMachine')
+  : basis.value === 'machine' ? t('manual.dro.switchToToGo') : t('manual.dro.switchToWork'))
 function cycleBasis(): void {
   basis.value = basis.value === 'work' ? 'machine' : basis.value === 'machine' ? 'dtg' : 'work'
 }
 let nextTouch = 0
-const touchBlock = computed(() => props.readOnly || panel.tab !== 'manual' ? 'Open Manual to touch off'
-  : basis.value !== 'work' ? 'Switch to work position to touch off' : mdiBlock.value)
+const touchBlock = computed(() => props.readOnly || panel.tab !== 'manual' ? t('manual.dro.openManual')
+  : basis.value !== 'work' ? t('manual.dro.switchToWorkPosition') : mdiBlock.value === null ? null : translateMessage(mdiBlock.value))
 const shifted = computed(() => reported.value?.offsets.g92.some((v) => v !== 0) ?? false)
 const tool = computed(() => reported.value?.tool.in_spindle)
+// A longer translation ends in an ellipsis in the fixed column; the tooltip has all of it.
+const toolHeading = computed(() => !live.value ? t('manual.dro.lastReportedTool') : tool.value === 0 ? t('manual.dro.noToolLoaded') : t('manual.dro.activeTool'))
 const compensation = computed(() => reported.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
 const toolLength = computed(() => reported.value?.offsets.tool[2])
-function openQuick(axis: AxisStatus, operation: 'Zero' | 'Half'): void {
+function openQuick(axis: AxisStatus, operation: 'zero' | 'half'): void {
   if (touchBlock.value !== null || !Number.isFinite(axis.work)) return
   touching.value = null
   quick.value = { axis: axis.axis, operation }
 }
-function quickFromMenu(axis: AxisStatus, operation: 'Zero' | 'Half', event: MouseEvent): void {
+function quickFromMenu(axis: AxisStatus, operation: 'zero' | 'half', event: MouseEvent): void {
   const menu = (event.currentTarget as HTMLElement).closest('details')
   if (menu) menu.open = false
   openQuick(axis, operation)
@@ -48,14 +57,14 @@ function confirmQuick(): void {
   const draft = quick.value
   const values = quickValues.value
   if (draft && values && touchBlock.value === null) {
-    send({ type: 'touch_off', axis: draft.axis, value: values.target, origin: draft.operation === 'Half' ? 'half' : 'zero' })
+    send({ type: 'touch_off', axis: draft.axis, value: values.target, origin: draft.operation === 'half' ? 'half' : 'zero' })
   }
   quick.value = null
 }
 function marker(axis: AxisStatus | RotaryAxisStatus): string {
-  if (axis.homing) return 'Homing'
-  if (axis.on_hard_limit) return 'On limit'
-  return axis.homed ? '' : 'Not homed'
+  if (axis.homing) return t('manual.dro.homing')
+  if (axis.on_hard_limit) return t('manual.dro.onLimit')
+  return axis.homed ? '' : t('manual.dro.notHomed')
 }
 function formatAngle(degrees: number | null): string {
   if (degrees === null || !Number.isFinite(degrees)) return '—'
@@ -90,55 +99,55 @@ watch([axes, touchBlock], () => {
 </script>
 
 <template>
-  <section class="dro" :class="{ distrust: !live, 'has-rotary': rotaryAxes.length > 0 }" aria-label="Coordinate readout">
+  <section class="dro" :class="{ distrust: !live, 'has-rotary': rotaryAxes.length > 0 }" :aria-label="t('manual.dro.readout')">
     <div class="basis">
-      <button v-tooltip="`Switch to ${nextBasisLabel} coordinates`" class="btn basis-toggle" type="button" :aria-label="`Coordinate view: ${basisLabel}. Switch to ${nextBasisLabel}`" @click="cycleBasis">
-        <span>{{ basisLabel }}<small v-if="basis === 'work' && shifted" class="g92">G92/G52 active</small></span>
+      <button v-tooltip="switchTip" class="btn basis-toggle" type="button" :aria-label="t('manual.dro.view', { current: basisLabel, next: nextBasisLabel })" @click="cycleBasis">
+        <span>{{ basisLabel }}<small v-if="basis === 'work' && shifted" class="g92">{{ t('manual.dro.shiftActive') }}</small></span>
         <AppIcon name="forward" />
       </button>
     </div>
     <div v-for="axis in axes" :key="axis.axis" class="axis-group">
       <component
         :is="readOnly ? 'div' : 'button'"
-        v-tooltip="readOnly ? undefined : touchBlock ?? `Touch off ${axis.axis.toUpperCase()} in ${wcs}`"
+        v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
         class="axis" :class="{ 'remote-axis': readOnly }"
         :type="readOnly ? undefined : 'button'" :disabled="readOnly ? undefined : touchBlock !== null || !Number.isFinite(axis.work)"
-        :aria-label="readOnly ? undefined : `Touch off ${axis.axis.toUpperCase()} in ${wcs}`" @click="openTouchOff(axis)"
+        :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
       >
         <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
-        <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? 'Last reported' : marker(axis) }}</span></span>
+        <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
         <span v-if="!readOnly && panel.tab !== 'manual'" class="touch hidden" aria-hidden="true"><AppIcon name="target" /></span>
       </component>
       <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
-        <summary :aria-label="`${axis.axis.toUpperCase()} coordinate actions`">···</summary>
+        <summary :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
         <div class="popover">
           <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
-          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="`Zero ${axis.axis.toUpperCase()}`" @click="quickFromMenu(axis, 'Zero', $event)">Zero {{ axis.axis.toUpperCase() }}</button>
-          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="`Half ${axis.axis.toUpperCase()}`" @click="quickFromMenu(axis, 'Half', $event)">½ Half {{ axis.axis.toUpperCase() }}</button>
+          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'zero', $event)">{{ t('manual.dro.zeroAxis', { axis: axis.axis.toUpperCase() }) }}</button>
+          <button class="btn" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.halfAxis', { axis: axis.axis.toUpperCase() })" @click="quickFromMenu(axis, 'half', $event)">{{ t('manual.dro.halfAxisButton', { axis: axis.axis.toUpperCase() }) }}</button>
         </div>
       </details>
     </div>
-    <span v-if="axes.length === 0" class="unavailable">Position unavailable</span>
+    <span v-if="axes.length === 0" class="unavailable">{{ t('manual.dro.positionUnavailable') }}</span>
     <div class="display-units">
-      <div class="units" role="group" aria-label="Display units">
+      <div class="units" role="group" :aria-label="t('manual.dro.displayUnits')">
         <button type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
         <button type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
       </div>
     </div>
-    <div class="active-tool" :class="{ stale: !live }" aria-label="Active tool and length compensation">
-      <span class="tool-heading">{{ !live ? 'Last reported tool' : tool === 0 ? 'No tool loaded' : 'Active tool' }}</span>
+    <div class="active-tool" :class="{ stale: !live }" :aria-label="t('manual.dro.activeToolGroup')">
+      <span v-tooltip="toolHeading" class="tool-heading">{{ toolHeading }}</span>
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
-      <span class="tool-length">Length <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
+      <span class="tool-length">{{ t('manual.dro.length') }} <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
-    <div v-if="rotaryAxes.length" class="rotary" role="group" aria-label="Rotary position in degrees">
+    <div v-if="rotaryAxes.length" class="rotary" role="group" :aria-label="t('manual.dro.rotary')">
       <div v-for="axis in rotaryAxes" :key="axis.axis" class="rotary-axis">
         <span class="rotary-letter mono">{{ axis.axis.toUpperCase() }}</span>
         <span class="rotary-angle mono">{{ formatAngle(axis[basis]) }}</span>
         <span v-if="live && marker(axis)" class="rotary-marker">{{ marker(axis) }}</span>
       </div>
-      <span v-if="!live" class="rotary-marker rotary-stale">Last reported</span>
+      <span v-if="!live" class="rotary-marker rotary-stale">{{ t('manual.dro.lastReported') }}</span>
     </div>
-    <NumberDialog v-if="touching !== null" :key="touching.key" :title="`Touch off ${touching.axis.toUpperCase()} in ${wcs}`" :effect="`Changes the ${wcs} work offset so that ${touching.axis.toUpperCase()} reads the value below at the present position. The machine does not move.`" :label="`${touching.axis.toUpperCase()} is now at`" :unit="unit" :initial="touching.initial" :action="`Set ${wcs} ${touching.axis.toUpperCase()}`" @confirm="touchOff" @close="touching = null" />
+    <NumberDialog v-if="touching !== null" :key="touching.key" :title="t('manual.dro.touchOff', { axis: touching.axis.toUpperCase(), wcs })" :effect="t('manual.dro.touchOffEffect', { wcs, axis: touching.axis.toUpperCase() })" :label="t('manual.dro.nowAt', { axis: touching.axis.toUpperCase() })" :unit="unit" :initial="touching.initial" :action="t('manual.dro.setAxis', { wcs, axis: touching.axis.toUpperCase() })" @confirm="touchOff" @close="touching = null" />
     <CoordinateConfirm v-if="quick && quickValues" :axis="quick.axis" :wcs="wcs" :current="quickValues.current" :target="quickValues.target" :unit="unit" :operation="quick.operation" @confirm="confirmQuick" @close="quick = null" />
   </section>
 </template>
@@ -173,7 +182,7 @@ watch([axes, touchBlock], () => {
 .units button { width: 44px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
-.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
+.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 @media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-toggle { min-height: 52px; } }

@@ -3,6 +3,7 @@ import { vTooltip } from '../tooltip'
 // Tools and offsets: the tool table, the tool in the spindle with its length touch-off, and the
 // nine work coordinate systems.
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { startDialog } from '../dialogs'
 import { findTool, linkBlock, mdiBlock, panel, send } from '../machine'
@@ -21,6 +22,9 @@ import OffsetHistoryDialog from './OffsetHistoryDialog.vue'
 import type { HistoryFilter } from '../offset-history'
 import { setterStatus, touchedOff } from '../setter-state'
 import { defaultToolName } from '../tool-models'
+
+const { t } = useI18n()
+const shiftKey = 'tools.tab.shift'
 
 const status = computed(() => panel.status)
 const unit = computed(() => panel.unit)
@@ -47,16 +51,16 @@ const applied = computed(() => status.value?.offsets.tool[2] ?? 0)
 /** Why the tool table cannot be edited, or null. */
 const editBlock = computed((): string | null => {
   if (linkBlock.value !== null || status.value === null) {
-    return linkBlock.value ?? 'No status from the machine yet'
+    return linkBlock.value ?? t('tools.tab.noStatus')
   }
-  return status.value.interp === 'idle' ? null : 'A program or MDI command is running'
+  return status.value.interp === 'idle' ? null : t('tools.tab.programRunning')
 })
 
 const touchBlock = computed((): string | null => {
   if (mdiBlock.value !== null) {
     return mdiBlock.value
   }
-  return loaded.value === 0 ? 'No tool in the spindle' : null
+  return loaded.value === 0 ? t('tools.tab.noToolInSpindle') : null
 })
 
 /** The table length differs from the offset in effect: LinuxCNC applies a length only at G43. */
@@ -96,7 +100,7 @@ watch([(): unknown => panel.hello, loaded, wcs, unit, touchBlock], () => { touch
 
 const loading = ref<Tool | null>(null)
 const loadBlock = computed(() => mdiBlock.value ?? (loading.value !== null && !sameTool(loading.value)
-  ? 'The tool table changed. Select the tool again.' : null))
+  ? t('tools.tab.tableChanged') : null))
 function openLoad(tool: Tool): void {
   if (mdiBlock.value === null) loading.value = { ...tool }
 }
@@ -110,8 +114,8 @@ watch([(): unknown => panel.hello, loaded, mdiBlock], () => { loading.value = nu
 
 const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, panel.link))
 function offsetHint(system: WorkOffsetRow): string | undefined {
-  if (system.offset === null) return `${wcsName(system.wcs)} offsets unavailable`
-  if (system.stale) return `${wcsName(system.wcs)} last reported offsets`
+  if (system.offset === null) return t('tools.tab.offsetsUnavailable', { system: wcsName(system.wcs) })
+  if (system.stale) return t('tools.tab.offsetsStale', { system: wcsName(system.wcs) })
   return undefined
 }
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
@@ -126,38 +130,38 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
   <div class="tools">
     <section class="card table">
       <div class="heading">
-        <h2>Tool table</h2>
+        <h2>{{ t('tools.tab.toolTable') }}</h2>
         <span class="hint spacer">{{ unit }}</span>
-        <button v-if="!panel.hello?.fixed_setter" v-tooltip="touchBlock ?? 'Set the loaded tool length from its present position'" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">Touch off length</button>
+        <button v-if="!panel.hello?.fixed_setter" v-tooltip="touchBlock ?? t('tools.tab.touchOffLengthHint')" class="btn touch-length" type="button" :disabled="touchBlock !== null" @click="openTouchOff">{{ t('tools.tab.touchOffLength') }}</button>
         <FixedSetterControls v-if="panel.hello?.fixed_setter" :limits="panel.hello.fixed_setter" />
-        <button v-tooltip="editBlock ?? 'Add a tool'" class="btn" type="button" :disabled="editBlock !== null" @click="add">
-          <AppIcon name="plus" /><span>Add tool</span>
+        <button v-tooltip="editBlock ?? t('tools.tab.addToolHint')" class="btn" type="button" :disabled="editBlock !== null" @click="add">
+          <AppIcon name="plus" /><span>{{ t('tools.tab.addTool') }}</span>
         </button>
-        <button v-if="panel.offsetHistory" v-tooltip="'Tool length and diameter changes, with Restore'" class="btn square tool-history" type="button" aria-label="Tool history" @click="historyFilter = 'tools'"><AppIcon name="history" /></button>
+        <button v-if="panel.offsetHistory" v-tooltip="t('tools.tab.toolHistoryHint')" class="btn square tool-history" type="button" :aria-label="t('tools.tab.toolHistory')" @click="historyFilter = 'tools'"><AppIcon name="history" /></button>
       </div>
       <SetterStatusBand v-if="panel.hello?.fixed_setter" :line="setterStatus" />
 
-      <p v-if="lengthMismatch" class="blocked">Applied length differs from the table. Load the tool again to apply its current length.</p>
+      <p v-if="lengthMismatch" class="blocked">{{ t('tools.tab.lengthMismatch') }}</p>
 
       <div class="scroll">
         <table>
           <thead>
             <tr>
-              <th class="num tool-column">Tool</th>
-              <th v-tooltip="'Touched off against the current reference'" class="touched-column">Set</th>
-              <th v-tooltip="'LinuxCNC tool-length offset, not physical tool length'" class="num dimension-column">Length</th>
-              <th class="num dimension-column">Diameter</th>
-              <th>Description</th>
+              <th class="num tool-column">{{ t('tools.tab.columnTool') }}</th>
+              <th v-tooltip="t('tools.tab.columnSetHint')" class="touched-column">{{ t('tools.tab.columnSet') }}</th>
+              <th v-tooltip="t('tools.tab.columnLengthHint')" class="num dimension-column">{{ t('tools.tab.columnLength') }}</th>
+              <th class="num dimension-column">{{ t('tools.tab.columnDiameter') }}</th>
+              <th>{{ t('tools.tab.columnDescription') }}</th>
               <th class="load-column"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="tool in tools" :key="tool.number" class="tool-row" :class="{ loaded: tool.number === loaded, selected: tool.number === selectedTool }" @click="tap(tool)">
               <td class="num mono">
-                <button class="tool-number" type="button" :aria-label="`Select tool ${tool.number}`" :aria-pressed="tool.number === selectedTool" @click.stop="tap(tool)">{{ toolLabel(tool.number) }}</button>
+                <button class="tool-number" type="button" :aria-label="t('tools.tab.selectTool', { number: tool.number })" :aria-pressed="tool.number === selectedTool" @click.stop="tap(tool)">{{ toolLabel(tool.number) }}</button>
               </td>
               <td class="touched-cell">
-                <span v-if="touchedOff(tool.number)" class="touched" aria-label="Touched off"><AppIcon name="check" /></span>
+                <span v-if="touchedOff(tool.number)" class="touched" :aria-label="t('tools.tab.touchedOff')"><AppIcon name="check" /></span>
               </td>
               <td class="num mono">{{ formatLength(tool.length, unit) }}</td>
               <td class="num mono">{{ formatLength(tool.diameter, unit) }}</td>
@@ -165,64 +169,62 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
                 {{ tool.comment || defaultToolName(tool.number) }}
               </td>
               <td class="actions">
-                <button v-tooltip="editBlock ?? `Edit T${tool.number}`" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="`Edit tool ${tool.number}`" @click.stop="edit(tool)">Edit</button>
-                <button v-tooltip="mdiBlock ?? `Load T${tool.number} and apply its length`" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="`Load tool ${tool.number}`" @click.stop="openLoad(tool)">Load</button>
+                <button v-tooltip="editBlock ?? t('tools.tab.editToolHint', { number: tool.number })" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="t('tools.tab.editToolLabel', { number: tool.number })" @click.stop="edit(tool)">{{ t('common.edit') }}</button>
+                <button v-tooltip="mdiBlock ?? t('tools.tab.loadToolHint', { number: tool.number })" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="t('tools.tab.loadToolLabel', { number: tool.number })" @click.stop="openLoad(tool)">{{ t('tools.tab.load') }}</button>
               </td>
             </tr>
           </tbody>
         </table>
-        <p v-if="panel.toolTable === null" class="hint">No tool table received.</p>
+        <p v-if="panel.toolTable === null" class="hint">{{ t('tools.tab.noToolTable') }}</p>
       </div>
     </section>
 
     <section class="card offsets">
       <div class="heading">
-        <h2>Work offsets</h2>
-        <span class="hint">{{ unit }} · origins, in machine coordinates</span>
-        <span v-if="systems.some(system => system.stale)" class="offset-history">Last reported</span>
-        <button v-if="panel.offsetHistory" v-tooltip="'Changes to work offsets and tools, with Restore'" class="btn history" type="button" @click="historyFilter = 'all'"><AppIcon name="history" /><span>History</span></button>
+        <h2>{{ t('tools.tab.workOffsets') }}</h2>
+        <span class="hint">{{ t('tools.tab.workOffsetsHint', { unit }) }}</span>
+        <span v-if="systems.some(system => system.stale)" class="offset-history">{{ t('tools.tab.lastReported') }}</span>
+        <button v-if="panel.offsetHistory" v-tooltip="t('tools.tab.historyHint')" class="btn history" type="button" @click="historyFilter = 'all'"><AppIcon name="history" /><span>{{ t('tools.tab.history') }}</span></button>
       </div>
       <div class="scroll">
         <table>
           <thead>
             <tr>
-              <th>System</th>
+              <th>{{ t('tools.tab.columnSystem') }}</th>
               <th class="num">X</th>
               <th class="num">Y</th>
               <th class="num">Z</th>
-              <th v-if="rotated" class="num">Rot</th>
+              <th v-if="rotated" class="num">{{ t('tools.tab.columnRotation') }}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="`Edit ${wcsName(system.wcs)} work origins`" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
+            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
               <td v-tooltip="offsetHint(system)" class="mono" :aria-label="offsetHint(system)">{{ wcsName(system.wcs) }}</td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
               <td class="actions">
-                <span v-if="system.active" class="chip go">active</span>
+                <span v-if="system.active" class="chip go">{{ t('tools.tab.active') }}</span>
                 <button
                   v-else
-                  v-tooltip="mdiBlock ?? `Make ${wcsName(system.wcs)} the active work system. The machine does not move.`"
+                  v-tooltip="mdiBlock ?? t('tools.tab.selectHint', { system: wcsName(system.wcs) })"
                   class="btn select"
                   type="button"
                   :disabled="mdiBlock !== null || status?.link !== 'live'"
                   @click.stop="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
-                  Select
+                  {{ t('tools.tab.select') }}
                 </button>
-                <button class="btn select" type="button" :aria-label="`Edit ${wcsName(system.wcs)} origins`" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">Edit</button>
+                <button class="btn select" type="button" :aria-label="t('tools.tab.editOrigins', { system: wcsName(system.wcs) })" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">{{ t('common.edit') }}</button>
               </td>
             </tr>
           </tbody>
         </table>
-        <p v-if="panel.workOffsets === null" class="hint">No work offsets received.</p>
+        <p v-if="panel.workOffsets === null" class="hint">{{ t('tools.tab.noWorkOffsets') }}</p>
       </div>
-      <p v-if="status?.offsets.g92.some((v) => v !== 0)" class="blocked g92">
-        A G92/G52 shift of
-        <span class="mono">{{ status.offsets.g92.map((v) => formatLength(v, unit)).join('  ') }}</span>
-        is added to every system.
-      </p>
+      <i18n-t v-if="status?.offsets.g92.some((v) => v !== 0)" :keypath="shiftKey" tag="p" class="blocked g92" scope="global">
+        <template #shift><span class="mono">{{ status.offsets.g92.map((v) => formatLength(v, unit)).join('  ') }}</span></template>
+      </i18n-t>
     </section>
 
     <ToolEditor v-if="editing !== null" :tool="editing.tool" @close="editing = null" />
@@ -230,21 +232,21 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
     <WorkOffsetDialog v-if="offsetEditor !== null" :wcs="offsetEditor" @close="offsetEditor = null" />
     <OffsetHistoryDialog v-if="historyFilter !== null" :filter="historyFilter" @close="historyFilter = null" />
 
-    <ModalDialog v-if="loading !== null" :title="`Load T${loading.number}?`" size="medium" expanded fresh-gesture @close="loading = null">
-      <p class="confirm"><strong>{{ loading.comment || `Tool ${loading.number}` }}</strong><br />Length {{ formatLength(loading.length, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }} · Diameter {{ formatLength(loading.diameter, unit) }} {{ unit === 'inch' ? 'in' : 'mm' }}</p>
-      <p class="confirm">Starts the machine’s tool-change sequence and applies this tool’s length. Follow the tool-change prompt if shown. The configured sequence may move the axes; clear the tool-change area first.</p>
+    <ModalDialog v-if="loading !== null" :title="t('tools.tab.loadTitle', { number: loading.number })" size="medium" expanded fresh-gesture @close="loading = null">
+      <p class="confirm"><strong>{{ loading.comment || t('tools.tab.toolNumber', { number: loading.number }) }}</strong><br />{{ t('tools.tab.loadValues', { length: formatLength(loading.length, unit), diameter: formatLength(loading.diameter, unit), unit: unit === 'inch' ? 'in' : 'mm' }) }}</p>
+      <p class="confirm">{{ t('tools.tab.loadEffect') }}</p>
       <p v-if="loadBlock" class="blocked" role="status">{{ loadBlock }}</p>
-      <template #footer><button class="btn" type="button" @click="loading = null">Cancel</button><button class="btn primary" type="button" :disabled="loadBlock !== null" @click="loadTool">Load T{{ loading.number }}</button></template>
+      <template #footer><button class="btn" type="button" @click="loading = null">{{ t('common.cancel') }}</button><button class="btn primary" type="button" :disabled="loadBlock !== null" @click="loadTool">{{ t('tools.tab.loadButton', { number: loading.number }) }}</button></template>
     </ModalDialog>
 
     <NumberDialog
       v-if="touching"
-      :title="`Touch off the length of T${loaded}`"
-      :effect="`Sets the length of T${loaded} in the tool table so that Z reads the value below in ${wcs} at the present position, and applies it (G43). The machine does not move.`"
-      label="Z is now at"
+      :title="t('tools.tab.touchOffTitle', { number: loaded })"
+      :effect="t('tools.tab.touchOffEffect', { number: loaded, system: wcs })"
+      :label="t('tools.tab.touchOffLabel')"
       :unit="unit"
       :initial="touching.initial"
-      :action="`Set T${loaded} length`"
+      :action="t('tools.tab.touchOffAction', { number: loaded })"
       @confirm="touchOff"
       @close="touching = null"
     />
@@ -256,7 +258,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
 .tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 480px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -289,7 +291,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .heading > .history { margin-left: auto; }
 .offset-history + .history { margin-left: 0; }
 .heading > .tool-history { width: 44px; padding: 0; }
-.table table { table-layout: fixed; }
+.table table { table-layout: auto; }
+.table th { white-space: nowrap; }
 .tool-column { width: 52px; }th.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }
 .tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
@@ -297,7 +300,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .tool-number { width: 100%; min-height: 44px; padding: 0; background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-weight: 700; text-align: right; }
 .tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.load-tool, .edit-tool { width: 64px; min-height: 44px; }
+.load-tool, .edit-tool { min-width: 64px; min-height: 44px; padding-inline: 8px; white-space: nowrap; }
 
 .scroll {
   flex: 1;
@@ -365,6 +368,9 @@ tr.loaded td {
   min-height: 44px;
 }
 .actions .chip + .btn { margin-left: 8px; }
+
+.tools > .offsets { width: max-content; min-width: 480px; max-width: 600px; }
+.offsets .select, .offsets .actions .btn { white-space: nowrap; }
 
 .offsets td:first-child {
   font-weight: 600;

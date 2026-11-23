@@ -1,4 +1,5 @@
 import { watch } from 'vue'
+import { t } from './i18n'
 import { onResult, panel, send } from './machine'
 import type { Tool } from './protocol'
 
@@ -15,25 +16,25 @@ export function saveTool(tool: Tool, signal: AbortSignal): Promise<string | null
     let accepted = false
     let done = false
     const stops: (() => void)[] = []
-    const timer = setTimeout(() => { finish('The tool save was not confirmed. Reopen the editor to check the current values.'); }, 10000)
+    const timer = setTimeout(() => { finish(t('tools.save.notConfirmed')); }, 10000)
     function finish(reason: string | null): void {
       if (done) return
       done = true; clearTimeout(timer); for (const stop of stops) stop(); resolve(reason)
     }
     function check(): void {
-      if (panel.hello !== hello || panel.link !== 'live') finish('The connection changed. Reopen the editor to check whether the tool was saved.')
+      if (panel.hello !== hello || panel.link !== 'live') finish(t('tools.save.connectionChanged'))
       else if (accepted && sameTool(panel.toolTable?.tools.find((row) => row.number === tool.number), tool)) finish(null)
     }
     stops.push(onResult((body, result) => {
       if (body !== command) return
-      if (result.outcome !== 'accepted') finish(result.reason || 'The tool could not be saved.')
+      if (result.outcome !== 'accepted') finish(result.reason || t('tools.save.couldNotSave'))
       else { accepted = true; check() }
     }))
     stops.push(watch([(): unknown => panel.toolTable, (): unknown => panel.hello, (): unknown => panel.link], check, { flush: 'sync' }))
-    const abort = (): void => { finish('Editor closed. Reopen it to check whether the tool was saved.') }
+    const abort = (): void => { finish(t('tools.save.editorClosed')) }
     signal.addEventListener('abort', abort, { once: true })
     stops.push(() => { signal.removeEventListener('abort', abort) })
     if (signal.aborted) { abort(); return }
-    try { send(command) } catch { finish('The tool save could not be sent.') }
+    try { send(command) } catch { finish(t('tools.save.couldNotSend')) }
   })
 }

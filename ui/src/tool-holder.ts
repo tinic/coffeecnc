@@ -1,17 +1,12 @@
+import { t } from './i18n'
+
 // Dimensions are nominal envelopes in millimetres. TTS uses a 3/4 in. shank.
 // ER nut diameters follow the standard REGO-FIX envelopes (28, 34 and 50 mm).
 const bores = [4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 export const holderChoices = [
-  { id: 'r8', label: 'R8 collet' },
-  { id: 'er16', label: 'ER16 collet holder' },
-  { id: 'er20', label: 'ER20 collet holder' },
-  { id: 'er32', label: 'ER32 collet holder' },
-  { id: 'bt30', label: 'BT30 holder' },
-  { id: 'generic', label: 'Generic holder' },
-  ...bores.map((bore) => ({ id: `tts-${String(bore)}` as `tts-${typeof bores[number]}`, label: `TTS end mill · ${String(bore)} mm` })),
-  { id: 'tts-er16', label: 'TTS / ER16' },
-  { id: 'tts-er20', label: 'TTS / ER20' },
-  { id: 'tts-er32', label: 'TTS / ER32' },
+  { id: 'r8' }, { id: 'er16' }, { id: 'er20' }, { id: 'er32' }, { id: 'bt30' }, { id: 'generic' },
+  ...bores.map((bore) => ({ id: `tts-${String(bore)}` as `tts-${typeof bores[number]}` })), // i18n-ignore
+  { id: 'tts-er16' }, { id: 'tts-er20' }, { id: 'tts-er32' },
 ] as const
 export type ToolHolder = typeof holderChoices[number]['id']
 
@@ -19,8 +14,17 @@ export function isToolHolder(value: unknown): value is ToolHolder {
   return holderChoices.some(({ id }) => id === value)
 }
 
+const holderNames = {
+  r8: 'tools.holder.r8', er16: 'tools.holder.er16', er20: 'tools.holder.er20', er32: 'tools.holder.er32',
+  bt30: 'tools.holder.bt30', generic: 'tools.holder.generic',
+} as const
+const ttsColletNames = { 'tts-er16': 'TTS / ER16', 'tts-er20': 'TTS / ER20', 'tts-er32': 'TTS / ER32' } as const
+
+/** The holder's name in the panel's language. */
 export function holderLabel(holder: ToolHolder): string {
-  return holderChoices.find(({ id }) => id === holder)?.label ?? ''
+  if (holder in holderNames) return t(holderNames[holder as keyof typeof holderNames])
+  if (holder in ttsColletNames) return ttsColletNames[holder as keyof typeof ttsColletNames]
+  return t('tools.holder.tts', { bore: holder.slice('tts-'.length) })
 }
 
 const er = {

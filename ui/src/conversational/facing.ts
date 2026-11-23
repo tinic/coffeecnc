@@ -1,13 +1,15 @@
 // Facing a rectangle: zig-zag passes across it, at equal depth steps, each pass entering and
 // leaving outside the stock.
 
-import { Checks, Program, checkCommon, feedNumber, steps, type Common, type Generated } from './program'
+import { t } from '../i18n'
+import { Checks, Program, checkCommon, feedNumber, steps, type Common, type Generated, type OperationsKey } from './program'
 
 export type Origin = 'lower-left' | 'lower-right' | 'upper-left' | 'upper-right' | 'centre'
 
-export const origins: readonly [Origin, string][] = [
-  ['lower-left', 'Lower-left corner'], ['lower-right', 'Lower-right corner'],
-  ['upper-left', 'Upper-left corner'], ['upper-right', 'Upper-right corner'], ['centre', 'Centre'],
+/** Each origin and the message key of its name. */
+export const origins: readonly [Origin, OperationsKey<'option'>][] = [
+  ['lower-left', 'operations.option.lowerLeft'], ['lower-right', 'operations.option.lowerRight'],
+  ['upper-left', 'operations.option.upperLeft'], ['upper-right', 'operations.option.upperRight'], ['centre', 'operations.option.centre'],
 ]
 
 export interface Facing extends Common {
@@ -28,12 +30,12 @@ export interface Facing extends Common {
 export function facing(f: Facing): Generated {
   const checks = new Checks()
   checkCommon(f, checks)
-  checks.positive(f.width, 'Size X')
-  checks.positive(f.height, 'Size Y')
-  checks.check(f.stepover > 0 && f.stepover <= 100, 'Stepover must be more than 0 % and at most 100 % of the tool diameter.')
-  checks.positive(f.depth, 'Total depth')
-  checks.positive(f.depthPerPass, 'Depth per pass')
-  checks.positive(f.plungeFeed, 'Plunge feed')
+  checks.positive(f.width, 'operations.label.sizeX')
+  checks.positive(f.height, 'operations.label.sizeY')
+  checks.check(f.stepover > 0 && f.stepover <= 100, t('operations.check.stepover'))
+  checks.positive(f.depth, 'operations.label.totalDepth')
+  checks.positive(f.depthPerPass, 'operations.label.depthPerPass')
+  checks.positive(f.plungeFeed, 'operations.label.plungeFeed')
   if (checks.errors.length) return { errors: checks.errors }
 
   const d = f.tool.diameter
@@ -50,14 +52,14 @@ export function facing(f: Facing): Generated {
   const layers = steps(f.depth, f.depthPerPass)
   const p = new Program(f)
   const [a, b] = f.along === 'x' ? ['X', 'Y'] : ['Y', 'X']
-  const corner = f.origin === 'centre' ? 'the centre' : `the ${f.origin} corner`
-  p.start('Facing', [
-    `Rectangle X ${p.n(f.width)} by Y ${p.n(f.height)}, X0 Y0 at ${corner}`,
-    `Passes along ${a}, zig-zag, ${String(rows)} per layer, stepover ${p.n(step)} = ${String(f.stepover)} %`,
-    `Depth ${p.n(f.depth)} in ${String(layers)} ${layers === 1 ? 'layer' : 'layers'} of ${p.n(f.depth / layers)}, plunge feed ${feedNumber(f.plungeFeed, f.unit)} outside the stock`,
+  const corner = f.origin === 'centre' ? 'the centre' : `the ${f.origin} corner` // i18n-ignore
+  p.start('Facing', [ // i18n-ignore
+    `Rectangle X ${p.n(f.width)} by Y ${p.n(f.height)}, X0 Y0 at ${corner}`, // i18n-ignore
+    `Passes along ${a}, zig-zag, ${String(rows)} per layer, stepover ${p.n(step)} = ${String(f.stepover)} %`, // i18n-ignore
+    `Depth ${p.n(f.depth)} in ${String(layers)} ${layers === 1 ? 'layer' : 'layers'} of ${p.n(f.depth / layers)}, plunge feed ${feedNumber(f.plungeFeed, f.unit)} outside the stock`, // i18n-ignore
   ])
   for (let layer = 1; layer <= layers; layer += 1) {
-    p.add('', `(Layer ${String(layer)} of ${String(layers)})`)
+    p.add('', `(Layer ${String(layer)} of ${String(layers)})`) // i18n-ignore
     if (f.along === 'x') p.rapidXY(ends[0], row(0))
     else p.rapidXY(row(0), ends[0])
     p.cut(`G1 Z${p.n((-f.depth * layer) / layers)}`, f.plungeFeed)

@@ -2,6 +2,7 @@
 import { vTooltip } from '../tooltip'
 // Asks for one number, with an on-screen keypad for touch screens without a keyboard.
 import { computed, onMounted, ref, useTemplateRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { parseNumericExpression } from '../numeric-expression'
 import { touchInput, vNumeric } from '../numeric-input'
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{
   error?: string
 }>(), { expanded: true, error: '' })
 const emit = defineEmits<{ confirm: [value: number, text: string]; close: [] }>()
+const { t } = useI18n()
 
 const text = ref<string>(props.initial)
 const fresh = ref<boolean>(true)
@@ -34,7 +36,7 @@ const value = computed(() => {
 
 const keys = ['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−', '±', '0', '.', '+'] as const
 const lengthEntry = computed(() => ['mm', 'in', 'inch'].includes(props.unit))
-const preview = computed(() => value.value === null ? 'Enter a valid formula' : `= ${String(Number(value.value.toPrecision(12)))} ${props.unit}`.trim())
+const preview = computed(() => value.value === null ? t('status.number.invalidFormula') : `= ${String(Number(value.value.toPrecision(12)))} ${props.unit}`.trim())
 
 function press(key: string): void {
   if (key === '±') {
@@ -107,15 +109,15 @@ onMounted(() => {
         <button v-for="key in keys" :key="key" class="btn mono" type="button" :disabled="integer && key === '.'" @click="press(key)">{{ key }}</button>
       </div>
       <div class="row corrections">
-        <button v-tooltip="'Delete the last digit'" class="btn grow" type="button" @click="backspace">
+        <button v-tooltip="t('status.number.deleteDigit')" class="btn grow" type="button" @click="backspace">
           <AppIcon name="backspace" />
         </button>
-        <button class="btn grow" type="button" @click="((text = '0'), (fresh = true))">Zero</button>
+        <button class="btn grow" type="button" @click="((text = '0'), (fresh = true))">{{ t('status.number.zero') }}</button>
       </div>
     </div>
     <p v-if="error" class="blocked" role="alert">{{ error }}</p>
     <template #footer>
-      <button class="btn" type="button" @click="emit('close')">Cancel</button>
+      <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
       <button class="btn primary" type="button" :disabled="value === null" @click="confirm">{{ action }}</button>
     </template>
   </ModalDialog>

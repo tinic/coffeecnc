@@ -5,6 +5,7 @@
 import { reactive, watch } from 'vue'
 
 import { arrived, arrivalToleranceMm, moveToleranceMm, type GoToMove } from './manual-moves'
+import { t } from './i18n'
 import type { CommandBody, Status } from './protocol'
 import type { ResultListener } from './store'
 
@@ -64,7 +65,7 @@ export function createMoveSequence(deps: {
 
   const stopResults = deps.onResult((sent, result) => {
     if (sent !== command || !state.running) return
-    if (result.outcome !== 'accepted') { end(result.reason || 'The move was refused'); return }
+    if (result.outcome !== 'accepted') { end(result.reason || t('manual.sequence.refused')); return }
     accepted = true
     observe(deps.status())
   })
@@ -86,8 +87,8 @@ export function createMoveSequence(deps: {
       return
     }
     idleStatuses += 1
-    if (busy) end('Go to stopped before the position was reached')
-    else if (idleStatuses > startStatuses) end('The move did not start')
+    if (busy) end(t('manual.sequence.stoppedEarly'))
+    else if (idleStatuses > startStatuses) end(t('manual.sequence.notStarted'))
   }
 
   const stopWatch = watch(deps.status, observe, { flush: 'sync' })

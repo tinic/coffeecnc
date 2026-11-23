@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { panel } from '../machine'
 import { machineFeedback } from '../machine-feedback'
 
 defineProps<{ showProbe?: boolean }>()
+const { t } = useI18n()
 const feedback = computed(() => machineFeedback(panel.status, panel.link))
 const showAtSpeed = computed(() => feedback.value.atSpeed.known &&
   typeof panel.status?.spindle.at_speed === 'boolean')
@@ -12,18 +14,18 @@ const showAtSpeed = computed(() => feedback.value.atSpeed.known &&
 <template>
   <dl
     v-if="feedback.rpm.known || showAtSpeed || (showProbe && feedback.probe.known)"
-    class="feedback" aria-label="Machine feedback"
+    class="feedback" :aria-label="t('status.feedback.label')"
   >
     <div v-if="feedback.rpm.known">
-      <dt>Measured spindle</dt>
+      <dt>{{ t('status.feedback.measuredSpindle') }}</dt>
       <dd class="rpm mono" :class="{ stale: feedback.rpm.stale }">{{ feedback.rpm.text }}</dd>
     </div>
     <div v-if="showAtSpeed">
-      <dt>At speed</dt>
+      <dt>{{ t('status.feedback.atSpeed') }}</dt>
       <dd class="at-speed mono" :class="{ stale: feedback.atSpeed.stale }">{{ feedback.atSpeed.text }}</dd>
     </div>
     <div v-if="showProbe && feedback.probe.known">
-      <dt>Probe input</dt>
+      <dt>{{ t('status.feedback.probeInput') }}</dt>
       <dd class="probe mono" :class="{ stale: feedback.probe.stale, tripped: feedback.probeTripped }">{{ feedback.probe.text }}</dd>
     </div>
   </dl>

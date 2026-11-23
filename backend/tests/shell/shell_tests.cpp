@@ -1689,7 +1689,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   auto geometry_text = result.at("identity").get<std::string>();
   std::erase(geometry_text, ',');
   check("step_import_sm101_geometry",
-        geometry_text.find("1 parts") != std::string::npos &&
+        geometry_text.find("1 part ") != std::string::npos &&
             geometry_text.find("1132 triangles") != std::string::npos,
         result.at("identity").dump());
   check("step_import_sm101_size", result.at("size").get<std::string>().find("120") != std::string::npos &&
@@ -2208,6 +2208,43 @@ void theme_in_settings(const Rig& rig) {
             rig.page_live() && rig.wait_js(harbor));
 }
 
+// The language switches the panel at once, is saved for this machine, returns after a reload,
+// and is set back to English for whatever runs after it.
+void language_in_settings(const Rig& rig) {
+  const auto open = [&]() -> bool {
+    return click_when_ready(rig, "summary.app-menu-toggle", "") == "ok" &&
+           click_when_ready(rig, "button.settings", "") == "ok" &&
+           rig.wait_js("document.querySelectorAll('.language-option').length === 7");
+  };
+  const auto german = "document.documentElement.lang === 'de' && "
+                      "!__t.find('[role=dialog] footer button.go', 'Save settings')";
+  const auto english = "document.documentElement.lang === 'en' && "
+                       "!!__t.find('[role=dialog] footer button.go', 'Save settings')";
+  check("settings_previews_german_text", open() &&
+        rig.click("label.language-option", "Deutsch") == "ok" && rig.wait_js(german));
+  check("settings_cancel_restores_language",
+        rig.click("[role=dialog] footer button:not(.go):not(.templates)", "") == "ok" &&
+            rig.wait_js("document.documentElement.lang === 'en' && !document.querySelector('[role=dialog]')"));
+  const bool saved = open() && rig.click("label.language-option", "Deutsch") == "ok" &&
+                     rig.wait_js(german) &&
+                     click_when_ready(rig, "[role=dialog] footer button.go", "") == "ok" &&
+                     rig.wait_js("__t.last.operator_settings?.document?.language === 'de' && "
+                                 "!document.querySelector('[role=dialog]')");
+  check("settings_saves_german_natively", saved);
+  if (!saved)
+    return;
+  const auto page = rig.hooks.state().page;
+  rig.hooks.reload();
+  check("settings_restores_saved_language_after_reload",
+        rig.wait(10s, [&]() -> bool { return rig.hooks.state().page != page; }) &&
+            rig.page_live() && rig.wait_js("document.documentElement.lang === 'de'"));
+  check("settings_returns_to_english",
+        open() && rig.click("label.language-option", "English") == "ok" && rig.wait_js(english) &&
+            click_when_ready(rig, "[role=dialog] footer button.go", "") == "ok" &&
+            rig.wait_js("__t.last.operator_settings?.document?.language === 'en' && "
+                        "!document.querySelector('[role=dialog]')"));
+}
+
 enum class Scenario : std::uint8_t { everything, tool_models_first_run, tool_models_second_run };
 
 void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario) {
@@ -2284,6 +2321,7 @@ void drive(ShellTestHooks& hooks, const MachineConfig& config, Scenario scenario
     estop(rig);
     status_gaps(rig, "estop");
     theme_in_settings(rig);
+    language_in_settings(rig);
     const auto state = hooks.state();
     check("no_request_off_the_scheme_at_end", state.foreign_resources.empty(),
           state.foreign_resources.empty() ? std::format("resources={}", state.resources.size())

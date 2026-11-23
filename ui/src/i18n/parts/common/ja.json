@@ -1,0 +1,20 @@
+{
+  "common": {
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "apply": "適用",
+    "save": "保存",
+    "back": "戻る",
+    "delete": "削除",
+    "remove": "取り除く",
+    "edit": "編集",
+    "more": "その他",
+    "default": "既定",
+    "unavailable": "利用不可",
+    "stale": "古い値",
+    "yes": "はい",
+    "no": "いいえ",
+    "off": "オフ",
+    "saving": "保存中…"
+  }
+}

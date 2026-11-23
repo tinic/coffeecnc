@@ -16,6 +16,20 @@ const { t } = useI18n()
 const props = defineProps<{ readOnly?: boolean }>()
 const basis = ref<'work' | 'machine' | 'dtg'>('work')
 const unit = computed(() => panel.unit)
+const linearReadouts = computed(() => {
+  const columns = 9 // Sign, integer digits, decimal point and fraction in either unit.
+  const integerPlaces = unit.value === 'mm' ? 4 : 3
+  return axes.value.map((axis) => {
+    const position = axis[basis.value]
+    const formatted = Number.isFinite(position) ? formatLength(position, unit.value) : '—'
+    const negative = formatted.startsWith('-')
+    const digits = negative ? formatted.slice(1) : formatted
+    const decimal = digits.indexOf('.')
+    const zeros = decimal < 0 ? '' : '0'.repeat(Math.max(0, integerPlaces - decimal))
+    const scale = Math.min(1, columns / (1 + zeros.length + digits.length))
+    return { axis, negative, zeros, digits, scale }
+  })
+})
 const wcs = computed(() => wcsName(reported.value?.offsets.wcs ?? 1))
 const touching = ref<{ key: number; axis: AxisLetter; initial: string; millimeters: number } | null>(null)
 const quick = ref<{ axis: AxisLetter; operation: 'zero' | 'half' } | null>(null)
@@ -106,8 +120,8 @@ watch([axes, touchBlock], () => {
         <AppIcon name="forward" />
       </button>
     </div>
-    <div v-if="axes.length" class="linear-axes">
-      <div v-for="axis in axes" :key="axis.axis" class="axis-group">
+    <div v-if="linearReadouts.length" class="linear-axes">
+      <div v-for="{ axis, negative, zeros, digits, scale } in linearReadouts" :key="axis.axis" class="axis-group">
         <component
           :is="readOnly ? 'div' : 'button'"
           v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
@@ -116,7 +130,10 @@ watch([axes, touchBlock], () => {
           :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
         >
           <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
-          <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
+          <span class="reading">
+            <span class="number mono" :style="{ '--number-scale': scale }"><span :aria-hidden="negative ? undefined : true">{{ negative ? '-' : '\u00a0' }}</span><span class="leading-zeros" aria-hidden="true">{{ zeros }}</span><span class="digits">{{ digits }}</span></span>
+            <span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span>
+          </span>
         </component>
         <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
           <summary class="tone-control" :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
@@ -174,9 +191,11 @@ watch([axes, touchBlock], () => {
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
 .axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .letter { flex: none; }
-/* The readout ends at a fixed position while the axis letter sits next to the first digit. */
-.reading { position: relative; display: flex; flex: none; flex-direction: column; text-align: right; }
+/* A sign slot and muted zero padding hold the digits in place through zero and across decades. */
+.reading { position: relative; display: flex; flex: none; flex-direction: column; inline-size: calc(9ch - .225em); text-align: right; }
 .number, .letter { letter-spacing: -.025em; white-space: nowrap; }
+.number { font-size: calc(1em * var(--number-scale, 1)); line-height: calc(1.2 * var(--type-dro)); }
+.leading-zeros { opacity: .42; }
 .marker { position: absolute; top: 100%; right: 0; line-height: 1.2; white-space: nowrap; font: 600 var(--type-sm)/1.2 var(--sans); color: var(--warn); }
 .units { display: flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
 .display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }

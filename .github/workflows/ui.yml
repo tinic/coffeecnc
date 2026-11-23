@@ -1,0 +1,29 @@
+# Type check, lint, unit tests and production build of the panel on every pull request and
+# push to main. The backend sentence tests in ui/test read the C++ sources, so a backend change
+# without its catalog entry also fails here.
+name: UI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Check and build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check
+          npm run build

@@ -876,12 +876,12 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
     if (loaded(now)) {
       started_program_ = {};
       verified_probe_program_.clear();
-      const auto wanted = [this, epoch] {
+      const auto reopen_current = [this, epoch] {
         const std::scoped_lock lock{mutex_};
         return !closing_ && epoch == epoch_;
       };
       const auto reopened = active(now) ? ActionResult{ActionStatus::failed, "The program is running."}
-                                        : port_.open_program(request.path, wanted);
+                                        : port_.open_program(request.path, reopen_current);
       if (reopened.status != ActionStatus::accepted)
         published = std::unexpected("Saved on disk, but not reopened. " + reopened.reason);
     }

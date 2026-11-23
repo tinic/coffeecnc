@@ -1,9 +1,6 @@
 #include "remote_server.hpp"
 
-#include <boost/asio.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/beast/websocket.hpp>
+#include "viewer_boost.hpp"
 #include <nlohmann/json.hpp>
 
 #include <array>

@@ -4,16 +4,16 @@
 import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
 import { contour } from './contour'
-import { drilling } from './drilling'
+import { drilling, type Drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'hole-finishing'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
-export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
+export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count' | 'duration'
 
 export type Values = Record<string, string>
 
@@ -65,6 +65,8 @@ export function unitOf(kind: NumberKind, unit: Unit): string {
       return '°'
     case 'count':
       return ''
+    case 'duration':
+      return 's'
   }
 }
 
@@ -122,6 +124,35 @@ function pocketOptions(v: Parsed): PocketOptions {
   }
 }
 
+const holePattern: Field = { type: 'choice', key: 'pattern', label: 'operations.label.pattern', options: [['grid', 'operations.option.grid'], ['circle', 'operations.option.boltCircle']] }
+
+const holeLocations: Field[] = [
+  num('x', 'operations.label.firstHoleX', 'coordinate', grid), num('y', 'operations.label.firstHoleY', 'coordinate', grid),
+  num('x', 'operations.label.centreX', 'coordinate', circle), num('y', 'operations.label.centreY', 'coordinate', circle),
+  num('columns', 'operations.label.columns', 'count', grid), num('rows', 'operations.label.rows', 'count', grid),
+  num('spacingX', 'operations.label.columnSpacingX', 'coordinate', grid), num('spacingY', 'operations.label.rowSpacingY', 'coordinate', grid),
+  num('count', 'operations.label.holes', 'count', circle), num('radius', 'operations.label.radius', 'length', circle),
+  num('startAngle', 'operations.label.firstHoleAngle', 'angle', circle),
+  num('depth', 'operations.label.holeDepth', 'length'),
+]
+
+const retractHeight = num('retract', 'operations.label.retractHeightR', 'length')
+
+type HoleGeometry = Omit<Drilling, keyof Common | 'cycle' | 'peck' | 'dwell'>
+function holeGeometry(v: Parsed): HoleGeometry {
+  return { pattern: v.text('pattern') === 'circle' ? 'circle' : 'grid',
+    x: v.num('x'), y: v.num('y'), columns: v.num('columns'), rows: v.num('rows'),
+    spacingX: v.num('spacingX'), spacingY: v.num('spacingY'), count: v.num('count'),
+    radius: v.num('radius'), startAngle: v.num('startAngle'), depth: v.num('depth'), retract: v.num('retract') }
+}
+
+const holeDefaults = {
+  mm: { pattern: 'grid', x: 10, y: 10, columns: 3, rows: 2, spacingX: 20, spacingY: 20, count: 6, radius: 25,
+    startAngle: 0, depth: 10, peck: 2, retract: 2 },
+  inch: { pattern: 'grid', x: 0.5, y: 0.5, columns: 3, rows: 2, spacingX: 1, spacingY: 1, count: 6, radius: 1,
+    startAngle: 0, depth: 0.4, peck: 0.08, retract: 0.08 },
+}
+
 export const operations: readonly Operation[] = [
   {
     id: 'facing',
@@ -146,30 +177,44 @@ export const operations: readonly Operation[] = [
     id: 'drilling',
     title: 'operations.operation.drilling',
     fields: [
-      { type: 'choice', key: 'pattern', label: 'operations.label.pattern', options: [['grid', 'operations.option.grid'], ['circle', 'operations.option.boltCircle']] },
+      holePattern,
       { type: 'choice', key: 'cycle', label: 'operations.label.cycle', options: [['G81', 'operations.option.g81'], ['G83', 'operations.option.g83']] },
-      num('x', 'operations.label.firstHoleX', 'coordinate', grid), num('y', 'operations.label.firstHoleY', 'coordinate', grid),
-      num('x', 'operations.label.centreX', 'coordinate', circle), num('y', 'operations.label.centreY', 'coordinate', circle),
-      num('columns', 'operations.label.columns', 'count', grid), num('rows', 'operations.label.rows', 'count', grid),
-      num('spacingX', 'operations.label.columnSpacingX', 'coordinate', grid), num('spacingY', 'operations.label.rowSpacingY', 'coordinate', grid),
-      num('count', 'operations.label.holes', 'count', circle), num('radius', 'operations.label.radius', 'length', circle),
-      num('startAngle', 'operations.label.firstHoleAngle', 'angle', circle),
-      num('depth', 'operations.label.holeDepth', 'length'),
+      ...holeLocations,
       num('peck', 'operations.label.peckDepth', 'length', (values) => values['cycle'] === 'G83'),
-      num('retract', 'operations.label.retractHeightR', 'length'),
+      retractHeight,
       ...feeds(false),
     ],
     defaults: (unit) => pick(unit,
-      { pattern: 'grid', cycle: 'G81', x: 10, y: 10, columns: 3, rows: 2, spacingX: 20, spacingY: 20, count: 6, radius: 25,
-        startAngle: 0, depth: 10, peck: 2, retract: 2, ...speeds.mm, feed: 100 },
-      { pattern: 'grid', cycle: 'G81', x: 0.5, y: 0.5, columns: 3, rows: 2, spacingX: 1, spacingY: 1, count: 6, radius: 1,
-        startAngle: 0, depth: 0.4, peck: 0.08, retract: 0.08, ...speeds.inch, feed: 4 }),
-    generate: (v, common) => drilling({ ...common, pattern: v.text('pattern') === 'circle' ? 'circle' : 'grid',
-      x: v.num('x'), y: v.num('y'), columns: v.num('columns'), rows: v.num('rows'), spacingX: v.num('spacingX'),
-      spacingY: v.num('spacingY'), count: v.num('count'), radius: v.num('radius'), startAngle: v.num('startAngle'),
-      cycle: v.text('cycle') === 'G83' ? 'G83' : 'G81', peck: v.num('peck'), depth: v.num('depth'), retract: v.num('retract') }),
+      { ...holeDefaults.mm, cycle: 'G81', ...speeds.mm, feed: 100 },
+      { ...holeDefaults.inch, cycle: 'G81', ...speeds.inch, feed: 4 }),
+    generate: (v, common) => drilling({ ...common, ...holeGeometry(v),
+      cycle: v.text('cycle') === 'G83' ? 'G83' : 'G81', peck: v.num('peck') }),
     name: (v) => v.text('pattern') === 'circle' ? `bolt-circle-${String(v.num('count'))}-holes` // i18n-ignore
       : `drill-grid-${String(v.num('columns'))}x${String(v.num('rows'))}`, // i18n-ignore
+  },
+  {
+    id: 'hole-finishing',
+    title: 'operations.operation.holeFinishing',
+    note: () => 'operations.operation.holeFinishingSetup',
+    fields: [
+      holePattern,
+      { type: 'choice', key: 'cycle', label: 'operations.label.cycle',
+        options: [['G85', 'operations.option.g85'], ['G89', 'operations.option.g89']] },
+      ...holeLocations,
+      num('dwell', 'operations.label.boreDwell', 'duration', (values) => values['cycle'] === 'G89'),
+      retractHeight,
+      ...feeds(false),
+    ],
+    defaults: (unit) => pick(unit,
+      { ...holeDefaults.mm, cycle: 'G85', dwell: 0.5, ...speeds.mm, rpm: 500, feed: 60 },
+      { ...holeDefaults.inch, cycle: 'G85', dwell: 0.5, ...speeds.inch, rpm: 500, feed: 2.4 }),
+    generate: (v, common) => drilling({ ...common, ...holeGeometry(v),
+      cycle: v.text('cycle') === 'G89' ? 'G89' : 'G85', peck: NaN, dwell: v.num('dwell') }),
+    name: (v): string => {
+      const operation = v.text('cycle') === 'G89' ? 'bore' : 'ream' // i18n-ignore
+      return v.text('pattern') === 'circle' ? `${operation}-circle-${String(v.num('count'))}-holes` // i18n-ignore
+        : `${operation}-grid-${String(v.num('columns'))}x${String(v.num('rows'))}` // i18n-ignore
+    },
   },
   {
     id: 'bore',

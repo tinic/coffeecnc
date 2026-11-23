@@ -4,7 +4,7 @@
 // Supported subset:
 //   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40 G41 G42, G53,
 //   Cutter compensation for absolute XY paths with tangent joins or outside corners only.
-//   G80 G81 G83 (absolute distance mode; X Y Z R Q, sticky Z R Q) G98 G99,
+//   G80 G81 G83 G85 G89 (absolute distance mode; X Y Z R Q P, sticky Z R Q P) G98 G99,
 //   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91 G91.1, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
 //   block delete with a leading /.
@@ -42,8 +42,8 @@ export interface Modal {
   units: LengthUnit
   absolute: boolean
   motion: Motion
-  /** Sticky words of the drilling cycles, mm in work coordinates; Q is the peck. */
-  cycle: { z?: number; r?: number; q?: number }
+  /** Sticky cycle words. Lengths are work-coordinate mm and P is in seconds. */
+  cycle: { z?: number; r?: number; q?: number; p?: number }
   /** G98: retract to `cycleStartZ`, the Z before the cycles began; G99: to R. */
   retract: 98 | 99
   cycleStartZ: number
@@ -58,8 +58,9 @@ export interface Modal {
   tools: Tool[]
 }
 
-/** G0 to G3, G80 (no motion) and the drilling cycles G81 and G83. */
-export type Motion = 0 | 1 | 2 | 3 | 80 | 81 | 83
+/** G0 to G3, G80 (no motion) and axial canned cycles. */
+type CannedCycle = 81 | 83 | 85 | 89
+export type Motion = 0 | 1 | 2 | 3 | 80 | CannedCycle
 
 export type Op =
   | {
@@ -313,6 +314,8 @@ const gGroups: Readonly<Record<number, string>> = {
   800: 'motion',
   810: 'motion',
   830: 'motion',
+  850: 'motion',
+  890: 'motion',
   400: 'cutter radius compensation',
   410: 'cutter radius compensation',
   420: 'cutter radius compensation',
@@ -650,7 +653,7 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     m.g92 = [0, 0, 0]
   }
 
-  const explicit = ([0, 10, 20, 30, 800, 810, 830] as const).find((code) => has(code))
+  const explicit = ([0, 10, 20, 30, 800, 810, 830, 850, 890] as const).find((code) => has(code))
   if (explicit !== undefined && axesTaken) {
     throw new InterpError(
       line,
@@ -660,18 +663,18 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   if (explicit !== undefined) {
     const next = (explicit / 10) as Motion
     // G98 returns to the Z from before this series of cycles.
-    if (drilling(next) && !drilling(m.motion)) m.cycleStartZ = present[2]
-    if (!drilling(next)) m.cycle = {}
+    if (cannedCycle(next) && !cannedCycle(m.motion)) m.cycleStartZ = present[2]
+    if (!cannedCycle(next) || (next !== m.motion && (next === 85 || next === 89))) m.cycle = {}
     m.motion = next
   }
   const axisGiven = axisWords.some((letter) => block.words.has(letter))
   if (m.motion === 80 && axisGiven && !axesTaken) {
     throw new InterpError(line, 'G80: axis words without a motion code (G0 to G3)')
   }
-  if (drilling(m.motion) && !axesTaken && (axisGiven || explicit !== undefined)) {
+  if (cannedCycle(m.motion) && !axesTaken && (axisGiven || explicit !== undefined)) {
     if (has(530)) throw new InterpError(line, 'G53 cannot be used with a canned cycle')
     if (m.cutter !== null || m.cutterExit !== null) throw new InterpError(line, 'a canned cycle cannot follow cutter compensation')
-    ops.push(...drill(m, word, line, scale))
+    ops.push(...axialCycle(m, word, line, scale))
   } else if (!axesTaken && (axisGiven || (explicit !== undefined && explicit >= 20 && explicit <= 30))) {
     const move = motion(m, block, word, used, line, scale, has(530))
     if (move !== null) {
@@ -707,25 +710,21 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   return { ops, blank: false }
 }
 
-function drilling(motion: Motion): motion is 81 | 83 {
-  return motion === 81 || motion === 83
+function cannedCycle(motion: Motion): motion is CannedCycle {
+  return motion === 81 || motion === 83 || motion === 85 || motion === 89
 }
 
 // LinuxCNC's G83 rapid back down to just above the last peck (G83_RAPID_DELTA, 0.010 inch).
 const peckClearance = 0.254
 
-/**
- * G81 or G83 at the X Y of this block (the present position for an axis not given): Z first to
- * R when below it, XY at the same height, Z to R, the drilling feed to Z (G83 in pecks of Q,
- * back to R between them), then out to R (G99) or the Z before the cycles (G98).
- */
-function drill(m: Modal, word: (letter: string) => number | undefined, line: number, scale: number): Op[] {
+/** Approach each hole through R and return to R (G99) or the initial Z (G98). */
+function axialCycle(m: Modal, word: (letter: string) => number | undefined, line: number, scale: number): Op[] {
   const name = `G${String(m.motion)}`
   if (!m.absolute) throw new InterpError(line, `${name} in incremental distance mode (G91) is not supported by the simulator`)
   if (m.feed <= 0) throw new InterpError(line, `cannot do ${name} with zero feed rate`)
-  const sticky = (letter: 'z' | 'r' | 'q'): number | undefined => {
+  const sticky = (letter: 'z' | 'r' | 'q' | 'p'): number | undefined => {
     const value = word(letter.toUpperCase())
-    if (value !== undefined) m.cycle[letter] = value * scale
+    if (value !== undefined) m.cycle[letter] = letter === 'p' ? value : value * scale
     return m.cycle[letter]
   }
   const x = word('X')
@@ -733,9 +732,11 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
   const z = sticky('z')
   const r = sticky('r')
   const q = m.motion === 83 ? sticky('q') : undefined
+  const dwell = m.motion === 89 ? sticky('p') : undefined
   if (z === undefined || r === undefined) throw new InterpError(line, `${name} needs Z and R words`)
   if (z > r) throw new InterpError(line, `${name}: Z ${String(z)} is above the R plane`)
   if (m.motion === 83 && (q === undefined || q <= 0)) throw new InterpError(line, 'G83 needs a positive Q word (peck depth)')
+  if (m.motion === 89 && (dwell === undefined || dwell < 0)) throw new InterpError(line, 'G89 needs a nonnegative P word (dwell)')
   const ops: Op[] = []
   let at = toWork(m, m.pos)
   const go = (to: Vec3, rapid: boolean): void => {
@@ -750,7 +751,7 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
   const hole: Vec3 = [x === undefined ? at[0] : x * scale, y === undefined ? at[1] : y * scale, at[2]]
   go(hole, true)
   go([hole[0], hole[1], r], true)
-  if (m.motion === 81 || q === undefined) {
+  if (q === undefined) {
     go([hole[0], hole[1], z], false)
   } else {
     for (let depth = r; depth > z;) {
@@ -760,7 +761,10 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
       if (depth > z) go([hole[0], hole[1], r], true)
     }
   }
-  go([hole[0], hole[1], m.retract === 98 ? Math.max(m.cycleStartZ, r) : r], true)
+  const clearZ = m.retract === 98 ? Math.max(m.cycleStartZ, r) : r
+  if (dwell !== undefined) ops.push({ kind: 'dwell', seconds: dwell })
+  if (m.motion === 85) go([hole[0], hole[1], r], false)
+  if (m.motion !== 85 || clearZ > r) go([hole[0], hole[1], clearZ], m.motion !== 89)
   return ops
 }
 

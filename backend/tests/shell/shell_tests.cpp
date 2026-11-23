@@ -1689,7 +1689,7 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
   auto geometry_text = result.at("identity").get<std::string>();
   std::erase(geometry_text, ',');
   check("step_import_sm101_geometry",
-        geometry_text.find("1 parts") != std::string::npos &&
+        geometry_text.find("1 part ") != std::string::npos &&
             geometry_text.find("1132 triangles") != std::string::npos,
         result.at("identity").dump());
   check("step_import_sm101_size", result.at("size").get<std::string>().find("120") != std::string::npos &&

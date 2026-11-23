@@ -5,13 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
 namespace coffeecnc {
 
 enum class TextFileError : std::uint8_t {
-  unreadable, // cannot be opened, or reading failed
+  unreadable, // not a regular file, cannot be opened, or reading failed
   too_large,  // has more than the limit; nothing of it is returned
 };
 
@@ -21,6 +22,11 @@ enum class TextFileError : std::uint8_t {
 // -Wnull-dereference: the end iterator holds a null stream buffer by design.)
 [[nodiscard]] inline auto read_text_file(const std::string& path, std::size_t limit)
     -> std::expected<std::string, TextFileError> {
+  // Only a regular file (through symlinks). A directory opens as a stream with libc++, and its
+  // read then ends at once with no error: it would be an empty file.
+  std::error_code status_error;
+  if (!std::filesystem::is_regular_file(path, status_error))
+    return std::unexpected(TextFileError::unreadable);
   std::ifstream in{path, std::ios::binary};
   if (!in)
     return std::unexpected(TextFileError::unreadable);

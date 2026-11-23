@@ -14,7 +14,6 @@ import { vTooltip } from '../tooltip'
 import { formatLength } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
-import NameEntry from './NameEntry.vue'
 
 const emit = defineEmits<{ line: [SetterStatusLine] }>()
 
@@ -82,7 +81,7 @@ function openSave(): void {
   if (!act(addBlock.value) || panel.status === null) return
   const name = nextPositionName(positions.value)
   draft.value = { fallback: name, position: machinePosition(panel.status), renaming: null }
-  draftName.value = name
+  draftName.value = ''
 }
 
 function openRename(entry: SavedPosition): void {
@@ -102,6 +101,12 @@ function confirmName(): void {
   } else if (chosen.plan !== renaming.name) {
     void store(positions.value.map((entry) => entry === renaming ? { ...entry, name: chosen.plan } : entry))
   }
+}
+
+function confirmNameOnEnter(event: KeyboardEvent): void {
+  if (event.isComposing) return
+  event.preventDefault()
+  confirmName()
 }
 
 // ---- delete ------------------------------------------------------------------------------------
@@ -206,8 +211,13 @@ const steps = computed(() => {
     </div>
   </div>
 
-  <ModalDialog v-if="draft" :title="draft.renaming ? `Rename ${draft.renaming.name}` : 'Save position'" size="medium" expanded fresh-gesture @close="draft = null">
-    <NameEntry v-model="draftName" label="Position name" :placeholder="draft.fallback" :max-length="maxPositionNameBytes" :replace-first="draft.renaming === null" @enter="confirmName" />
+  <ModalDialog v-if="draft" :title="draft.renaming ? `Rename ${draft.renaming.name}` : 'Save position'" size="small" expanded fresh-gesture @close="draft = null">
+    <input
+      v-model="draftName" class="field name-field" type="text" inputmode="text" enterkeyhint="done"
+      autocomplete="off" spellcheck="false" aria-label="Position name" data-native-text-input
+      :placeholder="draft.fallback" :maxlength="maxPositionNameBytes"
+      @keydown.enter="confirmNameOnEnter"
+    />
     <p class="coordinate mono">X {{ length(draft.position[0]) }}  Y {{ length(draft.position[1]) }}  Z {{ length(draft.position[2]) }} {{ unitName }}</p>
     <p v-if="nameBlock && nameBlock !== 'Saving…'" class="refusal" role="alert">{{ nameBlock }}</p>
     <p v-else>Machine coordinates, saved for this machine. An empty name saves as {{ draft.fallback }}.</p>
@@ -266,6 +276,7 @@ const steps = computed(() => {
 .row .delete-col { padding-inline: 2px; }
 .empty { padding: 12px; }
 .line { display: flex; align-items: center; gap: 10px; }
+.name-field { min-height: 48px; }
 .line .hint { margin-left: auto; font-size: 12px; }
 .btn[aria-disabled="true"] { opacity: .68; }
 .coordinate { margin: 0; font-size: 18px; white-space: pre; }

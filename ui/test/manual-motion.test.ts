@@ -78,14 +78,14 @@ async function tap(target: Element | { element: Node }): Promise<void> {
   element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await nextTick()
 }
-const typeKeys = async (keys: readonly string[]): Promise<void> => {
-  for (const key of keys) {
-    const found = document.querySelector(`button[aria-label="${key}"]`)
-    if (found === null) throw new Error(`No key ${key}`)
-    await tap(found)
-  }
-}
 const nameField = (): HTMLInputElement | null => document.querySelector<HTMLInputElement>('input[aria-label="Position name"]')
+async function typeName(name: string): Promise<void> {
+  const field = nameField()
+  if (field === null) throw new Error('No position name field')
+  field.value = name
+  field.dispatchEvent(new Event('input'))
+  await nextTick()
+}
 
 beforeEach(() => {
   vi.mocked(send).mockClear(); vi.mocked(operatorSettings.save).mockClear()
@@ -175,23 +175,30 @@ describe('saved positions in Manual', () => {
     const view = await mountManual()
     await button(view, 'Positions').trigger('click')
     await button(view, 'Save position').trigger('click')
-    expect(document.querySelector<HTMLInputElement>('input[aria-label="Position name"]')?.value).toBe('Position 1')
+    expect(nameField()?.placeholder).toBe('Position 1')
+    expect(nameField()?.value).toBe('')
     await button(view, 'Save').trigger('click'); await nextTick()
     expect(operatorSettings.save).toHaveBeenCalledOnce()
     expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Position 1', position: [100, 50, -20] }])
     expect(view.text()).toContain('Position 1')
     expect(send).not.toHaveBeenCalled()
   })
-  it('saves under a name typed on the on-screen keyboard, by touch', async () => {
+  it('allows the position name to receive native focus from a fresh touch', async () => {
     const stop = trackNumericInput()
     try {
       const view = await mountManual()
       await button(view, 'Positions').trigger('click')
       await tap(button(view, 'Save position'))
-      expect(nameField()?.value).toBe('Position 1')
-      // The first key replaces the name offered; Shift gives one capital.
-      await typeKeys(['Shift', 'Type V', 'Type i', 'Type s', 'Type e', 'Type a space', 'Type j', 'Type a', 'Type w', 'Type x', 'Delete the last character'])
-      expect(nameField()?.value).toBe('Vise jaw')
+      const field = nameField()
+      if (field === null) throw new Error('No position name field')
+      const mouseDown = (): Event => Object.assign(new Event('pointerdown', { bubbles: true, cancelable: true }), { pointerType: 'mouse' })
+      expect(field.dispatchEvent(mouseDown())).toBe(false)
+      expect(field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(false)
+      field.dispatchEvent(new Event('touchstart', { bubbles: true }))
+      field.dispatchEvent(new Event('touchend', { bubbles: true }))
+      expect(field.dispatchEvent(mouseDown())).toBe(true)
+      expect(field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(true)
+      await typeName('Vise jaw')
       await tap(button(view, 'Save'))
       expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Vise jaw', position: [100, 50, -20] }])
       expect(view.text()).toContain('Vise jaw')
@@ -202,7 +209,6 @@ describe('saved positions in Manual', () => {
     const view = await mountManual()
     await button(view, 'Positions').trigger('click')
     await button(view, 'Save position').trigger('click')
-    await typeKeys(['Clear the name'])
     expect(document.body.textContent).toContain('An empty name saves as Position 2')
     const field = nameField()
     if (field === null) throw new Error('No name field')
@@ -219,6 +225,8 @@ describe('saved positions in Manual', () => {
     const next = nameField()
     if (next === null) throw new Error('No name field')
     next.value = '  Fixture  '; next.dispatchEvent(new Event('input')); await nextTick()
+    next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true })); await nextTick()
+    expect(nameField()).toBe(next)
     next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); await nextTick()
     expect(panel.preferences.saved_positions.map((entry) => entry.name)).toEqual(['Corner', 'Position 2', 'Fixture'])
   })
@@ -235,14 +243,11 @@ describe('saved positions in Manual', () => {
       expect(nameField()).toBeNull()
       expect(operatorSettings.save).not.toHaveBeenCalled()
       await tap(view.get('button[aria-label="Rename Vise jaw"]').element)
-      // A rename edits the name: keys add to it.
-      await typeKeys(['Type a space', 'Type x'])
-      expect(nameField()?.value).toBe('Vise jaw x')
-      await typeKeys(['Clear the name', 'Shift', 'Type C', 'Type o', 'Type r', 'Type n', 'Type e', 'Type r'])
+      await typeName('Corner')
       expect(document.body.textContent).toContain('Another position is named Corner')
       await tap(button(view, 'Save'))
       expect(operatorSettings.save).not.toHaveBeenCalled()
-      await typeKeys(['Clear the name', 'Shift', 'Type L', 'Type e', 'Type f', 'Type t'])
+      await typeName('Left')
       await tap(button(view, 'Save'))
       expect(vi.mocked(operatorSettings.save).mock.calls[0]?.[0].saved_positions).toEqual([{ name: 'Left', position: [10, 20, -50] }, { name: 'Corner', position: [1, 2, -3] }])
       expect(view.find('button[aria-label="Rename Left"]').exists()).toBe(true)

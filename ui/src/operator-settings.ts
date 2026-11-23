@@ -6,9 +6,10 @@ export type ProgramLayout = 'path' | 'text' | 'split'
 export const panelThemes = ['light', 'dark', 'sandstone', 'harbor'] as const
 export type PanelTheme = typeof panelThemes[number]
 
-export const themeLabels: Record<PanelTheme, string> = {
-  light: 'Light', dark: 'Dark', sandstone: 'Sandstone', harbor: 'Harbor',
-}
+/** Message keys of the theme names; `t(themeLabels[theme])` where shown. */
+export const themeLabels = {
+  light: 'status.theme.light', dark: 'status.theme.dark', sandstone: 'status.theme.sandstone', harbor: 'status.theme.harbor',
+} as const satisfies Record<PanelTheme, string>
 
 export function isDarkTheme(theme: PanelTheme): boolean {
   return theme === 'dark' || theme === 'harbor'

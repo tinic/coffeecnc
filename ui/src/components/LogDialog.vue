@@ -3,41 +3,45 @@ import { vTooltip } from '../tooltip'
 // Everything the operator has been told in this session, newest first. On the simulator it also
 // holds the link-fault test control.
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+import { formatTime } from '../i18n'
+import { translateMessage } from '../i18n/messages'
 
 import { panel, setSimulatorFault } from '../machine'
 import type { LinkFault } from '../sim/machine'
-import { formatClock } from '../units'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
+const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 
 const entries = computed(() => [...panel.log].reverse())
 
-const faults: readonly (readonly [LinkFault, string, string])[] = [
-  ['none', 'Working', 'Status arrives normally.'],
-  ['silent', 'Silent', 'A frozen executable: no status and no answers.'],
-  ['stale', 'Reports stale', 'LinuxCNC stopped writing its status; the last one keeps arriving.'],
-  ['down', 'Reports down', 'No connection to LinuxCNC; placeholder status.'],
-]
+const faults = computed(() => [
+  ['none', t('status.log.faultNone'), t('status.log.faultNoneTip')],
+  ['silent', t('status.log.faultSilent'), t('status.log.faultSilentTip')],
+  ['stale', t('status.log.faultStale'), t('status.log.faultStaleTip')],
+  ['down', t('status.log.faultDown'), t('status.log.faultDownTip')],
+] as const satisfies readonly (readonly [LinkFault, string, string])[])
 </script>
 
 <template>
-  <ModalDialog title="Message log" size="large" @close="emit('close')">
-    <p v-if="entries.length === 0" class="hint">No messages in this session.</p>
+  <ModalDialog :title="t('status.log.title')" size="large" @close="emit('close')">
+    <p v-if="entries.length === 0" class="hint">{{ t('status.log.empty') }}</p>
     <ul class="log">
       <li v-for="entry in entries" :key="entry.id" :class="entry.level">
         <AppIcon :name="entry.level === 'error' ? 'warning' : 'info'" />
-        <span class="when mono">{{ formatClock(entry.time) }}</span>
+        <span class="when mono">{{ formatTime(entry.time) }}</span>
         <span class="text">
-          {{ entry.text }}<template v-if="entry.count > 1"> (×{{ entry.count }})</template>
-          <span v-if="entry.context" class="context">Answer to: {{ entry.context }}</span>
+          {{ translateMessage(entry.text) }}<template v-if="entry.count > 1"> (×{{ entry.count }})</template>
+          <span v-if="entry.context" class="context">{{ t('status.log.answerTo', { context: translateMessage(entry.context) }) }}</span>
         </span>
       </li>
     </ul>
     <template v-if="panel.simulated" #footer>
       <div class="fault">
-        <span class="label">Simulator test control: link</span>
+        <span class="label">{{ t('status.log.simulatorControl') }}</span>
         <div class="segmented">
           <button
             v-for="[fault, label, title] in faults"

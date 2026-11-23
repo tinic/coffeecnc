@@ -14,9 +14,7 @@
     "stale": "périmé",
     "yes": "Oui",
     "no": "Non",
-    "on": "Marche",
     "off": "Arrêt",
-    "saving": "Enregistrement…",
-    "loading": "Chargement…"
+    "saving": "Enregistrement…"
   }
 }

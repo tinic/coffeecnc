@@ -9,6 +9,7 @@ import { createOperatorSettingsState } from './operator-settings-state'
 import { createTransport } from './bridge'
 import { connectionBlock, machineBlock } from './machine-block'
 import { requiresHoming } from './machine-capabilities'
+import { t } from './i18n'
 import type { AxisStatus, CommandBody, RotaryAxisStatus, Status, Tool } from './protocol'
 import { createPanel, tabs, type PanelState, type ResultListener } from './store'
 
@@ -91,5 +92,5 @@ export const manualBlock: ComputedRef<string | null> = computed(() => machineBlo
 
 /** Why MDI, touch-off and coordinate system selection are unavailable, or null. */
 export const mdiBlock: ComputedRef<string | null> = computed(() =>
-  manualBlock.value ?? (!homingRequired.value || allHomed.value ? null : 'Axes are not homed'),
+  manualBlock.value ?? (!homingRequired.value || allHomed.value ? null : t('status.machineBlock.axesNotHomed')),
 )

@@ -14,9 +14,7 @@
     "stale": "stale",
     "yes": "Yes",
     "no": "No",
-    "on": "On",
     "off": "Off",
-    "saving": "Saving…",
-    "loading": "Loading…"
+    "saving": "Saving…"
   }
 }

@@ -47,6 +47,7 @@ public:
   // `files` must outlive the store. `root` is absolute; empty when none is configured. A listing
   // without a path shows `start` (the root when empty), which must lie inside the root.
   ProgramStore(const FileSystem& files, std::string root, std::string start = {});
+  [[nodiscard]] auto has_program_directory() const noexcept -> bool;
 
   // The directory at `path`; the root without one. Only directories and regular files (links
   // resolved, and only when they stay inside the root) whose names are UTF-8, do not start with

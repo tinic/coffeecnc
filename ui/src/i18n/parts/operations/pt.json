@@ -28,6 +28,8 @@
       "bore": "Mandrilagem helicoidal",
       "circularPocket": "Caixa circular",
       "rectangularPocket": "Caixa retangular",
+      "slot": "Ranhura / chaveta",
+      "slotSetup": "Use uma fresa de topo adequada à entrada. Defina o comprimento para que cada extremidade aberta fique no bordo do material e deixe espaço para a ferramenta o ultrapassar.",
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
@@ -79,6 +81,13 @@
       "cornerRadius": "Raio de canto",
       "toolDiameter": "O diâmetro da ferramenta na tabela de ferramentas",
       "numberOfHoles": "Número de furos",
+      "slotAxis": "Eixo",
+      "slotEnds": "Extremidades",
+      "slotLength": "Comprimento",
+      "slotWidth": "Largura",
+      "slotEntry": "Entrada",
+      "slotAngle": "Ângulo máximo de rampa",
+      "slotEntryFeed": "Avanço de entrada",
       "boltCircleRadius": "Raio do círculo de furos"
     },
     "option": {
@@ -108,6 +117,12 @@
       "grid": "Grelha",
       "boltCircle": "Círculo de furos",
       "g81": "G81 furação",
+      "slotClosed": "Fechadas",
+      "slotLow": "Aberta em −",
+      "slotHigh": "Aberta em +",
+      "slotBoth": "Ambas abertas",
+      "slotRamp": "Rampa",
+      "slotPlunge": "Mergulho",
       "g83": "G83 picagem"
     },
     "check": {
@@ -141,6 +156,13 @@
       "columnSpacing": "O espaçamento das colunas não pode ser zero.",
       "rowSpacing": "O espaçamento das linhas não pode ser zero.",
       "retractAboveClearance": "A altura de recuo não pode ficar acima da altura de segurança.",
+      "slotToolWidth": "A largura deve ser pelo menos igual ao diâmetro da ferramenta ({diameter}).",
+      "slotTravel": "A ranhura tem de ser mais comprida do que larga e deixar espaço para o curso da ferramenta.",
+      "slotOpenTravel": "Para acomodar a extremidade fechada, o comprimento da ranhura deve ser pelo menos metade da largura.",
+      "slotAngle": "O ângulo de rampa tem de ser superior a 0° e inferior a 90°.",
+      "slotPrecision": "Aumente os avanços, a profundidade, a folga ou a profundidade por passe para respeitar a precisão do programa.",
+      "slotRampRoom": "A ranhura é demasiado curta para este ângulo. Aumente o ângulo ou escolha Mergulho.",
+      "slotMoveCount": "A ranhura geraria demasiados movimentos. Aumente a profundidade por passe ou o ângulo da rampa.",
       "noHole": "Não há nenhum furo para furar."
     }
   }

@@ -265,7 +265,8 @@
   { "id": 39, "type": "clear_g92" },
   { "id": 40, "type": "watch_diagnostics", "on": true },
   { "id": 41, "type": "launch_hal_tool", "tool": "halscope" },
-  { "id": 42, "type": "backup", "directory": "/media/cnc/STICK" },
-  { "id": 43, "type": "check_restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz" },
-  { "id": 44, "type": "restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75" }
+  { "id": 42, "type": "manage_program_file", "operation": "rename", "path": "/home/cnc/nc_files/part.ngc", "name": "plate.ngc" },
+  { "id": 43, "type": "backup", "directory": "/media/cnc/STICK" },
+  { "id": 44, "type": "check_restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz" },
+  { "id": 45, "type": "restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75" }
 ]

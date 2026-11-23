@@ -25,6 +25,7 @@
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -555,6 +556,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles model_files;
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
+  LocalToolModelFiles copy_files;
+  LocalToolModelFiles upload_files;
   LocalToolModelFiles history_files;
   // Backup and restore, on the worker thread.
   LocalToolModelFiles machine_data_files;
@@ -565,6 +568,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
+  ProgramWriter copy_writer{programs, copy_files};
+  ProgramWriter upload_writer{programs, upload_files};
   std::unique_ptr<ToolModelStore> models;
   // The diagnostics view: HAL is read on the feed's thread, and only while a page watches. The
   // pin-to-signal wiring is that thread's alone. The HAL tools get LinuxCNC's environment.
@@ -576,6 +581,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::unique_ptr<DiagnosticsFeed> diagnostics;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
+  std::atomic<Runtime*> upload_runtime{};
   std::unique_ptr<RemoteServer> remote;
   PanelWindow window{{.ui_directory = *ui,
                       .windowed = options.windowed,
@@ -615,11 +621,14 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     std::unique_ptr<PanelFeed>& feed;
     std::unique_ptr<Runtime>& runtime;
     std::unique_ptr<ToolModelStore>& models;
+    std::unique_ptr<RemoteServer>& remote;
     std::unique_ptr<AlarmLog>& alarms;
     std::unique_ptr<DiagnosticsFeed>& diagnostics;
     ~Shutdown() {
       window.close();
       feed.reset();
+      if (remote)
+        remote->stop();
       runtime.reset();
       // It posts through the alarm log too.
       diagnostics.reset();
@@ -630,7 +639,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
       alarms.reset();
       models.reset();
     }
-  } shutdown{window, feed, runtime, models, alarms, diagnostics};
+  } shutdown{window, feed, runtime, models, remote, alarms, diagnostics};
   // What the services post to the page, as the alarm log sees it too.
   const auto post = [&window, &alarms](PageToken page, std::vector<std::string> messages) -> void {
     if (alarms)
@@ -639,8 +648,28 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   };
   if (config->remote_port != 0) {
     try {
-      remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts);
-      say(std::format("Read-only LAN screen on port {}.", remote->port()));
+      RemoteServer::Upload upload;
+      if (config->remote_upload) {
+        upload = [&](std::string_view name, std::string_view bytes, bool replace)
+            -> std::expected<void, std::string> {
+          auto* target = upload_runtime.load();
+          if (target == nullptr)
+            return std::unexpected("CoffeeCNC is starting.");
+          ProgramWriter::Publish publish;
+          if (replace) {
+            publish = [target](const std::string& path, const ProgramWriter::Commit& commit)
+                -> std::expected<void, std::string> {
+              return target->publish_program(path, commit);
+            };
+          }
+          if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
+            return std::unexpected(written.error());
+          return {};
+        };
+      }
+      remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts,
+                                              std::move(upload));
+      say(std::format("LAN screen on port {}.", remote->port()));
     } catch (const std::exception& error) {
       say(std::format("The LAN screen could not start: {}", error.what()));
     }
@@ -715,8 +744,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(),
+        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(), &copy_writer,
         machine_data.get());
+    upload_runtime.store(runtime.get());
     PanelFeed::Mirror mirror;
     if (remote) {
       mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,

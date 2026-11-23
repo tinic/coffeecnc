@@ -105,6 +105,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
           if (!valid_text(c.path, 4096) || !c.path.starts_with('/'))
             return reject("Choose a backup file.");
         }
+        if constexpr (std::is_same_v<T, ManageProgramFile>)
+          return allow();
         if constexpr (std::is_same_v<T, Abort> || std::is_same_v<T, JogStopAll>)
           return allow();
         // A new file: nothing of the machine's state decides about it. Replacing the loaded

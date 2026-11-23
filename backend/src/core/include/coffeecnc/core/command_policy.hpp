@@ -156,6 +156,13 @@ struct Mdi {
 struct ListDirectory {
   std::optional<std::string> path;
 };
+enum class ProgramFileOperation : std::uint8_t { create_folder, copy, rename, remove };
+// Copy uses the current file's name in Programs. Rename changes only its leaf name.
+struct ManageProgramFile {
+  ProgramFileOperation operation;
+  std::string path;
+  std::string name{};
+};
 struct OpenProgram {
   std::string path;
 };
@@ -297,7 +304,8 @@ using Command =
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
                  EditProgram, JogPausedZ, SaveProgram, RestoreOffset, SetWorkRotation, ClearG92,
-                 WatchDiagnostics, LaunchHalTool, Backup, CheckRestore, RestoreBackup>;
+                 WatchDiagnostics, LaunchHalTool, Backup, CheckRestore, RestoreBackup,
+                 ManageProgramFile>;
 
 struct Decision {
   bool allowed{};

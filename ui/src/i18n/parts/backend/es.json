@@ -1,5 +1,27 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "El programa está en ejecución.",
+      "directorySync": "Guardado en disco. Falló la sincronización de la carpeta. {detail}",
+      "manage": "Gestionar archivos de programa",
+      "unavailable": "La gestión de archivos de programa no está disponible.",
+      "nameForRename": "Solo se requiere un nombre nuevo al cambiar el nombre.",
+      "closing": "CoffeeCNC se está cerrando.",
+      "starting": "CoffeeCNC se está iniciando.",
+      "busy": "Se está subiendo otro programa.",
+      "verify": "No se puede comprobar el programa cargado con el controlador desconectado.",
+      "stop": "Detenga el programa cargado antes de reemplazarlo.",
+      "sameOrigin": "Suba el archivo desde la pantalla LAN de CoffeeCNC.",
+      "choose": "Seleccione el archivo de programa que desea subir.",
+      "size": "El programa supera los 16 MiB.",
+      "text": "Suba un archivo de programa en formato de texto.",
+      "uploadFailed": "No se pudo guardar el archivo subido.",
+      "copySize": "El archivo supera los 32 MiB.",
+      "nameTaken": "Ya existe un archivo o una carpeta con ese nombre.",
+      "missing": "El archivo o la carpeta ya no existe.",
+      "loaded": "Abra otro programa antes de mover o eliminar este elemento.",
+      "oneName": "Introduzca solo un nombre de archivo o carpeta."
+    },
     "toolChangeMeasurement": {
       "unavailable": "No se puede medir durante un cambio de herramienta del programa.",
       "requiresToolAndSetter": "Se necesita una herramienta de corte en la tabla y un medidor fijo.",

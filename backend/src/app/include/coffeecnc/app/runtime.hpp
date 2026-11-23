@@ -60,13 +60,14 @@ public:
           const ProgramStore& programs, Sink sink, ToolModelService* tool_models = nullptr,
           Quit quit = {}, PreviewWorker* preview = nullptr, PreviewEngine* restart_engine = nullptr,
           ProgramWriter* program_writer = nullptr, OffsetHistoryStore* history = nullptr,
-          DiagnosticsService* diagnostics = nullptr, MachineDataService* machine_data = nullptr);
+          DiagnosticsService* diagnostics = nullptr, ProgramWriter* copy_writer = nullptr,
+          MachineDataService* machine_data = nullptr);
   // Shutdown. From the first control period after it begins, at most control_period later, the
   // jog-stop level is high, with or without a jog, and nothing lowers it again. The worker
   // finishes the call it is in, executes waiting stop requests and stops each axis that may be
   // moving, once; the status thread finishes its reading; the control thread beats and holds
   // the level all that time, writes the level high once more and ends last. The destructor
-  // joins all three: it returns when the port and status calls in progress have returned, which
+  // joins the threads: it returns when the port and status calls in progress have returned, which
   // is bounded by their own bounds (see NmlPort) and not by this class. It never abandons a
   // thread that is inside LinuxCNC's libraries. The heartbeat stops with the control thread: the
   // watchdog then inhibits jogs as well.
@@ -84,6 +85,10 @@ public:
   // Session::loaded_program.
   [[nodiscard]] auto loaded_program() const -> std::string;
 
+  // Waits on the disk worker, never on the network or panel thread.
+  [[nodiscard]] auto publish_program(const std::string& path, const Session::Publication& publish)
+      -> std::expected<void, std::string>;
+
   // Since the start or the last call of reset_timing.
   [[nodiscard]] auto timing() const -> Timing;
   void reset_timing();
@@ -92,6 +97,7 @@ private:
   void control_loop();
   void status_loop();
   void work_loop();
+  void copy_loop(ProgramWriter& writer);
 
   StatusSource& status_;
   SafetyOutputs& outputs_;
@@ -106,6 +112,7 @@ private:
   std::thread control_;
   std::thread status_thread_;
   std::thread worker_;
+  std::thread copier_;
 };
 
 } // namespace coffeecnc

@@ -326,7 +326,7 @@ struct Rig {
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
                ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr,
                MachineDataService* machine_data = nullptr)
-      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, nullptr,
+      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, nullptr, false,
                 machine_data),
         page(driver.begin_page()) {
     port.state = homed_machine();
@@ -1094,7 +1094,8 @@ void directory_listing() {
                                                         {"kind", "file"},
                                                         {"bytes", 9},
                                                         {"modified", 1700000123456}}}},
-                                                     {"truncated", false}},
+                                                     {"truncated", false},
+                                                     {"writable", true}},
           "A null path lists the program directory: " + listed.messages.at(0));
   require(Json::parse(listed.messages.at(1)) ==
               Json{{"type", "result"}, {"id", 2}, {"outcome", "accepted"}, {"reason", ""}},
@@ -2844,6 +2845,86 @@ void editor_saves_over_the_loaded_program() {
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }
 
+void uploads_do_not_replace_the_running_program() {
+  constexpr auto part = "/home/cnc/nc_files/part.ngc";
+  constexpr auto other = "/home/cnc/nc_files/other.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  port.state.program_file = part;
+  FakeFileSystem files;
+  files.file(part, "M2\n");
+  const ProgramStore programs{files, program_directory};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs};
+  const auto clock = [] { return at(0ms); };
+  int published = 0;
+  const auto publish = [&](std::string path) {
+    auto queued = session.publish_program(std::move(path), [&]() -> std::expected<void, std::string> {
+      ++published;
+      return {};
+    });
+    require(session.work(clock).status == WorkStatus::done, "The worker takes up publication");
+    return queued.get();
+  };
+
+  require(!publish(part), "An offline controller cannot verify a replacement");
+  for (const auto interp : {InterpState::reading, InterpState::paused}) {
+    port.state.interp = interp;
+    session.observe(port.state, clock().monotonic);
+    require(!publish(part), "The loaded file is protected during execution and pause");
+  }
+  port.state.interp = InterpState::idle;
+  port.state.requested_tool = 2;
+  session.observe(port.state, clock().monotonic);
+  require(!publish(part) && published == 0, "The loaded file is protected while an M6 waits");
+  require(publish(other).has_value() && port.calls.empty(), "Another file can be replaced without reopening during a run");
+  port.state.requested_tool.reset();
+  session.observe(port.state, clock().monotonic);
+  require(publish(part).has_value() && published == 2 &&
+              port.calls == Calls{std::string("open_program ") + part},
+          "An idle replacement reopens the pathname in LinuxCNC");
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
+  const auto failed = publish(part);
+  require(!failed && published == 3 &&
+              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+          "A failed reopen reports the successful disk publication");
+}
+
+void usb_copy_does_not_hold_the_command_worker() {
+  constexpr auto source = "/media/turo/USB/part.ngc";
+  constexpr auto destination = "/home/cnc/nc_files/part.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  FakeFileSystem files;
+  files.file(source, "M2\n");
+  files.directory(program_directory);
+  const ProgramStore programs{files, "/", program_directory};
+  FakeDisk disk;
+  disk.files[source] = "M2\n";
+  FakeToolModelFiles writes{disk};
+  ProgramWriter writer{programs, writes};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs, nullptr, nullptr, nullptr, nullptr, nullptr,
+                  nullptr, true};
+  Driver driver{session, port};
+  const auto page = driver.begin_page();
+  static_cast<void>(driver.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto pending = driver.handle(page,
+      R"({"id":2,"type":"manage_program_file","operation":"copy","path":"/media/turo/USB/part.ngc"})", at(0ms));
+  require(pending.messages.empty() && !disk.files.contains(destination),
+          "The command worker returns while the copy waits for the disk worker");
+  writes.during = [&](std::string_view step) {
+    if (step == "sync") {
+      const auto stopped = results(driver.handle(page, R"({"id":3,"type":"abort"})", at(0ms)));
+      require(stopped.size() == 1 && stopped.front().at("outcome") == "accepted",
+              "Stop can be handled while the copy synchronizes");
+    }
+  };
+  const auto copied = session.copy_work(writer);
+  require(copied && !copied->messages.empty() && disk.files.contains(destination),
+          "The disk worker publishes the copy and returns its result");
+}
+
 } // namespace
 
 // A failing run prints the seed of its random sequence; pass it as the only argument to repeat.
@@ -2853,6 +2934,8 @@ auto main(int argc, char** argv) -> int {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
     editor_saves_over_the_loaded_program();
+    uploads_do_not_replace_the_running_program();
+    usb_copy_does_not_hold_the_command_worker();
     controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();

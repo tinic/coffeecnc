@@ -1215,6 +1215,8 @@ export class SimMachine {
         this.emit(listing)
         return null
       }
+      case 'manage_program_file':
+        return reject('Program file management is unavailable.')
       case 'open_program':
         return this.open(command.path)
       case 'run': {

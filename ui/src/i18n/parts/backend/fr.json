@@ -1,5 +1,27 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "Le programme est en cours d’exécution.",
+      "directorySync": "Enregistré sur le disque. La synchronisation du dossier a échoué. {detail}",
+      "manage": "Gérer les fichiers de programme",
+      "unavailable": "La gestion des fichiers de programme est indisponible.",
+      "nameForRename": "Un nouveau nom est requis uniquement pour renommer un fichier.",
+      "closing": "CoffeeCNC est en cours de fermeture.",
+      "starting": "CoffeeCNC est en cours de démarrage.",
+      "busy": "Un autre programme est en cours de téléversement.",
+      "verify": "Le programme chargé ne peut pas être vérifié lorsque le contrôleur est hors ligne.",
+      "stop": "Arrêtez le programme chargé avant de le remplacer.",
+      "sameOrigin": "Téléversez le fichier depuis l’écran LAN de CoffeeCNC.",
+      "choose": "Sélectionnez le fichier de programme à téléverser.",
+      "size": "Le programme dépasse 16 Mio.",
+      "text": "Téléversez un fichier de programme au format texte.",
+      "uploadFailed": "Le fichier téléversé n’a pas pu être enregistré.",
+      "copySize": "Le fichier dépasse 32 Mio.",
+      "nameTaken": "Un fichier ou un dossier porte déjà ce nom.",
+      "missing": "Le fichier ou le dossier n’existe plus.",
+      "loaded": "Ouvrez un autre programme avant de déplacer ou de supprimer cet élément.",
+      "oneName": "Saisissez uniquement un nom de fichier ou de dossier."
+    },
     "toolChangeMeasurement": {
       "unavailable": "La mesure pendant un changement d’outil du programme est indisponible.",
       "requiresToolAndSetter": "Il faut un outil de coupe dans la table et un palpeur d’outil fixe.",

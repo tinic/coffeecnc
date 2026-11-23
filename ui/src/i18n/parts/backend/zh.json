@@ -1,5 +1,27 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "程序正在运行。",
+      "directorySync": "已保存到磁盘。目录同步失败。{detail}",
+      "manage": "管理程序文件",
+      "unavailable": "程序文件管理不可用。",
+      "nameForRename": "仅重命名时需要提供新文件名。",
+      "closing": "CoffeeCNC 正在关闭。",
+      "starting": "CoffeeCNC 正在启动。",
+      "busy": "正在上传另一个程序。",
+      "verify": "控制器离线时无法核实已加载的程序。",
+      "stop": "请先停止已加载的程序，再替换文件。",
+      "sameOrigin": "请在 CoffeeCNC 局域网界面上传文件。",
+      "choose": "请选择要上传的程序文件。",
+      "size": "程序超过 16 MiB。",
+      "text": "请上传程序文本文件。",
+      "uploadFailed": "无法保存上传的文件。",
+      "copySize": "文件超过 32 MiB。",
+      "nameTaken": "已有同名文件或文件夹。",
+      "missing": "文件或文件夹已不存在。",
+      "loaded": "请先打开其他程序，再移动或删除此项目。",
+      "oneName": "请输入单个文件名或文件夹名。"
+    },
     "toolChangeMeasurement": {
       "unavailable": "程序换刀期间无法测量。",
       "requiresToolAndSetter": "需要刀具表中登记的切削刀具和固定对刀仪。",

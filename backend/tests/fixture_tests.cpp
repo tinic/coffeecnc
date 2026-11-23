@@ -81,7 +81,8 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "launch_hal_tool",
     "backup",
     "check_restore",
-    "restore"};
+    "restore",
+    "manage_program_file"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};

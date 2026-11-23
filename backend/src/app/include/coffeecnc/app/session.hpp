@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -254,7 +255,7 @@ public:
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
           OffsetHistoryStore* history = nullptr, DiagnosticsService* diagnostics = nullptr,
-          MachineDataService* machine_data = nullptr);
+          bool asynchronous_copies = false, MachineDataService* machine_data = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -280,6 +281,12 @@ public:
   // Any thread; does not wait for the controller.
   [[nodiscard]] auto loaded_program() const -> std::string;
 
+  // A disk worker has already written and synchronized a temporary program. Send only its
+  // atomic publication through the controller worker, serialized against program start.
+  using Publication = std::function<std::expected<void, std::string>()>;
+  [[nodiscard]] auto publish_program(std::string path, Publication publish)
+      -> std::future<std::expected<void, std::string>>;
+
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
   [[nodiscard]] auto control(Instant now, const ControlInput& input) -> bool;
@@ -288,6 +295,9 @@ public:
   // request. Blocks as long as the port does. The clock is read when messages are stamped. Also
   // collects the controller's operator messages for the page.
   [[nodiscard]] auto work(const Clock& clock) -> Work;
+
+  // On the disk thread, waits for one copy. A disengaged result means shutdown.
+  [[nodiscard]] auto copy_work(ProgramWriter& writer) -> std::optional<Outcome>;
 
   // Waits until there may be work, at most `timeout`.
   void wait_for_work(std::chrono::milliseconds timeout);
@@ -343,6 +353,17 @@ private:
     // A stop that is carried out even if its page is gone.
     bool stop{};
   };
+  struct ProgramPublication {
+    std::string path;
+    Publication publish;
+    std::promise<std::expected<void, std::string>> result;
+  };
+  struct ProgramCopy {
+    PageToken page;
+    RequestId id;
+    ManageProgramFile command;
+  };
+  void publish_program(ProgramPublication& request, const Clock& clock);
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
   struct Stage {
     StageKind kind{StageKind::reply};
@@ -463,12 +484,16 @@ private:
   const CommandPolicy policy_;
   std::deque<Queued> stops_;
   std::deque<Queued> requests_;
+  std::optional<ProgramCopy> copy_;
+  std::optional<ProgramPublication> publication_;
   ControllerState status_;
   std::array<AxisJog, 3> jog_{};
   // Consecutive control periods that found the level low, up to settled_periods.
   int low_periods_{settled_periods};
   bool woken_{};
   bool closing_{};
+  bool copying_{};
+  const bool asynchronous_copies_;
   bool page_open_{};
   bool ready_{};
   bool watch_frames_{};

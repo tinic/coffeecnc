@@ -16,6 +16,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <numbers>
@@ -640,6 +641,293 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
   require(port.status().g5x == g54, "feature probing changes only the active work coordinate system");
 }
 
+// Every feature cycle in a rotated G55 (#245). The simulated parts are square to the work axes:
+// HAL turns the commanded machine XY into the frame (u, v) of the work axes, about the machine
+// origin, and the windows lie in that frame. Ball-centre contacts:
+//   hollow (pocket, inside corner, slot, bore): trips outside u -5..13, v -9..5;
+//   solid (corner, boss, ridge): trips inside u -5..13, v -9..5 below Z 12;
+//   edge (angle): trips where v + g*u >= 6 (front) or u + g*v >= 6 (left), g = -0.05.
+// Each result is the work origin in the frame (where the work system reads X0 Y0) and the size.
+void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  constexpr double none = std::numeric_limits<double>::quiet_NaN();
+  const double turn = degrees * std::numbers::pi / 180;
+  const double c = std::cos(turn);
+  const double s = std::sin(turn);
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto to_frame = [&](const std::array<double, 3>& m) {
+    return std::array{c * m[0] + s * m[1], -s * m[0] + c * m[1], m[2]};
+  };
+  // The frame position of the active work system's X0 Y0.
+  const auto origin_of = [&](const NmlStatus& status) {
+    const auto& axes = status.controller.axes;
+    const auto f = to_frame({axes[0].machine, axes[1].machine, axes[2].machine});
+    return std::array{f[0] - status.work[0], f[1] - status.work[1]};
+  };
+  const auto at = [&](double u, double v) {
+    mdi(std::format("G21 G90 G53 G0 X{:.8f} Y{:.8f} Z20", c * u - s * v, s * u + c * v));
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    at(0, 0);
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  mdi(std::format("G10 L2 P2 X5 Y-7 Z2 R{}", degrees));
+  mdi("G55");
+  mdi("G92 X2 Y3 Z4");
+  at(0, 0);
+  mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12, the top of the solid part.
+  const auto initial = port.status();
+  require(std::abs(initial.rotation_xy - degrees) < 1e-9, std::format("G55 is rotated {}°", degrees));
+
+  halcmd("loadrt sum2 names=sim-rot-u,sim-rot-v,sim-rot-edge");
+  halcmd("loadrt near names=sim-rot-x,sim-rot-y,sim-rot-z");
+  halcmd("loadrt logic names=sim-rot-hollow,sim-rot-solid personality=0x802,0x103");
+  for (const auto* part : {"sim-rot-u", "sim-rot-v", "sim-rot-edge", "sim-rot-x", "sim-rot-y",
+                           "sim-rot-z", "sim-rot-hollow", "sim-rot-solid"})
+    halcmd(std::format("addf {} servo-thread", part));
+  halcmd("net sim-rot-mx axis.x.pos-cmd sim-rot-u.in0 sim-rot-v.in0 sim-rot-edge.in0");
+  halcmd("net sim-rot-my axis.y.pos-cmd sim-rot-u.in1 sim-rot-v.in1 sim-rot-edge.in1");
+  halcmd(std::format("setp sim-rot-u.gain0 {:.12f}", c));
+  halcmd(std::format("setp sim-rot-u.gain1 {:.12f}", s));
+  halcmd(std::format("setp sim-rot-v.gain0 {:.12f}", -s));
+  halcmd(std::format("setp sim-rot-v.gain1 {:.12f}", c));
+  halcmd("net sim-rot-fu sim-rot-u.out sim-rot-x.in1");
+  halcmd("net sim-rot-fv sim-rot-v.out sim-rot-y.in1");
+  halcmd("net sim-setter-z sim-rot-z.in1");
+  const auto window = [&](char axis, double low, double high) {
+    halcmd(std::format("setp sim-rot-{}.scale 1", axis));
+    halcmd(std::format("setp sim-rot-{}.in2 {}", axis, (high + low) / 2 / scale));
+    halcmd(std::format("setp sim-rot-{}.difference {}", axis, (high - low) / 2 / scale));
+  };
+  window('x', -5, 13);
+  window('y', -9, 5);
+  window('z', -100, 12);
+  halcmd("net sim-rot-inx sim-rot-x.out sim-rot-hollow.in-00 sim-rot-solid.in-00");
+  halcmd("net sim-rot-iny sim-rot-y.out sim-rot-hollow.in-01 sim-rot-solid.in-01");
+  halcmd("net sim-rot-inz sim-rot-z.out sim-rot-solid.in-02");
+  const auto probe_input = [&](std::string_view net, std::string_view pin) {
+    halcmd("unlinkp motion.probe-input");
+    halcmd("unlinkp coffeecnc.probe-input");
+    halcmd(std::format("net {} {} motion.probe-input coffeecnc.probe-input", net, pin));
+  };
+
+  struct Expected {
+    std::string_view name;
+    std::array<std::optional<double>, 2> origin; // frame; empty: the axis keeps its origin
+    std::array<std::optional<double>, 2> size{};
+    std::optional<double> diameter{};
+  };
+  const auto verify = [&](const Expected& expected, const NmlStatus& before,
+                          const std::expected<SetterState, std::string>& result) {
+    if (!result)
+      throw std::runtime_error(std::format("{} at {}°: {}", expected.name, degrees, result.error()));
+    const auto after = port.status();
+    const auto kept = origin_of(before);
+    const auto measured = origin_of(after);
+    bool ok = after.wcs == 2 && std::abs(after.rotation_xy - degrees) < 1e-9 &&
+              after.g92 == initial.g92 && after.tool_offset == initial.tool_offset &&
+              std::abs(after.g5x[2] - initial.g5x[2]) < 1e-6 && std::abs(machine()[2] - 20) < 0.03;
+    std::string line = std::format("fact=rotated_probe action={} rotation={}", expected.name, degrees);
+    for (std::size_t i = 0; i < 2; ++i) {
+      const double want = expected.origin[i].value_or(kept[i]);
+      ok = ok && std::abs(measured[i] - want) < 0.03;
+      line += std::format(" origin_{0}_expected={1:.4f} origin_{0}_measured={2:.4f}", "uv"[i], want,
+                          measured[i]);
+      if (expected.size[i] || result->feature_size[i]) {
+        ok = ok && expected.size[i] && result->feature_size[i] &&
+             std::abs(*result->feature_size[i] - *expected.size[i]) < 0.03;
+        line += std::format(" size_{0}_expected={1:.4f} size_{0}_measured={2:.4f}", "uv"[i],
+                            expected.size[i].value_or(none), result->feature_size[i].value_or(none));
+      }
+    }
+    if (expected.diameter) {
+      ok = ok && result->center_diameter &&
+           std::abs(*result->center_diameter - *expected.diameter) < 0.03;
+      line += std::format(" diameter_expected={:.4f} diameter_measured={:.4f}", *expected.diameter,
+                          result->center_diameter.value_or(none));
+    }
+    std::cout << line << std::endl;
+    require(ok, std::format("{} probes along the {}° work axes and sets G55 in them", expected.name,
+                            degrees));
+  };
+  const auto run = [&](const Expected& expected, FixedSetterRequest request) {
+    const auto before = port.status();
+    request.tool = 99;
+    request.start = machine();
+    verify(expected, before, port.fixed_setter(request, epoch, {}));
+  };
+
+  // Hollow: walls (ball contacts) at u -5 and 13, v -9 and 5; physical faces one radius out.
+  probe_input("sim-rot-inner", "sim-rot-hollow.nand");
+  at(2, 1);
+  run({.name = "inside_corner", .origin = {-6, 6}},
+      {.action = SetterAction::inside_corner, .direction = ProbeDirection::x_minus,
+       .y_direction = ProbeDirection::y_plus});
+  at(2, 1);
+  run({.name = "pocket", .origin = {4, -2}, .size = {20, 16}}, {.action = SetterAction::pocket});
+  at(2, 1);
+  run({.name = "slot", .origin = {4, std::nullopt}, .size = {20, std::nullopt}},
+      {.action = SetterAction::slot, .direction = ProbeDirection::x_plus});
+  at(2, 1);
+  run({.name = "slot_y", .origin = {std::nullopt, -2}, .size = {std::nullopt, 16}},
+      {.action = SetterAction::slot, .direction = ProbeDirection::y_plus});
+  at(2, 1);
+  // The bore's Y chord passes through its centre: 14 mm between contacts plus the 2 mm ball.
+  run({.name = "bore", .origin = {4, -2}, .diameter = 16}, {.action = SetterAction::bore});
+
+  // Solid: contacts at u -5 and 13, v -9 and 5; the faces lie one radius inward of them.
+  probe_input("sim-rot-outer", "sim-rot-solid.and");
+  at(2, 1);
+  run({.name = "corner", .origin = {-4, -8}},
+      {.action = SetterAction::corner, .direction = ProbeDirection::x_plus,
+       .y_direction = ProbeDirection::y_plus});
+  // From the far corner: contacts at u 13 and v 5, faces one radius inward at 12 and 4.
+  at(10, 2);
+  run({.name = "corner_xminus_yminus", .origin = {12, 4}},
+      {.action = SetterAction::corner, .direction = ProbeDirection::x_minus,
+       .y_direction = ProbeDirection::y_minus});
+  at(3, -1);
+  run({.name = "boss", .origin = {4, -2}, .diameter = 12},
+      {.action = SetterAction::boss, .gauge_width_mm = 16});
+  at(2, 1);
+  run({.name = "ridge", .origin = {std::nullopt, -2}, .size = {std::nullopt, 12}},
+      {.action = SetterAction::ridge, .direction = ProbeDirection::y_plus, .gauge_width_mm = 12});
+
+  // Ball calibration stays refused in a rotated system, before any command.
+  at(2, 1);
+  const auto writes_before_ball = port.writes().size();
+  const auto origin_before_ball = port.status().g5x;
+  FixedSetterRequest ball{SetterAction::ball, 99, machine()};
+  ball.gauge_width_mm = 20;
+  const auto refused_ball = port.fixed_setter(ball, epoch, {});
+  std::cout << std::format("fact=rotated_probe action=ball rotation={} refused={} writes={}", degrees,
+                           !refused_ball, port.writes().size() - writes_before_ball)
+            << std::endl;
+  require(!refused_ball && refused_ball.error().contains("without rotation") &&
+              port.writes().size() == writes_before_ball &&
+              port.status().g5x == origin_before_ball,
+          refused_ball ? "expected a refused ball calibration" : refused_ball.error());
+
+  // The travel check is on the machine endpoint: 1 mm inside the Y limit, the +X work axis
+  // leaves it although the X search alone would not.
+  // Two moves: each settles within the 6 s wait at 30 mm/s.
+  const double edge_y = s > 0 ? 249 : -249;
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y));
+  const auto writes = port.writes().size();
+  const auto origin = port.status().g5x;
+  const auto outside = port.fixed_setter({SetterAction::bore, 99, machine()}, epoch, {});
+  std::cout << std::format("fact=rotated_probe action=travel start_y={} endpoint_y={:.4f} "
+                           "limit_y={} writes={}",
+                           edge_y, edge_y + 20 * s, s > 0 ? 250 : -250,
+                           port.writes().size() - writes)
+            << std::endl;
+  require(!outside && outside.error().contains("outside the configured travel") &&
+              port.writes().size() == writes && port.status().g5x == origin,
+          outside ? "expected a travel refusal" : outside.error());
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
+  mdi("G21 G90 G53 G0 X0 Y0 Z20");
+
+  // Edge angle: the edge turns atan(0.05) from the work axis, measured from the rotated axes.
+  halcmd("unlinkp sim-tool-setter.in");
+  halcmd("net sim-rot-edge-normal sim-rot-edge.out sim-tool-setter.in");
+  halcmd(std::format("setp sim-tool-setter.min {}", 6 / scale));
+  halcmd(std::format("setp sim-tool-setter.max {}", 100 / scale));
+  probe_input("sim-setter-trip", "");
+  constexpr double g = -0.05;
+  // The edge turns atan(-g) from the axes of a system rotated `frame` degrees.
+  const auto edge = [&](ProbeDirection direction, double frame) {
+    const double fc = std::cos(frame * std::numbers::pi / 180);
+    const double fs = std::sin(frame * std::numbers::pi / 180);
+    // front: v + g u = (-s + g c) x + (c + g s) y; left: u + g v = (c - g s) x + (s + g c) y.
+    const bool front = direction == ProbeDirection::y_plus;
+    halcmd(std::format("setp sim-rot-edge.gain0 {:.12f}", front ? -fs + g * fc : fc - g * fs));
+    halcmd(std::format("setp sim-rot-edge.gain1 {:.12f}", front ? fc + g * fs : fs + g * fc));
+  };
+  const double residual = std::atan(-g) * 180 / std::numbers::pi;
+  const auto angle = [&](ProbeDirection direction, double expected) {
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    mdi(scale == 1 ? "G21" : "G20");
+    const double rotation = port.status().rotation_xy;
+    FixedSetterRequest request{SetterAction::angle, 99, machine(), direction};
+    request.gauge_width_mm = 20;
+    const auto measured = port.fixed_setter(request, epoch, {});
+    if (!measured)
+      throw std::runtime_error(std::format("angle at {}°: {}", rotation, measured.error()));
+    std::cout << std::format("fact=rotated_probe action=angle edge={} rotation={:.4f} angle_expected={:.4f} "
+                             "angle_measured={:.4f} apply_expected={:.4f} apply_offered={:.4f}",
+                             direction == ProbeDirection::y_plus ? "front" : "left", rotation,
+                             expected, measured->edge_angle_deg.value_or(none),
+                             wrapped_rotation(rotation + expected),
+                             measured->edge_rotation ? measured->edge_rotation->rotation_deg : none)
+              << std::endl;
+    require(measured->edge_angle_deg && measured->edge_rotation &&
+                std::abs(*measured->edge_angle_deg - expected) < 0.05 &&
+                std::abs(measured->edge_rotation->rotation_deg - wrapped_rotation(rotation + expected)) <
+                    0.05 &&
+                port.status().rotation_xy == rotation,
+            "the edge angle is measured from the rotated work axis and not written");
+    // Back clear of the edge before its simulation changes.
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    return *measured;
+  };
+  edge(ProbeDirection::x_plus, degrees);
+  static_cast<void>(angle(ProbeDirection::x_plus, -residual));
+  edge(ProbeDirection::y_plus, degrees);
+  const auto front = angle(ProbeDirection::y_plus, residual);
+  // The feature cycles above moved the G55 origin: applying keeps it where they left it.
+  const auto unturned = port.status().g5x;
+  const auto applied = port.fixed_setter(
+      {.action = SetterAction::apply_angle, .tool = 99, .edge_measurement = front.edge_rotation->id},
+      epoch, {});
+  const auto turned = port.status();
+  std::cout << std::format("fact=rotated_probe action=apply_angle rotation_expected={:.4f} rotation_measured={:.4f}",
+                           degrees + residual, turned.rotation_xy)
+            << std::endl;
+  require(applied && applied->edge_angle_deg &&
+              std::abs(*applied->edge_angle_deg - (degrees + residual)) < 0.05 &&
+              std::abs(turned.rotation_xy - (degrees + residual)) < 0.05 &&
+              std::ranges::equal(turned.g5x, unturned,
+                                 [](double a, double b) { return std::abs(a - b) < 1e-6; }),
+          applied ? "applying adds the measured turn to the present rotation"
+                  : applied.error());
+  // Square to the edge now: the remaining turn is zero.
+  static_cast<void>(angle(ProbeDirection::y_plus, 0));
+
+  // Near 180°: 179 + 2.8624 is written as -178.1376, inside the panel's ±360° limit.
+  constexpr double near_half_turn = 179;
+  mdi(std::format("G21 G10 L2 P2 R{}", near_half_turn));
+  edge(ProbeDirection::y_plus, near_half_turn);
+  const auto wide = angle(ProbeDirection::y_plus, residual);
+  const auto wrapped = port.fixed_setter(
+      {.action = SetterAction::apply_angle, .tool = 99, .edge_measurement = wide.edge_rotation->id},
+      epoch, {});
+  const double wrapped_expected = near_half_turn + residual - 360;
+  std::cout << std::format("fact=rotated_probe action=apply_angle_wrap rotation_expected={:.4f} "
+                           "rotation_measured={:.4f}",
+                           wrapped_expected, port.status().rotation_xy)
+            << std::endl;
+  require(wrapped && std::abs(port.status().rotation_xy - wrapped_expected) < 0.05,
+          wrapped ? "applying past 180° writes the same turn inside -180..180°" : wrapped.error());
+  static_cast<void>(angle(ProbeDirection::y_plus, 0));
+  mdi("G54");
+  require(port.status().g5x == g54 && port.status().rotation_xy == 0,
+          "rotated probing changes only the active work coordinate system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -965,6 +1253,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool material = scenario == "material";
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
+  const bool rotated = scenario == "rotated";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -977,7 +1266,7 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
-  if (material || edge || features)
+  if (material || edge || features || rotated)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -1023,6 +1312,11 @@ void run(const std::string& ini, std::string_view scenario) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (rotated) {
+    // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
+    rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
+    return;
+  }
   if (scenario == "measure-m6") {
 #ifdef COFFEECNC_PREVIEW_HELPER_BUILT
     control_thread.request_stop();
@@ -1304,7 +1598,7 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features" && scenario != "measure-m6") ||
+       scenario != "features" && scenario != "rotated" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

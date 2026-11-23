@@ -115,5 +115,5 @@ small { font-size: var(--type-sm); color: var(--text-dim); }
 .display-row { font-size: 12px; }.display-row label { display: flex; align-items: center; gap: 6px; }.opacity { flex: 1; }.opacity input { min-width: 70px; width: 100px; flex: 1; }
 .opacity-value { flex: none; width: 4ch; min-width: 4ch; text-align: right; }
 .placement-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
-.placement-grid { display: grid; grid-template-columns: 100px repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px 10px; font-size: 12px; }.placement-grid > span { color: var(--text-dim); }.placement-grid input { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--control); color: var(--text); }
+.placement-grid { display: grid; grid-template-columns: 100px repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px 10px; font-size: 12px; }.placement-grid > span { color: var(--text-dim); }.placement-grid input { min-width: 0; width: 100%; padding: 8px; border: 0; border-radius: var(--control-radius); background: var(--field); color: var(--text); }
 </style>

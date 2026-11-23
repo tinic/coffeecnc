@@ -79,7 +79,7 @@ onMounted(() => {
     <div class="browser" :class="{ 'has-recent': recent.length > 0 }">
       <section v-if="recent.length > 0" class="recent" :aria-label="t('program.fileBrowser.recentPrograms')">
         <h3>{{ t('program.fileBrowser.recent') }}</h3>
-        <button v-for="path in recent" :key="path" v-tooltip="path" class="entry" type="button" @click="open(path)">
+        <button v-for="path in recent" :key="path" v-tooltip="path" class="entry list-row" type="button" @click="open(path)">
           <AppIcon name="file" />
           <span class="recent-path">
             <span class="name">{{ baseName(path) }}</span>
@@ -113,7 +113,7 @@ onMounted(() => {
         </div>
         <div class="entries">
           <div v-for="entry in directory?.entries ?? []" :key="entry.name" class="entry-row">
-            <button class="entry" type="button" @click="choose(entry)">
+            <button class="entry list-row" type="button" @click="choose(entry)">
               <AppIcon :name="entry.kind === 'directory' ? 'folder' : 'file'" />
               <span class="name">{{ entry.name }}</span>
               <span v-if="entry.kind === 'file'" class="meta mono">{{ formatBytes(entry.bytes) }}</span>
@@ -189,16 +189,7 @@ onMounted(() => {
   gap: 10px;
   min-height: 48px;
   padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: none;
   text-align: left;
-  cursor: pointer;
-}
-
-.entry:hover {
-  border-color: var(--line-strong);
-  background: var(--control);
 }
 
 .name {

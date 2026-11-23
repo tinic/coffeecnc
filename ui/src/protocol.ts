@@ -590,9 +590,14 @@ export interface SetterState {
   center_diameter?: number
   /** Physical face-to-face widths in mm, one entry for each axis that was probed. */
   feature_size?: { x?: number; y?: number }
-  /** After an edge angle: how far the edge turns from the machine axis, degrees counterclockwise. */
+  /**
+   * After an edge angle: how far the edge turns from the active work system's axis, degrees
+   * counterclockwise. In a rotated work system this is the turn still left. After applying it:
+   * the work rotation written.
+   */
   edge_angle?: number
-  edge_rotation?: { measurement_id: number; wcs: number }
+  /** `rotation`: the G5x rotation applying writes, the present rotation plus `edge_angle`. */
+  edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
 }
 
 export interface DirectoryEntry {

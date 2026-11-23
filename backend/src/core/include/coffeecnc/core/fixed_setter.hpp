@@ -2,6 +2,7 @@
 #define COFFEECNC_CORE_FIXED_SETTER_HPP
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -47,6 +48,13 @@ enum class SetterAction : std::uint8_t {
   apply_angle
 };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
+
+// A G5x rotation in (-180, 180] degrees: the same turn as `degrees`. Applying an edge angle adds
+// it to the present rotation, which could otherwise pass the panel's ±360° limit (355 + 8).
+inline auto wrapped_rotation(double degrees) -> double {
+  const double turn = std::remainder(degrees, 360.0);
+  return turn == -180.0 ? 180.0 : turn;
+}
 
 constexpr auto is_material_probe(SetterAction action) -> bool {
   return action != SetterAction::status && action != SetterAction::touch_off &&
@@ -102,12 +110,15 @@ struct SetterState {
   std::optional<double> ball_diameter{};
   // After a bore or boss: its diameter, mm (the chord through the centre).
   std::optional<double> center_diameter{};
-  // After an edge angle: how far the edge turns from the machine axis, degrees, counterclockwise
-  // seen from above.
+  // After an edge angle: how far the edge turns from the active work system's axis, degrees,
+  // counterclockwise seen from above. In a rotated work system that is the turn still left.
+  // After applying it: the work rotation written.
   std::optional<double> edge_angle_deg{};
   struct EdgeRotation {
     std::uint64_t id;
     int wcs;
+    // The G5x rotation applying writes: the present rotation plus the measured angle.
+    double rotation_deg{};
   };
   // Present on a measurement that can be confirmed as a G5x rotation.
   std::optional<EdgeRotation> edge_rotation{};

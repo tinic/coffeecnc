@@ -45,6 +45,11 @@ const directions: Record<Lateral, XY> = {
   x_minus: [-1, 0], x_plus: [1, 0], y_minus: [0, -1], y_plus: [0, 1],
 }
 
+/** A G5x rotation in (-180, 180]: applying an edge angle cannot pass the ±360° limit. */
+export function wrapped(degrees: number): number {
+  const turn = degrees - 360 * Math.round(degrees / 360)
+  return turn === -180 ? 180 : turn
+}
 function turn([x, y]: XY, degrees: number): XY {
   const a = degrees * Math.PI / 180
   return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
@@ -84,8 +89,16 @@ function rayInnerWall(start: Vec3, direction: XY, recess: ProbeBlock): number | 
   const point = relative(start, recess)
   const [hx, hy] = recess.half
   if (Math.abs(point[0]) >= hx - rubyRadius || Math.abs(point[1]) >= hy - rubyRadius) return null
-  const axis = direction[0] ? 0 : 1
-  return recess.half[axis] - rubyRadius - point[axis] * direction[axis]
+  // A rotated work system probes the walls at an angle: the nearest wall the ray leaves through.
+  const vector = turn(direction, -recess.angle)
+  let exit = Infinity
+  for (const axis of [0, 1] as const) {
+    const spread = vector[axis]
+    if (Math.abs(spread) < 1e-9) continue
+    const wall = recess.half[axis] - rubyRadius
+    exit = Math.min(exit, ((spread > 0 ? wall : -wall) - point[axis]) / spread)
+  }
+  return exit
 }
 function rayRound(start: Vec3, direction: XY, centre: XY, radius: number, inside: boolean): number | null {
   const x = start[0] - centre[0], y = start[1] - centre[1]
@@ -146,7 +159,8 @@ export class SimProbe {
   private teacher = 0
   private readonly measured = new Map(demoProbeTools.map(tool => [tool.number, tool.length]))
   private readonly physicalLengths: Map<number, number>
-  private angle: { id: number; degrees: number; frame: string } | null = null
+  /** A measured edge: the G5x rotation applying it writes. */
+  private angle: { id: number; rotation: number; frame: string } | null = null
   private angleId = 0
 
   constructor(tools: readonly Tool[]) {
@@ -193,8 +207,8 @@ export class SimProbe {
       if (measurement?.id !== command.measurement_id || measurement.frame !== frame(modal))
         return 'The work frame or tool changed. Measure the edge again.'
       return result(() => {
-        modal.rotations[modal.wcs - 1] = measurement.degrees
-        return { edge_angle: measurement.degrees }
+        modal.rotations[modal.wcs - 1] = measurement.rotation
+        return { edge_angle: measurement.rotation }
       })
     }
     this.angle = null
@@ -268,15 +282,24 @@ export class SimProbe {
       return contact ? origin(along(contact, direction, tableRadius), base[0] === 0 ? 'Y' : 'X') : noContact
     }
 
-    if (rotation !== 0) return 'Use a work coordinate system without rotation for this probe cycle.'
+    // Feature cycles run along the active work system's XY axes, turned by its rotation, and
+    // compute their results in that frame: `toFrame` turns a machine point into it about the
+    // machine origin, `fromFrame` turns it back, `axisOf` gives a work direction in machine XY.
+    const toFrame = (point: Vec3): Vec3 => [...turn([point[0], point[1]], -rotation), point[2]]
+    const fromFrame = (point: Vec3): Vec3 => [...turn([point[0], point[1]], rotation), point[2]]
+    const axisOf = (direction: XY): XY => turn(direction, rotation)
+    const startFrame = toFrame(start)
     if (command.action === 'angle') {
       const spacing = command.spacing
       if (!(Math.abs(spacing) >= 5 && Math.abs(spacing) <= 300)) return 'Enter a spacing of 5 to 300 mm.'
       if (start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return noContact
-      const direction = directions[command.direction]
-      const axis = direction[0] === 0 ? 1 : 0
-      const next: Vec3 = [...start]
-      next[axis === 0 ? 1 : 0] += spacing
+      const base = directions[command.direction]
+      const direction = axisOf(base)
+      const axis = base[0] === 0 ? 1 : 0
+      const across = axis === 0 ? 1 : 0
+      const nextFrame: Vec3 = [...startFrame]
+      nextFrame[across] += spacing
+      const next = fromFrame(nextFrame)
       const block = [slanted, stock, gauge].find(item => {
         const distance = rayBox(start, direction, item)
         return distance !== null && distance <= searchTravel
@@ -286,29 +309,37 @@ export class SimProbe {
       path.move(next)
       const second = lateral(path, next, direction, rayBox(next, direction, block))
       if (!first || !second) return noContact
-      const degrees = (axis === 0 ? -1 : 1) * Math.atan((second[axis] - first[axis]) / spacing) * 180 / Math.PI
+      const [a, b] = [toFrame(first), toFrame(second)]
+      // The turn left from the work axis; applying it adds the turn to the present rotation.
+      const degrees = (axis === 0 ? -1 : 1) * Math.atan((b[axis] - a[axis]) / (b[across] - a[across])) * 180 / Math.PI
       if (Math.abs(degrees) > 10) return 'Both contacts must be on the same straight edge.'
       return result(() => {
         const id = ++this.angleId
-        this.angle = { id, degrees, frame: frame(modal) }
-        return { edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs } }
+        this.angle = { id, rotation: wrapped(rotation + degrees), frame: frame(modal) }
+        return { edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs, rotation: wrapped(rotation + degrees) } }
       })
     }
 
     if (tableRadius <= 0) return 'Set the probe ball diameter first.'
+    // Two frame faces as the machine point where the work system reads X0 Y0.
+    const corner = (x: number, y: number): Vec3 => fromFrame([x, y, start[2]])
     if (command.action === 'bore') {
       if (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
           start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return 'Jog the ball into the simulated bore below its top.'
-      const hit = (from: Vec3, direction: XY): Vec3 | null =>
-        lateral(path, from, direction, rayRound(from, direction, bore, boreRadius - rubyRadius, true))
+      const hit = (from: Vec3, direction: XY): Vec3 | null => {
+        const machine = axisOf(direction)
+        return lateral(path, from, machine, rayRound(from, machine, bore, boreRadius - rubyRadius, true))
+      }
       const right = hit(start, [1, 0]), left = hit(start, [-1, 0])
       if (!left || !right) return noContact
-      const centre: Vec3 = [(left[0] + right[0]) / 2, start[1], start[2]]
+      const centreX = (toFrame(left)[0] + toFrame(right)[0]) / 2
+      const centre = corner(centreX, startFrame[1])
       path.move(centre)
       const back = hit(centre, [0, 1]), front = hit(centre, [0, -1])
       if (!front || !back) return noContact
-      const offset = origin([centre[0], (front[1] + back[1]) / 2, centre[2]], 'XY')
-      return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: back[1] - front[1] + tool.diameter }) }
+      const [backY, frontY] = [toFrame(back)[1], toFrame(front)[1]]
+      const offset = origin(corner(centreX, (frontY + backY) / 2), 'XY')
+      return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: backY - frontY + tool.diameter }) }
     }
 
     if (command.action === 'inside_corner' || command.action === 'pocket' ||
@@ -322,17 +353,20 @@ export class SimProbe {
       } else if (!over(start, recess) || start[2] + rubyRadius >= gaugeZ || start[2] <= gaugeZ - recessDepth) {
         return 'Jog the ball into the simulated recess below its top and clear of the floor.'
       }
-      const hit = (direction: XY): Vec3 | null => outsideRidge
-        ? outside(path, gaugeZ, start, direction, command.width / 2 + tableRadius + margin + reach, at => rayBox(at, direction, ridge))
-        : lateral(path, start, direction, rayInnerWall(start, direction, recess))
+      const hit = (direction: XY): Vec3 | null => {
+        const machine = axisOf(direction)
+        return outsideRidge
+          ? outside(path, gaugeZ, start, machine, command.width / 2 + tableRadius + margin + reach, at => rayBox(at, machine, ridge))
+          : lateral(path, start, machine, rayInnerWall(start, machine, recess))
+      }
       if (command.action === 'inside_corner') {
         const x = directions[command.x_direction], y = directions[command.y_direction]
         const a = hit(x), b = hit(y)
         if (!a || !b) return noContact
-        return origin([a[0] + x[0] * tableRadius, b[1] + y[1] * tableRadius, start[2]], 'XY')
+        return origin(corner(toFrame(a)[0] + x[0] * tableRadius, toFrame(b)[1] + y[1] * tableRadius), 'XY')
       }
       const across: Axis = command.action === 'pocket' ? 'XY' : command.axis === 'x' ? 'X' : 'Y'
-      const point: Vec3 = [...start]
+      const point: Vec3 = [...startFrame]
       const size: NonNullable<SetterState['feature_size']> = {}
       for (const axis of [0, 1] as const) {
         const label = axis === 0 ? 'X' : 'Y'
@@ -343,13 +377,13 @@ export class SimProbe {
         const positive = hit(outsideRidge ? backward : forward)
         if (!negative || !positive) return noContact
         const correction = outsideRidge ? tableRadius : -tableRadius
-        const low = negative[axis] + correction
-        const high = positive[axis] - correction
-        if (!(low < start[axis] && start[axis] < high)) return 'The faces do not enclose the starting point.'
+        const low = toFrame(negative)[axis] + correction
+        const high = toFrame(positive)[axis] - correction
+        if (!(low < startFrame[axis] && startFrame[axis] < high)) return 'The faces do not enclose the starting point.'
         point[axis] = (low + high) / 2
         size[axis === 0 ? 'x' : 'y'] = high - low
       }
-      const offset = origin(point, across)
+      const offset = origin(fromFrame(point), across)
       return { ...offset, finish: () => ({ ...offset.finish(), feature_size: size }) }
     }
 
@@ -358,25 +392,32 @@ export class SimProbe {
     const outsideDistance = reach + margin + rubyRadius
     if (command.action === 'corner') {
       const x = directions[command.x_direction], y = directions[command.y_direction]
-      const [sx, sy] = relative(start, stock)
-      if (!over(start, stock) || stock.half[0] + x[0] * sx > reach || stock.half[1] + y[1] * sy > reach)
+      // The block's own axes: the rotation applied from its edge angle keeps them close.
+      const block = [stock, slanted].find(item => over(start, item))
+      const [sx, sy] = block ? relative(start, block) : [Infinity, Infinity]
+      if (!block || block.half[0] + x[0] * sx > reach || block.half[1] + y[1] * sy > reach)
         return 'Start over the stock within 10 mm of both selected faces.'
-      const a = outside(path, gaugeZ, start, x, outsideDistance, at => rayBox(at, x, stock))
-      const b = outside(path, gaugeZ, start, y, outsideDistance, at => rayBox(at, y, stock))
+      const [mx, my] = [axisOf(x), axisOf(y)]
+      const a = outside(path, gaugeZ, start, mx, outsideDistance, at => rayBox(at, mx, block))
+      const b = outside(path, gaugeZ, start, my, outsideDistance, at => rayBox(at, my, block))
       if (!a || !b) return noContact
-      return origin([a[0] + x[0] * tableRadius, b[1] + y[1] * tableRadius, start[2]], 'XY')
+      return origin(corner(toFrame(a)[0] + x[0] * tableRadius, toFrame(b)[1] + y[1] * tableRadius), 'XY')
     }
     const size = command.action === 'ball' ? command.gauge_width : command.diameter
     if (!(size >= 2 && size <= 200)) return 'Enter a size from 2 to 200 mm.'
+    if (command.action === 'ball' && rotation !== 0) return 'Ball calibration needs a work system without rotation.'
     if (command.action === 'ball' && !over(start, gauge)) return 'Start above the simulated calibration gauge.'
     if (command.action === 'boss' && radiusFrom(start, boss) >= bossRadius) return 'Start above the simulated boss.'
-    const hit = (from: Vec3, direction: XY): Vec3 | null =>
-      outside(path, gaugeZ, from, direction, size / 2 + outsideDistance, at => command.action === 'ball'
-        ? rayBox(at, direction, gauge) : rayRound(at, direction, boss, bossRadius + rubyRadius, false))
+    const hit = (from: Vec3, direction: XY): Vec3 | null => {
+      const machine = axisOf(direction)
+      return outside(path, gaugeZ, from, machine, size / 2 + outsideDistance, at => command.action === 'ball'
+        ? rayBox(at, machine, gauge) : rayRound(at, machine, boss, bossRadius + rubyRadius, false))
+    }
     const left = hit(start, [1, 0]), right = hit(start, [-1, 0])
     if (!left || !right) return noContact
+    const [leftX, rightX] = [toFrame(left)[0], toFrame(right)[0]]
     if (command.action === 'ball') {
-      const diameter = right[0] - left[0] - size
+      const diameter = rightX - leftX - size
       if (diameter <= 0 || Math.abs(diameter - tool.diameter) > 0.5)
         return 'The measured ball diameter differs by more than 0.5 mm. Check the gauge width.'
       return result(() => {
@@ -384,11 +425,12 @@ export class SimProbe {
         return { ball_diameter: tool.diameter }
       })
     }
-    const centre: Vec3 = [(left[0] + right[0]) / 2, start[1], start[2]]
+    const centreX = (leftX + rightX) / 2
+    const centre = corner(centreX, startFrame[1])
     const front = hit(centre, [0, 1]), back = hit(centre, [0, -1])
     if (!front || !back) return noContact
-    centre[1] = (front[1] + back[1]) / 2
-    const offset = origin(centre, 'XY')
-    return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: back[1] - front[1] - tool.diameter }) }
+    const [frontY, backY] = [toFrame(front)[1], toFrame(back)[1]]
+    const offset = origin(corner(centreX, (frontY + backY) / 2), 'XY')
+    return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: backY - frontY - tool.diameter }) }
   }
 }

@@ -376,7 +376,6 @@
       "touchOffT99First": "Touch off T99 and apply its length first.",
       "ridgeStart": "Touch off T99, set Z0 on the ridge top, and start above its middle.",
       "featureStart": "Touch off T99, set Z0 on the feature top, and start above it.",
-      "noRotation": "Use a work coordinate system without rotation for this probe cycle.",
       "boreStart": "Jog the ball into the simulated bore below its top.",
       "recessStart": "Jog the ball into the simulated recess below its top and clear of the floor.",
       "gaugeStart": "Start above the simulated calibration gauge.",

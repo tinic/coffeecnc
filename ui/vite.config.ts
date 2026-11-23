@@ -15,5 +15,6 @@ export default defineConfig({
   // Prebundle the lazy preview's studio lighting before the first dialog opens.
   optimizeDeps: { include: ['three', 'three/addons/environments/RoomEnvironment.js'] },
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 600 },
-  test: { environment: 'jsdom', include: ['test/**/*.test.ts'], setupFiles: ['test/setup-i18n.ts'] },
+  // The theme contrast test reads the design tokens from style.css; other CSS stays unprocessed.
+  test: { environment: 'jsdom', include: ['test/**/*.test.ts'], setupFiles: ['test/setup-i18n.ts'], css: { include: [/src\/style\.css/] } },
 })

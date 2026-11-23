@@ -376,7 +376,6 @@
       "touchOffT99First": "Tome primeiro a referência de T99 e aplique o seu comprimento.",
       "ridgeStart": "Tome a referência de T99, defina Z0 no topo da nervura e comece por cima do seu centro.",
       "featureStart": "Tome a referência de T99, defina Z0 no topo do elemento e comece por cima dele.",
-      "noRotation": "Use um sistema de coordenadas da peça sem rotação para este ciclo de apalpação.",
       "boreStart": "Leve a esfera com jog para dentro do furo simulado, abaixo do seu topo.",
       "recessStart": "Leve a esfera com jog para dentro do rebaixo simulado, abaixo do seu topo e afastada do fundo.",
       "gaugeStart": "Comece por cima do padrão de calibração simulado.",

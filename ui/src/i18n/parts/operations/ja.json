@@ -12,6 +12,7 @@
       "title": "新規加工",
       "operations": "加工",
       "tool": "工具",
+      "chooseThreadMill": "ねじ切りカッターを選択",
       "noTools": "工具テーブルに工具がありません",
       "toolAndFeeds": "工具と送り",
       "geometry": "形状",
@@ -33,7 +34,9 @@
       "rectangularPocket": "矩形ポケット",
       "slot": "溝・キー溝",
       "slotSetup": "進入方法に対応したエンドミルを使用してください。開放端が素材の端に来るように長さを設定し、その先に工具が通れる空間を確保してください。",
-      "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
+      "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。",
+      "threadMill": "内ねじミリング",
+      "threadMillSetup": "単山ねじ切りカッターと下穴を使用します。刃部と首部が穴に干渉しないことを確認し、工具中心での送り速度を入力してください。 ねじ深さは工具先端の Z 位置です。刃の高さを考慮してください。"
     },
     "label": {
       "boreDwell": "底面での停止時間",
@@ -92,7 +95,14 @@
       "slotEntry": "進入",
       "slotAngle": "最大ランプ角度",
       "slotEntryFeed": "進入送り",
-      "boltCircleRadius": "ボルト円半径"
+      "boltCircleRadius": "ボルト円半径",
+      "threadMajor": "ねじの呼び径",
+      "threadPitch": "ねじピッチ",
+      "threadPilot": "下穴径",
+      "threadPilotDepth": "下穴の有効深さ",
+      "threadDepth": "ねじ深さ",
+      "threadPasses": "径方向のパス数",
+      "threadHand": "ねじの向き"
     },
     "option": {
       "g85": "リーマ (G85)",
@@ -129,7 +139,9 @@
       "slotBoth": "両端開放",
       "slotRamp": "ランプ",
       "slotPlunge": "垂直",
-      "g83": "G83 ペック"
+      "g83": "G83 ペック",
+      "threadRight": "右ねじ",
+      "threadLeft": "左ねじ"
     },
     "check": {
       "profilePrecision": "寸法と送りを確認してください。各パスはプログラムの精度で表現できる値とし、最大 2,000 パスにしてください。",
@@ -169,7 +181,11 @@
       "slotPrecision": "送り、深さ、退避高さ、またはパスあたりの深さを増やし、プログラムの精度で表現できる値にしてください。",
       "slotRampRoom": "このランプ角度では溝が短すぎます。角度を増やすか、垂直進入を選んでください。",
       "slotMoveCount": "移動回数が多すぎます。パスあたりの深さかランプ角度を増やしてください。",
-      "noHole": "加工する穴がありません。"
+      "noHole": "加工する穴がありません。",
+      "threadDiameters": "下穴径はカッター径より大きく、ねじの呼び径より小さくしてください。",
+      "threadPilotDepth": "下穴の円筒部は {depth} より深くしてください。",
+      "threadPrecision": "ピッチ、退避高さ、送り速度、主軸回転数、寸法がプログラムの精度に収まるか確認してください。",
+      "threadTurns": "このピッチでのねじ深さは 1 ～ {max} 周分にしてください。"
     }
   }
 }

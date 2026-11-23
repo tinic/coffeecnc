@@ -180,11 +180,11 @@ export class Program {
     this.rapidZ(this.c.clearance)
   }
 
-  /** Clear of the work, optional coolant off, spindle off, program end. */
-  end(stopCoolant = false): string {
+  /** Clear of the work, then any final modal cleanup, spindle off and program end. */
+  end(stopCoolant = false, afterClearance: readonly string[] = []): string {
     if (this.lines.at(-1) !== `G0 Z${this.n(this.c.clearance)}`) this.rapidZ(this.c.clearance)
     if (stopCoolant) this.add('M9')
-    this.add('M5', programEnd)
+    this.add(...afterClearance, 'M5', programEnd)
     return `${this.lines.join('\n')}\n`
   }
 }

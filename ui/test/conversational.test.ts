@@ -11,6 +11,7 @@ import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
 import { chainOperations, number, type Generated } from '../src/conversational/program'
 import { slot, type Slot } from '../src/conversational/slot'
+import { threadMill, type ThreadMill } from '../src/conversational/thread-mill'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -413,6 +414,48 @@ describe('contours', () => {
       'The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.')
     expect(errors(contour({ ...circular, shape: 'rectangle', inside: true, width: 40, height: 35, corner: 4 }))).toContain(
       'An inside corner radius must be greater than the cutter radius (5).')
+  })
+})
+
+describe('internal thread milling', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 0, diameter: 6, comment: '' },
+    { number: 2, pocket: 2, length: 0, diameter: 6.35, comment: '' },
+  ]
+  const metric = { ...mm, tool: { ...mm.tool, diameter: 6 }, x: 10, y: -5, majorDiameter: 10,
+    pilotDiameter: 8.5, pilotDepth: 12, depth: 3.75, pitch: 1.5, passes: 2, leftHand: false,
+    feed: 60, entryFeed: 50 } satisfies ThreadMill
+
+  it('cuts ascending right-hand helices with one pitch per turn and a partial last turn', () => {
+    const program = text(threadMill(metric))
+    expect(program).toContain('M70\nG61 G91.1\nG0 X10 Y-5')
+    expect(program).toContain('G1 Z-4.125 F50\nG3 X11.625 Y-5 Z-3.75 I0.8125 J0 F60')
+    expect(program).toContain('G3 X12 Y-5 Z-2.25 I-2 J0\nG3 X12 Y-5 Z-0.75 I-2 J0')
+    expect(program).toContain('G3 X8 Y-5 Z0 I-2 J0\nG3 X10 Y-5 Z0.375 I1 J0')
+    expect(program).toContain('G0 Z5\nM72\nM5\nM2\n')
+    const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
+    expect(preview.error).toBeNull()
+    expect(preview.state).toBe('ready')
+  })
+
+  it('keeps an imperial fractional pitch and descends for a left-hand thread', () => {
+    const operation = operations.find((entry) => entry.id === 'thread-mill')
+    if (!operation) throw new Error('Missing thread milling operation')
+    const values = { ...operation.defaults('inch'), pitch: '1/28in', hand: 'left', x: '1/4in' }
+    const program = text(operation.generate(parse(operation, values, 'inch'), inch))
+    expect(program).toContain('G17 G20')
+    expect(program).toContain('G0 X0.25 Y0\n\n(Radial pass 1 of 2)\nG1 Z0.008929 F2')
+    expect(program).toContain('Z-0.035714 I-0.046875 J0')
+    expect(program).toContain('Z-0.357143 I-0.046875 J0')
+    expect(program).toContain('G3 X0.25 Y0 Z-0.383929')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('refuses an undersized pilot, shallow hole, insufficient clearance or a sub-pitch thread', () => {
+    expect(errors(threadMill({ ...metric, pilotDiameter: 6 }))[0]).toContain('wider than the cutter')
+    expect(errors(threadMill({ ...metric, pilotDepth: 4 }))[0]).toContain('deeper than 4.125')
+    expect(errors(threadMill({ ...metric, clearance: 0.2 }))[0]).toContain('clearance')
+    expect(errors(threadMill({ ...metric, depth: 0.75 }))[0]).toContain('between 1 and 500 turns')
   })
 })
 

@@ -12,6 +12,7 @@
       "title": "Nova operação",
       "operations": "Operação",
       "tool": "Ferramenta",
+      "chooseThreadMill": "Selecionar uma fresa de roscar",
       "noTools": "Não há ferramentas na tabela de ferramentas",
       "toolAndFeeds": "Ferramenta e avanços",
       "geometry": "Geometria",
@@ -33,7 +34,9 @@
       "rectangularPocket": "Caixa retangular",
       "slot": "Ranhura / chaveta",
       "slotSetup": "Use uma fresa de topo adequada à entrada. Defina o comprimento para que cada extremidade aberta fique no bordo do material e deixe espaço para a ferramenta o ultrapassar.",
-      "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
+      "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro.",
+      "threadMill": "Fresagem de rosca interna",
+      "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta. A profundidade da rosca define o Z da ponta. Tenha em conta a altura do dente."
     },
     "label": {
       "boreDwell": "Pausa no fundo",
@@ -92,7 +95,14 @@
       "slotEntry": "Entrada",
       "slotAngle": "Ângulo máximo de rampa",
       "slotEntryFeed": "Avanço de entrada",
-      "boltCircleRadius": "Raio do círculo de furos"
+      "boltCircleRadius": "Raio do círculo de furos",
+      "threadMajor": "Diâmetro maior da rosca",
+      "threadPitch": "Passo da rosca",
+      "threadPilot": "Diâmetro de pré-furo",
+      "threadPilotDepth": "Profundidade útil do furo",
+      "threadDepth": "Profundidade da rosca",
+      "threadPasses": "Passagens radiais",
+      "threadHand": "Sentido da rosca"
     },
     "option": {
       "g85": "Alargamento (G85)",
@@ -129,7 +139,9 @@
       "slotBoth": "Ambas abertas",
       "slotRamp": "Rampa",
       "slotPlunge": "Mergulho",
-      "g83": "G83 picagem"
+      "g83": "G83 picagem",
+      "threadRight": "À direita",
+      "threadLeft": "À esquerda"
     },
     "check": {
       "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
@@ -169,7 +181,11 @@
       "slotPrecision": "Aumente os avanços, a profundidade, a folga ou a profundidade por passe para respeitar a precisão do programa.",
       "slotRampRoom": "A ranhura é demasiado curta para este ângulo. Aumente o ângulo ou escolha Mergulho.",
       "slotMoveCount": "A ranhura geraria demasiados movimentos. Aumente a profundidade por passe ou o ângulo da rampa.",
-      "noHole": "Não há nenhum furo para furar."
+      "noHole": "Não há nenhum furo para furar.",
+      "threadDiameters": "O pré-furo tem de ser mais largo do que a fresa e mais estreito do que o diâmetro maior da rosca.",
+      "threadPilotDepth": "A parte cilíndrica do furo tem de ser mais profunda do que {depth}.",
+      "threadPrecision": "Verifique o passo, a altura livre, o avanço, a rotação do eixo e as dimensões em relação à precisão do programa.",
+      "threadTurns": "Com este passo, a profundidade da rosca tem de abranger entre 1 e {max} voltas."
     }
   }
 }

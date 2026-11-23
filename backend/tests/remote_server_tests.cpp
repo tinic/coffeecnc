@@ -180,9 +180,9 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto host6 = "[::1]" + suffix;
   boost::system::error_code ipv6_unavailable;
   tcp::acceptor ipv6_probe{io};
-  ipv6_probe.open(tcp::v6(), ipv6_unavailable);
+  std::ignore = ipv6_probe.open(tcp::v6(), ipv6_unavailable);
   if (!ipv6_unavailable)
-    ipv6_probe.bind({ipv6, 0}, ipv6_unavailable);
+    std::ignore = ipv6_probe.bind({ipv6, 0}, ipv6_unavailable);
   const auto home = get(io, port, http::verb::get, "/", host);
   require(home.result() == http::status::temporary_redirect && home[http::field::location] == "/view",
           "The root redirects to the viewer entry.");

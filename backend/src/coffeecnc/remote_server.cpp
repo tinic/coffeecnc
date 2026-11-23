@@ -332,9 +332,12 @@ private:
 
   void serve_part(std::string_view target, std::string_view host) {
     const auto snapshot = owner_.latest.load();
-    if (!snapshot || !snapshot->program)
+    if (!snapshot)
       return refuse(http::status::not_found);
-    const auto& program = *snapshot->program;
+    const auto& selected = snapshot->program;
+    if (!selected)
+      return refuse(http::status::not_found);
+    const auto& program = *selected;
     const auto prefix = std::string(program_part_path) + "?revision=" +
                         std::to_string(program.revision) + "&";
     if (!target.starts_with(prefix) || target.find('#') != std::string_view::npos)
@@ -510,9 +513,9 @@ RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port,
                          std::span<const std::string> aliases)
     : ui_directory(directory) {
   Error error;
-  listener.open(tcp::v6(), error);
+  std::ignore = listener.open(tcp::v6(), error);
   if (!error)
-    listener.set_option(net::ip::v6_only(false), error);
+    std::ignore = listener.set_option(net::ip::v6_only(false), error);
   const auto protocol = error ? tcp::v4() : tcp::v6();
   if (error) {
     if (listener.is_open())

@@ -809,8 +809,8 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
     const std::scoped_lock lock{mutex};
     return result;
   };
-  const auto accepted = [&](Json request) {
-    auto reply = send(std::move(request));
+  const auto accepted = [&](Json request, std::chrono::milliseconds timeout = 12s) {
+    auto reply = send(std::move(request), timeout);
     if (reply.value("outcome", "") != "accepted")
       throw std::runtime_error(reply.dump());
   };
@@ -926,7 +926,7 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
   const auto applied = mailbox.latest();
   require(applied && std::abs(applied->status.tool_offset[2] - 41) < 0.03,
           "the measured length has been applied by G43");
-  accepted({{"type", "start_restart"}, {"plan_id", plan.at("plan_id")}});
+  accepted({{"type", "start_restart"}, {"plan_id", plan.at("plan_id")}}, 60s);
   require(wait([&] {
     return reading.status.interp == InterpState::idle && reading.commanded_position &&
            std::abs(reading.commanded_position->at(0) - 22) < 0.03;

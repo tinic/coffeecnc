@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseChamferMill": "Selecciona una fresa de chaflanar",
       "chooseEngravingTool": "Selecciona una herramienta de grabado",
       "chooseFinishTool": "Selecciona un escariador o una herramienta de mandrinar",
       "pocketOptions": "Geometría, entrada y paredes",
@@ -23,6 +24,8 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "chamfer": "Chaflán",
+      "chamferSetup": "Sitúa Z0 en la cara superior y usa el diámetro de corte máximo en la tabla de herramientas. El ancho del chaflán se mide en la cara superior.",
       "engraving": "Grabado",
       "engravingSetup": "Sitúa Z0 en la superficie. La línea base empieza a la izquierda del texto. Las letras se graban en mayúsculas.",
       "holeFinishing": "Escariado / mandrinado",
@@ -42,6 +45,11 @@
       "threadMillSetup": "Usa una fresa de roscar de perfil único y un agujero pretaladrado. Verifica la holgura de la fresa y su cuello. Introduce el avance en el centro de la herramienta. La profundidad de rosca fija la Z de la punta. Ten en cuenta la altura del diente."
     },
     "label": {
+      "chamferWidth": "Ancho de chaflán",
+      "chamferIncludedAngle": "Ángulo incluido",
+      "chamferTipDiameter": "Diámetro de la punta",
+      "chamferTipBelow": "Punta por debajo del chaflán",
+      "chamferOpeningDepth": "Profundidad premecanizada",
       "engravingText": "Texto",
       "engravingX": "Línea base X",
       "engravingY": "Línea base Y",
@@ -153,6 +161,13 @@
       "threadLeft": "A izquierdas"
     },
     "check": {
+      "chamferAngle": "El ángulo incluido debe ser mayor de 0° y menor de 180°.",
+      "chamferTip": "El diámetro de la punta debe ser cero o menor que el de la fresa.",
+      "chamferPrecision": "Comprueba el ancho, la profundidad de la punta, la altura libre, los avances y las rpm según la precisión del programa.",
+      "chamferTooWide": "El chaflán debe dejar espacio en la cara superior.",
+      "chamferCutter": "El corte requerido supera el diámetro de corte máximo de la fresa.",
+      "chamferOpeningDepth": "La abertura debe estar libre a una profundidad mayor que {depth}.",
+      "chamferRoom": "El agujero o la cajera son demasiado pequeños para la fresa y su entrada.",
       "engravingRotation": "Introduce un ángulo de giro finito.",
       "engravingSpacing": "El espacio entre letras debe ser cero o mayor.",
       "engravingLength": "Introduce entre 1 y {max} caracteres.",

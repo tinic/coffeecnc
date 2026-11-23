@@ -89,6 +89,25 @@ describe('new operation dialog', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('requires a chamfer mill and calculates the tool-tip depth from the entered width', async () => {
+    await open()
+    button('Chamfer').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    const width = input('Chamfer width, mm')
+    width.value = '1/2mm'
+    width.dispatchEvent(new Event('input'))
+    await nextTick()
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/chamfer-40x30mm.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No chamfer program was saved')
+    expect(save.text).toContain('G1 Z-1 F60')
+  })
+
   it('takes engraving text through the ordinary text field and requires an explicit tool', async () => {
     await open()
     button('Engraving').click()

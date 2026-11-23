@@ -5416,6 +5416,38 @@ void work_offsets(Rig& rig) {
         leave.outcome == "accepted" && time.has_value(),
         std::format("{} {} {}", leave.outcome, took(time), text(6)));
   settle();
+
+  // A stop queued while a synch is outstanding goes out at once: task is held so that the synch
+  // stays unanswered, and the abort must not wait for its echo (1 s) or completion (3 s).
+  const auto types = NmlPort::types();
+  const auto from = rig.port.writes().size();
+  std::optional<Clock::time_point> synch_at;
+  std::optional<Clock::time_point> abort_at;
+  Clock::time_point posted{};
+  RequestId abort{};
+  {
+    const FrozenTask frozen{rig.config.ini_file};
+    const auto done = rig.loads->synched.load();
+    rig.loads->synch_wanted.store((done ? done->count : 0) + 1);
+    const auto seen = [&](long type, std::optional<Clock::time_point>& at) -> bool {
+      for (const auto& write : written_since(rig, from))
+        if (write.type == type)
+          at = write.at;
+      return at.has_value();
+    };
+    static_cast<void>(rig.pump_until(500ms, [&]() -> bool { return seen(types.synch, synch_at); }));
+    posted = Clock::now();
+    abort = rig.post(R"("type":"abort")");
+    static_cast<void>(rig.pump_until(900ms, [&]() -> bool { return seen(types.abort, abort_at); }));
+  }
+  const auto stopped = rig.await(abort, 10s);
+  const double waited = abort_at ? milliseconds(*abort_at - posted) : -1;
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_stop_does_not_wait_behind_a_synch",
+        synch_at.has_value() && abort_at.has_value() && waited < 100 && time.has_value(),
+        std::format("synch_written={} abort_written_after_ms={:.1f} abort={} current_again={}",
+                    synch_at.has_value(), waited, stopped.outcome, took(time)));
+  settle();
 }
 
 void rotary_readouts(Rig& rig) {

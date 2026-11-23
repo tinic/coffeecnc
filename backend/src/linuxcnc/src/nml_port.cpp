@@ -45,7 +45,19 @@
 #include <rcs.hh>
 #include <stat_msg.hh>
 
+#include <sys/stat.h>
+
 namespace coffeecnc {
+
+auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
+  struct stat info{};
+  if (path.empty() || ::stat(path.c_str(), &info) != 0)
+    return std::nullopt;
+  return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
+                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
+                               std::int64_t{info.st_mtim.tv_nsec},
+                   .size = std::int64_t{info.st_size}};
+}
 
 void WrittenSerials::begin() {
   const std::scoped_lock lock{mutex_};
@@ -932,7 +944,8 @@ auto NmlPort::types() -> Types {
           EMC_COOLANT_FLOOD_ON_TYPE,
           EMC_COOLANT_MIST_ON_TYPE,
           EMC_TOOL_LOAD_TOOL_TABLE_TYPE,
-          EMC_TASK_ABORT_TYPE};
+          EMC_TASK_ABORT_TYPE,
+          EMC_TASK_PLAN_SYNCH_TYPE};
 }
 
 NmlGateHold::NmlGateHold() : lock_(nml_gate()) {}
@@ -972,12 +985,34 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
       now.task_executing ||
       (state.machine == MachineState::on && state.mode == TaskMode::automatic) || !wanted())
     return;
-  const auto from = impl_->begin(&wanted);
+  static_cast<void>(impl_->begin(&wanted));
   const Impl::Scope scope{*impl_};
   EMC_TASK_PLAN_SYNCH message;
-  // Done means written: task saves the file before it reports the synch done.
-  if (accepted(impl_->run(message, from)))
-    loads->synched.store(std::make_shared<const SynchPoint>(point));
+  if (!accepted(impl_->write(message))) {
+    impl_->synch_retry = Clock::now() + synch_retry_period;
+    return;
+  }
+  // The wait gives way to every request and stop the session queues meanwhile (`wanted` turns
+  // false): those never wait behind a synch. The synch then is not counted and is asked for
+  // again. Done means written: task saves the file before it reports the synch done.
+  int rcs = RCS_EXEC;
+  const bool ended = until(completion_timeout, [&]() -> bool {
+    impl_->collect();
+    if (!wanted())
+      return true;
+    const EMC_STAT* s = impl_->stat();
+    if (s == nullptr || s->echo_serial_number != impl_->serial)
+      return false;
+    rcs = s->status;
+    return rcs != RCS_EXEC;
+  });
+  if (!wanted())
+    return;
+  if (ended && rcs == RCS_DONE) {
+    auto done_point = point;
+    done_point.file = file_stamp(impl_->config.parameter_file);
+    loads->synched.store(std::make_shared<const SynchPoint>(std::move(done_point)));
+  }
   else
     impl_->synch_retry = Clock::now() + synch_retry_period;
 }

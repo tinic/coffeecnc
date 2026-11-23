@@ -452,7 +452,7 @@ void source_inactive_systems() {
     const auto done = rig.loads.synched.load();
     rig.loads.synched.store(std::make_shared<const SynchPoint>(
         SynchPoint{(done ? done->count : 0) + 1, rig.loads.activity.load(),
-                   rig.loads.gcode_writes.load()}));
+                   rig.loads.gcode_writes.load(), file_stamp(file.string())}));
   };
 
   auto r = rig.step(idle);
@@ -486,6 +486,24 @@ void source_inactive_systems() {
           "A command of another client, seen by the status thread, makes them not current");
   synched();
   require(rig.step(idle).work_systems[2].current, "until the next synch");
+
+  // Another program writes the file, or task does for a reason of its own: not the file the
+  // last synch wrote.
+  saved(55);
+  r = rig.step(idle);
+  require(r.work_systems[2] == WorkSystem{{55, 0, 0}, 0, true, false} &&
+              rig.loads.synch_wanted.load() == 4,
+          "A file replaced after the synch is shown, not current, and a synch is asked for");
+  saved(66);
+  synched();
+  saved(77); // replaced between the synch and the read
+  r = rig.step(idle);
+  require(r.work_systems[2] == WorkSystem{{77, 0, 0}, 0, true, false},
+          "A file replaced between the synch and its read is not current either");
+  saved(88);
+  synched();
+  require(rig.step(idle).work_systems[2] == WorkSystem{{88, 0, 0}, 0, true, true},
+          "The file of the next synch is");
 
   auto running = idle;
   running.controller.mode = TaskMode::automatic;

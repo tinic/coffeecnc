@@ -118,10 +118,23 @@ struct BreakpointSource {
 //
 // The publisher then shows the file as current while both counters are what they were when
 // the synch was sent. See NmlPanelSource.
+// Which file a path names, and its version: LinuxCNC replaces the parameter file by a rename, so
+// every write is a new inode. Nothing when the path cannot be read with stat().
+struct FileStamp {
+  std::uint64_t inode{};
+  std::int64_t modified{}; // nanoseconds
+  std::int64_t size{};
+  friend auto operator==(const FileStamp&, const FileStamp&) -> bool = default;
+};
+[[nodiscard]] auto file_stamp(const std::string& path) -> std::optional<FileStamp>;
+
 struct SynchPoint {
   std::uint64_t count{};    // the synchs this port had completed, this one included
   std::uint64_t activity{}; // NmlLoads::activity when it was sent
   std::uint64_t gcode{};    // NmlLoads::gcode_writes when it was sent
+  // The parameter file as the port found it once task reported the synch done: the file the
+  // synch wrote. A file with another stamp was written by something else, or after it.
+  std::optional<FileStamp> file{};
 };
 
 // The serial numbers of the last commands this port wrote, and whether a write is under way:
@@ -255,6 +268,7 @@ public:
     long coolant_mist_on;
     long load_tool_table;
     long abort;
+    long synch;
   };
   [[nodiscard]] static auto types() -> Types;
 

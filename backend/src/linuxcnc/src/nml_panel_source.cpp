@@ -15,8 +15,6 @@
 #include <string>
 #include <utility>
 
-#include <sys/stat.h>
-#include <sys/types.h>
 
 namespace coffeecnc {
 
@@ -77,13 +75,7 @@ struct NmlPanelSource::Impl {
   std::uint64_t mdi_blocks_seen{};
 
   // The interpreter's parameter file as read last; see read_parameters.
-  struct Stamp {
-    ino_t inode{};
-    std::int64_t modified{}; // nanoseconds
-    off_t size{};
-    friend auto operator==(const Stamp&, const Stamp&) -> bool = default;
-  };
-  std::optional<Stamp> parameters_stamp;
+  std::optional<FileStamp> parameters_stamp;
   std::uint64_t parameters_synch{}; // the synch it was read after
   std::array<std::optional<WorkSystem>, 9> saved_systems{};
   bool saved_current{};
@@ -256,21 +248,19 @@ struct NmlPanelSource::Impl {
     // The synch first, then the file: a file read after the synch is at least that new.
     const auto point = loads != nullptr ? loads->synched.load() : nullptr;
     const std::uint64_t synch = point ? point->count : 0;
-    struct stat info{};
-    if (::stat(config.parameter_file.c_str(), &info) != 0) {
+    const auto stamp = file_stamp(config.parameter_file);
+    if (!stamp) {
       parameters_stamp.reset();
       saved_systems = {};
       return;
     }
-    const Stamp stamp{.inode = info.st_ino,
-                      .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
-                                  info.st_mtim.tv_nsec,
-                      .size = info.st_size};
     if (stamp != parameters_stamp || synch != parameters_synch) {
       const auto text = read_text_file(config.parameter_file, max_parameter_file_bytes);
+      // Replaced during the read: the text may be of the newer file. Read again next time.
+      const bool same = text && file_stamp(config.parameter_file) == stamp;
       if (text) {
         saved_systems = parameter_work_systems(*text, config.millimetres_per_unit);
-        parameters_stamp = stamp;
+        parameters_stamp = same ? stamp : std::nullopt;
         parameters_synch = synch;
       } else {
         saved_systems = {};
@@ -279,7 +269,9 @@ struct NmlPanelSource::Impl {
     }
     if (loads == nullptr || status.controller.link != Link::live || !parameters_stamp)
       return;
-    saved_current = point && parameters_synch == synch &&
+    // Only the file the last synch wrote: one replaced since (by task for a reason of its own,
+    // or by anything else) is not known to be current until the next synch.
+    saved_current = point && parameters_synch == synch && point->file == parameters_stamp &&
                     loads->activity.load() == point->activity &&
                     loads->gcode_writes.load() == point->gcode &&
                     status.controller.interp == InterpState::idle && status.queued_mdi == 0;

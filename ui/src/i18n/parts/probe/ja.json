@@ -268,7 +268,7 @@
       "sessionOnlyReason": "このセッションのみ保持：{reason}",
       "gone": "この項目は履歴にもうありません。",
       "reviewTitle": "{target} {fields} を復元しますか？",
-      "effectTool": "{target} の以前の値を工具テーブルに書き戻します（G10 L1）。適用中の工具長は次の G43 で変わります。",
+      "effectTool": "{target} の以前の値を工具テーブルに書き戻します（G10 L1）。{target} が主軸にあり、その工具長が適用中の場合は、工具長を再適用します（G43）。",
       "effectShift": "以前の G92/G52 シフトを書き戻します（G52）。すべてのワーク座標系に加算されます。",
       "effectWork": "{target} の以前の値を書き戻します（G10 L2）。他の軸は変わりません。",
       "noMotion": "機械は動きません。",

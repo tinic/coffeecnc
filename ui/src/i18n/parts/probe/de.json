@@ -268,7 +268,7 @@
       "sessionOnlyReason": "Nur für diese Sitzung gespeichert: {reason}",
       "gone": "Dieser Eintrag ist nicht mehr im Verlauf.",
       "reviewTitle": "{target} {fields} wiederherstellen?",
-      "effectTool": "Schreibt die früheren Werte von {target} in die Werkzeugtabelle zurück (G10 L1). Eine aktive Länge ändert sich beim nächsten G43.",
+      "effectTool": "Schreibt die früheren Werte von {target} in die Werkzeugtabelle zurück (G10 L1). Ist {target} in der Spindel und ihre Länge aktiv, wird die Länge erneut aktiviert (G43).",
       "effectShift": "Schreibt die frühere G92/G52-Verschiebung zurück (G52). Sie wirkt zusätzlich in jedem Werkstückkoordinatensystem.",
       "effectWork": "Schreibt die früheren Werte von {target} zurück (G10 L2). Andere Achsen bleiben unverändert.",
       "noMotion": "Die Maschine bewegt sich nicht.",

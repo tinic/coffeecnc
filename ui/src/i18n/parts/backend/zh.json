@@ -266,6 +266,7 @@
       "cannotReadToolTable": "无法读取刀具表 {file}。",
       "cannotWriteToolTable": "无法写入刀具表 {file}。",
       "cannotReplaceToolTable": "无法替换刀具表 {file}。",
+      "lengthOffsetUnreadable": "无法读取当前生效的刀长补偿。",
       "toolTableNotLoaded": "刀具表文件 {file} 已更改，但在通知 LinuxCNC 加载之前请求已取消。",
       "cannotOpenChannels": "无法从 {file} 打开 LinuxCNC 的 NML 通道。",
       "restoreFromTable": "无法从刀具表恢复 T{tool}。",

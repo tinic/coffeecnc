@@ -5529,6 +5529,116 @@ void offset_history(Rig& rig) {
                         back ? change_text(*back) : "none", length, original.length));
     }
 
+    // #287: a restored length of the tool in the spindle is applied again in the same request
+    // when that tool's length is in effect (G43 H1 follows the G10 L1). Under G49 and under
+    // another H the offset in effect stays; under G43.2 the restore is refused.
+    {
+      const auto line = [&](std::string_view text) -> std::string {
+        rig.pump(OffsetHistoryStore::grace + 500ms);
+        const auto sent = session.send(std::format(R"("type":"mdi","text":"{}")", text));
+        rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+        return sent.first + (sent.second.empty() ? "" : " " + sent.second);
+      };
+      const auto tool_length = [&](int number) -> double {
+        const auto tools = loaded_tools(table->read_raw(), rig.config.millimetres_per_unit);
+        const auto found = std::ranges::find_if(
+            tools, [number](const auto& candidate) -> bool { return candidate.tool.number == number; });
+        return found == tools.end() ? std::numeric_limits<double>::quiet_NaN() : found->tool.length;
+      };
+      const auto restore_length = [&](const std::optional<HistoryEntry>& of, bool awaits)
+          -> std::pair<std::string, std::optional<HistoryEntry>> {
+        rig.pump(OffsetHistoryStore::grace + 500ms);
+        const auto before = last_id();
+        const auto sent =
+            of ? session.send(std::format(R"("type":"restore_offset","entry":{})", of->id))
+               : std::pair<std::string, std::string>{"no_entry", ""};
+        auto entry = awaits ? awaited(before, HistoryField::length) : std::nullopt;
+        rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+        return {sent.first + (sent.second.empty() ? "" : " " + sent.second), std::move(entry)};
+      };
+      // T1's table length, the Z offset in effect and the work Z readout, all in mm.
+      std::string seen;
+      const auto follows = [&](double length, double offset) -> bool {
+        const bool settled = rig.pump_until(5s, [&]() -> bool {
+          const auto s = rig.status();
+          const double work_z = s.controller.axes[2].machine - s.g5x[2] - s.g92[2] - offset;
+          return near(tool_length(1), length, 0.001) && near(s.tool_offset[2], offset, 0.001) &&
+                 near(s.work[2], work_z, 0.001);
+        });
+        const auto s = rig.status();
+        seen = std::format("table={:.4f} offset={:.4f} work_z={:.4f} machine_z={:.4f} g5x_z={:.4f} "
+                           "g92_z={:.4f} expected table={:.4f} offset={:.4f}",
+                           tool_length(1), s.tool_offset[2], s.work[2], s.controller.axes[2].machine,
+                           s.g5x[2], s.g92[2], length, offset);
+        return settled;
+      };
+      const auto start = rig.status();
+      const int start_tool = start.controller.tool_in_spindle;
+      const bool start_g43 = std::ranges::contains(start.active_codes, "G43");
+      const double original = tool_length(1);
+      const double longer = original + 3;
+      const double t2 = tool_length(2);
+      const auto loaded = line("M61 Q1 G43 H1");
+      const auto before_write = last_id();
+      const auto set_length = line(std::format("G10 L1 P1 Z{:.4f}", longer));
+      const auto written = awaited(before_write, HistoryField::length);
+      const auto applied = line("G43 H1");
+      // `follows` is asked before each check: its detail is the state it saw.
+      const bool written_followed = follows(longer, longer);
+      check("history_tool_length_of_the_loaded_tool",
+            loaded == "accepted" && set_length == "accepted" && applied == "accepted" && written &&
+                written->target == HistoryTarget::tool && written->number == 1 && written_followed,
+            std::format("{} {} {} {} {}", loaded, set_length, applied,
+                        written ? change_text(*written) : "none", seen));
+
+      const auto [g43, r1] = restore_length(written, true);
+      const bool g43_followed = follows(original, original);
+      check("history_restore_applies_g43_again",
+            g43 == "accepted" && r1 && r1->source == HistorySource::restore && g43_followed,
+            std::format("{} {} {}", g43, r1 ? change_text(*r1) : "none", seen));
+
+      const auto inch = line("G20");
+      const auto [g43_inch, r2] = restore_length(r1, true);
+      const auto back_to_mm = line("G21");
+      const bool inch_followed = follows(longer, longer);
+      check("history_restore_applies_g43_again_in_inch",
+            inch == "accepted" && g43_inch == "accepted" && back_to_mm == "accepted" && r2 &&
+                inch_followed,
+            std::format("{} {} {} {} {}", inch, g43_inch, back_to_mm,
+                        r2 ? change_text(*r2) : "none", seen));
+
+      const auto cancelled = line("G49");
+      const auto [g49, r3] = restore_length(r2, true);
+      const bool g49_kept = follows(original, 0);
+      check("history_restore_without_offset_applies_none",
+            cancelled == "accepted" && g49 == "accepted" && r3 && g49_kept &&
+                std::ranges::contains(rig.status().active_codes, "G49"),
+            std::format("{} {} {} {}", cancelled, g49, r3 ? change_text(*r3) : "none", seen));
+
+      const auto other = line("G43 H2");
+      const auto [h2, r4] = restore_length(r3, true);
+      const bool h2_kept = follows(longer, t2);
+      check("history_restore_keeps_the_offset_of_another_h",
+            other == "accepted" && h2 == "accepted" && r4 && h2_kept,
+            std::format("{} {} {} {}", other, h2, r4 ? change_text(*r4) : "none", seen));
+
+      // G43.2 adds T2's length to T1's: a sum that is not T1's length, kept as it is.
+      const auto own = line("G43 H1");
+      const auto added = line("G43.2 H2");
+      const auto [additive, r5] = restore_length(r4, true);
+      const bool sum_kept = follows(original, longer + t2);
+      check("history_restore_keeps_a_g43_2_sum",
+            own == "accepted" && added == "accepted" && additive == "accepted" && r5 && sum_kept,
+            std::format("{} {} {} {} {}", own, added, additive, r5 ? change_text(*r5) : "none",
+                        seen));
+
+      // Back to the start: T1's length, the tool and the offset.
+      static_cast<void>(line("G49"));
+      static_cast<void>(line(std::format("G10 L1 P1 Z{:.4f}", original)));
+      static_cast<void>(line(start_g43 ? std::format("M61 Q{} G43 H{}", start_tool, start_tool)
+                                       : std::format("M61 Q{}", start_tool)));
+    }
+
     // An X-only restore must preserve omitted offsets. Cover Y on the XYZ mill and A on
     // the rotary mill so an implementation watching only XYZ cannot pass both profiles.
     const bool rotary = !rig.config.rotary_joints[0].empty();

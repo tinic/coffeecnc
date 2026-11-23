@@ -164,6 +164,30 @@ describe('simulated offset history', () => {
     expect(latest(r.out).storage).toBe('session_only')
   })
 
+  it('applies a restored length of the loaded tool again when its length is in effect', () => {
+    const r = rig()
+    r.home()
+    r.send({ type: 'mdi', text: 'T2 M6' })
+    r.sim.advance(40)
+    r.send({ type: 'tool_changed' })
+    r.finish()
+    r.send({ type: 'mdi', text: 'G43 H2' })
+    r.finish()
+    const applied = r.status().offsets.tool[2]
+    r.send({ type: 'set_tool', tool: { number: 2, pocket: 2, length: applied + 3, diameter: 6, comment: '' } })
+    const edited = only(latest(r.out).entries[0])
+    r.send({ type: 'mdi', text: 'G43 H2' })
+    r.finish()
+    expect(r.status().offsets.tool[2]).toBe(applied + 3)
+    expect(r.send({ type: 'restore_offset', entry: edited.id }).outcome).toBe('accepted')
+    expect(r.status().offsets.tool[2]).toBe(applied)
+    // Under G49 nothing is applied.
+    r.send({ type: 'mdi', text: 'G49' })
+    r.finish()
+    expect(r.send({ type: 'restore_offset', entry: only(latest(r.out).entries[0]).id }).outcome).toBe('accepted')
+    expect(r.status().offsets.tool[2]).toBe(0)
+  })
+
   it('refuses a restore of a tool that was added, and a restore with the machine off', () => {
     const r = rig()
     r.home()

@@ -266,6 +266,7 @@
       "cannotReadToolTable": "工具テーブル {file} を読み込めません。",
       "cannotWriteToolTable": "工具テーブル {file} に書き込めません。",
       "cannotReplaceToolTable": "工具テーブル {file} を置き換えられません。",
+      "lengthOffsetUnreadable": "有効な工具長補正を読み取れません。",
       "toolTableNotLoaded": "工具テーブルファイル {file} は変更されましたが、LinuxCNC に読み込みを指示する前に要求がキャンセルされました。",
       "cannotOpenChannels": "{file} から LinuxCNC の NML チャネルを開けません。",
       "restoreFromTable": "工具テーブルから T{tool} を復元できませんでした。",

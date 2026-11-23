@@ -266,6 +266,7 @@
       "cannotReadToolTable": "Die Werkzeugtabelle {file} kann nicht gelesen werden.",
       "cannotWriteToolTable": "Die Werkzeugtabelle {file} kann nicht geschrieben werden.",
       "cannotReplaceToolTable": "Die Werkzeugtabelle {file} kann nicht ersetzt werden.",
+      "lengthOffsetUnreadable": "Die aktive Werkzeuglängenkorrektur kann nicht gelesen werden.",
       "toolTableNotLoaded": "Die Werkzeugtabellendatei {file} wurde geändert, aber die Anfrage wurde abgebrochen, bevor LinuxCNC sie laden sollte.",
       "cannotOpenChannels": "Die NML-Kanäle von LinuxCNC können nicht aus {file} geöffnet werden.",
       "restoreFromTable": "T{tool} konnte nicht aus der Werkzeugtabelle wiederhergestellt werden.",

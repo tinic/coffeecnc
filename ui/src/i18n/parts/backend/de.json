@@ -570,7 +570,10 @@
       "cannotRead": "Das Alarmprotokoll {file} kann nicht gelesen werden: {detail}",
       "notRotated": "Das Alarmprotokoll konnte nicht rotiert werden: {detail}",
       "notSaved": "Das Alarmprotokoll konnte nicht gespeichert werden: {detail}",
-      "entriesLost": "Einige Einträge des Alarmprotokolls konnten nicht gespeichert werden."
+      "entriesLost": "Einige Einträge des Alarmprotokolls konnten nicht gespeichert werden.",
+      "keptForRun": "Das Alarmprotokoll in {directory} wird nur für diesen Lauf geführt: {detail}",
+      "inUse": "es wird von einem anderen CoffeeCNC verwendet.",
+      "notLocked": "seine Sperre kann nicht gesetzt werden: {detail}."
     }
   }
 }

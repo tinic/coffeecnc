@@ -160,16 +160,17 @@ auto AlarmLog::locked() -> bool {
   if (lock_) {
     problem = lock_();
   } else if (const auto taken = files_.lock(directory_); !taken) {
-    problem = taken.error().in_use ? "it is in use by another CoffeeCNC"
-                                   : "its lock cannot be taken: " + taken.error().reason;
+    if (taken.error().in_use)
+      problem = "it is in use by another CoffeeCNC.";
+    else
+      problem = "its lock cannot be taken: " + taken.error().reason + ".";
   } else {
     own_lock_ = true;
   }
   if (!problem)
     return true;
   const std::scoped_lock lock{mutex_};
-  reason_ = std::format("The alarm log in {} is kept for this run only: {}{}", directory_, *problem,
-                        problem->ends_with('.') ? "" : ".");
+  reason_ = std::format("The alarm log in {} is kept for this run only: {}", directory_, *problem);
   directory_.clear();
   pending_.clear();
   return false;
@@ -333,9 +334,9 @@ void AlarmLog::loop() {
         said_ = reason_;
         // Not under the mutex: a stderr that blocks must not block the threads that post.
         if (!said_.empty()) {
-          auto text = "coffeecnc: " + said_ + '\n';
+          const auto text = said_;
           lock.unlock();
-          std::cerr << text << std::flush;
+          std::cerr << "coffeecnc: " << text << '\n' << std::flush;
           lock.lock();
         }
       }

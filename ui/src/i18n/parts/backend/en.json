@@ -570,7 +570,10 @@
       "cannotRead": "The alarm log {file} cannot be read: {detail}",
       "notRotated": "The alarm log could not be rotated: {detail}",
       "notSaved": "The alarm log could not be saved: {detail}",
-      "entriesLost": "Some alarm log entries could not be saved."
+      "entriesLost": "Some alarm log entries could not be saved.",
+      "keptForRun": "The alarm log in {directory} is kept for this run only: {detail}",
+      "inUse": "it is in use by another CoffeeCNC.",
+      "notLocked": "its lock cannot be taken: {detail}."
     }
   }
 }

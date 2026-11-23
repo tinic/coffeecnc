@@ -570,7 +570,10 @@
       "cannotRead": "No se puede leer el registro de alarmas {file}: {detail}",
       "notRotated": "No se pudo rotar el registro de alarmas: {detail}",
       "notSaved": "No se pudo guardar el registro de alarmas: {detail}",
-      "entriesLost": "No se pudieron guardar algunas entradas del registro de alarmas."
+      "entriesLost": "No se pudieron guardar algunas entradas del registro de alarmas.",
+      "keptForRun": "El registro de alarmas en {directory} se guarda solo durante esta ejecución: {detail}",
+      "inUse": "lo usa otro CoffeeCNC.",
+      "notLocked": "no se puede tomar su bloqueo: {detail}."
     }
   }
 }

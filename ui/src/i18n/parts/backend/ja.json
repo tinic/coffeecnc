@@ -570,7 +570,10 @@
       "cannotRead": "アラームログ {file} を読み込めません：{detail}",
       "notRotated": "アラームログをローテーションできませんでした：{detail}",
       "notSaved": "アラームログを保存できませんでした：{detail}",
-      "entriesLost": "一部のアラームログ項目を保存できませんでした。"
+      "entriesLost": "一部のアラームログ項目を保存できませんでした。",
+      "keptForRun": "{directory} のアラームログはこの実行中のみ保持されます: {detail}",
+      "inUse": "別の CoffeeCNC が使用中です。",
+      "notLocked": "ロックを取得できません: {detail}。"
     }
   }
 }

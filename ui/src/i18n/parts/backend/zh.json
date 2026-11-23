@@ -570,7 +570,10 @@
       "cannotRead": "无法读取报警日志 {file}：{detail}",
       "notRotated": "无法轮换报警日志：{detail}",
       "notSaved": "无法保存报警日志：{detail}",
-      "entriesLost": "部分报警日志条目无法保存。"
+      "entriesLost": "部分报警日志条目无法保存。",
+      "keptForRun": "{directory} 中的报警日志仅在本次运行中保留：{detail}",
+      "inUse": "另一个 CoffeeCNC 正在使用它。",
+      "notLocked": "无法获取其锁：{detail}。"
     }
   }
 }

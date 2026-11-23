@@ -570,7 +570,10 @@
       "cannotRead": "Le journal des alarmes {file} ne peut pas être lu : {detail}",
       "notRotated": "Le journal des alarmes n’a pas pu être archivé : {detail}",
       "notSaved": "Le journal des alarmes n’a pas pu être enregistré : {detail}",
-      "entriesLost": "Certaines entrées du journal des alarmes n’ont pas pu être enregistrées."
+      "entriesLost": "Certaines entrées du journal des alarmes n’ont pas pu être enregistrées.",
+      "keptForRun": "Le journal des alarmes dans {directory} est conservé pour cette exécution seulement : {detail}",
+      "inUse": "il est utilisé par un autre CoffeeCNC.",
+      "notLocked": "son verrou ne peut pas être pris : {detail}."
     }
   }
 }

@@ -570,7 +570,10 @@
       "cannotRead": "Não é possível ler o registo de alarmes {file}: {detail}",
       "notRotated": "Não foi possível rodar o registo de alarmes: {detail}",
       "notSaved": "Não foi possível guardar o registo de alarmes: {detail}",
-      "entriesLost": "Não foi possível guardar algumas entradas do registo de alarmes."
+      "entriesLost": "Não foi possível guardar algumas entradas do registo de alarmes.",
+      "keptForRun": "O registo de alarmes em {directory} é mantido apenas nesta execução: {detail}",
+      "inUse": "está em uso por outro CoffeeCNC.",
+      "notLocked": "o seu bloqueio não pode ser obtido: {detail}."
     }
   }
 }

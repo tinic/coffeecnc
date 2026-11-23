@@ -5961,7 +5961,7 @@ void diagnostics_view(Rig& rig) {
           .launch = [&](HalTool tool) -> std::optional<std::string> {
             return launcher.launch(tool);
           }},
-      [&](PageToken, std::vector<std::string> messages) -> void {
+      [&](PageToken, const std::vector<std::string>& messages) -> void {
         const std::lock_guard lock{mutex};
         for (const auto& message : messages) {
           received.push_back(Json::parse(message));

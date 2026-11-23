@@ -187,7 +187,7 @@ void feed_reads_only_while_watched() {
   std::this_thread::sleep_for(3 * period);
   require(posted.count() == at_close, "Nothing after the feed is gone");
 
-  DiagnosticsFeed bare{{}, [](PageToken, std::vector<std::string>) -> void {}, period};
+  DiagnosticsFeed bare{{}, [](PageToken, const std::vector<std::string>&) -> void {}, period};
   require(bare.launch(HalTool::halscope).has_value(), "No launcher: a refusal, never a start");
 }
 

@@ -203,7 +203,7 @@ auto HalToolLauncher::program(HalTool tool) const -> std::optional<std::string> 
     // An empty entry of PATH is the working directory: never a place for these tools here.
     if (directory.empty() || directory.front() != '/')
       continue;
-    const auto candidate = (std::filesystem::path(directory) / name).string();
+    auto candidate = (std::filesystem::path(directory) / name).string();
     std::error_code error;
     if (std::filesystem::is_regular_file(candidate, error) && access(candidate.c_str(), X_OK) == 0)
       return candidate;
@@ -283,6 +283,7 @@ auto HalToolLauncher::states() -> std::vector<HalToolState> {
       open.at(i) = children_.at(i) > 0;
   }
   std::vector<HalToolState> states;
+  states.reserve(hal_tools.size());
   for (const auto tool : hal_tools)
     states.push_back({.tool = tool,
                       .available = program(tool).has_value(),

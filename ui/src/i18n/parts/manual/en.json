@@ -198,7 +198,7 @@
       "enterFeed": "Enter a feed above zero",
       "feedAboveMax": "The feed is above the machine maximum",
       "enterDistance": "Enter a distance above zero",
-      "room": "{direction} has {room} mm before the soft limit",
+      "room": "{direction} has {room} {unit} before the soft limit",
       "atLimit": "{axis} is at its soft limit",
       "zNoSoftLimits": "Z has no soft limits",
       "safeZRange": "Safe Z must be within the Z soft limits, {min} to {max} {unit}",

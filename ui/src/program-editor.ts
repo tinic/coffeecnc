@@ -4,7 +4,7 @@
 import { ref } from 'vue'
 
 import { t } from './i18n'
-import type { ProgramText } from './protocol'
+import type { ProgramText, Status } from './protocol'
 
 /** The longest program text `save_program` writes (the backend's max_saved_program_bytes). */
 export const maxProgramBytes = 512 * 1024
@@ -33,6 +33,16 @@ export function uneditableReason(program: ProgramText): string | null {
   return null
 }
 
+/**
+ * True while the program file may not be written and opened again: a program runs or is paused,
+ * the machine moves, waits for a tool change, homes, or stops at a breakpoint.
+ */
+export function machineBusy(status: Status | null): boolean {
+  return status?.interp !== 'idle' || !status.motion.in_position ||
+    status.wait.kind === 'tool_change' || status.axes.some((axis) => axis.homing) ||
+    status.rotary_axes?.some((axis) => axis.homing) === true || status.program.breakpoint !== undefined
+}
+
 export interface EditorState {
   text: string
   start: number
@@ -40,7 +50,8 @@ export interface EditorState {
 }
 
 /**
- * Undo and redo of whole texts. Typing in one place within `mergeMs` is one step. The oldest
+ * Undo and redo of whole texts. Typing on from where the last edit left the caret, within
+ * `mergeMs`, is one step; a caret moved elsewhere starts a new step. The oldest
  * steps go first once the history holds more than `maxSteps` or `maxCharacters`.
  */
 export class EditHistory {
@@ -48,13 +59,15 @@ export class EditHistory {
   private redoStack: EditorState[] = []
   private lastEdit = -Infinity
   private lastKind = ''
+  private lastCaret = -1
 
   constructor(private readonly maxSteps = 200, private readonly maxCharacters = 16 * 1024 * 1024, private readonly mergeMs = 1000) {}
 
-  /** Records `before`, the state ahead of an edit of `kind` made at `now`. */
-  record(before: EditorState, kind: string, now: number): void {
+  /** Records `before`, the state ahead of an edit of `kind` made at `now` that left the caret at `caret`. */
+  record(before: EditorState, kind: string, now: number, caret: number): void {
     const typing = kind === 'insertText' || kind === 'deleteContentBackward' || kind === 'deleteContentForward'
-    const merge = typing && kind === this.lastKind && now - this.lastEdit < this.mergeMs && this.undoStack.length > 0
+    const merge = typing && kind === this.lastKind && now - this.lastEdit < this.mergeMs && this.undoStack.length > 0 &&
+      before.start === this.lastCaret && before.end === this.lastCaret
     if (!merge) {
       this.undoStack.push(before)
       let characters = this.undoStack.reduce((sum, state) => sum + state.text.length, 0)
@@ -65,6 +78,7 @@ export class EditHistory {
     this.redoStack = []
     this.lastEdit = now
     this.lastKind = kind
+    this.lastCaret = caret
   }
 
   get canUndo(): boolean { return this.undoStack.length > 0 }

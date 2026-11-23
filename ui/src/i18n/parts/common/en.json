@@ -15,6 +15,7 @@
     "yes": "Yes",
     "no": "No",
     "off": "Off",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "listSeparator": ", "
   }
 }

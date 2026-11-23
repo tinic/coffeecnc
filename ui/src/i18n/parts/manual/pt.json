@@ -198,7 +198,7 @@
       "enterFeed": "Introduza um avanço superior a zero",
       "feedAboveMax": "O avanço excede o máximo da máquina",
       "enterDistance": "Introduza uma distância superior a zero",
-      "room": "{direction} tem {room} mm até ao limite de software",
+      "room": "{direction} tem {room} {unit} até ao limite de software",
       "atLimit": "{axis} está no limite de software",
       "zNoSoftLimits": "Z não tem limites de software",
       "safeZRange": "O Z de segurança tem de estar dentro dos limites de software de Z, de {min} a {max} {unit}",

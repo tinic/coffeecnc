@@ -40,6 +40,8 @@ export interface PowerFeedRequest {
   feed: number
   /** mm/min; the fastest feed offered. */
   maxFeed: number
+  /** The display unit, for lengths in the reason a feed is refused. */
+  unit: LengthUnit
 }
 
 export interface PowerFeedPlan {
@@ -130,7 +132,7 @@ export function powerFeedPlan(context: MoveContext, request: PowerFeedRequest): 
     if (!Number.isFinite(distance) || distance <= 0) return { ok: false, reason: t('manual.moves.enterDistance') }
     if (distance > room) {
       return { ok: false, reason: room > moveToleranceMm
-        ? t('manual.moves.room', { direction: name, room: number(room, 'mm') })
+        ? t('manual.moves.room', { direction: name, room: number(room, request.unit), unit: request.unit === 'inch' ? 'in' : 'mm' })
         : t('manual.moves.atLimit', { axis: letter(request.axis) }) }
     }
     target = axis.machine + request.direction * distance

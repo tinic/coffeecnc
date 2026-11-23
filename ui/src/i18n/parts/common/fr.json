@@ -15,6 +15,7 @@
     "yes": "Oui",
     "no": "Non",
     "off": "Arrêt",
-    "saving": "Enregistrement…"
+    "saving": "Enregistrement…",
+    "listSeparator": ", "
   }
 }

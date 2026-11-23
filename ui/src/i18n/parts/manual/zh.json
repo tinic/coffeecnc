@@ -198,7 +198,7 @@
       "enterFeed": "请输入大于零的进给",
       "feedAboveMax": "进给超过机床最大值",
       "enterDistance": "请输入大于零的距离",
-      "room": "{direction} 距软限位只有 {room} mm",
+      "room": "{direction} 距软限位只有 {room} {unit}",
       "atLimit": "{axis} 已在软限位",
       "zNoSoftLimits": "Z 没有软限位",
       "safeZRange": "安全 Z 必须在 Z 软限位以内：{min} 至 {max} {unit}",

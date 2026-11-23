@@ -104,6 +104,7 @@ struct MachineConfig {
   std::string runtime_directory{};
   // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
   std::uint16_t remote_port{};
+  std::vector<std::string> remote_hosts{};
   [[nodiscard]] auto touched_off_file() const -> std::string;
 };
 

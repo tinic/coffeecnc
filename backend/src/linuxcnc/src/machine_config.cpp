@@ -1,3 +1,4 @@
+#include <coffeecnc/core/remote_hosts.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
 #include <algorithm>
@@ -677,6 +678,23 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     if (parse_error != std::errc{} || end != value.data() + value.size() || remote_port > 65535)
       return std::unexpected(std::string("[COFFEECNC] REMOTE_PORT must be an integer from 0 to 65535."));
   }
+  std::vector<std::string> remote_hosts;
+  if (const auto aliases = ini.text("COFFEECNC", "REMOTE_HOSTS")) {
+    constexpr std::string_view separators = " ,\t";
+    const std::string_view list{*aliases};
+    auto begin = list.find_first_not_of(separators);
+    while (begin != std::string_view::npos) {
+      const auto end = list.find_first_of(separators, begin);
+      const auto host = list.substr(begin, end - begin);
+      auto normalized = normalize_remote_host(host);
+      if (!normalized)
+        return std::unexpected(std::format(
+            "[COFFEECNC] REMOTE_HOSTS: \"{}\" is not a hostname.", host));
+      if (std::ranges::find(remote_hosts, *normalized) == remote_hosts.end())
+        remote_hosts.push_back(std::move(*normalized));
+      begin = list.find_first_not_of(separators, end);
+    }
+  }
   MotionTolerances tolerances;
   if (const auto parsed = positive_settings(ini,
           {{"PROBE_OFF_LINE_TOLERANCE_MM", &tolerances.probe_off_line_mm},
@@ -724,6 +742,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .motion_tolerances = tolerances,
       .macros = std::move(*configured_macros),
       .remote_port = static_cast<std::uint16_t>(remote_port),
+      .remote_hosts = std::move(remote_hosts),
   };
 }
 

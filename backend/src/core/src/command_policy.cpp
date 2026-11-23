@@ -379,6 +379,17 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
               !axis_state(s, Axis::x) || !axis_state(s, Axis::y) || !axis_state(s, Axis::z))
             return reject("Provide G54 through G59.3 and finite XYZ offsets.");
           return idle(s, TaskMode::mdi, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, SetWorkRotation>) {
+          if (s.requested_tool)
+            return reject("Finish the tool change before editing work origins.");
+          if (c.wcs < 1 || c.wcs > 9 || !std::isfinite(c.degrees) ||
+              std::abs(c.degrees) > max_work_rotation)
+            return reject("Provide G54 through G59.3 and an XY rotation from -360 to 360 degrees.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, ClearG92>) {
+          if (s.requested_tool)
+            return reject("Finish the tool change before clearing the G92/G52 shift.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, RestoreOffset>) {
           // G10 L2, G52 or G10 L1 through MDI: the conditions of the other offset edits.
           if (s.requested_tool)

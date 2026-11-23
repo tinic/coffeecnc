@@ -71,7 +71,8 @@ auto history_source(const Command& command) -> std::optional<HistorySource> {
           return c.origin == TouchOrigin::zero   ? HistorySource::zero
                  : c.origin == TouchOrigin::half ? HistorySource::half
                                                  : HistorySource::touch_off;
-        } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
+        } else if constexpr (std::is_same_v<T, SetWorkOffset> || std::is_same_v<T, SetWorkRotation> ||
+                             std::is_same_v<T, ClearG92>) {
           return HistorySource::work_offset_table;
         } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
           return HistorySource::tool_touch_off;
@@ -1279,6 +1280,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<ToolChanged>(request.command) ||
       std::holds_alternative<SelectWcs>(request.command) ||
       std::holds_alternative<SetWorkOffset>(request.command) ||
+      std::holds_alternative<SetWorkRotation>(request.command) ||
+      std::holds_alternative<ClearG92>(request.command) ||
       std::holds_alternative<RestoreOffset>(request.command) ||
       std::holds_alternative<TouchOff>(request.command) ||
       std::holds_alternative<ToolTouchOff>(request.command) ||
@@ -1501,6 +1504,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             history_->written(*mark, c.wcs, {c.offset[0], c.offset[1], c.offset[2], std::nullopt},
                               clock().unix_time);
           return written;
+        } else if constexpr (std::is_same_v<T, SetWorkRotation>) {
+          // R alone: LinuxCNC keeps the XYZ of the system. Degrees in every unit mode.
+          auto written = mdi(request, "G10 L2 P" + std::to_string(c.wcs) + " R" + real(c.degrees));
+          if (mark && written.kind == StageKind::reply &&
+              written.reply.outcome == CommandOutcome::accepted)
+            history_->written(*mark, c.wcs, {std::nullopt, std::nullopt, std::nullopt, c.degrees},
+                              clock().unix_time);
+          return written;
+        } else if constexpr (std::is_same_v<T, ClearG92>) {
+          // G92 and G52 are one offset in LinuxCNC: G92.1 zeroes it, and the values G92.3 would
+          // bring back. The offset history records the change from the status and can restore it.
+          return mdi(request, "G92.1");
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
           return mdi(request, std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));

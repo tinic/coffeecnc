@@ -221,6 +221,14 @@ struct SetWorkOffset {
   int wcs;
   std::array<double, 3> offset; // XYZ origin in machine coordinates, millimetres
 };
+// The XY rotation of one work system (G10 L2 P<wcs> R<degrees>); 0 clears it.
+inline constexpr double max_work_rotation = 360; // degrees, either way
+struct SetWorkRotation {
+  int wcs;
+  double degrees;
+};
+// Clears the G92/G52 shift (G92.1): one offset in LinuxCNC, #5211 ... #5219.
+struct ClearG92 {};
 // What the operator used to set the coordinate: only for the offset history.
 enum class TouchOrigin : std::uint8_t { typed, zero, half };
 struct TouchOff {
@@ -260,7 +268,7 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset>;
+                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset, SetWorkRotation, ClearG92>;
 
 struct Decision {
   bool allowed{};

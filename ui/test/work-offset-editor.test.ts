@@ -84,7 +84,7 @@ describe('confirmed work origins', () => {
   it('never invents zero for unknown origins and requires three explicit entries', async () => {
     origin(1).available = false
     await open(2)
-    expect(view().findAll('input').map((field) => (field.element as HTMLInputElement).value)).toEqual(['', '', ''])
+    expect(view().findAll('.coordinates input').map((field) => (field.element as HTMLInputElement).value)).toEqual(['', '', ''])
     await press('Review changes'); expect(view().find('.changes').exists()).toBe(false)
     await view().get('[aria-label="G55 X origin"]').setValue('1')
     await view().get('[aria-label="G55 Y origin"]').setValue('2')
@@ -93,6 +93,70 @@ describe('confirmed work origins', () => {
     await press('Review changes'); expect(view().findAll('.changes td').filter((cell) => cell.text() === 'Unavailable')).toHaveLength(3)
     await press('Confirm G55 XYZ')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_work_offset', wcs: 2, offset: [1, 2, 3] })
+  })
+  it('sets the XY rotation of a system only after review, keeping XYZ', async () => {
+    await open(2)
+    const field = view().get('[aria-label="G55 XY rotation"]')
+    expect((field.element as HTMLInputElement).value).toBe('15')
+    await field.setValue('15/2')
+    await press('Set rotation…')
+    expect(view().get('[role="dialog"]').attributes('aria-label')).toBe('Set G55 XY rotation?')
+    expect(view().findAll('.changes td').map((cell) => cell.text())).toEqual(['15°', '7.5°'])
+    expect(view().text()).toContain('XYZ origins and G92/G52 shifts stay unchanged')
+    expect(view().text()).not.toContain('the preview turn immediately')
+    expect(send).not.toHaveBeenCalled()
+    await press('Confirm G55 rotation')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_work_rotation', wcs: 2, rotation_xy: 7.5 })
+  })
+  it('zeroes the rotation of the active system, which the readout and preview follow', async () => {
+    await open(1)
+    await press('Zero rotation…')
+    expect(view().get('[role="dialog"]').attributes('aria-label')).toBe('Zero G54 XY rotation?')
+    expect(view().text()).toContain('the work readout and the preview turn immediately')
+    await press('Confirm G54 rotation')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_work_rotation', wcs: 1, rotation_xy: 0 })
+  })
+  it('offers no rotation beyond a full turn, and no zero of a zero rotation', async () => {
+    origin(0).rotation_xy = 0
+    await open(1)
+    const button = (text: string): boolean => view().findAll('button').find((item) => item.text() === text)?.attributes('disabled') !== undefined
+    expect(button('Zero rotation…')).toBe(true)
+    expect(button('Set rotation…')).toBe(true)
+    await view().get('[aria-label="G54 XY rotation"]').setValue('400')
+    expect(button('Set rotation…')).toBe(true)
+    await view().get('[aria-label="G54 XY rotation"]').setValue('-360')
+    expect(button('Set rotation…')).toBe(false)
+  })
+  it('blocks a rotation review when the rotation changes meanwhile', async () => {
+    await open(2); await press('Zero rotation…')
+    origin(1).rotation_xy = 20
+    await nextTick(); await press('Confirm G55 rotation')
+    expect(send).not.toHaveBeenCalled(); expect(view().get('.blocked').text()).toContain('rotation changed')
+  })
+  it('clears an active G92/G52 shift after review, saying how to undo it', async () => {
+    await open(2)
+    expect(view().text()).not.toContain('Clear shift…')
+    status().offsets.g92 = [1.5, -2, 0]
+    await nextTick()
+    expect(view().findAll('.shift-axes span').map((item) => item.text())).toEqual(['X 1.500', 'Y -2.000', 'Z 0.000', 'mm'])
+    await press('Clear shift…')
+    expect(view().get('[role="dialog"]').attributes('aria-label')).toBe('Clear the G92/G52 shift?')
+    expect(view().findAll('.changes td').map((cell) => cell.text())).toEqual(['1.500', '0.000', '-2.000', '0.000', '0.000', '0.000'])
+    expect(view().text()).toContain('Restore brings it back')
+    await press('Clear shift')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'clear_g92' })
+  })
+  it('blocks the shift clear when the shift changes, and every edit while busy', async () => {
+    status().offsets.g92 = [1, 0, 0]
+    await open(1); await press('Clear shift…')
+    status().offsets.g92 = [2, 0, 0]
+    await nextTick(); await press('Clear shift')
+    expect(send).not.toHaveBeenCalled(); expect(view().get('[role="dialog"] .blocked').text()).toContain('shift changed')
+    await press('Back')
+    status().interp = 'reading'
+    await nextTick()
+    for (const text of ['Zero rotation…', 'Clear shift…'])
+      expect(view().findAll('button').find((item) => item.text() === text)?.attributes('disabled')).toBeDefined()
   })
   it('retains exact unedited origins in inches across encoder feedback and status replacement', async () => {
     panel.unit = 'inch'; origin(0).offset = [1.234567891, -2.345678912, 3.456789123]

@@ -1101,6 +1101,19 @@ export class SimMachine {
         const [x, y, z] = command.offset
         return this.internal(`G10 L2 P${String(command.wcs)} X${decimal(x)} Y${decimal(y)} Z${decimal(z)}`)
       }
+      case 'set_work_rotation': {
+        if (!Number.isInteger(command.wcs) || command.wcs < 1 || command.wcs > 9 ||
+            !Number.isFinite(command.rotation_xy) || Math.abs(command.rotation_xy) > 360) return reject('Invalid XY rotation')
+        const blocked = this.offsetCommand('set an XY rotation')
+        if (blocked !== null) return blocked
+        const degrees = command.rotation_xy.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })
+        return this.internal(`G10 L2 P${String(command.wcs)} R${degrees}`)
+      }
+      case 'clear_g92': {
+        const blocked = this.offsetCommand('clear the G92/G52 shift')
+        if (blocked !== null) return blocked
+        return this.internal('G92.1')
+      }
       case 'tool_touch_off': {
         if (!Number.isFinite(command.value)) {
           return reject('Touch-off value is not a number')
@@ -1714,7 +1727,8 @@ export class SimMachine {
 /** The offset history's name for a panel command that can change offsets. */
 function historySource(command: ToMachine): HistorySource | null {
   if (command.type === 'touch_off') return command.origin ?? 'touch_off'
-  if (command.type === 'set_work_offset') return 'work_offset_table'
+  if (command.type === 'set_work_offset' || command.type === 'set_work_rotation' ||
+      command.type === 'clear_g92') return 'work_offset_table'
   if (command.type === 'tool_touch_off') return 'tool_touch_off'
   if (command.type === 'set_tool' || command.type === 'remove_tool') return 'tool_table'
   return command.type === 'mdi' ? 'mdi' : null

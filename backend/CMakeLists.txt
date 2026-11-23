@@ -254,6 +254,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
         set_tests_properties(linuxcnc_offset_history_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # The offset editor's XY rotation and G92/G52 clear, with history and refusals.
+        add_test(NAME linuxcnc_offset_edits_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_edits_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> offset-edits)
+        set_tests_properties(linuxcnc_offset_edits_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
         # Go to and power feed: G53 blocks under tool, work and G92 offsets end where saved.
         add_test(NAME linuxcnc_machine_moves_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 150 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_machine_moves_${units}

@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -192,6 +193,53 @@ void work_origin_gates() {
   for (const double value : {std::numeric_limits<double>::infinity(),
                              std::numeric_limits<double>::quiet_NaN()})
     require(!policy.evaluate(SetWorkOffset{1, {0, value, 0}}, s).allowed, "No nonfinite origins");
+}
+
+// The XY rotation and the G92/G52 clear: the gates of the other offset edits.
+void rotation_and_shift_gates() {
+  CommandPolicy policy{simulator_limits()};
+  const Command rotate = SetWorkRotation{2, 15};
+  const Command clear = ClearG92{};
+  for (const auto& command : {rotate, clear}) {
+    auto s = ready();
+    const auto allowed = policy.evaluate(command, s);
+    require(allowed.allowed && allowed.required_mode == TaskMode::mdi,
+            "Rotation and shift clear use MDI");
+    for (int scenario = 0; scenario < 9; ++scenario) {
+      s = ready();
+      switch (scenario) {
+      case 0: s.link = Link::stale; break;
+      case 1: s.machine = MachineState::off; break;
+      case 2: s.machine = MachineState::estop; break;
+      case 3: s.interp = InterpState::reading; break;
+      case 4: s.interp = InterpState::paused; s.mode = TaskMode::automatic; break;
+      case 5: s.in_position = false; break;
+      case 6: s.requested_tool = 2; break;
+      case 7: s.axes[2].homing = true; break;
+      case 8: s.axes[2].homed = false; break;
+      default: std::unreachable();
+      }
+      require(!policy.evaluate(command, s).allowed,
+              std::format("Rotation and shift clear respect execution gates ({})", scenario));
+    }
+  }
+  const Limits unforced{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false};
+  auto unhomed = ready();
+  unhomed.axes[2].homed = false;
+  require(CommandPolicy{unforced}.evaluate(rotate, unhomed).allowed &&
+              CommandPolicy{unforced}.evaluate(clear, unhomed).allowed,
+          "Unhomed with NO_FORCE_HOMING, as the other offset edits");
+  const auto s = ready();
+  require(policy.evaluate(SetWorkRotation{1, 0}, s).allowed &&
+              policy.evaluate(SetWorkRotation{9, -360}, s).allowed &&
+              policy.evaluate(SetWorkRotation{3, 360}, s).allowed,
+          "Zero and the full turn either way are rotations");
+  for (const int wcs : {0, 10})
+    require(!policy.evaluate(SetWorkRotation{wcs, 0}, s).allowed, "No implicit/invalid WCS");
+  for (const double degrees : {360.001, -400.0, std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::quiet_NaN()})
+    require(!policy.evaluate(SetWorkRotation{1, degrees}, s).allowed,
+            "No rotation beyond a full turn, none that is not finite");
 }
 // A machine LinuxCNC runs unhomed ([TRAJ] NO_FORCE_HOMING): execution is allowed, jog rules stay.
 void homing_capability() {
@@ -569,6 +617,7 @@ auto main() -> int {
     reference_mark_homing();
     fixed_setter_homing();
     work_origin_gates();
+    rotation_and_shift_gates();
     paused_z_gates();
     homing_capability();
     axis_jog_ceilings();

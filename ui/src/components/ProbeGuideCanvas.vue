@@ -317,7 +317,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   cancelAnimationFrame(frame)
+  frame = 0
   resize?.disconnect()
+  resize = null
   canvas.value?.removeEventListener('webglcontextlost', lost)
   clearStock()
   toolMesh.dispose()
@@ -334,6 +336,8 @@ onBeforeUnmount(() => {
   reflections.dispose(scene)
   renderer?.dispose()
   renderer?.forceContextLoss()
+  // A frame or resize callback already queued finds no renderer and returns (#279).
+  renderer = null
 })
 </script>
 

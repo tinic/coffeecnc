@@ -14,6 +14,7 @@ import type {
   MachineState,
   Preview,
   RestartPlan,
+  SetOverride,
   Status,
   TaskMode,
   ToMachine,
@@ -187,7 +188,7 @@ export class SimMachine {
   private readonly jogs: [JogState | null, JogState | null, JogState | null] = [null, null, null]
   private exec: Exec | null = null
   private velocity = 0
-  private readonly overrides = { feed: 1, rapid: 1, spindle: 1 }
+  private readonly overrides = { feed: 1, rapid: 1, spindle: 1, velocity_limit: 1 }
   private program: { file: string; lines: string[]; revision: number; stamp: string } | null = null
   /** Where the program last stopped before its end, for that program revision. */
   private stoppedAt: { revision: number; line: number; tool: number } | null = null
@@ -387,6 +388,7 @@ export class SimMachine {
         programmed_feed: m.feed,
         feed_override: this.overrides.feed,
         rapid_override: this.overrides.rapid,
+        velocity_limit: this.overrides.velocity_limit,
         in_position: this.inPosition(),
       },
       spindle: { direction: m.spindle, commanded_rpm: m.speed, override: this.overrides.spindle,
@@ -660,10 +662,11 @@ export class SimMachine {
   /** Moves along the active polyline; returns the time left over, or -1 while it is not done. */
   private advanceMove(active: Extract<Active, { kind: 'move' }>, ms: number): number {
     const op = active.op
-    const speed =
+    const requested =
       op.motion === 'rapid'
         ? rapidVelocity * (this.pendingProbe ? 1 : this.overrides.rapid)
         : Math.min(rapidVelocity, op.feed * (this.pendingProbe ? 1 : this.overrides.feed))
+    const speed = Math.min(requested, rapidVelocity * this.overrides.velocity_limit)
     if (speed <= 0) {
       return -1
     }
@@ -1637,7 +1640,7 @@ export class SimMachine {
     return null
   }
 
-  private setOverride(which: 'feed' | 'rapid' | 'spindle', value: number): Rejection | null {
+  private setOverride(which: SetOverride['which'], value: number): Rejection | null {
     if (!Number.isFinite(value)) {
       return reject('Override value is not a number')
     }
@@ -1646,6 +1649,9 @@ export class SimMachine {
       this.overrides.feed = clamp(0, hello.max_feed_override)
     } else if (which === 'rapid') {
       this.overrides.rapid = clamp(0, 1)
+    } else if (which === 'velocity_limit') {
+      if (value < 0 || value > 1) return reject('Maximum velocity limit is out of range.')
+      this.overrides.velocity_limit = value
     } else {
       this.overrides.spindle = clamp(hello.min_spindle_override, hello.max_spindle_override)
     }

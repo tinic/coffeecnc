@@ -145,6 +145,8 @@ export interface MotionStatus {
   programmed_feed: number
   feed_override: number
   rapid_override: number
+  /** Applied fraction of the configured linear trajectory ceiling, if supported. */
+  velocity_limit?: number
   in_position: boolean
 }
 
@@ -610,7 +612,7 @@ export interface Abort extends CommandBase {
 }
 export interface SetOverride extends CommandBase {
   type: 'set_override'
-  which: 'feed' | 'rapid' | 'spindle'
+  which: 'feed' | 'rapid' | 'spindle' | 'velocity_limit'
   value: number
 }
 export interface SetSpindle extends CommandBase {

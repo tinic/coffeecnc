@@ -660,6 +660,11 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     return std::unexpected(manual_tool_change.error());
 
   Limits limits{jog_ceiling, axis_jog, feed, spindle_min, spindle_max, *rpm, *homing};
+  if (const auto maximum = ini.real("TRAJ", "MAX_LINEAR_VELOCITY"); maximum && *maximum > 0) {
+    const auto mm_per_min = *maximum * scale * seconds_per_minute;
+    if (std::isfinite(mm_per_min))
+      limits.max_trajectory_velocity = mm_per_min;
+  }
   for (std::size_t i = 0; i < limits.axis_motors.size(); ++i)
     limits.axis_motors[i] = static_cast<int>(joints->at(i).size());
 

@@ -169,6 +169,7 @@
       "resetFeed": "将进给倍率重置为 100%",
       "resetSpindle": "将主轴倍率重置为 100%",
       "resetRapid": "将快速倍率重置为 100%",
+      "resetVelocityLimit": "重置最高速度",
       "reset": "重置 100%"
     },
     "workSystems": {

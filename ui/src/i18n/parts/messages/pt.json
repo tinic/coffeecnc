@@ -56,6 +56,8 @@
       "waitHoming": "Aguarde que a referenciação termine.",
       "feedOverrideRange": "O ajuste do avanço está fora do intervalo.",
       "rapidOverrideRange": "O ajuste do rápido está fora do intervalo.",
+      "velocityLimitRange": "O limite de velocidade máxima está fora da faixa.",
+      "velocityLimitUnavailable": "O ajuste de velocidade máxima não está disponível nesta máquina.",
       "spindleOverrideRange": "O ajuste da árvore está fora do intervalo.",
       "unknownOverride": "Ajuste desconhecido.",
       "unknownSpindleDirection": "Sentido de rotação da árvore desconhecido.",

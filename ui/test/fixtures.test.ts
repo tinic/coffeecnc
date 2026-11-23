@@ -141,6 +141,9 @@ const examples: Examples = {
   watch_diagnostics: { id: 40, type: 'watch_diagnostics', on: true },
   launch_hal_tool: { id: 41, type: 'launch_hal_tool', tool: 'halscope' },
   manage_program_file: { id: 42, type: 'manage_program_file', operation: 'rename', path: '/home/cnc/nc_files/part.ngc', name: 'plate.ngc' },
+  backup: { id: 43, type: 'backup', directory: '/media/cnc/STICK' },
+  check_restore: { id: 44, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
+  restore: { id: 45, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

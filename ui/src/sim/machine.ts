@@ -1058,6 +1058,67 @@ export class SimMachine {
     this.emit(result)
   }
 
+  // ---- backup and restore ---------------------------------------------------------------------
+  // The simulator's archive is JSON text in its program folder: the tool table and the work
+  // offsets, which the simulated LinuxCNC holds; the INI and HAL files are fixed and the same.
+
+  private backupState(): { tools: string; parameters: string } {
+    return {
+      tools: JSON.stringify(this.modal.tools),
+      parameters: JSON.stringify({ offsets: this.modal.offsets, rotations: this.modal.rotations }),
+    }
+  }
+
+  private backup(directory: string): Rejection | null {
+    if (listDirectory(this.files, directory) === null) return reject('Choose a folder for the backup.')
+    const stamp = new Date(this.clock()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const path = `${directory}/coffeecnc-sim-${stamp}.tar.gz`
+    const text = JSON.stringify({ format: 'coffeecnc-sim-backup', created: this.clock(), ...this.backupState() })
+    this.files.set(path, text)
+    this.emit({ type: 'backup_written', path, files: 4, bytes: text.length, not_included: [] })
+    return null
+  }
+
+  private checkRestore(path: string, token: string | null): Rejection | null {
+    if (this.machine === 'on') return reject('Switch the machine off or press E-stop before a restore.')
+    if (this.exec !== null) return reject('Stop the program before a restore.')
+    const text = this.files.get(path)
+    if (text === undefined) return reject(`${path} does not exist.`)
+    let saved: { format?: unknown; created?: unknown; tools?: unknown; parameters?: unknown }
+    try {
+      saved = JSON.parse(text) as typeof saved
+    } catch {
+      return reject('This is not a backup archive: Unrecognized archive format')
+    }
+    if (saved.format !== 'coffeecnc-sim-backup' || typeof saved.tools !== 'string' || typeof saved.parameters !== 'string')
+      return reject('This is not a CoffeeCNC backup: it has no manifest.')
+    const now = this.backupState()
+    const stamp = programStamp(path + text)
+    if (token === null) {
+      const config = '/home/sim/linuxcnc/configs/sim'
+      const change = (a: string, b: string): 'same' | 'changed' => a === b ? 'same' : 'changed'
+      this.emit({
+        type: 'restore_summary', path, token: stamp, machine_id: null,
+        created: typeof saved.created === 'number' ? saved.created : 0,
+        files: [
+          { role: 'ini', name: 'config/sim.ini', target: `${config}/sim.ini`, change: 'same', bytes: 2048, symlink: false },
+          { role: 'hal', name: 'config/sim.hal', target: `${config}/sim.hal`, change: 'same', bytes: 1024, symlink: false },
+          { role: 'tool_table', name: 'tool-table/sim.tbl', target: `${config}/sim.tbl`, change: change(saved.tools, now.tools), bytes: saved.tools.length, symlink: false },
+          { role: 'parameters', name: 'parameters/sim.var', target: `${config}/sim.var`, change: 'at_exit', bytes: saved.parameters.length, symlink: false },
+          { role: 'data', name: 'data/tool-models.json', target: '/home/sim/.local/share/coffeecnc/sim/tool-models.json', change: 'at_exit', bytes: 512, symlink: false },
+        ],
+      })
+      return null
+    }
+    if (token !== stamp) return reject('The backup file changed after it was checked. Check it again.')
+    this.modal.tools.splice(0, this.modal.tools.length, ...(JSON.parse(saved.tools) as Modal['tools']))
+    const parameters = JSON.parse(saved.parameters) as Pick<Modal, 'offsets' | 'rotations'>
+    this.modal.offsets = parameters.offsets
+    this.modal.rotations = parameters.rotations
+    this.operatorMessage('info', 'Simulated restore: the tool table and work offsets are the backup\'s. This browser stays open.')
+    return null
+  }
+
   private notOn(what: string): Rejection | null {
     if (this.machine === 'estop') {
       return reject(`Can't ${what}: machine is in E-stop`)
@@ -1332,6 +1393,12 @@ export class SimMachine {
       }
       case 'restore_offset':
         return this.restoreOffset(command.entry)
+      case 'backup':
+        return this.backup(command.directory)
+      case 'check_restore':
+        return this.checkRestore(command.path, null)
+      case 'restore':
+        return this.checkRestore(command.path, command.token)
       case 'edit_program':
         return this.editProgram(command.path, command.line, command.old_text, command.new_text)
       case 'save_program':

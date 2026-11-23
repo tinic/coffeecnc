@@ -84,7 +84,11 @@
       "invalidToolRow": "刀具表行无效。",
       "invalidToolNumber": "刀号无效。",
       "noToolChangePending": "没有等待确认的手动换刀。",
-      "unsupportedCommand": "不支持的命令。"
+      "unsupportedCommand": "不支持的命令。",
+      "backupFolder": "请选择备份文件夹。",
+      "backupFile": "请选择备份文件。",
+      "restoreMachineOn": "恢复前请让机床断电或按下急停。",
+      "restoreProgram": "恢复前请停止程序。"
     },
     "session": {
       "busy": "等待 LinuxCNC 处理的请求过多。",
@@ -149,6 +153,7 @@
       "directoryNotSent": "无法发送目录：{detail}",
       "mdiTooLong": "MDI 需要一个程序段，且不超过 254 字节。",
       "jogStopFailed": "{axis} 的点动停止失败：{detail}",
+      "noBackup": "此 CoffeeCNC 无法备份或恢复。",
       "noDiagnostics": "HAL 诊断不属于此会话。"
     },
     "request": {
@@ -278,6 +283,9 @@
         "saveSettings": "保存设置",
         "toolModels": "刀具模型",
         "settings": "设置",
+        "backup": "备份机床数据",
+        "checkBackup": "检查备份",
+        "restoreBackup": "恢复备份",
         "openDiagnostics": "打开诊断",
         "closeDiagnostics": "关闭诊断",
         "startHalTool": "启动 {tool}"
@@ -382,6 +390,8 @@
       "bossStart": "请从模拟凸台上方开始。",
       "setLoadedLength": "检查前请先设置当前刀具的长度。",
       "browserSimulator": "浏览器模拟器",
+      "simRestored": "模拟恢复：刀具表和工件坐标偏置已恢复为备份内容。此浏览器保持打开。",
+      "simNoFile": "{path} 不存在。",
       "noHalTools": "浏览器模拟器没有 HAL 工具：它在没有 LinuxCNC 的情况下运行。"
     },
     "bridge": {

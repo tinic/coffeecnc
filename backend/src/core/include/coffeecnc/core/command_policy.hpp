@@ -274,6 +274,20 @@ struct RestoreOffset {
 };
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
+// Write a backup archive of the machine's data into this folder.
+struct Backup {
+  std::string directory;
+};
+// What a restore of this archive would write; nothing is written.
+struct CheckRestore {
+  std::string path;
+};
+// Restore the archive checked with this token: staged, then CoffeeCNC and LinuxCNC stop and the
+// files are written.
+struct RestoreBackup {
+  std::string path;
+  std::string token;
+};
 // The diagnostics view opens (`on`) or closes: HAL inputs are read and sent only while it is open.
 struct WatchDiagnostics {
   bool on{};
@@ -290,7 +304,8 @@ using Command =
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
                  EditProgram, JogPausedZ, SaveProgram, RestoreOffset, SetWorkRotation, ClearG92,
-                 WatchDiagnostics, LaunchHalTool, ManageProgramFile>;
+                 WatchDiagnostics, LaunchHalTool, Backup, CheckRestore, RestoreBackup,
+                 ManageProgramFile>;
 
 struct Decision {
   bool allowed{};

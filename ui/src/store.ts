@@ -7,6 +7,7 @@ import { reactive } from 'vue'
 import type { Transport } from './bridge'
 import type {
   AlarmLog,
+  BackupWritten,
   CommandBody,
   CommandResult,
   Diagnostics,
@@ -17,6 +18,7 @@ import type {
   OffsetHistory,
   Preview,
   ProgramText,
+  RestoreSummary,
   Status,
   ToolTable,
   ToolModels,
@@ -99,6 +101,9 @@ export interface PanelState {
   program: ProgramText | null
   preview: Preview | null
   directory: Directory | null
+  /** The last backup written, and the last restore checked, for the backup dialog. */
+  backupWritten: BackupWritten | null
+  restoreSummary: RestoreSummary | null
   log: LogEntry[]
   /** The log entry shown in the status bar, until dismissed. */
   notice: LogEntry | null
@@ -232,6 +237,12 @@ export function describeCommand(command: CommandBody): string {
       return 'Save tool preview model'
     case 'set_operator_settings':
       return 'Save settings'
+    case 'backup':
+      return 'Back up machine data'
+    case 'check_restore':
+      return 'Check backup'
+    case 'restore':
+      return 'Restore backup'
     case 'watch_diagnostics':
       return command.on ? 'Open diagnostics' : 'Close diagnostics'
     case 'launch_hal_tool':
@@ -280,6 +291,8 @@ export function createPanel(options: PanelOptions): Panel {
     program: null,
     preview: null,
     directory: null,
+    backupWritten: null,
+    restoreSummary: null,
     log: [],
     notice: null,
     mdi: [],
@@ -469,6 +482,12 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'directory':
         state.directory = message
+        break
+      case 'backup_written':
+        state.backupWritten = message
+        break
+      case 'restore_summary':
+        state.restoreSummary = message
         break
       case 'message':
         log(message.level, message.text, '', message.time)

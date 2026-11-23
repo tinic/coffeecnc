@@ -82,7 +82,7 @@ jobs:
         run: |
           set -eu
           tools="curl git build-essential cmake ninja-build pkg-config dpkg-dev file
-            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev"
+            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev libarchive-dev"
           if [ "$LINUXCNC_ORG" = 1 ]; then
             apt-get install -y --no-install-recommends $tools linuxcnc-uspace-dev
             rm -rf linuxcnc-cache && mkdir linuxcnc-cache

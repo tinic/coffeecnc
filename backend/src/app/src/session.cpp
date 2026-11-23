@@ -1,5 +1,6 @@
 #include <coffeecnc/app/session.hpp>
 
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 
@@ -299,10 +300,10 @@ Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore&
                  ToolModelService* tool_models, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
                  OffsetHistoryStore* history, DiagnosticsService* diagnostics,
-                 bool asynchronous_copies)
+                 bool asynchronous_copies, MachineDataService* machine_data)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
       restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
-      diagnostics_(diagnostics), policy_(limits),
+      diagnostics_(diagnostics), machine_data_(machine_data), policy_(limits),
       asynchronous_copies_(asynchronous_copies) {}
 
 auto Session::reply(ActionResult result) -> Reply {
@@ -354,7 +355,16 @@ auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) 
     tool_models_->page_ended(PageToken{pages_});
   if (diagnostics_ != nullptr)
     diagnostics_->page_ended(PageToken{pages_});
-  return PageToken{++pages_};
+  const PageToken page{++pages_};
+  // A restore staged for a quit of the page this one replaces: the window drops that close (a
+  // close is for the page that asked), so no exit comes for it now, and a later exit must not
+  // write it. After the page changed and under the lock: a staging that ends before this is
+  // abandoned here, one that ends after it finds the page changed and abandons itself. The
+  // restore never takes this lock while it holds its own (lock order: this, then the
+  // restore's).
+  if (machine_data_ != nullptr)
+    machine_data_->abandon_restore();
+  return page;
 }
 
 void Session::end_page(PageToken page) {
@@ -951,12 +961,23 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (!stop_waits)
     flush_stops();
   const auto now = clock();
-  const std::scoped_lock lock{mutex_};
+  std::unique_lock lock{mutex_};
+  const bool shown = page_open_ && request.page == PageToken{pages_};
+  const bool quits =
+      shown && step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+  // A restore staged for an exit that does not come now (the page ended, a stop came first) is
+  // dropped: a later exit must not write it.
+  if (step.quit && !quits && machine_data_ != nullptr &&
+      std::holds_alternative<RestoreBackup>(request.command)) {
+    lock.unlock();
+    machine_data_->abandon_restore();
+    lock.lock();
+  }
   if (!page_open_)
     return result;
   result.outcome.page = PageToken{pages_};
   if (request.page == result.outcome.page) {
-    result.quit = step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+    result.quit = quits;
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(
@@ -1691,6 +1712,28 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.state != MachineState::on)
             cancel_jogs(nullptr);
           return result;
+        } else if constexpr (std::is_same_v<T, Backup> || std::is_same_v<T, CheckRestore> ||
+                             std::is_same_v<T, RestoreBackup>) {
+          if (machine_data_ == nullptr)
+            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot back up or restore."});
+          MachineDataAnswer done;
+          if constexpr (std::is_same_v<T, Backup>) {
+            done = machine_data_->backup(c.directory);
+          } else if constexpr (std::is_same_v<T, CheckRestore>) {
+            done = machine_data_->check_restore(c.path);
+          } else {
+            // The machine as it is now, just before anything is staged.
+            done =
+                machine_data_->restore(c.path, c.token, request.page.value, [&]() -> std::string {
+                  const auto recheck = policy_.evaluate(request.command, port_.snapshot());
+                  return recheck.allowed ? std::string{} : recheck.reason;
+                });
+          }
+          Stage step;
+          step.reply = {done.outcome, std::move(done.reason)};
+          step.produced = std::move(done.messages);
+          step.quit = done.quit;
+          return step;
         } else if constexpr (std::is_same_v<T, Quit>) {
           // Power off when on; an E-stop or a machine already off stays as it is (no reset).
           if (state.machine == MachineState::on) {

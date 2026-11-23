@@ -14,15 +14,16 @@ import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
 const { t } = useI18n()
-const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: []; diagnostics: [] }>()
+const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: []; backup: []; diagnostics: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
-function openAppDialog(dialog: 'quit' | 'settings' | 'diagnostics'): void {
+function openAppDialog(dialog: 'quit' | 'settings' | 'backup' | 'diagnostics'): void {
   if (menu.value) {
     menu.value.open = false
     menu.value.querySelector('summary')?.focus({ preventScroll: true })
   }
   if (dialog === 'quit') emit('quit')
+  else if (dialog === 'backup') emit('backup')
   else if (dialog === 'diagnostics') emit('diagnostics')
   else emit('settings')
 }
@@ -155,6 +156,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
           <p v-if="pendingPower" class="notice" role="status">{{ t(waitingLabels[pendingPower.command.state]) }}</p>
           <div class="application-actions">
             <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />{{ t('status.statusBar.settings') }}</button>
+            <button class="btn settings" type="button" @click="openAppDialog('backup')"><AppIcon name="folder" />{{ t('status.statusBar.backup') }}</button>
             <button v-if="panel.hello?.diagnostics === true" class="btn diagnostics" type="button" @click="openAppDialog('diagnostics')"><AppIcon name="pulse" />{{ t('status.statusBar.diagnostics') }}</button>
             <button class="btn quit" type="button" @click="openAppDialog('quit')"><AppIcon name="power" />{{ t('status.statusBar.quit') }}</button>
           </div>

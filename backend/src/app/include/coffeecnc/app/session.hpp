@@ -25,6 +25,7 @@
 #include <vector>
 
 namespace coffeecnc {
+class MachineDataService;
 class OffsetHistoryStore;
 class ProgramWriter;
 
@@ -254,7 +255,7 @@ public:
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
           OffsetHistoryStore* history = nullptr, DiagnosticsService* diagnostics = nullptr,
-          bool asynchronous_copies = false);
+          bool asynchronous_copies = false, MachineDataService* machine_data = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -449,6 +450,7 @@ private:
   ProgramWriter* program_writer_;
   OffsetHistoryStore* history_;
   DiagnosticsService* diagnostics_;
+  MachineDataService* machine_data_; // backup and restore, on the worker thread
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.

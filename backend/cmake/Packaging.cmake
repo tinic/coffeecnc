@@ -77,8 +77,9 @@ set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE ${architecture})
 set(CPACK_DEBIAN_PACKAGE_SECTION misc)
 set(CPACK_DEBIAN_PACKAGE_PRIORITY optional)
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/tinic/coffeecnc")
-# Library packages come from dpkg-shlibdeps. LinuxCNC's libraries have no shlibs file, and
-# halcmd is run as a program, so that package is named here.
+# Library packages come from dpkg-shlibdeps (libarchive13t64 for backup and restore among
+# them). LinuxCNC's libraries have no shlibs file, and halcmd is run as a program, so that
+# package is named here.
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "linuxcnc-uspace (= ${linuxcnc_version})")
 # The panel's Chinese and Japanese text needs CJK fonts, which a GNOME install may not have

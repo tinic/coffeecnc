@@ -111,6 +111,73 @@ public:
     return std::unexpected(path + " cannot be appended to here");
   }
 
+  // A file of a machine's configuration: `relative` beneath the directory `root`. Every
+  // component of `relative` but the last is a directory that is not a symbolic link, and none
+  // is `.`, `..` or empty: what is reached through a symbolic link is not beneath `root`. The
+  // last component is followed when it is read, as LinuxCNC reads it.
+  struct Found {
+    Content content;
+    bool symlink{};   // the last component is a symbolic link
+    std::string link; // where that link points, as it is written; empty for a file
+    unsigned mode{};  // permission bits of the file that was read
+    unsigned group{}; // its group ID
+  };
+  struct Written {
+    // False: the file was written, but the group it was to keep could not be set (the user is
+    // not in it): it has the user's group.
+    bool group_kept{true};
+  };
+  struct ReplaceError {
+    bool renamed{}; // the new file has the name: only the fsync of its directory failed
+    std::string reason;
+  };
+  using Replaced = std::expected<Written, ReplaceError>;
+  // The first `limit` bytes of that file. No value: there is no such file (or a symbolic link
+  // to none).
+  [[nodiscard]] virtual auto read_beneath(const std::string& root, const std::string& relative,
+                                          std::size_t limit)
+      -> std::expected<std::optional<Found>, std::string> {
+    static_cast<void>(relative);
+    static_cast<void>(limit);
+    return std::unexpected(root + " cannot be read here");
+  }
+  // The folder that would hold that file exists (reached as read_beneath reaches it). An error:
+  // it cannot be told, or a component on the way is a link.
+  [[nodiscard]] virtual auto folder_exists_beneath(const std::string& root,
+                                                   const std::string& relative)
+      -> std::expected<bool, std::string> {
+    static_cast<void>(relative);
+    return std::unexpected(root + " cannot be read here");
+  }
+  // Replaces that file by a regular file holding `bytes`, with permission bits `mode` and, when
+  // given, group `group`: a temporary file beside it (`<name>.coffeecnc-tmp`), write, fsync,
+  // rename, fsync of the directory. A symbolic link of that name is replaced, not followed. The
+  // group is set only when it is not the one the new file has; a group the user may not give
+  // (EPERM) is not a failure: the result says it was not kept.
+  [[nodiscard]] virtual auto replace_beneath(const std::string& root, const std::string& relative,
+                                             std::string_view bytes, unsigned mode,
+                                             std::optional<unsigned> group) -> Replaced {
+    static_cast<void>(relative);
+    static_cast<void>(bytes);
+    static_cast<void>(mode);
+    static_cast<void>(group);
+    return std::unexpected(ReplaceError{false, root + " cannot be written here"});
+  }
+  // Removes that file (a missing one is not a failure) and fsyncs its directory.
+  [[nodiscard]] virtual auto remove_beneath(const std::string& root, const std::string& relative)
+      -> Done {
+    static_cast<void>(relative);
+    return std::unexpected(root + " cannot be written here");
+  }
+  // Replaces that file by a symbolic link to `target` (symlinkat beside it, rename, fsync of the
+  // directory): what a restore put back where a link was.
+  [[nodiscard]] virtual auto link_beneath(const std::string& root, const std::string& relative,
+                                          const std::string& target) -> Done {
+    static_cast<void>(relative);
+    static_cast<void>(target);
+    return std::unexpected(root + " cannot be written here");
+  }
+
 protected:
   ToolModelFiles(const ToolModelFiles&) = default;
   ToolModelFiles(ToolModelFiles&&) = default;
@@ -139,6 +206,18 @@ public:
   [[nodiscard]] auto link(const std::string& from, const std::string& to) -> Done override;
   [[nodiscard]] auto sync_directory(const std::string& directory) -> Done override;
   void discard(const std::string& path) override;
+  [[nodiscard]] auto read_beneath(const std::string& root, const std::string& relative,
+                                  std::size_t limit)
+      -> std::expected<std::optional<Found>, std::string> override;
+  [[nodiscard]] auto folder_exists_beneath(const std::string& root, const std::string& relative)
+      -> std::expected<bool, std::string> override;
+  [[nodiscard]] auto replace_beneath(const std::string& root, const std::string& relative,
+                                     std::string_view bytes, unsigned mode,
+                                     std::optional<unsigned> group) -> Replaced override;
+  [[nodiscard]] auto remove_beneath(const std::string& root, const std::string& relative)
+      -> Done override;
+  [[nodiscard]] auto link_beneath(const std::string& root, const std::string& relative,
+                                  const std::string& target) -> Done override;
   [[nodiscard]] auto append(const std::string& path, std::string_view bytes) -> Done override;
 
 private:

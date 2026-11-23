@@ -29,7 +29,7 @@
       "circularPocket": "圆形型腔",
       "rectangularPocket": "矩形型腔",
       "slot": "槽 / 键槽",
-      "slotSetup": "请选用适合进刀方式的立铣刀。开放端以毛坯边缘为准，并在边缘之外留出刀具行程。",
+      "slotSetup": "请选用适合进刀方式的立铣刀。设置槽长，使开放端位于毛坯边缘，并在边缘之外留出刀具行程。",
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
@@ -158,6 +158,7 @@
       "retractAboveClearance": "退刀高度不能高于安全高度。",
       "slotToolWidth": "槽宽必须至少等于刀具直径（{diameter}）。",
       "slotTravel": "槽长必须大于槽宽，并为刀具留出行程。",
+      "slotOpenTravel": "要容纳封闭端，槽长必须至少为槽宽的一半。",
       "slotAngle": "斜坡角度必须大于 0° 且小于 90°。",
       "slotPrecision": "请增大进给、深度、退刀高度或每刀深度，使参数符合程序精度。",
       "slotRampRoom": "槽长不足以使用此进刀角度。请增大角度或选择垂直进刀。",

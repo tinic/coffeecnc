@@ -29,7 +29,7 @@
       "circularPocket": "Poche circulaire",
       "rectangularPocket": "Poche rectangulaire",
       "slot": "Rainure / clavette",
-      "slotSetup": "Utilisez une fraise adaptée à l’entrée. Pour une extrémité ouverte, indiquez le bord du brut et libérez le passage de l’outil au-delà.",
+      "slotSetup": "Utilisez une fraise adaptée à l’entrée. Réglez la longueur pour que chaque extrémité ouverte coïncide avec le bord du brut. Laissez de la place au-delà pour l’outil.",
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre."
     },
     "label": {
@@ -158,6 +158,7 @@
       "retractAboveClearance": "La hauteur de dégagement ne doit pas dépasser la hauteur de sécurité.",
       "slotToolWidth": "La largeur doit être au moins égale au diamètre de l’outil ({diameter}).",
       "slotTravel": "La rainure doit être plus longue que large et laisser de la place au déplacement de l’outil.",
+      "slotOpenTravel": "Pour loger l’extrémité fermée, prévoyez une longueur d’au moins la moitié de la largeur de la rainure.",
       "slotAngle": "L’angle de rampe doit être supérieur à 0° et inférieur à 90°.",
       "slotPrecision": "Augmentez les avances, la profondeur, le dégagement ou la profondeur de passe selon la précision du programme.",
       "slotRampRoom": "La rainure est trop courte pour cet angle. Augmentez l’angle ou choisissez Plongée.",

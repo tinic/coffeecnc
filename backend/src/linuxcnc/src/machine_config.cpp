@@ -4,11 +4,13 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -63,6 +65,12 @@ public:
   auto real(const char* section, const char* key) -> std::optional<double> {
     const auto value = text(section, key);
     return value ? number(*value) : std::nullopt;
+  }
+  auto expand_tilde(const std::string& text) -> std::optional<std::string> {
+    std::array<char, PATH_MAX> expanded{};
+    if (file_.TildeExpansion(text.c_str(), expanded.data(), expanded.size()) != IniFile::ERR_NONE)
+      return {};
+    return std::string(expanded.data());
   }
 
 private:
@@ -262,6 +270,129 @@ auto axis_joints(Ini& ini) -> std::expected<std::array<std::vector<int>, 6>, std
                             "{}: add coordinates={} to match [TRAJ] COORDINATES.",
                             own, coordinates));
   return joints;
+}
+
+// The name of a named O-word call in an MDI block (`O<name> call ...`), as the interpreter reads
+// the line: without white space and in lower case, up to a comment. Empty for any other block.
+auto called_subroutine(std::string_view block) -> std::string {
+  std::string text;
+  for (const char c : block) {
+    if (c == '(' || c == ';')
+      break;
+    if (std::isspace(static_cast<unsigned char>(c)) == 0)
+      text += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  const auto end = text.find('>');
+  if (!text.starts_with("o<") || end == std::string::npos ||
+      text.compare(end + 1, 4, "call") != 0)
+    return {};
+  return text.substr(2, end - 2);
+}
+
+auto trimmed(std::string_view text) -> std::string_view {
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
+    text.remove_prefix(1);
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())) != 0)
+    text.remove_suffix(1);
+  return text;
+}
+
+auto has_control(std::string_view text) -> bool {
+  return std::ranges::any_of(text, [](unsigned char c) -> bool { return c < 0x20 || c == 0x7f; });
+}
+
+// Characters of UTF-8 text: the bytes that do not continue a character.
+auto characters(std::string_view text) -> std::size_t {
+  return static_cast<std::size_t>(std::ranges::count_if(
+      text, [](unsigned char c) -> bool { return (c & 0xC0U) != 0x80U; }));
+}
+
+// [COFFEECNC] MACRO = <label> | <MDI block>, every occurrence in order. A named O-word call must
+// find its file where the interpreter looks: [DISPLAY] PROGRAM_PREFIX, then each directory of
+// [RS274NGC] SUBROUTINE_PATH (separated by colons, relative to the INI file's directory).
+auto macros(Ini& ini, const std::filesystem::path& file)
+    -> std::expected<std::vector<Macro>, std::string> {
+  // LinuxCNC's IniFile cuts a line after 255 characters and says nothing (seen on 2.9.4): a
+  // longer MACRO line would run a different block from the one written.
+  constexpr std::size_t ini_line = 255;
+  std::ifstream lines{file};
+  bool inside = false;
+  for (std::string line; std::getline(lines, line);) {
+    const auto text = trimmed(line);
+    const auto equals = text.find('=');
+    if (text.starts_with('['))
+      inside = text.starts_with("[COFFEECNC]");
+    else if (inside && equals != std::string_view::npos && line.size() > ini_line &&
+             upper(without_spaces(std::string(text.substr(0, equals)))) == "MACRO")
+      return std::unexpected(std::format(
+          "[COFFEECNC] has a MACRO line of {} characters: LinuxCNC reads only the first {}. Put "
+          "the steps in a subroutine file and call it with O<file name> call.",
+          line.size(), ini_line));
+  }
+  const auto directory = file.parent_path();
+  std::vector<Macro> found;
+  for (int occurrence = 1;; ++occurrence) {
+    const auto given = ini.text("COFFEECNC", "MACRO", occurrence);
+    if (!given)
+      break;
+    if (found.size() == max_macros)
+      return std::unexpected(
+          std::format("[COFFEECNC] has more than {} MACRO lines: remove some.", max_macros));
+    const auto bar = given->find('|');
+    if (bar == std::string::npos)
+      return std::unexpected(std::format(
+          "[COFFEECNC] MACRO = {} has no |: write the label, then | and the MDI block, for "
+          "example MACRO = Park | G53 G0 Z0.",
+          *given));
+    const auto label = trimmed(std::string_view(*given).substr(0, bar));
+    const auto block = trimmed(std::string_view(*given).substr(bar + 1));
+    if (label.empty())
+      return std::unexpected(
+          std::format("[COFFEECNC] MACRO = {} has no label before the |.", *given));
+    if (characters(label) > max_macro_label || has_control(label))
+      return std::unexpected(
+          std::format("[COFFEECNC] MACRO label \"{}\" is too long: use at most {} characters.",
+                      label, max_macro_label));
+    if (block.empty())
+      return std::unexpected(
+          std::format("[COFFEECNC] MACRO \"{}\" has no MDI block after the |.", label));
+    if (block.size() > max_macro_mdi || has_control(block))
+      return std::unexpected(std::format(
+          "[COFFEECNC] MACRO \"{}\" is too long: MDI takes one block of at most {} bytes. Put "
+          "the steps in a subroutine file and call it with O<file name> call.",
+          label, max_macro_mdi));
+    if (std::ranges::any_of(found,
+                            [&](const Macro& macro) -> bool { return macro.label == label; }))
+      return std::unexpected(std::format(
+          "[COFFEECNC] MACRO \"{}\" is there twice: give each macro its own label.", label));
+    if (const auto name = called_subroutine(block); !name.empty()) {
+      std::vector<std::filesystem::path> places;
+      const auto add_directory = [&](const std::string& path) -> void {
+        if (const auto expanded = ini.expand_tilde(path))
+          places.emplace_back(absolute(directory, *expanded));
+      };
+      if (const auto prefix = ini.text("DISPLAY", "PROGRAM_PREFIX"); prefix && !prefix->empty())
+        add_directory(*prefix);
+      const auto path = ini.text("RS274NGC", "SUBROUTINE_PATH").value_or("");
+      for (std::size_t at = 0; at <= path.size();) {
+        const auto end = std::min(path.find(':', at), path.size());
+        if (const auto entry = trimmed(std::string_view(path).substr(at, end - at));
+            !entry.empty())
+          add_directory(std::string(entry));
+        at = end + 1;
+      }
+      std::error_code error;
+      if (!std::ranges::any_of(places, [&](const std::filesystem::path& place) -> bool {
+            return std::filesystem::is_regular_file(place / (name + ".ngc"), error);
+          }))
+        return std::unexpected(
+            std::format("[COFFEECNC] MACRO \"{}\" calls O<{}>, but {}.ngc is not in [DISPLAY] "
+                        "PROGRAM_PREFIX or [RS274NGC] SUBROUTINE_PATH.",
+                        label, name, name));
+    }
+    found.push_back({std::string(label), std::string(block)});
+  }
+  return found;
 }
 
 } // namespace
@@ -546,6 +677,9 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
            {"PROBE_POSITION_TOLERANCE_MM", &tolerances.probe_position_mm},
            {"RESTART_POSITION_TOLERANCE_MM", &tolerances.restart_position_mm}}); !parsed)
     return std::unexpected(parsed.error());
+  auto configured_macros = macros(ini, file);
+  if (!configured_macros)
+    return std::unexpected(std::move(configured_macros.error()));
   return MachineConfig{
       .ini_file = file.string(),
       .directory = directory.string(),
@@ -581,6 +715,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
           ini.text("EMCIO", "DB_PROGRAM").value_or("").empty(),
       .paused_z = paused_z,
       .motion_tolerances = tolerances,
+      .macros = std::move(*configured_macros),
   };
 }
 

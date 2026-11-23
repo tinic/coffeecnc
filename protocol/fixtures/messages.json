@@ -34,7 +34,17 @@
     "tool_model_storage": 1,
     "quit_supported": true,
     "operator_settings_storage": 1,
-    "max_spindle_rpm": 5000
+    "max_spindle_rpm": 5000,
+    "macros": [
+      {
+        "label": "Park",
+        "mdi": "G53 G0 Z0"
+      },
+      {
+        "label": "Clamp check",
+        "mdi": "O<clamp> call"
+      }
+    ]
   },
   {
     "type": "hello",

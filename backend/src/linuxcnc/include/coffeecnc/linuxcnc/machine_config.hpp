@@ -6,6 +6,7 @@
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 
 #include <array>
+#include <cstddef>
 #include <expected>
 #include <optional>
 #include <string>
@@ -96,6 +97,8 @@ struct MachineConfig {
   bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
   std::optional<PausedZLimits> paused_z{};
   MotionTolerances motion_tolerances{};
+  // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
+  std::vector<Macro> macros{};
   // Resolved and prepared by the application before connecting to LinuxCNC.
   std::string runtime_directory{};
   [[nodiscard]] auto touched_off_file() const -> std::string;
@@ -116,6 +119,12 @@ struct MachineIniInspection {
   std::array<bool, 3> signal_configured{};
   std::vector<std::string> halfiles;
 };
+
+// Limits of [COFFEECNC] MACRO. A label is counted in characters (UTF-8 code points); the MDI
+// block in bytes, as LinuxCNC's MDI command takes it.
+inline constexpr std::size_t max_macros = 12;
+inline constexpr std::size_t max_macro_label = 24;
+inline constexpr std::size_t max_macro_mdi = 254;
 
 inline constexpr std::array coffeecnc_signal_keys{"SPINDLE_RPM_SIGNAL", "SPINDLE_AT_SPEED_SIGNAL",
                                                   "PROBE_SIGNAL"};

@@ -267,6 +267,12 @@ if(BUILD_TESTING)
         $<TARGET_FILE:coffeecnc_sim_tests> probe-interlock)
       set_tests_properties(linuxcnc_probe_tool_interlock PROPERTIES LABELS linuxcnc
         RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
+      # [COFFEECNC] MACRO: the INI keys, hello, and each macro's block run as MDI (#211).
+      add_test(NAME linuxcnc_macros_mm COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+        -u mm -t 60 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_macros_mm
+        $<TARGET_FILE:coffeecnc_sim_tests> macros)
+      set_tests_properties(linuxcnc_macros_mm PROPERTIES LABELS linuxcnc
+        RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 390)
       # The same on a mill with the G0759's INI values: unhomed MDI and runs, per-axis jog
       # ceilings, optional signals.
       add_test(NAME linuxcnc_edge_rotation_g0759 COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

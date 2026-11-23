@@ -29,6 +29,7 @@ import AppIcon from './AppIcon.vue'
 import MaterialProbeControls from './MaterialProbeControls.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import MachineFeedback from './MachineFeedback.vue'
+import MdiMacros from './MdiMacros.vue'
 import MotionPad from './MotionPad.vue'
 import PowerFeedControls from './PowerFeedControls.vue'
 import SavedPositions from './SavedPositions.vue'
@@ -604,6 +605,7 @@ function coolant(which: 'flood' | 'mist'): void {
             @keydown.up.prevent="recallMdi(-1)"
             @keydown.down.prevent="recallMdi(1)"
           />
+          <MdiMacros />
           <button v-tooltip="mdiBlock ?? 'Run this command'" class="btn primary" type="submit" :aria-disabled="mdiBlock !== null || mdiText.trim() === ''">
             Run
           </button>

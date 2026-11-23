@@ -510,6 +510,12 @@ auto check_configuration(const Options& options) -> int {
            !hal.connected("coffeecnc.reference-mark-y") ||
            !hal.connected("coffeecnc.reference-mark-z"))
     std::cout << "  (a link to coffeecnc.reference-mark-x/y/z was not found in the inspected HAL)";
+  std::string macro_labels;
+  for (const auto& macro : config->macros)
+    macro_labels += std::format("{}{}", macro_labels.empty() ? "" : ", ", macro.label);
+  std::cout << "\n  Macros                       "
+            << (config->macros.empty() ? std::string("off  ([COFFEECNC] MACRO = <label> | <MDI block>)")
+                                       : std::format("{}  ({})", config->macros.size(), macro_labels));
   std::cout << "\nSee /usr/share/coffeecnc/coffeecnc.ini.example for every key.\n";
   return hal.postgui_error ? 1 : 0;
 }

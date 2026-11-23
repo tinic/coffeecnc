@@ -68,6 +68,14 @@ FIXED_SETTER = no
 # holds an absolute path, else ~/.local/share/coffeecnc. A path that is not absolute is not
 # used: nothing is saved then, and the panel says why.
 #DATA_DIRECTORY = /var/lib/coffeecnc
+# Macro buttons in the MDI card of Manual: MACRO = <label> | <MDI block>, one line for each
+# macro, at most 12. A label has at most 24 characters and is unique. The block is one MDI line of
+# at most 254 bytes. The panel shows the block and runs it after a confirmation, with the same
+# rules as a typed MDI command. For more steps, write a subroutine file and call it: the file
+# <name>.ngc must be in [DISPLAY] PROGRAM_PREFIX or in a directory of [RS274NGC] SUBROUTINE_PATH,
+# else coffeecnc does not start. Without MACRO lines the panel shows no macro button.
+#MACRO = Park | G53 G0 Z0
+#MACRO = Clamp check | O<clamp> call
 
 [HAL]
 # Run by coffeecnc with halcmd once its HAL component exists; a path relative to the INI

@@ -233,7 +233,7 @@ describe('backend sentences', () => {
   const files = Object.entries(sources).map(([path, raw]) => [path.split('/').at(-1) ?? path, raw] as const)
 
   it('reads every listed source', () => {
-    expect(files.length).toBe(22)
+    expect(files.length).toBe(24)
   })
 
   for (const [file, raw] of files) {

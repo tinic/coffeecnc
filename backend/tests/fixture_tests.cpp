@@ -519,6 +519,7 @@ auto variants(const Json& message) -> std::set<std::string> {
       add("role", file.at("role").get<std::string>());
       add("change", file.at("change").get<std::string>());
       add("symlink", file.at("symlink").get<bool>() ? "true" : "false");
+    }
   } else if (type == "diagnostics") {
     for (const auto& input : message.at("inputs")) {
       add("state", input.at("state").get<std::string>());

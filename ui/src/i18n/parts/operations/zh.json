@@ -28,6 +28,8 @@
       "bore": "螺旋镗孔",
       "circularPocket": "圆形型腔",
       "rectangularPocket": "矩形型腔",
+      "slot": "槽 / 键槽",
+      "slotSetup": "请选用适合进刀方式的立铣刀。设置槽长，使开放端位于毛坯边缘，并在边缘之外留出刀具行程。",
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
@@ -79,6 +81,13 @@
       "cornerRadius": "圆角半径",
       "toolDiameter": "刀具表中的刀具直径",
       "numberOfHoles": "孔数",
+      "slotAxis": "轴",
+      "slotEnds": "端部",
+      "slotLength": "长度",
+      "slotWidth": "宽度",
+      "slotEntry": "进刀",
+      "slotAngle": "最大斜坡角度",
+      "slotEntryFeed": "进刀进给",
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
@@ -108,6 +117,12 @@
       "grid": "网格",
       "boltCircle": "圆周分布",
       "g81": "G81 钻孔",
+      "slotClosed": "两端封闭",
+      "slotLow": "− 端开放",
+      "slotHigh": "+ 端开放",
+      "slotBoth": "两端开放",
+      "slotRamp": "斜坡",
+      "slotPlunge": "垂直",
       "g83": "G83 啄钻"
     },
     "check": {
@@ -141,6 +156,13 @@
       "columnSpacing": "列间距不能为零。",
       "rowSpacing": "行间距不能为零。",
       "retractAboveClearance": "退刀高度不能高于安全高度。",
+      "slotToolWidth": "槽宽必须至少等于刀具直径（{diameter}）。",
+      "slotTravel": "槽长必须大于槽宽，并为刀具留出行程。",
+      "slotOpenTravel": "要容纳封闭端，槽长必须至少为槽宽的一半。",
+      "slotAngle": "斜坡角度必须大于 0° 且小于 90°。",
+      "slotPrecision": "请增大进给、深度、退刀高度或每刀深度，使参数符合程序精度。",
+      "slotRampRoom": "槽长不足以使用此进刀角度。请增大角度或选择垂直进刀。",
+      "slotMoveCount": "槽加工会生成过多移动。请增大每刀深度或斜坡角度。",
       "noHole": "没有要钻的孔。"
     }
   }

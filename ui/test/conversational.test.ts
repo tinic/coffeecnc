@@ -10,6 +10,7 @@ import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
 import { chainOperations, number, type Generated } from '../src/conversational/program'
+import { slot, type Slot } from '../src/conversational/slot'
 import { splitLines } from '../src/sim/files'
 import { newModal, previewProgram } from '../src/sim/gcode'
 
@@ -389,6 +390,57 @@ describe('contours', () => {
       'The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.')
     expect(errors(contour({ ...circular, shape: 'rectangle', inside: true, width: 40, height: 35, corner: 4 }))).toContain(
       'An inside corner radius must be greater than the cutter radius (5).')
+  })
+})
+
+describe('slots and keyways', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+    { number: 2, pocket: 2, length: 40, diameter: 6.35, comment: '' },
+  ]
+  const closed = { ...mm, along: 'x', ends: 'closed', x: 20, y: 10, length: 50, width: 16,
+    depth: 3.7, depthPerPass: 2, angle: 1, plunge: false, entryFeed: 120 } as const satisfies Slot
+  const open = { ...inch, along: 'y', ends: 'high', x: 0.2, y: 0.5, length: 1.5, width: 0.375,
+    depth: 0.1, depthPerPass: 0.05, angle: NaN, plunge: false, entryFeed: 4 } as const satisfies Slot
+
+  it('ramps a closed slot within the maximum angle and sweeps both rounded ends at every layer', () => {
+    const program = text(slot(closed))
+    expect(program).toContain('G0 X3 Y10\nG1 Z0 F120')
+    const rampZ = [...program.matchAll(/^G1 X(?:3|37) Y10 Z(-[\d.]+)(?: F120)?$/gm)].map((match) => Number(match[1]))
+    expect(rampZ).toHaveLength(8)
+    rampZ.forEach((z, index) => {
+      expect(Math.abs(z - (rampZ[index - 1] ?? 0))).toBeLessThanOrEqual(34 * Math.tan(Math.PI / 180))
+    })
+    expect(rampZ.at(-1)).toBe(-3.7)
+    expect(program.match(/^G3 X3 Y7 I0 J-3$/gm)).toHaveLength(2)
+    expect(program.match(/^G3 X37 Y13 I0 J3$/gm)).toHaveLength(2)
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('starts outside the chosen stock edge and rotates its arcs onto the Y axis in inch', () => {
+    const program = text(slot(open))
+    expect(program).toContain('G0 X0.2 Y1.3751\nG1 Z-0.05 F4')
+    expect(program).toContain('G1 X0.2 Y-0.0625 F24')
+    expect(program).not.toMatch(/^G1 X0\.2 Y1\.3751$/m)
+    expect(program).toContain('G3 X0.1375 Y1.3751 I-0.0625 J0')
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('allows short open slots and checks that a remaining closed end fits', () => {
+    const both = slot({ ...closed, ends: 'both', length: 5, width: 16 })
+    const one = slot({ ...closed, ends: 'low', length: 10, width: 16 })
+    for (const made of [both, one])
+      expect(previewProgram(newModal(tools), splitLines(text(made)), false, 1).error).toBeNull()
+    expect(errors(slot({ ...closed, ends: 'low', length: 5, width: 16 }))[0]).toContain('half the slot width')
+  })
+
+  it('uses a centre-line pass for a tool-width keyway and rejects unmachinable dimensions', () => {
+    const program = text(slot({ ...closed, width: 10, plunge: true }))
+    expect(program).not.toMatch(/^G3 /m)
+    expect(program).toContain('G1 Z-1.85 F120\nG1 X40 Y10 F600')
+    expect(errors(slot({ ...closed, width: 9 }))[0]).toContain('at least the tool diameter')
+    expect(errors(slot({ ...closed, length: 15 }))[0]).toContain('longer than it is wide')
+    expect(errors(slot({ ...closed, angle: 0.00001 }))[0]).toContain('too short for this ramp angle')
   })
 })
 

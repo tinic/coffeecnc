@@ -136,9 +136,11 @@ const examples: Examples = {
   jog_paused_z: { id: 35, type: 'jog_paused_z', distance: 1 },
   save_program: { id: 36, type: 'save_program', path: '/home/cnc/nc_files/part.ngc', text: 'G21\nG1 X12 F450\nM2\n', stamp: '9f6b1c2e04d3a587' },
   restore_offset: { id: 37, type: 'restore_offset', entry: 10 },
-  backup: { id: 38, type: 'backup', directory: '/media/cnc/STICK' },
-  check_restore: { id: 39, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
-  restore: { id: 40, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
+  set_work_rotation: { id: 38, type: 'set_work_rotation', wcs: 2, rotation_xy: -12.5 },
+  clear_g92: { id: 39, type: 'clear_g92' },
+  backup: { id: 40, type: 'backup', directory: '/media/cnc/STICK' },
+  check_restore: { id: 41, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
+  restore: { id: 42, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

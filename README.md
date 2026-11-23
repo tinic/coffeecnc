@@ -101,9 +101,9 @@ Set a port in the machine's INI file to enable the read-only screen when CoffeeC
 REMOTE_PORT = 8787
 ```
 
-From a device on the home LAN, open `http://<machine-hostname>:8787` or `http://<machine-ipv4>:8787`. The viewer shows live coordinates, machine state, the loaded program, its toolpath and messages. It serves up to eight viewers with HTTP and WebSocket, without sign-in. Leave the key out or set it to `0` to disable the listener.
+From a device on the home LAN, open `http://<machine-hostname>:8787`, `http://<machine-ipv4>:8787`, or `http://[<machine-ipv6>]:8787`. The viewer shows live coordinates, machine state, the loaded program, its toolpath and messages. It also previews a STEP file with the same base name beside the loaded program, up to 25 MiB. The gear opens theme and language settings for this browser. It serves up to eight simultaneous viewers with HTTP and WebSocket, without sign-in. Leave the key out or set it to `0` to disable the listener.
 
-The viewer accepts the machine's hostname, its short name and `<short-name>.local`, and names from the system DNS search domains that resolve to the machine. For a custom DNS alias, add `REMOTE_HOSTS = mill.example.local` under `[COFFEECNC]`. Separate multiple hostnames with spaces or commas and leave out the port.
+The viewer accepts the machine's hostname, its short name and `<short-name>.local`, and names from the system DNS search domains that resolve to the machine. It refreshes discovery after address changes such as a DHCP lease. For a custom DNS alias, add `REMOTE_HOSTS = mill.example.local` under `[COFFEECNC]`. Separate multiple hostnames with spaces or commas and leave out the port.
 
 ## Build from source
 

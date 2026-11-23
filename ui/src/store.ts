@@ -191,6 +191,10 @@ export function describeCommand(command: CommandBody): string {
       return `Select ${wcsName(command.wcs)}`
     case 'set_work_offset':
       return `Set ${wcsName(command.wcs)} XYZ origins`
+    case 'set_work_rotation':
+      return `Set ${wcsName(command.wcs)} XY rotation`
+    case 'clear_g92':
+      return 'Clear G92/G52 shift'
     case 'plan_restart':
       return `Plan restart at line ${String(command.line)}`
     case 'start_restart':

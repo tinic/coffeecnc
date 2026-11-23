@@ -7,6 +7,8 @@ export interface WorkOffsetRow {
   rotation_xy: number | null
   active: boolean
   stale: boolean
+  /** A known value the controller may have changed since it was read (`current: false`). */
+  unconfirmed: boolean
 }
 
 function validOffset(value: unknown): value is Vec3 {
@@ -33,6 +35,7 @@ export function workOffsetRows(offsets: WorkOffsets | null, status: Status | nul
       rotation_xy: known ? system.rotation_xy : null,
       active: fresh && status.offsets.wcs === wcs,
       stale: known && !fresh,
+      unconfirmed: known && fresh && system.current === false,
     }
   })
 }

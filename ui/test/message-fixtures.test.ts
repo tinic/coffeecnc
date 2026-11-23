@@ -643,7 +643,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 2,
@@ -653,7 +654,8 @@ const examples = [
           -100
         ],
         "rotation_xy": 15,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 3,
@@ -663,7 +665,8 @@ const examples = [
           0
         ],
         "rotation_xy": -90,
-        "available": true
+        "available": true,
+        "current": false
       },
       {
         "wcs": 4,
@@ -673,7 +676,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 5,
@@ -683,7 +687,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 6,
@@ -693,7 +698,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 7,
@@ -703,7 +709,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 8,
@@ -713,7 +720,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 9,
@@ -723,7 +731,8 @@ const examples = [
           3
         ],
         "rotation_xy": 0,
-        "available": true
+        "available": true,
+        "current": true
       }
     ]
   },
@@ -739,7 +748,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 2,
@@ -749,7 +759,8 @@ const examples = [
           -100
         ],
         "rotation_xy": 15,
-        "available": true
+        "available": true,
+        "current": true
       },
       {
         "wcs": 3,
@@ -759,7 +770,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 4,
@@ -769,7 +781,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 5,
@@ -779,7 +792,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 6,
@@ -789,7 +803,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 7,
@@ -799,7 +814,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 8,
@@ -809,7 +825,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       },
       {
         "wcs": 9,
@@ -819,7 +836,8 @@ const examples = [
           0
         ],
         "rotation_xy": 0,
-        "available": false
+        "available": false,
+        "current": false
       }
     ]
   },

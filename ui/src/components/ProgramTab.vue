@@ -290,7 +290,7 @@ async function showFailure(): Promise<void> {
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? t('program.tab.ncProgram') : t('program.tab.toolpathPreview') }}</span>
           <div class="scene-actions">
-            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
+            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" class="tone-control" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
           </div>
         </header>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>{{ t('program.tab.partial', { count: program.lines.length }) }}</span></div>
@@ -381,33 +381,37 @@ async function showFailure(): Promise<void> {
 
 <style scoped>
 .program { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; }
-.workspace-card { display: grid; grid-template-columns: minmax(0, 1fr) 292px; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.workspace-card { display: grid; grid-template-columns: minmax(0, 1fr) 292px; flex: 1; min-height: 0; border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .scene { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
-.scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
-.scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
+.scene-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 6px 12px 6px 18px; gap: 4px 12px; flex: none; }
+.scene-title { display: flex; align-items: center; gap: 8px; font-size: var(--type-body); font-weight: 600; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
-.program-check, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check, .breakpoint-chip { min-height: var(--touch); padding: 5px 10px; white-space: nowrap; font-size: var(--type-sm); }
 .breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.program-check.ready { color: var(--go); }
-.program-check.blocked { color: var(--stop); }
-.program-check.review:not(.blocked) { color: var(--warn); }
-.view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
+.program-check.ready { color: var(--go); background: var(--go-soft); }
+.program-check.blocked { color: var(--stop); background: var(--stop-soft); }
+.program-check.review:not(.blocked) { color: var(--warn); background: var(--warn-soft); }
+.view-switch { display: flex; align-items: center; gap: 3px; }
+.view-switch button { min-width: var(--touch); min-height: var(--touch); border: 0; border-radius: 7px; padding: 0 12px; font-size: var(--type-body); font-weight: 600; color: var(--text-dim); background: none; cursor: pointer; }
+.view-switch button:hover { background: var(--control-hover); }
+.view-switch button:active { background: var(--control-active); }
+.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
-.inspector { display: flex; flex-direction: column; min-height: 0; padding: 20px; border-left: 1px solid var(--line); overflow-y: auto; }
-.panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
+.inspector { display: flex; flex-direction: column; min-height: 0; }
+.panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: var(--type-md); font-weight: 600; letter-spacing: -.15px; }
 .sections { display: flex; flex-direction: column; gap: 5px; margin: 0 -8px 14px; }
-.section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; height: 36px; padding: 0 10px; font-size: 12px; }
+.section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; min-height: var(--touch); padding: 0 10px; font-size: var(--type-sm); }
 .section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
-.section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-dim); font-size: 11px; flex: none; }
-.section[aria-pressed=true] .section-number { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 4px; }.section-text strong { font-weight: 500; font-size: 13px; }.section-text small { font-size: 11px; color: var(--text-dim); }
-.context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
+.section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-sunken); color: var(--text-dim); font-size: var(--type-sm); flex: none; }
+.section[aria-pressed=true] .section-number { background: var(--panel); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 3px; }.section-text strong { font-weight: 600; font-size: var(--type-body); }.section-text small { font-size: var(--type-sm); color: var(--text-dim); }
+.context-note, .quiet { margin: 15px 0 0; font-size: var(--type-sm); color: var(--text-dim); }
 .status-row { flex: none; min-height: 20px; display: flex; justify-content: flex-end; align-items: center; gap: 20px; font-size: 12px; }
 .status-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-row > .mono { font-size: 11px; color: var(--text-dim); }
+.status-row > .mono { font-size: var(--type-sm); color: var(--text-dim); }
 .line-count { text-align: right; }
 .run-time { text-align: center; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -425,8 +429,8 @@ async function showFailure(): Promise<void> {
 .picked-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--text); }
 .picked-close { flex: none; min-width: 36px; padding: 0; }
 .stopped-at .btn { height: 36px; }.dismiss-stop { min-width: 36px; padding: 0; }
-@media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
-.inspector { padding: 0; overflow: hidden; }
+@media (max-height: 850px) { .program { gap: 10px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
+.inspector { overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }
 .inspector-body > * { flex-shrink: 0; }
 @media (max-height: 850px) { .inspector-body { padding: 14px 20px; } }

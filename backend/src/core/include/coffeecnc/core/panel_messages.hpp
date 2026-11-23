@@ -236,6 +236,10 @@ struct WorkSystem {
   // Whether offset and rotation are known. False: they are placeholders, zero, and not to be
   // shown. Always sent.
   bool available{};
+  // Whether a known value is known to be the one in force: the active system on a live link,
+  // and an inactive one read from the interpreter after the last thing it ran. False for a
+  // value the interpreter may have changed since it was read. Always sent.
+  bool current{};
   friend auto operator==(const WorkSystem&, const WorkSystem&) -> bool = default;
 };
 

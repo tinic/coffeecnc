@@ -399,6 +399,22 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
               !axis_state(s, Axis::x) || !axis_state(s, Axis::y) || !axis_state(s, Axis::z))
             return reject("Provide G54 through G59.3 and finite XYZ offsets.");
           return idle(s, TaskMode::mdi, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, SetWorkRotation>) {
+          if (s.requested_tool)
+            return reject("Finish the tool change before editing work origins.");
+          if (c.wcs < 1 || c.wcs > 9 || !std::isfinite(c.degrees) ||
+              std::abs(c.degrees) > max_work_rotation)
+            return reject("Provide G54 through G59.3 and an XY rotation from -360 to 360 degrees.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
+        } else if constexpr (std::is_same_v<T, ClearG92>) {
+          if (s.requested_tool)
+            return reject("Finish the tool change before clearing the G92/G52 shift.");
+          // G92.1 clears the A, B and C shift as well, which the panel neither shows in the
+          // review nor records in the offset history: not offered on such a machine.
+          if (std::ranges::any_of(s.rotary_axes, [](const AxisState& a) -> bool { return a.enabled; }))
+            return reject("On a machine with A, B or C axes, clear the G92/G52 shift with G92.1 "
+                          "in MDI: it clears their shift too.");
+          return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, RestoreOffset>) {
           // G10 L2, G52 or G10 L1 through MDI: the conditions of the other offset edits.
           if (s.requested_tool)

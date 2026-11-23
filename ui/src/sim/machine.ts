@@ -215,6 +215,8 @@ export class SimMachine {
   private toolsKey = ''
   private toolRevision = 0
   private offsetsKey = ''
+  /** A program ran and the mode has not left auto since. */
+  private ranInAuto = false
   private offsetsRevision = 0
   private previewKey = ''
   private previewBlockDelete = false
@@ -243,7 +245,7 @@ export class SimMachine {
     this.modal.offsets[0] = [150, 60, -160]
     this.modal.offsets[1] = [150, 160, -160]
     this.toolsKey = JSON.stringify(this.modal.tools)
-    this.offsetsKey = JSON.stringify([this.modal.offsets, this.modal.rotations])
+    this.offsetsKey = JSON.stringify([this.modal.offsets, this.modal.rotations, this.modal.wcs, true])
     this.syncModal()
     this.checkPreview()
   }
@@ -462,8 +464,20 @@ export class SimMachine {
     })
   }
 
+  /**
+   * As the native adapter reads them from LinuxCNC's parameter file: an inactive system is
+   * current only once the interpreter was synchronised after the last thing it ran, which
+   * LinuxCNC refuses in auto mode. So after a program it is not current until the mode
+   * leaves auto; the active system always is.
+   */
+  private inactiveCurrent(): boolean {
+    if (this.exec?.source === 'program') this.ranInAuto = true
+    else if (this.mode !== 'auto') this.ranInAuto = false
+    return this.exec === null && !this.ranInAuto
+  }
+
   private checkOffsets(): void {
-    const key = JSON.stringify([this.modal.offsets, this.modal.rotations])
+    const key = JSON.stringify([this.modal.offsets, this.modal.rotations, this.modal.wcs, this.inactiveCurrent()])
     if (key !== this.offsetsKey) {
       this.offsetsKey = key
       this.offsetsRevision += 1
@@ -489,6 +503,7 @@ export class SimMachine {
       systems: this.modal.offsets.map((offset, index) => ({
         wcs: index + 1,
         available: true,
+        current: index + 1 === this.modal.wcs || this.inactiveCurrent(),
         offset: [...offset],
         rotation_xy: this.modal.rotations[index] ?? 0,
       })),
@@ -1161,6 +1176,19 @@ export class SimMachine {
         const [x, y, z] = command.offset
         return this.internal(`G10 L2 P${String(command.wcs)} X${decimal(x)} Y${decimal(y)} Z${decimal(z)}`)
       }
+      case 'set_work_rotation': {
+        if (!Number.isInteger(command.wcs) || command.wcs < 1 || command.wcs > 9 ||
+            !Number.isFinite(command.rotation_xy) || Math.abs(command.rotation_xy) > 360) return reject('Invalid XY rotation')
+        const blocked = this.offsetCommand('set an XY rotation')
+        if (blocked !== null) return blocked
+        const degrees = command.rotation_xy.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })
+        return this.internal(`G10 L2 P${String(command.wcs)} R${degrees}`)
+      }
+      case 'clear_g92': {
+        const blocked = this.offsetCommand('clear the G92/G52 shift')
+        if (blocked !== null) return blocked
+        return this.internal('G92.1')
+      }
       case 'tool_touch_off': {
         if (!Number.isFinite(command.value)) {
           return reject('Touch-off value is not a number')
@@ -1782,7 +1810,8 @@ export class SimMachine {
 /** The offset history's name for a panel command that can change offsets. */
 function historySource(command: ToMachine): HistorySource | null {
   if (command.type === 'touch_off') return command.origin ?? 'touch_off'
-  if (command.type === 'set_work_offset') return 'work_offset_table'
+  if (command.type === 'set_work_offset' || command.type === 'set_work_rotation' ||
+      command.type === 'clear_g92') return 'work_offset_table'
   if (command.type === 'tool_touch_off') return 'tool_touch_off'
   if (command.type === 'set_tool' || command.type === 'remove_tool') return 'tool_table'
   return command.type === 'mdi' ? 'mdi' : null

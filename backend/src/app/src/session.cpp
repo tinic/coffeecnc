@@ -72,7 +72,8 @@ auto history_source(const Command& command) -> std::optional<HistorySource> {
           return c.origin == TouchOrigin::zero   ? HistorySource::zero
                  : c.origin == TouchOrigin::half ? HistorySource::half
                                                  : HistorySource::touch_off;
-        } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
+        } else if constexpr (std::is_same_v<T, SetWorkOffset> || std::is_same_v<T, SetWorkRotation> ||
+                             std::is_same_v<T, ClearG92>) {
           return HistorySource::work_offset_table;
         } else if constexpr (std::is_same_v<T, ToolTouchOff>) {
           return HistorySource::tool_touch_off;
@@ -281,6 +282,11 @@ auto starts_jog(const Command& command) -> bool {
   if (const auto* jog = std::get_if<Jog>(&command))
     return jog->held;
   return std::holds_alternative<JogStep>(command) || std::holds_alternative<JogPausedZ>(command);
+}
+
+auto idle_for_tool_measurement(const ControllerState& state) -> bool {
+  return state.link == Link::live && state.interp == InterpState::idle &&
+         state.mode == TaskMode::mdi && !state.requested_tool;
 }
 
 } // namespace
@@ -599,12 +605,16 @@ void Session::observe(const ControllerState& state, JogLease::Time now) {
     ++setter_datum_;
   const bool tool_changed = state.tool_in_spindle != status_.tool_in_spindle ||
                             state.tool_request != status_.tool_request;
+  // M61 can report the new tool before it reports idle MDI. Wake the measurement wait
+  // on the later transition too, even though the spindle and the HAL request are unchanged.
+  const bool measurement_ready =
+      idle_for_tool_measurement(state) && !idle_for_tool_measurement(status_);
   if (tool_changed)
     ++setter_tool_;
   status_ = state;
   status_at_ = now;
   have_status_ = true;
-  if (tool_changed)
+  if (tool_changed || measurement_ready)
     work_ready_.notify_all();
 }
 
@@ -1311,9 +1321,7 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   {
     std::unique_lock lock{mutex_};
     const auto loaded = [&] {
-      return status_.link == Link::live && status_.interp == InterpState::idle &&
-             status_.mode == TaskMode::mdi && !status_.requested_tool &&
-             status_.tool_in_spindle == tool;
+      return idle_for_tool_measurement(status_) && status_.tool_in_spindle == tool;
     };
     work_ready_.wait_for(lock, std::chrono::seconds{2}, [&] {
       return loaded() || !current(request);
@@ -1486,6 +1494,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<ToolChanged>(request.command) ||
       std::holds_alternative<SelectWcs>(request.command) ||
       std::holds_alternative<SetWorkOffset>(request.command) ||
+      std::holds_alternative<SetWorkRotation>(request.command) ||
+      std::holds_alternative<ClearG92>(request.command) ||
       std::holds_alternative<RestoreOffset>(request.command) ||
       std::holds_alternative<TouchOff>(request.command) ||
       std::holds_alternative<ToolTouchOff>(request.command) ||
@@ -1729,6 +1739,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             history_->written(*mark, c.wcs, {c.offset[0], c.offset[1], c.offset[2], std::nullopt},
                               clock().unix_time);
           return written;
+        } else if constexpr (std::is_same_v<T, SetWorkRotation>) {
+          // R alone: LinuxCNC keeps the XYZ of the system. Degrees in every unit mode.
+          auto written = mdi(request, "G10 L2 P" + std::to_string(c.wcs) + " R" + real(c.degrees));
+          if (mark && written.kind == StageKind::reply &&
+              written.reply.outcome == CommandOutcome::accepted)
+            history_->written(*mark, c.wcs, {std::nullopt, std::nullopt, std::nullopt, c.degrees},
+                              clock().unix_time);
+          return written;
+        } else if constexpr (std::is_same_v<T, ClearG92>) {
+          // G92 and G52 are one offset in LinuxCNC: G92.1 zeroes it, and the values G92.3 would
+          // bring back. The offset history records the change from the status and can restore it.
+          return mdi(request, "G92.1");
         } else if constexpr (std::is_same_v<T, TouchOff>) {
           // P0 is the active coordinate system.
           return mdi(request, std::string("G10 L20 P0 ") + letter(c.axis) + length(c.value, state));

@@ -342,6 +342,10 @@ export interface WorkOffsets {
     /** False means the numeric fields are placeholders, not usable coordinates. Older peers
      * omit this field and supply a complete table. New senders always set it explicitly. */
     available?: boolean
+    /** False: a known value that the controller may have changed since it was read (an
+     * inactive system read from LinuxCNC's parameter file before the interpreter ran
+     * something). Older peers omit it: their values are taken as current. */
+    current?: boolean
   }[]
 }
 
@@ -706,6 +710,16 @@ export interface SetWorkOffset extends CommandBase {
   wcs: number
   offset: Vec3
 }
+/** Sets the XY rotation of one work system in degrees, -360 to 360, keeping its XYZ (G10 L2 R). */
+export interface SetWorkRotation extends CommandBase {
+  type: 'set_work_rotation'
+  wcs: number
+  rotation_xy: number
+}
+/** Clears the G92/G52 shift, one offset in LinuxCNC (G92.1). Recorded in the offset history. */
+export interface ClearG92 extends CommandBase {
+  type: 'clear_g92'
+}
 /** Sets the work offset so the axis reads `value` at its present position (G10 L20). */
 export interface TouchOff extends CommandBase {
   type: 'touch_off'
@@ -859,6 +873,8 @@ export type ToMachine =
   | JogPausedZ
   | SaveProgram
   | RestoreOffset
+  | SetWorkRotation
+  | ClearG92
   | Backup
   | CheckRestore
   | Restore

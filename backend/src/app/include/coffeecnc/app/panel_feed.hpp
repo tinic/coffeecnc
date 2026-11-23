@@ -149,7 +149,8 @@ class PanelFeed {
 public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
   // Nonblocking, on the publisher thread. Also receives readings while the local page reloads.
-  using Mirror = std::function<void(std::span<const std::string>, std::span<const PanelRecord>, bool)>;
+  using Mirror = std::function<void(std::span<const std::string>, std::span<const PanelRecord>,
+                                    const Status&, bool)>;
   // Called on the publisher thread right after `hello` and the snapshots were handed to
   // `deliver` for that page: what must reach a page after its `hello` is sent from here.
   using SnapshotsSent = std::function<void(PageToken)>;

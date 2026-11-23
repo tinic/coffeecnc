@@ -116,6 +116,7 @@ const systems = computed(() => workOffsetRows(panel.workOffsets, status.value, p
 function offsetHint(system: WorkOffsetRow): string | undefined {
   if (system.offset === null) return t('tools.tab.offsetsUnavailable', { system: wcsName(system.wcs) })
   if (system.stale) return t('tools.tab.offsetsStale', { system: wcsName(system.wcs) })
+  if (system.unconfirmed) return t('tools.tab.offsetsUnconfirmed', { system: wcsName(system.wcs) })
   return undefined
 }
 const rotated = computed(() => systems.value.some((system) => system.rotation_xy !== null && system.rotation_xy !== 0))
@@ -169,8 +170,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
                 {{ tool.comment || defaultToolName(tool.number) }}
               </td>
               <td class="actions">
-                <button v-tooltip="editBlock ?? t('tools.tab.editToolHint', { number: tool.number })" class="btn edit-tool" type="button" :disabled="editBlock !== null" :aria-label="t('tools.tab.editToolLabel', { number: tool.number })" @click.stop="edit(tool)">{{ t('common.edit') }}</button>
-                <button v-tooltip="mdiBlock ?? t('tools.tab.loadToolHint', { number: tool.number })" class="btn load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="t('tools.tab.loadToolLabel', { number: tool.number })" @click.stop="openLoad(tool)">{{ t('tools.tab.load') }}</button>
+                <button v-tooltip="editBlock ?? t('tools.tab.editToolHint', { number: tool.number })" class="btn quiet edit-tool" type="button" :disabled="editBlock !== null" :aria-label="t('tools.tab.editToolLabel', { number: tool.number })" @click.stop="edit(tool)">{{ t('common.edit') }}</button>
+                <button v-tooltip="mdiBlock ?? t('tools.tab.loadToolHint', { number: tool.number })" class="btn quiet load-tool" type="button" :disabled="mdiBlock !== null" :aria-label="t('tools.tab.loadToolLabel', { number: tool.number })" @click.stop="openLoad(tool)">{{ t('tools.tab.load') }}</button>
               </td>
             </tr>
           </tbody>
@@ -184,6 +185,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
         <h2>{{ t('tools.tab.workOffsets') }}</h2>
         <span class="hint">{{ t('tools.tab.workOffsetsHint', { unit }) }}</span>
         <span v-if="systems.some(system => system.stale)" class="offset-history">{{ t('tools.tab.lastReported') }}</span>
+        <span v-else-if="systems.some(system => system.unconfirmed)" v-tooltip="t('tools.tab.unconfirmedHint')" class="offset-history unconfirmed-note">{{ t('tools.tab.unconfirmed') }}</span>
         <button v-if="panel.offsetHistory" v-tooltip="t('tools.tab.historyHint')" class="btn history" type="button" @click="historyFilter = 'all'"><AppIcon name="history" /><span>{{ t('tools.tab.history') }}</span></button>
       </div>
       <div class="scroll">
@@ -199,7 +201,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
             </tr>
           </thead>
           <tbody>
-            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
+            <tr v-for="system in systems" :key="system.wcs" class="offset-row" :class="{ loaded: system.active, unconfirmed: system.unconfirmed, editable: mdiBlock === null && panel.link === 'live' && status?.link === 'live' }" :tabindex="mdiBlock === null && panel.link === 'live' && status?.link === 'live' ? 0 : -1" :aria-label="t('tools.tab.editWorkOrigins', { system: wcsName(system.wcs) })" @click="editOffset(system.wcs)" @keydown.enter.self.prevent="editOffset(system.wcs)" @keydown.space.self.prevent="editOffset(system.wcs)">
               <td v-tooltip="offsetHint(system)" class="mono" :aria-label="offsetHint(system)">{{ wcsName(system.wcs) }}</td>
               <td v-for="(value, axis) in system.offset ?? [null, null, null]" :key="axis" class="num mono">{{ value === null ? '—' : formatLength(value, unit) }}</td>
               <td v-if="rotated" class="num mono">{{ system.rotation_xy === null ? '—' : system.rotation_xy === 0 ? '' : `${system.rotation_xy}°` }}</td>
@@ -208,14 +210,14 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
                 <button
                   v-else
                   v-tooltip="mdiBlock ?? t('tools.tab.selectHint', { system: wcsName(system.wcs) })"
-                  class="btn select"
+                  class="btn quiet select"
                   type="button"
                   :disabled="mdiBlock !== null || status?.link !== 'live'"
                   @click.stop="send({ type: 'select_wcs', wcs: system.wcs })"
                 >
                   {{ t('tools.tab.select') }}
                 </button>
-                <button class="btn select" type="button" :aria-label="t('tools.tab.editOrigins', { system: wcsName(system.wcs) })" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">{{ t('common.edit') }}</button>
+                <button class="btn quiet select" type="button" :aria-label="t('tools.tab.editOrigins', { system: wcsName(system.wcs) })" :disabled="mdiBlock !== null || panel.link !== 'live' || status?.link !== 'live'" @click.stop="editOffset(system.wcs)">{{ t('common.edit') }}</button>
               </td>
             </tr>
           </tbody>
@@ -254,8 +256,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 </template>
 
 <style scoped>
-.touched { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ok, #15803d); color: #fff; vertical-align: middle; }
-.touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
+.touched { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--go-soft); color: var(--go); vertical-align: middle; }
+.touched :deep(svg) { width: 18px; height: 18px; stroke-width: 3; }
 .tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -273,11 +275,9 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 
 .heading h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--type-body);
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text);
 }
 
 .spacer {
@@ -301,6 +301,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .load-tool, .edit-tool { min-width: 64px; min-height: 44px; padding-inline: 8px; white-space: nowrap; }
+.tool-row.selected .load-tool:not(:disabled, :hover, :active) { color: var(--accent); background: var(--panel-raised); }
 
 .scroll {
   flex: 1;
@@ -316,22 +317,20 @@ th {
   position: sticky;
   top: 0;
   padding: 6px;
-  border-bottom: 1px solid var(--line-strong);
-  background: var(--panel);
-  font-size: 11px;
+  background: var(--bg-sunken);
+  font-size: var(--type-sm);
   font-weight: 600;
-  letter-spacing: 0.07em;
   text-align: left;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text);
 }
 
 td {
   height: 47px;
   padding: 1px 6px;
-  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
+
+tr:nth-child(even):not(.loaded, .selected) td { background: color-mix(in srgb, var(--bg-sunken) 44%, var(--panel)); }
 
 .num {
   text-align: right;
@@ -340,7 +339,7 @@ td {
 td.comment {
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--type-body);
   line-height: 1.3;
   padding-block: 6px;
 }
@@ -364,7 +363,7 @@ tr.loaded td {
 
 .select {
   padding: 0 10px;
-  font-size: 13px;
+  font-size: var(--type-body);
   min-height: 44px;
 }
 .actions .chip + .btn { margin-left: 8px; }
@@ -377,6 +376,8 @@ tr.loaded td {
 }
 
 .offsets th, .offsets td { padding-left: 4px; padding-right: 4px; }
+.offset-row.unconfirmed td.num { color: var(--text-dim); font-style: italic; }
+.unconfirmed-note { cursor: help; }
 
 
 .entry {

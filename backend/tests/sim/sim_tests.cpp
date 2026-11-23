@@ -55,6 +55,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -172,7 +173,7 @@ public:
   // Where the runtime's status thread leaves its readings, and what the port counts: what the
   // executable's panel source is made on.
   const NmlStatusMailbox* mailbox{};
-  const NmlLoads* loads{};
+  NmlLoads* loads{};
   std::unique_ptr<Runtime> runtime;
   PreviewWorker* restart_preview{};
   PreviewEngine* restart_engine{};
@@ -5039,10 +5040,12 @@ public:
     return {"no_result", ""};
   }
   // The last `offset_history` the page was sent.
-  auto shown() -> Json {
+  auto shown() -> Json { return last("offset_history"); }
+  // The last message of this type the page was sent.
+  auto last(std::string_view type) -> Json {
     const std::lock_guard lock{mutex_};
     for (auto message = messages_.rbegin(); message != messages_.rend(); ++message)
-      if (message->at("type") == "offset_history")
+      if (message->at("type") == type)
         return *message;
     return nullptr;
   }
@@ -5313,6 +5316,303 @@ void offset_history(Rig& rig) {
         again.snapshot()->entries == kept && again.snapshot()->reason.empty(),
         std::format("entries={} reason={}", again.snapshot()->entries.size(),
                     word(again.snapshot()->reason)));
+  rig.start();
+}
+
+// The inactive work systems from LinuxCNC's parameter file: how soon a value is shown as
+// current after the panel's G10 L2 of an inactive system, a touch-off in another system, the
+// panel's MDI line and another client's MDI; and that after a program in auto mode it is shown,
+// not current, until task leaves auto mode.
+void work_offsets(Rig& rig) {
+  NmlPanelSource source{rig.config, *rig.mailbox, {}, {}, rig.loads};
+  std::array<WorkSystem, 9> shown{};
+  // Reads as the publisher does, every 50 ms, until `done`; how long that took.
+  const auto watch = [&](std::chrono::milliseconds timeout,
+                         const std::function<bool()>& done) -> std::optional<double> {
+    const auto start = Clock::now();
+    auto next = start;
+    const bool reached = rig.pump_until(timeout, [&]() -> bool {
+      if (Clock::now() < next)
+        return false;
+      next = Clock::now() + 50ms;
+      shown = source.read().work_systems;
+      return done();
+    });
+    return reached ? std::optional<double>{milliseconds(Clock::now() - start)} : std::nullopt;
+  };
+  const auto row = [&](int wcs) -> const WorkSystem& {
+    return shown.at(static_cast<std::size_t>(wcs) - 1);
+  };
+  const auto current = [&](int wcs, double x) -> bool {
+    return row(wcs).available && row(wcs).current && near(row(wcs).offset[0], x, 0.001);
+  };
+  const auto took = [](const std::optional<double>& time) -> std::string {
+    return time ? std::format("{:.0f}ms", *time) : std::string("never");
+  };
+  const auto settle = [&]() -> void { rig.pump_until(5s, [&]() -> bool { return rig.idle(); }); };
+  const auto text = [&](int wcs) -> std::string {
+    return std::format("G5{}x={:.4f} available={} current={}", wcs + 3, row(wcs).offset[0],
+                       row(wcs).available, row(wcs).current);
+  };
+
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54")"));
+  settle();
+  auto time = watch(3s, [&]() -> bool {
+    return std::ranges::all_of(shown, [](const WorkSystem& s) { return s.available && s.current; });
+  });
+  check("wcs_inactive_current_after_a_synch", time.has_value(), took(time));
+
+  const auto set = rig.send(R"("type":"set_work_offset","wcs":2,"offset":[11,12,13])");
+  time = watch(3s, [&]() -> bool {
+    return current(2, 11) && near(row(2).offset[1], 12, 0.001) && near(row(2).offset[2], 13, 0.001);
+  });
+  check("wcs_panel_g10_l2_inactive_current", set.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", set.outcome, took(time), text(2)));
+
+  // A touch-off in G56, then back to G54: G56 is shown with the value LinuxCNC had for it.
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":3)"));
+  settle();
+  const auto touch = rig.send(R"("type":"touch_off","axis":"x","value":5)");
+  settle();
+  const double touched = rig.status().g5x[0];
+  static_cast<void>(rig.send(R"("type":"select_wcs","wcs":1)"));
+  settle();
+  time = watch(3s, [&]() -> bool { return current(3, touched); });
+  check("wcs_touch_off_in_another_system_current",
+        touch.outcome == "accepted" && rig.status().wcs == 1 && time.has_value(),
+        std::format("{} {} live={:.4f} {}", touch.outcome, took(time), touched, text(3)));
+
+  const auto typed = rig.send(R"("type":"mdi","text":"G10 L2 P4 X21")");
+  time = watch(3s, [&]() -> bool { return current(4, 21); });
+  check("wcs_panel_mdi_current", typed.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", typed.outcome, took(time), text(4)));
+
+  const auto printed = all_output_of(
+      "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MDI); "
+      "c.wait_complete(); c.mdi(\"G10 L2 P5 X31\"); c.wait_complete(); print(\"outside=sent\")'");
+  time = watch(5s, [&]() -> bool { return current(5, 31); });
+  check("wcs_other_client_mdi_current",
+        printed.find("outside=sent") != std::string::npos && time.has_value(),
+        std::format("printed={} {} {}", word(printed), took(time), text(5)));
+
+  // A program, run by another client, that ends in auto mode with M2.
+  const auto written = rig.config.program_prefix + "/coffeecnc_wcs.ngc";
+  {
+    std::ofstream out{written};
+    out << "G21\nG10 L2 P6 X41\nM2\n";
+  }
+  const auto ran = all_output_of(std::format(
+      "python3 -c 'import linuxcnc, time; s = linuxcnc.stat(); c = linuxcnc.command(); "
+      "c.mode(linuxcnc.MODE_AUTO); c.wait_complete(); c.program_open(\"{}\"); c.wait_complete(); "
+      "c.auto(linuxcnc.AUTO_RUN, 0); c.wait_complete(); time.sleep(0.2); s.poll(); "
+      "[time.sleep(0.01) or s.poll() for _ in range(500) if s.interp_state != linuxcnc.INTERP_IDLE]; "
+      "s.poll(); print(\"ran=\" + str(s.interp_state == linuxcnc.INTERP_IDLE and s.task_mode == "
+      "linuxcnc.MODE_AUTO))'",
+      written));
+  static_cast<void>(watch(1500ms, []() -> bool { return false; }));
+  const bool held = row(6).available && !row(6).current;
+  check("wcs_not_current_after_a_program_in_auto", ran.find("ran=True") != std::string::npos && held,
+        std::format("printed={} {}", word(ran), text(6)));
+  const auto leave = rig.send(R"("type":"mdi","text":"G54")");
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_program_value_current_once_task_leaves_auto",
+        leave.outcome == "accepted" && time.has_value(),
+        std::format("{} {} {}", leave.outcome, took(time), text(6)));
+  settle();
+
+  // A stop queued while a synch is outstanding goes out at once: task is held so that the synch
+  // stays unanswered, and the abort must not wait for its echo (1 s) or completion (3 s).
+  const auto types = NmlPort::types();
+  const auto from = rig.port.writes().size();
+  std::optional<Clock::time_point> synch_at;
+  std::optional<Clock::time_point> abort_at;
+  Clock::time_point posted{};
+  RequestId abort{};
+  {
+    const FrozenTask frozen{rig.config.ini_file};
+    const auto done = rig.loads->synched.load();
+    rig.loads->synch_wanted.store((done ? done->count : 0) + 1);
+    const auto seen = [&](long type, std::optional<Clock::time_point>& at) -> bool {
+      for (const auto& write : written_since(rig, from))
+        if (write.type == type)
+          at = write.at;
+      return at.has_value();
+    };
+    static_cast<void>(rig.pump_until(500ms, [&]() -> bool { return seen(types.synch, synch_at); }));
+    posted = Clock::now();
+    abort = rig.post(R"("type":"abort")");
+    static_cast<void>(rig.pump_until(900ms, [&]() -> bool { return seen(types.abort, abort_at); }));
+  }
+  const auto stopped = rig.await(abort, 10s);
+  const double waited = abort_at ? milliseconds(*abort_at - posted) : -1;
+  time = watch(3s, [&]() -> bool { return current(6, 41); });
+  check("wcs_stop_does_not_wait_behind_a_synch",
+        synch_at.has_value() && abort_at.has_value() && waited < 100 && time.has_value(),
+        std::format("synch_written={} abort_written_after_ms={:.1f} abort={} current_again={}",
+                    synch_at.has_value(), waited, stopped.outcome, took(time)));
+  settle();
+}
+
+// The offset editor's XY rotation and G92/G52 clear against LinuxCNC: the blocks are taken, the
+// readout and the preview inputs follow the rotation, each edit is one history entry, Restore
+// undoes it, and a running program refuses both.
+void offset_edits(Rig& rig) {
+  if (std::ranges::any_of(rig.config.rotary_joints, [](const auto& joints) { return !joints.empty(); })) {
+    // G92.1 would also clear an A shift the review does not show: refused, nothing is sent.
+    static_cast<void>(rig.send(R"("type":"mdi","text":"G92 X3 A10")"));
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    const auto from = rig.port.writes().size();
+    const auto refused = rig.send(R"("type":"clear_g92")");
+    rig.pump(200ms);
+    const auto status = rig.status();
+    check("edits_g92_clear_refused_with_rotary_axes",
+          refused.outcome == "rejected" && refused.reason.starts_with("On a machine with A, B or C") &&
+              written_since(rig, from).empty() && !near(status.g92[0], 0),
+          std::format("{} {} writes={} g92_x={:.4f}", refused.outcome, refused.reason,
+                      written_since(rig, from).size(), status.g92[0]));
+    static_cast<void>(rig.send(R"("type":"mdi","text":"G92.1")"));
+    rig.pump_until(5s, [&]() -> bool { return rig.idle(); });
+    return;
+  }
+  auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("edits_tool_data", table.has_value(), table ? "tool.mmap" : table.error());
+  if (!table)
+    return;
+  const auto directory = rig.config.directory + "/offset-edits-data";
+  std::filesystem::remove_all(directory);
+  std::filesystem::create_directories(directory);
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G21 G90 G54 G92.1 G10 L2 P1 X0 Y0 Z0 R0")"));
+  static_cast<void>(rig.send(R"("type":"mdi","text":"G53 G0 X40 Y30")"));
+  rig.pump_until(10s, [&]() -> bool { return rig.idle(); });
+  rig.stop();
+  LocalToolModelFiles files;
+  {
+    OffsetHistoryStore history{files, directory};
+    HistorySession session{rig, *table, history};
+    const auto settle = [&]() -> void { rig.pump_until(5s, [&]() -> bool { return rig.idle(); }); };
+    const auto entry = [&](std::uint64_t after, HistoryTarget target) -> std::optional<HistoryEntry> {
+      std::optional<HistoryEntry> found;
+      rig.pump_until(5s, [&]() -> bool {
+        for (const auto& item : history.snapshot()->entries)
+          if (item.id > after && item.target == target)
+            found = item;
+        return found.has_value();
+      });
+      return found;
+    };
+    const auto newest = [&]() -> std::uint64_t {
+      const auto entries = history.snapshot()->entries;
+      return entries.empty() ? 0 : entries.front().id;
+    };
+    const auto context = [&]() -> std::uint64_t {
+      const auto status = session.last("status");
+      return status.is_null() ? 0 : status.at("preview_context").get<std::uint64_t>();
+    };
+    rig.pump_until(3s, [&]() -> bool { return !session.shown().is_null() && context() != 0; });
+    rig.pump(300ms);
+
+    // The active system: the readout turns with it, the preview context moves.
+    const auto before_context = context();
+    const auto before = newest();
+    const auto rotate = session.send(R"("type":"set_work_rotation","wcs":1,"rotation_xy":30)");
+    settle();
+    const auto rotated = entry(before, HistoryTarget::wcs);
+    rig.pump(200ms);
+    const auto status = rig.status();
+    // Machine (40, 30) in a frame turned 30° about the G54 origin (0, 0).
+    const double angle = std::numbers::pi / 6;
+    const double x = (40 * std::cos(angle)) + (30 * std::sin(angle));
+    const double y = (-40 * std::sin(angle)) + (30 * std::cos(angle));
+    const auto shown = session.last("status");
+    check("edits_rotation_active",
+          rotate.first == "accepted" && near(status.rotation_xy, 30, 1e-9) &&
+              near(status.work[0], x, 0.001) && near(status.work[1], y, 0.001) &&
+              near(shown.at("axes").at(0).at("work").get<double>(), x, 0.001) &&
+              context() > before_context && rotated && rotated->number == 1 &&
+              rotated->source == HistorySource::work_offset_table &&
+              rotated->changes.size() == 1 && rotated->changes[0].field == HistoryField::rotation_xy &&
+              near(value(rotated->changes[0].before), 0) && near(value(rotated->changes[0].after), 30),
+          std::format("{} {} rotation={:.4f} work={:.4f},{:.4f} expected={:.4f},{:.4f} context={}->{} {}",
+                      rotate.first, rotate.second, status.rotation_xy, status.work[0], status.work[1],
+                      x, y, before_context, context(), rotated ? change_text(*rotated) : "none"));
+
+    const auto undo = rotated ? session.send(std::format(R"("type":"restore_offset","entry":{})", rotated->id))
+                              : std::pair<std::string, std::string>{"no_entry", ""};
+    settle();
+    rig.pump(200ms);
+    check("edits_rotation_restored",
+          undo.first == "accepted" && near(rig.status().rotation_xy, 0, 1e-9) &&
+              near(rig.status().work[0], 40, 0.001),
+          std::format("{} {} rotation={:.4f}", undo.first, undo.second, rig.status().rotation_xy));
+
+    // An inactive system: written without selecting it, and zeroed.
+    const auto inactive = session.send(R"("type":"set_work_rotation","wcs":2,"rotation_xy":-12.5)");
+    settle();
+    const bool kept = rig.status().wcs == 1 && near(rig.status().rotation_xy, 0, 1e-9);
+    static_cast<void>(session.send(R"("type":"select_wcs","wcs":2)"));
+    settle();
+    const double g55 = rig.status().rotation_xy;
+    const auto zero = session.send(R"("type":"set_work_rotation","wcs":2,"rotation_xy":0)");
+    settle();
+    check("edits_rotation_inactive_and_zero",
+          inactive.first == "accepted" && kept && near(g55, -12.5, 1e-9) && zero.first == "accepted" &&
+              near(rig.status().rotation_xy, 0, 1e-9),
+          std::format("{} kept={} g55={:.4f} {} now={:.4f}", inactive.first, kept, g55, zero.first,
+                      rig.status().rotation_xy));
+    static_cast<void>(session.send(R"("type":"select_wcs","wcs":1)"));
+    settle();
+
+    // G92/G52: one shift, cleared with G92.1 and restored from the history.
+    static_cast<void>(session.send(R"("type":"mdi","text":"G92 X5 Y7")"));
+    settle();
+    rig.pump(OffsetHistoryStore::grace + 500ms);
+    const auto shift = rig.status().g92;
+    const auto before_clear = newest();
+    const auto clear = session.send(R"("type":"clear_g92")");
+    settle();
+    const auto cleared = entry(before_clear, HistoryTarget::g92);
+    const auto zeroed = rig.status().g92;
+    check("edits_g92_cleared",
+          clear.first == "accepted" && !near(shift[0], 0) && near(zeroed[0], 0) &&
+              near(zeroed[1], 0) && near(zeroed[2], 0) && cleared &&
+              cleared->source == HistorySource::work_offset_table &&
+              near(value(cleared->changes[0].before), shift[0]),
+          std::format("{} {} shift={:.4f},{:.4f} now={:.4f},{:.4f} {}", clear.first, clear.second,
+                      shift[0], shift[1], zeroed[0], zeroed[1], cleared ? change_text(*cleared) : "none"));
+    const auto back = cleared ? session.send(std::format(R"("type":"restore_offset","entry":{})", cleared->id))
+                              : std::pair<std::string, std::string>{"no_entry", ""};
+    settle();
+    check("edits_g92_restored",
+          back.first == "accepted" && near(rig.status().g92[0], shift[0]) &&
+              near(rig.status().g92[1], shift[1]),
+          std::format("{} {} g92={:.4f},{:.4f}", back.first, back.second, rig.status().g92[0],
+                      rig.status().g92[1]));
+    static_cast<void>(session.send(R"("type":"clear_g92")"));
+    settle();
+
+    // A program runs: both are refused, nothing is sent.
+    const auto dwell = rig.config.program_prefix + "/coffeecnc_dwell.ngc";
+    {
+      std::ofstream out{dwell};
+      out << "G4 P3\nM2\n";
+    }
+    const auto ran = all_output_of(std::format(
+        "python3 -c 'import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_AUTO); "
+        "c.wait_complete(); c.program_open(\"{}\"); c.wait_complete(); c.auto(linuxcnc.AUTO_RUN, 0); "
+        "print(\"started=1\")'",
+        dwell));
+    rig.pump_until(2s, [&]() -> bool { return rig.snapshot().interp != InterpState::idle; });
+    const auto busy_rotation = session.send(R"("type":"set_work_rotation","wcs":1,"rotation_xy":5)");
+    const auto busy_clear = session.send(R"("type":"clear_g92")");
+    check("edits_refused_while_running",
+          ran.find("started=1") != std::string::npos && busy_rotation.first == "rejected" &&
+              busy_clear.first == "rejected" &&
+              busy_clear.second == "Wait for the interpreter and motion to become idle." &&
+              near(rig.status().rotation_xy, 0, 1e-9),
+          std::format("{} {} / {} {}", busy_rotation.first, busy_rotation.second, busy_clear.first,
+                      busy_clear.second));
+    rig.pump_until(6s, [&]() -> bool { return rig.snapshot().interp == InterpState::idle; });
+  }
   rig.start();
 }
 
@@ -5622,7 +5922,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
          bool air_only, bool restart_only, bool preflight_only,
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
-         bool moves_only, bool macros_only, bool velocity_only) -> int {
+         bool moves_only, bool macros_only, bool velocity_only, bool wcs_only, bool edits_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -5676,7 +5976,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   auto port = NmlPort::connect(*config, &shared, &loads);
   check("nml_connect", port.has_value(), port ? config->nml_file : port.error());
   // One status channel for the runtime's status thread, one for this thread.
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   auto view = NmlStatusReader::connect(*config, &shared);
   check("nml_status_readers", reader.has_value() && view.has_value(),
@@ -5702,6 +6002,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   rig.loads = &loads;
   rig.pump(300ms);
   power(rig);
+  if (edits_only) {
+    homing(rig);
+    offset_edits(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (velocity_only) {
     homing(rig);
     velocity_limit(rig);
@@ -5733,6 +6039,12 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
   if (moves_only) {
     homing(rig);
     machine_moves(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
+  if (wcs_only) {
+    homing(rig);
+    work_offsets(rig);
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
@@ -5877,6 +6189,8 @@ auto main(int argc, char** argv) -> int {
   bool moves_only = false;
   bool macros_only = false;
   bool velocity_only = false;
+  bool wcs_only = false;
+  bool edits_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
       ini_file = argv[i + 1];
@@ -5901,6 +6215,8 @@ auto main(int argc, char** argv) -> int {
     moves_only = moves_only || std::string_view(argv[i]) == "machine-moves";
     macros_only = macros_only || std::string_view(argv[i]) == "macros";
     velocity_only = velocity_only || std::string_view(argv[i]) == "velocity-limit";
+    wcs_only = wcs_only || std::string_view(argv[i]) == "work-offsets";
+    edits_only = edits_only || std::string_view(argv[i]) == "offset-edits";
   }
   if (models_only && !ini_file.empty())
     return print_tool_models(ini_file);
@@ -5912,7 +6228,8 @@ auto main(int argc, char** argv) -> int {
           "restore-spindle-tool]");
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
-               history_only, rotary_only, probe_interlock_only, moves_only, macros_only, velocity_only);
+               history_only, rotary_only, probe_interlock_only, moves_only, macros_only, velocity_only,
+               wcs_only, edits_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

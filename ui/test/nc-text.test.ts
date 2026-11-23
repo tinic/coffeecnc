@@ -81,3 +81,46 @@ it('scrolls the last picked row above the line actions', async () => {
   expect(pane.get('.line-actions').text()).toContain('Restart from line 40')
   expect(scroller.element.scrollTop + scroller.element.clientHeight).toBe(contentHeight)
 })
+
+it('selects a line tapped on the path view, and reports the selection back', async () => {
+  const lines = Array.from({ length: 200 }, (_, i) => `G1 X${String(i)} F500`)
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(240)
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(lines.length * 24)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } })
+  vi.stubGlobal('ResizeObserver', class {
+    observe(): void { /* The viewport size is supplied by the test. */ }
+    disconnect(): void { /* No observer was scheduled. */ }
+  })
+  const pane = mount(NcText, { props: { lines, motionLine: 0, currentLine: 0, errorLine: 0, restartable: true } })
+  wrapper = pane
+  const scroller = pane.get<HTMLElement>('.scroller')
+  const exposed = pane.vm as unknown as { select: (line: number) => void }
+
+  exposed.select(150)
+  await nextTick()
+  await nextTick()
+  // In the middle of the view, with its line bar.
+  expect(scroller.element.scrollTop).toBe(Math.round(149.5 * 24 - 120))
+  expect(pane.get('.row.picked .text').text()).toBe('G1 X149 F500')
+  expect(pane.get('.line-actions').text()).toContain('Restart from line 150')
+  expect(pane.emitted('selection')?.at(-1)).toEqual([150, 150])
+
+  // A tap on a line of the text is reported too.
+  await pane.findAll('.row').find((row) => row.get('.number').text() === '148')?.get('.number').trigger('click')
+  expect(pane.emitted('selection')?.at(-1)).toEqual([148, 148])
+
+  // Beside the path: the selection goes.
+  exposed.select(0)
+  await nextTick()
+  expect(pane.find('.row.picked').exists()).toBe(false)
+  expect(pane.emitted('selection')?.at(-1)).toEqual([0, 0])
+
+  // Where lines cannot be picked (a program runs), the line is marked without actions.
+  await pane.setProps({ restartable: false })
+  exposed.select(20)
+  await nextTick()
+  expect(pane.get('.row.picked .text').text()).toBe('G1 X19 F500')
+  expect(pane.find('.line-actions').exists()).toBe(false)
+  expect(pane.emitted('selection')?.at(-1)).toEqual([20, 20])
+})

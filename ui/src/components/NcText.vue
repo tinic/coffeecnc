@@ -40,6 +40,8 @@ const emit = defineEmits<{
   lineEdit: [action: LineAction, first: number, last: number]
   undoLineEdit: []
   dismissLineEdit: []
+  /** The selected or marked lines, inclusive; 0, 0 for none. The path view highlights them. */
+  selection: [first: number, last: number]
 }>()
 
 /** Where each token starts in its line, so a tapped F or S word can be found again. */
@@ -55,16 +57,24 @@ const single = computed(() => picked.value > 0 && anchor.value === picked.value)
 const selectionStart = computed(() => Math.min(anchor.value, picked.value))
 const selectionEnd = computed(() => Math.max(anchor.value, picked.value))
 
+/** A line shown for a tap on the path while lines cannot be picked: highlighted, no actions. */
+const marked = ref(0)
+
 function clearSelection(): void {
-  anchor.value = picked.value = 0
+  anchor.value = picked.value = marked.value = 0
 }
 watch(() => props.lines, clearSelection)
 watch(canPick, (value) => { if (!value) clearSelection() })
 function pick(line: number): void {
   if (!canPick.value) return
+  marked.value = 0
   if (single.value && picked.value === line) clearSelection()
   else anchor.value = picked.value = line
 }
+watch([selectionStart, selectionEnd, marked], ([start, end, mark]) => {
+  if (start > 0) emit('selection', start, end)
+  else emit('selection', mark, mark)
+})
 function pickCode(event: MouseEvent, line: number): void {
   if (event.target instanceof Element && event.target.classList.contains('editable')) return
   if (document.getSelection()?.isCollapsed === false) return
@@ -199,7 +209,27 @@ function goTo(line: number): void {
   show(line)
 }
 
-defineExpose({ goTo })
+/**
+ * Selects `line` for a tap on the path view and scrolls it to the middle; 0 clears. Where lines
+ * cannot be picked, the line is only marked.
+ */
+function select(line: number): void {
+  if (drag !== null) cancelRange()
+  if (line <= 0 || line > props.lines.length) {
+    clearSelection()
+    return
+  }
+  goTo(line)
+  if (canPick.value) {
+    marked.value = 0
+    anchor.value = picked.value = line
+  } else {
+    anchor.value = picked.value = 0
+    marked.value = line
+  }
+}
+
+defineExpose({ goTo, select })
 
 function onScroll(): void {
   scrollTop.value = scroller.value?.scrollTop ?? 0
@@ -310,7 +340,7 @@ onBeforeUnmount(() => {
               motion: row.number === motionLine,
               current: row.number === currentLine && row.number !== motionLine,
               error: row.number === errorLine,
-              picked: row.number >= selectionStart && row.number <= selectionEnd,
+              picked: (row.number >= selectionStart && row.number <= selectionEnd) || row.number === marked,
               breakpoint: row.number === breakpointLine,
             }"
           >

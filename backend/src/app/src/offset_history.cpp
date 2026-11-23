@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -93,9 +95,13 @@ auto entry_from(const Json& value) -> HistoryEntry {
   entry.time = value.at("time").get<std::int64_t>();
   entry.source = parse(value.at("source"), sources);
   entry.target = parse(value.at("target"), targets);
-  if (!value.at("number").is_number_integer())
-    throw Damaged("a number is not an integer");
-  entry.number = value.at("number").get<int>();
+  // Valid numbers are 0 to 9 or a tool number. Checked before narrowing, so that 2^32 + 1 does
+  // not wrap to work system 1.
+  const auto& number = value.at("number");
+  if (!number.is_number_unsigned() ||
+      number.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+    throw Damaged("a number is not a small integer");
+  entry.number = static_cast<int>(number.get<std::uint64_t>());
   const bool numbered = entry.target == HistoryTarget::wcs ? entry.number >= 1 && entry.number <= 9
                         : entry.target == HistoryTarget::g92 ? entry.number == 0
                                                              : entry.number > 0;
@@ -106,6 +112,24 @@ auto entry_from(const Json& value) -> HistoryEntry {
     entry.changes.push_back({parse(change.at("field"), all_fields),
                              optional_finite(change.at("before")),
                              optional_finite(change.at("after"))});
+  // A restore writes each field with the code of the target: X, Y, Z and R of a work system,
+  // X, Y and Z of G52, Z and R of a tool. A field of another target would write the wrong value.
+  const auto belongs = [target = entry.target](HistoryField field) {
+    switch (target) {
+    case HistoryTarget::wcs:
+      return field != HistoryField::length && field != HistoryField::diameter;
+    case HistoryTarget::g92:
+      return std::ranges::contains(fields, field);
+    case HistoryTarget::tool:
+      return field == HistoryField::length || field == HistoryField::diameter;
+    }
+    return false;
+  };
+  for (auto change = entry.changes.begin(); change != entry.changes.end(); ++change)
+    if (!belongs(change->field) ||
+        std::ranges::contains(std::next(change), entry.changes.end(), change->field,
+                              &HistoryChange::field))
+      throw Damaged("a change does not belong to its target");
   if (!value.at("restores").is_null())
     entry.restores = counter(value.at("restores"));
   return entry;
@@ -148,8 +172,10 @@ void OffsetHistoryStore::load() {
     const auto& saved_entries = root.at("entries");
     entries.reserve(saved_entries.size());
     std::ranges::transform(saved_entries, std::back_inserter(entries), entry_from);
+    // Newest first, each id once.
     if (entries.size() > max_entries ||
-        !std::ranges::is_sorted(entries, std::ranges::greater{}, &HistoryEntry::id))
+        std::ranges::adjacent_find(entries, std::ranges::less_equal{}, &HistoryEntry::id) !=
+            entries.end())
       throw Damaged("the entries are not in order");
     const auto next = counter(root.at("next_id"));
     if (!entries.empty() && next <= entries.front().id)

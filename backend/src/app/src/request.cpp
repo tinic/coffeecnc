@@ -317,6 +317,14 @@ auto command(const Json& object) -> Command {
     }
     return SetWorkOffset{integer(object, "wcs"), values};
   }
+  if (type == "set_work_rotation") {
+    fields(object, {"id", "type", "wcs", "rotation_xy"});
+    return SetWorkRotation{integer(object, "wcs"), number(object, "rotation_xy")};
+  }
+  if (type == "clear_g92") {
+    fields(object, {"id", "type"});
+    return ClearG92{};
+  }
   if (type == "tool_touch_off") {
     fields(object, {"id", "type", "value"});
     return ToolTouchOff{number(object, "value")};

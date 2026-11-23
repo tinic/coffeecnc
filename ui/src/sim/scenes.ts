@@ -16,6 +16,7 @@
 //   error          upstream sample started; the interpreter error stopped it
 //   limit          program stopped by a soft limit
 //   stale          as running, then the link goes silent
+//   shift          G55 set and rotated 15 degrees, and a G92 shift
 //   probe          T99 above simulated stock, or pre-positioned by the setup parameter
 //   offsets        several work systems set, then a program in auto mode that wrote G56
 
@@ -41,6 +42,7 @@ export const sceneNames = [
   'error',
   'limit',
   'stale',
+  'shift',
   'probe',
   'history',
   'offsets',
@@ -209,6 +211,14 @@ export function applyScene(sim: SimMachine, name: string, setup = 'top'): void {
       load(start.tool, start.position)
       break
     }
+    case 'shift':
+      // A rotated G55 and a G92 shift: what the work offset editor edits and clears.
+      d.homed()
+      d.send({ type: 'set_work_offset', wcs: 2, offset: [120, 80, -45] })
+      d.send({ type: 'set_work_rotation', wcs: 2, rotation_xy: 15 })
+      d.send({ type: 'mdi', text: 'G92 X2 Y-1.5' })
+      d.idle()
+      break
     case 'history':
       // Offset history entries of every kind the panel makes, and a restore of the first.
       d.homed()

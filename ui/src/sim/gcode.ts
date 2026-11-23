@@ -4,7 +4,7 @@
 // Supported subset:
 //   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40, G53,
 //   G80 G81 G83 (absolute distance mode; X Y Z R Q, sticky Z R Q) G98 G99,
-//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91, G92, G94,
+//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
 //   block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
@@ -303,6 +303,7 @@ const gGroups: Readonly<Record<number, string>> = {
   40: 'non-modal',
   100: 'non-modal',
   920: 'non-modal',
+  921: 'non-modal',
   530: 'machine coordinates',
   170: 'plane',
   200: 'units',
@@ -604,6 +605,9 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     if (!any) {
       throw new InterpError(line, 'G92 needs at least one axis word')
     }
+  } else if (has(921)) {
+    // G92.1: the G92/G52 shift and what G92.3 would restore are zero.
+    m.g92 = [0, 0, 0]
   }
 
   const explicit = ([0, 10, 20, 30, 800, 810, 830] as const).find((code) => has(code))

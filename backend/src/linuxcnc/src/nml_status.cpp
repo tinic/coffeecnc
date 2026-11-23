@@ -380,6 +380,10 @@ struct NmlStatusReader::Impl {
 
 void NmlStatusMailbox::put(const NmlStatus& status,
                            std::chrono::steady_clock::time_point read_at) {
+  if (loads_ != nullptr && status.controller.link == Link::live &&
+      (status.controller.interp != InterpState::idle || status.queued_mdi != 0 ||
+       !loads_->serials.ours(status.echo_serial)))
+    ++loads_->activity;
   const std::scoped_lock lock{mutex_};
   latest_ = TimedStatus{status, read_at};
 }

@@ -481,7 +481,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(port.error());
     return 1;
   }
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   if (!reader) {
     say(reader.error());

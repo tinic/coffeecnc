@@ -270,6 +270,18 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_sim_tests> offset-history)
         set_tests_properties(linuxcnc_offset_history_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # The inactive work systems from the parameter file, and when they are current.
+        add_test(NAME linuxcnc_work_offsets_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_work_offsets_${units}
+          $<TARGET_FILE:coffeecnc_sim_tests> work-offsets)
+        set_tests_properties(linuxcnc_work_offsets_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 450)
+        # When LinuxCNC writes the parameter file: the facts the reading above relies on.
+        add_test(NAME linuxcnc_parameter_file_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 90 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_parameter_file_${units}
+          ${PROJECT_SOURCE_DIR}/tests/sim/work_offset_facts.py)
+        set_tests_properties(linuxcnc_parameter_file_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 420)
         # The offset editor's XY rotation and G92/G52 clear, with history and refusals.
         add_test(NAME linuxcnc_offset_edits_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_offset_edits_${units}

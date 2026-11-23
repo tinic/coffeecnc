@@ -94,6 +94,16 @@ describe('confirmed work origins', () => {
     await press('Confirm G55 XYZ')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'set_work_offset', wcs: 2, offset: [1, 2, 3] })
   })
+  it('says when the origins shown may be out of date, and still edits them', async () => {
+    origin(1).current = false
+    await open(2)
+    expect(view().get('.hint.unconfirmed').text()).toContain('may have changed since')
+    // X, Y, Z and the XY rotation (#272).
+    expect(view().findAll('input').map((field) => (field.element as HTMLInputElement).value)).toEqual(['25.4', '-50.8', '3.5', '15'])
+    origin(1).current = true
+    await nextTick()
+    expect(view().find('.hint.unconfirmed').exists()).toBe(false)
+  })
   it('sets the XY rotation of a system only after review, keeping XYZ', async () => {
     await open(2)
     const field = view().get('[aria-label="G55 XY rotation"]')

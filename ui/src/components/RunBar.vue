@@ -263,7 +263,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
           </div>
         </div>
       </details>
-      <button class="btn stop-button" type="button" :aria-label="t('status.runBar.stopTip')" @click="closeConfirmation(); spindleConfirm = null; breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />{{ t('status.runBar.stop') }}</button>
+      <button class="btn danger stop-button" type="button" :aria-label="t('status.runBar.stopTip')" @click="closeConfirmation(); spindleConfirm = null; breakpointSelection = null; send({ type: 'abort' })"><AppIcon name="stop" />{{ t('status.runBar.stop') }}</button>
       <button v-if="!touchOff || primary.type === 'pause'" v-tooltip="primary.blocked ?? primary.label" class="btn primary main-action" type="button" :disabled="primary.blocked !== null || spindleConfirm !== null || (primary.type === 'run' && confirmation !== null)" @click="primaryAction"><AppIcon :name="primary.icon" />{{ primary.label }}</button>
     </div>
     <ModalDialog v-if="spindleConfirm" :title="t('status.runBar.spindleConfirmTitle')" size="small" fresh-gesture @close="spindleConfirm = null">
@@ -291,7 +291,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: 6px; font-size: 12px; color: var(--text-dim); }
 .paused-z-reading strong { color: var(--text); white-space: nowrap; }
 .paused-z .btn { min-width: 47px; height: 48px; padding: 0 8px; border-radius: 9px; }
-.stop-button { color: var(--stop); min-width: 88px; }
+.stop-button { min-width: 88px; font-weight: 650; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
 .more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: var(--touch); height: 48px; font-size: var(--type-lg); line-height: 1; color: var(--text-dim); }

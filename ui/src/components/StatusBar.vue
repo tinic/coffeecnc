@@ -94,6 +94,10 @@ const machineMessage = computed(() => {
   return reason
 })
 const notice = computed(() => panel.notice && translateMessage(panel.notice.text) === machineMessage.value ? null : panel.notice)
+const messageTone = computed(() => {
+  if (notice.value?.level === 'error' || (live.value && status.value?.machine === 'estop')) return 'error'
+  return notice.value?.level ?? (liftedAfterStop.value ? 'lift-warning' : machineMessage.value ? 'machine-message' : 'empty')
+})
 const state = computed(() => ({
   label: machineReason.value ?? t('status.statusBar.idle'),
   tone: !live.value || status.value?.machine === 'estop' ? 'stop' : machineReason.value ? 'warn' : 'go',
@@ -124,7 +128,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <img v-show="isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
     </div>
     <nav class="em-nav" :aria-label="t('status.statusBar.workspace')">
-      <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
+      <button v-for="[tab, label] in tabs" :key="tab" class="choice" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
@@ -138,7 +142,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
     </div>
     <div class="machine-controls">
       <button class="estop" type="button" :aria-label="t('status.statusBar.assertEstop')" @click="send({ type: 'set_machine', state: 'estop' })"><AppIcon name="stop" />{{ t('status.statusBar.estopButton') }}</button>
-      <button class="btn power-control" :class="{ go: status?.machine === 'off' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
+      <button class="btn power-control" :class="{ go: status?.machine === 'off', warning: status?.machine === 'estop' }" type="button" :disabled="powerBlocked" @click="power(powerTarget)"><AppIcon name="power" />{{ powerLabel }}</button>
       <details ref="menu" v-popover class="state-menu">
         <summary v-tooltip="t('status.statusBar.appMenu')" class="app-menu-toggle" :aria-label="t('status.statusBar.appMenu')"><AppIcon name="menu" /></summary>
         <div class="popover">
@@ -159,8 +163,8 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
     </div>
   </section>
   <section class="message-area" :aria-label="t('status.statusBar.messages')">
-    <div class="message-band" :class="notice?.level ?? (liftedAfterStop ? 'lift-warning' : machineMessage ? 'machine-message' : 'empty')">
-      <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ notice?.level === 'error' ? '!' : 'i' }}</span>
+    <div class="message-band" :class="messageTone">
+      <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ messageTone === 'error' || messageTone === 'lift-warning' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
         <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
@@ -180,7 +184,6 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: 7px; background: none; font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
 .em-nav button:hover { background: var(--control-hover); }
 .em-nav button:active { background: var(--control-active); transition-duration: 0s; }
-.em-nav button[aria-current] { background: var(--panel); color: var(--text); }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .connection { display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-dim); }
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
@@ -190,6 +193,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .estop:hover { background: #a51924; }.estop:active { box-shadow: none; transform: translateY(1px); }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .estop :deep(svg) { width: 22px; height: 22px; }
 .machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: var(--type-md); }
+.power-control:not(:disabled, .go, .warning) { border-color: var(--control-edge); }
 .jobbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; gap: 20px; }
 .job { min-width: 0; }.title-row { display: flex; gap: 12px; align-items: center; }
 h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.35px; font-weight: 650; }
@@ -208,6 +212,7 @@ h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.3
 .modal-codes { max-width: 180px; font-size: var(--type-sm); text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border-radius: 9px; background: var(--panel); }
+.message-band.info, .message-band.machine-message { box-shadow: inset 4px 0 var(--accent); }
 .message-band.error { color: var(--stop); background: var(--stop-soft); box-shadow: inset 5px 0 var(--stop); }
 .message-band.lift-warning { color: var(--warn); background: var(--warn-soft); box-shadow: inset 5px 0 var(--warn); }
 .message-band.empty { color: var(--text-dim); background: transparent; }

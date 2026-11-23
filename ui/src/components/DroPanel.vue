@@ -148,8 +148,8 @@ watch([axes, touchBlock], () => {
     <span v-else class="unavailable">{{ t('manual.dro.positionUnavailable') }}</span>
     <div class="display-units">
       <div class="units" role="group" :aria-label="t('manual.dro.displayUnits')">
-        <button class="tone-control" type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
-        <button class="tone-control" type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
+        <button class="tone-control choice" type="button" :aria-pressed="unit === 'mm'" @click="panel.unit = 'mm'">mm</button>
+        <button class="tone-control choice" type="button" :aria-pressed="unit === 'inch'" @click="panel.unit = 'inch'">in</button>
       </div>
     </div>
     <div class="active-tool" :class="{ stale: !live }" :aria-label="t('manual.dro.activeToolGroup')">
@@ -200,7 +200,6 @@ watch([axes, touchBlock], () => {
 .units { display: flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
 .display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }
 .units button { width: 44px; height: 48px; border: 0; border-radius: 6px; background: none; font-size: var(--type-md); color: var(--text-dim); cursor: pointer; }
-.units button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
 .tool-heading, .tool-length { color: var(--text-dim); font-size: var(--type-sm); }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: var(--type-md); font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }

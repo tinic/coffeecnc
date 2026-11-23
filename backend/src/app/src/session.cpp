@@ -1150,7 +1150,7 @@ auto Session::send_restart(const Queued& request, const PreparedRestart& restart
   return staged(std::move(result));
 }
 
-auto Session::start_restart(Queued& request, StartRestart command) -> Stage {
+auto Session::start_restart(const Queued& request, StartRestart command) -> Stage {
   if (!restart_ || restart_->tool_request || restart_->plan.plan_id != command.plan_id ||
       !wanted(restart_->owner))
     return answer({CommandOutcome::rejected, "Choose a line and review the restart plan again."});
@@ -1182,7 +1182,7 @@ auto Session::start_restart(Queued& request, StartRestart command) -> Stage {
   return result;
 }
 
-auto Session::resume_restart(Queued& request, const ControllerState& state) -> Stage {
+auto Session::resume_restart(const Queued& request, const ControllerState& state) -> Stage {
   auto restart = std::exchange(restart_, std::nullopt);
   if (!restart || restart->tool_request != state.tool_request ||
       restart->plan.point.tool != state.requested_tool || !wanted(restart->owner))

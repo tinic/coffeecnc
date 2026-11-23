@@ -363,8 +363,8 @@ private:
   [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
   [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
                                   const ControllerState& state) -> Stage;
-  [[nodiscard]] auto start_restart(Queued& request, StartRestart command) -> Stage;
-  [[nodiscard]] auto resume_restart(Queued& request, const ControllerState& state) -> Stage;
+  [[nodiscard]] auto start_restart(const Queued& request, StartRestart command) -> Stage;
+  [[nodiscard]] auto resume_restart(const Queued& request, const ControllerState& state) -> Stage;
   [[nodiscard]] auto send_restart(const Queued& request, const PreparedRestart& restart,
                                   bool after_change) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)

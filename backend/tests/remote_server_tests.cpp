@@ -183,7 +183,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   connect(slow, port, host);
   slow.next_layer().set_option(net::socket_base::receive_buffer_size(1024));
   const std::array large{
-      std::string(R"({"type":"preview","context":8,"payload":")") + std::string(4 * 1024 * 1024, 'x') + "\"}",
+      std::string(R"({"type":"preview","context":8,"payload":")") + std::string(4uz * 1024 * 1024, 'x') + "\"}",
       std::string(R"({"type":"status","seq":2,"preview_context":8})")};
   constexpr std::array update{PanelRecord::preview, PanelRecord::status};
   const auto before = std::chrono::steady_clock::now();

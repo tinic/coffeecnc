@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -64,6 +65,12 @@ public:
   auto real(const char* section, const char* key) -> std::optional<double> {
     const auto value = text(section, key);
     return value ? number(*value) : std::nullopt;
+  }
+  auto expand_tilde(const std::string& text) -> std::optional<std::string> {
+    std::array<char, PATH_MAX> expanded{};
+    if (file_.TildeExpansion(text.c_str(), expanded.data(), expanded.size()) != IniFile::ERR_NONE)
+      return {};
+    return std::string(expanded.data());
   }
 
 private:
@@ -360,14 +367,18 @@ auto macros(Ini& ini, const std::filesystem::path& file)
           "[COFFEECNC] MACRO \"{}\" is there twice: give each macro its own label.", label));
     if (const auto name = called_subroutine(block); !name.empty()) {
       std::vector<std::filesystem::path> places;
+      const auto add_directory = [&](const std::string& path) -> void {
+        if (const auto expanded = ini.expand_tilde(path))
+          places.emplace_back(absolute(directory, *expanded));
+      };
       if (const auto prefix = ini.text("DISPLAY", "PROGRAM_PREFIX"); prefix && !prefix->empty())
-        places.emplace_back(absolute(directory, *prefix));
+        add_directory(*prefix);
       const auto path = ini.text("RS274NGC", "SUBROUTINE_PATH").value_or("");
       for (std::size_t at = 0; at <= path.size();) {
         const auto end = std::min(path.find(':', at), path.size());
         if (const auto entry = trimmed(std::string_view(path).substr(at, end - at));
             !entry.empty())
-          places.emplace_back(absolute(directory, std::string(entry)));
+          add_directory(std::string(entry));
         at = end + 1;
       }
       std::error_code error;

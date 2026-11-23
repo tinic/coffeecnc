@@ -692,6 +692,17 @@ void macros() {
   require(load(search("Clamp | o < Clamp > CALL [1] [2]")).has_value(),
           "the name as the interpreter reads it: lower case, no spaces, with arguments");
   require(load(search("Park | O<park> call")).has_value(), "a call found in PROGRAM_PREFIX");
+  const auto* home = std::getenv("HOME");
+  require(home != nullptr, "LinuxCNC needs HOME to expand a tilde");
+  const auto home_relative = [&](const std::filesystem::path& path) -> std::string {
+    return "~/" + std::filesystem::relative(path, home).generic_string();
+  };
+  const auto home_prefix = with(search("Park | O<park> call"), "PROGRAM_PREFIX = macro-programs",
+                                "PROGRAM_PREFIX = " + home_relative(programs));
+  require(load(home_prefix).has_value(), "a call found in a home-relative PROGRAM_PREFIX");
+  const auto home_subs = with(search("Clamp | O<clamp> call"), "SUBROUTINE_PATH = /nonexistent: macro-subs",
+                              "SUBROUTINE_PATH = /nonexistent: " + home_relative(subroutines));
+  require(load(home_subs).has_value(), "a call found in a home-relative SUBROUTINE_PATH");
   require(has(error(search("Lost | O<lost> call")),
               "MACRO \"Lost\" calls O<lost>, but lost.ngc is not in [DISPLAY] PROGRAM_PREFIX or "
               "[RS274NGC] SUBROUTINE_PATH."),

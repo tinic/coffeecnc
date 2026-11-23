@@ -104,6 +104,21 @@ describe('MDI macros', () => {
     expect(sent()).toEqual([])
   })
 
+  it('invalidates the confirmation when the machine configuration changes', async () => {
+    peer(); view()
+    await tap('Macros'); await tap('Park')
+    const oldRun = button('Run')
+    peer({}, [{ label: 'Park', mdi: 'G53 G0 Z-20' }])
+    oldRun.click()
+    await nextTick()
+    expect(sent()).toEqual([])
+    expect(wrapper?.find('[role="dialog"]').exists()).toBe(false)
+    await tap('Macros'); await tap('Park')
+    expect(wrapper?.get('.block').text()).toBe('G53 G0 Z-20')
+    await tap('Run')
+    expect(sent()).toEqual([expect.objectContaining({ type: 'mdi', text: 'G53 G0 Z-20' })])
+  })
+
   it.each([
     ['machine off', (s: Status): void => { s.machine = 'off' }, {}, 'Machine is off'],
     ['E-stop', (s: Status): void => { s.machine = 'estop' }, {}, 'Machine is in E-stop'],

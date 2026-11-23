@@ -2,7 +2,7 @@
 // Macros of the MDI card ([COFFEECNC] MACRO, #211): one button that opens the list. A macro runs
 // as one MDI block after a confirmation that shows it, under the rules of a typed block, and its
 // result goes to the MDI history. Nothing shows when the machine has no macros.
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 import { mdiBlock, panel, send } from '../machine'
 import type { Macro } from '../protocol'
@@ -18,6 +18,8 @@ function close(): void {
   open.value = false
   chosen.value = null
 }
+
+watch(() => panel.hello, close, { flush: 'sync' })
 
 function run(): void {
   const macro = chosen.value

@@ -5,6 +5,8 @@
 #include <coffeecnc/app/tool_model_store.hpp>
 
 #include <expected>
+#include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -37,7 +39,25 @@ public:
   [[nodiscard]] auto create(std::string_view path, std::string_view text, bool replace)
       -> std::expected<std::string, std::string>;
 
+  // Writes the program editor's `text` over the existing program `path`, durably as
+  // replace_line. Check `stamp` before writing and check the bytes again after syncing the
+  // temporary file. An external writer can still change the file between the last check and
+  // the rename. `text` has `\n` line ends; a file
+  // whose first line ends in `\r\n` keeps that line end on every line. No backup is kept: the
+  // rename leaves either the old file or the new one, never a part of either.
+  // The final controller check returns a refusal reason or an empty string to proceed.
+  [[nodiscard]] auto replace(std::string_view path, std::string_view text, std::string_view stamp,
+                             const std::function<std::string()>& check_controller = {})
+      -> std::expected<std::string, std::string>;
+
 private:
+  // Replaces the file `resolved` with `bytes` through `<directory>/.<name><suffix>`.
+  [[nodiscard]] auto write_over(const std::string& resolved, std::string_view bytes,
+                                std::string_view suffix,
+                                std::optional<std::string_view> previous = std::nullopt,
+                                const std::function<std::string()>& check_controller = {})
+      -> std::expected<void, std::string>;
+
   const ProgramStore& programs_;
   ToolModelFiles& files_;
 };

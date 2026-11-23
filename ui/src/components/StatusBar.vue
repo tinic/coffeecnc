@@ -10,7 +10,7 @@ import { baseName, formatLength } from '../units'
 import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
-const emit = defineEmits<{ log: []; open: []; create: []; quit: []; settings: [] }>()
+const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
 function openAppDialog(dialog: 'quit' | 'settings'): void {
@@ -124,7 +124,7 @@ const subtitle = computed(() => {
   </header>
   <section class="jobbar">
     <div class="job">
-      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button></template></div>
+      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="'Edit program'" class="open" type="button" aria-label="Edit program" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">

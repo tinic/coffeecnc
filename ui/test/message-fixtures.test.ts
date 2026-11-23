@@ -834,7 +834,8 @@ const examples = [
       "G0 X0 Y0 Z10",
       "M2"
     ],
-    "truncated": false
+    "truncated": false,
+    "stamp": "9f6b1c2e04d3a587"
   },
   {
     "type": "program",
@@ -844,7 +845,8 @@ const examples = [
       "G21",
       "G0 X0"
     ],
-    "truncated": true
+    "truncated": true,
+    "stamp": "0d41e5a3b2c79f10"
   },
   {
     "type": "preview",

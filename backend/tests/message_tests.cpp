@@ -293,10 +293,11 @@ void table_rules() {
 }
 
 void program_and_preview_rules() {
-  ProgramText program{1, "/nc/part.ngc", {"G0 X1", "(Fr\xE4ser)"}, true};
+  ProgramText program{1, "/nc/part.ngc", {"G0 X1", "(Fr\xE4ser)"}, true, "0123456789abcdef"};
   const auto text = parsed(encode_program(program));
-  require(text.size() == 5 && text.at("truncated") == true,
+  require(text.size() == 6 && text.at("truncated") == true,
           "A program that was cut says so on the wire");
+  require(text.at("stamp") == "0123456789abcdef", "The stamp is sent as it is");
   program.truncated = false;
   require(parsed(encode_program(program)).at("truncated") == false,
           "A whole program says so explicitly");

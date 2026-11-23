@@ -364,6 +364,11 @@ void save_program_requests() {
   rejected(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","replace":1})", 42);
   rejected(R"({"id":42,"type":"save_program","path":"a.ngc"})", 42);
   rejected(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","open":true})", 42);
+  const auto edited = body<SaveProgram>(R"({"id":42,"type":"save_program","path":"part.ngc",)"
+                                        R"("text":"M2\n","stamp":"9f6b1c2e04d3a587"})");
+  require(edited.stamp == "9f6b1c2e04d3a587" && !save.stamp,
+          "The editor's save names the stamp it opened; a new program has none");
+  rejected(R"({"id":42,"type":"save_program","path":"a.ngc","text":"M2","stamp":7})", 42);
 
   // Above 16 KiB only a program: one of 200 KiB decodes, anything else of that size does not.
   const auto wire = [](std::string_view type, std::size_t bytes) -> std::string {
@@ -395,6 +400,33 @@ void save_program_requests() {
               !policy.evaluate(SaveProgram{"a.ngc", "", false}, disconnected).allowed &&
               !policy.evaluate(SaveProgram{"a\nb.ngc", "M2", false}, disconnected).allowed,
           "An empty path or text, or a path with a line end, is refused");
+
+  // Over the loaded program it is an edit of it: only on a live, idle machine.
+  require(!policy.evaluate(edited, disconnected).allowed,
+          "Saving over the loaded program needs live machine state");
+  ControllerState idle;
+  idle.link = Link::live;
+  idle.machine = MachineState::on;
+  idle.program_loaded = true;
+  require(policy.evaluate(edited, idle).allowed, "An idle machine with a program allows the save");
+  auto running = idle;
+  running.interp = InterpState::reading;
+  const auto refused = policy.evaluate(edited, running);
+  require(!refused.allowed && refused.reason == "Stop the program before saving it.",
+          "Refused while the program runs");
+  running.interp = InterpState::paused;
+  require(!policy.evaluate(edited, running).allowed, "Refused while the program is paused");
+  require(policy.evaluate(save, running).allowed,
+          "A new program can still be written while one runs: nothing of it is loaded");
+  auto unloaded = idle;
+  unloaded.program_loaded = false;
+  require(!policy.evaluate(edited, unloaded).allowed, "Refused without a loaded program");
+  auto changing = idle;
+  changing.requested_tool = 3;
+  require(!policy.evaluate(edited, changing).allowed, "Refused while a tool change waits");
+  auto bad_stamp = edited;
+  bad_stamp.stamp = "";
+  require(!policy.evaluate(bad_stamp, idle).allowed, "An empty stamp is refused");
 }
 
 void policy_still_required() {

@@ -28,7 +28,7 @@ beforeEach(() => {
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.mode = 'auto'; panel.status.interp = 'reading'
   panel.status.program = { ...panel.status.program, file: '/parts/a.ngc', revision: 3, current_line: 200 }
-  panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['G0 X1', 'G0 Y2'], truncated: true }
+  panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['G0 X1', 'G0 Y2'], truncated: true, stamp: '0' }
   panel.directory = { type: 'directory', path: '/parts', parent: null, entries: [], truncated: true }
   panel.toolTable = null; panel.preview = null; panel.programLayout = 'text'; panel.unit = 'mm'
 })
@@ -214,7 +214,7 @@ describe('stopped at line', () => {
   it('can be dismissed, and shows again for a stop at another line', async () => {
     if (panel.status === null) throw new Error('Missing status')
     panel.status.mode = 'manual'; panel.status.interp = 'idle'
-    panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['T1 M6', 'G1 X1 F100', 'G1 Y1'], truncated: false }
+    panel.program = { type: 'program', file: '/parts/a.ngc', revision: 3, lines: ['T1 M6', 'G1 X1 F100', 'G1 Y1'], truncated: false, stamp: '0' }
     panel.preview = { type: 'preview', context: panel.status.preview_context, state: 'ready', error: null, bounds: null, dwells: [],
       segments: [2, 3].map((line) => ({ line, kind: 'feed' as const, tool: 1, points: [0, 0, 0, 1, 0, 0], feed: 100 })) }
     panel.status.program = { ...panel.status.program, restart_hint: { line: 2, tool: 1 } }

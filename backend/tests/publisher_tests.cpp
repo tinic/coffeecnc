@@ -81,7 +81,7 @@ void snapshots_and_sequence() {
   require(rig.types() == Types{"status"} && rig.sent.back().at("motion").at("velocity") == 100,
           "A status change needs no other message");
 
-  rig.program = ProgramText{1, "/nc/part.ngc", {"G0 X1"}, false};
+  rig.program = ProgramText{1, "/nc/part.ngc", {"G0 X1"}, false, "0"};
   rig.loaded = true;
   require(rig.types(true) ==
               Types{"hello", "tool_table", "work_offsets", "program", "preview", "status"},
@@ -108,7 +108,7 @@ void changes_only() {
   rig.work_offsets.revision = 9;
   require(rig.types() == Types{"work_offsets", "status"}, "A new work offset revision is sent");
 
-  rig.program = ProgramText{1, "/nc/part.ngc", {"G0 X1"}, false};
+  rig.program = ProgramText{1, "/nc/part.ngc", {"G0 X1"}, false, "0"};
   rig.loaded = true;
   require(rig.types() == Types{"program", "status"}, "A loaded program is sent");
   require(rig.types() == Types{"status"}, "And sent once");

@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
   <div class="nc">
     <div
       ref="scroller"
-      class="scroller"
+      class="scroller gcode-tones"
       tabindex="0"
       @scroll="onScroll"
       @wheel.passive="operatorScrolled"
@@ -301,23 +301,6 @@ onBeforeUnmount(() => {
 .text {
   padding-right: var(--code-padding);
 }
-
-[data-tone='rapid'] { color: var(--gcode-rapid); }
-[data-tone='cut'] { color: var(--gcode-cut); }
-[data-tone='modal'] { color: var(--gcode-modal); }
-[data-tone='x'] { color: var(--gcode-x); }
-[data-tone='y'] { color: var(--gcode-y); }
-[data-tone='z'] { color: var(--gcode-z); }
-[data-tone='argument'] { color: var(--gcode-argument); }
-[data-tone='rate'] { color: var(--gcode-rate); }
-[data-tone='tool'] { color: var(--gcode-tool); }
-[data-tone='spindle'] { color: var(--gcode-spindle); }
-[data-tone='stop'] { color: var(--gcode-stop); font-weight: 700; }
-[data-tone='comment'] { color: var(--gcode-comment); font-style: italic; }
-[data-tone='message'] { color: var(--gcode-message); font-style: italic; font-weight: 500; }
-[data-tone='flow'] { color: var(--gcode-flow); }
-[data-tone='parameter'] { color: var(--gcode-parameter); }
-[data-tone='expression'] { color: var(--gcode-expression); }
 
 .row.current {
   background: var(--control);

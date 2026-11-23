@@ -254,9 +254,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   active_only.systems.at(1) = {{100, 100, -100}, 15, true};
   messages.push_back(encode_work_offsets(active_only));
 
-  messages.push_back(
-      encode_program({3, part, {"G21 G90 G54", "", "(pièce)", "G0 X0 Y0 Z10", "M2"}, false}));
-  messages.push_back(encode_program({4, "/home/cnc/nc_files/huge.ngc", {"G21", "G0 X0"}, true}));
+  messages.push_back(encode_program(
+      {3, part, {"G21 G90 G54", "", "(pièce)", "G0 X0 Y0 Z10", "M2"}, false, "9f6b1c2e04d3a587"}));
+  messages.push_back(encode_program(
+      {4, "/home/cnc/nc_files/huge.ngc", {"G21", "G0 X0"}, true, "0d41e5a3b2c79f10"}));
 
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{

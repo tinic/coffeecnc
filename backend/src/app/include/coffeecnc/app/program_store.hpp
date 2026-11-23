@@ -28,6 +28,10 @@ namespace coffeecnc {
 // not choose what the machine runs.
 //
 // Stateless: the root is resolved again on every call.
+// A stamp of a program's bytes: 16 hexadecimal digits of their 64-bit FNV-1a hash. The program
+// editor saves over a program only while the file still has the stamp it was opened with.
+[[nodiscard]] auto program_stamp(std::string_view bytes) -> std::string;
+
 class ProgramStore {
 public:
   // Entries of one listing. A directory with more is listed truncated.
@@ -69,7 +73,8 @@ public:
 
   // The text of a program under the same rules, for the `program` message. Lines end at `\n`,
   // `\r\n` or `\r`; a line end at the end of the file does not start another line. Every byte
-  // that is not part of a well-formed UTF-8 sequence becomes one U+FFFD.
+  // that is not part of a well-formed UTF-8 sequence becomes one U+FFFD. `stamp` is the
+  // program_stamp of the bytes read, the whole file unless it is `truncated`.
   [[nodiscard]] auto read_program(std::string_view path, std::uint64_t revision) const
       -> std::expected<ProgramText, std::string>;
 

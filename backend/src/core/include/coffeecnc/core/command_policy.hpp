@@ -180,10 +180,15 @@ struct EditProgram {
 };
 // Writes a new program file below the program directory ([DISPLAY] PROGRAM_PREFIX). An existing
 // file is replaced only when `replace` is set, and never the loaded program.
+//
+// With `stamp` (from the `program` message) it saves the program editor's text over the loaded
+// program instead: only while nothing runs, only when the file still has that stamp, and the
+// program is then opened again. `replace` does not apply.
 struct SaveProgram {
   std::string path;
   std::string text;
   bool replace{};
+  std::optional<std::string> stamp{};
 };
 // The longest program text `save_program` writes.
 inline constexpr std::size_t max_saved_program_bytes = std::size_t{512} * 1024;

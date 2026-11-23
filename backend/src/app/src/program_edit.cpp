@@ -13,6 +13,8 @@
 namespace coffeecnc {
 namespace {
 
+constexpr auto changed_program = "The program file changed since it was opened. Open it again to edit it.";
+
 struct Span {
   std::size_t begin{};
   std::size_t end{};
@@ -133,23 +135,84 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
     return std::unexpected("The program changed since it was shown. Open it again.");
 
   const std::string replaced = bytes.substr(0, start) + std::string{after} + bytes.substr(stop);
-  const auto slash = resolved->rfind('/');
-  const std::string directory = resolved->substr(0, slash);
+  if (auto written = write_over(*resolved, replaced, ".coffeecnc-edit"); !written)
+    return std::unexpected(written.error());
+  return std::move(*resolved);
+}
+
+auto ProgramWriter::write_over(const std::string& resolved, std::string_view bytes,
+                               std::string_view suffix, std::optional<std::string_view> previous,
+                               const std::function<std::string()>& check_controller)
+    -> std::expected<void, std::string> {
+  const auto slash = resolved.rfind('/');
+  const std::string directory = resolved.substr(0, slash);
   const std::string temporary =
-      std::format("{}/.{}.coffeecnc-edit", directory, resolved->substr(slash + 1));
+      std::format("{}/.{}{}", directory, resolved.substr(slash + 1), suffix);
   auto step = files_.open_temporary(temporary);
   if (step)
-    step = files_.write(replaced);
+    step = files_.write(bytes);
   if (step)
     step = files_.sync();
+  if (step && check_controller) {
+    if (auto reason = check_controller(); !reason.empty()) {
+      files_.discard(temporary);
+      return std::unexpected(std::move(reason));
+    }
+  }
+  if (step && previous) {
+    const auto current = files_.read(resolved, previous->size() + 1);
+    if (!current || !*current || (*current)->more || (*current)->bytes != *previous) {
+      files_.discard(temporary);
+      return std::unexpected(current ? std::string{changed_program} : current.error());
+    }
+  }
   if (step)
-    step = files_.rename(temporary, *resolved);
-  if (step)
-    step = files_.sync_directory(directory.empty() ? "/" : directory);
+    step = files_.rename(temporary, resolved);
   if (!step) {
     files_.discard(temporary);
     return std::unexpected("The program could not be saved. " + step.error());
   }
+  if (auto durable = files_.sync_directory(directory.empty() ? "/" : directory); !durable)
+    return std::unexpected("The program was replaced, but its directory could not be synchronized. " +
+                           durable.error());
+  return {};
+}
+
+auto ProgramWriter::replace(std::string_view path, std::string_view text, std::string_view stamp,
+                            const std::function<std::string()>& check_controller)
+    -> std::expected<std::string, std::string> {
+  auto resolved = programs_.resolve_program(path);
+  if (!resolved)
+    return std::unexpected(resolved.error());
+  if (text.size() > max_saved_program_bytes)
+    return std::unexpected(std::string("The program text is longer than 512 KiB."));
+  // As read_program reads it, so that the stamps compare the same bytes.
+  const auto content = files_.read(*resolved, ProgramStore::max_program_bytes + 1);
+  if (!content)
+    return std::unexpected(content.error());
+  const auto& file = *content;
+  if (!file)
+    return std::unexpected("The program no longer exists.");
+  const std::string& bytes = file->bytes;
+  if (file->more || program_stamp(bytes) != stamp)
+    return std::unexpected(changed_program);
+  const auto end = bytes.find_first_of("\r\n");
+  const bool windows = end != std::string::npos && bytes.compare(end, 2, "\r\n") == 0;
+  std::string converted;
+  if (windows) {
+    converted.reserve(text.size() + (text.size() / 16));
+    for (std::size_t i = 0; i < text.size(); ++i) {
+      if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r'))
+        converted += '\r';
+      converted += text[i];
+    }
+  }
+  const std::string_view saved = windows ? std::string_view{converted} : text;
+  if (saved.size() > max_saved_program_bytes)
+    return std::unexpected("The program text with its line endings is longer than 512 KiB.");
+  if (auto written = write_over(*resolved, saved, ".coffeecnc-edit", bytes, check_controller);
+      !written)
+    return std::unexpected(written.error());
   return std::move(*resolved);
 }
 

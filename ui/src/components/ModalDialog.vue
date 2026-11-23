@@ -8,7 +8,7 @@ import { openDialogs } from '../dialogs'
 import { vFreshGesture } from '../numeric-input'
 import AppIcon from './AppIcon.vue'
 
-defineProps<{ title: string; size: 'small' | 'medium' | 'large' | 'wide'; contained?: boolean; expanded?: boolean; freshGesture?: boolean }>()
+defineProps<{ title: string; size: 'small' | 'medium' | 'large' | 'wide'; contained?: boolean; expanded?: boolean; freshGesture?: boolean; docked?: boolean; closeDisabled?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 onMounted(() => {
@@ -21,11 +21,12 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport defer :to="expanded ? '#workspace-dialogs' : '#dialogs'">
-    <div v-fresh-gesture="freshGesture" class="scrim" @pointerdown.self="emit('close')" @touchend.self.prevent="emit('close')" @keydown.esc="emit('close')">
+    <div v-fresh-gesture="freshGesture" class="scrim" :class="{ docked }" @pointerdown.self="emit('close')" @touchend.self.prevent="emit('close')" @keydown.esc="emit('close')">
       <section class="dialog" :class="size" role="dialog" :aria-label="title">
         <header>
           <h2>{{ title }}</h2>
-          <button v-tooltip="'Close'" aria-label="Close" class="btn quiet square" type="button" @click="emit('close')">
+          <slot name="header" />
+          <button v-tooltip="'Close'" :disabled="closeDisabled" aria-label="Close" class="btn quiet square" type="button" @click="emit('close')">
             <AppIcon name="close" />
           </button>
         </header>
@@ -81,6 +82,13 @@ onBeforeUnmount(() => {
   width: 1180px;
   height: 100%;
 }
+
+.docked { padding: 0 16px; }
+.docked .dialog { width: 100%; }
+.docked header { flex-wrap: wrap; justify-content: start; padding: 6px 8px 6px 12px; }
+.docked h2 { max-width: 25%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docked .body { padding: 0; }
+.docked footer { padding: 6px 12px; }
 
 header {
   display: flex;

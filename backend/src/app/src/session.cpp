@@ -937,8 +937,9 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     }
   }
   if (restart_ && !restart_->tool_request && !std::holds_alternative<StartRestart>(command) &&
-      !std::holds_alternative<PlanRestart>(command) && !std::holds_alternative<ListDirectory>(command) &&
-      !std::holds_alternative<SaveProgram>(command))
+      !std::holds_alternative<PlanRestart>(command) &&
+      !std::holds_alternative<ListDirectory>(command) &&
+      !(std::holds_alternative<SaveProgram>(command) && !std::get<SaveProgram>(command).stamp))
     restart_.reset();
   auto decision = policy_.evaluate(command, state);
   std::optional<CheckedPreview> verified;
@@ -1281,7 +1282,9 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
       std::holds_alternative<SetTool>(request.command) ||
       std::holds_alternative<RemoveTool>(request.command) ||
       std::holds_alternative<OpenProgram>(request.command) ||
-      std::holds_alternative<EditProgram>(request.command)) {
+      std::holds_alternative<EditProgram>(request.command) ||
+      (std::holds_alternative<SaveProgram>(request.command) &&
+       std::get<SaveProgram>(request.command).stamp)) {
     const std::scoped_lock lock{mutex_};
     if (changes_datum)
       ++setter_datum_;
@@ -1384,6 +1387,35 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, SaveProgram>) {
           if (program_writer_ == nullptr)
             return answer({CommandOutcome::rejected, "This CoffeeCNC cannot save programs."});
+          if (c.stamp) {
+            const auto file = programs_.resolve_program(c.path);
+            if (!file)
+              return answer({CommandOutcome::rejected, file.error()});
+            const auto loaded = programs_.resolve_program(state.program_file);
+            if (!loaded || *file != *loaded)
+              return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
+            return act(request, [&](const Wanted& still) -> ActionResult {
+              const auto check_controller = [&]() -> std::string {
+                if (!still())
+                  return "The save was cancelled before the program was replaced.";
+                const auto now = port_.snapshot();
+                if (const auto recheck = policy_.evaluate(request.command, now); !recheck.allowed)
+                  return recheck.reason;
+                const auto active = programs_.resolve_program(now.program_file);
+                if (!active || *active != *file)
+                  return "The loaded program changed before the save finished.";
+                return {};
+              };
+              auto written = program_writer_->replace(*file, c.text, *c.stamp, check_controller);
+              if (!written)
+                return {ActionStatus::failed, written.error()};
+              // LinuxCNC reads the new text only when the program is opened again.
+              auto reopened = port_.open_program(*written, still);
+              if (reopened.status != ActionStatus::accepted)
+                return {ActionStatus::failed, "Saved on disk, but not reopened. " + reopened.reason};
+              return reopened;
+            });
+          }
           // Through a link too: the file LinuxCNC has open is never written over.
           if (c.replace && !state.program_file.empty()) {
             const auto target = programs_.resolve_new_program(c.path);

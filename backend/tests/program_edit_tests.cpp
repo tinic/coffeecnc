@@ -2,6 +2,10 @@
 #include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/tool_model_store.hpp>
+#include <coffeecnc/core/command_policy.hpp>
+
+#include "fake_file_system.hpp"
+#include "fake_tool_model_files.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -124,12 +128,139 @@ void creates_new_programs(const fs::path& base) {
   fs::remove_all(root);
 }
 
+// The program editor's save over the loaded program (save_program with a stamp).
+void saves_over_a_program_with_its_stamp(const fs::path& base) {
+  const fs::path root = base / "program_replace_root";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path part = root / "part.ngc";
+  const std::string before = "G21\nG1 X10 F600\nM2\n";
+  { std::ofstream(part, std::ios::binary) << before; }
+  const LocalFileSystem files;
+  const ProgramStore programs{files, root.string()};
+  LocalToolModelFiles writes;
+  ProgramWriter writer{programs, writes};
+
+  const auto shown = programs.read_program(part.string(), 1);
+  require(shown && shown->stamp == program_stamp(before) && shown->stamp.size() == 16,
+          "The program message names the bytes it was read from");
+  require(program_stamp(before) != program_stamp("G21\nG1 X10 F601\nM2\n") &&
+              program_stamp("") == "cbf29ce484222325",
+          "Another text has another stamp; the empty text has FNV-1a's offset basis");
+
+  // A second name for the file as it was: the save makes a new file, it does not write into it.
+  fs::create_hard_link(part, root / "kept.ngc");
+  const std::string after = "G21\nG1 X12 F450\nG1 Y5\nM2\n";
+  const auto saved = writer.replace(part.string(), after, shown->stamp);
+  require(saved && *saved == fs::canonical(part).string(),
+          "The edited text is saved over the program: " + saved.error_or(""));
+  require(read(part) == after, "The new text is written exactly");
+  require(read(root / "kept.ngc") == before,
+          "The old file is replaced by a rename, never rewritten in place");
+  require(!fs::exists(root / ".part.ngc.coffeecnc-edit"), "No temporary file is left");
+
+  const auto stale = writer.replace(part.string(), "M2\n", shown->stamp);
+  require(!stale && stale.error() ==
+                        "The program file changed since it was opened. Open it again to edit it.",
+          "The stamp of the text before the save no longer matches");
+  require(read(part) == after, "A refused save writes nothing");
+
+  // Someone else (CAM, another panel) writes the file while it is open in the editor.
+  const auto opened = program_stamp(after);
+  { std::ofstream(part, std::ios::binary | std::ios::trunc) << "G21\nG0 X0\nM2\n"; }
+  require(!writer.replace(part.string(), "M2\n", opened),
+          "A file changed on disk is not written over");
+  require(read(part) == "G21\nG0 X0\nM2\n", "It keeps the other writer's text");
+
+  const std::string cap(max_saved_program_bytes + 1, 'G');
+  const auto large = writer.replace(part.string(), cap, program_stamp(read(part)));
+  require(!large && large.error() == "The program text is longer than 512 KiB.",
+          "A text above 512 KiB is refused");
+  require(writer.replace(part.string(), std::string(max_saved_program_bytes, ';'),
+                         program_stamp(read(part)))
+                  .has_value() &&
+              fs::file_size(part) == max_saved_program_bytes,
+          "A text of exactly 512 KiB is saved");
+
+  const fs::path windows = root / "windows.ngc";
+  { std::ofstream(windows, std::ios::binary) << "G21\r\nM2\r\n"; }
+  require(writer.replace(windows.string(), "G21\nG0 X1\r\nM2\n", program_stamp("G21\r\nM2\r\n"))
+              .has_value(),
+          "A program with CR LF line ends is saved");
+  const std::string windows_text = "G21\r\nG0 X1\r\nM2\r\n";
+  require(read(windows) == windows_text, "Its line ends stay CR LF, none doubled");
+  const auto too_large = writer.replace(windows.string(), std::string(max_saved_program_bytes, '\n'),
+                                       program_stamp(windows_text));
+  require(!too_large && read(windows) == windows_text,
+          "A text that exceeds the cap after restoring CR LF is refused before replacing the file");
+
+  require(!writer.replace((root / "missing.ngc").string(), "M2\n", program_stamp("")),
+          "A program that does not exist is refused");
+  require(!writer.replace((base / "outside.ngc").string(), "M2\n", program_stamp("")),
+          "A file outside the program directory is refused");
+  fs::remove_all(root);
+}
+
+void keeps_external_changes_during_sync() {
+  constexpr auto path = "/nc/part.ngc";
+  const std::string before = "G0 X1\nM2\n";
+  const std::string external = "G0 X9\nM2\n";
+  FakeFileSystem files;
+  files.file(path, before);
+  const ProgramStore programs{files, "/nc"};
+  FakeDisk disk;
+  disk.files[path] = before;
+  FakeToolModelFiles writes{disk};
+  writes.during = [&](std::string_view step) {
+    if (step == "sync")
+      disk.files[path] = external;
+  };
+  ProgramWriter writer{programs, writes};
+  const auto save = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
+  require(!save && save.error().starts_with("The program file changed"),
+          "The original is checked once more after the temporary file is synced");
+  require(disk.files.at(path) == external && writes.count("rename") == 0,
+          "The external writer's text remains on disk");
+  require(!disk.files.contains("/nc/.part.ngc.coffeecnc-edit"), "The refused save discards its temporary file");
+}
+
+// Failures before rename keep the original. A directory sync failure reports the replacement.
+void a_failed_save_keeps_the_program() {
+  constexpr auto path = "/nc/part.ngc";
+  const std::string before = "G0 X1\nM2\n";
+  for (const std::string step : {"open_temporary", "write", "sync", "rename", "sync_directory"}) {
+    FakeFileSystem files;
+    files.file(path, before);
+    const ProgramStore programs{files, "/nc"};
+    FakeDisk disk;
+    disk.files[path] = before;
+    FakeToolModelFiles writes{disk};
+    writes.failures[step] = 1;
+    ProgramWriter writer{programs, writes};
+    const auto saved = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
+    if (step == "sync_directory") {
+      require(!saved && saved.error().starts_with("The program was replaced"),
+              "A directory sync failure reports that replacement already happened");
+      require(disk.files.at(path) == "G0 X2\nM2\n", "The new text is visible after the rename");
+    } else {
+      require(!saved && saved.error().starts_with("The program could not be saved."),
+              "A failed " + step + " is reported");
+      require(disk.files.at(path) == before, "A failed " + step + " keeps the program");
+    }
+    require(!disk.files.contains("/nc/.part.ngc.coffeecnc-edit"),
+            "A failed " + step + " leaves no temporary file");
+  }
+}
+
 } // namespace
 
 auto main(int argc, char** argv) -> int {
   edits_only_feed_or_speed_numbers();
   replaces_one_line_durably(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   creates_new_programs(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
+  saves_over_a_program_with_its_stamp(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
+  keeps_external_changes_during_sync();
+  a_failed_save_keeps_the_program();
   if (failures != 0)
     return EXIT_FAILURE;
   std::cout << "program_edit: all passed\n";

@@ -304,7 +304,7 @@ struct Rig {
         now += read_time;
         if (path.ends_with("refused.ngc"))
           return std::unexpected(std::string("outside the program directory."));
-        return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false};
+        return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false, "0"};
       },
       &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 

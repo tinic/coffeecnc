@@ -103,6 +103,8 @@ const scrollLeft = ref(0)
 const viewHeight = ref(0)
 const caret = ref(0)
 const lines = computed(() => text.value.split('\n'))
+/** Lines as the code view counts them: a final line end starts no line. */
+const lineCount = computed(() => text.value.endsWith('\n') ? lines.value.length - 1 : lines.value.length)
 const starts = computed(() => {
   const found = [0]
   for (let at = text.value.indexOf('\n'); at >= 0; at = text.value.indexOf('\n', at + 1)) found.push(at + 1)
@@ -151,6 +153,8 @@ function state(): EditorState {
   const element = area.value
   return { text: text.value, start: element?.selectionStart ?? 0, end: element?.selectionEnd ?? 0 }
 }
+// The selection as last seen: an edit is undone to the text and selection before it.
+let selection = { start: 0, end: 0 }
 function sync(): void {
   const element = area.value
   if (element === null) return
@@ -158,6 +162,7 @@ function sync(): void {
   scrollLeft.value = element.scrollLeft
   viewHeight.value = element.clientHeight
   caret.value = element.selectionStart
+  selection = { start: element.selectionStart, end: element.selectionEnd }
 }
 
 const history = new EditHistory()
@@ -171,7 +176,6 @@ function apply(next: EditorState | null): void {
   void nextTick(() => {
     const element = area.value
     if (element === null) return
-    element.value = next.text
     element.setSelectionRange(next.start, next.end)
     reveal(lineOf(next.text, next.start))
   })
@@ -185,11 +189,16 @@ function beforeInput(event: InputEvent): void {
     else redo()
     return
   }
-  history.record(state(), event.inputType, Date.now())
+  before = state()
 }
-function input(): void {
+// Not every input announces itself (a composition, execCommand): the text is then the one
+// before the input and the selection the last one seen.
+let before: EditorState | null = null
+function input(event: Event): void {
   const element = area.value
   if (element === null) return
+  history.record(before ?? { text: text.value, ...selection }, event instanceof InputEvent ? event.inputType : '', Date.now())
+  before = null
   text.value = element.value
   canUndo.value = history.canUndo
   canRedo.value = history.canRedo
@@ -262,7 +271,6 @@ watch([(): ProgramText | null => panel.program, (): unknown => panel.status?.pro
   name.value = uniqueName(`${baseName(program.file).replace(/\.[^.]*$/, '')}-copy`, new Set([baseName(program.file)]))
   void nextTick(() => {
     if (area.value === null) return
-    area.value.value = text.value
     area.value.setSelectionRange(0, 0)
     sync()
   })
@@ -272,7 +280,6 @@ let observer: ResizeObserver | null = null
 onMounted(() => {
   const element = area.value
   if (element === null) return
-  element.value = text.value
   element.setSelectionRange(0, 0)
   sync()
   if (typeof ResizeObserver !== 'undefined') {
@@ -300,7 +307,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
           <input v-model="goLine" class="field mono" type="text" inputmode="numeric" aria-label="Go to line" placeholder="Line" autocomplete="off" @keydown.enter.prevent="goTo" />
           <button class="btn" type="button" :disabled="goLine === ''" @click="goTo">Go</button>
         </span>
-        <span class="where mono">Line {{ caretLine }} · {{ lines.length }} {{ lines.length === 1 ? 'line' : 'lines' }} · {{ formatBytes(size) }}</span>
+        <span class="where mono">Line {{ caretLine }} · {{ lineCount }} {{ lineCount === 1 ? 'line' : 'lines' }} · {{ formatBytes(size) }}</span>
       </div>
       <p v-if="notice" class="notice" role="status"><AppIcon name="info" />{{ notice }}</p>
       <div class="editor" :class="{ readonly: readOnly }" :style="{ '--number-width': numberWidth }">
@@ -321,7 +328,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
             </div>
           </div>
           <textarea
-            ref="area" class="area" aria-label="Program text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"
+            ref="area" :value="text" class="area" aria-label="Program text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"
             :readonly="readOnly" @beforeinput="beforeInput" @input="input" @keydown="keydown" @scroll="sync" @select="sync" @keyup="sync" @pointerup="sync"
           ></textarea>
         </div>

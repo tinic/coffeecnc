@@ -34,7 +34,7 @@ auto reading(const fs::path& file) -> PanelReading {
   status.program.file = file.string();
   status.program.revision = 7;
   result.program = std::make_shared<const ProgramText>(
-      ProgramText{7, file.string(), {"G21", "G0 X0", "G0 Z10", "G1 Y10 F60", "M30"}, false});
+      ProgramText{7, file.string(), {"G21", "G0 X0", "G0 Z10", "G1 Y10 F60", "M30"}, false, "0"});
   return result;
 }
 

@@ -104,7 +104,8 @@ void pages_and_snapshots() {
   require(sent.types == Types{"status"} && sent.last().at("seq") == 2,
           "Then a status per step while nothing changes");
 
-  r.program = std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false});
+  r.program =
+      std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false, "0"});
   r.status.program.file = "/nc/a.ngc";
   r.status.program.revision = 1;
   sent = compose(composer, r);
@@ -201,11 +202,13 @@ void preview_context_follows_live_inputs() {
   require(compose(composer, r).context() == context + 2, "After the run its state is a new start");
 
   // The same file loaded again is a new program: its text is sent and the context changes.
-  r.program = std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false});
+  r.program =
+      std::make_shared<const ProgramText>(ProgramText{1, "/nc/a.ngc", {"G0 X1"}, false, "0"});
   r.status.program.file = "/nc/a.ngc";
   r.status.program.revision = 1;
   context = compose(composer, r).context();
-  r.program = std::make_shared<const ProgramText>(ProgramText{2, "/nc/a.ngc", {"G0 X1"}, false});
+  r.program =
+      std::make_shared<const ProgramText>(ProgramText{2, "/nc/a.ngc", {"G0 X1"}, false, "0"});
   r.status.program.revision = 2;
   sent = compose(composer, r);
   require(sent.types == Types{"program", "preview", "status"} && sent.context() == context + 1 &&

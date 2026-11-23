@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "彫刻工具を選択",
       "pocketOptions": "寸法、進入、側面",
       "reviewJob": "ジョブを確認",
       "toolChangeHeight": "工具交換位置は機械座標の Z {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "engraving": "彫刻",
+      "engravingSetup": "表面を Z0 に設定してください。ベースラインは文字列の左端から始まります。英字は大文字で彫刻します。",
       "contour": "輪郭",
       "contourSetup": "進入経路に空間を確保してください。内側を切削する場合は、加工済みのポケットや穴から開始します。",
       "inclinedEntry": "選択した進入方法に対応したエンドミルを使用してください。",
@@ -33,6 +36,12 @@
       "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
     },
     "label": {
+      "engravingText": "文字列",
+      "engravingX": "ベースライン X",
+      "engravingY": "ベースライン Y",
+      "engravingHeight": "文字の高さ",
+      "engravingSpacing": "文字間隔",
+      "engravingRotation": "回転（反時計回り）",
       "profileShape": "形状",
       "profileSide": "切削側",
       "profileDirection": "方向",
@@ -126,6 +135,11 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "engravingRotation": "有限の回転角を入力してください。",
+      "engravingSpacing": "文字間隔はゼロ以上にしてください。",
+      "engravingLength": "1 ～ {max} 文字を入力してください。",
+      "engravingCharacters": "A–Z、0–9、空白、または + - / . : _ を使用してください。",
+      "engravingPrecision": "文字の大きさ、深さ、退避高さ、送り速度、主軸回転数がプログラムの精度に収まるか確認してください。",
       "profilePrecision": "寸法と送りを確認してください。各パスはプログラムの精度で表現できる値とし、最大 2,000 パスにしてください。",
       "profileCorner": "角の半径は 0 以上かつ短い辺の半分未満にしてください。",
       "profileInsideCorner": "内側の角の半径は工具半径（{radius}）より大きくしてください。",

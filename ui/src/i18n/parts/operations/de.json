@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "Gravierwerkzeug auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
       "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "engraving": "Gravur",
+      "engravingSetup": "Z0 auf die Oberfläche setzen. Die Grundlinie beginnt links am Text. Buchstaben werden als Großbuchstaben graviert.",
       "contour": "Kontur",
       "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
@@ -33,6 +36,12 @@
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
+      "engravingText": "Text",
+      "engravingX": "Grundlinie X",
+      "engravingY": "Grundlinie Y",
+      "engravingHeight": "Buchstabenhöhe",
+      "engravingSpacing": "Zeichenabstand",
+      "engravingRotation": "Drehung (gegen UZS)",
       "profileShape": "Form",
       "profileSide": "Schnittseite",
       "profileDirection": "Richtung",
@@ -126,6 +135,11 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "engravingRotation": "Einen endlichen Drehwinkel eingeben.",
+      "engravingSpacing": "Der Zeichenabstand muss mindestens null sein.",
+      "engravingLength": "Zwischen 1 und {max} Zeichen eingeben.",
+      "engravingCharacters": "A–Z, 0–9, Leerzeichen oder + - / . : _ verwenden.",
+      "engravingPrecision": "Schriftgröße, Tiefe, Freihöhe, Vorschübe und Drehzahl auf die Programmgenauigkeit abstimmen.",
       "profilePrecision": "Prüfen Sie Abmessungen und Vorschübe. Jeder Durchgang muss mit der Programmgenauigkeit darstellbar sein. Maximal 2.000 Durchgänge.",
       "profileCorner": "Der Eckenradius muss mindestens null und kleiner als die halbe kürzere Seite sein.",
       "profileInsideCorner": "Der innere Eckenradius muss größer als der Werkzeugradius ({radius}) sein.",

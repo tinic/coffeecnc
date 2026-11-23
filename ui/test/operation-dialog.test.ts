@@ -89,6 +89,27 @@ describe('new operation dialog', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('takes engraving text through the ordinary text field and requires an explicit tool', async () => {
+    await open()
+    button('Engraving').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    const label = input('Text')
+    expect(label.getAttribute('inputmode')).toBeNull()
+    expect(tool?.element.value).toBe('0')
+    label.value = 'part/07'
+    label.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/engrave-part-07.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No engraving program was saved')
+    expect(save.text).toContain('(Lettering: PART/07)')
+    expect(save.text).toContain('T2 M6\nG43 H2')
+  })
+
   it('queues snapshots in order, discards a queued item and saves the job only', async () => {
     await open(['job-facing-100x60mm.ngc'])
     button('Add to job').click()

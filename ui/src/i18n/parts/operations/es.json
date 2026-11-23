@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "Selecciona una herramienta de grabado",
       "pocketOptions": "Geometría, entrada y paredes",
       "reviewJob": "Revisar trabajo",
       "toolChangeHeight": "Cambios de herramienta en Z de máquina {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "engraving": "Grabado",
+      "engravingSetup": "Sitúa Z0 en la superficie. La línea base empieza a la izquierda del texto. Las letras se graban en mayúsculas.",
       "contour": "Contorno",
       "contourSetup": "Deja libre la entrada. Para un corte interior, empieza desde un bolsillo abierto o un agujero.",
       "inclinedEntry": "Utilice una fresa de extremo apta para la entrada seleccionada.",
@@ -33,6 +36,12 @@
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
+      "engravingText": "Texto",
+      "engravingX": "Línea base X",
+      "engravingY": "Línea base Y",
+      "engravingHeight": "Altura de letra",
+      "engravingSpacing": "Espacio entre letras",
+      "engravingRotation": "Giro antihorario",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
       "profileDirection": "Sentido",
@@ -126,6 +135,11 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "engravingRotation": "Introduce un ángulo de giro finito.",
+      "engravingSpacing": "El espacio entre letras debe ser cero o mayor.",
+      "engravingLength": "Introduce entre 1 y {max} caracteres.",
+      "engravingCharacters": "Usa A–Z, 0–9, espacios o + - / . : _.",
+      "engravingPrecision": "Comprueba el tamaño, la profundidad, la altura libre, los avances y las rpm según la precisión del programa.",
       "profilePrecision": "Revisa las dimensiones y los avances. Cada pasada debe poder expresarse con la precisión del programa. Máximo 2000 pasadas.",
       "profileCorner": "El radio de esquina debe ser mayor o igual a cero y menor que la mitad del lado más corto.",
       "profileInsideCorner": "El radio de esquina interior debe ser mayor que el radio de la herramienta ({radius}).",

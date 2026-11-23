@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "选择雕刻刀",
       "pocketOptions": "几何、切入与侧壁",
       "reviewJob": "检查作业",
       "toolChangeHeight": "在机床坐标 Z {z} {unit} 处换刀",
@@ -20,6 +21,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "engraving": "文字雕刻",
+      "engravingSetup": "将工件表面设为 Z0。基线从文字左端开始。字母以大写雕刻。",
       "contour": "轮廓",
       "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
@@ -33,6 +36,12 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "engravingText": "文字",
+      "engravingX": "基线 X",
+      "engravingY": "基线 Y",
+      "engravingHeight": "字高",
+      "engravingSpacing": "字间距",
+      "engravingRotation": "旋转（逆时针）",
       "profileShape": "形状",
       "profileSide": "切削侧",
       "profileDirection": "方向",
@@ -126,6 +135,11 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "engravingRotation": "输入有限的旋转角度。",
+      "engravingSpacing": "字间距必须大于或等于零。",
+      "engravingLength": "输入 1 至 {max} 个字符。",
+      "engravingCharacters": "使用 A–Z、0–9、空格或 + - / . : _。",
+      "engravingPrecision": "请按程序精度检查字高、深度、安全高度、进给速度和主轴转速。",
       "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
       "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
       "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",

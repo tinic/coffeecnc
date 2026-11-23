@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "Selecionar uma ferramenta de gravação",
       "pocketOptions": "Geometria, entrada e paredes",
       "reviewJob": "Rever trabalho",
       "toolChangeHeight": "Trocas de ferramenta no Z de máquina {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "engraving": "Gravação",
+      "engravingSetup": "Defina Z0 na superfície. A linha de base começa à esquerda do texto. As letras são gravadas em maiúsculas.",
       "contour": "Contorno",
       "contourSetup": "Deixe a entrada livre. Para um corte interior, comece numa bolsa aberta ou num furo.",
       "inclinedEntry": "Use uma fresa de topo adequada à entrada escolhida.",
@@ -33,6 +36,12 @@
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
+      "engravingText": "Texto",
+      "engravingX": "Linha de base X",
+      "engravingY": "Linha de base Y",
+      "engravingHeight": "Altura das letras",
+      "engravingSpacing": "Espaçamento das letras",
+      "engravingRotation": "Rotação anti-horária",
       "profileShape": "Forma",
       "profileSide": "Lado de corte",
       "profileDirection": "Sentido",
@@ -126,6 +135,11 @@
       "g83": "G83 picagem"
     },
     "check": {
+      "engravingRotation": "Introduza um ângulo de rotação finito.",
+      "engravingSpacing": "O espaçamento entre letras tem de ser zero ou superior.",
+      "engravingLength": "Introduza entre 1 e {max} caracteres.",
+      "engravingCharacters": "Use A–Z, 0–9, espaços ou + - / . : _.",
+      "engravingPrecision": "Verifique o tamanho, a profundidade, a altura livre, os avanços e a rotação em relação à precisão do programa.",
       "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
       "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
       "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",

@@ -5,12 +5,13 @@ import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
 import { contour } from './contour'
 import { drilling } from './drilling'
+import { engraving } from './engraving'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket, type PocketOptions } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 import { slot, type SlotEnds } from './slot'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour' | 'slot' | 'engraving'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
@@ -29,6 +30,7 @@ interface FieldBase {
 }
 export type Field =
   | (FieldBase & { type: 'number'; kind: NumberKind })
+  | (FieldBase & { type: 'text' })
   | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[]; select?: boolean })
 
 export interface Operation {
@@ -289,6 +291,32 @@ export const operations: readonly Operation[] = [
       length: v.num('length'), width: v.num('width'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'),
       plunge: v.text('slotEntry') === 'plunge', angle: v.num('angle'), entryFeed: v.num('plungeFeed') }),
     name: (v, unit) => `slot-${v.text('along')}-${number(v.num('length'), unit)}x${size(v.num('width'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'engraving',
+    title: 'operations.operation.engraving',
+    note: () => 'operations.operation.engravingSetup',
+    fields: [
+      { type: 'text', key: 'label', label: 'operations.label.engravingText' },
+      num('x', 'operations.label.engravingX', 'coordinate'), num('y', 'operations.label.engravingY', 'coordinate'),
+      num('height', 'operations.label.engravingHeight', 'length'),
+      num('spacing', 'operations.label.engravingSpacing', 'length'),
+      num('angle', 'operations.label.engravingRotation', 'angle'),
+      num('depth', 'operations.label.depth', 'length'),
+      ...feeds(true, 'operations.label.entryFeed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { label: '', x: 0, y: 0, height: 6, spacing: 0.8, angle: 0, depth: 0.15,
+        ...speeds.mm, rpm: 2500, feed: 100, plungeFeed: 40 },
+      { label: '', x: 0, y: 0, height: 0.25, spacing: 0.03, angle: 0, depth: 0.006,
+        ...speeds.inch, rpm: 2500, feed: 4, plungeFeed: 1.5 }),
+    generate: (v, common) => engraving({ ...common, label: v.text('label'), x: v.num('x'), y: v.num('y'),
+      height: v.num('height'), spacing: v.num('spacing'), angle: v.num('angle'), depth: v.num('depth'),
+      entryFeed: v.num('plungeFeed') }),
+    name: (v): string => {
+      const label = v.text('label').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30).replace(/^-|-$/g, '')
+      return label ? `engrave-${label}` : 'engraving' // i18n-ignore
+    },
   },
 ]
 

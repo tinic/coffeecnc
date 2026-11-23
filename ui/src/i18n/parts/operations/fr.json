@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "Choisir un outil de gravure",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
       "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "engraving": "Gravure",
+      "engravingSetup": "Réglez Z0 sur la surface. La ligne de base commence à gauche du texte. Les lettres sont gravées en majuscules.",
       "contour": "Contour",
       "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
@@ -33,6 +36,12 @@
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre."
     },
     "label": {
+      "engravingText": "Texte",
+      "engravingX": "Ligne de base X",
+      "engravingY": "Ligne de base Y",
+      "engravingHeight": "Hauteur des lettres",
+      "engravingSpacing": "Espacement des lettres",
+      "engravingRotation": "Rotation antihoraire",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
       "profileDirection": "Sens",
@@ -126,6 +135,11 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "engravingRotation": "Saisissez un angle de rotation fini.",
+      "engravingSpacing": "L’espacement des lettres doit être positif ou nul.",
+      "engravingLength": "Saisissez de 1 à {max} caractères.",
+      "engravingCharacters": "Utilisez A–Z, 0–9, des espaces ou + - / . : _.",
+      "engravingPrecision": "Vérifiez la taille du texte, la profondeur, le dégagement, les avances et la vitesse selon la précision du programme.",
       "profilePrecision": "Vérifiez les dimensions et les avances. Chaque passe doit respecter la précision du programme. Maximum 2 000 passes.",
       "profileCorner": "Le rayon de coin doit être positif ou nul et inférieur à la moitié du plus petit côté.",
       "profileInsideCorner": "Le rayon d’un coin intérieur doit dépasser le rayon de l’outil ({radius}).",

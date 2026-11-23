@@ -48,6 +48,7 @@ const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
 // fitting (the largest for facing, a drill for holes, an end mill otherwise).
 const pickedTool = reactive<Partial<Record<OperationId, number>>>({})
 function suggestedTool(id: OperationId): number {
+  if (id === 'engraving') return 0
   const cutting = tools.value.filter((tool) => tool.diameter > 0)
   const named = (wanted: RegExp, unwanted: RegExp): number | undefined =>
     cutting.find((tool) => wanted.test(tool.comment) && !unwanted.test(tool.comment))?.number
@@ -254,11 +255,19 @@ const fieldGroups = computed(() => {
         <p v-if="operationNote" class="operation-note">{{ t(operationNote) }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
-          <div class="fields" :class="{ cutting: group.includesTool, pocket: pocket && !group.includesTool }">
+          <div
+            class="fields"
+            :class="{
+              cutting: group.includesTool,
+              pocket: pocket && !group.includesTool,
+              engraving: chosen === 'engraving' && !group.includesTool,
+            }"
+          >
             <label v-if="group.includesTool" class="entry tool-entry">
               <span class="label">{{ t('operations.dialog.tool') }}</span>
               <select v-model.number="toolNumber" class="field" :aria-label="t('operations.dialog.tool')" :disabled="saving">
                 <option v-if="tools.length === 0" :value="0">{{ t('operations.dialog.noTools') }}</option>
+                <option v-else-if="chosen === 'engraving'" :value="0" disabled>{{ t('operations.dialog.chooseEngravingTool') }}</option>
                 <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
               </select>
             </label>
@@ -278,6 +287,13 @@ const fieldGroups = computed(() => {
                   </button>
                 </div>
               </div>
+              <label v-else-if="field.type === 'text'" class="entry text-entry">
+                <span class="label">{{ t(field.label) }}</span>
+                <input
+                  v-model="entered[field.key]" class="field" type="text" :aria-label="t(field.label)"
+                  autocomplete="off" spellcheck="false" :disabled="saving"
+                />
+              </label>
               <label v-else class="entry">
                 <span class="label">{{ t(field.label) }}</span>
                 <span class="number-field">
@@ -337,10 +353,11 @@ const fieldGroups = computed(() => {
 .form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }
 .fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
-.fields.cutting { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.fields.cutting, .fields.engraving { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .fields.pocket { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .fields.pocket .number-field:has(.field-unit) input { padding-right: 44px; }
 .tool-entry { grid-column: span 2; }
+.text-entry { grid-column: 1 / -1; }
 .number-field { position: relative; min-width: 0; }
 .number-field:has(.field-unit) input { padding-right: 62px; }
 .field-unit { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 11px; pointer-events: none; }
@@ -354,5 +371,5 @@ p.errors { padding: 0; }
 .file strong, .where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file strong { font-size: 13px; font-weight: 500; }
 .where { margin-top: 2px; color: var(--text-dim); }
-@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting, .fields.pocket { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting, .fields.pocket, .fields.engraving { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

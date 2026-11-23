@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseEngravingTool": "Choose an engraving tool",
       "pocketOptions": "Geometry, entry and walls",
       "reviewJob": "Review job",
       "toolChangeHeight": "Tool changes at machine Z {z} {unit}",
@@ -20,6 +21,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "engraving": "Engraving",
+      "engravingSetup": "Set Z0 at the surface. The baseline starts at the left of the text. Letters engrave in uppercase.",
       "contour": "Contour",
       "contourSetup": "Keep the lead-in clear. For an inside cut, start from an open pocket or hole.",
       "inclinedEntry": "Use an end mill rated for the selected entry.",
@@ -33,6 +36,12 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "engravingText": "Text",
+      "engravingX": "Baseline X",
+      "engravingY": "Baseline Y",
+      "engravingHeight": "Letter height",
+      "engravingSpacing": "Letter spacing",
+      "engravingRotation": "Rotation (CCW)",
       "profileShape": "Shape",
       "profileSide": "Cut side",
       "profileDirection": "Direction",
@@ -126,6 +135,11 @@
       "g83": "G83 peck"
     },
     "check": {
+      "engravingRotation": "Enter a finite rotation angle.",
+      "engravingSpacing": "Letter spacing must be zero or greater.",
+      "engravingLength": "Enter between 1 and {max} characters.",
+      "engravingCharacters": "Use A–Z, 0–9, spaces, or + - / . : _.",
+      "engravingPrecision": "Check the lettering size, depth, clearance, feeds and spindle speed against the program’s precision.",
       "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
       "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
       "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",

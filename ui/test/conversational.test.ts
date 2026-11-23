@@ -371,8 +371,17 @@ describe('slots and keyways', () => {
     const program = text(slot(open))
     expect(program).toContain('G0 X0.2 Y1.3751\nG1 Z-0.05 F4')
     expect(program).toContain('G1 X0.2 Y-0.0625 F24')
+    expect(program).not.toMatch(/^G1 X0\.2 Y1\.3751$/m)
     expect(program).toContain('G3 X0.1375 Y1.3751 I-0.0625 J0')
     expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('allows short open slots and checks that a remaining closed end fits', () => {
+    const both = slot({ ...closed, ends: 'both', length: 5, width: 16 })
+    const one = slot({ ...closed, ends: 'low', length: 10, width: 16 })
+    for (const made of [both, one])
+      expect(previewProgram(newModal(tools), splitLines(text(made)), false, 1).error).toBeNull()
+    expect(errors(slot({ ...closed, ends: 'low', length: 5, width: 16 }))[0]).toContain('half the slot width')
   })
 
   it('uses a centre-line pass for a tool-width keyway and rejects unmachinable dimensions', () => {

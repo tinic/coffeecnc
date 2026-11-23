@@ -44,7 +44,8 @@ export function slot(s: Slot): Generated {
   const openHigh = s.ends === 'high' || s.ends === 'both'
   const low = openLow ? Math.floor(-halfLength - outside) : Math.ceil(-halfLength + halfWidth)
   const high = openHigh ? Math.ceil(halfLength + outside) : Math.floor(halfLength - halfWidth)
-  checks.check(halfLength > halfWidth && high > low, t('operations.check.slotTravel'))
+  if (s.ends === 'closed') checks.check(halfLength > halfWidth && high > low, t('operations.check.slotTravel'))
+  else if (s.ends !== 'both') checks.check(2 * halfLength >= halfWidth, t('operations.check.slotOpenTravel'))
   const depth = units(s.depth)
   const stepLimit = floor(s.depthPerPass)
   const spread = Math.max(0, floor((s.width - s.tool.diameter) / 2))
@@ -53,7 +54,7 @@ export function slot(s: Slot): Generated {
   const y = units(s.y)
   const extent = Math.max(Math.abs(x), Math.abs(y)) + Math.max(Math.abs(low), Math.abs(high), spread)
   checks.check(Number.isSafeInteger(extent) && Number.isSafeInteger(depth) && Number.isSafeInteger(units(s.clearance))
-    && depth > 0 && stepLimit > 0 && units(s.clearance) > 0 && ringStep > 0
+    && halfLength > 0 && depth > 0 && stepLimit > 0 && units(s.clearance) > 0 && ringStep > 0
     && Number(feedNumber(s.feed, s.unit)) > 0 && Number(feedNumber(s.entryFeed, s.unit)) > 0,
   t('operations.check.slotPrecision'))
   const rampDrop = ramp ? Math.floor((high - low) * Math.tan(s.angle * Math.PI / 180) + 1e-9) : 1
@@ -100,15 +101,17 @@ export function slot(s: Slot): Generated {
       }
     } else p.cut(`G1 ${z(after)}`, s.entryFeed)
     // Traverse the full centre line at depth before expanding into the sides.
-    linear(at === low ? high : low, 0)
-    if (at === high && rings > 0) linear(high, 0)
+    const end = at === low ? high : low
+    linear(end, 0)
+    // Start from the end just reached and keep both turns counterclockwise.
+    const side = end === high ? 1 : -1
     for (let ring = 1; ring <= rings; ring += 1) {
-      const r = Math.round(spread * ring / rings)
-      linear(high, r)
-      linear(low, r)
-      arc(low, -r)
-      linear(high, -r)
-      arc(high, r)
+      const r = side * Math.round(spread * ring / rings)
+      linear(end, r)
+      linear(at, r)
+      arc(at, -r)
+      linear(end, -r)
+      arc(end, r)
     }
     p.rapidZ(s.clearance)
   }

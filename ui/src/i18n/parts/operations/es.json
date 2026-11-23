@@ -25,7 +25,7 @@
       "circularPocket": "Cajera circular",
       "rectangularPocket": "Cajera rectangular",
       "slot": "Ranura / chavetero",
-      "slotSetup": "Usa una fresa adecuada para la entrada. Para un extremo abierto, indica el borde del material y deja espacio para que la herramienta lo sobrepase.",
+      "slotSetup": "Usa una fresa adecuada para la entrada. Ajusta la longitud para que cada extremo abierto coincida con el borde del material. Deja espacio para que la herramienta lo sobrepase.",
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
@@ -118,6 +118,7 @@
       "retractAboveClearance": "La altura de retracción no puede estar por encima de la altura de seguridad.",
       "slotToolWidth": "La anchura debe ser al menos el diámetro de la herramienta ({diameter}).",
       "slotTravel": "La ranura debe ser más larga que ancha y dejar que la herramienta se desplace.",
+      "slotOpenTravel": "Para alojar el extremo cerrado, la longitud de la ranura debe ser al menos la mitad de su anchura.",
       "slotAngle": "El ángulo de rampa debe ser mayor que 0° y menor que 90°.",
       "slotPrecision": "Aumenta los avances, la profundidad, la altura libre o la profundidad por pasada para ajustarlos a la precisión del programa.",
       "slotRampRoom": "La ranura es demasiado corta para este ángulo. Aumenta el ángulo o elige penetración vertical.",

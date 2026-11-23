@@ -25,7 +25,7 @@
       "circularPocket": "Caixa circular",
       "rectangularPocket": "Caixa retangular",
       "slot": "Ranhura / chaveta",
-      "slotSetup": "Use uma fresa de topo adequada à entrada. Numa extremidade aberta, indique o bordo do material e deixe espaço para a ferramenta passar além dele.",
+      "slotSetup": "Use uma fresa de topo adequada à entrada. Defina o comprimento para que cada extremidade aberta fique no bordo do material e deixe espaço para a ferramenta o ultrapassar.",
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
@@ -118,6 +118,7 @@
       "retractAboveClearance": "A altura de recuo não pode ficar acima da altura de segurança.",
       "slotToolWidth": "A largura deve ser pelo menos igual ao diâmetro da ferramenta ({diameter}).",
       "slotTravel": "A ranhura tem de ser mais comprida do que larga e deixar espaço para o curso da ferramenta.",
+      "slotOpenTravel": "Para acomodar a extremidade fechada, o comprimento da ranhura deve ser pelo menos metade da largura.",
       "slotAngle": "O ângulo de rampa tem de ser superior a 0° e inferior a 90°.",
       "slotPrecision": "Aumente os avanços, a profundidade, a folga ou a profundidade por passe para respeitar a precisão do programa.",
       "slotRampRoom": "A ranhura é demasiado curta para este ângulo. Aumente o ângulo ou escolha Mergulho.",

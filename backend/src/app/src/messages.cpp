@@ -542,11 +542,14 @@ auto encode_directory(const Directory& directory) -> Encoded {
                        {"bytes", fields.count(entry.bytes, "entries.bytes")},
                        {"modified", entry.modified}});
   }
-  return fields.finish({{"type", "directory"},
-                        {"path", directory.path},
-                        {"parent", nullable(directory.parent)},
-                        {"entries", std::move(entries)},
-                        {"truncated", directory.truncated}});
+  Json message{{"type", "directory"},
+               {"path", directory.path},
+               {"parent", nullable(directory.parent)},
+               {"entries", std::move(entries)},
+               {"truncated", directory.truncated}};
+  if (directory.writable.has_value())
+    message["writable"] = directory.writable.value_or(false);
+  return fields.finish(message);
 }
 
 auto history_name(HistorySource source) -> std::string_view {

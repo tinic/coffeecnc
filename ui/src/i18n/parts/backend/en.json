@@ -1,5 +1,27 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "The program is running.",
+      "directorySync": "Saved on disk. Directory synchronization failed. {detail}",
+      "manage": "Manage program files",
+      "unavailable": "Program file management is unavailable.",
+      "nameForRename": "A new file name is required for rename only.",
+      "closing": "CoffeeCNC is closing.",
+      "starting": "CoffeeCNC is starting.",
+      "busy": "Another program upload is in progress.",
+      "verify": "Cannot verify the loaded program while the controller is offline.",
+      "stop": "Stop the loaded program before replacing it.",
+      "sameOrigin": "Upload from the CoffeeCNC LAN screen.",
+      "choose": "Choose a program file to upload.",
+      "size": "The program is longer than 16 MiB.",
+      "text": "The upload must be a program text file.",
+      "uploadFailed": "The upload could not be saved.",
+      "copySize": "The file is longer than 32 MiB.",
+      "nameTaken": "A file or folder already has that name.",
+      "missing": "The file or folder no longer exists.",
+      "loaded": "Open a different program before moving or deleting this item.",
+      "oneName": "Use a single file or folder name."
+    },
     "toolChangeMeasurement": {
       "unavailable": "Measuring during a program tool change is unavailable.",
       "requiresToolAndSetter": "A cutting tool in the tool table and a fixed setter are required.",

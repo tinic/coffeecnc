@@ -264,5 +264,6 @@
   { "id": 38, "type": "set_work_rotation", "wcs": 2, "rotation_xy": -12.5 },
   { "id": 39, "type": "clear_g92" },
   { "id": 40, "type": "watch_diagnostics", "on": true },
-  { "id": 41, "type": "launch_hal_tool", "tool": "halscope" }
+  { "id": 41, "type": "launch_hal_tool", "tool": "halscope" },
+  { "id": 42, "type": "manage_program_file", "operation": "rename", "path": "/home/cnc/nc_files/part.ngc", "name": "plate.ngc" }
 ]

@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "上传程序",
+      "choose": "将一个文件拖到此处或浏览选择",
+      "replace": "替换已有文件",
+      "uploading": "正在上传…",
+      "saved": "{name} 已保存到程序文件夹。",
+      "failed": "无法上传程序。"
+    },
     "fileBrowser": {
+      "newFolder": "新建文件夹",
+      "rename": "重命名",
+      "name": "名称",
+      "actions": "{name} 的操作",
+      "copyToPrograms": "复制到程序文件夹",
+      "copied": "{name} 已复制到程序文件夹。",
+      "deleteConfirm": "要删除 {name} 吗？",
       "title": "打开程序",
       "recentPrograms": "最近的程序",
       "recent": "最近",

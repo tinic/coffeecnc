@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "Subir programa",
+      "choose": "Suelte un archivo aquí o selecciónelo",
+      "replace": "Reemplazar el archivo existente",
+      "uploading": "Subiendo…",
+      "saved": "{name} se guardó en Programas.",
+      "failed": "No se pudo subir el programa."
+    },
     "fileBrowser": {
+      "newFolder": "Nueva carpeta",
+      "rename": "Cambiar nombre",
+      "name": "Nombre",
+      "actions": "Acciones para {name}",
+      "copyToPrograms": "Copiar a Programas",
+      "copied": "{name} se copió a Programas.",
+      "deleteConfirm": "¿Eliminar {name}?",
       "title": "Abrir programa",
       "recentPrograms": "Programas recientes",
       "recent": "Recientes",

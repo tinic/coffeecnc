@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "Programm hochladen",
+      "choose": "Eine Datei hier ablegen oder auswählen",
+      "replace": "Vorhandene Datei ersetzen",
+      "uploading": "Wird hochgeladen…",
+      "saved": "{name} wurde in „Programme“ gespeichert.",
+      "failed": "Das Programm konnte nicht hochgeladen werden."
+    },
     "fileBrowser": {
+      "newFolder": "Neuer Ordner",
+      "rename": "Umbenennen",
+      "name": "Name",
+      "actions": "Aktionen für {name}",
+      "copyToPrograms": "Nach „Programme“ kopieren",
+      "copied": "{name} wurde nach „Programme“ kopiert.",
+      "deleteConfirm": "{name} löschen?",
       "title": "Programm öffnen",
       "recentPrograms": "Zuletzt geöffnete Programme",
       "recent": "Zuletzt",

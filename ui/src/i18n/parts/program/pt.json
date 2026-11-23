@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "Carregar programa",
+      "choose": "Largue um ficheiro aqui ou selecione-o",
+      "replace": "Substituir o ficheiro existente",
+      "uploading": "A carregar…",
+      "saved": "{name} foi guardado em Programas.",
+      "failed": "Não foi possível carregar o programa."
+    },
     "fileBrowser": {
+      "newFolder": "Nova pasta",
+      "rename": "Mudar o nome",
+      "name": "Nome",
+      "actions": "Ações para {name}",
+      "copyToPrograms": "Copiar para Programas",
+      "copied": "{name} foi copiado para Programas.",
+      "deleteConfirm": "Eliminar {name}?",
       "title": "Abrir programa",
       "recentPrograms": "Programas recentes",
       "recent": "Recentes",

@@ -108,6 +108,7 @@ function startNew(): void {
 
 // The text area and what is drawn with it.
 const area = useTemplateRef<HTMLTextAreaElement>('area')
+const findField = useTemplateRef<HTMLInputElement>('findField')
 const rowHeight = 24
 const overscan = 6
 const scrollTop = ref(0)
@@ -229,7 +230,7 @@ function keydown(event: KeyboardEvent): void {
     redo()
   } else if (key === 'f') {
     event.preventDefault()
-    document.querySelector<HTMLInputElement>('.editor-tools input[aria-label="Find"]')?.focus()
+    findField.value?.focus()
   } else if (key === 's') {
     event.preventDefault()
     save()
@@ -311,7 +312,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
         <button v-tooltip="t('program.editor.newProgram')" class="btn square" type="button" :aria-label="t('program.editor.newProgram')" :disabled="saving" @click="startNew"><AppIcon name="plus" /></button>
         <span class="find">
           <AppIcon name="search" />
-          <input v-model="query" class="field mono" type="search" :aria-label="t('program.editor.find')" :placeholder="t('program.editor.find')" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
+          <input ref="findField" v-model="query" class="field mono" type="search" :aria-label="t('program.editor.find')" :placeholder="t('program.editor.find')" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
           <span class="count mono" role="status">{{ matchLabel }}</span>
         </span>
         <button v-tooltip="t('program.editor.previousMatch')" class="btn square" type="button" :aria-label="t('program.editor.previousMatch')" :disabled="matches.length === 0" @click="findNext(-1)"><AppIcon name="up" /></button>

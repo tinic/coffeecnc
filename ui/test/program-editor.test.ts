@@ -6,6 +6,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import ProgramEditor from '../src/components/ProgramEditor.vue'
+import { setLanguage } from '../src/i18n'
 import { EditHistory, findAll, lineOf, lineStart, maxProgramBytes, programSource, uneditableReason, type EditorTarget } from '../src/program-editor'
 import type { FromMachine, ProgramText, Status, ToMachine } from '../src/protocol'
 import { programDirectory, programStamp } from '../src/sim/files'
@@ -316,6 +317,16 @@ describe('program editor', () => {
     button('Undo').click()
     await nextTick()
     expect(area().value).toBe(`${lines.join('\n')}\n`)
+  })
+
+  it('goes to Find with Ctrl+F in every language', async () => {
+    await setLanguage('de')
+    load()
+    await open()
+    const element = one('textarea')
+    element?.focus()
+    element?.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(one('.find input'))
   })
 
   it('finds, marks and counts matches, and goes to a line', async () => {

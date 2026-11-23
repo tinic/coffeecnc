@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "remote_server.hpp"
 
+#include <coffeecnc/app/alarm_log.hpp>
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
@@ -256,6 +257,11 @@ auto preview_helper() -> std::string {
     return COFFEECNC_PREVIEW_HELPER_BUILT;
 #endif
   return {};
+}
+
+auto unix_now() -> std::chrono::milliseconds {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch());
 }
 
 // An environment variable; empty when it is not set.
@@ -527,6 +533,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
   LocalToolModelFiles history_files;
+  LocalToolModelFiles alarm_files;
+  // Every operator message and refusal posted to the page is also kept in the alarm log.
+  std::unique_ptr<AlarmLog> alarms;
   std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
@@ -550,8 +559,12 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                                      std::chrono::milliseconds rendered_at) -> void {
                         if (!runtime)
                           return;
+                        if (alarms)
+                          alarms->request(page, json);
                         auto outcome = runtime->submit(page, json, rendered_at);
                         const bool ready = outcome.send_snapshots;
+                        if (alarms)
+                          alarms->posted(outcome.page, outcome.messages, unix_now());
                         window.post(outcome.page, std::move(outcome.messages));
                         if (ready && feed)
                           feed->page_ready(page);
@@ -568,13 +581,22 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     std::unique_ptr<PanelFeed>& feed;
     std::unique_ptr<Runtime>& runtime;
     std::unique_ptr<ToolModelStore>& models;
+    std::unique_ptr<AlarmLog>& alarms;
     ~Shutdown() {
       window.close();
       feed.reset();
       runtime.reset();
       models.reset();
+      // Last: what the others posted while they stopped is appended.
+      alarms.reset();
     }
-  } shutdown{window, feed, runtime, models};
+  } shutdown{window, feed, runtime, models, alarms};
+  // What the services post to the page, as the alarm log sees it too.
+  const auto post = [&window, &alarms](PageToken page, std::vector<std::string> messages) -> void {
+    if (alarms)
+      alarms->posted(page, messages, unix_now());
+    window.post(page, std::move(messages));
+  };
   if (config->remote_port != 0) {
     try {
       remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts);
@@ -585,12 +607,16 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   int code = 0;
   try {
-    models = std::make_unique<ToolModelStore>(
-        model_files, location,
+    // In the machine's data directory, next to the offset history; without one, for this run
+    // only.
+    alarms = std::make_unique<AlarmLog>(
+        alarm_files,
+        location.availability == ToolModelAvailability::available ? location.directory : "",
+        location.availability == ToolModelAvailability::available ? "" : location.reason,
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
-        },
-        config->limits);
+        });
+    models = std::make_unique<ToolModelStore>(model_files, location, post, config->limits);
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
     // Next to the program progress, in the machine's data directory; without one, for this
     // session only.
@@ -604,7 +630,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
-        [&window, &remote](const Outcome& outcome) -> void {
+        [&window, &remote, &alarms](const Outcome& outcome) -> void {
+          if (alarms)
+            alarms->posted(outcome.page, outcome.messages, unix_now());
           window.post(outcome.page, outcome.messages);
           if (remote)
             remote->notifications(outcome.messages);
@@ -620,11 +648,11 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     }
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
-        source,
-        [&window](PageToken page, std::vector<std::string> messages) -> void {
-          window.post(page, std::move(messages));
+        source, post, &preview,
+        [&models, &alarms](PageToken page) -> void {
+          models->send_snapshot(page);
+          alarms->send_snapshot(page);
         },
-        &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)
       hooks.before_load(window, *config);

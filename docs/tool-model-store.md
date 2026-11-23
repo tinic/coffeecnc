@@ -7,7 +7,7 @@ Saved tool-model defaults and per-tool assignments of the panel, kept by the bac
 | Key in `[COFFEECNC]` | Rule | Effect |
 |---|---|---|
 | `MACHINE_ID` | `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, case-sensitive; no fallback from name, host or path | Absent or empty: `session_only`. Not valid: `unavailable` |
-| `DATA_DIRECTORY` | Absolute. Default `$XDG_DATA_HOME/coffeecnc` when that variable is an absolute path (a relative one is ignored), else `$HOME/.local/share/coffeecnc` | The machine ID is appended; file `tool-models.json`, lock file `lock` |
+| `DATA_DIRECTORY` | Absolute. Default `$XDG_DATA_HOME/coffeecnc` when that variable is an absolute path (a relative one is ignored), else `$HOME/.local/share/coffeecnc` | The machine ID is appended; file `tool-models.json`, lock file `lock`. The same directory holds the offset history and the alarm log (`alarm-log.jsonl`, `alarm-log.1.jsonl`, `alarm-log.2.jsonl`) |
 
 ## Interface
 

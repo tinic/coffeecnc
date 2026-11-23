@@ -145,7 +145,12 @@
       "noSettingsStorage": "このセッションにはオペレーター設定の保存先がありません。",
       "tooManySettingsChanges": "待機中の設定変更が多すぎます。",
       "settingsPageEnded": "この設定ページは終了しました。",
-      "tooManyChanges": "待機中の工具モデルの変更が多すぎます。"
+      "tooManyChanges": "待機中の工具モデルの変更が多すぎます。",
+      "fileNotOpenedAppend": "ファイルを開けません：{error}",
+      "fileNotWritten": "ファイルに書き込めません：{error}",
+      "fileNotSynchronised": "ファイルを同期できません：{error}",
+      "fileNotClosed": "ファイルを閉じられません：{error}",
+      "appendUnsupported": "ここでは {path} に追記できません"
     },
     "offsetHistory": {
       "nameNotString": "名前が文字列ではありません",
@@ -535,6 +540,12 @@
     "jogStop": {
       "watchdog": "HAL ウォッチドッグによりジョグが停止しました。CoffeeCNC のハートビートがウォッチドッグのタイムアウトより長く止まりました。",
       "probeContact": "ジョグ停止：プローブ接触"
+    },
+    "alarmLog": {
+      "cannotRead": "アラームログ {file} を読み込めません：{detail}",
+      "notRotated": "アラームログをローテーションできませんでした：{detail}",
+      "notSaved": "アラームログを保存できませんでした：{detail}",
+      "entriesLost": "一部のアラームログ項目を保存できませんでした。"
     }
   }
 }

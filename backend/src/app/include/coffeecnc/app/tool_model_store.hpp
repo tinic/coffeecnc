@@ -104,6 +104,12 @@ public:
   [[nodiscard]] virtual auto sync_directory(const std::string& directory) -> Done = 0;
   // Closes the temporary file if it is open and removes it. Failure is not reported.
   virtual void discard(const std::string& path) = 0;
+  // Appends to the regular file, made with mode 0600 when it is missing, and fsyncs it. A
+  // failure can leave part of the bytes in the file. The temporary file is not touched.
+  [[nodiscard]] virtual auto append(const std::string& path, std::string_view bytes) -> Done {
+    static_cast<void>(bytes);
+    return std::unexpected(path + " cannot be appended to here");
+  }
 
 protected:
   ToolModelFiles(const ToolModelFiles&) = default;
@@ -133,6 +139,7 @@ public:
   [[nodiscard]] auto link(const std::string& from, const std::string& to) -> Done override;
   [[nodiscard]] auto sync_directory(const std::string& directory) -> Done override;
   void discard(const std::string& path) override;
+  [[nodiscard]] auto append(const std::string& path, std::string_view bytes) -> Done override;
 
 private:
   int lock_{-1};

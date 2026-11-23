@@ -1,3 +1,4 @@
+#include <coffeecnc/app/alarm_log.hpp>
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/request.hpp>
@@ -362,6 +363,17 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_offset_history(history));
   messages.push_back(
       encode_offset_history({1, false, "No machine identity configured", {}}));
+  AlarmLogView alarms;
+  alarms.saved = true;
+  alarms.session = 3;
+  alarms.skipped = 1;
+  alarms.entries = {
+      {1, 4, 1700000000000, MessageLevel::error, "Joint 2 following error", "", ""},
+      {2, 1, 1700000100000, MessageLevel::info, "Program loaded", "", ""},
+      {2, 2, 1700000105000, MessageLevel::error, "The machine is off.", "rejected",
+       R"({"axis":"x","type":"home"})"}};
+  messages.emplace_back(encode_alarm_log(alarms));
+  messages.emplace_back(encode_alarm_log({false, "No machine identity configured", 1, 0, {}}));
   return messages;
 }
 
@@ -438,6 +450,13 @@ auto variants(const Json& message) -> std::set<std::string> {
         add("before", change.at("before").is_null() ? "null" : "given");
         add("after", change.at("after").is_null() ? "null" : "given");
       }
+    }
+  } else if (type == "alarm_log") {
+    add("storage", message.at("storage").get<std::string>());
+    add("entries", message.at("entries").empty() ? "empty" : "some");
+    for (const auto& entry : message.at("entries")) {
+      add("outcome", entry.at("outcome").is_null() ? "null" : "given");
+      add("command", entry.at("command").is_null() ? "null" : "given");
     }
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
@@ -568,6 +587,15 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "offset_history before given",
     "offset_history after null",
     "offset_history after given",
+    "alarm_log",
+    "alarm_log storage saved",
+    "alarm_log storage session_only",
+    "alarm_log entries empty",
+    "alarm_log entries some",
+    "alarm_log outcome null",
+    "alarm_log outcome given",
+    "alarm_log command null",
+    "alarm_log command given",
 });
 
 void every_machine_message_encodes() {

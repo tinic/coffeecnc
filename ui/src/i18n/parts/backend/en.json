@@ -145,7 +145,12 @@
       "noSettingsStorage": "Operator settings storage is not part of this session.",
       "tooManySettingsChanges": "Too many settings changes are waiting.",
       "settingsPageEnded": "This settings page has ended.",
-      "tooManyChanges": "Too many tool model changes are waiting."
+      "tooManyChanges": "Too many tool model changes are waiting.",
+      "fileNotOpenedAppend": "the file cannot be opened: {error}",
+      "fileNotWritten": "the file cannot be written: {error}",
+      "fileNotSynchronised": "the file cannot be synchronised: {error}",
+      "fileNotClosed": "the file cannot be closed: {error}",
+      "appendUnsupported": "{path} cannot be appended to here"
     },
     "offsetHistory": {
       "nameNotString": "a name is not a string",
@@ -535,6 +540,12 @@
     "jogStop": {
       "watchdog": "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the watchdog timeout.",
       "probeContact": "Jog stopped: probe contact"
+    },
+    "alarmLog": {
+      "cannotRead": "The alarm log {file} cannot be read: {detail}",
+      "notRotated": "The alarm log could not be rotated: {detail}",
+      "notSaved": "The alarm log could not be saved: {detail}",
+      "entriesLost": "Some alarm log entries could not be saved."
     }
   }
 }

@@ -264,6 +264,29 @@ void LocalToolModelFiles::discard(const std::string& path) {
   static_cast<void>(::unlink(path.c_str()));
 }
 
+auto LocalToolModelFiles::append(const std::string& path, std::string_view bytes) -> Done {
+  int opened =
+      ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, file_mode);
+  if (opened < 0)
+    return failure("the file cannot be opened");
+  const auto done = [&]() -> Done {
+    while (!bytes.empty()) {
+      const auto written = ::write(opened, bytes.data(), bytes.size());
+      if (written < 0 && errno == EINTR)
+        continue;
+      if (written < 0)
+        return failure("the file cannot be written");
+      bytes.remove_prefix(static_cast<std::size_t>(written));
+    }
+    if (::fsync(opened) != 0)
+      return failure("the file cannot be synchronised");
+    return {};
+  }();
+  if (!close_descriptor(opened) && done)
+    return failure("the file cannot be closed");
+  return done;
+}
+
 ToolModelArchive::ToolModelArchive(ToolModelFiles& files, ToolModelLocation location)
     : files_(files), location_(std::move(location)) {
   show({location_.machine_id,

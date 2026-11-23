@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 36 cases and the native fixture 35, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 36 cases and the native fixture 37, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -36,6 +36,10 @@ The [storage contract](../docs/design/native-tool-model-storage.md) defines docu
 ## Operator settings
 
 `hello.operator_settings_storage: 1` enables the `operator_settings` snapshot and `set_operator_settings` command. `hello.max_spindle_rpm` supplies the machine's spindle ceiling. The document contains startup display units, enabled work-system shortcuts, default spindle RPM and default jog velocity in mm/min. Saving never sends controller commands. The snapshot and save revision follow the same identity and durability rules as tool models, with a separate file and the same writer/lock. [Complete contract](../docs/design/operator-settings.md).
+
+## Alarm log
+
+`alarm_log` is sent once after `hello`: what the operator was told before the page was loaded, oldest first, at most 500 entries, of earlier runs of CoffeeCNC and of earlier pages of this run. What is told after it arrives as `message` and `result` as before. Each entry has the run it was told in (`session`, from 1; the message's own `session` is this run), `time`, `level`, `text`, the `outcome` of a result (null for an operator message) and the `command` the result answers, as a panel sent it without its id (null when it is not known; only its `type` when it was longer than 512 bytes). A panel reads `command` defensively: an older panel may have sent it. `storage` is `saved` or `session_only` with the `reason`; `reason` also says when the log cannot be read or written now. `skipped` counts lines of the saved log that could not be read. The panel shows the entries under its own, grouped by run. File format and limits: [backend rules](../docs/backend-rules.md).
 
 ## Version mismatch
 

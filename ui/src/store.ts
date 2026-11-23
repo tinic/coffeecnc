@@ -6,6 +6,7 @@ import { reactive } from 'vue'
 
 import type { Transport } from './bridge'
 import type {
+  AlarmLog,
   CommandBody,
   CommandResult,
   Directory,
@@ -89,6 +90,8 @@ export interface PanelState {
   workOffsets: WorkOffsets | null
   /** Null until the executable sends one; a peer without a history never does. */
   offsetHistory: OffsetHistory | null
+  /** What was told before this page was loaded; null until the executable sends it. */
+  alarmLog: AlarmLog | null
   program: ProgramText | null
   preview: Preview | null
   directory: Directory | null
@@ -258,6 +261,7 @@ export function createPanel(options: PanelOptions): Panel {
     startupSpindleRpm: 0,
     workOffsets: null,
     offsetHistory: null,
+    alarmLog: null,
     program: null,
     preview: null,
     directory: null,
@@ -359,6 +363,7 @@ export function createPanel(options: PanelOptions): Panel {
         state.toolModels = null
         state.toolTable = null
         state.offsetHistory = null
+        state.alarmLog = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
           // These snapshots belong to a protocol we can no longer interpret. Clearing hello
@@ -433,6 +438,9 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'offset_history':
         state.offsetHistory = message
+        break
+      case 'alarm_log':
+        state.alarmLog = message
         break
       case 'program':
         state.program = message

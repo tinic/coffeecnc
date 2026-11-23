@@ -123,6 +123,15 @@ public:
     calls.push_back("discard " + path);
     disk.files.erase(path);
   }
+  // A failing append writes half of the bytes, as a full disk does.
+  auto append(const std::string& path, std::string_view bytes) -> Done override {
+    if (begin("append", path)) {
+      disk.files[path] += bytes.substr(0, bytes.size() / 2);
+      return std::unexpected(std::string("the file cannot be written: No space left on device"));
+    }
+    disk.files[path] += bytes;
+    return {};
+  }
 
   // Calls of this step so far.
   [[nodiscard]] auto count(std::string_view step) const -> std::size_t {

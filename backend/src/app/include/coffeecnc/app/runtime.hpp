@@ -101,7 +101,7 @@ private:
   std::atomic<bool> stop_control_{};
   std::atomic<bool> stop_status_{};
   std::atomic<std::uint64_t> control_periods_{};
-  std::atomic<std::int64_t> longest_control_period_{};
+  std::atomic<std::chrono::nanoseconds::rep> longest_control_period_{};
   std::thread control_;
   std::thread status_thread_;
   std::thread worker_;

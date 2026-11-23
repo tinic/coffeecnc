@@ -205,7 +205,12 @@ if(BUILD_TESTING)
       coffeecnc_enable_analyzers(coffeecnc_sim_tests)
       add_executable(coffeecnc_fixed_setter_tests tests/sim/fixed_setter_tests.cpp)
       target_link_libraries(coffeecnc_fixed_setter_tests PRIVATE
-        coffeecnc_linuxcnc coffeecnc_project_options)
+        coffeecnc_app coffeecnc_linuxcnc coffeecnc_project_options nlohmann_json::nlohmann_json)
+      if(TARGET coffeecnc_preview)
+        target_compile_definitions(coffeecnc_fixed_setter_tests PRIVATE
+          COFFEECNC_PREVIEW_HELPER_BUILT="$<TARGET_FILE:coffeecnc_preview>")
+        add_dependencies(coffeecnc_fixed_setter_tests coffeecnc_preview)
+      endif()
       # The TIMEOUT of every simulation test includes 300 s it may wait for the host's
       # simulation lock (run.sh -w): another checkout may be running one.
       foreach(units mm inch)
@@ -233,6 +238,17 @@ if(BUILD_TESTING)
         # Include the consecutive tolerance checks at the configured probe speeds.
         set_tests_properties(linuxcnc_fixed_setter_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
           RESOURCE_LOCK linuxcnc TIMEOUT 470)
+        if(TARGET coffeecnc_preview)
+          set(change_position)
+          if(units STREQUAL "inch")
+            set(change_position -c)
+          endif()
+          add_test(NAME linuxcnc_m6_measure_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -u ${units} ${change_position} -t 130 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_m6_measure_${units}
+            $<TARGET_FILE:coffeecnc_fixed_setter_tests> measure-m6)
+          set_tests_properties(linuxcnc_m6_measure_${units} PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
+            RESOURCE_LOCK linuxcnc TIMEOUT 460)
+        endif()
         add_test(NAME linuxcnc_material_probe_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 420 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_material_probe_${units}
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> material)

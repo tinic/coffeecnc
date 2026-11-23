@@ -992,7 +992,8 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
         settings_, inputs, run,
         static_cast<int>(std::min<std::ptrdiff_t>(std::ranges::count(text, '\n') + 1, 2000000000)),
         *last_tools);
-    if (outcome.restart && outcome.restart->tool != inputs.start.tool_in_spindle &&
+    if (outcome.restart &&
+        outcome.restart->tool != inputs.restart_loaded_tool.value_or(inputs.start.tool_in_spindle) &&
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||
          settings_.tool_change_quill_up)) {
       outcome.restart.reset();

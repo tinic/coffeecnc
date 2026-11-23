@@ -266,6 +266,7 @@
         "editTool": "Editar herramienta {tool}",
         "removeTool": "Quitar herramienta {tool}",
         "confirmToolChange": "Confirmar cambio de herramienta",
+        "measureToolDuringChange": "Medir durante el cambio de herramienta",
         "saveToolModelDefaults": "Guardar valores predeterminados de modelos de herramienta",
         "saveToolPreviewModel": "Guardar modelo de vista previa de la herramienta",
         "saveSettings": "Guardar ajustes",

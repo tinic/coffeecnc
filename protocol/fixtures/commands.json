@@ -253,12 +253,75 @@
       "go_to_safe_z": 40
     }
   },
-  { "id": 29, "type": "set_work_offset", "wcs": 2, "offset": [25.4, -50.8, 0] },
-  { "id": 30, "type": "fixed_setter", "action": "touch_off", "tool": 98, "x": 4, "y": 6.35, "z": -85.3 },
-  { "id": 31, "type": "plan_restart", "line": 25, "preview_context": 7 },
-  { "id": 32, "type": "start_restart", "plan_id": 3 },
-  { "id": 33, "type": "edit_program", "path": "/home/cnc/nc_files/part.ngc", "line": 12, "old_text": "G1 X10 F600", "new_text": "G1 X10 F450" },
-  { "id": 35, "type": "jog_paused_z", "distance": 1 },
-  { "id": 36, "type": "save_program", "path": "/home/cnc/nc_files/part.ngc", "text": "G21\nG1 X12 F450\nM2\n", "stamp": "9f6b1c2e04d3a587" },
-  { "id": 37, "type": "restore_offset", "entry": 10 }
+  {
+    "id": 29,
+    "type": "set_work_offset",
+    "wcs": 2,
+    "offset": [
+      25.4,
+      -50.8,
+      0
+    ]
+  },
+  {
+    "id": 30,
+    "type": "fixed_setter",
+    "action": "touch_off",
+    "tool": 98,
+    "x": 4,
+    "y": 6.35,
+    "z": -85.3
+  },
+  {
+    "id": 31,
+    "type": "plan_restart",
+    "line": 25,
+    "preview_context": 7
+  },
+  {
+    "id": 32,
+    "type": "start_restart",
+    "plan_id": 3
+  },
+  {
+    "id": 33,
+    "type": "edit_program",
+    "path": "/home/cnc/nc_files/part.ngc",
+    "line": 12,
+    "old_text": "G1 X10 F600",
+    "new_text": "G1 X10 F450"
+  },
+  {
+    "id": 35,
+    "type": "jog_paused_z",
+    "distance": 1
+  },
+  {
+    "id": 36,
+    "type": "save_program",
+    "path": "/home/cnc/nc_files/part.ngc",
+    "text": "G21\nG1 X12 F450\nM2\n",
+    "stamp": "9f6b1c2e04d3a587"
+  },
+  {
+    "id": 37,
+    "type": "restore_offset",
+    "entry": 10
+  },
+  {
+    "id": 38,
+    "type": "backup",
+    "directory": "/media/cnc/STICK"
+  },
+  {
+    "id": 39,
+    "type": "check_restore",
+    "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz"
+  },
+  {
+    "id": 40,
+    "type": "restore",
+    "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
+    "token": "3f1c8e0a9b2d4c75"
+  }
 ]

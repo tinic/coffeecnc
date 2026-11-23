@@ -102,6 +102,13 @@ if(BUILD_TESTING)
       coffeecnc_project_options nlohmann_json::nlohmann_json)
     coffeecnc_enable_analyzers(coffeecnc_offset_history_tests)
     add_test(NAME offset_history COMMAND coffeecnc_offset_history_tests)
+    if(TARGET coffeecnc_backup)
+      add_executable(coffeecnc_machine_data_tests tests/machine_data_tests.cpp)
+      target_link_libraries(coffeecnc_machine_data_tests PRIVATE coffeecnc_backup
+        coffeecnc_project_options nlohmann_json::nlohmann_json LibArchive::LibArchive)
+      coffeecnc_enable_analyzers(coffeecnc_machine_data_tests)
+      add_test(NAME machine_data COMMAND coffeecnc_machine_data_tests)
+    endif()
     # The preview in the app layer: composer on a service, worker thread on an engine, both the
     # test's own. No interpreter.
     add_executable(coffeecnc_preview_tests tests/preview_tests.cpp)

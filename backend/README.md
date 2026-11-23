@@ -33,7 +33,7 @@ Run inside `backend/`. Requires CMake 3.25+, Ninja and a C++23 compiler (Clang o
 | `COFFEECNC_LINUXCNC` | `AUTO` (default), `ON`, `OFF` | `AUTO` builds the adapter where LinuxCNC's development files and Boost headers are found; `ON` fails configuration without them |
 | `COFFEECNC_SHELL` | `AUTO` (default), `ON`, `OFF` | `AUTO` builds the shell where `pkg-config` finds `webkit2gtk-4.1` and `gtk+-3.0`. The executable is built where adapter and shell both are |
 
-The adapter needs `linuxcnc-uspace-dev` and `libboost-dev` (LinuxCNC's headers include Boost's; its package does not depend on it). Where Boost cannot be installed, headers unpacked under `build/deps/usr/include` are accepted. The package ships `libtooldata.so` without `tooldata.hh`; `src/linuxcnc/upstream/tooldata.hh` is LinuxCNC's own header, used where none is installed.
+The executable needs `libarchive-dev` (backup and restore). The adapter needs `linuxcnc-uspace-dev` and `libboost-dev` (LinuxCNC's headers include Boost's; its package does not depend on it). Where Boost cannot be installed, headers unpacked under `build/deps/usr/include` are accepted. The package ships `libtooldata.so` without `tooldata.hh`; `src/linuxcnc/upstream/tooldata.hh` is LinuxCNC's own header, used where none is installed.
 
 Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC starts `coffeecnc -ini <file>`. Options: `--windowed` (1280 x 800 instead of full screen), `--ui <directory>` (the built panel; default is the installed one, and in a development build `ui/dist` of the checkout), `--inspector`.
 
@@ -68,6 +68,7 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | `panel_bundle`, `panel_stamp` | | Build `ui/dist` from this checkout; the stamp checker refuses a changed source, a changed bundle and an unbuilt source |
 | `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 229 checks, about 32 s each, with a paired STEP sample over a computed preview |
 | `text_file` | | The bounded file reader: bound, block edges, missing file, directory |
+| `machine_data` | | Backup and restore on a file system that fails at each step: archive round trip, garbage and cut archives; what a backup holds and leaves out; new, changed and same files; another machine's backup; path traversal and unlisted, duplicate and symbolic-link entries refused with nothing written; refusal states of the policy, the recheck and a changed file; staging, the helper's writes, the pre-restore copy and the next start's notice; a partial write put back. Built where libarchive is |
 | `xvfb_wrapper` | | `tests/shell/under_xvfb.sh`: an early exit, a program gone after its checks and a failed check are nonzero exits |
 | `install_tree`, `package_deb` | | The installed layout; the package's control fields, dependencies and contents; no build-host path in an installed-only build |
 | `linuxcnc_installed_prefix_start`, `linuxcnc_installed_package_start` | `linuxcnc` | The installed executable as DISPLAY program without overrides: names its own panel and helper, a preview becomes ready, SIGTERM leaves no process |

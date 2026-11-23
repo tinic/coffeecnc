@@ -234,4 +234,28 @@ run -ini "$work/sim/coffeecnc_sim.ini"
 said " preview_helper=$alone/bin/coffeecnc-preview\$" && ! said 'coffeecnc: No preview helper'
 check installed_helper_beside_the_executable_is_used $? "$(detail)"
 
+# --apply-restore: the helper a restore leaves behind waits for the process it is told (the
+# linuxcnc script), then writes the staged file and keeps the one it replaces.
+data="$work/restore-data"
+rm -rf "$data" && mkdir -p "$data/restore" "$work/restore-config" || exit 125
+echo 'T1 P1 Z10 ;now' >"$work/restore-config/tool.tbl"
+echo 'T1 P1 Z48.2 ;backup' >"$data/restore/0.staged"
+printf '{"version":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","to":"%s"}]}\n' \
+  "$data/restore/0.staged" "$work/restore-config/tool.tbl" >"$data/restore/plan.json"
+sleep 2 &
+waited=$!
+start=$(date +%s)
+run --apply-restore "$data" --after "$waited"
+end=$(date +%s)
+[ "$code" = 0 ] && said 'coffeecnc: restore=written files=1' && [ $((end - start)) -ge 1 ] &&
+  grep -q 'Z48.2 ;backup' "$work/restore-config/tool.tbl" && [ ! -e "$data/restore/plan.json" ] &&
+  grep -q '"ok":true' "$data/restore/result.json" && ls "$data"/pre-restore-*.tar.gz >/dev/null 2>&1
+check apply_restore_waits_and_writes $? "$(detail)_waited_$((end - start))s"
+run --apply-restore "$data" --after "$waited"
+[ "$code" = 0 ] && said 'coffeecnc: restore=written files=0'
+check apply_restore_without_a_plan_does_nothing $? "$(detail)"
+run --apply-restore "$data"
+[ "$code" = 1 ] && said 'usage: coffeecnc --apply-restore'
+check apply_restore_usage $? "$(detail)"
+
 exit $failed

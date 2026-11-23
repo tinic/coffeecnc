@@ -81,7 +81,11 @@
       "invalidToolRow": "Invalid tool table row.",
       "invalidToolNumber": "Invalid tool number.",
       "noToolChangePending": "No manual tool change is awaiting confirmation.",
-      "unsupportedCommand": "Unsupported command."
+      "unsupportedCommand": "Unsupported command.",
+      "backupFolder": "Choose a folder for the backup.",
+      "backupFile": "Choose a backup file.",
+      "restoreMachineOn": "Switch the machine off or press E-stop before a restore.",
+      "restoreProgram": "Stop the program before a restore."
     },
     "session": {
       "busy": "Too many requests are waiting for LinuxCNC.",
@@ -145,7 +149,8 @@
       "previousStopAxis": "The previous jog stop on {axis} is not confirmed: {detail}",
       "directoryNotSent": "Directory cannot be sent: {detail}",
       "mdiTooLong": "MDI requires one block of at most 254 bytes.",
-      "jogStopFailed": "Jog stop failed on {axis}: {detail}"
+      "jogStopFailed": "Jog stop failed on {axis}: {detail}",
+      "noBackup": "This CoffeeCNC cannot back up or restore."
     },
     "request": {
       "nestingLimit": "Request nesting limit exceeded.",
@@ -270,7 +275,10 @@
         "saveToolPreviewModel": "Save tool preview model",
         "saveSettings": "Save settings",
         "toolModels": "Tool models",
-        "settings": "Settings"
+        "settings": "Settings",
+        "backup": "Back up machine data",
+        "checkBackup": "Check backup",
+        "restoreBackup": "Restore backup"
       }
     },
     "sim": {
@@ -369,7 +377,9 @@
       "gaugeStart": "Start above the simulated calibration gauge.",
       "bossStart": "Start above the simulated boss.",
       "setLoadedLength": "Set the loaded tool’s length before checking it.",
-      "browserSimulator": "browser simulator"
+      "browserSimulator": "browser simulator",
+      "simRestored": "Simulated restore: the tool table and work offsets are the backup's. This browser stays open.",
+      "simNoFile": "{path} does not exist."
     },
     "bridge": {
       "noController": "CoffeeCNC cannot connect to its native controller. Restart the application.",

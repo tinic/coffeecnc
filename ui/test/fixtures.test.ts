@@ -136,6 +136,9 @@ const examples: Examples = {
   jog_paused_z: { id: 35, type: 'jog_paused_z', distance: 1 },
   save_program: { id: 36, type: 'save_program', path: '/home/cnc/nc_files/part.ngc', text: 'G21\nG1 X12 F450\nM2\n', stamp: '9f6b1c2e04d3a587' },
   restore_offset: { id: 37, type: 'restore_offset', entry: 10 },
+  backup: { id: 38, type: 'backup', directory: '/media/cnc/STICK' },
+  check_restore: { id: 39, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
+  restore: { id: 40, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

@@ -125,7 +125,8 @@
       "messageLog": "消息日志",
       "dismissTip": "关闭此消息；它仍保留在消息日志中",
       "dismiss": "关闭",
-      "estopButton": "急停"
+      "estopButton": "急停",
+      "backup": "备份与恢复"
     },
     "machineBlock": {
       "connecting": "尚未收到机床状态",
@@ -252,6 +253,40 @@
       "machineOn": "机床上电",
       "readOnly": "只读",
       "messageLog": "消息日志"
+    },
+    "backup": {
+      "title": "备份与恢复",
+      "backupTitle": "备份",
+      "backupWhat": "一个归档，包含 INI 文件及其 HAL 文件、刀具表、工件坐标偏置（.var），以及 CoffeeCNC 的刀具模型、设置、偏置历史和消息日志。",
+      "backupAction": "选择文件夹并备份…",
+      "chooseFolder": "选择备份文件夹",
+      "useFolder": "备份到此处",
+      "written": "已保存 {path}：{files} 个文件，{size}。",
+      "notIncluded": "未包含在备份中：{path}（{reason}）",
+      "restoreTitle": "恢复",
+      "restoreWhat": "选择一个备份以查看会更改的内容。恢复前不会写入任何内容。",
+      "chooseBackup": "选择备份…",
+      "waitingLive": "正在等待与机床的实时连接。",
+      "created": "备份于 {time}。",
+      "machine": "机床 {machine}。",
+      "nothingChanges": "所有文件与当前相同：无需恢复。",
+      "restoreEffect": "恢复会停止 CoffeeCNC 和 LinuxCNC。LinuxCNC 停止后写入文件；被替换的文件会作为备份保存在数据文件夹中。",
+      "restartNeeded": "之后请重新启动 LinuxCNC：.var、刀具表、INI 和 HAL 的更改在启动时生效。",
+      "restoreAction": "恢复 {n} 个文件并退出",
+      "restoring": "正在恢复：CoffeeCNC 和 LinuxCNC 即将停止。停止后请重新启动 LinuxCNC。",
+      "simulatedDone": "模拟恢复已完成。此浏览器保持打开。",
+      "role": {
+        "ini": "INI 文件",
+        "hal": "HAL 文件",
+        "tool_table": "刀具表",
+        "parameters": "工件坐标偏置（.var）",
+        "data": "CoffeeCNC 数据"
+      },
+      "change": {
+        "new": "新增",
+        "changed": "将更改",
+        "same": "相同"
+      }
     }
   }
 }

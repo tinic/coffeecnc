@@ -1,3 +1,4 @@
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/request.hpp>
@@ -71,7 +72,10 @@ constexpr std::array<std::string_view, std::variant_size_v<Command>> wire_types{
     "edit_program",
     "jog_paused_z",
     "save_program",
-    "restore_offset"};
+    "restore_offset",
+    "backup",
+    "check_restore",
+    "restore"};
 
 void every_panel_command_decodes() {
   std::ifstream file{COFFEECNC_COMMAND_FIXTURES};
@@ -362,6 +366,31 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_offset_history(history));
   messages.push_back(
       encode_offset_history({1, false, "No machine identity configured", {}}));
+  messages.emplace_back(encode_backup_written(
+      {"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
+       8,
+       5321,
+       {{"LIB:basic_sim.tcl", "a HAL file of LinuxCNC's own library"}}}));
+  messages.emplace_back(
+      encode_backup_written({"/home/cnc/coffeecnc-machine-20261123-140200.tar.gz", 3, 1024, {}}));
+  constexpr auto configs = "/home/cnc/linuxcnc/configs/g0759/";
+  messages.emplace_back(encode_restore_summary(
+      {"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
+       "3f1c8e0a9b2d4c75",
+       "G0759",
+       1795960920000,
+       {{"ini", "config/g0759.ini", std::string(configs) + "g0759.ini", "same", 4012},
+        {"hal", "config/g0759.hal", std::string(configs) + "g0759.hal", "changed", 2210},
+        {"tool_table", "tool-table/tool.tbl", std::string(configs) + "tool.tbl", "changed", 310},
+        {"parameters", "parameters/g0759.var", std::string(configs) + "g0759.var", "changed", 1882},
+        {"data", "data/tool-models.json",
+         "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "new", 512}}}));
+  messages.emplace_back(encode_restore_summary(
+      {"/home/cnc/old.tar.gz",
+       "0000000000000001",
+       std::nullopt,
+       0,
+       {{"ini", "config/mill.ini", "/home/cnc/linuxcnc/configs/mill/mill.ini", "same", 10}}}));
   return messages;
 }
 
@@ -438,6 +467,14 @@ auto variants(const Json& message) -> std::set<std::string> {
         add("before", change.at("before").is_null() ? "null" : "given");
         add("after", change.at("after").is_null() ? "null" : "given");
       }
+    }
+  } else if (type == "backup_written") {
+    add("not_included", message.at("not_included").empty() ? "empty" : "some");
+  } else if (type == "restore_summary") {
+    add("machine_id", message.at("machine_id").is_null() ? "null" : "given");
+    for (const auto& file : message.at("files")) {
+      add("role", file.at("role").get<std::string>());
+      add("change", file.at("change").get<std::string>());
     }
   } else if (type == "directory") {
     add("parent", message.at("parent").is_null() ? "null" : "path");
@@ -568,6 +605,20 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "offset_history before given",
     "offset_history after null",
     "offset_history after given",
+    "backup_written",
+    "backup_written not_included empty",
+    "backup_written not_included some",
+    "restore_summary",
+    "restore_summary machine_id given",
+    "restore_summary machine_id null",
+    "restore_summary role ini",
+    "restore_summary role hal",
+    "restore_summary role tool_table",
+    "restore_summary role parameters",
+    "restore_summary role data",
+    "restore_summary change same",
+    "restore_summary change changed",
+    "restore_summary change new",
 });
 
 void every_machine_message_encodes() {

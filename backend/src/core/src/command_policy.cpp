@@ -95,6 +95,16 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         // telemetry: the adapter still has to attempt the stop and report its actual outcome.
         if constexpr (std::is_same_v<T, Ready> || std::is_same_v<T, ListDirectory>)
           return allow();
+        // A backup only reads the machine's files and writes an archive elsewhere.
+        if constexpr (std::is_same_v<T, Backup>) {
+          if (!valid_text(c.directory, 4096) || !c.directory.starts_with('/'))
+            return reject("Choose a folder for the backup.");
+          return allow();
+        }
+        if constexpr (std::is_same_v<T, CheckRestore> || std::is_same_v<T, RestoreBackup>) {
+          if (!valid_text(c.path, 4096) || !c.path.starts_with('/'))
+            return reject("Choose a backup file.");
+        }
         if constexpr (std::is_same_v<T, Abort> || std::is_same_v<T, JogStopAll>)
           return allow();
         // A new file: nothing of the machine's state decides about it. Replacing the loaded
@@ -172,6 +182,16 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         if constexpr (std::is_same_v<T, Quit>) {
           if (s.interp != InterpState::idle)
             return reject("Stop the program before quitting.");
+          return allow();
+        }
+
+        // LinuxCNC must not run anything while its files are replaced, and the machine stays
+        // off until it has started again with them.
+        if constexpr (std::is_same_v<T, CheckRestore> || std::is_same_v<T, RestoreBackup>) {
+          if (s.machine == MachineState::on)
+            return reject("Switch the machine off or press E-stop before a restore.");
+          if (s.interp != InterpState::idle || homing(s))
+            return reject("Stop the program before a restore.");
           return allow();
         }
 

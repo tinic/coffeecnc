@@ -253,6 +253,20 @@ struct RestoreOffset {
 };
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
+// Write a backup archive of the machine's data into this folder.
+struct Backup {
+  std::string directory;
+};
+// What a restore of this archive would write; nothing is written.
+struct CheckRestore {
+  std::string path;
+};
+// Restore the archive checked with this token: staged, then CoffeeCNC and LinuxCNC stop and the
+// files are written.
+struct RestoreBackup {
+  std::string path;
+  std::string token;
+};
 
 using Command =
     std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
@@ -260,7 +274,8 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset>;
+                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset, Backup, CheckRestore,
+                 RestoreBackup>;
 
 struct Decision {
   bool allowed{};

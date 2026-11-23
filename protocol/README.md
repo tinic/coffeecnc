@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 36 cases and the native fixture 35, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 39 cases and the native fixture 39, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -36,6 +36,10 @@ The [storage contract](../docs/design/native-tool-model-storage.md) defines docu
 ## Operator settings
 
 `hello.operator_settings_storage: 1` enables the `operator_settings` snapshot and `set_operator_settings` command. `hello.max_spindle_rpm` supplies the machine's spindle ceiling. The document contains startup display units, enabled work-system shortcuts, default spindle RPM and default jog velocity in mm/min. Saving never sends controller commands. The snapshot and save revision follow the same identity and durability rules as tool models, with a separate file and the same writer/lock. [Complete contract](../docs/design/operator-settings.md).
+
+## Backup and restore
+
+`backup` writes an archive of the machine's data into `directory` and is answered with `backup_written` (path, number of files, size, and the HAL files `not_included` with the reason) before its result. `check_restore` reads the archive at `path` and writes nothing; `restore_summary` precedes its result with every file of the archive, its `role` (`ini`, `hal`, `tool_table`, `parameters`, `data`), the `target` it would replace on this machine, and its `change` (`new`, `changed`, `same`), and a `token`. `restore` takes `path` and that `token`; an archive that changed since is refused. Both are refused unless the machine is off or in E-stop and no program runs. An accepted `restore` quits the application like `quit`: the files are written after LinuxCNC has stopped, and the next start sends an operator message with the outcome. A restore that changes nothing is accepted with a reason and does not quit. File handling: [backend rules](../docs/backend-rules.md).
 
 ## Version mismatch
 

@@ -81,7 +81,11 @@
       "invalidToolRow": "Fila de la tabla de herramientas no válida.",
       "invalidToolNumber": "Número de herramienta no válido.",
       "noToolChangePending": "Ningún cambio manual de herramienta espera confirmación.",
-      "unsupportedCommand": "Comando no admitido."
+      "unsupportedCommand": "Comando no admitido.",
+      "backupFolder": "Elija una carpeta para la copia de seguridad.",
+      "backupFile": "Elija un archivo de copia de seguridad.",
+      "restoreMachineOn": "Apague la máquina o pulse la parada de emergencia antes de restaurar.",
+      "restoreProgram": "Pare el programa antes de restaurar."
     },
     "session": {
       "busy": "Demasiadas solicitudes esperan a LinuxCNC.",
@@ -145,7 +149,8 @@
       "previousStopAxis": "La parada de jog anterior en {axis} no está confirmada: {detail}",
       "directoryNotSent": "No se puede enviar la carpeta: {detail}",
       "mdiTooLong": "MDI requiere un único bloque de 254 bytes como máximo.",
-      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}"
+      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}",
+      "noBackup": "Este CoffeeCNC no puede hacer copias de seguridad ni restaurar."
     },
     "request": {
       "nestingLimit": "Se superó el límite de anidamiento de la solicitud.",
@@ -270,7 +275,10 @@
         "saveToolPreviewModel": "Guardar modelo de vista previa de la herramienta",
         "saveSettings": "Guardar ajustes",
         "toolModels": "Modelos de herramienta",
-        "settings": "Ajustes"
+        "settings": "Ajustes",
+        "backup": "Copiar datos de la máquina",
+        "checkBackup": "Comprobar copia de seguridad",
+        "restoreBackup": "Restaurar copia de seguridad"
       }
     },
     "sim": {
@@ -369,7 +377,9 @@
       "gaugeStart": "Empiece sobre el patrón de calibración simulado.",
       "bossStart": "Empiece sobre el saliente simulado.",
       "setLoadedLength": "Fije la longitud de la herramienta cargada antes de comprobarla.",
-      "browserSimulator": "simulador en el navegador"
+      "browserSimulator": "simulador en el navegador",
+      "simRestored": "Restauración simulada: la tabla de herramientas y los decalajes de origen de pieza son los de la copia. Este navegador sigue abierto.",
+      "simNoFile": "{path} no existe."
     },
     "bridge": {
       "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación.",

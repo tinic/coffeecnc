@@ -391,6 +391,30 @@ export interface OffsetHistory {
   entries: HistoryEntry[]
 }
 
+/** A backup archive was written. */
+export interface BackupWritten {
+  type: 'backup_written'
+  path: string
+  files: number
+  bytes: number
+  /** HAL files the INI names that are not in the archive: LinuxCNC's own, or outside the configuration folder. */
+  not_included: { path: string; reason: string }[]
+}
+
+export type BackupRole = 'ini' | 'hal' | 'tool_table' | 'parameters' | 'data'
+
+/** What a restore of the archive at `path` would write; precedes the result of `check_restore`. */
+export interface RestoreSummary {
+  type: 'restore_summary'
+  path: string
+  /** Handed back with `restore`: the archive is still the one checked. */
+  token: string
+  machine_id: string | null
+  /** Milliseconds since the Unix epoch; 0 when unknown. */
+  created: number
+  files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same'; bytes: number }[]
+}
+
 /** An operator error or message from LinuxCNC, or from the executable itself. */
 export interface OperatorMessage {
   type: 'message'
@@ -517,6 +541,8 @@ export type FromMachine =
   | Preview
   | WorkOffsets
   | OffsetHistory
+  | BackupWritten
+  | RestoreSummary
   | OperatorMessage
   | CommandResult
   | Directory
@@ -696,6 +722,28 @@ export interface RestoreOffset extends CommandBase {
   type: 'restore_offset'
   entry: number
 }
+/** Writes a backup archive of the machine's data into `directory`; answered with `backup_written`. */
+export interface Backup extends CommandBase {
+  type: 'backup'
+  directory: string
+}
+/**
+ * What a restore of the archive would write; answered with `restore_summary`. Refused unless the
+ * machine is off or in E-stop and no program runs.
+ */
+export interface CheckRestore extends CommandBase {
+  type: 'check_restore'
+  path: string
+}
+/**
+ * Restores the archive checked with `token`. Accepted: CoffeeCNC and LinuxCNC stop, and the
+ * files are written once LinuxCNC has stopped. Same refusals as `check_restore`.
+ */
+export interface Restore extends CommandBase {
+  type: 'restore'
+  path: string
+  token: string
+}
 /**
  * Sets the loaded tool's length so Z reads `value` at its present position (G10 L10), and
  * applies it (G43).
@@ -809,6 +857,9 @@ export type ToMachine =
   | JogPausedZ
   | SaveProgram
   | RestoreOffset
+  | Backup
+  | CheckRestore
+  | Restore
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

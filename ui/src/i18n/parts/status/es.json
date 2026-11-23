@@ -125,7 +125,8 @@
       "messageLog": "Registro de mensajes",
       "dismissTip": "Descartar este mensaje; se conserva en el registro de mensajes",
       "dismiss": "Descartar",
-      "estopButton": "PARADA DE EMERGENCIA"
+      "estopButton": "PARADA DE EMERGENCIA",
+      "backup": "Copia y restauración"
     },
     "machineBlock": {
       "connecting": "Aún no hay estado de la máquina",
@@ -252,6 +253,40 @@
       "machineOn": "Máquina encendida",
       "readOnly": "Solo lectura",
       "messageLog": "Registro de mensajes"
+    },
+    "backup": {
+      "title": "Copia de seguridad y restauración",
+      "backupTitle": "Hacer copia",
+      "backupWhat": "Un archivo comprimido con el archivo INI y sus archivos HAL, la tabla de herramientas, los decalajes de origen de pieza (.var) y los modelos de herramienta, ajustes, historial de decalajes y registro de mensajes de CoffeeCNC.",
+      "backupAction": "Elegir carpeta y hacer copia…",
+      "chooseFolder": "Elegir carpeta para la copia",
+      "useFolder": "Copiar aquí",
+      "written": "Guardado {path}: {files} archivos, {size}.",
+      "notIncluded": "No está en la copia: {path} ({reason})",
+      "restoreTitle": "Restaurar",
+      "restoreWhat": "Elija una copia para ver qué cambiaría. No se escribe nada hasta que restaure.",
+      "chooseBackup": "Elegir copia…",
+      "waitingLive": "Esperando una conexión activa con la máquina.",
+      "created": "Copia del {time}.",
+      "machine": "Máquina {machine}.",
+      "nothingChanges": "Todos los archivos son iguales a los actuales: nada que restaurar.",
+      "restoreEffect": "La restauración detiene CoffeeCNC y LinuxCNC. Los archivos se escriben cuando LinuxCNC se ha detenido; los archivos que sustituyen se guardan en una copia en la carpeta de datos.",
+      "restartNeeded": "Después, inicie LinuxCNC de nuevo: los cambios en .var, tabla de herramientas, INI y HAL se aplican al arrancar.",
+      "restoreAction": "Restaurar {n} archivo y salir | Restaurar {n} archivos y salir",
+      "restoring": "Restaurando: CoffeeCNC y LinuxCNC se detienen ahora. Inicie LinuxCNC de nuevo cuando se haya detenido.",
+      "simulatedDone": "Restauración simulada completada. Este navegador sigue abierto.",
+      "role": {
+        "ini": "Archivo INI",
+        "hal": "Archivo HAL",
+        "tool_table": "Tabla de herramientas",
+        "parameters": "Decalajes de origen de pieza (.var)",
+        "data": "Datos de CoffeeCNC"
+      },
+      "change": {
+        "new": "Nuevo",
+        "changed": "Cambia",
+        "same": "Igual"
+      }
     }
   }
 }

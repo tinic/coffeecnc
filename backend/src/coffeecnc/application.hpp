@@ -64,6 +64,13 @@ struct ApplicationHooks {
 [[nodiscard]] auto run_application(const Options& options, const ApplicationHooks& hooks = {})
     -> int;
 
+// `coffeecnc --apply-restore <data directory> --after <pid>`: the helper a run that staged a
+// restore starts as it ends. It waits until process <pid> (the `linuxcnc` script that started
+// that run) has ended, at most restore_wait: by then LinuxCNC has stopped and written its .var
+// file. Then it takes the data directory's lock and writes the staged files
+// (apply_staged_restore). Exit code 0 when they were written or nothing was staged.
+[[nodiscard]] auto apply_restore(std::span<const std::string_view> arguments) -> int;
+
 // Settings of the process WebKit reads from the environment, each only when the environment
 // does not say otherwise. Call before any thread starts.
 //

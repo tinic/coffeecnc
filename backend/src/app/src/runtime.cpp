@@ -32,10 +32,10 @@ Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outp
                  const Limits& limits, const ProgramStore& programs, Sink sink,
                  ToolModelService* tool_models, Quit quit, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
-                 OffsetHistoryStore* history)
+                 OffsetHistoryStore* history, MachineDataService* machine_data)
     : status_(status), outputs_(outputs), sink_(std::move(sink)), quit_(std::move(quit)),
       session_(port, limits, programs, tool_models, preview, restart_engine, program_writer,
-               history),
+               history, machine_data),
       control_([this]() -> void { control_loop(); }),
       status_thread_([this]() -> void { status_loop(); }),
       worker_([this]() -> void { work_loop(); }) {}

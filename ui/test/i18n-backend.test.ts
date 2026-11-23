@@ -23,6 +23,8 @@ const sources = import.meta.glob<string>([
   '../../backend/src/app/src/tool_model_store.cpp',
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/offset_history.cpp',
+  '../../backend/src/app/src/machine_data.cpp',
+  '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/program_store.cpp',
   '../../backend/src/app/src/program_edit.cpp',
   '../../backend/src/app/src/file_system.cpp',
@@ -229,7 +231,7 @@ describe('backend sentences', () => {
   const files = Object.entries(sources).map(([path, raw]) => [path.split('/').at(-1) ?? path, raw] as const)
 
   it('reads every listed source', () => {
-    expect(files.length).toBe(20)
+    expect(files.length).toBe(22)
   })
 
   for (const [file, raw] of files) {

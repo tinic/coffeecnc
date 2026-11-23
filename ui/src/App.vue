@@ -15,6 +15,7 @@ import NumericEntryDialog from './components/NumericEntryDialog.vue'
 import RemoteScreen from './components/RemoteScreen.vue'
 import { isRemoteScreen } from './bridge'
 import SettingsDialog from './components/SettingsDialog.vue'
+import BackupDialog from './components/BackupDialog.vue'
 import QuitDialog from './components/QuitDialog.vue'
 import { startDialog } from './dialogs'
 import { editorTarget } from './program-editor'
@@ -37,13 +38,14 @@ function newProgram(folder: string): void {
 }
 const quitOpen = ref(false)
 const settingsOpen = ref(false)
+const backupOpen = ref<boolean>(startDialog === 'backup')
 const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null)
 </script>
 
 <template>
   <RemoteScreen v-if="isRemoteScreen()" />
   <div v-else class="app">
-    <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @edit="edit" @quit="quitOpen = true" @settings="settingsOpen = true" />
+    <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @edit="edit" @quit="quitOpen = true" @settings="settingsOpen = true" @backup="backupOpen = true" />
     <div class="workspace">
       <DroPanel />
       <main class="middle">
@@ -58,6 +60,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
         <OperationDialog v-if="creating" @close="creating = false" />
         <ProgramEditor v-if="editorTarget" :key="editorKey" :target="editorTarget" @close="editorTarget = null" @new-program="newProgram" />
         <SettingsDialog v-if="settingsOpen" :settings="operatorSettings" @close="settingsOpen = false" />
+        <BackupDialog v-if="backupOpen" @close="backupOpen = false" />
         <QuitDialog v-if="quitOpen" @close="quitOpen = false" />
       </main>
       <div id="workspace-dialogs"></div>

@@ -1,5 +1,6 @@
 #include <coffeecnc/app/session.hpp>
 
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 
@@ -273,10 +274,10 @@ auto starts_jog(const Command& command) -> bool {
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
                  ToolModelService* tool_models, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
-                 OffsetHistoryStore* history)
+                 OffsetHistoryStore* history, MachineDataService* machine_data)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
       restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
-      policy_(limits) {}
+      machine_data_(machine_data), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -1318,6 +1319,27 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.state != MachineState::on)
             cancel_jogs(nullptr);
           return result;
+        } else if constexpr (std::is_same_v<T, Backup> || std::is_same_v<T, CheckRestore> ||
+                             std::is_same_v<T, RestoreBackup>) {
+          if (machine_data_ == nullptr)
+            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot back up or restore."});
+          MachineDataAnswer done;
+          if constexpr (std::is_same_v<T, Backup>) {
+            done = machine_data_->backup(c.directory);
+          } else if constexpr (std::is_same_v<T, CheckRestore>) {
+            done = machine_data_->check_restore(c.path);
+          } else {
+            // The machine as it is now, just before anything is staged.
+            done = machine_data_->restore(c.path, c.token, [&]() -> std::string {
+              const auto recheck = policy_.evaluate(request.command, port_.snapshot());
+              return recheck.allowed ? std::string{} : recheck.reason;
+            });
+          }
+          Stage step;
+          step.reply = {done.outcome, std::move(done.reason)};
+          step.produced = std::move(done.messages);
+          step.quit = done.quit;
+          return step;
         } else if constexpr (std::is_same_v<T, Quit>) {
           // Power off when on; an E-stop or a machine already off stays as it is (no reset).
           if (state.machine == MachineState::on) {

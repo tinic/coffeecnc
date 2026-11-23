@@ -2,6 +2,7 @@
 #include "remote_server.hpp"
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
@@ -28,6 +29,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -35,8 +37,10 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <thread>
 #include <vector>
 
+#include <csignal>
 #include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -256,6 +260,42 @@ auto preview_helper() -> std::string {
     return COFFEECNC_PREVIEW_HELPER_BUILT;
 #endif
   return {};
+}
+
+auto unix_now() -> std::chrono::milliseconds {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch());
+}
+
+// Starts `coffeecnc --apply-restore <directory> --after <parent>` in a session of its own, so
+// that it outlives this process and the `linuxcnc` script that started it.
+void start_restore_helper(const std::string& directory) {
+  std::error_code error;
+  auto self = std::filesystem::read_symlink("/proc/self/exe", error).string();
+  if (error) {
+    say("A restore is staged, but the helper cannot be found. It is not written.");
+    return;
+  }
+  std::string option{"--apply-restore"};
+  std::string place{directory};
+  std::string after{"--after"};
+  std::string parent = std::to_string(getppid());
+  std::array<char*, 6> argv{self.data(), option.data(), place.data(), after.data(),
+                            parent.data(), nullptr};
+  posix_spawnattr_t attributes;
+  if (posix_spawnattr_init(&attributes) != 0) {
+    say("A restore is staged, but the helper cannot start. It is not written.");
+    return;
+  }
+  static_cast<void>(posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSID));
+  pid_t child{};
+  const int failed = posix_spawn(&child, argv.front(), nullptr, &attributes, argv.data(), environ);
+  posix_spawnattr_destroy(&attributes);
+  if (failed != 0)
+    say(std::format("A restore is staged, but the helper cannot start: {}. It is not written.",
+                    std::generic_category().message(failed)));
+  else
+    say(std::format("restore helper pid={} waits for pid={}", child, parent));
 }
 
 // An environment variable; empty when it is not set.
@@ -527,6 +567,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
   LocalToolModelFiles history_files;
+  // Backup and restore, on the worker thread.
+  LocalToolModelFiles machine_data_files;
+  std::unique_ptr<MachineData> machine_data;
   std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
@@ -601,6 +644,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             ? ""
             : location.reason);
     program_writer.emplace(programs, edit_files);
+    {
+      MachineDataPaths paths;
+      paths.machine_id = location.machine_id.value_or("");
+      paths.ini_file = config->ini_file;
+      paths.config_directory = config->directory;
+      if (const auto inspected = inspect_machine_ini(config->ini_file))
+        paths.hal_files = inspected->halfiles;
+      if (!config->postgui_halfile.empty())
+        paths.hal_files.push_back(config->postgui_halfile);
+      paths.tool_table = config->tool_table;
+      paths.parameter_file = config->parameter_file;
+      if (location.availability == ToolModelAvailability::available)
+        paths.data_directory = location.directory;
+      machine_data = std::make_unique<MachineData>(machine_data_files, std::move(paths), unix_now);
+    }
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
@@ -610,7 +668,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get());
+        &preview, &restart_engine, &*program_writer, history.get(), machine_data.get());
     PanelFeed::Mirror mirror;
     if (remote) {
       mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,
@@ -624,7 +682,13 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
-        &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
+        &preview,
+        [&models, &machine_data, &window](PageToken page) -> void {
+          models->send_snapshot(page);
+          // What a restore before this run came to, once.
+          if (auto notice = machine_data->take_notice())
+            window.post(page, {encode_message(notice->first, notice->second, unix_now())});
+        },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)
       hooks.before_load(window, *config);
@@ -633,7 +697,64 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(error.what());
     code = 1;
   }
+  if (machine_data && machine_data->staged() && !location.directory.empty())
+    start_restore_helper(location.directory);
   return code;
+}
+
+auto apply_restore(std::span<const std::string_view> arguments) -> int {
+  constexpr auto restore_wait = std::chrono::minutes{5};
+  constexpr auto poll = std::chrono::milliseconds{200};
+  if (arguments.size() != 4 || arguments[2] != "--after") {
+    say("usage: coffeecnc --apply-restore <data directory> --after <pid>");
+    return 1;
+  }
+  const std::string directory{arguments[1]};
+  pid_t parent{};
+  try {
+    parent = static_cast<pid_t>(std::stol(std::string(arguments[3])));
+  } catch (const std::exception&) {
+    say("--after needs a process id.");
+    return 1;
+  }
+  // Alive: it exists and has not ended (a zombie has ended, whoever reaps it).
+  const auto alive = [parent]() -> bool {
+    if (parent <= 1 || (::kill(parent, 0) != 0 && errno != EPERM))
+      return false;
+    std::ifstream stat{std::format("/proc/{}/stat", parent)};
+    std::string line;
+    std::getline(stat, line);
+    const auto close = line.rfind(')');
+    return close == std::string::npos || close + 2 >= line.size() || line[close + 2] != 'Z';
+  };
+  const auto until = std::chrono::steady_clock::now() + restore_wait;
+  while (alive()) {
+    if (std::chrono::steady_clock::now() > until) {
+      say("restore=not_written reason=LinuxCNC did not stop");
+      return 1;
+    }
+    std::this_thread::sleep_for(poll);
+  }
+  LocalToolModelFiles files;
+  // A CoffeeCNC started again at once holds the lock: wait for it a little, then leave the plan
+  // for that run to report.
+  for (int tries = 0;; ++tries) {
+    const auto locked = files.lock(directory);
+    if (locked)
+      break;
+    if (!locked.error().in_use || tries > 50) {
+      say(std::format("restore=not_written reason={}", locked.error().reason));
+      return 1;
+    }
+    std::this_thread::sleep_for(poll);
+  }
+  const auto applied = apply_staged_restore(files, directory, unix_now());
+  if (!applied) {
+    say(std::format("restore=failed reason={}", applied.error()));
+    return 1;
+  }
+  say(std::format("restore=written files={}", *applied));
+  return 0;
 }
 
 } // namespace coffeecnc

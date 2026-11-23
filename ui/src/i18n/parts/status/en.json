@@ -125,7 +125,8 @@
       "messageLog": "Message log",
       "dismissTip": "Dismiss this message; keep it in the message log",
       "dismiss": "Dismiss",
-      "estopButton": "E-STOP"
+      "estopButton": "E-STOP",
+      "backup": "Backup and restore"
     },
     "machineBlock": {
       "connecting": "No status from the machine yet",
@@ -252,6 +253,40 @@
       "machineOn": "Machine on",
       "readOnly": "Read-only",
       "messageLog": "Message log"
+    },
+    "backup": {
+      "title": "Backup and restore",
+      "backupTitle": "Back up",
+      "backupWhat": "One archive with the INI file and its HAL files, the tool table, the work offsets (.var), and CoffeeCNC's tool models, settings, offset history and message log.",
+      "backupAction": "Choose folder and back up…",
+      "chooseFolder": "Choose a folder for the backup",
+      "useFolder": "Back up here",
+      "written": "Saved {path}: {files} files, {size}.",
+      "notIncluded": "Not in the backup: {path} ({reason})",
+      "restoreTitle": "Restore",
+      "restoreWhat": "Choose a backup to see what it would change. Nothing is written until you restore.",
+      "chooseBackup": "Choose backup…",
+      "waitingLive": "Waiting for a live machine connection.",
+      "created": "Backed up {time}.",
+      "machine": "Machine {machine}.",
+      "nothingChanges": "Every file is the same as now: nothing to restore.",
+      "restoreEffect": "Restore stops CoffeeCNC and LinuxCNC. The files are written once LinuxCNC has stopped; the files they replace are kept in a backup in the data folder.",
+      "restartNeeded": "Start LinuxCNC again afterwards: the .var, tool table, INI and HAL changes take effect when it starts.",
+      "restoreAction": "Restore {n} file and quit | Restore {n} files and quit",
+      "restoring": "Restoring: CoffeeCNC and LinuxCNC stop now. Start LinuxCNC again when it has stopped.",
+      "simulatedDone": "Simulated restore completed. This browser stays open.",
+      "role": {
+        "ini": "INI file",
+        "hal": "HAL file",
+        "tool_table": "Tool table",
+        "parameters": "Work offsets (.var)",
+        "data": "CoffeeCNC data"
+      },
+      "change": {
+        "new": "New",
+        "changed": "Changes",
+        "same": "Same"
+      }
     }
   }
 }

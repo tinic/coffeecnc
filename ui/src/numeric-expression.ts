@@ -18,7 +18,7 @@ export function parseNumericExpression(text: string, displayedUnit = ''): number
   }
   const qualify = (quantity: Quantity): Quantity => {
     space()
-    const suffix = /^(?:inch|mm|in|rpm|deg|°|%)/.exec(source.slice(position))?.[0]
+    const suffix = /^(?:inch|mm|in|rpm|deg|°|%|s)/.exec(source.slice(position))?.[0]
     if (suffix === undefined) return quantity
     if (quantity.unit) fail()
     position += suffix.length

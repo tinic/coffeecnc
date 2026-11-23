@@ -727,6 +727,11 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
     if (parse_error != std::errc{} || end != value.data() + value.size() || remote_port > 65535)
       return std::unexpected(std::string("[COFFEECNC] REMOTE_PORT must be an integer from 0 to 65535."));
   }
+  const auto upload = flag(ini, "REMOTE_UPLOAD");
+  if (!upload)
+    return std::unexpected(upload.error());
+  if (*upload && remote_port != 0 && path("DISPLAY", "PROGRAM_PREFIX").empty())
+    return std::unexpected(std::string("[COFFEECNC] REMOTE_UPLOAD needs a [DISPLAY] PROGRAM_PREFIX."));
   std::vector<std::string> remote_hosts;
   if (const auto aliases = ini.text("COFFEECNC", "REMOTE_HOSTS")) {
     constexpr std::string_view separators = " ,\t";
@@ -786,6 +791,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
       .remote_hosts = std::move(remote_hosts),
       .touch_probe_tool = probe_tool,
       .remote_port = static_cast<std::uint16_t>(remote_port),
+      .remote_upload = *upload,
       .machine_units = scale == 1 ? LengthUnit::mm : LengthUnit::inch,
       .axes = {Axis::x, Axis::y, Axis::z},
       .home_all_configured = home_all,

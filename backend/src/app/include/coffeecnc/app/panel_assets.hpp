@@ -9,6 +9,9 @@
 
 namespace coffeecnc {
 
+// A URL-encoded, single file name from the LAN upload endpoint.
+[[nodiscard]] auto program_upload_name(std::string_view encoded) -> std::optional<std::string>;
+
 // Where the panel is served from, and the only origin there is.
 inline constexpr std::string_view panel_scheme = "coffeecnc";
 inline constexpr std::string_view panel_origin = "coffeecnc://panel";

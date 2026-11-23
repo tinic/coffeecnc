@@ -3,6 +3,7 @@
 
 #include <coffeecnc/app/program_store.hpp>
 #include <coffeecnc/app/tool_model_store.hpp>
+#include <coffeecnc/core/command_policy.hpp>
 
 #include <expected>
 #include <functional>
@@ -25,6 +26,9 @@ namespace coffeecnc {
 // The replaced file is readable and writable by its owner only (mode 0600).
 class ProgramWriter {
 public:
+  using Commit = std::function<std::expected<void, std::string>()>;
+  using Publish = std::function<std::expected<void, std::string>(const std::string&, const Commit&)>;
+
   // Both must outlive the writer. One caller at a time.
   ProgramWriter(const ProgramStore& programs, ToolModelFiles& files);
 
@@ -39,6 +43,17 @@ public:
   [[nodiscard]] auto create(std::string_view path, std::string_view text, bool replace)
       -> std::expected<std::string, std::string>;
 
+  // Imports the bytes from a file or the LAN. A publisher can serialize the final, atomic
+  // write against controller commands after the temporary file has been synchronized.
+  [[nodiscard]] auto receive(std::string_view path, std::string_view bytes, bool replace,
+                             const Publish& publish = {})
+      -> std::expected<std::string, std::string>;
+
+  // All writes stay under Programs. Copy may read a file from another browser location.
+  // Rename and delete refuse the file LinuxCNC has open and any folder which contains it.
+  [[nodiscard]] auto manage(const ManageProgramFile& command, std::string_view loaded)
+      -> std::expected<void, std::string>;
+
   // Writes the program editor's `text` over the existing program `path`, durably as
   // replace_line. Check `stamp` before writing and check the bytes again after syncing the
   // temporary file. An external writer can still change the file between the last check and
@@ -51,6 +66,10 @@ public:
       -> std::expected<std::string, std::string>;
 
 private:
+  [[nodiscard]] auto write_new(ProgramStore::NewProgram target, std::string_view bytes,
+                               bool replace, std::string temporary_name, const Publish& publish)
+      -> std::expected<std::string, std::string>;
+
   // Replaces the file `resolved` with `bytes` through `<directory>/.<name><suffix>`.
   [[nodiscard]] auto write_over(const std::string& resolved, std::string_view bytes,
                                 std::string_view suffix,

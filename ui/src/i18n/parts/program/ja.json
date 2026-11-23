@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "プログラムをアップロード",
+      "choose": "ファイルを1つドロップするか選択してください",
+      "replace": "既存のファイルを置き換える",
+      "uploading": "アップロード中…",
+      "saved": "{name} をプログラムフォルダーに保存しました。",
+      "failed": "プログラムをアップロードできませんでした。"
+    },
     "fileBrowser": {
+      "newFolder": "新しいフォルダー",
+      "rename": "名前を変更",
+      "name": "名前",
+      "actions": "{name} の操作",
+      "copyToPrograms": "プログラムフォルダーにコピー",
+      "copied": "{name} をプログラムフォルダーにコピーしました。",
+      "deleteConfirm": "{name} を削除しますか？",
       "title": "プログラムを開く",
       "recentPrograms": "最近のプログラム",
       "recent": "最近",

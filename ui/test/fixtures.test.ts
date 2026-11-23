@@ -140,6 +140,7 @@ const examples: Examples = {
   clear_g92: { id: 39, type: 'clear_g92' },
   watch_diagnostics: { id: 40, type: 'watch_diagnostics', on: true },
   launch_hal_tool: { id: 41, type: 'launch_hal_tool', tool: 'halscope' },
+  manage_program_file: { id: 42, type: 'manage_program_file', operation: 'rename', path: '/home/cnc/nc_files/part.ngc', name: 'plate.ngc' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

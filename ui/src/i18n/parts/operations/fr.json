@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseFinishTool": "Choisir un alésoir ou un outil à aléser",
       "pocketOptions": "Géométrie, entrée et parois",
       "reviewJob": "Vérifier la tâche",
       "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
@@ -21,6 +22,8 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "holeFinishing": "Alésage",
+      "holeFinishingSetup": "Utilisez des trous prépercés et vérifiez que l’outil peut descendre à la profondeur programmée et remonter en avance.",
       "contour": "Contour",
       "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
@@ -36,6 +39,7 @@
       "threadMillSetup": "Utilisez une fraise à fileter à profil unique et un trou prépercé. Vérifiez le dégagement de la fraise et de son col. Saisissez l’avance au centre de l’outil. La profondeur définit le Z de la pointe. Tenez compte de la hauteur de la dent."
     },
     "label": {
+      "boreDwell": "Temporisation au fond",
       "profileShape": "Forme",
       "profileSide": "Côté de coupe",
       "profileDirection": "Sens",
@@ -101,6 +105,8 @@
       "threadHand": "Sens du filetage"
     },
     "option": {
+      "g85": "Alésoir (G85)",
+      "g89": "Outil à aléser (G89)",
       "profileCircle": "Cercle",
       "profileRectangle": "Rectangle",
       "profileOutside": "Extérieur",

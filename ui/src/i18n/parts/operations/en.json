@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseFinishTool": "Choose a reamer or boring tool",
       "pocketOptions": "Geometry, entry and walls",
       "reviewJob": "Review job",
       "toolChangeHeight": "Tool changes at machine Z {z} {unit}",
@@ -21,6 +22,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "holeFinishing": "Ream / bore",
+      "holeFinishingSetup": "Use predrilled holes and verify the tool can feed in and out to the programmed depth.",
       "contour": "Contour",
       "contourSetup": "Keep the lead-in clear. For an inside cut, start from an open pocket or hole.",
       "inclinedEntry": "Use an end mill rated for the selected entry.",
@@ -36,6 +39,7 @@
       "threadMillSetup": "Use a single-form thread mill and a predrilled hole. Verify cutter and neck clearance. Enter the tool-centre feed. Thread depth sets tool-tip Z. Allow for the cutter’s tooth height."
     },
     "label": {
+      "boreDwell": "Bottom dwell",
       "profileShape": "Shape",
       "profileSide": "Cut side",
       "profileDirection": "Direction",
@@ -101,6 +105,8 @@
       "threadHand": "Thread hand"
     },
     "option": {
+      "g85": "Ream (G85)",
+      "g89": "Bore (G89)",
       "profileCircle": "Circle",
       "profileRectangle": "Rectangle",
       "profileOutside": "Outside",

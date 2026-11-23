@@ -13,10 +13,12 @@ import DroPanel from './DroPanel.vue'
 import LogDialog from './LogDialog.vue'
 import ModalDialog from './ModalDialog.vue'
 import ProgramTab from './ProgramTab.vue'
+import RemoteProgramUpload from './RemoteProgramUpload.vue'
 
 const { t } = useI18n()
 const logOpen = ref(false)
 const settingsOpen = ref(false)
+const uploadOpen = ref(false)
 function chooseTheme(event: Event): void {
   const next = decodeTheme((event.target as HTMLSelectElement).value)
   if (next !== null) operatorSettings.chooseTheme(next)
@@ -41,7 +43,7 @@ const file = computed(() => reported.value?.program.file)
   <div class="remote">
     <header>
       <img :src="`./branding/coffeecnc-logo-${isDarkTheme(theme) ? 'dark' : 'light'}.svg`" alt="CoffeeCNC" width="161" height="36" />
-      <span class="read-only">{{ t('status.remote.readOnly') }}</span>
+      <span v-if="!panel.hello?.program_upload" class="read-only">{{ t('status.remote.readOnly') }}</span>
       <strong v-if="panel.hello?.machine_name">{{ panel.hello.machine_name }}</strong>
       <span
         role="status" class="machine-state" :class="{
@@ -50,6 +52,7 @@ const file = computed(() => reported.value?.program.file)
           off: live && reported?.machine === 'off',
         }"
       >{{ state }}</span>
+      <button v-if="panel.hello?.program_upload" class="btn" type="button" @click="uploadOpen = true">{{ t('program.upload.title') }}</button>
       <button class="btn" type="button" @click="logOpen = true">{{ t('status.remote.messageLog') }}<span v-if="panel.log.length"> · {{ panel.log.length }}</span></button>
       <button class="btn square" type="button" :aria-label="t('status.settings.title')" aria-haspopup="dialog" @click="settingsOpen = true"><AppIcon name="settings" /></button>
     </header>
@@ -64,6 +67,7 @@ const file = computed(() => reported.value?.program.file)
       <div id="dialogs"></div>
       <div id="workspace-dialogs"></div>
       <LogDialog v-if="logOpen" @close="logOpen = false" />
+      <RemoteProgramUpload v-if="uploadOpen" @close="uploadOpen = false" />
       <ModalDialog v-if="settingsOpen" :title="t('status.settings.title')" size="small" @close="settingsOpen = false">
         <label class="viewer-setting">
           <span>{{ t('status.settings.theme') }}</span>

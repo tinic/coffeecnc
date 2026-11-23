@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "Upload program",
+      "choose": "Drop one file here or browse",
+      "replace": "Replace existing file",
+      "uploading": "Uploading…",
+      "saved": "{name} saved to Programs.",
+      "failed": "The program could not be uploaded."
+    },
     "fileBrowser": {
+      "newFolder": "New folder",
+      "rename": "Rename",
+      "name": "Name",
+      "actions": "Actions for {name}",
+      "copyToPrograms": "Copy to Programs",
+      "copied": "{name} copied to Programs.",
+      "deleteConfirm": "Delete {name}?",
       "title": "Open program",
       "recentPrograms": "Recent programs",
       "recent": "Recent",

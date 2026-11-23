@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "chooseFinishTool": "Reibahle oder Ausdrehwerkzeug auswählen",
       "pocketOptions": "Geometrie, Eintauchen und Wände",
       "reviewJob": "Auftrag prüfen",
       "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
@@ -21,6 +22,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "holeFinishing": "Reiben / Ausdrehen",
+      "holeFinishingSetup": "Vorgebohrte Löcher verwenden. Prüfen, ob das Werkzeug bis zur programmierten Tiefe hinein- und herausfahren kann.",
       "contour": "Kontur",
       "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
@@ -36,6 +39,7 @@
       "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben. Die Gewindetiefe legt die Z-Position der Werkzeugspitze fest. Die Höhe des Schneidprofils berücksichtigen."
     },
     "label": {
+      "boreDwell": "Verweilzeit am Grund",
       "profileShape": "Form",
       "profileSide": "Schnittseite",
       "profileDirection": "Richtung",
@@ -101,6 +105,8 @@
       "threadHand": "Gewinderichtung"
     },
     "option": {
+      "g85": "Reiben (G85)",
+      "g89": "Ausdrehen (G89)",
       "profileCircle": "Kreis",
       "profileRectangle": "Rechteck",
       "profileOutside": "Außen",

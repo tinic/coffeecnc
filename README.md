@@ -105,6 +105,10 @@ From a device on the home LAN, open `http://<machine-hostname>:8787`, `http://<m
 
 The viewer accepts the machine's hostname, its short name and `<short-name>.local`, and names from the system DNS search domains that resolve to the machine. It refreshes discovery after address changes such as a DHCP lease. For a custom DNS alias, add `REMOTE_HOSTS = mill.example.local` under `[COFFEECNC]`. Separate multiple hostnames with spaces or commas and leave out the port.
 
+On a trusted home LAN, add `REMOTE_UPLOAD = yes` under `[COFFEECNC]` to enable **Upload program** on the viewer. Browse for a file or drop it into the upload dialog. CoffeeCNC saves program text up to 16 MiB to `[DISPLAY] PROGRAM_PREFIX`. Replacing an existing file requires selecting **Replace existing file**. A running or paused program keeps its file. Open an uploaded program from the machine panel to review and run it.
+
+On the machine panel, open the program browser and choose **USB** to find a file. Its row menu can copy it to **Programs**. The browser can create folders, rename items and delete files or empty folders inside **Programs**. Open a different program before renaming or deleting the loaded file or its folder.
+
 ## Build from source
 
 The native application builds with CMake and packages as a Debian package for the controller. A `v*` tag builds and publishes the packages ([release workflow](.github/workflows/release.yml)). See [the backend build](backend/README.md) and [packaging](docs/packaging.md). The tests include LinuxCNC simulation scenarios for jogging, tool setting and probing.

@@ -418,6 +418,8 @@ struct Directory {
   std::vector<DirectoryEntry> entries;
   // The directory holds more than `entries`. Always sent.
   bool truncated{};
+  // An entry can be added, renamed or removed in this folder under PROGRAM_PREFIX.
+  std::optional<bool> writable{};
   friend auto operator==(const Directory&, const Directory&) -> bool = default;
 };
 

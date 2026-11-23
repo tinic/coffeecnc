@@ -410,7 +410,7 @@ void RemoteServer::Impl::resolve_host(std::string query, bool search_candidate) 
   resolver.async_resolve(tcp::v4(), query, "0", tcp::resolver::canonical_name,
     [this, candidate = search_candidate ? query : std::string{}]
     (Error error, const tcp::resolver::results_type& entries) -> void {
-      if (error || entries.empty() || !std::ranges::all_of(entries, [this](const auto& entry) {
+      if (error || !std::ranges::any_of(entries, [this](const auto& entry) {
             const auto address = entry.endpoint().address().to_v4();
             return std::ranges::find(local_addresses, address) != local_addresses.end();
           }))

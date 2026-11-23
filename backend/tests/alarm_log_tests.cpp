@@ -12,6 +12,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -55,8 +56,11 @@ struct Fixture {
     log = std::make_unique<AlarmLog>(files, std::move(at), "No machine identity configured",
                                      [this](PageToken token, std::vector<std::string> messages) {
                                        const std::scoped_lock lock{delivered_mutex};
-                                       for (auto& message : messages)
-                                         delivered.emplace_back(token, std::move(message));
+                                       std::ranges::transform(
+                                           messages, std::back_inserter(delivered),
+                                           [token](std::string& message) {
+                                             return std::pair{token, std::move(message)};
+                                           });
                                      });
     log->settle();
   }
@@ -77,8 +81,7 @@ struct Fixture {
   }
   [[nodiscard]] auto texts() const -> std::vector<std::string> {
     std::vector<std::string> out;
-    for (const auto& entry : log->view().entries)
-      out.push_back(entry.text);
+    std::ranges::transform(log->view().entries, std::back_inserter(out), &AlarmRecord::text);
     return out;
   }
   [[nodiscard]] auto lines(const std::string& path) const -> std::vector<Json> {

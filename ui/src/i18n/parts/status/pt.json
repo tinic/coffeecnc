@@ -157,7 +157,7 @@
       "spindleOverride": "Ajuste da árvore",
       "rapidOverride": "Ajuste do rápido",
       "velocityLimit": "Velocidade máxima",
-      "moreWithVelocityLimit": "Velocidade máxima {value}",
+      "velocityLimitValue": "Velocidade máxima {value}",
       "velocityLimitTip": "Limita movimentos lineares coordenados, exceto os sincronizados com a posição do spindle. A velocidade do jog é independente.",
       "pausedZBusy": "Operação de Z em pausa em curso",
       "pausedZLift": "Elevação de Z em pausa",

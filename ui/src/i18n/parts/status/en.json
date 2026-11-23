@@ -157,7 +157,7 @@
       "spindleOverride": "Spindle override",
       "rapidOverride": "Rapid override",
       "velocityLimit": "Maximum velocity",
-      "moreWithVelocityLimit": "Maximum velocity {value}",
+      "velocityLimitValue": "Maximum velocity {value}",
       "velocityLimitTip": "Caps coordinated linear moves, except motion synchronized to spindle position. Jog speed is separate.",
       "pausedZBusy": "Paused Z operation in progress",
       "pausedZLift": "Paused Z lift",

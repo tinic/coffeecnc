@@ -157,7 +157,7 @@
       "spindleOverride": "Correction de broche",
       "rapidOverride": "Correction de rapide",
       "velocityLimit": "Vitesse maximale",
-      "moreWithVelocityLimit": "Vitesse maximale {value}",
+      "velocityLimitValue": "Vitesse maximale {value}",
       "velocityLimitTip": "Limite les déplacements linéaires coordonnés, sauf ceux synchronisés sur la position de la broche. La vitesse de déplacement manuel est indépendante.",
       "pausedZBusy": "Opération Z en pause en cours",
       "pausedZLift": "Relevage Z en pause",

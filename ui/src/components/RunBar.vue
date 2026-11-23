@@ -24,9 +24,11 @@ const status = reported
 const velocityLimit = computed(() => status.value?.motion.velocity_limit ?? null)
 const activeVelocityLimit = computed(() => velocityLimit.value !== null && velocityLimit.value < 1
   ? formatPercent(Math.min(0.99, velocityLimit.value)) : null)
-const moreLabel = computed(() => activeVelocityLimit.value === null
-  ? t('status.runBar.moreControls')
-  : t('status.runBar.moreWithVelocityLimit', { value: activeVelocityLimit.value }))
+const moreLabel = computed(() => {
+  const label = t('status.runBar.moreControls')
+  return activeVelocityLimit.value === null ? label
+    : `${label} · ${t('status.runBar.velocityLimitValue', { value: activeVelocityLimit.value })}`
+})
 const checkedPreview = computed(() => currentProgramPreview(panel.preview ?? null, status.value))
 const check = computed(() => describeProgramCheck(checkedPreview.value, panel.unit))
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
@@ -267,6 +269,8 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .main-action { width: 212px; }
 .more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
 .velocity-limit { font-size: 10px; color: var(--accent); white-space: nowrap; }
-.popover { bottom: calc(100% + 16px); right: -100px; }
+.popover { bottom: calc(100% + 16px); right: -100px; width: min(430px, calc(100vw - 32px)); }
+.popover > .override { grid-template-columns: 120px minmax(65px, 1fr) 48px 86px; }
+.popover > .override :deep(input) { min-width: 0; height: 44px; }
 .popover > .override + .override { margin-top: 8px; }
 </style>

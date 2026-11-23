@@ -157,7 +157,7 @@
       "spindleOverride": "Spindel-Override",
       "rapidOverride": "Eilgang-Override",
       "velocityLimit": "Maximalgeschwindigkeit",
-      "moreWithVelocityLimit": "Maximalgeschwindigkeit {value}",
+      "velocityLimitValue": "Maximalgeschwindigkeit {value}",
       "velocityLimitTip": "Begrenzt koordinierte lineare Bewegungen außer bei Synchronisierung mit der Spindelposition. Die Tippgeschwindigkeit ist unabhängig davon.",
       "pausedZBusy": "Z-Bewegung in der Pause läuft",
       "pausedZLift": "Z-Anheben in der Pause",

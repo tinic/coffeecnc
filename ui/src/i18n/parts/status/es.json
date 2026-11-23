@@ -157,7 +157,7 @@
       "spindleOverride": "Ajuste del husillo",
       "rapidOverride": "Ajuste de rápido",
       "velocityLimit": "Velocidad máxima",
-      "moreWithVelocityLimit": "Velocidad máxima {value}",
+      "velocityLimitValue": "Velocidad máxima {value}",
       "velocityLimitTip": "Limita los movimientos lineales coordinados salvo los sincronizados con la posición del husillo. La velocidad de desplazamiento manual es independiente.",
       "pausedZBusy": "Operación de Z en pausa en curso",
       "pausedZLift": "Elevación de Z en pausa",

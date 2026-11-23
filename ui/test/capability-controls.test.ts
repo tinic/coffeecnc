@@ -298,7 +298,7 @@ describe('capability-aware controls', () => {
     expect(wrapper.find('.velocity-limit').exists()).toBe(false)
     panel.status.motion.velocity_limit = 0.4
     await nextTick()
-    expect(wrapper.get('.more-button').attributes('aria-label')).toBe('Maximum velocity 40 %')
+    expect(wrapper.get('.more-button').attributes('aria-label')).toBe('More execution controls · Maximum velocity 40 %')
     expect(wrapper.get('.velocity-limit').text()).toBe('40 %')
   })
   it('puts probing in its own workspace with jogging, WCS and Stop', async () => {

@@ -152,17 +152,18 @@ watch([axes, touchBlock], () => {
 </template>
 
 <style scoped>
-.dro { display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border-radius: var(--radius); background: var(--panel); }
+.dro { --basis-width: clamp(154px, 13.75vw, 176px); display: flex; align-items: center; flex: none; min-height: 78px; margin: 0 24px 10px; padding: 12px 0; border-radius: var(--radius); background: var(--panel); }
 .dro.has-rotary { flex-wrap: wrap; }
-.rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 6px; padding: 4px 0 0 154px; border-top: 1px solid var(--line); }
+.rotary { display: flex; flex: 0 0 100%; align-items: center; margin-top: 6px; padding: 4px 0 0 var(--basis-width); border-top: 1px solid var(--line); }
 .rotary-axis { display: grid; grid-template-columns: 20px 132px minmax(0, 1fr); flex: 0 0 257px; align-items: baseline; gap: 12px; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
 .rotary-letter, .rotary-angle { font-size: var(--type-lg); line-height: 24px; font-weight: 500; }
 .rotary-angle { text-align: right; }
 .rotary-marker { color: var(--warn); font-size: var(--type-sm); }
 .rotary-stale { margin-left: auto; padding: 0 12px; white-space: nowrap; }
 .distrust .rotary-angle { color: var(--text-faint); }
-.basis { display: flex; align-self: stretch; width: 154px; flex: none; padding: 0 10px; }
+.basis { display: flex; align-self: stretch; width: var(--basis-width); flex: none; padding: 0 10px; }
 .basis-toggle { width: 100%; min-height: 56px; justify-content: space-between; gap: 8px; padding: 0 10px; font-size: var(--type-body); font-weight: 600; white-space: nowrap; }
+.basis-toggle > span { min-width: 0; white-space: normal; line-height: 1.2; text-align: left; }
 .basis-toggle :deep(svg) { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
 .g92 { display: block; font-size: var(--type-sm); line-height: 1.2; color: var(--warn); }
 .axis-group { display: flex; align-items: center; justify-content: center; flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); }

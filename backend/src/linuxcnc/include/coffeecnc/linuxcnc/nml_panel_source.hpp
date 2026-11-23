@@ -36,7 +36,9 @@ namespace coffeecnc {
 //                 replaced and after every synch the port reports (NmlLoads::synched). LinuxCNC
 //                 writes the file only when task synchronises the interpreter, not after an
 //                 MDI block or a program (see SynchPoint). An inactive system is `current`
-//                 while: the link is live; the file was read after the last synch; activity
+//                 while: the link is live; the file read is the one the last synch wrote
+//                 (SynchPoint::file, the same stamp; a file replaced since by anything else
+//                 is not current until the next synch); activity
 //                 and gcode_writes are what they were when that synch was sent; and the
 //                 reading shows the interpreter idle with no MDI queued. Else it is shown as
 //                 not current and a synch is asked for (synch_wanted), which the port sends

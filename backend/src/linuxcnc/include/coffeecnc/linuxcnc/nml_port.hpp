@@ -114,7 +114,9 @@ struct BreakpointSource {
 //              queued, and every sample whose echoed serial number is none this port wrote
 //              recently (another client's command)
 //   worker     counts its own `gcode_writes` (MDI blocks, run, step, resume); sends the synch
-//              from idle_maintenance when task can take it, and publishes `synched`
+//              from idle_maintenance when task can take it, and publishes `synched` with
+//              the file's stamp once task reports it done. The wait for that gives way to
+//              anything the session queues: a stop never waits behind a synch
 //
 // The publisher then shows the file as current while both counters are what they were when
 // the synch was sent. See NmlPanelSource.

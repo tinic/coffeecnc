@@ -369,7 +369,8 @@
       "setLoadedLength": "检查前请先设置当前刀具的长度。"
     },
     "bridge": {
-      "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。"
+      "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。",
+      "lanReadOnly": "局域网屏幕为只读。"
     },
     "step": {
       "chooseFile": "请选择不超过 25 MB 的 STEP 文件",

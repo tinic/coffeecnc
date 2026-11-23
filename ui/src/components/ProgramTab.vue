@@ -34,6 +34,7 @@ import { translateMessage } from '../i18n/messages'
 
 const { t } = useI18n()
 
+const props = defineProps<{ readOnly?: boolean }>()
 const status = reported
 const lineEditBar = computed(() => ({
   block: lineEdits.block.value,
@@ -162,7 +163,7 @@ const timeTooltip = computed(() => {
 })
 
 // A restart is planned from an idle, loaded program whose text is the one the machine has.
-const canRestart = computed(() => textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
+const canRestart = computed(() => !props.readOnly && textCurrent.value && !programExecuting.value && status.value?.interp === 'idle' &&
   sections.value.length > 0 && !status.value.program.breakpoint)
 const activeBreakpoint = computed(() => status.value?.program.breakpoint)
 const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBreakpoint(status.value)?.line ?? 0)
@@ -269,7 +270,7 @@ async function showFailure(): Promise<void> {
         <div class="views" :class="panel.programLayout">
           <template v-if="panel.programLayout !== 'path'">
             <NcText
-              v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart && !lineEdits.pending.value" :edits="lineEditBar"
+              v-if="program !== null && textCurrent" ref="text" :lines="program.lines" :motion-line="lineInText(motionLine)" :current-line="lineInText(currentLine)" :error-line="failureLine" :restartable="canRestart && !lineEdits.pending.value" :edits="readOnly ? undefined : lineEditBar"
               :breakpoint-line="breakpointLine" :breakpoint-lines="breakpointLines" :breakpoint-reached="activeBreakpoint?.reached === true"
               :breakpoint-block="breakpointBlock"
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
@@ -278,7 +279,7 @@ async function showFailure(): Promise<void> {
             <div v-else class="empty">{{ status?.program.file ? t('program.tab.waitingText') : t('program.tab.openToBegin') }}</div>
           </template>
           <PathView v-if="panel.programLayout !== 'text'">
-            <PartModel />
+            <PartModel v-if="!readOnly" />
           </PathView>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
             <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
@@ -305,7 +306,7 @@ async function showFailure(): Promise<void> {
               {{ t('program.tab.check') }}<span v-if="check?.warnings.length && !check.errors.length">{{ check.warnings.length }}</span>
             </button>
             <button
-              v-if="breakpointLine" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
+              v-if="breakpointLine && !readOnly" class="btn breakpoint-chip" type="button" :disabled="!!activeBreakpoint"
               :aria-label="activeBreakpoint ? breakpointLabel : t('program.tab.clearBreakpoint')" @click="breakpointSelection = null"
             >
               {{ breakpointLabel }}<AppIcon v-if="!activeBreakpoint" name="close" />

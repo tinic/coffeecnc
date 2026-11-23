@@ -235,6 +235,16 @@
       "effect": "只更新此字段。请另行应用或运行其操作。",
       "useValue": "使用此值",
       "number": "数值"
+    },
+    "remote": {
+      "noLive": "无实时机床状态",
+      "estop": "急停",
+      "machineOff": "机床断电",
+      "paused": "已暂停",
+      "running": "运行中",
+      "machineOn": "机床上电",
+      "readOnly": "只读",
+      "messageLog": "消息日志"
     }
   }
 }

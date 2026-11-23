@@ -579,6 +579,20 @@ void simulation_profiles() {
   require(std::system(inch.c_str()) != 0, "the gantry profile is millimetres only");
 }
 
+void remote_viewer_port() {
+  const auto defaults = load(g0759);
+  require(defaults && defaults->remote_port == 0, "The LAN viewer is off by default");
+  const auto enabled = with(std::string(g0759), "[COFFEECNC]\n", "[COFFEECNC]\nREMOTE_PORT = 8787\n");
+  const auto viewer = load(enabled);
+  require(viewer && viewer->remote_port == 8787, "The enabled LAN viewer reads the configured port");
+  const auto zero = load(with(enabled, "REMOTE_PORT = 8787", "REMOTE_PORT = 0"));
+  require(zero && zero->remote_port == 0, "A zero port also disables the LAN viewer");
+  for (const auto* invalid : {"-1", "65536", "3.5", "open"}) {
+    const auto refused = load(with(enabled, "REMOTE_PORT = 8787", std::string("REMOTE_PORT = ") + invalid));
+    require(!refused && has(refused.error(), "REMOTE_PORT"), "An invalid LAN port is rejected");
+  }
+}
+
 void fixed_setter_is_explicit_and_bounded() {
   require(!load(g0759)->fixed_setter, "ordinary machine profiles have no automatic fixed setter");
   const auto enabled = with(std::string(g0759), "[COFFEECNC]\n",
@@ -793,6 +807,7 @@ auto main(int argc, char** argv) -> int {
     tool_model_settings();
     shipped_example();
     simulation_profiles();
+    remote_viewer_port();
     fixed_setter_is_explicit_and_bounded();
     motion_settings();
     linuxcnc_switches();

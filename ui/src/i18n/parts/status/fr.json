@@ -235,6 +235,16 @@
       "effect": "Modifie uniquement ce champ. Appliquez ou lancez son action séparément.",
       "useValue": "Utiliser la valeur",
       "number": "Nombre"
+    },
+    "remote": {
+      "noLive": "Aucun état machine en direct",
+      "estop": "Arrêt d’urgence",
+      "machineOff": "Machine hors tension",
+      "paused": "En pause",
+      "running": "En cours",
+      "machineOn": "Machine sous tension",
+      "readOnly": "Lecture seule",
+      "messageLog": "Journal des messages"
     }
   }
 }

@@ -125,7 +125,7 @@ void PanelComposer::observe(const PanelReading& reading) {
 }
 
 auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool ready_again,
-                            std::chrono::milliseconds unix_time)
+                            std::chrono::milliseconds unix_time, std::vector<PanelRecord>* records)
     -> std::expected<std::vector<std::string>, std::string> {
   observe(reading);
   if (page_ != page) {
@@ -167,7 +167,7 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   auto messages = publisher_.publish(
       {hello_, status, reading.tool_table, work_offsets_, reading.program.get(), preview,
        reading.offset_history.get()},
-      snapshots_due_);
+      snapshots_due_, records);
   if (!messages)
     return messages; // Nothing was sent: what was due still is.
   snapshots_due_ = false;
@@ -177,15 +177,17 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
                                                                : MessageLevel::info,
                                                  message.text, unix_time);
                          });
+  if (records != nullptr)
+    records->insert(records->end(), waiting_.size(), PanelRecord::message);
   waiting_.clear();
   return messages;
 }
 
 PanelFeed::PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview,
                      SnapshotsSent snapshots_sent, ProgramProgress* progress,
-                     OffsetHistoryStore* history)
+                     OffsetHistoryStore* history, Mirror mirror)
     : source_(source), deliver_(std::move(deliver)), snapshots_sent_(std::move(snapshots_sent)),
-      preview_(preview), progress_(progress), history_(history),
+      preview_(preview), progress_(progress), history_(history), mirror_(std::move(mirror)),
       thread_([this]() -> void { loop(); }) {}
 
 PanelFeed::~PanelFeed() {
@@ -219,6 +221,7 @@ void PanelFeed::loop() {
   // snapshots: as the composer itself counts them.
   std::optional<PageToken> composed;
   bool snapshots_owed = false;
+  std::vector<PanelRecord> records;
   auto next = std::chrono::steady_clock::now();
   for (;;) {
     auto reading = source_.read();
@@ -235,16 +238,23 @@ void PanelFeed::loop() {
       page = page_;
       ready = std::exchange(ready_, false);
     }
-    if (page) {
-      snapshots_owed = snapshots_owed || ready || composed != page;
-      composed = page;
-      auto messages = composer.compose(reading, *page, ready, unix_now());
+    if (page || mirror_) {
+      const auto publication = page.value_or(PageToken{});
+      snapshots_owed = snapshots_owed || ready || composed != publication;
+      composed = publication;
+      records.clear();
+      auto messages = composer.compose(reading, publication, ready, unix_now(),
+                                       mirror_ ? &records : nullptr);
       if (messages) {
         reported.clear();
-        deliver_(*page, std::move(*messages));
-        if (std::exchange(snapshots_owed, false) && snapshots_sent_)
-          snapshots_sent_(*page);
-      } else if (messages.error() != reported) {
+        if (mirror_)
+          mirror_(*messages, records, reading.program != nullptr);
+        if (page) {
+          deliver_(*page, std::move(*messages));
+          if (std::exchange(snapshots_owed, false) && snapshots_sent_)
+            snapshots_sent_(*page);
+        }
+      } else if (page && messages.error() != reported) {
         reported = messages.error();
         deliver_(*page, {encode_message(MessageLevel::error,
                                         "The machine status cannot be shown: " + reported,

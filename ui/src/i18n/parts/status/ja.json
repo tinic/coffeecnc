@@ -235,6 +235,16 @@
       "effect": "このフィールドのみを更新します。適用または実行は別に行ってください。",
       "useValue": "値を使用",
       "number": "数値"
+    },
+    "remote": {
+      "noLive": "機械のライブ状態がありません",
+      "estop": "非常停止",
+      "machineOff": "機械電源オフ",
+      "paused": "一時停止中",
+      "running": "実行中",
+      "machineOn": "機械電源オン",
+      "readOnly": "閲覧のみ",
+      "messageLog": "メッセージログ"
     }
   }
 }

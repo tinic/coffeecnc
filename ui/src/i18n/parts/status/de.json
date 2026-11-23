@@ -235,6 +235,16 @@
       "effect": "Ändert nur dieses Feld. Übernehmen oder starten Sie seine Aktion separat.",
       "useValue": "Wert übernehmen",
       "number": "Zahl"
+    },
+    "remote": {
+      "noLive": "Kein aktueller Maschinenstatus",
+      "estop": "Not-Halt",
+      "machineOff": "Maschine aus",
+      "paused": "Pausiert",
+      "running": "Läuft",
+      "machineOn": "Maschine ein",
+      "readOnly": "Nur lesen",
+      "messageLog": "Meldungsprotokoll"
     }
   }
 }

@@ -74,9 +74,14 @@ struct PanelState {
 // the program text and the preview points per call.
 //
 // Pure logic, NOT thread-safe.
+enum class PanelRecord : std::uint8_t {
+  hello, tool_table, work_offsets, offset_history, program, preview, status, message
+};
+
 class StatusPublisher {
 public:
-  [[nodiscard]] auto publish(const PanelState& state, bool snapshots)
+  [[nodiscard]] auto publish(const PanelState& state, bool snapshots,
+                             std::vector<PanelRecord>* records = nullptr)
       -> std::expected<std::vector<std::string>, std::string>;
 
 private:

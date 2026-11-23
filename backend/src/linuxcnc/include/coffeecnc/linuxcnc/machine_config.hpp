@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
@@ -101,6 +102,8 @@ struct MachineConfig {
   std::vector<Macro> macros{};
   // Resolved and prepared by the application before connecting to LinuxCNC.
   std::string runtime_directory{};
+  // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
+  std::uint16_t remote_port{};
   [[nodiscard]] auto touched_off_file() const -> std::string;
 };
 

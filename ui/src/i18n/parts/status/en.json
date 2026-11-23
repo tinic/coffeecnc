@@ -235,6 +235,16 @@
       "effect": "Updates this field only. Apply or run its action separately.",
       "useValue": "Use value",
       "number": "Number"
+    },
+    "remote": {
+      "noLive": "No live machine status",
+      "estop": "E-stop",
+      "machineOff": "Machine off",
+      "paused": "Paused",
+      "running": "Running",
+      "machineOn": "Machine on",
+      "readOnly": "Read-only",
+      "messageLog": "Message log"
     }
   }
 }

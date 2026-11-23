@@ -13,6 +13,7 @@ import NumberDialog from './NumberDialog.vue'
 import CoordinateConfirm from './CoordinateConfirm.vue'
 
 const { t } = useI18n()
+const props = defineProps<{ readOnly?: boolean }>()
 const basis = ref<'work' | 'machine' | 'dtg'>('work')
 const unit = computed(() => panel.unit)
 const wcs = computed(() => wcsName(reported.value?.offsets.wcs ?? 1))
@@ -34,7 +35,7 @@ function cycleBasis(): void {
   basis.value = basis.value === 'work' ? 'machine' : basis.value === 'machine' ? 'dtg' : 'work'
 }
 let nextTouch = 0
-const touchBlock = computed(() => panel.tab !== 'manual' ? t('manual.dro.openManual')
+const touchBlock = computed(() => props.readOnly || panel.tab !== 'manual' ? t('manual.dro.openManual')
   : basis.value !== 'work' ? t('manual.dro.switchToWorkPosition') : mdiBlock.value === null ? null : translateMessage(mdiBlock.value))
 const shifted = computed(() => reported.value?.offsets.g92.some((v) => v !== 0) ?? false)
 const tool = computed(() => reported.value?.tool.in_spindle)
@@ -104,12 +105,18 @@ watch([axes, touchBlock], () => {
       </button>
     </div>
     <div v-for="axis in axes" :key="axis.axis" class="axis-group">
-      <button v-tooltip="touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" class="axis" type="button" :disabled="touchBlock !== null || !Number.isFinite(axis.work)" :aria-label="t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)">
+      <component
+        :is="readOnly ? 'div' : 'button'"
+        v-tooltip="readOnly ? undefined : touchBlock ?? t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })"
+        class="axis" :class="{ 'remote-axis': readOnly }"
+        :type="readOnly ? undefined : 'button'" :disabled="readOnly ? undefined : touchBlock !== null || !Number.isFinite(axis.work)"
+        :aria-label="readOnly ? undefined : t('manual.dro.touchOff', { axis: axis.axis.toUpperCase(), wcs })" @click="openTouchOff(axis)"
+      >
         <span class="letter mono">{{ axis.axis.toUpperCase() }}</span>
         <span class="reading"><span class="number mono">{{ formatLength(axis[basis], unit) }}</span><span class="marker">{{ !live ? t('manual.dro.lastReported') : marker(axis) }}</span></span>
-        <span v-if="panel.tab !== 'manual'" class="touch hidden" aria-hidden="true"><AppIcon name="target" /></span>
-      </button>
-      <details v-if="panel.tab === 'manual'" v-popover class="axis-actions">
+        <span v-if="!readOnly && panel.tab !== 'manual'" class="touch hidden" aria-hidden="true"><AppIcon name="target" /></span>
+      </component>
+      <details v-if="!readOnly && panel.tab === 'manual'" v-popover class="axis-actions">
         <summary :aria-label="t('manual.dro.axisActions', { axis: axis.axis.toUpperCase() })">···</summary>
         <div class="popover">
           <h3>{{ axis.axis.toUpperCase() }} · {{ wcs }}</h3>
@@ -160,7 +167,7 @@ watch([axes, touchBlock], () => {
 .axis-group { display: flex; align-items: center; flex: none; min-width: 0; border-left: 1px solid var(--line); }
 .axis { display: flex; flex: none; height: 56px; align-items: center; gap: 12px; min-width: 0; padding: 0 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .axis-actions { position: relative; flex: none; margin-right: 4px; }.axis-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 7px; color: var(--text-dim); font-size: 20px; }.axis-actions summary:hover { background: var(--accent-soft); }.axis-actions .popover { top: calc(100% + 8px); right: 0; width: 190px; min-width: 190px; }.axis-actions .btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
-.axis:disabled { cursor: default; }.axis:hover:not(:disabled) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.axis:disabled, .axis.remote-axis { cursor: default; }.axis:hover:not(:disabled, .remote-axis) { background: var(--accent-soft); }.axis:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .letter { flex: none; width: 20px; color: var(--text); }/* Coordinates sit next to their letter, grouped on the left with the units; digits right-aligned
    in a fixed column (nine 27 px monospace characters: -9999.999 or -999.9999) so they do not move
    as they change. */

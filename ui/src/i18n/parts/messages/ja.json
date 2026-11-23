@@ -369,7 +369,8 @@
       "setLoadedLength": "確認する前に装着工具の長さを設定してください。"
     },
     "bridge": {
-      "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。"
+      "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。",
+      "lanReadOnly": "LAN 画面は閲覧専用です。"
     },
     "step": {
       "chooseFile": "25 MB 以下の STEP ファイルを選択してください",

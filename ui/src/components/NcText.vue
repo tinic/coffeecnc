@@ -31,7 +31,7 @@ const props = defineProps<{
     hasClipboard: boolean
     canUndo: boolean
     message: { text: string; error: boolean } | null
-  }
+  } | undefined
 }>()
 const emit = defineEmits<{
   restart: [line: number]

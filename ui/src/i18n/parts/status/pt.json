@@ -235,6 +235,16 @@
       "effect": "Atualiza apenas este campo. Aplique ou execute a sua ação em separado.",
       "useValue": "Usar valor",
       "number": "Número"
+    },
+    "remote": {
+      "noLive": "Sem estado da máquina em direto",
+      "estop": "Paragem de emergência",
+      "machineOff": "Máquina desligada",
+      "paused": "Em pausa",
+      "running": "Em execução",
+      "machineOn": "Máquina ligada",
+      "readOnly": "Só leitura",
+      "messageLog": "Registo de mensagens"
     }
   }
 }

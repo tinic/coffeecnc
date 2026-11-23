@@ -369,7 +369,8 @@
       "setLoadedLength": "Fije la longitud de la herramienta cargada antes de comprobarla."
     },
     "bridge": {
-      "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación."
+      "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación.",
+      "lanReadOnly": "La pantalla de red es de solo lectura."
     },
     "step": {
       "chooseFile": "Elija un archivo STEP de 25 MB como máximo",

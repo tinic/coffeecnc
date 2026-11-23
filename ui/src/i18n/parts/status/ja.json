@@ -178,6 +178,7 @@
       "reopening": "元のプログラムを開き直しています",
       "checking": "プログラムをチェック中です",
       "breakpointCheck": "ブレークポイントには完全なプログラムチェックが必要です",
+      "breakpointPastPreview": "プレビューはこの行より前で終わっています。プレビューされた経路上の行を選んでください",
       "nothingRunning": "実行中のものはありません",
       "waitingToolChange": "工具交換を待っています",
       "dismissSpindleConfirm": "続行する前に主軸の確認を閉じてください",

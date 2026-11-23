@@ -1,0 +1,35 @@
+(Pocket with named parameters, numbered parameters and O-word subroutines)
+#<depth> = -2
+#<step> = 0.5
+#<_cut_feed> = 400 (global: the subroutine reads it)
+#100 = 800 (parametric plunge feed)
+o<square> sub
+  (#1 = size, #2 = depth)
+  G1 Z#2 F#100
+  G1 X#1 F#<_cut_feed>
+  G1 Y#1
+  G1 X0
+  G1 Y0
+o<square> endsub
+G21 G90 G17 G94
+T1 M6
+G43 H1
+S1500 M3
+G54
+G0 X0 Y0
+G0 Z5
+#<z> = 0
+o<pass> while [#<z> GT #<depth>]
+  #<z> = [#<z> - #<step>]
+  o<square> call [20] [#<z>]
+o<pass> endwhile
+o110 if [#<depth> LT -1]
+  G0 Z5
+o110 else
+  G0 Z10
+o110 endif
+#<_last_depth> = #<z>
+(debug, final depth #<z>)
+G0 Z15
+M5
+M30

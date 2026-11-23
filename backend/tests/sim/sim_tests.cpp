@@ -4155,8 +4155,15 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
   };
   refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit");
   refused("preflight_blocks_missing_tool_length", "T2 M6\nG43 H2\nG0 X10\n", "T2");
-  refused("preflight_blocks_unverified_work_origin", "G55\nG0 X10\n", "G55");
   refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel");
+  // LinuxCNC's parameter file holds every work system: G55 is verified from it.
+  const auto other_system = load("G55\nG0 X10\n");
+  check("preflight_verifies_another_work_origin_from_the_parameter_file",
+        other_system.errors.empty() &&
+            std::ranges::any_of(other_system.frames, [](const ProgramFrameCheck& frame) {
+              return frame.wcs == 2 && frame.available;
+            }),
+        other_system.errors.empty() ? "" : other_system.errors.front());
 
   const auto report = load("G0 X8\nG1 X10 F300\n");
   const bool expected_frame = report.frames.size() == 1 &&
@@ -4400,6 +4407,281 @@ void program_breakpoint(Rig& rig, NmlLoads& loads) {
     check("breakpoint_orphan_allows_spindle_restore", false, orphaned.error());
   }
   rig.restart_preview = nullptr;
+  rig.start();
+}
+
+// Programs of common CAM posts (tests/cam) on the G0759: preview, Run, Run to line and
+// Restart from line across G28, several work systems and parameters.
+void cam_programs(Rig& rig) {
+  const auto table = LoadedToolTable::attach(rig.config.millimetres_per_unit);
+  check("cam_tool_table", table.has_value());
+  if (!table)
+    return;
+  PreviewOracle oracle{rig, *table};
+  PreviewWorker preview{oracle.engine};
+  HelperPreviewEngine engine{load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                                  rig.config.directory + "/preview-work")};
+  rig.stop();
+  rig.restart_preview = &preview;
+  rig.restart_engine = &engine;
+  rig.start();
+  const auto settled = [&] {
+    const auto s = rig.status();
+    return s.command_done && !s.task_executing && s.controller.in_position &&
+           s.controller.interp == InterpState::idle;
+  };
+  const auto send_mdi = [&](std::string_view text) {
+    const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
+    return result.accepted() && rig.pump_until(10s, settled);
+  };
+  constexpr double origin_z = -55;
+  constexpr double length = 18.975;
+  const bool setup =
+      rig.send(R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6,"comment":"End mill"})").accepted() &&
+      rig.send(R"("type":"set_tool","tool":{"number":2,"pocket":2,"length":25.4,"diameter":3,"comment":"Drill"})").accepted() &&
+      send_mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z{} R0", origin_z)) &&
+      send_mdi(std::format("G10 L2 P2 X60 Y-8 Z{} R0", origin_z)) &&
+      send_mdi(std::format("G10 L2 P3 X110 Y-8 Z{} R0", origin_z)) &&
+      send_mdi("M61 Q1 G43 H1") && send_mdi("G0 Z20") && send_mdi("G0 X0 Y0");
+  check("cam_setup", setup);
+  if (!setup)
+    return;
+
+  std::uint64_t context = 0;
+  const auto load = [&](const std::string& text) {
+    auto [inputs, path] = oracle.preview(text);
+    preview.submit(++context, inputs);
+    const bool shown = rig.pump_until(10s, [&] {
+      const auto checked = preview.checked_preview().preview;
+      return checked && checked->context == context;
+    });
+    check("cam_preview_current", shown, path.error ? path.error->text : "");
+    return std::move(path);
+  };
+  const auto state = [](const PreviewOutcome& o) {
+    return o.state == PreviewState::ready ? "ready" : o.state == PreviewState::failed ? "failed"
+                                                                                      : "unavailable";
+  };
+  const std::filesystem::path cam{COFFEECNC_CAM_SAMPLES_DIRECTORY};
+  for (const auto* sample : {"fusion360-linuxcnc.ngc", "mastercam-linuxcnc.ngc",
+                           "sheetcam-linuxcnc.ngc", "estlcam-linuxcnc.ngc",
+                           "parameters-subroutines.ngc", "several-work-offsets.ngc",
+                           "unset-parameter.ngc"}) {
+    const auto text = read_text_file((cam / sample).string(), 65536).value_or("");
+    const auto o = load(text);
+    fact("cam_program", std::format("sample={} state={} error_line={} error={} segments={} "
+                                    "check_errors={}",
+                                    sample, state(o), o.error ? o.error->line : 0,
+                                    word(o.error ? o.error->text : "-"), o.segments.size(),
+                                    o.check ? o.check->errors.size() : 0));
+    const bool expected = std::string_view(sample) == "unset-parameter.ngc"
+                              ? o.state == PreviewState::failed && o.error && o.error->line == 5
+                              : o.state == PreviewState::ready && o.check && o.check->errors.empty();
+    check("cam_program_preview", expected, std::format("{}: {}", sample,
+                                                        o.error ? o.error->text : "-"));
+  }
+
+  // A program whose preview ends early: Run still starts, after the review of the partial check.
+  const auto partial = load(read_text_file((cam / "unset-parameter.ngc").string(), 65536).value_or(""));
+  const auto unreviewed = rig.send(std::format(
+      R"("type":"run","preview_context":{},"display_units":"mm")", context));
+  const auto reviewed = rig.send(std::format(
+      R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true)", context));
+  const bool ran = reviewed.accepted() && rig.pump_until(30s, [&] {
+    return rig.idle() && near(rig.status().work[0], 10, 0.05);
+  });
+  check("cam_run_after_partial_check",
+        partial.state == PreviewState::failed && unreviewed.outcome == "rejected" &&
+            unreviewed.reason.find("warnings") != std::string::npos && ran,
+        unreviewed.text() + " " + reviewed.text());
+
+  // Run to line on the path before the end of a partial preview.
+  const auto at_breakpoint = [&](int line) {
+    const auto status = oracle.source.read().status;
+    return status.program.breakpoint && status.program.breakpoint->line == line &&
+           status.program.breakpoint->reached;
+  };
+  const auto to_line = [&](int line, std::string_view text) {
+    return rig.send(std::format(
+        R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true,"breakpoint":{{"line":{},"text":{}}})",
+        context, line, Json(text).dump()));
+  };
+  const auto copy = std::filesystem::path(rig.config.directory) / ".coffeecnc-breakpoint.ngc";
+  const auto finish = [&] {
+    const auto resumed = rig.send(R"("type":"resume")");
+    return resumed.accepted() && rig.pump_until(30s, [&] {
+      return rig.idle() && rig.status().program_file == oracle.program &&
+             !std::filesystem::exists(copy);
+    });
+  };
+  static_cast<void>(send_mdi("G0 Z20"));
+  const auto stops = load("G21 G90 G17 G54 G40 G49 G80 G94 G97 G64\nG0 Z20\nG0 X8 Y4\n"
+                          "G1 Z2 F900\nG1 X[11 + #3000] F1200\nM30\n");
+  const auto beyond = to_line(5, "G1 X[11 + #3000] F1200");
+  const auto before = to_line(4, "G1 Z2 F900");
+  const bool paused = before.accepted() && rig.pump_until(10s, [&] { return at_breakpoint(4); });
+  const auto raw = rig.status();
+  check("cam_breakpoint_on_partial_preview",
+        stops.state == PreviewState::failed && stops.error && stops.error->line == 5 &&
+            beyond.outcome == "rejected" && paused && near(raw.commanded_position[0], 18, 0.02) &&
+            finish(),
+        beyond.text() + " " + before.text());
+
+  // A Fusion 360 program with G28 G91 Z0 before and after the cut: a whole preview, Run to a
+  // line after the G28, and Restart from a line after it.
+  const std::string fusion =
+      "G90 G94 G17 G91.1\nG21\nG28 G91 Z0\nG90\nS1500 M3\nG54\nG0 X-4 Y-4\nG43 Z15 H1\nG0 Z5\n"
+      "G1 Z-1 F300\nG1 X24 F800\nG1 Y24\nG0 Z15\nG28 G91 Z0\nG90\nM5\nM30\n";
+  // With the length of T1 in effect, as at the start of a job.
+  static_cast<void>(send_mdi("G43 H1"));
+  static_cast<void>(send_mdi("G0 Z20"));
+  auto path = load(fusion);
+  const auto lifted = std::ranges::find(path.segments, 3, &PreviewSegment::line);
+  check("cam_g28_preview",
+        path.state == PreviewState::ready && near(rig.status().tool_offset[2], length, 0.001) &&
+            lifted != path.segments.end() && near(lifted->points.back()[2], -length, 0.01),
+        lifted == path.segments.end()
+            ? std::string("no segment of line 3")
+            : std::format("line 3 ends at tip z={:.3f}", lifted->points.back()[2]));
+  const auto after_g28 = to_line(11, "G1 X24 F800");
+  const bool reached = after_g28.accepted() && rig.pump_until(20s, [&] { return at_breakpoint(11); });
+  const auto at = rig.status();
+  const bool resumed = reached && finish();
+  check("cam_breakpoint_after_g28",
+        reached && near(at.work[0], -4, 0.02) && near(at.work[1], -4, 0.02) &&
+            near(at.work[2], -1, 0.02) && resumed &&
+            near(rig.status().controller.axes[2].machine, 0, 0.02),
+        after_g28.text());
+
+  static_cast<void>(send_mdi("G0 Z20"));
+  static_cast<void>(send_mdi("G0 X0 Y0"));
+  path = load(fusion);
+  const auto plan = rig.send(
+      std::format(R"("type":"plan_restart","line":12,"preview_context":{})", context));
+  const bool planned = plan.accepted() && plan.restart.value("tool", 0) == 1 &&
+                       !plan.restart.value("needs_tool_change", true);
+  check("cam_restart_after_g28_planned", planned, plan.text());
+  if (planned) {
+    const auto start = plan.restart.at("start").get<Vec3>();
+    const auto id = rig.post(std::format(R"("type":"start_restart","plan_id":{})",
+                                         plan.restart.at("plan_id").get<std::uint64_t>()));
+    int first = 0;
+    const bool done = rig.pump_until(120s, [&] {
+      const auto s = rig.status();
+      if (auto result = rig.result(id); result && !result->accepted())
+        return true;
+      if (s.controller.mode == TaskMode::automatic && s.motion_line > 0 && first == 0)
+        first = s.motion_line;
+      return first != 0 && !s.task_executing && rig.idle();
+    });
+    const auto end = rig.await(id);
+    check("cam_restart_after_g28",
+          end.accepted() && done && first == 12 && near(start[0], 24, 0.01) &&
+              near(start[1], -4, 0.01) && near(rig.status().work[0], 24, 0.05) &&
+              near(rig.status().work[1], 24, 0.05) &&
+              near(rig.status().controller.axes[2].machine, 0, 0.02),
+          std::format("first={} {} {}", first, end.text(), PreviewOracle::join(rig.all_messages())));
+  }
+
+  // Review of #276, finding 2: a G28.1 in MDI after the preview. Task has it in memory only;
+  // the parameter file has it from the next synchronisation, and a restart in MDI mode does
+  // not switch modes. The port's restart synchronises task first and refuses before anything
+  // moves. Driven at the port with the runtime down, so that no synch of idle maintenance
+  // makes the file current in between.
+  static_cast<void>(send_mdi("G0 Z20"));
+  static_cast<void>(send_mdi("G0 X0 Y0"));
+  rig.settle();
+  auto restart_inputs = oracle.preview(fusion).first;
+  restart_inputs.restart_line = 12;
+  const auto planned_restart = oracle.engine.compute(restart_inputs, {});
+  const auto& point = planned_restart.outcome.restart;
+  std::string refused_restart = point ? std::string("not run") : planned_restart.outcome.restart_blocked;
+  bool held = false;
+  if (point && planned_restart.files_changed) {
+    rig.direct([&]() -> void {
+      const auto resting = rig.port.status().commanded_position;
+      const auto saved = rig.port.mdi("G28.1", always());
+      const auto& watch = planned_restart.files_changed;
+      const Wanted files_current = [&watch]() -> bool { return !watch({}); };
+      const bool stale_unseen = files_current();
+      const auto result = rig.port.start_restart(*point, restart_inputs, false, files_current,
+                                                 always());
+      const auto after = rig.port.status().commanded_position;
+      refused_restart = std::format("saved={} unseen={} result={} moved={:.3f}", saved.reason,
+                                    stale_unseen, result.reason, distance(after, resting));
+      held = saved.status == ActionStatus::accepted && stale_unseen &&
+             result.status != ActionStatus::accepted &&
+             result.reason.find("The machine's saved parameters changed after the restart was "
+                                "reviewed.") != std::string::npos &&
+             distance(after, resting) < 0.01;
+    });
+  }
+  check("cam_restart_refuses_stale_parameter_file", held, refused_restart);
+  rig.settle();
+
+  // Finding 5: a remapped code the interpreter does not know without its remap. Without the
+  // remap it is the program's error, which refuses Run; with it the preview ends there, with
+  // no error in the check.
+  {
+    auto settings = load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
+                                          rig.config.directory + "/preview-work");
+    settings.remapped = {"m10", "g88.1"};
+    HelperPreviewEngine remapping{settings};
+    for (const auto* code : {"M10 P1", "G88.1 X1 Y1 Z1"}) {
+      auto [remap_inputs, plain] =
+          oracle.preview(std::format("G21 G90 G54\nG0 Z20\nG0 X2 Y2\n{}\nG0 X4\nM30\n", code));
+      const auto o = remapping.compute(remap_inputs, {}).outcome;
+      fact("cam_remapped_unknown", std::format("code={} plain={} remapped={} error={}", word(code),
+                                               state(plain), state(o),
+                                               word(o.error ? o.error->text : "-")));
+      check("cam_remapped_unknown_code_ends_preview",
+            plain.check && !plain.check->errors.empty() && o.state == PreviewState::failed &&
+                o.error && o.error->line == 4 &&
+                o.error->text.find("is remapped on this machine") != std::string::npos &&
+                o.check && o.check->errors.empty() && o.segments.size() == 2,
+            std::format("{}: {}", code, o.error ? o.error->text : "-"));
+    }
+  }
+
+  // Several work systems: G55's offsets come from the parameter file.
+  static_cast<void>(send_mdi("G0 Z20"));
+  static_cast<void>(send_mdi("G0 X0 Y0"));
+  const std::string vises = "G21 G90 G17 G94\nG54\nG0 X0 Y0 Z5\nG1 Z-1 F300\nG1 X20 F800\nG0 Z5\n"
+                            "G55\nG0 X0 Y0\nG1 Z-1 F300\nG1 X20 F800\nG0 Z5\nG54\nM30\n";
+  path = load(vises);
+  const auto in_g55 = std::ranges::find(path.segments, 10, &PreviewSegment::line);
+  check("cam_g55_preview",
+        path.state == PreviewState::ready && in_g55 != path.segments.end() &&
+            near(in_g55->points.back()[0], 80, 0.01) && path.check && path.check->errors.empty(),
+        path.error ? path.error->text : "");
+  const auto other = rig.send(
+      std::format(R"("type":"plan_restart","line":10,"preview_context":{})", context));
+  check("cam_restart_needs_its_work_system",
+        other.outcome == "rejected" && other.reason == "This line runs in G55. Select G55, then "
+                                                       "choose the line again.",
+        other.text());
+  // G10 in MDI changes G55 in task's interpreter; task writes the parameter file at its next
+  // synchronisation. A Run with the preview made before must not start.
+  const auto shown = context;
+  const auto trace = rig.status().commanded_position;
+  const bool moved = send_mdi(std::format("G10 L2 P2 X70 Y-8 Z{} R0", origin_z));
+  const auto stale = rig.send(std::format(
+      R"("type":"run","preview_context":{},"display_units":"mm","confirmed":true)", shown));
+  fact("cam_stale_g55_run", "outcome=" + stale.outcome + " reason=" + word(stale.reason));
+  check("cam_stale_parameter_file_refuses_run",
+        moved && !stale.accepted() && distance(rig.status().commanded_position, trace) < 0.01,
+        stale.text());
+  path = load(vises);
+  const auto moved_g55 = std::ranges::find(path.segments, 10, &PreviewSegment::line);
+  check("cam_g55_preview_follows_g10",
+        path.state == PreviewState::ready && moved_g55 != path.segments.end() &&
+            near(moved_g55->points.back()[0], 90, 0.01),
+        path.error ? path.error->text : "");
+
+  static_cast<void>(rig.send(R"("type":"abort")"));
+  rig.stop();
+  rig.restart_preview = nullptr;
+  rig.restart_engine = nullptr;
   rig.start();
 }
 
@@ -6135,7 +6417,7 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
          bool breakpoint_only, bool paused_z_only, bool paused_spindle_only, bool whole_job_only,
          bool gantry_only, bool history_only, bool rotary_only, bool probe_interlock_only,
          bool moves_only, bool macros_only, bool velocity_only, bool wcs_only, bool edits_only,
-         bool diagnostics_only) -> int {
+         bool cam_only, bool diagnostics_only) -> int {
   tool_table_text();
   const auto config = load_machine_config(ini_file);
   check("machine_config", config.has_value(), config ? config->machine_name : config.error());
@@ -6291,6 +6573,11 @@ auto run(const std::string& ini_file, bool g0759, bool contact_only, bool restor
     power_off(rig);
     return failures == 0 ? 0 : 1;
   }
+  if (cam_only) {
+    cam_programs(rig);
+    power_off(rig);
+    return failures == 0 ? 0 : 1;
+  }
   if (preflight_only) {
     program_preflight(rig, loads);
     power_off(rig);
@@ -6408,6 +6695,7 @@ auto main(int argc, char** argv) -> int {
   bool velocity_only = false;
   bool wcs_only = false;
   bool edits_only = false;
+  bool cam_only = false;
   bool diagnostics_only = false;
   for (int i = 1; i < argc; ++i) {
     if (std::string_view(argv[i]) == "-ini" && i + 1 < argc)
@@ -6435,6 +6723,7 @@ auto main(int argc, char** argv) -> int {
     velocity_only = velocity_only || std::string_view(argv[i]) == "velocity-limit";
     wcs_only = wcs_only || std::string_view(argv[i]) == "work-offsets";
     edits_only = edits_only || std::string_view(argv[i]) == "offset-edits";
+    cam_only = cam_only || std::string_view(argv[i]) == "cam-programs";
     diagnostics_only = diagnostics_only || std::string_view(argv[i]) == "diagnostics";
   }
   if (models_only && !ini_file.empty())
@@ -6448,7 +6737,7 @@ auto main(int argc, char** argv) -> int {
     code = run(ini_file, g0759, contact_only, restore_only, air_only, restart_only, preflight_only,
                breakpoint_only, paused_z_only, paused_spindle_only, whole_job_only, gantry_only,
                history_only, rotary_only, probe_interlock_only, moves_only, macros_only, velocity_only,
-               wcs_only, edits_only, diagnostics_only);
+               wcs_only, edits_only, cam_only, diagnostics_only);
   } catch (const std::exception& error) {
     check("no_exception", false, error.what());
   }

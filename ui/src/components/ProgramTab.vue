@@ -14,7 +14,7 @@ import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, progressAt, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointLines as checkedBreakpointLines, currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
 import { formatVelocity, toolLabel, velocityUnit } from '../units'
@@ -170,11 +170,7 @@ const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBr
 const breakpointBlock = computed(() => machineBlock(panel, true) ??
   (homingRequired.value && !allHomed.value ? t('program.tab.notHomed') : null) ??
   (status.value?.interp !== 'idle' || !status.value.motion.in_position ? t('program.tab.stopToRun') : null))
-const breakpointLines = computed(() => {
-  const preview = checkedPreview.value
-  return new Set(canRestart.value && preview?.state === 'ready' && preview.check
-    ? preview.segments.map((segment) => segment.line) : [])
-})
+const breakpointLines = computed(() => canRestart.value ? checkedBreakpointLines(checkedPreview.value) : new Set<number>())
 const breakpointLabel = computed(() => activeBreakpoint.value?.reached
   ? t('program.tab.pausedBefore', { line: breakpointLine.value }) : t('program.tab.pauseBefore', { line: breakpointLine.value }))
 function chooseBreakpoint(line: number): void {

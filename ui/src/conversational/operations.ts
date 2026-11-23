@@ -7,8 +7,9 @@ import { drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
+import { slot, type SlotEnds } from './slot'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'slot'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
@@ -87,6 +88,7 @@ const size = (value: number, unit: Unit): string => `${number(value, unit)}${uni
 
 const grid = (values: Values): boolean => values['pattern'] === 'grid'
 const circle = (values: Values): boolean => values['pattern'] === 'circle'
+const slotClosed = (values: Values): boolean => values['ends'] === 'closed'
 
 export const operations: readonly Operation[] = [
   {
@@ -191,6 +193,35 @@ export const operations: readonly Operation[] = [
       height: v.num('height'), cornerRadius: v.num('cornerRadius'), stepover: v.num('stepover'), depth: v.num('depth'),
       depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
     name: (v, unit) => `rectangular-pocket-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'slot',
+    title: 'operations.operation.slot',
+    note: 'operations.operation.slotSetup',
+    fields: [
+      { type: 'choice', key: 'along', label: 'operations.label.slotAxis',
+        options: [['x', 'operations.option.x'], ['y', 'operations.option.y']] },
+      { type: 'choice', key: 'ends', label: 'operations.label.slotEnds',
+        options: [['closed', 'operations.option.slotClosed'], ['low', 'operations.option.slotLow'],
+          ['high', 'operations.option.slotHigh'], ['both', 'operations.option.slotBoth']] },
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('length', 'operations.label.slotLength', 'length'), num('width', 'operations.label.slotWidth', 'length'),
+      num('depth', 'operations.label.depth', 'length'), num('depthPerPass', 'operations.label.depthPerPass', 'length'),
+      { type: 'choice', key: 'slotEntry', label: 'operations.label.slotEntry',
+        options: [['ramp', 'operations.option.slotRamp'], ['plunge', 'operations.option.slotPlunge']], when: slotClosed },
+      num('angle', 'operations.label.slotAngle', 'angle', (v) => slotClosed(v) && v['slotEntry'] === 'ramp'),
+      ...feeds(false), num('plungeFeed', 'operations.label.slotEntryFeed', 'feed'),
+    ],
+    defaults: (unit) => pick(unit,
+      { along: 'x', ends: 'closed', x: 0, y: 0, length: 40, width: 10, depth: 3, depthPerPass: 1,
+        slotEntry: 'ramp', angle: 3, ...speeds.mm, feed: 300, plungeFeed: 100 },
+      { along: 'x', ends: 'closed', x: 0, y: 0, length: 1.5, width: 0.375, depth: 0.12, depthPerPass: 0.04,
+        slotEntry: 'ramp', angle: 3, ...speeds.inch, feed: 12, plungeFeed: 4 }),
+    generate: (v, common) => slot({ ...common, x: v.num('x'), y: v.num('y'),
+      along: v.text('along') === 'y' ? 'y' : 'x', ends: v.text('ends') as SlotEnds,
+      length: v.num('length'), width: v.num('width'), depth: v.num('depth'), depthPerPass: v.num('depthPerPass'),
+      plunge: v.text('slotEntry') === 'plunge', angle: v.num('angle'), entryFeed: v.num('plungeFeed') }),
+    name: (v, unit) => `slot-${v.text('along')}-${number(v.num('length'), unit)}x${size(v.num('width'), unit)}`, // i18n-ignore
   },
 ]
 

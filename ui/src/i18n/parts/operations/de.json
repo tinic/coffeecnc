@@ -24,6 +24,8 @@
       "bore": "Helix-Ausdrehen",
       "circularPocket": "Kreistasche",
       "rectangularPocket": "Rechtecktasche",
+      "slot": "Nut / Passfedernut",
+      "slotSetup": "Verwenden Sie einen für die Eintauchbewegung geeigneten Schaftfräser. Geben Sie bei einem offenen Ende die Werkstückkante an und lassen Sie dahinter Platz für den Fräser.",
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
@@ -65,6 +67,13 @@
       "cornerRadius": "Eckenradius",
       "toolDiameter": "Der Werkzeugdurchmesser in der Werkzeugtabelle",
       "numberOfHoles": "Anzahl Bohrungen",
+      "slotAxis": "Achse",
+      "slotEnds": "Enden",
+      "slotLength": "Länge",
+      "slotWidth": "Breite",
+      "slotEntry": "Eintauchen",
+      "slotAngle": "Maximaler Rampenwinkel",
+      "slotEntryFeed": "Eintauchvorschub",
       "boltCircleRadius": "Lochkreisradius"
     },
     "option": {
@@ -78,6 +87,12 @@
       "grid": "Raster",
       "boltCircle": "Lochkreis",
       "g81": "G81 Bohren",
+      "slotClosed": "Geschlossen",
+      "slotLow": "Bei − offen",
+      "slotHigh": "Bei + offen",
+      "slotBoth": "Beide offen",
+      "slotRamp": "Rampe",
+      "slotPlunge": "Senkrecht",
       "g83": "G83 Tieflochbohren"
     },
     "check": {
@@ -101,6 +116,12 @@
       "columnSpacing": "Der Spaltenabstand darf nicht null sein.",
       "rowSpacing": "Der Reihenabstand darf nicht null sein.",
       "retractAboveClearance": "Die Rückzugshöhe darf nicht über der Sicherheitshöhe liegen.",
+      "slotToolWidth": "Die Breite muss mindestens dem Werkzeugdurchmesser ({diameter}) entsprechen.",
+      "slotTravel": "Die Nut muss länger als breit sein und dem Werkzeug Platz zum Verfahren lassen.",
+      "slotAngle": "Der Rampenwinkel muss größer als 0° und kleiner als 90° sein.",
+      "slotPrecision": "Erhöhen Sie Vorschub, Tiefe, Freifahrhöhe oder Zustellung auf einen in Programmgenauigkeit darstellbaren Wert.",
+      "slotRampRoom": "Die Nut ist für diesen Rampenwinkel zu kurz. Vergrößern Sie den Winkel oder wählen Sie senkrechtes Eintauchen.",
+      "slotMoveCount": "Die Nut würde zu viele Bewegungen erzeugen. Vergrößern Sie die Zustellung oder den Rampenwinkel.",
       "noHole": "Es ist keine Bohrung vorhanden."
     }
   }

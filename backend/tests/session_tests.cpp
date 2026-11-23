@@ -2230,7 +2230,7 @@ void offset_history() {
   FakeToolModelFiles files{disk};
   OffsetHistoryStore history{files, ""};
   Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, &history};
-  const auto machine = [](Vec3 g54, std::vector<Tool> tools) -> PanelReading {
+  const auto machine = [](const Vec3& g54, std::vector<Tool> tools) -> PanelReading {
     PanelReading reading;
     reading.status.link = Link::live;
     reading.status.offsets.wcs = 1;

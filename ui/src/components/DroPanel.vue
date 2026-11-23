@@ -195,7 +195,7 @@ watch([axes, touchBlock], () => {
 .reading { position: relative; display: flex; flex: none; flex-direction: column; inline-size: calc(9ch - .225em); text-align: right; }
 .number, .letter { letter-spacing: -.025em; white-space: nowrap; }
 .number { font-size: calc(1em * var(--number-scale, 1)); line-height: calc(1.2 * var(--type-dro)); }
-.leading-zeros { opacity: .42; }
+.leading-zeros { opacity: var(--dro-zero-opacity); }
 .marker { position: absolute; top: 100%; right: 0; line-height: 1.2; white-space: nowrap; font: 600 var(--type-sm)/1.2 var(--sans); color: var(--warn); }
 .units { display: flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
 .display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }

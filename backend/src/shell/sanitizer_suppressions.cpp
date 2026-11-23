@@ -10,10 +10,15 @@
 //   libGLX_mesa.so.0                108124 bytes in 481 allocations
 //   libjavascriptcoregtk-4.1.so.0      360 bytes in  15 allocations
 //
+// In CI (Debian 13 container, no GPU, Xvfb) Mesa renders with its gallium software driver, which
+// keeps allocations of its own the same way:
+//
+//   libgallium-25.0.7-2+deb13u1.so    2352 bytes in  49 allocations (quit_delivery)
+//
 // No frame of any of them was in CoffeeCNC's code. A pattern suppresses every leak with a frame
-// in that library, so a leak this code causes through one of the three (an object of theirs it
+// in that library, so a leak this code causes through one of them (an object of theirs it
 // fails to release) is hidden as well: with these in place the shell's own use of them is not
-// leak-checked. Nothing else is suppressed: not GTK, not GLib, not the rest of WebKit.
+// leak-checked. Nothing else is suppressed: not GTK, not GLib, not the rest of WebKit or Mesa.
 //
 // ThreadSanitizer. GLib and the libraries of GTK and WebKitGTK are not instrumented:
 // ThreadSanitizer sees only the calls they make into its interceptors (malloc, free, string
@@ -38,6 +43,7 @@ extern "C" auto __lsan_default_suppressions() -> const char*;
 extern "C" auto __lsan_default_suppressions() -> const char* {
   return "leak:libfontconfig.so\n"
          "leak:libGLX_mesa.so\n"
+         "leak:libgallium-\n"
          "leak:libjavascriptcoregtk-4.1.so\n";
 }
 

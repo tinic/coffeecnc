@@ -14,6 +14,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <string_view>
@@ -535,9 +536,8 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
   if (!homing)
     return std::unexpected(homing.error());
   // LinuxCNC reads HOME_SEQUENCE as an integer; anything else is no sequence.
-  std::size_t joint_count = 0;
-  for (const auto& own : *joints)
-    joint_count += own.size();
+  const auto joint_count = std::accumulate(joints->begin(), joints->end(), std::size_t{0},
+      [](std::size_t count, const auto& group) { return count + group.size(); });
   std::vector<std::optional<int>> sequences;
   for (std::size_t joint = 0; joint < joint_count; ++joint) {
     const auto value = ini.real(std::format("JOINT_{}", joint).c_str(), "HOME_SEQUENCE");

@@ -2,11 +2,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
@@ -156,8 +158,10 @@ void offset_history() {
                                                 snapshots);
     require(messages.has_value(), "Publishing succeeds");
     Types found;
-    for (const auto& text : messages.value_or(std::vector<std::string>{}))
-      found.push_back(Json::parse(text).at("type").get<std::string>());
+    if (messages)
+      std::ranges::transform(*messages, std::back_inserter(found), [](const std::string& text) {
+        return Json::parse(text).at("type").get<std::string>();
+      });
     return found;
   };
   require(types(true) ==

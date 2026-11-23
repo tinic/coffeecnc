@@ -10,7 +10,7 @@ constexpr std::string_view file_name = "operator-settings.json";
 constexpr std::string_view temporary_name = "operator-settings.json.tmp";
 } // namespace
 
-OperatorSettingsArchive::OperatorSettingsArchive(ToolModelFiles& files, Limits limits)
+OperatorSettingsArchive::OperatorSettingsArchive(ToolModelFiles& files, const Limits& limits)
     : files_(files), limits_(limits) {}
 auto OperatorSettingsArchive::path(std::string_view name) const -> std::string {
   return location_.directory + '/' + std::string(name);

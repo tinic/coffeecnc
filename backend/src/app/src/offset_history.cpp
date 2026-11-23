@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <stdexcept>
 #include <utility>
 
@@ -29,9 +30,10 @@ template <typename T, std::size_t N>
 auto parse(const Json& value, const std::array<T, N>& choices) -> T {
   if (!value.is_string())
     throw Damaged("a name is not a string");
-  for (const auto choice : choices)
-    if (history_name(choice) == value.get<std::string>())
-      return choice;
+  const auto name = value.get<std::string_view>();
+  const auto match = std::ranges::find_if(choices, [name](T choice) { return history_name(choice) == name; });
+  if (match != choices.end())
+    return *match;
   throw Damaged("an unknown name");
 }
 
@@ -69,10 +71,11 @@ auto optional_json(const std::optional<double>& value) -> Json {
 
 auto entry_json(const HistoryEntry& entry) -> Json {
   auto changes = Json::array();
-  for (const auto& change : entry.changes)
-    changes.push_back({{"field", history_name(change.field)},
-                       {"before", optional_json(change.before)},
-                       {"after", optional_json(change.after)}});
+  std::ranges::transform(entry.changes, std::back_inserter(changes), [](const auto& change) -> Json {
+    return {{"field", history_name(change.field)},
+            {"before", optional_json(change.before)},
+            {"after", optional_json(change.after)}};
+  });
   return {{"id", entry.id},
           {"time", entry.time},
           {"source", history_name(entry.source)},
@@ -142,8 +145,9 @@ void OffsetHistoryStore::load() {
     std::vector<HistoryEntry> entries;
     if (!root.at("entries").is_array())
       throw Damaged("the entries are not a list");
-    for (const auto& value : root.at("entries"))
-      entries.push_back(entry_from(value));
+    const auto& saved_entries = root.at("entries");
+    entries.reserve(saved_entries.size());
+    std::ranges::transform(saved_entries, std::back_inserter(entries), entry_from);
     if (entries.size() > max_entries ||
         !std::ranges::is_sorted(entries, std::ranges::greater{}, &HistoryEntry::id))
       throw Damaged("the entries are not in order");
@@ -245,20 +249,20 @@ void OffsetHistoryStore::change_system(
   constexpr std::array names{HistoryField::x, HistoryField::y, HistoryField::z,
                              HistoryField::rotation_xy};
   auto& known = seen_.systems.at(static_cast<std::size_t>(wcs) - 1);
-  HistoryEntry entry{0, unix_time.count(), by.first, HistoryTarget::wcs, wcs, {}, by.second};
+  HistoryEntry record{0, unix_time.count(), by.first, HistoryTarget::wcs, wcs, {}, by.second};
   for (std::size_t i = 0; i < values.size(); ++i) {
     const auto& value = values.at(i);
     auto& before = known.at(i);
     if (!value || (before && !differs(*before, *value)))
       continue;
     if (before || record_unknown)
-      entry.changes.push_back({names.at(i), before, value});
+      record.changes.push_back({names.at(i), before, value});
     else
       seen_due_ = true;
     before = value;
   }
-  if (!entry.changes.empty())
-    add(std::move(entry));
+  if (!record.changes.empty())
+    add(std::move(record));
 }
 
 void OffsetHistoryStore::written(std::uint64_t mark, int wcs,
@@ -316,13 +320,13 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
         seen_.g92 = status.offsets.g92;
         seen_due_ = true;
       } else {
-        HistoryEntry entry{0, unix_time.count(), by.first, HistoryTarget::g92, 0, {}, by.second};
+        HistoryEntry record{0, unix_time.count(), by.first, HistoryTarget::g92, 0, {}, by.second};
         for (std::size_t i = 0; i < fields.size(); ++i)
           if (differs(seen_.g92->at(i), status.offsets.g92.at(i)))
-            entry.changes.push_back({fields.at(i), seen_.g92->at(i), status.offsets.g92.at(i)});
-        if (!entry.changes.empty()) {
+            record.changes.push_back({fields.at(i), seen_.g92->at(i), status.offsets.g92.at(i)});
+        if (!record.changes.empty()) {
           seen_.g92 = status.offsets.g92;
-          add(std::move(entry));
+          add(std::move(record));
         }
       }
     }
@@ -377,13 +381,11 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
       seen_due_ = false;
       write_after_ = now + write_period;
       auto entries = Json::array();
-      for (const auto& entry : entries_)
-        entries.push_back(entry_json(entry));
+      std::ranges::transform(entries_, std::back_inserter(entries), entry_json);
       auto systems = Json::array();
       for (const auto& system : seen_.systems) {
         auto fields_json = Json::array();
-        for (const auto& value : system)
-          fields_json.push_back(optional_json(value));
+        std::ranges::transform(system, std::back_inserter(fields_json), optional_json);
         systems.push_back(std::move(fields_json));
       }
       Json tools = nullptr;

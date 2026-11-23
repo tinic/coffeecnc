@@ -306,7 +306,7 @@ void failures() {
     archive.open(owner.shared_location());
     require(archive.apply(command()).outcome == CommandOutcome::accepted, "Initial file saved");
     const auto saved = disk.files.at(file);
-    files.failures[step] = 1;
+    files.failures.emplace(step, 1);
     auto changed = command(1);
     changed.document.default_spindle_rpm = 2000;
     const auto reply = archive.apply(changed);

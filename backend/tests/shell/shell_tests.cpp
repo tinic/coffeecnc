@@ -107,7 +107,7 @@ auto descendants(std::string_view name) -> std::vector<pid_t> {
     std::ifstream in{std::format("/proc/{}/status", pid)};
     for (std::string line; std::getline(in, line);)
       if (line.starts_with("PPid:"))
-        return static_cast<pid_t>(std::atoi(line.c_str() + 5));
+        return std::atoi(line.c_str() + 5);
     return 0;
   };
   std::vector<pid_t> found;
@@ -118,7 +118,7 @@ auto descendants(std::string_view name) -> std::vector<pid_t> {
           return c >= '0' && c <= '9';
         }))
       continue;
-    const auto pid = static_cast<pid_t>(std::atoi(text.c_str()));
+    const pid_t pid = std::atoi(text.c_str());
     std::string command = contents(entry.path() / "comm");
     while (!command.empty() && command.back() == '\n')
       command.pop_back();

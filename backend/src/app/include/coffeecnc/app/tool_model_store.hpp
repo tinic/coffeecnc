@@ -220,7 +220,7 @@ private:
 // It never opens a second lock and never changes the tool-model document.
 class OperatorSettingsArchive {
 public:
-  OperatorSettingsArchive(ToolModelFiles& files, Limits limits);
+  OperatorSettingsArchive(ToolModelFiles& files, const Limits& limits);
   void open(ToolModelLocation location);
   [[nodiscard]] auto apply(const SetOperatorSettings& command) -> ToolModelReply;
   [[nodiscard]] auto settings() const -> const OperatorSettings& { return settings_; }

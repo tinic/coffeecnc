@@ -260,6 +260,8 @@ struct NmlPort::Impl {
     int wcs;
     std::array<double, 3> g5x;
     std::array<double, 3> g92;
+    // Compared by the defaulted equality operator.
+    // cppcheck-suppress unusedStructMember
     double rotation;
     friend auto operator==(const WorkFrame&, const WorkFrame&) -> bool = default;
   };
@@ -2085,17 +2087,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("Second point: " + second.error());
     // The face moves across by `across` while the probe moves `spacing` along it.
     const double across = (*second)[line.axis] - (*first)[line.axis];
-    const double run = (*second)[along] - (*first)[along];
-    if (!std::isfinite(run) || std::abs(run - spacing) > position_tolerance)
+    const double measured_spacing = (*second)[along] - (*first)[along];
+    if (!std::isfinite(measured_spacing) || std::abs(measured_spacing - spacing) > position_tolerance)
       return std::unexpected("The two contact points did not reach the requested spacing.");
     // An edge is a line, so measuring it in reverse gives the same orientation.
     const double degrees =
-        (line.axis == 0 ? -1.0 : 1.0) * std::atan(across / run) * 180 / std::numbers::pi;
+        (line.axis == 0 ? -1.0 : 1.0) * std::atan(across / measured_spacing) * 180 / std::numbers::pi;
     if (!std::isfinite(degrees) || std::abs(degrees) > 10)
       return std::unexpected(std::format(
           "The edge turns {:.2f}° over {:.1f} mm, more than 10°. Check that both points touched "
           "the same straight edge.",
-          degrees, run));
+          degrees, measured_spacing));
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks)};
     const auto* current = impl_->stat();

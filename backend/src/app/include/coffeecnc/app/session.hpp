@@ -365,7 +365,7 @@ private:
                                   const ControllerState& state) -> Stage;
   [[nodiscard]] auto start_restart(Queued& request, StartRestart command) -> Stage;
   [[nodiscard]] auto resume_restart(Queued& request, const ControllerState& state) -> Stage;
-  [[nodiscard]] auto send_restart(Queued& request, const PreparedRestart& restart,
+  [[nodiscard]] auto send_restart(const Queued& request), const PreparedRestart& restart,
                                   bool after_change) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
       -> Stage;

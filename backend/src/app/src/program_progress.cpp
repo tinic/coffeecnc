@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iterator>
 #include <utility>
 
 namespace coffeecnc {
@@ -76,13 +77,14 @@ void ProgramProgress::save(PanelReading& reading) {
     return;
   }
   auto programs = Json::array();
-  for (const auto& entry : records_)
-    programs.push_back({{"path", entry.path},
-                        {"modified", entry.stamp.modified},
-                        {"bytes", entry.stamp.bytes},
-                        {"line", entry.next.line},
-                        {"tool", entry.next.tool},
-                        {"completed_line", entry.completed_line}});
+  std::ranges::transform(records_, std::back_inserter(programs), [](const auto& entry) -> Json {
+    return {{"path", entry.path},
+            {"modified", entry.stamp.modified},
+            {"bytes", entry.stamp.bytes},
+            {"line", entry.next.line},
+            {"tool", entry.next.tool},
+            {"completed_line", entry.completed_line}};
+  });
   const auto file = directory_ + '/' + file_name;
   const auto temporary = file + ".tmp";
   auto step = files_.open_temporary(temporary);

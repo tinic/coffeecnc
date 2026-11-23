@@ -957,8 +957,8 @@ void rotary_readouts() {
   raw.motion.joint[5].homing = 1;
   raw.motion.joint[5].velocity = 1;
   raw.motion.joint[5].maxHardLimit = 1;
-  const auto reading = to_status(raw, config, nullptr, Link::live);
-  const auto panel = to_panel_status(reading, config, {}, 0);
+  const auto rotary = to_status(raw, config, nullptr, Link::live);
+  const auto panel = to_panel_status(rotary, config, {}, 0);
   require(panel.rotary_axes.size() == 2, "only configured rotary axes appear");
   const auto& a = panel.rotary_axes[0];
   const auto& c = panel.rotary_axes[1];

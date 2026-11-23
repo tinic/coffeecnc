@@ -130,6 +130,8 @@ void PreviewWorker::loop() {
       return stop_ || waiting_ || files_context != newest_;
     });
     lock.lock();
+    // Another thread can request revalidation while the mutex is released.
+    // cppcheck-suppress knownConditionTrueFalse
     if (files_context != newest_ || check != revalidation_)
       continue;
     if (changed) {

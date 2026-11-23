@@ -1083,9 +1083,7 @@ auto run(const HelperRequest& request) -> int {
   return 0;
 }
 
-} // namespace
-
-auto main(int argc, char** argv) -> int try {
+auto run_preview(int argc, char** argv) -> int {
   char* end = nullptr;
   const long descriptor = argc == 3 ? std::strtol(argv[2], &end, 10) : -1;
   if (argc == 3 && end != argv[2] && *end == 0 && descriptor >= 3 && descriptor <= INT_MAX)
@@ -1110,10 +1108,18 @@ auto main(int argc, char** argv) -> int try {
   const int code = run(*request);
   std::fflush(sink);
   std::_Exit(code);
-} catch (const std::exception& error) {
-  std::fprintf(stderr, "coffeecnc-preview: %s\n", error.what());
-  return 2;
-} catch (...) {
-  std::fputs("coffeecnc-preview: interpreter failed\n", stderr);
-  return 2;
+}
+
+} // namespace
+
+auto main(int argc, char** argv) -> int {
+  try {
+    return run_preview(argc, argv);
+  } catch (const std::exception& error) {
+    std::fprintf(stderr, "coffeecnc-preview: %s\n", error.what());
+    return 2;
+  } catch (...) {
+    std::fputs("coffeecnc-preview: interpreter failed\n", stderr);
+    return 2;
+  }
 }

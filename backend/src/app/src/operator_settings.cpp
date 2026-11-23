@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -82,8 +83,9 @@ auto read_positions(const Json& list) -> std::optional<std::vector<SavedPosition
 }
 auto positions_json(const std::vector<SavedPosition>& positions) -> Json {
   auto list = Json::array();
-  for (const auto& saved : positions)
-    list.push_back({{"name", saved.name}, {"position", saved.position}});
+  std::ranges::transform(positions, std::back_inserter(list), [](const auto& saved) -> Json {
+    return {{"name", saved.name}, {"position", saved.position}};
+  });
   return list;
 }
 auto theme_name(PanelTheme value) -> std::string_view {

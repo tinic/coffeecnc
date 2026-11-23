@@ -61,10 +61,8 @@ void exact(const Json& value, std::string_view what, std::initializer_list<std::
       names, [&](std::string_view name) -> bool { return !value.contains(name); });
   if (missing != names.end())
     throw Invalid(std::format("{} lacks the field {}.", what, *missing));
-  auto expected = names.size();
-  for (const auto name : optional)
-    if (value.contains(name))
-      ++expected;
+  const auto present = std::ranges::count_if(optional, [&](auto name) { return value.contains(name); });
+  const auto expected = names.size() + static_cast<std::size_t>(present);
   if (value.size() != expected)
     throw Invalid(std::format("{} has an unknown field.", what));
 }

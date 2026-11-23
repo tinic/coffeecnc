@@ -2,6 +2,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <format>
@@ -75,10 +76,9 @@ auto plain_decimal(std::string_view text) -> bool {
 }
 
 auto control(std::string_view text) -> bool {
-  for (const char c : text)
-    if (std::iscntrl(static_cast<unsigned char>(c)) != 0 && c != '\t')
-      return true;
-  return false;
+  return std::ranges::any_of(text, [](char c) {
+    return std::iscntrl(static_cast<unsigned char>(c)) != 0 && c != '\t';
+  });
 }
 
 } // namespace

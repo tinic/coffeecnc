@@ -4128,8 +4128,15 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
   };
   refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit");
   refused("preflight_blocks_missing_tool_length", "T2 M6\nG43 H2\nG0 X10\n", "T2");
-  refused("preflight_blocks_unverified_work_origin", "G55\nG0 X10\n", "G55");
   refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel");
+  // LinuxCNC's parameter file holds every work system: G55 is verified from it.
+  const auto other_system = load("G55\nG0 X10\n");
+  check("preflight_verifies_another_work_origin_from_the_parameter_file",
+        other_system.errors.empty() &&
+            std::ranges::any_of(other_system.frames, [](const ProgramFrameCheck& frame) {
+              return frame.wcs == 2 && frame.available;
+            }),
+        other_system.errors.empty() ? "" : other_system.errors.front());
 
   const auto report = load("G0 X8\nG1 X10 F300\n");
   const bool expected_frame = report.frames.size() == 1 &&
@@ -4498,12 +4505,14 @@ void cam_programs(Rig& rig) {
   const std::string fusion =
       "G90 G94 G17 G91.1\nG21\nG28 G91 Z0\nG90\nS1500 M3\nG54\nG0 X-4 Y-4\nG43 Z15 H1\nG0 Z5\n"
       "G1 Z-1 F300\nG1 X24 F800\nG1 Y24\nG0 Z15\nG28 G91 Z0\nG90\nM5\nM30\n";
+  // With the length of T1 in effect, as at the start of a job.
+  static_cast<void>(send_mdi("G43 H1"));
   static_cast<void>(send_mdi("G0 Z20"));
   auto path = load(fusion);
   const auto lifted = std::ranges::find(path.segments, 3, &PreviewSegment::line);
   check("cam_g28_preview",
-        path.state == PreviewState::ready && lifted != path.segments.end() &&
-            near(lifted->points.back()[2], -length, 0.01),
+        path.state == PreviewState::ready && near(rig.status().tool_offset[2], length, 0.001) &&
+            lifted != path.segments.end() && near(lifted->points.back()[2], -length, 0.01),
         lifted == path.segments.end()
             ? std::string("no segment of line 3")
             : std::format("line 3 ends at tip z={:.3f}", lifted->points.back()[2]));

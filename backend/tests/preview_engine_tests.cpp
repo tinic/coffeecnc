@@ -571,6 +571,13 @@ void parameters_and_saved_positions() {
   stops("G28", "G28 moves to a position that is not in the machine's parameter file");
   stops("G30 X1", "G30 moves to a position that is not in the machine's parameter file");
   stops("G55 G1 X1", "moves in G55, whose offsets are not in the machine's parameter file");
+  {
+    const auto unknown = rig.preview(head + "G55 G1 X1\nM2\n");
+    require(unknown.check && std::ranges::contains(unknown.check->errors,
+                                                   std::string("The G55 work origin could not be "
+                                                               "verified.")),
+            "A work system the parameter file does not hold is an error of the program check");
+  }
   stops("G92.3", "G92.3");
   stops("G1 X#<_task>", "reads the _task parameter");
   stops("G[1] X1", "computed G word");

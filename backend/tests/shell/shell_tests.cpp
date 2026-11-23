@@ -1495,10 +1495,16 @@ void paired_sample(const Rig& rig, const std::filesystem::path& programs) {
   const bool opened_b = open("task-17_B.nc");
   preview = report("task-17_B.nc", "G54");
   const auto context_g54 = preview.at("context").get<std::uint64_t>();
-  check("paired_sample_b_stops_at_g55_while_g54_is_active",
-        opened_b && of_status(preview, 1) && preview.at("state") == "failed" &&
-            preview.at("error").is_object() && preview.at("error").at("line") == 24 &&
-            preview.at("error").at("text").get<std::string>().find("G55") != std::string::npos,
+  // With G54 active, G55's offsets come from LinuxCNC's parameter file: the G55 part is
+  // previewed and its origin verified (#253).
+  const auto frames = preview.contains("check") && preview.at("check").is_object()
+                          ? preview.at("check").value("frames", Json::array())
+                          : Json::array();
+  check("paired_sample_b_previews_g55_while_g54_is_active",
+        opened_b && of_status(preview, 1) && !preview.at("segments").empty() &&
+            std::ranges::any_of(frames, [](const Json& frame) {
+              return frame.value("wcs", 0) == 2 && frame.value("available", false);
+            }),
         judged(preview));
   rig.snapshot("task17b-preview-g54-active");
   const bool g55 = select(2);

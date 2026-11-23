@@ -649,6 +649,7 @@
       "halNotNamed": "{name} ist keine HAL-Datei, die die INI-Datei nennt: das Archiv wird abgelehnt.",
       "unreachable": "{name} kann nicht wiederhergestellt werden: {detail}. Das Archiv wird abgelehnt.",
       "stale": "Die Wiederherstellung wurde {age} s vor dem Ende von CoffeeCNC vorbereitet, mehr als {limit} s: nichts wurde geschrieben.",
+      "otherBoot": "Die Wiederherstellung wurde vor dem Neustart des Computers vorbereitet: nichts wurde geschrieben.",
       "noFolder": "{name} kann nicht wiederhergestellt werden: Der Ordner von {path} existiert nicht. Das Archiv wird abgelehnt.",
       "restoredGroups": "Die Sicherung wurde wiederhergestellt: {count} Dateien wurden geschrieben. Die Dateien von vor der Wiederherstellung liegen in {path}. Diese Dateien haben ihre Gruppe nicht behalten, da dieser Benutzer nicht in ihr ist: {files}.",
       "changedAfter": "{path} hat sich geändert, nachdem die Wiederherstellung vorbereitet wurde: nichts wurde geschrieben.",

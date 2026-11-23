@@ -76,6 +76,8 @@ struct Fixture {
   FakeToolModelFiles files{disk};
   std::unique_ptr<MachineData> machine;
   int pauses = 0;
+  // The boot clock that staging reads; none: the system's (boot_time()).
+  std::optional<BootTime> boot;
 
   Fixture() {
     disk.directories.insert({config, std::string(config) + "/hal", data, usb});
@@ -92,7 +94,8 @@ struct Fixture {
   void open(MachineDataPaths given = paths()) {
     machine = std::make_unique<MachineData>(
         files, std::move(given), [] { return now; },
-        [this](std::chrono::milliseconds) { ++pauses; });
+        [this](std::chrono::milliseconds) { ++pauses; },
+        [this] { return boot.value_or(boot_time()); });
   }
   // The `backup_written` message of a backup to the stick.
   auto backup() -> Json {
@@ -785,6 +788,8 @@ public:
   void pause(std::chrono::milliseconds period) override { clock += period; }
   auto elapsed() -> std::chrono::milliseconds override { return clock; }
   auto now() -> std::chrono::milliseconds override { return 1795000000000ms + clock; }
+  BootTime boot = coffeecnc::boot_time(); // when the helper started
+  auto boot_time() -> BootTime override { return {boot.boot_id, boot.since_boot + clock}; }
 };
 
 // Review #274, 6: the helper waited only for its parent, not at all when that was PID 1, and
@@ -852,13 +857,18 @@ void helper_waits_for_linuxcnc() {
 // one staged long before the run ended.
 void stale_plan_refused() {
   Fixture f;
+  f.boot = BootTime{"boot-1", 1h};
+  f.open();
   const std::string path = f.backup()["path"];
   f.disk.files[tools] = "now tools\n";
   f.stage(path);
-  require(f.plan()["staged"] == now.count() && f.plan()["page"] == 7,
-          "The plan has the time it was staged and the page that asked");
+  require(f.plan()["staged"] == now.count() && f.plan()["page"] == 7 &&
+              f.plan()["boot_id"] == "boot-1" && f.plan()["booted"] == 3600000,
+          "The plan has the time it was staged, on both clocks, and the page that asked");
   f.disk.files[var] = "5221\t42\n"; // newer offsets, written at the late exit
-  const auto late = apply_staged_restore(f.files, data, now + 3min + 1s);
+  RestoreHooks hooks;
+  hooks.ended = BootTime{"boot-1", 1h + 3min + 1s};
+  const auto late = apply_staged_restore(f.files, data, now + 3min + 1s, hooks);
   require(!late && late.error() == "The restore was prepared 181 s before CoffeeCNC ended, more "
                                    "than 120 s: nothing was written.",
           "A plan staged 3 minutes before the exit is refused: " +
@@ -874,21 +884,44 @@ void stale_plan_refused() {
           "The next start says so: " + (notice ? notice->second : std::string{}));
   // The run ended at once, and LinuxCNC took long to stop: the end of the run counts.
   f.stage(path);
-  RestoreHooks hooks;
-  hooks.ended = now + 5s;
+  hooks.ended = BootTime{"boot-1", 1h + 5s};
   const auto slow = apply_staged_restore(f.files, data, now + 4min, hooks);
   require(slow && *slow >= 1 && f.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n",
           "A plan of the run that just ended is written although LinuxCNC took 4 minutes");
-  // A clock that went back is as old.
+  // A plan staged after the end of the run is as old.
   f.open();
   f.stage(path);
-  hooks.ended = now - 10min;
+  hooks.ended = BootTime{"boot-1", 1h - 10min};
   require(!apply_staged_restore(f.files, data, now, hooks).has_value(),
           "A plan staged after the end of the run is refused");
+  // Review of a2865e8, 2: NTP steps the system clock between staging and the helper. Only the
+  // boot clock counts: 30 s on it is written, whichever way the system clock went.
+  for (const auto stepped : {now + 3h, now - 1h}) {
+    f.open();
+    f.disk.files[tools] = "now tools\n";
+    f.stage(path);
+    hooks.ended = BootTime{"boot-1", 1h + 30s};
+    const auto applied = apply_staged_restore(f.files, data, stepped, hooks);
+    require(applied && f.disk.files[tools] == "T1 P1 Z48.2 D6 ;End mill\n",
+            "A system clock stepped by NTP does not refuse the restore: " +
+                (applied ? std::string{} : applied.error()));
+  }
+  // Another boot: the plan is of a run before it, however its clock reads.
+  f.open();
+  f.disk.files[tools] = "now tools\n";
+  f.stage(path);
+  hooks.ended = BootTime{"boot-2", 1h + 5s};
+  const auto rebooted = apply_staged_restore(f.files, data, now + 5s, hooks);
+  require(!rebooted && rebooted.error() == "The restore was prepared before the computer was "
+                                           "started again: nothing was written.",
+          "A plan of another boot is refused: " +
+              (rebooted ? std::string{} : rebooted.error()));
+  require(f.disk.files[tools] == "now tools\n", "Nothing is written");
   // The helper takes its own start as the end of the run.
   f.open();
   f.stage(path);
   FakeHost host;
+  host.boot = BootTime{"boot-1", 1h};
   host.clock = 3min; // started 3 minutes after the plan
   const auto outcome = run_restore_helper(f.files, data, 4000, host);
   require(outcome.code == 1 && outcome.line.find("more than 120 s") != std::string::npos,
@@ -1165,6 +1198,80 @@ void real_files(const std::filesystem::path& base) {
   std::filesystem::remove_all(root);
 }
 
+// The helper with the local lock file at `path`; LinuxCNC does not run, the parent is gone.
+class LocalLockHost final : public RestoreHost {
+public:
+  explicit LocalLockHost(const std::string& path) : local(path) {}
+  LocalRestoreHost local;
+  auto alive(long) -> bool override { return false; }
+  auto linuxcnc_running() -> std::optional<std::string> override { return std::nullopt; }
+  auto take_linuxcnc_lock() -> std::optional<std::string> override {
+    return local.take_linuxcnc_lock();
+  }
+  auto holds_linuxcnc_lock() -> bool override { return local.holds_linuxcnc_lock(); }
+  void release_linuxcnc_lock() override { local.release_linuxcnc_lock(); }
+  void pause(std::chrono::milliseconds) override {}
+  auto elapsed() -> std::chrono::milliseconds override { return {}; }
+  auto now() -> std::chrono::milliseconds override { return 1795000000000ms; }
+  auto boot_time() -> BootTime override { return local.boot_time(); }
+};
+
+// Review of a2865e8, 1: the helper took a lock as its own by device and inode only, so a lock
+// that LinuxCNC made again on the freed inode passed, and the helper then removed LinuxCNC's
+// live lock. The lock holds a token of the helper, and the content is compared too.
+void real_linuxcnc_lock(const std::filesystem::path& base) {
+  const auto lock = base / "machine_data_linuxcnc.lock";
+  std::filesystem::remove(lock);
+  {
+    LocalRestoreHost host{lock.string()};
+    require(!host.take_linuxcnc_lock().has_value(), "The lock is made");
+    const auto token = read_real(lock);
+    const auto pid = std::format("{} ", ::getpid());
+    require(token.starts_with(pid) && token.size() == pid.size() + 33 && token.ends_with('\n'),
+            "It holds this process ID and 16 random bytes: " + token);
+    require(host.holds_linuxcnc_lock(), "and is this helper's");
+    LocalRestoreHost other{lock.string()};
+    require(other.take_linuxcnc_lock().has_value() && !other.holds_linuxcnc_lock(),
+            "A lock that exists is refused, and is not the other helper's");
+    host.release_linuxcnc_lock();
+    require(!std::filesystem::exists(lock), "Released: removed");
+  }
+  Fixture f;
+  const std::string path = f.backup()["path"];
+  f.disk.files[tools] = "now tools\n";
+  f.disk.files[var] = "now var\n";
+  f.stage(path);
+  LocalLockHost host{lock.string()};
+  bool same_inode = false;
+  f.files.during = [&](std::string_view step) {
+    struct stat before{};
+    if (step != "replace" || same_inode || ::stat(lock.c_str(), &before) != 0)
+      return;
+    // LinuxCNC's lock on the same inode: the file is emptied and written, not made anew.
+    std::ofstream{lock, std::ios::binary | std::ios::trunc} << "4242\n";
+    struct stat after{};
+    same_inode = ::stat(lock.c_str(), &after) == 0 && after.st_dev == before.st_dev &&
+                 after.st_ino == before.st_ino;
+  };
+  auto outcome = run_restore_helper(f.files, data, 4000, host);
+  f.files.during = nullptr;
+  require(same_inode, "The lock is LinuxCNC's now, on the same inode");
+  require(outcome.code == 1 && outcome.line.find("LinuxCNC was started while the files were "
+                                                 "written") != std::string::npos,
+          "A lock with LinuxCNC's content stops the restore: " + outcome.line);
+  require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "now var\n",
+          "and what was written is put back");
+  require(std::filesystem::exists(lock) && read_real(lock) == "4242\n",
+          "LinuxCNC's lock is not removed");
+  std::filesystem::remove(lock);
+  // Left alone, the helper writes and removes its own lock.
+  f.open();
+  f.stage(path);
+  outcome = run_restore_helper(f.files, data, 4000, host);
+  require(outcome.code == 0 && !std::filesystem::exists(lock),
+          "The helper writes and removes its lock: " + outcome.line);
+}
+
 // Review #274, 7: the helper inherited the descriptors of CoffeeCNC that are not close-on-exec
 // (asio's sockets: the LAN screen's port stayed taken).
 void spawn_closes_descriptors(const std::filesystem::path& base) {
@@ -1220,6 +1327,7 @@ auto main(int argc, char** argv) -> int {
     links_and_groups();
     helper_holds_linuxcnc_lock();
     real_files(base);
+    real_linuxcnc_lock(base);
     spawn_closes_descriptors(base);
     std::cout << checks << " machine data checks passed\n";
     return 0;

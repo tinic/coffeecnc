@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -20,11 +22,13 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -2281,9 +2285,11 @@ void quit() {
 // A restore that stages its files and asks to quit, as MachineData does.
 class FakeMachineData final : public MachineDataService {
 public:
-  std::function<void()> during; // inside restore, before it answers
+  std::function<void()> during;  // inside restore, before it answers
+  std::function<void()> dropped; // inside abandon_restore, after it dropped the plan
   int staged = 0;
   int abandoned = 0;
+  std::atomic<bool> armed{}; // a plan is staged and not abandoned
   auto backup(const std::string&) -> MachineDataAnswer override { return {}; }
   auto check_restore(const std::string&) -> MachineDataAnswer override { return {}; }
   std::uint64_t page = 0; // of the last restore
@@ -2293,9 +2299,15 @@ public:
       during();
     ++staged;
     page = asked;
+    armed = true;
     return {CommandOutcome::accepted, "", {}, true};
   }
-  void abandon_restore() override { ++abandoned; }
+  void abandon_restore() override {
+    ++abandoned;
+    armed = false;
+    if (dropped)
+      dropped();
+  }
 };
 
 // Review #274, 3: a staged restore whose quit was not delivered (the page ended or was replaced,
@@ -2342,6 +2354,54 @@ void restore_quit_not_delivered() {
     require(!rig.driver.quit && data.abandoned == 2,
             "An abort before the quit: the staged restore is abandoned");
   }
+}
+
+// Review of a2865e8, 3: begin_page abandoned the restore before it took the session's lock and
+// changed the page. A staging that ended in between delivered its quit to the old page (whose
+// close the window then drops) and stayed armed for a later exit. Here the staging ends while
+// begin_page abandons: before the fix that is before the page changed, and the old page gets
+// the quit; with it, begin_page holds the session's lock, so the worker finds the new page.
+void restore_staged_while_page_begins() {
+  FakeMachineData data;
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+  rig.port.state.machine = MachineState::off;
+  std::mutex mutex;
+  std::condition_variable changed;
+  bool staging = false;
+  bool go = false;
+  bool sent = false;
+  data.during = [&] {
+    std::unique_lock lock{mutex};
+    staging = true;
+    changed.notify_all();
+    changed.wait(lock, [&] { return go; });
+  };
+  std::thread worker{[&] {
+    static_cast<void>(rig.send(
+        R"("type":"restore","path":"/media/cnc/STICK/b.tar.gz","token":"0123456789abcdef")"));
+    const std::scoped_lock lock{mutex};
+    sent = true;
+    changed.notify_all();
+  }};
+  {
+    std::unique_lock lock{mutex};
+    changed.wait(lock, [&] { return staging; });
+  }
+  std::atomic<bool> first{true};
+  data.dropped = [&] {
+    if (!first.exchange(false))
+      return; // the worker's own abandon, once it found the page changed
+    std::unique_lock lock{mutex};
+    go = true;
+    changed.notify_all();
+    // Before the fix the worker ends here; with it, it waits for begin_page's lock.
+    changed.wait_for(lock, 1s, [&] { return sent; });
+  };
+  const auto page = rig.session.begin_page();
+  worker.join();
+  require(data.staged == 1 && !data.armed && !rig.driver.quit,
+          "A restore staged while a page begins is abandoned, and its quit is not delivered");
+  require(page != rig.page, "The page changed");
 }
 
 void new_page() {
@@ -2964,6 +3024,7 @@ auto main(int argc, char** argv) -> int {
     lost_machine_cancels_jogs();
     quit();
     restore_quit_not_delivered();
+    restore_staged_while_page_begins();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

@@ -54,6 +54,15 @@ inline constexpr std::string_view restore_result_name = "result.json";
 // is old.
 inline constexpr auto restore_plan_limit = std::chrono::minutes{2};
 
+// This boot of the computer (/proc/sys/kernel/random/boot_id) and the time since it
+// (CLOCK_BOOTTIME, which counts suspend and which NTP does not step). How old a plan is is
+// measured on it: the system clock can be stepped. An empty boot_id: it cannot be read.
+struct BootTime {
+  std::string boot_id;
+  std::chrono::milliseconds since_boot{};
+};
+[[nodiscard]] auto boot_time() -> BootTime;
+
 struct MachineDataPaths {
   std::string machine_id;             // empty: none configured
   std::string ini_file;               // absolute
@@ -112,7 +121,8 @@ struct MachineDataAnswer {
 // plan. A restore that asked to quit and whose quit the session did not deliver (the page ended,
 // an abort or an E-stop came first), or whose page is replaced after it (the window then drops
 // the close), is abandoned: its plan is removed, and no later exit writes it. abandon_restore is
-// called from any thread.
+// called from any thread, also under the session's lock: neither it nor `restore` (once
+// `recheck` has answered) may take that lock.
 class MachineDataService {
 public:
   MachineDataService() = default;
@@ -166,12 +176,15 @@ class MachineData final : public MachineDataService {
 public:
   using Clock = std::function<std::chrono::milliseconds()>;
   using Pause = std::function<void(std::chrono::milliseconds)>;
+  using BootClock = std::function<BootTime()>;
   // How long the start waits for a helper that holds the data folder's lock.
   static constexpr auto lock_wait = std::chrono::seconds{5};
   static constexpr auto lock_poll = std::chrono::milliseconds{100};
   // The files must outlive this. Reads what a restore before this run came to (notice()).
-  // `pause` waits for the lock; a sleep when none is given.
-  MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause = {});
+  // `pause` waits for the lock; a sleep when none is given. `boot`: boot_time() when none is
+  // given.
+  MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause = {},
+              BootClock boot = {});
 
   [[nodiscard]] auto backup(const std::string& directory) -> MachineDataAnswer override;
   [[nodiscard]] auto check_restore(const std::string& path) -> MachineDataAnswer override;
@@ -211,6 +224,7 @@ private:
   ToolModelFiles& files_;
   MachineDataPaths paths_;
   Clock clock_;
+  BootClock boot_;
   void abandon_locked();
 
   std::atomic<bool> staged_{};
@@ -222,9 +236,9 @@ private:
 
 // What the helper asks while it writes; each may be empty.
 struct RestoreHooks {
-  // When the run that staged the plan ended (the helper's start); none: `now`. A plan staged
-  // more than restore_plan_limit before or after it is refused.
-  std::optional<std::chrono::milliseconds> ended;
+  // When the run that staged the plan ended (the helper's start); none: boot_time() now. A plan
+  // of another boot, or staged more than restore_plan_limit before or after it, is refused.
+  std::optional<BootTime> ended;
   // Before the applying marker: a reason, and nothing is written.
   std::function<std::optional<std::string>()> may_write;
   // Before each replacement: a reason, and what was written is put back.
@@ -232,7 +246,8 @@ struct RestoreHooks {
 };
 
 // The helper's work, after LinuxCNC has stopped: reads `<data>/restore/plan.json` and refuses
-// it unless it is of this machine, was staged at most restore_plan_limit before the run ended,
+// it unless it is of this machine, was staged in this boot at most restore_plan_limit before
+// the run ended (on the boot clock: `now` is only for the names and times it writes),
 // and every target (but the .var file and the data files, which LinuxCNC and CoffeeCNC write as
 // they stop) holds what it held when the restore was prepared. A target that now holds the
 // backup's file is not written. Then a backup of every target that is written, as it is now,

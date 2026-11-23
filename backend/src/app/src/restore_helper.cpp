@@ -6,16 +6,19 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
 #include <spawn.h>
+#include <sys/random.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -33,7 +36,8 @@ auto digits(std::string_view text) -> bool {
 
 } // namespace
 
-LocalRestoreHost::LocalRestoreHost() : started_(std::chrono::steady_clock::now()) {}
+LocalRestoreHost::LocalRestoreHost(std::string lock_path)
+    : started_(std::chrono::steady_clock::now()), lock_path_(std::move(lock_path)) {}
 
 auto LocalRestoreHost::alive(long pid) -> bool {
   if (pid <= 0 || (::kill(static_cast<pid_t>(pid), 0) != 0 && errno != EPERM))
@@ -47,8 +51,8 @@ auto LocalRestoreHost::alive(long pid) -> bool {
 
 auto LocalRestoreHost::linuxcnc_running() -> std::optional<std::string> {
   std::error_code error;
-  if (std::filesystem::exists(linuxcnc_lock, error))
-    return std::format("{} exists", linuxcnc_lock);
+  if (std::filesystem::exists(lock_path_, error))
+    return std::format("{} exists", lock_path_);
   for (std::filesystem::directory_iterator entries{"/proc", error}, end; !error && entries != end;
        entries.increment(error)) {
     const auto pid = entries->path().filename().string();
@@ -64,32 +68,57 @@ auto LocalRestoreHost::linuxcnc_running() -> std::optional<std::string> {
 }
 
 auto LocalRestoreHost::take_linuxcnc_lock() -> std::optional<std::string> {
-  const std::string path{linuxcnc_lock};
+  const auto& path = lock_path_;
+  // A token no other process writes: a lock made again by LinuxCNC can get the freed inode.
+  std::array<std::uint64_t, 2> random{};
+  if (::getrandom(random.data(), sizeof random, 0) != static_cast<ssize_t>(sizeof random))
+    return std::format("{} cannot be made: {}", path, std::generic_category().message(errno));
+  const auto token = std::format("{} {:016x}{:016x}\n", ::getpid(), random[0], random[1]);
   const int made = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
   if (made < 0)
     return std::format("{} cannot be made: {}", path, std::generic_category().message(errno));
   struct stat info{};
-  const bool known = ::fstat(made, &info) == 0;
+  const bool known = ::write(made, token.data(), token.size()) ==
+                         static_cast<ssize_t>(token.size()) &&
+                     ::fstat(made, &info) == 0;
+  const int error = errno;
   static_cast<void>(::close(made));
   if (!known) {
     static_cast<void>(::unlink(path.c_str()));
-    return std::format("{} cannot be read back", path);
+    return std::format("{} cannot be written: {}", path, std::generic_category().message(error));
   }
-  lock_ = {static_cast<unsigned long>(info.st_dev), static_cast<unsigned long>(info.st_ino)};
+  lock_ = Lock{static_cast<unsigned long>(info.st_dev), static_cast<unsigned long>(info.st_ino),
+               token};
   return std::nullopt;
 }
 
 auto LocalRestoreHost::holds_linuxcnc_lock() -> bool {
+  if (!lock_)
+    return false;
+  const int opened = ::open(lock_path_.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (opened < 0)
+    return false;
   struct stat info{};
-  const std::string path{linuxcnc_lock};
-  return lock_ && ::lstat(path.c_str(), &info) == 0 &&
-         static_cast<unsigned long>(info.st_dev) == lock_->first &&
-         static_cast<unsigned long>(info.st_ino) == lock_->second;
+  std::string held(lock_->token.size() + 1, '\0');
+  bool same = ::fstat(opened, &info) == 0 && S_ISREG(info.st_mode) &&
+              static_cast<unsigned long>(info.st_dev) == lock_->device &&
+              static_cast<unsigned long>(info.st_ino) == lock_->inode;
+  std::size_t got = 0;
+  while (same && got < held.size()) {
+    const auto read = ::read(opened, held.data() + got, held.size() - got);
+    if (read < 0 && errno == EINTR)
+      continue;
+    if (read <= 0)
+      break;
+    got += static_cast<std::size_t>(read);
+  }
+  static_cast<void>(::close(opened));
+  return same && std::string_view{held}.substr(0, got) == lock_->token;
 }
 
 void LocalRestoreHost::release_linuxcnc_lock() {
   if (holds_linuxcnc_lock())
-    static_cast<void>(::unlink(std::string(linuxcnc_lock).c_str()));
+    static_cast<void>(::unlink(lock_path_.c_str()));
   lock_.reset();
 }
 
@@ -107,11 +136,13 @@ auto LocalRestoreHost::now() -> std::chrono::milliseconds {
       std::chrono::system_clock::now().time_since_epoch());
 }
 
+auto LocalRestoreHost::boot_time() -> BootTime { return coffeecnc::boot_time(); }
+
 auto run_restore_helper(ToolModelFiles& files, const std::string& directory, long parent,
                         RestoreHost& host) -> RestoreHelperOutcome {
   // The run that staged the restore ends now, or has ended: a plan much older was not this run's
   // to write.
-  const auto started = host.now();
+  const auto started = host.boot_time();
   if (parent <= 1)
     return {1, std::format("restore=not_written reason=the parent process is {}, not the "
                            "linuxcnc script: when LinuxCNC stops cannot be told",

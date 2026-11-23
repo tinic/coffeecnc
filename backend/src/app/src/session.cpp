@@ -337,11 +337,6 @@ auto Session::staged(ActionResult result) -> Stage {
 }
 
 auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) -> PageToken {
-  // A restore staged for a quit of the page this one replaces: the window drops that close (a
-  // close is for the page that asked), so no exit comes for it now, and a later exit must not
-  // write it. Outside the lock: the restore takes it for its recheck while it stages.
-  if (machine_data_ != nullptr)
-    machine_data_->abandon_restore();
   const std::scoped_lock lock{mutex_};
   problems_.clear(); // The page they were for is gone.
   stop_jogs();       // A stop that fails is reported to the new page and retried.
@@ -360,7 +355,16 @@ auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) 
     tool_models_->page_ended(PageToken{pages_});
   if (diagnostics_ != nullptr)
     diagnostics_->page_ended(PageToken{pages_});
-  return PageToken{++pages_};
+  const PageToken page{++pages_};
+  // A restore staged for a quit of the page this one replaces: the window drops that close (a
+  // close is for the page that asked), so no exit comes for it now, and a later exit must not
+  // write it. After the page changed and under the lock: a staging that ends before this is
+  // abandoned here, one that ends after it finds the page changed and abandons itself. The
+  // restore never takes this lock while it holds its own (lock order: this, then the
+  // restore's).
+  if (machine_data_ != nullptr)
+    machine_data_->abandon_restore();
+  return page;
 }
 
 void Session::end_page(PageToken page) {

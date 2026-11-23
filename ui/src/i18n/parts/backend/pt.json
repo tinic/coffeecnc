@@ -649,6 +649,7 @@
       "halNotNamed": "{name} não é um ficheiro HAL indicado pelo ficheiro INI: o arquivo é recusado.",
       "unreachable": "{name} não pode ser restaurado: {detail}. O arquivo é recusado.",
       "stale": "O restauro foi preparado {age} s antes de o CoffeeCNC terminar, mais de {limit} s: nada foi escrito.",
+      "otherBoot": "O restauro foi preparado antes de o computador ser reiniciado: nada foi escrito.",
       "noFolder": "{name} não pode ser restaurado: a pasta de {path} não existe. O arquivo é recusado.",
       "restoredGroups": "A cópia de segurança foi restaurada: foram escritos {count} ficheiros. Os ficheiros de antes do restauro estão em {path}. Estes ficheiros não mantiveram o seu grupo, a que este utilizador não pertence: {files}.",
       "changedAfter": "{path} mudou depois de o restauro ser preparado: nada foi escrito.",

@@ -649,6 +649,7 @@
       "halNotNamed": "{name} is not a HAL file the INI file names: the archive is refused.",
       "unreachable": "{name} cannot be restored: {detail}. The archive is refused.",
       "stale": "The restore was prepared {age} s before CoffeeCNC ended, more than {limit} s: nothing was written.",
+      "otherBoot": "The restore was prepared before the computer was started again: nothing was written.",
       "noFolder": "{name} cannot be restored: the folder of {path} does not exist. The archive is refused.",
       "restoredGroups": "The backup was restored: {count} files were written. The files from before the restore are in {path}. These files did not keep their group, which this user is not in: {files}.",
       "changedAfter": "{path} changed after the restore was prepared: nothing was written.",

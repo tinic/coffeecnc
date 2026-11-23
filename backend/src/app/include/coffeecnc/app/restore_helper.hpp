@@ -1,13 +1,13 @@
 #ifndef COFFEECNC_APP_RESTORE_HELPER_HPP
 #define COFFEECNC_APP_RESTORE_HELPER_HPP
 
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/tool_model_store.hpp>
 
 #include <chrono>
 #include <expected>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace coffeecnc {
@@ -25,11 +25,13 @@ public:
   // Why LinuxCNC runs on this host: its lock file, or a milltask or rtapi_app process. None when
   // it does not.
   [[nodiscard]] virtual auto linuxcnc_running() -> std::optional<std::string> = 0;
-  // Makes LinuxCNC's lock file (O_EXCL), so that a `linuxcnc` started while the helper writes
-  // finds it: a reason when it cannot (it exists: LinuxCNC runs).
+  // Makes LinuxCNC's lock file (O_EXCL) and writes a token of this helper into it (its process ID
+  // and random bytes), so that a `linuxcnc` started while the helper writes finds it: a reason
+  // when it cannot (it exists: LinuxCNC runs).
   [[nodiscard]] virtual auto take_linuxcnc_lock() -> std::optional<std::string> = 0;
-  // The lock file is still the one take_linuxcnc_lock made: a `linuxcnc` that cleaned up "the
-  // other session" removed it.
+  // The lock file is still the one take_linuxcnc_lock made: the same device, inode and token. A
+  // `linuxcnc` that cleaned up "the other session" removed it; one that made its own lock again
+  // may have got the same inode, but not the token.
   [[nodiscard]] virtual auto holds_linuxcnc_lock() -> bool = 0;
   // Removes the lock file, only when it is still the one this helper made.
   virtual void release_linuxcnc_lock() = 0;
@@ -38,6 +40,9 @@ public:
   [[nodiscard]] virtual auto elapsed() -> std::chrono::milliseconds = 0;
   // Milliseconds since the Unix epoch.
   [[nodiscard]] virtual auto now() -> std::chrono::milliseconds = 0;
+  // This boot and the time since it (boot_time()): how old a plan is, on a clock that NTP does
+  // not step.
+  [[nodiscard]] virtual auto boot_time() -> BootTime = 0;
 
 protected:
   RestoreHost(const RestoreHost&) = default;
@@ -48,7 +53,8 @@ protected:
 
 class LocalRestoreHost final : public RestoreHost {
 public:
-  LocalRestoreHost();
+  // `lock_path`: LinuxCNC's lock file; a test gives one of its own.
+  explicit LocalRestoreHost(std::string lock_path = "/tmp/linuxcnc.lock");
   [[nodiscard]] auto alive(long pid) -> bool override;
   [[nodiscard]] auto linuxcnc_running() -> std::optional<std::string> override;
   [[nodiscard]] auto take_linuxcnc_lock() -> std::optional<std::string> override;
@@ -57,11 +63,18 @@ public:
   void pause(std::chrono::milliseconds period) override;
   [[nodiscard]] auto elapsed() -> std::chrono::milliseconds override;
   [[nodiscard]] auto now() -> std::chrono::milliseconds override;
+  [[nodiscard]] auto boot_time() -> BootTime override;
 
 private:
+  struct Lock {
+    unsigned long device{};
+    unsigned long inode{};
+    std::string token; // what the file holds
+  };
   std::chrono::steady_clock::time_point started_;
-  // The lock file this helper made: its device and inode; none while it holds none.
-  std::optional<std::pair<unsigned long, unsigned long>> lock_;
+  std::string lock_path_;
+  // The lock file this helper made; none while it holds none.
+  std::optional<Lock> lock_;
 };
 
 // What the helper came to: its exit code and its one line for stderr, `restore=<what>` and a

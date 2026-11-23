@@ -6,10 +6,13 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <iterator>
 #include <set>
 #include <thread>
 #include <utility>
+
+#include <time.h>
 
 namespace coffeecnc {
 namespace {
@@ -17,7 +20,7 @@ using Json = nlohmann::json;
 
 constexpr std::string_view format_name = "coffeecnc-backup";
 constexpr int manifest_version = 1;
-constexpr int plan_version = 3;
+constexpr int plan_version = 4;
 constexpr std::size_t max_relative_bytes = 255;
 constexpr std::size_t max_record_bytes = std::size_t{1024} * 1024;
 // A file the restore makes: the configuration's are readable by all, CoffeeCNC's own are not.
@@ -238,8 +241,27 @@ auto restored_data_file(std::string_view name) -> bool {
          !name.starts_with("alarm-log");
 }
 
-MachineData::MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause)
-    : files_(files), paths_(std::move(paths)), clock_(std::move(clock)) {
+auto boot_time() -> BootTime {
+  BootTime now;
+  std::ifstream id{"/proc/sys/kernel/random/boot_id"};
+  std::getline(id, now.boot_id);
+#ifdef CLOCK_BOOTTIME
+  constexpr clockid_t clock = CLOCK_BOOTTIME;
+#else
+  constexpr clockid_t clock = CLOCK_MONOTONIC;
+#endif
+  timespec time{};
+  if (::clock_gettime(clock, &time) != 0)
+    return {};
+  now.since_boot = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::seconds{time.tv_sec} + std::chrono::nanoseconds{time.tv_nsec});
+  return now;
+}
+
+MachineData::MachineData(ToolModelFiles& files, MachineDataPaths paths, Clock clock, Pause pause,
+                         BootClock boot)
+    : files_(files), paths_(std::move(paths)), clock_(std::move(clock)),
+      boot_(boot ? std::move(boot) : BootClock{[] { return boot_time(); }}) {
   if (!pause)
     pause = [](std::chrono::milliseconds period) { std::this_thread::sleep_for(period); };
   report_last_restore(pause);
@@ -614,8 +636,8 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
     return refuse("The backup file changed after it was checked. Check it again.");
   if (const auto reason = recheck(); !reason.empty())
     return refuse(reason);
-  // After the recheck, which takes the session's lock: a page that begins meanwhile abandons
-  // under this one.
+  // After the recheck: a page that begins meanwhile abandons under this lock, once this staging
+  // is done (Session::begin_page holds its own lock then, and this code never takes it).
   const std::scoped_lock lock{stage_mutex_};
   std::vector<const Planned*> changes;
   for (const auto& file : checked->files)
@@ -649,9 +671,13 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
                     {"relative", file.relative},
                     {"held", held_json(file.held)}});
   }
+  // How old the plan is is told on the boot clock, which NTP does not step.
+  const auto booted = boot_();
   const Json document{{"version", plan_version},
                       {"machine_id", paths_.machine_id},
                       {"staged", clock_().count()},
+                      {"boot_id", booted.boot_id},
+                      {"booted", booted.since_boot.count()},
                       {"page", page},
                       {"source", path},
                       {"ini", paths_.ini_file},
@@ -716,14 +742,22 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (!plan.is_object() || plan.value("version", 0) != plan_version ||
       !plan.contains("machine_id") || !plan["machine_id"].is_string() ||
       plan["machine_id"].get<std::string>() != base_name(data_directory) ||
-      !plan.contains("staged") || !plan["staged"].is_number_integer() || !plan.contains("files") ||
+      !plan.contains("staged") || !plan["staged"].is_number_integer() ||
+      !plan.contains("boot_id") || !plan["boot_id"].is_string() || !plan.contains("booted") ||
+      !plan["booted"].is_number_integer() || !plan.contains("files") ||
       !plan["files"].is_array())
     reason = damaged;
   // A plan whose quit was not delivered, written by a later exit: what it was checked against is
   // old, and the .var and data files are not compared.
+  // Measured on the boot clock: a system clock that NTP stepped meanwhile does not count.
+  const auto ended = reason.empty() ? hooks.ended.value_or(boot_time()) : BootTime{};
+  if (reason.empty() &&
+      (ended.boot_id.empty() || plan["boot_id"].get<std::string>() != ended.boot_id))
+    reason = "The restore was prepared before the computer was started again: nothing was "
+             "written.";
   if (reason.empty()) {
     const auto age =
-        hooks.ended.value_or(now) - std::chrono::milliseconds{plan["staged"].get<std::int64_t>()};
+        ended.since_boot - std::chrono::milliseconds{plan["booted"].get<std::int64_t>()};
     constexpr auto limit =
         std::chrono::duration_cast<std::chrono::milliseconds>(restore_plan_limit);
     if (age > limit || age < -limit)

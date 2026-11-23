@@ -649,6 +649,7 @@
       "halNotNamed": "{name} 不是 INI 文件指定的 HAL 文件：拒绝该归档。",
       "unreachable": "{name} 无法恢复：{detail}。拒绝该归档。",
       "stale": "恢复在 CoffeeCNC 结束前 {age} 秒准备，超过 {limit} 秒：未写入任何内容。",
+      "otherBoot": "恢复是在计算机重新启动之前准备的：未写入任何内容。",
       "noFolder": "{name} 无法恢复：{path} 所在的文件夹不存在。拒绝该归档。",
       "restoredGroups": "备份已恢复：已写入 {count} 个文件。恢复前的文件保存在 {path}。以下文件未保留其组，因为此用户不在该组中：{files}。",
       "changedAfter": "{path} 在准备恢复后已更改：未写入任何内容。",

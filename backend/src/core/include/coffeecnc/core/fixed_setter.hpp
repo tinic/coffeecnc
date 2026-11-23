@@ -2,6 +2,7 @@
 #define COFFEECNC_CORE_FIXED_SETTER_HPP
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -47,6 +48,13 @@ enum class SetterAction : std::uint8_t {
   apply_angle
 };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
+
+// A G5x rotation in (-180, 180] degrees: the same turn as `degrees`. Applying an edge angle adds
+// it to the present rotation, which could otherwise pass the panel's ±360° limit (355 + 8).
+inline auto wrapped_rotation(double degrees) -> double {
+  const double turn = std::remainder(degrees, 360.0);
+  return turn == -180.0 ? 180.0 : turn;
+}
 
 constexpr auto is_material_probe(SetterAction action) -> bool {
   return action != SetterAction::status && action != SetterAction::touch_off &&

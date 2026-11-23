@@ -45,6 +45,11 @@ const directions: Record<Lateral, XY> = {
   x_minus: [-1, 0], x_plus: [1, 0], y_minus: [0, -1], y_plus: [0, 1],
 }
 
+/** A G5x rotation in (-180, 180]: applying an edge angle cannot pass the ±360° limit. */
+export function wrapped(degrees: number): number {
+  const turn = degrees - 360 * Math.round(degrees / 360)
+  return turn === -180 ? 180 : turn
+}
 function turn([x, y]: XY, degrees: number): XY {
   const a = degrees * Math.PI / 180
   return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
@@ -310,8 +315,8 @@ export class SimProbe {
       if (Math.abs(degrees) > 10) return 'Both contacts must be on the same straight edge.'
       return result(() => {
         const id = ++this.angleId
-        this.angle = { id, rotation: rotation + degrees, frame: frame(modal) }
-        return { edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs, rotation: rotation + degrees } }
+        this.angle = { id, rotation: wrapped(rotation + degrees), frame: frame(modal) }
+        return { edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs, rotation: wrapped(rotation + degrees) } }
       })
     }
 

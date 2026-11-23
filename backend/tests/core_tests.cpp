@@ -1,5 +1,6 @@
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/fixed_setter.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
 #include <coffeecnc/core/jog_stop_report.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
@@ -113,6 +114,16 @@ void reference_mark_homing() {
   s.axes[1].reference_mark = false;
   require(policy.evaluate(Home{Axis::y}, s).reason != y.reason,
           "machine power is asked for before the reference mark");
+}
+
+// Applying an edge angle adds it to the present rotation: the sum stays in (-180, 180] (#245).
+void edge_rotation_wraps() {
+  for (const auto& [sum, wrapped] : {std::pair{363.0, 3.0}, std::pair{-363.0, -3.0},
+                                     std::pair{181.8624, -178.1376}, std::pair{-180.0, 180.0},
+                                     std::pair{180.0, 180.0}, std::pair{540.0, 180.0},
+                                     std::pair{10.3624, 10.3624}, std::pair{0.0, 0.0}})
+    require(std::abs(wrapped_rotation(sum) - wrapped) < 1e-9,
+            std::format("rotation {} wraps to {}, not {}", sum, wrapped, wrapped_rotation(sum)));
 }
 
 void fixed_setter_homing() {
@@ -650,6 +661,7 @@ auto main() -> int {
     pending_manual_tool_change();
     reference_mark_homing();
     fixed_setter_homing();
+    edge_rotation_wraps();
     work_origin_gates();
     rotation_and_shift_gates();
     paused_z_gates();

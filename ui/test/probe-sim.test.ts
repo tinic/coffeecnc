@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CommandBody, CommandResult, FromMachine, ProbeDirection, Vec3 } from '../src/protocol'
 import { SimMachine } from '../src/sim/machine'
 import { toWork } from '../src/sim/gcode'
+import { wrapped } from '../src/sim/probe'
 import { applyScene } from '../src/sim/scenes'
 
 type MovingProbe = Extract<CommandBody, { type: 'fixed_setter'; x: number }>
@@ -207,6 +208,11 @@ describe('browser probe scene', () => {
       expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
       expect(sim.status().offsets.rotation_xy).toBe(degrees)
     }
+  })
+
+  it('keeps an applied rotation inside -180..180° like the controller', () => {
+    expect([363, -363, -180, 180, 540, 10.5].map(wrapped)).toEqual([3, -3, 180, 180, 180, 10.5])
+    expect(wrapped(179 + 2.8624)).toBeCloseTo(-178.1376)
   })
 
   it('refuses a ball calibration in a rotated work system', () => {

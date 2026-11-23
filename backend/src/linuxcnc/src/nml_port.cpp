@@ -2250,7 +2250,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset)
       return std::unexpected("The work frame or tool changed. Measure the edge again.");
     const auto id = ++impl_->next_edge_measurement;
-    const double rotation = before.rotation_xy + degrees;
+    const double rotation = wrapped_rotation(before.rotation_xy + degrees);
     impl_->edge_measurement = Impl::EdgeMeasurement{id, frame, epoch, before.tool_offset, rotation};
     state.edge_angle_deg = degrees;
     state.edge_rotation = SetterState::EdgeRotation{id, frame.wcs, rotation};

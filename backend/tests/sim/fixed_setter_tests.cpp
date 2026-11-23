@@ -782,6 +782,9 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   run({.name = "slot", .origin = {4, std::nullopt}, .size = {20, std::nullopt}},
       {.action = SetterAction::slot, .direction = ProbeDirection::x_plus});
   at(2, 1);
+  run({.name = "slot_y", .origin = {std::nullopt, -2}, .size = {std::nullopt, 16}},
+      {.action = SetterAction::slot, .direction = ProbeDirection::y_plus});
+  at(2, 1);
   // The bore's Y chord passes through its centre: 14 mm between contacts plus the 2 mm ball.
   run({.name = "bore", .origin = {4, -2}, .diameter = 16}, {.action = SetterAction::bore});
 
@@ -791,12 +794,32 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   run({.name = "corner", .origin = {-4, -8}},
       {.action = SetterAction::corner, .direction = ProbeDirection::x_plus,
        .y_direction = ProbeDirection::y_plus});
+  // From the far corner: contacts at u 13 and v 5, faces one radius inward at 12 and 4.
+  at(10, 2);
+  run({.name = "corner_xminus_yminus", .origin = {12, 4}},
+      {.action = SetterAction::corner, .direction = ProbeDirection::x_minus,
+       .y_direction = ProbeDirection::y_minus});
   at(3, -1);
   run({.name = "boss", .origin = {4, -2}, .diameter = 12},
       {.action = SetterAction::boss, .gauge_width_mm = 16});
   at(2, 1);
   run({.name = "ridge", .origin = {std::nullopt, -2}, .size = {std::nullopt, 12}},
       {.action = SetterAction::ridge, .direction = ProbeDirection::y_plus, .gauge_width_mm = 12});
+
+  // Ball calibration stays refused in a rotated system, before any command.
+  at(2, 1);
+  const auto writes_before_ball = port.writes().size();
+  const auto origin_before_ball = port.status().g5x;
+  FixedSetterRequest ball{SetterAction::ball, 99, machine()};
+  ball.gauge_width_mm = 20;
+  const auto refused_ball = port.fixed_setter(ball, epoch, {});
+  std::cout << std::format("fact=rotated_probe action=ball rotation={} refused={} writes={}", degrees,
+                           !refused_ball, port.writes().size() - writes_before_ball)
+            << std::endl;
+  require(!refused_ball && refused_ball.error().contains("without rotation") &&
+              port.writes().size() == writes_before_ball &&
+              port.status().g5x == origin_before_ball,
+          refused_ball ? "expected a refused ball calibration" : refused_ball.error());
 
   // The travel check is on the machine endpoint: 1 mm inside the Y limit, the +X work axis
   // leaves it although the X search alone would not.
@@ -825,11 +848,14 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   halcmd(std::format("setp sim-tool-setter.max {}", 100 / scale));
   probe_input("sim-setter-trip", "");
   constexpr double g = -0.05;
-  const auto edge = [&](ProbeDirection direction) {
+  // The edge turns atan(-g) from the axes of a system rotated `frame` degrees.
+  const auto edge = [&](ProbeDirection direction, double frame) {
+    const double fc = std::cos(frame * std::numbers::pi / 180);
+    const double fs = std::sin(frame * std::numbers::pi / 180);
     // front: v + g u = (-s + g c) x + (c + g s) y; left: u + g v = (c - g s) x + (s + g c) y.
     const bool front = direction == ProbeDirection::y_plus;
-    halcmd(std::format("setp sim-rot-edge.gain0 {:.12f}", front ? -s + g * c : c - g * s));
-    halcmd(std::format("setp sim-rot-edge.gain1 {:.12f}", front ? c + g * s : s + g * c));
+    halcmd(std::format("setp sim-rot-edge.gain0 {:.12f}", front ? -fs + g * fc : fc - g * fs));
+    halcmd(std::format("setp sim-rot-edge.gain1 {:.12f}", front ? fc + g * fs : fs + g * fc));
   };
   const double residual = std::atan(-g) * 180 / std::numbers::pi;
   const auto angle = [&](ProbeDirection direction, double expected) {
@@ -844,21 +870,23 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     std::cout << std::format("fact=rotated_probe action=angle edge={} rotation={:.4f} angle_expected={:.4f} "
                              "angle_measured={:.4f} apply_expected={:.4f} apply_offered={:.4f}",
                              direction == ProbeDirection::y_plus ? "front" : "left", rotation,
-                             expected, measured->edge_angle_deg.value_or(none), rotation + expected,
+                             expected, measured->edge_angle_deg.value_or(none),
+                             wrapped_rotation(rotation + expected),
                              measured->edge_rotation ? measured->edge_rotation->rotation_deg : none)
               << std::endl;
     require(measured->edge_angle_deg && measured->edge_rotation &&
                 std::abs(*measured->edge_angle_deg - expected) < 0.05 &&
-                std::abs(measured->edge_rotation->rotation_deg - (rotation + expected)) < 0.05 &&
+                std::abs(measured->edge_rotation->rotation_deg - wrapped_rotation(rotation + expected)) <
+                    0.05 &&
                 port.status().rotation_xy == rotation,
             "the edge angle is measured from the rotated work axis and not written");
     // Back clear of the edge before its simulation changes.
     mdi("G21 G90 G53 G0 X0 Y0 Z20");
     return *measured;
   };
-  edge(ProbeDirection::x_plus);
+  edge(ProbeDirection::x_plus, degrees);
   static_cast<void>(angle(ProbeDirection::x_plus, -residual));
-  edge(ProbeDirection::y_plus);
+  edge(ProbeDirection::y_plus, degrees);
   const auto front = angle(ProbeDirection::y_plus, residual);
   // The feature cycles above moved the G55 origin: applying keeps it where they left it.
   const auto unturned = port.status().g5x;
@@ -877,6 +905,23 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
           applied ? "applying adds the measured turn to the present rotation"
                   : applied.error());
   // Square to the edge now: the remaining turn is zero.
+  static_cast<void>(angle(ProbeDirection::y_plus, 0));
+
+  // Near 180°: 179 + 2.8624 is written as -178.1376, inside the panel's ±360° limit.
+  constexpr double near_half_turn = 179;
+  mdi(std::format("G21 G10 L2 P2 R{}", near_half_turn));
+  edge(ProbeDirection::y_plus, near_half_turn);
+  const auto wide = angle(ProbeDirection::y_plus, residual);
+  const auto wrapped = port.fixed_setter(
+      {.action = SetterAction::apply_angle, .tool = 99, .edge_measurement = wide.edge_rotation->id},
+      epoch, {});
+  const double wrapped_expected = near_half_turn + residual - 360;
+  std::cout << std::format("fact=rotated_probe action=apply_angle_wrap rotation_expected={:.4f} "
+                           "rotation_measured={:.4f}",
+                           wrapped_expected, port.status().rotation_xy)
+            << std::endl;
+  require(wrapped && std::abs(port.status().rotation_xy - wrapped_expected) < 0.05,
+          wrapped ? "applying past 180° writes the same turn inside -180..180°" : wrapped.error());
   static_cast<void>(angle(ProbeDirection::y_plus, 0));
   mdi("G54");
   require(port.status().g5x == g54 && port.status().rotation_xy == 0,

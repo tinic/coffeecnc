@@ -192,9 +192,8 @@ void AlarmLog::load() {
       open_line = !bytes.empty() && bytes.back() != '\n';
     }
   }
-  std::uint64_t highest = 0;
-  for (const auto& record : read)
-    highest = std::max(highest, record.session);
+  const std::uint64_t highest =
+      read.empty() ? 0 : std::ranges::max(read, {}, &AlarmRecord::session).session;
   const std::scoped_lock lock{mutex_};
   session_ = highest + 1;
   skipped_ = skipped;
@@ -323,16 +322,16 @@ void AlarmLog::loop() {
   idle_.notify_all();
 }
 
-void AlarmLog::record(AlarmRecord record) {
-  record.session = session_;
-  record.number = next_order_;
-  record.text = bounded(std::move(record.text), max_text_bytes);
-  kept_.push_back({next_order_++, record});
+void AlarmLog::add(AlarmRecord entry) {
+  entry.session = session_;
+  entry.number = next_order_;
+  entry.text = bounded(std::move(entry.text), max_text_bytes);
+  kept_.push_back({next_order_++, entry});
   while (kept_.size() > max_entries)
     kept_.pop_front();
   if (directory_.empty())
     return;
-  pending_.push_back(std::move(record));
+  pending_.push_back(std::move(entry));
   while (pending_.size() > max_pending) {
     pending_.pop_front();
     ++lost_;
@@ -395,7 +394,7 @@ void AlarmLog::posted(PageToken page, std::span<const std::string> messages,
         if (record.outcome.empty() || record.outcome == "accepted")
           continue;
       }
-      this->record(std::move(record));
+      add(std::move(record));
     }
   }
   wake_.notify_all();
@@ -410,17 +409,17 @@ void AlarmLog::send_snapshot(PageToken page) {
 }
 
 auto AlarmLog::view_before(std::uint64_t order) const -> AlarmLogView {
-  AlarmLogView view;
-  view.saved = !directory_.empty();
-  view.reason = reason_;
-  if (lost_ > 0 && view.reason.empty())
-    view.reason = "Some alarm log entries could not be saved.";
-  view.session = session_;
-  view.skipped = skipped_;
+  AlarmLogView shown;
+  shown.saved = !directory_.empty();
+  shown.reason = reason_;
+  if (lost_ > 0 && shown.reason.empty())
+    shown.reason = "Some alarm log entries could not be saved.";
+  shown.session = session_;
+  shown.skipped = skipped_;
   for (const auto& kept : kept_)
     if (kept.order < order)
-      view.entries.push_back(kept.record);
-  return view;
+      shown.entries.push_back(kept.record);
+  return shown;
 }
 
 auto AlarmLog::view() const -> AlarmLogView {

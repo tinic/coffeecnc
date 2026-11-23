@@ -130,7 +130,7 @@ private:
   void load();
   // Writes `batch` with the files as they are; false when it failed.
   auto append(const std::vector<AlarmRecord>& batch) -> bool;
-  void record(AlarmRecord record);
+  void add(AlarmRecord record);
   [[nodiscard]] auto view_before(std::uint64_t order) const -> AlarmLogView;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
 

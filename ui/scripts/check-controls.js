@@ -188,7 +188,7 @@ function pageMeasure(themes, allowed) {
   return { findings, rows }
 }
 
-// A list row under the pointer: no outline, and a hover tone of 1.1:1 or more from the surface.
+// A list row in its hover state (forced through DevTools): no outline, and a tone of 1.1:1 or more from the surface.
 function pageHover(themes, sig) {
   const parse = (value) => {
     let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(value)
@@ -201,7 +201,7 @@ function pageHover(themes, sig) {
   const lum = (c) => c.slice(0, 3).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
-  const el = [...document.querySelectorAll(':hover')].reverse().find((c) => window.__sig(c) === sig)
+  const el = [...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && window.__sig(c) === sig)
   if (!el) return []
   const under = () => {
     const stack = []
@@ -263,6 +263,8 @@ async function cdp(port) {
     return reply.result?.result?.value
   }
   await call('Page.enable')
+  await call('DOM.enable')
+  await call('CSS.enable')
   await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
   return { call, run, close: () => { call('Page.close').catch(() => undefined); setTimeout(() => { ws.close() }, 500) } }
 }
@@ -386,13 +388,19 @@ async function main() {
             for (const row of measured.rows) {
               if (hovered.has(row.sig)) continue
               hovered.add(row.sig)
-              await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: row.at[0], y: row.at[1] })
-              await sleep(150)
-              let hover = await page.run(pageHover, themes, row.sig)
-              // The first pointer move after a load can land before the hover style applies; look again.
-              if (hover.length > 0) { await sleep(300); hover = await page.run(pageHover, themes, row.sig) }
-              for (const finding of hover) await record(finding, null)
-              await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+              // Force :hover on the row through DevTools: a pointer move is not reliable in headless Chrome.
+              const handle = await page.call('Runtime.evaluate', {
+                expression: `[...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && window.__sig(c) === ${JSON.stringify(row.sig)})`,
+              })
+              const objectId = handle.result?.result?.objectId
+              if (!objectId) continue
+              await page.call('DOM.getDocument', { depth: 0 })
+              const node = await page.call('DOM.requestNode', { objectId })
+              const nodeId = node.result?.nodeId
+              if (!nodeId) continue
+              await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
+              for (const finding of await page.run(pageHover, themes, row.sig)) await record(finding, null)
+              await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
             }
             if (job.path.length < maxDepth) {
               for (const sig of await page.run(pageClickables, noClick)) {

@@ -413,9 +413,30 @@ void power_on(const Rig& rig) {
     const b = document.querySelector('button.power-control');
     return !!b && !b.closest('details') && !document.querySelector('details.state-menu').open;
   )") == true);
-  check("panel_reset_estop", rig.click("button.power-control", "Reset E-stop") == "ok");
+  // A new page receives live LinuxCNC status before the watchdog has seen fresh frames.
+  // The sim wires the watchdog hold to motion.jog-inhibit. Wait for its release before
+  // sending a power command, including the reset after platform() reloads the page.
+  const bool frames_ready = rig.wait(5s, []() -> bool {
+    return output_of("halcmd getp motion.jog-inhibit") == "FALSE";
+  });
+  check("panel_fresh_frames_before_estop_reset", frames_ready);
+  if (!frames_ready)
+    throw Failure("the panel watchdog did not release after the page loaded");
+  const auto press = rig.js(R"(
+    const sent = __t.sent.length;
+    const click = __t.click('button.power-control', 'Reset E-stop');
+    const request = __t.sent.slice(sent).find((m) => m?.type === 'set_machine' && m.state === 'off');
+    return { click, id: request?.id ?? null };
+  )");
+  check("panel_reset_estop", press.at("click") == "ok" && press.at("id").is_number(), press.dump());
+  const auto reply = std::format("__t.received.find((m) => m.type === 'result' && m.id === {})",
+                                 press.at("id").dump());
+  const bool answered = rig.wait_js(reply, 5s);
+  const auto result = rig.js("return " + reply + " ?? null;");
   check("linuxcnc_estop_reset",
-        rig.wait(5s, [&]() -> bool { return rig.status().controller.machine == MachineState::off; }));
+        answered && result.is_object() && result.at("outcome") == "accepted" &&
+            rig.wait(5s, [&]() -> bool { return rig.status().controller.machine == MachineState::off; }),
+        result.dump());
   check("panel_shows_off", rig.wait_js(R"((() => {
     const b = __t.find('button.power-control', 'Machine on');
     return __t.last.status.machine === 'off' && b && !b.disabled;

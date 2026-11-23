@@ -985,6 +985,16 @@ const examples = [
     "time": 1700000001000
   },
   {
+    "type": "message",
+    "level": "info",
+    "text": "Jog stopped: probe contact",
+    "time": 1700000001100,
+    "localization": {
+      "key": "backend.jogStop.probeContact",
+      "params": {}
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",
@@ -1017,6 +1027,16 @@ const examples = [
     "id": 44,
     "outcome": "timed_out",
     "reason": "LinuxCNC did not answer."
+  },
+  {
+    "type": "result",
+    "id": 47,
+    "outcome": "timed_out",
+    "reason": "LinuxCNC did not answer.",
+    "localization": {
+      "key": "messages.session.linuxcncNoAnswer",
+      "params": {}
+    }
   },
   {
     "type": "result",

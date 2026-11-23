@@ -121,8 +121,11 @@ struct NmlPanelSource::Impl {
     } else {
       withheld = std::move(rows);
       if (!std::exchange(comments_failed, true))
-        messages.push_back({true, "The tool table file " + config.tool_table +
-                                      " cannot be read: the tool table is not shown."});
+        messages.push_back({true,
+                            "The tool table file " + config.tool_table +
+                                " cannot be read: the tool table is not shown.",
+                            MessageKey{"backend.nmlPanelSource.toolTableUnreadable",
+                                       {{"file", config.tool_table}}}});
     }
     if (tool_table.revision == 0 || shown != tool_table.tools)
       tool_table = {tool_table.revision + 1, std::move(shown)};
@@ -163,7 +166,8 @@ struct NmlPanelSource::Impl {
       pending.reset();
       pending_raw.reset();
       if (!std::exchange(tools_failed, true))
-        messages.push_back({true, "LinuxCNC's tool table cannot be read."});
+        messages.push_back({true, "LinuxCNC's tool table cannot be read.",
+                            MessageKey{"backend.nmlPanelSource.toolTableMemory"}});
       return;
     }
     tools_failed = false;

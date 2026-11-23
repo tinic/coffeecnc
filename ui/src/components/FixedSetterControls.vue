@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 
 import { allHomed, findTool, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import { useCardFeedback } from '../card-feedback'
@@ -138,7 +138,7 @@ const removeListener = onResult((command, result) => {
   if (result.outcome !== 'accepted') {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
     if (motion) {
-      error.value = (): string => translateMessage(result.reason, result.refusal) || (command.action === 'check'
+      error.value = (): string => translateResult(result) || (command.action === 'check'
         ? t('tools.setter.checkNotConfirmed') : t('tools.setter.measureNotConfirmed'))
       refresh()
     }

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { i18n, setLanguage } from '../src/i18n'
-import { matchMessage, translateMessage } from '../src/i18n/messages'
+import { matchMessage, translateMessage, translateResult } from '../src/i18n/messages'
 
 const native = import.meta.glob<string>([
   '../../backend/src/core/src/command_policy.cpp',
@@ -16,6 +16,11 @@ const native = import.meta.glob<string>([
   '../../backend/src/app/src/panel_feed.cpp',
   '../../backend/src/app/include/coffeecnc/app/session.hpp',
   '../../backend/src/app/include/coffeecnc/app/panel_feed.hpp',
+], { query: '?raw', import: 'default', eager: true })
+const adapter = import.meta.glob<string>([
+  '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
+  '../../backend/src/linuxcnc/src/nml_port.cpp',
+  '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
@@ -218,9 +223,29 @@ describe('native and store sentences', () => {
     const all = Object.values(native).join('\n')
     for (const text of english) expect(all).toContain(`"${text}"`)
   })
+
+  it('keeps the keys for native messages and failures in the English catalog', () => {
+    let literalCount = 0
+    for (const source of [...Object.values(native), ...Object.values(adapter)]) {
+      for (const [, key] of source.matchAll(/MessageKey\{\s*"([^"]+)"/g))
+        expect(i18n.global.te(key ?? '', 'en'), key).toBe(true)
+      for (const { text, after } of cppLiterals(source)) {
+        const key = /^(?:\s*,\s*\{\})*\s*,\s*MessageKey\{\s*"([^"]+)"\s*\}/.exec(after)?.[1]
+        if (key === undefined) continue
+        expect(i18n.global.t(key as never, {}, { locale: 'en' }), key).toBe(text)
+        literalCount += 1
+      }
+    }
+    expect(literalCount).toBeGreaterThan(60)
+  })
 })
 
 describe('translateMessage', () => {
+  it('uses a structured key for a timeout without matching its English reason', async () => {
+    await setLanguage('de')
+    expect(translateResult({ type: 'result', id: 8, outcome: 'timed_out', reason: 'Older fallback.',
+      localization: { key: 'messages.session.linuxcncNoAnswer', params: {} } })).toBe('LinuxCNC hat nicht geantwortet.')
+  })
   it('translates a known refusal', async () => {
     await setLanguage('de')
     expect(translateMessage('Load a program first.')).toBe('Laden Sie zuerst ein Programm.')

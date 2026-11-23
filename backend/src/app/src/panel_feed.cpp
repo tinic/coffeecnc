@@ -178,7 +178,7 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
                          [&](const ControllerMessage& message) -> std::string {
                            return encode_message(message.error ? MessageLevel::error
                                                                : MessageLevel::info,
-                                                 message.text, unix_time);
+                                                 message.text, unix_time, message.localization);
                          });
   if (records != nullptr)
     records->insert(records->end(), waiting_.size(), PanelRecord::message);
@@ -259,9 +259,11 @@ void PanelFeed::loop() {
         }
       } else if (page && messages.error() != reported) {
         reported = messages.error();
-        deliver_(*page, {encode_message(MessageLevel::error,
-                                        "The machine status cannot be shown: " + reported,
-                                        unix_now())});
+        deliver_(
+            *page,
+            {encode_message(
+                MessageLevel::error, "The machine status cannot be shown: " + reported, unix_now(),
+                MessageKey{"messages.panelFeed.statusCannotShow", {{"detail", reported}}})});
       }
     } else {
       composer.observe(reading);

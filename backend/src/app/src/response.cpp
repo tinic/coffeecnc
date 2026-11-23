@@ -38,10 +38,15 @@ auto text(const Json& message) -> std::string {
 auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
                    const std::optional<SetterState>& setter,
                    const std::optional<RestartPlan>& restart,
-                   const std::optional<RefusalMessage>& refusal) -> std::string {
+                   const std::optional<RefusalMessage>& refusal,
+                   const std::optional<MessageKey>& localization) -> std::string {
   Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
   if (outcome == CommandOutcome::rejected && refusal)
     message["refusal"] = {{"key", refusal->key}, {"params", refusal->params}};
+  // A refusal following a command already sent (for example a mode change) is a failure.
+  const auto& key = !localization && outcome != CommandOutcome::rejected ? refusal : localization;
+  if (outcome != CommandOutcome::accepted && key)
+    message["localization"] = {{"key", key->key}, {"params", key->params}};
   if (setter) {
     auto measurement = Json(nullptr);
     if (const auto& r = setter->measurement) {
@@ -102,16 +107,21 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                           {"start", p.start}};
   }
   if (!finite_numbers(message))
-    return encode_result(id, CommandOutcome::failed, "The controller returned a non-finite result.");
+    return encode_result(id, CommandOutcome::failed, "The controller returned a non-finite result.",
+                         {}, {}, {}, MessageKey{"messages.response.nonFinite"});
   return text(message);
 }
 
 auto encode_message(MessageLevel level, std::string_view text_for_operator,
-                    std::chrono::milliseconds unix_time) -> std::string {
-  return text(Json{{"type", "message"},
-                   {"level", level == MessageLevel::info ? "info" : "error"},
-                   {"text", text_for_operator},
-                   {"time", unix_time.count()}});
+                    std::chrono::milliseconds unix_time,
+                    const std::optional<MessageKey>& localization) -> std::string {
+  Json message{{"type", "message"},
+               {"level", level == MessageLevel::info ? "info" : "error"},
+               {"text", text_for_operator},
+               {"time", unix_time.count()}};
+  if (localization)
+    message["localization"] = {{"key", localization->key}, {"params", localization->params}};
+  return text(message);
 }
 
 } // namespace coffeecnc

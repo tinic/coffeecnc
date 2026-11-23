@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_APP_PANEL_ASSETS_HPP
 #define COFFEECNC_APP_PANEL_ASSETS_HPP
 
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
@@ -42,9 +43,11 @@ struct Asset {
 // extension .step or .stp (either case), as its canonical path. Only for `loaded`, the program
 // LinuxCNC has open (it may be in any directory): nothing for another program, another URL, a
 // program that does not exist, or no such model. A model that is a symbolic link is followed:
-// the operator put it beside the program. The panel loads it with the program.
+// the operator put it beside the program. The LAN viewer skips symbolic links.
 inline constexpr std::string_view program_part_path = "/program-part";
-[[nodiscard]] auto resolve_program_part(std::string_view url, std::string_view loaded)
+enum class ProgramPartLinks : std::uint8_t { follow, skip };
+[[nodiscard]] auto resolve_program_part(std::string_view url, std::string_view loaded,
+                                        ProgramPartLinks links = ProgramPartLinks::follow)
     -> std::optional<std::string>;
 
 // The URL is one of the panel's own: the only place the window may navigate to.

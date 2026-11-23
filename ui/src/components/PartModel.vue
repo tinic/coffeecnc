@@ -70,7 +70,7 @@ function apply(): void {
 <template>
   <div class="model-summary">
     <button
-      v-tooltip="detail ? summary + ' · ' + detail : summary" class="attach" type="button"
+      v-tooltip="detail ? summary + ' · ' + detail : summary" class="attach tone-control" type="button"
       :class="{ on: part.attachment && part.visible }" :aria-label="'STEP · ' + summary" aria-haspopup="dialog"
       @click="open = true"
     >
@@ -106,10 +106,12 @@ function apply(): void {
 
 <style scoped>
 .model-summary { flex: none; }
-.attach { min-height: 30px; padding: 5px 7px; border: 0; border-radius: 6px; background: none; color: var(--text-dim); cursor: pointer; font-size: 10px; }
+.attach { min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); cursor: pointer; font-size: var(--type-body); }
+.attach:hover { background: var(--control-hover); }
+.attach:active { background: var(--control-active); }
 .attach.on { color: var(--accent); background: var(--panel); }
 .model-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-small { font-size: 10px; color: var(--text-dim); }
+small { font-size: var(--type-sm); color: var(--text-dim); }
 .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .load-row, .display-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .identity { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }.identity span, .hint { color: var(--text-dim); font-size: 12px; }.hint, .notice, .error { margin: 0; line-height: 1.5; }.notice { color: var(--warn); font-size: 12px; }.error { color: var(--stop); font-size: 12px; }

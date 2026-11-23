@@ -285,7 +285,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 <style scoped>
 .runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 18px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
 .runbar.touch-off { grid-template-columns: 1fr; justify-items: end; }
-.command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
+.command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: var(--type-body); }
 .spindle-effect { margin: 0; line-height: 1.55; }
 .paused-z { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: 6px; font-size: 12px; color: var(--text-dim); }
@@ -294,10 +294,10 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .stop-button { color: var(--stop); min-width: 88px; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
-.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
+.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: var(--touch); height: 48px; font-size: var(--type-lg); line-height: 1; color: var(--text-dim); }
 /* Active options grow the button to the left only; Stop and the primary action stay put. */
 .more-button.active { gap: 3px; padding: 0 4px; border-radius: 9px; background: var(--accent-soft); }
-.more-button.active .dots { font-size: 18px; color: var(--accent); }
+.more-button.active .dots { color: var(--accent); }
 .active-options { display: flex; gap: 3px; }
 .active-options small { padding: 1px 3px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--accent); background: var(--panel); white-space: nowrap; }
 .popover { bottom: calc(100% + 16px); right: -100px; width: min(430px, calc(100vw - 32px)); }

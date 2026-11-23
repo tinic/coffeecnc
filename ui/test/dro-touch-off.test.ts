@@ -47,14 +47,14 @@ describe('touching the coordinate readout', () => {
     const view = wrapper.get('.basis-toggle')
     expect(wrapper.findAll('.basis button')).toHaveLength(1)
     expect(view.text()).toBe('Work · G54')
-    expect(wrapper.get('.axis .number').text()).toBe('12.346')
+    expect(wrapper.get('.axis .digits').text()).toBe('12.346')
     await view.trigger('click')
     expect(view.text()).toBe('Machine')
-    expect(wrapper.get('.axis .number').text()).toBe('40.000')
+    expect(wrapper.get('.axis .digits').text()).toBe('40.000')
     expect(wrapper.get('button[aria-label="Zero X"]').attributes('disabled')).toBeDefined()
     await view.trigger('click')
     expect(view.text()).toBe('To go')
-    expect(wrapper.get('.axis .number').text()).toBe('2.000')
+    expect(wrapper.get('.axis .digits').text()).toBe('2.000')
     await view.trigger('click')
     expect(view.text()).toBe('Work · G54')
     expect(wrapper.get('.axis').attributes('disabled')).toBeUndefined()
@@ -63,6 +63,34 @@ describe('touching the coordinate readout', () => {
     await nextTick()
     expect(view.text()).toBe('Work · G55')
     expect(view.attributes('aria-label')).toContain('Switch to Machine')
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('pads the readout across signs and magnitudes while keeping the real zero and precision', async () => {
+    const axis = panel.status?.axes[0]
+    if (!axis) throw new Error('Missing axis')
+    const number = wrapper.get('.axis .number')
+    const leading = number.get('.leading-zeros')
+    expect(leading.attributes('aria-hidden')).toBe('true')
+    for (const [position, zeros, display] of [
+      [-0.0004, '000', '0000.000'],
+      [-12.345678, '00', '-0012.346'],
+      [9999.999, '', '9999.999'],
+      [10000, '', '10000.000'],
+    ] as const) {
+      axis.work = position
+      await nextTick()
+      expect(leading.text()).toBe(zeros)
+      expect(number.text()).toBe(display)
+    }
+    panel.unit = 'inch'
+    axis.work = 25.4
+    await nextTick()
+    expect(leading.text()).toBe('00')
+    expect(number.text()).toBe('001.0000')
+    expect(number.get('.digits').text()).toBe('1.0000')
+    await number.trigger('click')
+    expect(field().value).toBe('1.0000')
     expect(send).not.toHaveBeenCalled()
   })
 

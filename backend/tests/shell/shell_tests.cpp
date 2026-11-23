@@ -1851,13 +1851,13 @@ void platform(const Rig& rig, const std::filesystem::path& ui) {
                                  id.dump());
   const auto requested_path = (std::filesystem::path(rig.config.program_prefix) / "probe.ngc").string();
   const bool answered = id.is_number() && rig.wait_js(reply);
-  const auto result = rig.js("return " + reply + " ?? null;");
-  const bool reopened = answered && result.is_object() && result.value("outcome", "") == "accepted" &&
+  const auto open_result = rig.js("return " + reply + " ?? null;");
+  const bool reopened = answered && open_result.is_object() && open_result.value("outcome", "") == "accepted" &&
                         rig.wait_js(std::format("__t.last.status.program.file === {}",
                                                 Json(requested_path).dump()));
   check("panel_opens_other_program", reopened,
         Json{{"listed", listed}, {"frames_ready", ready_to_open}, {"click", click},
-             {"result", result}, {"program", rig.panel_status().at("program").at("file")}}.dump());
+             {"result", open_result}, {"program", rig.panel_status().at("program").at("file")}}.dump());
   const bool removed = reopened &&
       rig.wait_js("/Part model removed because the program changed/.test("
                   "__t.text(document.querySelector('.model-summary')))");

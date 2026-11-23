@@ -3365,8 +3365,14 @@ void tool_models(Rig& rig, const std::string& ini_file) {
               !before.tool_file.empty(),
           "tools=" + word(after.tools.dump()) + " offsets=" + word(after.offsets.dump()));
   }
-  check("tool_models_no_nml_command", rig.port.writes().size() == writes_before,
-        "written=" + trace_text(written_since(rig, writes_before)));
+  // The port's own EMC_TASK_PLAN_SYNCH, sent when idle so that the parameter file is current
+  // (#271), is no motion or program command. Every other write is.
+  const auto synch = NmlPort::types().synch;
+  const auto written = written_since(rig, writes_before);
+  check("tool_models_no_nml_command",
+        std::ranges::all_of(written,
+                            [&](const auto& write) -> bool { return write.type == synch; }),
+        "written=" + trace_text(written));
   const auto on_disk = decode_tool_model_file(file_text(saved_file));
   check("tool_models_file",
         on_disk && on_disk->machine_id == "G0759-sim" && on_disk->revision == 2 &&

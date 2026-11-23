@@ -2,6 +2,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <format>
@@ -75,10 +76,9 @@ auto plain_decimal(std::string_view text) -> bool {
 }
 
 auto control(std::string_view text) -> bool {
-  for (const char c : text)
-    if (std::iscntrl(static_cast<unsigned char>(c)) != 0 && c != '\t')
-      return true;
-  return false;
+  return std::ranges::any_of(text, [](char c) {
+    return std::iscntrl(static_cast<unsigned char>(c)) != 0 && c != '\t';
+  });
 }
 
 } // namespace
@@ -112,11 +112,12 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes);
   if (!content)
     return std::unexpected(content.error());
-  if (!*content)
+  const auto& file = *content;
+  if (!file)
     return std::unexpected("The program no longer exists.");
-  if ((*content)->more)
+  if (file->more)
     return std::unexpected("The program is too large to edit here.");
-  const std::string& bytes = (*content)->bytes;
+  const std::string& bytes = file->bytes;
 
   // Where line `line` starts and ends, without its line end (\n, \r\n or \r).
   std::size_t start = 0;
@@ -161,9 +162,14 @@ auto ProgramWriter::write_over(const std::string& resolved, std::string_view byt
   }
   if (step && previous) {
     const auto current = files_.read(resolved, previous->size() + 1);
-    if (!current || !*current || (*current)->more || (*current)->bytes != *previous) {
+    if (!current) {
       files_.discard(temporary);
-      return std::unexpected(current ? std::string{changed_program} : current.error());
+      return std::unexpected(current.error());
+    }
+    const auto& file = *current;
+    if (!file || file->more || file->bytes != *previous) {
+      files_.discard(temporary);
+      return std::unexpected(std::string{changed_program});
     }
   }
   if (step)

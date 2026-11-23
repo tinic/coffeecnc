@@ -58,8 +58,12 @@ auto hal_words(std::string_view line) -> std::vector<std::string> {
   }
   std::istringstream input{std::string(line)};
   std::vector<std::string> words;
-  for (std::string word; input >> std::quoted(word);)
+  for (;;) {
+    std::string word;
+    if (!(input >> std::quoted(word)))
+      break;
     words.push_back(std::move(word));
+  }
   return words;
 }
 
@@ -185,14 +189,14 @@ auto scan_ini_hal(const MachineIniInspection& ini) -> HalInspection {
       result.read(library / filename.substr(4));
       continue;
     }
-    const auto local = result.directory / filename;
+    auto selected = result.directory / filename;
     std::error_code error;
-    if (fs::path(filename).is_absolute() || fs::exists(local, error))
-      result.read(local);
-    else if (fs::exists(library / filename, error))
-      result.read(library / filename);
-    else
-      result.read(local);
+    if (fs::path(filename).is_relative() && !fs::exists(selected, error)) {
+      const auto fallback = library / filename;
+      if (fs::exists(fallback, error))
+        selected = fallback;
+    }
+    result.read(selected);
   }
   if (std::ranges::any_of(result.links,
                           [](const auto& link) { return link.first.starts_with("coffeecnc."); }))
@@ -280,14 +284,18 @@ auto repair_ini(const MachineIniInspection& plan, const std::vector<IniAddition>
     return std::unexpected("The INI could not be locked for writing.");
   LocalToolModelFiles files;
   const auto before = files.read(path, max_file_bytes);
-  if (!before || !*before || (*before)->more)
+  if (!before)
     return std::unexpected("Cannot read the complete INI for its backup.");
+  const auto& original_contents = *before;
+  if (!original_contents || original_contents->more)
+    return std::unexpected("Cannot read the complete INI for its backup.");
+  const auto& original_bytes = original_contents->bytes;
   const auto latest = inspect_machine_ini(path);
   if (!latest || latest->display != plan.display || latest->postgui != plan.postgui ||
       latest->signal_configured != plan.signal_configured || latest->halfiles != plan.halfiles)
     return std::unexpected(
         "The INI changed during the check. Re-run the check on the current file.");
-  auto replacement = (*before)->bytes;
+  auto replacement = original_bytes;
   const auto first_newline = replacement.find('\n');
   const std::string_view newline = first_newline != 0 && first_newline != replacement.npos &&
                                            replacement[first_newline - 1] == '\r'
@@ -339,8 +347,10 @@ auto repair_ini(const MachineIniInspection& plan, const std::vector<IniAddition>
   struct stat current{};
   const auto unchanged = files.read(path, max_file_bytes);
   if (::lstat(path.c_str(), &current) != 0 || current.st_dev != original.st_dev ||
-      current.st_ino != original.st_ino || !unchanged || !*unchanged || (*unchanged)->more ||
-      (*unchanged)->bytes != (*before)->bytes)
+      current.st_ino != original.st_ino || !unchanged)
+    return std::unexpected("The INI changed while it was being prepared.");
+  const auto& current_contents = *unchanged;
+  if (!current_contents || current_contents->more || current_contents->bytes != original_bytes)
     return std::unexpected("The INI changed while it was being prepared.");
   auto backup = path + ".bak";
   for (int suffix = 1; ::link(path.c_str(), backup.c_str()) != 0; ++suffix) {
@@ -426,6 +436,7 @@ auto check_configuration(const Options& options) -> int {
     if (!joints.empty())
       axis_list += std::format(", {} (read-only)", rotary_letters[i]);
   }
+  const auto& display = ini->display;
   std::cout << (hal.postgui_error ? "\nCoffeeCNC does not start with this file: post-GUI HAL "
                                     "sources could not be loaded.\n"
                                   : "\nCoffeeCNC starts with this file.\n")
@@ -441,9 +452,9 @@ auto check_configuration(const Options& options) -> int {
             << "  Home all          "
             << (config->home_all_configured ? "configured" : "not configured: home each axis")
             << '\n'
-            << "  Display           " << ini->display.value_or("not configured");
-  if (ini->display && *ini->display != "coffeecnc" && !ini->display->starts_with("coffeecnc ") &&
-      !fs::path(*ini->display).filename().string().starts_with("coffeecnc"))
+            << "  Display           " << display.value_or("not configured");
+  if (display && *display != "coffeecnc" && !display->starts_with("coffeecnc ") &&
+      !fs::path(*display).filename().string().starts_with("coffeecnc"))
     std::cout << "  (to start the CoffeeCNC panel, set [DISPLAY] DISPLAY = coffeecnc)";
   std::cout << "\n\nFiles\n"
             << "  Programs          " << file_state(config->program_prefix) << '\n'
@@ -490,9 +501,9 @@ auto check_configuration(const Options& options) -> int {
                                signal_pins[i]);
     std::cout << '\n';
   }
+  const auto& probe_tool = config->touch_probe_tool;
   std::cout << "  Touch probe tool             "
-            << (config->touch_probe_tool ? std::format("T{}", *config->touch_probe_tool)
-                                         : std::string("off  (TOUCH_PROBE_TOOL)"))
+            << (probe_tool ? std::format("T{}", *probe_tool) : std::string("off  (TOUCH_PROBE_TOOL)"))
             << '\n'
             << "  Fixed tool setter            " << on_off(config->fixed_setter.has_value())
             << (config->fixed_setter ? "" : "  (FIXED_SETTER = yes and the SETTER_* keys)") << '\n'

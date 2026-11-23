@@ -35,7 +35,7 @@ constexpr auto epoch = 1700000000000ms;
 const Clock::time_point start{};
 
 // A live, idle machine in G54 with two tools.
-auto reading(Vec3 g54 = {10, 20, -30}) -> PanelReading {
+auto reading(const Vec3& g54 = {10, 20, -30}) -> PanelReading {
   PanelReading sample;
   sample.status.link = Link::live;
   sample.status.machine = MachineState::on;

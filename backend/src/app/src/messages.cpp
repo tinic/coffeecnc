@@ -250,14 +250,16 @@ auto encode_hello(const Hello& hello) -> Encoded {
     message["touch_probe_tool"] = *hello.touch_probe_tool;
   if (!hello.program_places.empty()) {
     auto places = Json::array();
-    for (const auto& place : hello.program_places)
-      places.push_back({{"name", place.name}, {"path", place.path}});
+    std::ranges::transform(hello.program_places, std::back_inserter(places), [](const auto& place) -> Json {
+      return {{"name", place.name}, {"path", place.path}};
+    });
     message["program_places"] = std::move(places);
   }
   if (!hello.macros.empty()) {
     auto macros = Json::array();
-    for (const auto& macro : hello.macros)
-      macros.push_back({{"label", macro.label}, {"mdi", macro.mdi}});
+    std::ranges::transform(hello.macros, std::back_inserter(macros), [](const auto& macro) -> Json {
+      return {{"label", macro.label}, {"mdi", macro.mdi}};
+    });
     message["macros"] = std::move(macros);
   }
   if (hello.coolant)
@@ -292,7 +294,7 @@ auto encode_hello(const Hello& hello) -> Encoded {
       message["fixed_setter"]["material_geometry"] = material_geometry;
     }
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
@@ -376,7 +378,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
     auto rotary = Json::array();
     for (const auto& axis : status.rotary_axes) {
       const auto angle = [&](const std::optional<double>& value, std::string_view field) -> Json {
-        return value ? Json(fields.real(*value, field)) : Json(nullptr);
+        return value ? fields.real(*value, field) : Json(nullptr);
       };
       rotary.push_back({{"axis", std::string(1, axis.axis)},
                         {"homed", axis.homed},
@@ -410,7 +412,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
       break;
     }
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_tool_table(const ToolTable& table) -> Encoded {
@@ -463,8 +465,9 @@ auto encode_preview(const Preview& preview) -> Encoded {
                         {"feed", fields.real(segment.feed, "segments.feed")}});
   }
   auto dwells = Json::array();
-  for (const auto& dwell : preview.dwells)
-    dwells.push_back({{"line", dwell.line}, {"seconds", fields.real(dwell.seconds, "dwells.seconds")}});
+  std::ranges::transform(preview.dwells, std::back_inserter(dwells), [&](const auto& dwell) -> Json {
+    return {{"line", dwell.line}, {"seconds", fields.real(dwell.seconds, "dwells.seconds")}};
+  });
   Json error = nullptr;
   if (preview.error)
     error = {{"line", preview.error->line}, {"text", preview.error->text}};
@@ -481,11 +484,12 @@ auto encode_preview(const Preview& preview) -> Encoded {
                {"dwells", std::move(dwells)}};
   if (const auto& check = preview.check) {
     auto tools = Json::array();
-    for (const auto& row : check->tools)
-      tools.push_back({{"tool", row.tool},
-                       {"length", row.length == ToolLengthCheck::touched_off ? "touched_off"
-                                  : row.length == ToolLengthCheck::table     ? "table"
-                                                                             : "missing"}});
+    std::ranges::transform(check->tools, std::back_inserter(tools), [](const auto& row) -> Json {
+      return {{"tool", row.tool},
+              {"length", row.length == ToolLengthCheck::touched_off ? "touched_off"
+                         : row.length == ToolLengthCheck::table    ? "table"
+                                                                   : "missing"}};
+    });
     auto frames = Json::array();
     for (const auto& frame : check->frames) {
       Json extent = nullptr;
@@ -501,8 +505,8 @@ auto encode_preview(const Preview& preview) -> Encoded {
                    : Json(nullptr);
     };
     auto units = Json::array();
-    for (const auto unit : check->units)
-      units.push_back(name(unit));
+    std::ranges::transform(check->units, std::back_inserter(units),
+                           [](LengthUnit unit) { return name(unit); });
     message["check"] = {{"tools", std::move(tools)},
                         {"frames", std::move(frames)},
                         {"feed", range(check->feed)},
@@ -514,7 +518,7 @@ auto encode_preview(const Preview& preview) -> Encoded {
                                    : check->travel == TravelCheck::outside ? "outside"
                                                                            : "unknown"}};
   }
-  return fields.finish(std::move(message));
+  return fields.finish(message);
 }
 
 auto encode_directory(const Directory& directory) -> Encoded {
@@ -606,10 +610,11 @@ auto encode_offset_history(const OffsetHistory& history) -> Encoded {
     if (entry.time > static_cast<std::int64_t>(max_safe_integer) || entry.time < 0)
       fields.fail("entries.time", "is outside 0 to 2^53 - 1");
     auto changes = Json::array();
-    for (const auto& change : entry.changes)
-      changes.push_back({{"field", history_name(change.field)},
-                         {"before", value(change.before, "entries.changes.before")},
-                         {"after", value(change.after, "entries.changes.after")}});
+    std::ranges::transform(entry.changes, std::back_inserter(changes), [&](const auto& change) -> Json {
+      return {{"field", history_name(change.field)},
+              {"before", value(change.before, "entries.changes.before")},
+              {"after", value(change.after, "entries.changes.after")}};
+    });
     entries.push_back(
         {{"id", fields.count(entry.id, "entries.id")},
          {"time", entry.time},

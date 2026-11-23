@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <iterator>
 #include <system_error>
 #include <utility>
 
@@ -93,7 +94,7 @@ auto read_check(std::string_view line, std::optional<HelperOutput::ProgramFacts>
       return false;
     if (frame.available && !bounds(line, frame.bounds.emplace()))
       return false;
-    check->frames.push_back(std::move(frame));
+    check->frames.push_back(frame);
   } else if (type == "machine") {
     if (check->machine || !bounds(line, check->machine.emplace()))
       return false;
@@ -269,11 +270,14 @@ auto write_check(const HelperOutput::ProgramFacts& facts) -> std::string {
   auto out = std::format("check units {} {} {} {}\n", int{facts.mm}, int{facts.inch},
                          int{facts.variable_spindle}, int{facts.feed_per_revolution});
   for (const int tool : facts.tools)
-    out += std::format("check tool {}\n", tool);
-  for (const auto& frame : facts.frames)
-    out += frame.bounds ? std::format("check wcs {} 1 {} {}\n", frame.wcs, vec(frame.bounds->min),
-                                      vec(frame.bounds->max))
-                        : std::format("check wcs {} 0\n", frame.wcs);
+    std::format_to(std::back_inserter(out), "check tool {}\n", tool);
+  for (const auto& frame : facts.frames) {
+    if (frame.bounds)
+      std::format_to(std::back_inserter(out), "check wcs {} 1 {} {}\n", frame.wcs,
+                     vec(frame.bounds->min), vec(frame.bounds->max));
+    else
+      std::format_to(std::back_inserter(out), "check wcs {} 0\n", frame.wcs);
+  }
   if (const auto& machine = facts.machine)
     out += std::format("check machine {} {}\n", vec(machine->min), vec(machine->max));
   if (const auto& feed = facts.feed)

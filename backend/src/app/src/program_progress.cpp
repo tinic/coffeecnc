@@ -5,13 +5,14 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iterator>
 #include <utility>
 
 namespace coffeecnc {
 namespace {
 using Json = nlohmann::json;
 constexpr std::size_t max_records = 128;
-constexpr std::size_t max_bytes = 256 * 1024;
+constexpr std::size_t max_bytes = 256uz * 1024;
 constexpr auto write_period = std::chrono::seconds{1};
 constexpr auto file_name = "program-progress.json";
 } // namespace
@@ -41,9 +42,12 @@ void ProgramProgress::load() {
   if (directory_.empty())
     return;
   const auto content = files_.read(directory_ + '/' + file_name, max_bytes);
-  if (!content || !*content || (*content)->more)
+  if (!content)
     return;
-  const auto root = Json::parse((*content)->bytes, nullptr, false);
+  const auto& file = *content;
+  if (!file || file->more)
+    return;
+  const auto root = Json::parse(file->bytes, nullptr, false);
   if (!root.is_object() || !root.contains("version") || root["version"] != 1 ||
       !root.contains("programs") || !root["programs"].is_array())
     return;
@@ -62,6 +66,7 @@ void ProgramProgress::load() {
         records_.push_back(std::move(entry));
     } catch (const Json::exception&) {
       // A damaged record does not hide the others.
+      continue;
     }
   }
 }
@@ -72,13 +77,14 @@ void ProgramProgress::save(PanelReading& reading) {
     return;
   }
   auto programs = Json::array();
-  for (const auto& entry : records_)
-    programs.push_back({{"path", entry.path},
-                        {"modified", entry.stamp.modified},
-                        {"bytes", entry.stamp.bytes},
-                        {"line", entry.next.line},
-                        {"tool", entry.next.tool},
-                        {"completed_line", entry.completed_line}});
+  std::ranges::transform(records_, std::back_inserter(programs), [](const auto& entry) -> Json {
+    return {{"path", entry.path},
+            {"modified", entry.stamp.modified},
+            {"bytes", entry.stamp.bytes},
+            {"line", entry.next.line},
+            {"tool", entry.next.tool},
+            {"completed_line", entry.completed_line}};
+  });
   const auto file = directory_ + '/' + file_name;
   const auto temporary = file + ".tmp";
   auto step = files_.open_temporary(temporary);

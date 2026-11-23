@@ -13,7 +13,7 @@ constexpr std::string_view language_name = "panel-language.json";
 constexpr std::string_view language_temporary_name = "panel-language.json.tmp";
 } // namespace
 
-OperatorSettingsArchive::OperatorSettingsArchive(ToolModelFiles& files, Limits limits)
+OperatorSettingsArchive::OperatorSettingsArchive(ToolModelFiles& files, const Limits& limits)
     : files_(files), limits_(limits) {}
 auto OperatorSettingsArchive::path(std::string_view name) const -> std::string {
   return location_.directory + '/' + std::string(name);
@@ -41,16 +41,19 @@ void OperatorSettingsArchive::open(ToolModelLocation location) {
 // The language file is optional: missing, unreadable or damaged, the panel is in English.
 auto OperatorSettingsArchive::read_language() const -> PanelLanguage {
   const auto result = files_.read(path(language_name), max_panel_language_bytes);
-  if (!result || !*result || (*result)->more)
+  if (!result)
     return PanelLanguage::en;
-  return decode_panel_language_file((*result)->bytes, location_.machine_id.value_or(""))
+  const auto& content = *result;
+  if (!content || content->more)
+    return PanelLanguage::en;
+  return decode_panel_language_file(content->bytes, location_.machine_id.value_or(""))
       .value_or(PanelLanguage::en);
 }
 auto OperatorSettingsArchive::read() const -> OperatorSettings {
-  auto settings = read_settings();
-  if (settings.document)
-    settings.document->language = read_language();
-  return settings;
+  auto loaded = read_settings();
+  if (loaded.document)
+    loaded.document->language = read_language();
+  return loaded;
 }
 auto OperatorSettingsArchive::replace(std::string_view name, std::string_view temporary,
                                       const std::string& text) -> ToolModelFiles::Done {
@@ -71,14 +74,15 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto result = files_.read(file, max_operator_settings_bytes);
   if (!result)
     return unavailable(file + " cannot be read: " + result.error());
-  if (!*result) {
+  const auto& content = *result;
+  if (!content) {
     OperatorPreferences defaults;
     defaults.default_jog_velocity = std::min(600.0, limits_.max_jog_velocity);
     return {location_.machine_id, 0, ToolModelAvailability::available, location_.reason, defaults};
   }
-  if ((*result)->more)
+  if (content->more)
     return unavailable(file + " exceeds 16 KiB. The file was left alone.");
-  const auto saved = decode_operator_settings_file((*result)->bytes);
+  const auto saved = decode_operator_settings_file(content->bytes);
   if (!saved)
     return unavailable(file + " is not usable: " + saved.error() + " The file was left alone.");
   if (saved->machine_id != location_.machine_id)
@@ -112,12 +116,14 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});
   if (!text)
     return {CommandOutcome::rejected, text.error(), false};
+  const bool language_changed =
+      settings_.document && settings_.document->language != command.document.language;
   if (const auto step = replace(file_name, temporary_name, *text); !step)
     return {CommandOutcome::failed,
             "Settings were not saved: " + step.error() + ". The saved file is unchanged.", false};
   // Only a change of language writes the language file, after the settings file.
-  if (next.document->language != settings_.document->language) {
-    const auto language = encode_panel_language_file(command.machine_id, next.document->language);
+  if (language_changed) {
+    const auto language = encode_panel_language_file(command.machine_id, command.document.language);
     const auto step = language ? replace(language_name, language_temporary_name, *language)
                                : ToolModelFiles::Done{std::unexpected(language.error())};
     if (!step) {

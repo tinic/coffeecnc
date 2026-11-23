@@ -17,7 +17,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow
     -Wold-style-cast -Wnon-virtual-dtor -Woverloaded-virtual -Wformat=2
     -Wnull-dereference -Wdouble-promotion -Wimplicit-fallthrough
+    -pedantic-errors -Wcast-qual -Wmissing-declarations -Wextra-semi
     $<$<BOOL:${COFFEECNC_WARNINGS_AS_ERRORS}>:-Werror>)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(coffeecnc_project_options INTERFACE
+      -Wuseless-cast -Wduplicated-cond -Wduplicated-branches -Wlogical-op)
+  endif()
 elseif(MSVC)
   target_compile_options(coffeecnc_project_options INTERFACE
     /W4 $<$<BOOL:${COFFEECNC_WARNINGS_AS_ERRORS}>:/WX>)

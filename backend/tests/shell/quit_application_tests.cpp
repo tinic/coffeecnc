@@ -147,9 +147,9 @@ auto main(int argc, char** argv) -> int {
       webkit_user_content_manager_register_script_message_handler(manager, "quitEvidence");
       g_signal_connect(manager, "script-message-received::quitEvidence", G_CALLBACK(+[](
           WebKitUserContentManager*, WebKitJavascriptResult* result, gpointer data) -> void {
-        auto& state = *static_cast<Evidence*>(data);
         gchar* text = jsc_value_to_string(webkit_javascript_result_get_js_value(result));
         if (text != nullptr) {
+          auto& state = *static_cast<Evidence*>(data);
           const std::string_view value{text};
           if (value == "supported") state.supported = true;
           if (value == "accepted") state.accepted = true;

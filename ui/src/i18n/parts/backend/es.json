@@ -610,6 +610,13 @@
       "notMarked": "no se pudo marcar el inicio de la restauración: {detail}",
       "readHere": "{path} no se puede leer aquí",
       "writeHere": "{path} no se puede escribir aquí"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} no está instalado: no está en la ruta de búsqueda ({path}).",
+      "alreadyOpen": "{name} ya está abierto.",
+      "notStarted": "No se pudo iniciar {name}.",
+      "notStartedBecause": "No se pudo iniciar {name}: {error}.",
+      "cannotStart": "Las herramientas HAL no se pueden iniciar aquí."
     }
   }
 }

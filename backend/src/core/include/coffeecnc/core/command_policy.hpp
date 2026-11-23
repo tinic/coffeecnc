@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_CORE_COMMAND_POLICY_HPP
 #define COFFEECNC_CORE_COMMAND_POLICY_HPP
 
+#include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/fixed_setter.hpp>
 #include <coffeecnc/core/operator_settings.hpp>
 #include <coffeecnc/core/tool_models.hpp>
@@ -280,6 +281,14 @@ struct RestoreBackup {
   std::string path;
   std::string token;
 };
+// The diagnostics view opens (`on`) or closes: HAL inputs are read and sent only while it is open.
+struct WatchDiagnostics {
+  bool on{};
+};
+// Start halshow, halmeter or halscope as a program of its own.
+struct LaunchHalTool {
+  HalTool tool{HalTool::halshow};
+};
 
 using Command =
     std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
@@ -288,7 +297,7 @@ using Command =
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
                  EditProgram, JogPausedZ, SaveProgram, RestoreOffset, SetWorkRotation, ClearG92,
-                 Backup, CheckRestore, RestoreBackup>;
+                 WatchDiagnostics, LaunchHalTool, Backup, CheckRestore, RestoreBackup>;
 
 struct Decision {
   bool allowed{};

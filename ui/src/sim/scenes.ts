@@ -19,6 +19,8 @@
 //   shift          G55 set and rotated 15 degrees, and a G92 shift
 //   probe          T99 above simulated stock, or pre-positioned by the setup parameter
 //   offsets        several work systems set, then a program in auto mode that wrote G56
+//   refmarks       homing on reference marks: X jogged onto its mark, Y across it, Z not yet
+//   rotary         an A axis besides X, Y and Z, homed, demo program loaded (no preview)
 
 import type { Status, ToMachine } from '../protocol'
 import { programDirectory, samplesDirectory } from './files'
@@ -46,6 +48,8 @@ export const sceneNames = [
   'probe',
   'history',
   'offsets',
+  'refmarks',
+  'rotary',
 ] as const
 
 export type SceneName = (typeof sceneNames)[number]
@@ -90,7 +94,7 @@ class Director {
     this.send({ type: 'set_machine', state: 'off' })
     this.send({ type: 'set_machine', state: 'on' })
     this.send({ type: 'home', axis: 'all' })
-    this.until((status) => status.axes.every((axis) => axis.homed))
+    this.until((status) => [...status.axes, ...(status.rotary_axes ?? [])].every((axis) => axis.homed))
   }
 
   open(path: string): void {
@@ -246,6 +250,22 @@ export function applyScene(sim: SimMachine, name: string, setup = 'top'): void {
       d.idle()
       break
     }
+    case 'refmarks':
+      // After power-up of the scales: X stops at its mark, Y has crossed its mark and stands
+      // 5 mm past it, Z has not crossed its mark, so Home all is refused.
+      sim.enableReferenceMarks()
+      d.send({ type: 'set_machine', state: 'off' })
+      d.send({ type: 'set_machine', state: 'on' })
+      d.send({ type: 'jog_step', axis: 'x', distance: 10, velocity: 600 })
+      d.until((status) => status.motion.in_position)
+      d.send({ type: 'jog_step', axis: 'y', distance: 15, velocity: 600 })
+      d.until((status) => status.motion.in_position)
+      break
+    case 'rotary':
+      sim.enableRotary()
+      d.homed()
+      d.open(plate)
+      break
   }
   sim.quiet = false
 }

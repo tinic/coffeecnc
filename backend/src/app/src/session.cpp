@@ -119,6 +119,7 @@ constexpr auto panel_clock_slop = std::chrono::milliseconds{20};
 // ten 10 ms control periods, below the 300 ms timeout of the HAL watchdog in the post-GUI file.
 constexpr auto control_fresh = std::chrono::milliseconds{100};
 constexpr auto no_tool_models_reason = "Tool model storage is not part of this session.";
+constexpr auto no_diagnostics_reason = "HAL diagnostics are not part of this session.";
 constexpr auto probe_loaded_reason = "A touch probe is loaded";
 constexpr std::string_view probe_code_unknown =
     "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.";
@@ -274,6 +275,10 @@ auto needs_panel_frame(const Command& command) -> bool {
     return machine->state != MachineState::estop;
   if (const auto* setter = std::get_if<FixedSetterRequest>(&command))
     return setter->action != SetterAction::status;
+  // Reading HAL and opening a HAL tool move nothing.
+  if (std::holds_alternative<WatchDiagnostics>(command) ||
+      std::holds_alternative<LaunchHalTool>(command))
+    return false;
   return !only_stops(command) && !std::holds_alternative<Pause>(command);
 }
 
@@ -294,10 +299,11 @@ auto idle_for_tool_measurement(const ControllerState& state) -> bool {
 Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
                  ToolModelService* tool_models, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
-                 OffsetHistoryStore* history, MachineDataService* machine_data)
+                 OffsetHistoryStore* history, DiagnosticsService* diagnostics,
+                 MachineDataService* machine_data)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
       restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
-      machine_data_(machine_data), policy_(limits) {}
+      diagnostics_(diagnostics), machine_data_(machine_data), policy_(limits) {}
 
 auto Session::reply(ActionResult result) -> Reply {
   switch (result.status) {
@@ -346,6 +352,8 @@ auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) 
   page_open_ = !closing_;
   if (tool_models_ != nullptr)
     tool_models_->page_ended(PageToken{pages_});
+  if (diagnostics_ != nullptr)
+    diagnostics_->page_ended(PageToken{pages_});
   return PageToken{++pages_};
 }
 
@@ -363,6 +371,8 @@ void Session::end_page(PageToken page) {
   page_open_ = false;
   if (tool_models_ != nullptr)
     tool_models_->page_ended(page);
+  if (diagnostics_ != nullptr)
+    diagnostics_->page_ended(page);
 }
 
 void Session::close() {
@@ -374,6 +384,8 @@ void Session::close() {
   page_open_ = false;
   if (tool_models_ != nullptr)
     tool_models_->page_ended(PageToken{pages_});
+  if (diagnostics_ != nullptr)
+    diagnostics_->page_ended(PageToken{pages_});
   wake();
 }
 
@@ -428,7 +440,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   Outcome outcome;
   outcome.page = page;
   auto decoded = decode_request(json);
-  const std::scoped_lock lock{mutex_};
+  std::unique_lock lock{mutex_};
   if (!page_open_ || page != PageToken{pages_})
     return outcome;
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
@@ -477,6 +489,29 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     else if (const auto refused =
                  tool_models_->submit_operator_settings(page, request.id, std::move(*settings)))
       result(CommandOutcome::rejected, *refused);
+    return outcome;
+  }
+
+  // HAL diagnostics: not the controller's business either. A HAL tool starts outside the
+  // mutex: starting a process is not instant, and the shell's thread is the only caller.
+  if (std::holds_alternative<WatchDiagnostics>(request.command) ||
+      std::holds_alternative<LaunchHalTool>(request.command)) {
+    const auto decision = policy_.evaluate(request.command, status(now.monotonic));
+    if (!decision.allowed) {
+      result(CommandOutcome::rejected, decision.reason);
+    } else if (diagnostics_ == nullptr) {
+      result(CommandOutcome::rejected, no_diagnostics_reason);
+    } else if (const auto* watch = std::get_if<WatchDiagnostics>(&request.command)) {
+      diagnostics_->watch(page, watch->on);
+      result(CommandOutcome::accepted, "");
+    } else {
+      report(outcome, now.unix_time);
+      lock.unlock();
+      const auto refused = diagnostics_->launch(std::get<LaunchHalTool>(request.command).tool);
+      outcome.messages.push_back(encode_result(
+          request.id, refused ? CommandOutcome::rejected : CommandOutcome::accepted,
+          refused.value_or("")));
+    }
     return outcome;
   }
 
@@ -1811,11 +1846,12 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return port_.tool_changed(state.requested_tool.value_or(-1), state.tool_request, still);
           });
         } else {
-          static_assert(std::is_same_v<T, SetToolModelDefaults> ||
-                            std::is_same_v<T, SetToolModelAssignment> ||
-                            std::is_same_v<T, SetOperatorSettings>,
-                        "Every command needs an action.");
-          // `submit` hands these to the tool-model service: none is ever queued.
+          constexpr bool served_in_submit =
+              std::is_same_v<T, SetToolModelDefaults> || std::is_same_v<T, SetToolModelAssignment> ||
+              std::is_same_v<T, SetOperatorSettings> || std::is_same_v<T, WatchDiagnostics> ||
+              std::is_same_v<T, LaunchHalTool>;
+          static_assert(served_in_submit, "Every command needs an action.");
+          // `submit` hands these to the tool-model or diagnostics service: none is ever queued.
           return answer({CommandOutcome::rejected, no_tool_models_reason});
         }
       },

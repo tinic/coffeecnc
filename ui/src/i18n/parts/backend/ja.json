@@ -610,6 +610,13 @@
       "notMarked": "復元の開始を記録できませんでした: {detail}",
       "readHere": "{path} はここでは読み取れません",
       "writeHere": "{path} はここでは書き込めません"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} はインストールされていません。検索パス（{path}）にありません。",
+      "alreadyOpen": "{name} はすでに開いています。",
+      "notStarted": "{name} を起動できませんでした。",
+      "notStartedBecause": "{name} を起動できませんでした：{error}。",
+      "cannotStart": "ここでは HAL ツールを起動できません。"
     }
   }
 }

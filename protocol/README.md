@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 41 cases and the native fixture 39, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 43 cases and the native fixture 40, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -158,3 +158,15 @@ and `wcs`. After confirmation, send `fixed_setter` with `action: "apply_angle"`,
 the measurement ID and the probe tool. The controller accepts the measurement
 once, in the same operator session and work frame. The applied result reports
 the verified rotation in `setter.edge_angle`.
+
+## HAL diagnostics
+
+`hello.diagnostics: true` enables two additive v1 commands and one message. Absent or false: the panel offers no diagnostics view. The LAN screen's hello never carries it.
+
+| Command | Fields | Answer |
+| --- | --- | --- |
+| `watch_diagnostics` | `on` (boolean) | `accepted` at once, in every machine state. While `on`, the page is sent `diagnostics` about ten times a second; `on: false` or the end of the page stops it. One page at a time |
+| `launch_hal_tool` | `tool`: `halshow`, `halmeter` or `halscope` | `accepted` when the program was started; `rejected` with the reason when it is not installed, already open or could not start |
+
+`diagnostics` has `inputs`, one per row in order, and `tools`. An input has `role` (`min_limit`, `max_limit`, `home_switch`, `amp_fault`, `estop_chain`, `estop_request`, `probe`, `spindle_on`, `spindle_at_speed`, `spindle_speed_out`, `spindle_speed_in`, `spindle_fault`, `configured`), `name` (the HAL pin or signal), `kind` (`pin` or `signal`), `state` (`missing`, `unwired`, `undriven`, `live`) and `value` (boolean, number or null). Joint rows add `joint` and, where the joint moves a known axis, `axis`; configured rows add `label`. `spindle.0.speed-in` is in revolutions per second. A tool has `tool`, `available` (installed) and `open` (started by CoffeeCNC and not ended).
+

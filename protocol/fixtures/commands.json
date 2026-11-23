@@ -263,7 +263,9 @@
   { "id": 37, "type": "restore_offset", "entry": 10 },
   { "id": 38, "type": "set_work_rotation", "wcs": 2, "rotation_xy": -12.5 },
   { "id": 39, "type": "clear_g92" },
-  { "id": 40, "type": "backup", "directory": "/media/cnc/STICK" },
-  { "id": 41, "type": "check_restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz" },
-  { "id": 42, "type": "restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75" }
+  { "id": 40, "type": "watch_diagnostics", "on": true },
+  { "id": 41, "type": "launch_hal_tool", "tool": "halscope" },
+  { "id": 42, "type": "backup", "directory": "/media/cnc/STICK" },
+  { "id": 43, "type": "check_restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz" },
+  { "id": 44, "type": "restore", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75" }
 ]

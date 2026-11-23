@@ -153,7 +153,8 @@
       "directoryNotSent": "Não é possível enviar a pasta: {detail}",
       "mdiTooLong": "O MDI exige um único bloco com 254 bytes no máximo.",
       "jogStopFailed": "A paragem de jog falhou em {axis}: {detail}",
-      "noBackup": "Este CoffeeCNC não pode fazer cópias de segurança nem restaurar."
+      "noBackup": "Este CoffeeCNC não pode fazer cópias de segurança nem restaurar.",
+      "noDiagnostics": "O diagnóstico HAL não faz parte desta sessão."
     },
     "request": {
       "nestingLimit": "Limite de aninhamento do pedido excedido.",
@@ -284,7 +285,10 @@
         "settings": "Definições",
         "backup": "Copiar dados da máquina",
         "checkBackup": "Verificar cópia de segurança",
-        "restoreBackup": "Restaurar cópia de segurança"
+        "restoreBackup": "Restaurar cópia de segurança",
+        "openDiagnostics": "Abrir o diagnóstico",
+        "closeDiagnostics": "Fechar o diagnóstico",
+        "startHalTool": "Iniciar {tool}"
       }
     },
     "sim": {
@@ -388,7 +392,8 @@
       "setLoadedLength": "Defina o comprimento da ferramenta carregada antes de o verificar.",
       "browserSimulator": "simulador no navegador",
       "simRestored": "Restauro simulado: a tabela de ferramentas e os deslocamentos da origem da peça são os da cópia. Este navegador continua aberto.",
-      "simNoFile": "{path} não existe."
+      "simNoFile": "{path} não existe.",
+      "noHalTools": "O simulador do navegador não tem ferramentas HAL: funciona sem o LinuxCNC."
     },
     "bridge": {
       "noController": "O CoffeeCNC não consegue ligar-se ao seu controlador nativo. Reinicie a aplicação.",

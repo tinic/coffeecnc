@@ -153,7 +153,8 @@
       "directoryNotSent": "无法发送目录：{detail}",
       "mdiTooLong": "MDI 需要一个程序段，且不超过 254 字节。",
       "jogStopFailed": "{axis} 的点动停止失败：{detail}",
-      "noBackup": "此 CoffeeCNC 无法备份或恢复。"
+      "noBackup": "此 CoffeeCNC 无法备份或恢复。",
+      "noDiagnostics": "HAL 诊断不属于此会话。"
     },
     "request": {
       "nestingLimit": "请求嵌套超出限制。",
@@ -284,7 +285,10 @@
         "settings": "设置",
         "backup": "备份机床数据",
         "checkBackup": "检查备份",
-        "restoreBackup": "恢复备份"
+        "restoreBackup": "恢复备份",
+        "openDiagnostics": "打开诊断",
+        "closeDiagnostics": "关闭诊断",
+        "startHalTool": "启动 {tool}"
       }
     },
     "sim": {
@@ -388,7 +392,8 @@
       "setLoadedLength": "检查前请先设置当前刀具的长度。",
       "browserSimulator": "浏览器模拟器",
       "simRestored": "模拟恢复：刀具表和工件坐标偏置已恢复为备份内容。此浏览器保持打开。",
-      "simNoFile": "{path} 不存在。"
+      "simNoFile": "{path} 不存在。",
+      "noHalTools": "浏览器模拟器没有 HAL 工具：它在没有 LinuxCNC 的情况下运行。"
     },
     "bridge": {
       "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。",

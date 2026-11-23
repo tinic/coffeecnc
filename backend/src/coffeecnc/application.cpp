@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "remote_server.hpp"
 
+#include <coffeecnc/app/diagnostics_feed.hpp>
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/restore_helper.hpp>
@@ -14,6 +15,7 @@
 #include <coffeecnc/app/tool_model_store.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
+#include <coffeecnc/linuxcnc/hal_diagnostics.hpp>
 #include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
@@ -560,6 +562,14 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
   std::unique_ptr<ToolModelStore> models;
+  // The diagnostics view: HAL is read on the feed's thread, and only while a page watches. The
+  // pin-to-signal wiring is that thread's alone. The HAL tools get LinuxCNC's environment.
+  HalApiLookup hal_lookup;
+  HalToolLauncher launcher{environment("PATH").value_or("/usr/bin:/bin"),
+                            hal_tool_environment(config->ini_file)};
+  const auto diagnostic_rows = diagnostic_inputs(*config);
+  PinSignals wiring;
+  std::unique_ptr<DiagnosticsFeed> diagnostics;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
   std::unique_ptr<RemoteServer> remote;
@@ -597,13 +607,15 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     std::unique_ptr<PanelFeed>& feed;
     std::unique_ptr<Runtime>& runtime;
     std::unique_ptr<ToolModelStore>& models;
+    std::unique_ptr<DiagnosticsFeed>& diagnostics;
     ~Shutdown() {
       window.close();
       feed.reset();
       runtime.reset();
       models.reset();
+      diagnostics.reset();
     }
-  } shutdown{window, feed, runtime, models};
+  } shutdown{window, feed, runtime, models, diagnostics};
   if (config->remote_port != 0) {
     try {
       remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts);
@@ -648,6 +660,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             : location.reason);
     program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
+    diagnostics = std::make_unique<DiagnosticsFeed>(
+        DiagnosticsFeed::Source{
+            .begin = [&wiring]() -> void {
+              // Unknown wiring (halcmd failed) leaves every linked pin `live`.
+              wiring = pin_signals(halcmd_show("sig", "").value_or(""));
+            },
+            .read = [&]() -> Diagnostics {
+              return {read_diagnostics(diagnostic_rows, hal_lookup, wiring), launcher.states()};
+            },
+            .launch = [&launcher](HalTool tool) -> std::optional<std::string> {
+              return launcher.launch(tool);
+            }},
+        [&window](PageToken page, std::vector<std::string> messages) -> void {
+          window.post(page, std::move(messages));
+        });
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
         [&window, &remote](const Outcome& outcome) -> void {
@@ -656,7 +683,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get(), machine_data.get());
+        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(),
+        machine_data.get());
     PanelFeed::Mirror mirror;
     if (remote) {
       mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,

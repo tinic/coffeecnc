@@ -320,7 +320,8 @@ struct Rig {
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
                ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr,
                MachineDataService* machine_data = nullptr)
-      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, machine_data),
+      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, nullptr,
+                machine_data),
         page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
@@ -634,6 +635,74 @@ void operator_settings_go_to_storage() {
           "Operator preferences go directly to storage");
   require(port.calls.empty() && port.snapshots == 0,
           "Saving preferences issues no controller commands or reads");
+}
+
+class FakeDiagnostics final : public DiagnosticsService {
+public:
+  std::vector<std::pair<std::uint64_t, bool>> watches;
+  std::vector<HalTool> launched;
+  std::vector<std::uint64_t> ended;
+  std::optional<std::string> refusal;
+  void watch(PageToken page, bool on) override { watches.emplace_back(page.value, on); }
+  auto launch(HalTool tool) -> std::optional<std::string> override {
+    launched.push_back(tool);
+    return refusal;
+  }
+  void page_ended(PageToken page) override { ended.push_back(page.value); }
+};
+
+// #251: the diagnostics view's requests go to their service at once, in E-stop with the link
+// down, and never to the controller.
+void diagnostics_go_to_their_service() {
+  FakePort port;
+  port.state = ControllerState{};
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  FakeDiagnostics diagnostics;
+  Session session{port,    Limits{3000, 1.2, 0.5, 1.2, 24000}, programs, nullptr, nullptr,
+                  nullptr, nullptr,                            nullptr,  &diagnostics};
+  Driver driver{session, port};
+  RequestId id = 0;
+  const auto send = [&](PageToken page, std::string_view body) -> Json {
+    const auto outcome = driver.handle(page, std::format("{{\"id\":{},{}}}", ++id, body), at(0ms));
+    const auto found = results(outcome);
+    return found.size() == 1 ? found.front() : Json();
+  };
+  const auto page = driver.begin_page();
+  require(send(page, R"("type":"watch_diagnostics","on":true)").at("reason") == gate_reason &&
+              diagnostics.watches.empty(),
+          "Before ready the watch is rejected like any other request");
+  static_cast<void>(send(page, R"("type":"ready")"));
+  auto answer = send(page, R"("type":"watch_diagnostics","on":true)");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.watches == std::vector<std::pair<std::uint64_t, bool>>{{page.value, true}},
+          "The watch is accepted at once, in E-stop with the link down");
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.launched == std::vector<HalTool>{HalTool::halscope},
+          "A HAL tool is started by the service");
+  diagnostics.refusal = "halscope is already open.";
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open.",
+          "The service's refusal is the result");
+  answer = send(page, R"("type":"watch_diagnostics","on":false)");
+  require(answer.at("outcome") == "accepted" && diagnostics.watches.back() ==
+                                                    std::pair<std::uint64_t, bool>{page.value, false},
+          "The watch ends");
+  require(port.calls.empty(), "Nothing reached the controller");
+  driver.end_page(page);
+  require(!diagnostics.ended.empty() && diagnostics.ended.back() == page.value,
+          "The end of the page ends its diagnostics");
+
+  Session without{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
+  Driver plain{without, port};
+  const auto other = plain.begin_page();
+  static_cast<void>(plain.handle(other, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto refused = results(
+      plain.handle(other, R"({"id":2,"type":"launch_hal_tool","tool":"halshow"})", at(0ms)));
+  require(refused.size() == 1 && refused.front().at("outcome") == "rejected" &&
+              refused.front().at("reason") == "HAL diagnostics are not part of this session.",
+          "Without a service the requests are rejected");
 }
 
 void tool_model_commands_go_to_their_service() {
@@ -2694,6 +2763,7 @@ auto main(int argc, char** argv) -> int {
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
+    diagnostics_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
     pending_probe_tool_changes();
     operator_settings_go_to_storage();

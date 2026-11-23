@@ -337,6 +337,17 @@ auto command(const Json& object) -> Command {
     fields(object, {"id", "type"});
     return ClearG92{};
   }
+  if (type == "watch_diagnostics") {
+    fields(object, {"id", "type", "on"});
+    return WatchDiagnostics{boolean(object, "on")};
+  }
+  if (type == "launch_hal_tool") {
+    fields(object, {"id", "type", "tool"});
+    return LaunchHalTool{choice<HalTool>(object, "tool",
+                                         {{hal_tool_name(HalTool::halshow), HalTool::halshow},
+                                          {hal_tool_name(HalTool::halmeter), HalTool::halmeter},
+                                          {hal_tool_name(HalTool::halscope), HalTool::halscope}})};
+  }
   if (type == "tool_touch_off") {
     fields(object, {"id", "type", "value"});
     return ToolTouchOff{number(object, "value")};

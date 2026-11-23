@@ -153,7 +153,8 @@
       "directoryNotSent": "Directory cannot be sent: {detail}",
       "mdiTooLong": "MDI requires one block of at most 254 bytes.",
       "jogStopFailed": "Jog stop failed on {axis}: {detail}",
-      "noBackup": "This CoffeeCNC cannot back up or restore."
+      "noBackup": "This CoffeeCNC cannot back up or restore.",
+      "noDiagnostics": "HAL diagnostics are not part of this session."
     },
     "request": {
       "nestingLimit": "Request nesting limit exceeded.",
@@ -284,7 +285,10 @@
         "settings": "Settings",
         "backup": "Back up machine data",
         "checkBackup": "Check backup",
-        "restoreBackup": "Restore backup"
+        "restoreBackup": "Restore backup",
+        "openDiagnostics": "Open diagnostics",
+        "closeDiagnostics": "Close diagnostics",
+        "startHalTool": "Start {tool}"
       }
     },
     "sim": {
@@ -388,7 +392,8 @@
       "setLoadedLength": "Set the loaded tool’s length before checking it.",
       "browserSimulator": "browser simulator",
       "simRestored": "Simulated restore: the tool table and work offsets are the backup's. This browser stays open.",
-      "simNoFile": "{path} does not exist."
+      "simNoFile": "{path} does not exist.",
+      "noHalTools": "The browser simulator has no HAL tools: it runs without LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC cannot connect to its native controller. Restart the application.",

@@ -610,6 +610,13 @@
       "notMarked": "无法记录恢复已开始：{detail}",
       "readHere": "此处无法读取 {path}",
       "writeHere": "此处无法写入 {path}"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} 未安装：它不在搜索路径中（{path}）。",
+      "alreadyOpen": "{name} 已经打开。",
+      "notStarted": "无法启动 {name}。",
+      "notStartedBecause": "无法启动 {name}：{error}。",
+      "cannotStart": "此处无法启动 HAL 工具。"
     }
   }
 }

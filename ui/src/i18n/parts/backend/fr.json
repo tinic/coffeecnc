@@ -610,6 +610,13 @@
       "notMarked": "le début de la restauration n'a pas pu être noté : {detail}",
       "readHere": "{path} ne peut pas être lu ici",
       "writeHere": "{path} ne peut pas être écrit ici"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} n’est pas installé : il n’est pas dans le chemin de recherche ({path}).",
+      "alreadyOpen": "{name} est déjà ouvert.",
+      "notStarted": "{name} n’a pas pu être démarré.",
+      "notStartedBecause": "{name} n’a pas pu être démarré : {error}.",
+      "cannotStart": "Les outils HAL ne peuvent pas être démarrés ici."
     }
   }
 }

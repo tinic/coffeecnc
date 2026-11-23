@@ -126,7 +126,8 @@
       "dismissTip": "このメッセージを閉じます。メッセージログには残ります",
       "dismiss": "閉じる",
       "estopButton": "非常停止",
-      "backup": "バックアップと復元"
+      "backup": "バックアップと復元",
+      "diagnostics": "診断"
     },
     "machineBlock": {
       "connecting": "機械からの状態はまだありません",
@@ -290,6 +291,81 @@
       },
       "symlink": "リンク: ファイルがリンクを置き換えます",
       "atExitNote": "LinuxCNC は停止時にワークオフセット (.var) を書き込みます。その後で比較して書き込みます。"
+    },
+    "diagnostics": {
+      "title": "HAL 診断",
+      "hint": "LinuxCNC から見た HAL 入力です。この画面を開いている間、毎秒約 10 回読み取ります。読み取りで HAL は何も変わりません。",
+      "waiting": "最初の読み取りを待っています…",
+      "stale": "1 秒間読み取りがありません。値は最新ではありません。",
+      "live": "リアルタイム",
+      "alarms": "{count} 件の入力に注意が必要です",
+      "section": {
+        "switches": "リミットスイッチと原点スイッチ",
+        "estop": "非常停止回路",
+        "probe": "プローブとツールセッター",
+        "spindle": "主軸とインバーター",
+        "configured": "機械の信号",
+        "tools": "HAL ツール"
+      },
+      "column": {
+        "joint": "ジョイント",
+        "minLimit": "最小リミット",
+        "maxLimit": "最大リミット",
+        "homeSwitch": "原点スイッチ",
+        "driveFault": "ドライブ異常"
+      },
+      "jointName": "ジョイント {joint}",
+      "noJoints": "この読み取りにはジョイントの入力がありません。",
+      "row": {
+        "estopChain": "外部非常停止回路",
+        "estopRequest": "LinuxCNC イネーブル",
+        "probe": "プローブ入力",
+        "spindleOn": "主軸オン",
+        "spindleAtSpeed": "回転到達",
+        "spindleSpeedOut": "指令回転数",
+        "spindleSpeedIn": "実測回転数",
+        "spindleFault": "主軸ドライブ異常"
+      },
+      "value": {
+        "tripped": "作動",
+        "clear": "非作動",
+        "on": "オン",
+        "off": "オフ",
+        "fault": "異常",
+        "ok": "正常",
+        "closed": "閉",
+        "open": "開",
+        "enabled": "有効",
+        "estop": "非常停止",
+        "atSpeed": "到達",
+        "notAtSpeed": "未到達",
+        "none": "—"
+      },
+      "state": {
+        "missing": "HAL にありません",
+        "unwired": "未配線",
+        "undriven": "駆動元なし"
+      },
+      "stateTip": {
+        "missing": "HAL にこの名前のピンもシグナルもありません。",
+        "unwired": "ピンはどのシグナルにも接続されていません。ピン自身の値を読み取ります。",
+        "undriven": "このシグナルに書き込むものはありません。スイッチや入力で駆動されていません。"
+      },
+      "pinName": "ピン {name}",
+      "signalName": "シグナル {name}",
+      "setterHint": "他の入力のツールセッターや 2 つ目のプローブは、[COFFEECNC] DIAGNOSTIC により「機械の信号」に表示されます。",
+      "noConfigured": "設定されていません。INI ファイルの [COFFEECNC] に信号ごとに 1 行追加してください。例：{example}",
+      "tools": {
+        "halshowTip": "すべてのピン、シグナル、パラメーターとその値",
+        "halmeterTip": "1 つのピンまたはシグナルの値",
+        "halscopeTip": "時間に沿って記録したシグナル",
+        "notInstalled": "未インストール",
+        "open": "起動中",
+        "closed": "タップして開く",
+        "starting": "起動しています…",
+        "unknown": "—",
+        "hint": "それぞれパネルの外に専用のウィンドウで開きます。各ツールは 1 つまでです。CoffeeCNC の終了とともに閉じます。"
+      }
     }
   }
 }

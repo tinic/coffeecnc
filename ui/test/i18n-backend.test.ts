@@ -31,6 +31,8 @@ const sources = import.meta.glob<string>([
   '../../backend/src/app/src/preview.cpp',
   '../../backend/src/app/src/status_publisher.cpp',
   '../../backend/src/app/src/runtime.cpp',
+  '../../backend/src/app/src/diagnostics_feed.cpp',
+  '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/linuxcnc/src/nml_status.cpp',

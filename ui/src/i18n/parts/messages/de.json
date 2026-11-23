@@ -153,7 +153,8 @@
       "directoryNotSent": "Das Verzeichnis kann nicht gesendet werden: {detail}",
       "mdiTooLong": "MDI erfordert genau einen Satz mit höchstens 254 Bytes.",
       "jogStopFailed": "Tipp-Stopp an {axis} fehlgeschlagen: {detail}",
-      "noBackup": "Dieses CoffeeCNC kann nicht sichern oder wiederherstellen."
+      "noBackup": "Dieses CoffeeCNC kann nicht sichern oder wiederherstellen.",
+      "noDiagnostics": "Die HAL-Diagnose gehört nicht zu dieser Sitzung."
     },
     "request": {
       "nestingLimit": "Die Verschachtelungsgrenze der Anfrage ist überschritten.",
@@ -284,7 +285,10 @@
         "settings": "Einstellungen",
         "backup": "Maschinendaten sichern",
         "checkBackup": "Sicherung prüfen",
-        "restoreBackup": "Sicherung wiederherstellen"
+        "restoreBackup": "Sicherung wiederherstellen",
+        "openDiagnostics": "Diagnose öffnen",
+        "closeDiagnostics": "Diagnose schließen",
+        "startHalTool": "{tool} starten"
       }
     },
     "sim": {
@@ -388,7 +392,8 @@
       "setLoadedLength": "Setzen Sie die Länge des eingewechselten Werkzeugs, bevor Sie sie prüfen.",
       "browserSimulator": "Browser-Simulator",
       "simRestored": "Simulierte Wiederherstellung: Werkzeugtabelle und Nullpunktverschiebungen stammen aus der Sicherung. Dieser Browser bleibt geöffnet.",
-      "simNoFile": "{path} existiert nicht."
+      "simNoFile": "{path} existiert nicht.",
+      "noHalTools": "Der Browser-Simulator hat keine HAL-Werkzeuge: Er läuft ohne LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC kann keine Verbindung zu seiner nativen Steuerung herstellen. Starten Sie die Anwendung neu.",

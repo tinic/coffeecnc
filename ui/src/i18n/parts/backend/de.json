@@ -610,6 +610,13 @@
       "notMarked": "der Beginn der Wiederherstellung konnte nicht vermerkt werden: {detail}",
       "readHere": "{path} kann hier nicht gelesen werden",
       "writeHere": "{path} kann hier nicht geschrieben werden"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",
+      "alreadyOpen": "{name} ist bereits geöffnet.",
+      "notStarted": "{name} konnte nicht gestartet werden.",
+      "notStartedBecause": "{name} konnte nicht gestartet werden: {error}.",
+      "cannotStart": "HAL-Werkzeuge können hier nicht gestartet werden."
     }
   }
 }

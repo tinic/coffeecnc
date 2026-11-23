@@ -153,7 +153,8 @@
       "directoryNotSent": "ディレクトリを送信できません：{detail}",
       "mdiTooLong": "MDI には 254 バイト以下のブロックが 1 つ必要です。",
       "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}",
-      "noBackup": "この CoffeeCNC ではバックアップも復元もできません。"
+      "noBackup": "この CoffeeCNC ではバックアップも復元もできません。",
+      "noDiagnostics": "HAL 診断はこのセッションにはありません。"
     },
     "request": {
       "nestingLimit": "要求の入れ子の上限を超えました。",
@@ -284,7 +285,10 @@
         "settings": "設定",
         "backup": "機械データのバックアップ",
         "checkBackup": "バックアップを確認",
-        "restoreBackup": "バックアップを復元"
+        "restoreBackup": "バックアップを復元",
+        "openDiagnostics": "診断を開く",
+        "closeDiagnostics": "診断を閉じる",
+        "startHalTool": "{tool} を起動"
       }
     },
     "sim": {
@@ -388,7 +392,8 @@
       "setLoadedLength": "確認する前に装着工具の長さを設定してください。",
       "browserSimulator": "ブラウザーシミュレーター",
       "simRestored": "シミュレーションの復元：工具テーブルとワーク座標オフセットはバックアップの内容です。このブラウザーは開いたままです。",
-      "simNoFile": "{path} は存在しません。"
+      "simNoFile": "{path} は存在しません。",
+      "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。"
     },
     "bridge": {
       "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。",

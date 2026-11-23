@@ -138,9 +138,11 @@ const examples: Examples = {
   restore_offset: { id: 37, type: 'restore_offset', entry: 10 },
   set_work_rotation: { id: 38, type: 'set_work_rotation', wcs: 2, rotation_xy: -12.5 },
   clear_g92: { id: 39, type: 'clear_g92' },
-  backup: { id: 40, type: 'backup', directory: '/media/cnc/STICK' },
-  check_restore: { id: 41, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
-  restore: { id: 42, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
+  watch_diagnostics: { id: 40, type: 'watch_diagnostics', on: true },
+  launch_hal_tool: { id: 41, type: 'launch_hal_tool', tool: 'halscope' },
+  backup: { id: 42, type: 'backup', directory: '/media/cnc/STICK' },
+  check_restore: { id: 43, type: 'check_restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz' },
+  restore: { id: 44, type: 'restore', path: '/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz', token: '3f1c8e0a9b2d4c75' },
 }
 
 describe('protocol/fixtures/commands.json', () => {

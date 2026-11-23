@@ -298,10 +298,19 @@ describe('machine functions', () => {
 })
 
 describe('what the interpreter does not support', () => {
+  it('refuses unsupported compensated corners and an undersized G40 exit', () => {
+    const inside = modal()
+    run(inside, 'G1 G41 D1 X10 Y0 F100')
+    expect(error(inside, 'G1 X10 Y10')).toContain('use a tangent arc')
+    const outside = modal()
+    run(outside, 'G1 G42 D1 X10 Y0 F100', 'G1 X10 Y10')
+    expect(error(outside, 'G40 G0 X13 Y10')).toContain('longer than the cutter diameter')
+  })
+
   it('names the line and the word, and never skips', () => {
     const m = modal()
-    expect(error(m, 'G41 D1')).toBe('line 12: D word is not supported by the simulator')
-    expect(error(m, 'G41')).toBe('line 12: G41 is not supported by the simulator')
+    expect(error(m, 'G41 D9')).toBe('line 12: G41: tool 9 needs a positive diameter in the tool table')
+    expect(error(m, 'G41')).toBe('line 12: G41: tool 0 needs a positive diameter in the tool table')
     expect(error(m, 'G82 R.1 Z-.5 P1')).toBe('line 12: G82 is not supported by the simulator')
     expect(error(m, 'G38.2 Z-1')).toBe('line 12: G38.2 is not supported by the simulator')
     expect(error(m, 'G93')).toBe('line 12: G93 is not supported by the simulator')
@@ -350,9 +359,9 @@ describe('preview', () => {
   })
 
   it('fails at the first line the interpreter refuses and keeps the path so far', () => {
-    const preview = previewProgram(modal(), ['G0 X5', 'G1 X10 F100', 'G41 D1', 'G1 X20', 'M2'], false, 1)
+    const preview = previewProgram(modal(), ['G0 X5', 'G1 X10 F100', 'G41 D9', 'G1 X20', 'M2'], false, 1)
     expect(preview.state).toBe('failed')
-    expect(preview.error).toEqual({ line: 3, text: 'line 3: D word is not supported by the simulator' })
+    expect(preview.error).toEqual({ line: 3, text: 'line 3: G41: tool 9 needs a positive diameter in the tool table' })
     expect(preview.segments).toHaveLength(2)
   })
 

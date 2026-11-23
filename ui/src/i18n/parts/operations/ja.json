@@ -13,6 +13,8 @@
       "notSaved": "プログラムは保存されませんでした。"
     },
     "operation": {
+      "contour": "輪郭",
+      "contourSetup": "進入経路に空間を確保してください。内側を切削する場合は、加工済みのポケットや穴から開始します。",
       "facing": "正面削り",
       "drilling": "穴パターン",
       "bore": "ヘリカル中ぐり",
@@ -21,6 +23,10 @@
       "centreCutting": "中心で真下に突っ込みます。中心刃付きのエンドミルを使用してください。"
     },
     "label": {
+      "profileShape": "形状",
+      "profileSide": "切削側",
+      "profileDirection": "方向",
+      "profileDiameter": "輪郭の直径",
       "sizeX": "X サイズ",
       "sizeY": "Y サイズ",
       "origin": "X0 Y0 の位置",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "ボルト円半径"
     },
     "option": {
+      "profileCircle": "円",
+      "profileRectangle": "長方形",
+      "profileOutside": "外側",
+      "profileInside": "内側",
+      "clockwise": "時計回り",
+      "counterclockwise": "反時計回り",
       "lowerLeft": "左下コーナー",
       "lowerRight": "右下コーナー",
       "upperLeft": "左上コーナー",
@@ -75,6 +87,10 @@
       "g83": "G83 ペック"
     },
     "check": {
+      "profilePrecision": "寸法と送りを確認してください。各パスはプログラムの精度で表現できる値とし、最大 2,000 パスにしてください。",
+      "profileCorner": "角の半径は 0 以上かつ短い辺の半分未満にしてください。",
+      "profileInsideCorner": "内側の角の半径は工具半径（{radius}）より大きくしてください。",
+      "profileLeadRoom": "工具と進入経路が輪郭の内側に収まりません。工具を小さくするか、輪郭を大きくしてください。",
       "positive": "{label}は 0 より大きい値にしてください。",
       "count": "{label}は 1 から {max} までの整数にしてください。",
       "chooseTool": "工具テーブルから工具を選択してください。",

@@ -13,6 +13,8 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "contour": "Contorno",
+      "contourSetup": "Deja libre la entrada. Para un corte interior, empieza desde un bolsillo abierto o un agujero.",
       "facing": "Planeado",
       "drilling": "Patrón de taladros",
       "bore": "Mandrinado helicoidal",
@@ -21,6 +23,10 @@
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
+      "profileShape": "Forma",
+      "profileSide": "Lado de corte",
+      "profileDirection": "Sentido",
+      "profileDiameter": "Diámetro del contorno",
       "sizeX": "Tamaño X",
       "sizeY": "Tamaño Y",
       "origin": "X0 Y0 en",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "Radio del círculo de taladros"
     },
     "option": {
+      "profileCircle": "Círculo",
+      "profileRectangle": "Rectángulo",
+      "profileOutside": "Exterior",
+      "profileInside": "Interior",
+      "clockwise": "Horario",
+      "counterclockwise": "Antihorario",
       "lowerLeft": "Esquina inferior izquierda",
       "lowerRight": "Esquina inferior derecha",
       "upperLeft": "Esquina superior izquierda",
@@ -75,6 +87,10 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "profilePrecision": "Revisa las dimensiones y los avances. Cada pasada debe poder expresarse con la precisión del programa. Máximo 2000 pasadas.",
+      "profileCorner": "El radio de esquina debe ser mayor o igual a cero y menor que la mitad del lado más corto.",
+      "profileInsideCorner": "El radio de esquina interior debe ser mayor que el radio de la herramienta ({radius}).",
+      "profileLeadRoom": "La herramienta y su entrada no caben en el contorno. Usa una herramienta menor o un contorno mayor.",
       "positive": "{label}: debe ser mayor que cero.",
       "count": "{label}: debe ser un número entero de 1 a {max}.",
       "chooseTool": "Elija una herramienta de la tabla de herramientas.",

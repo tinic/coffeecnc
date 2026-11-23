@@ -13,6 +13,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "contour": "Contour",
+      "contourSetup": "Keep the lead-in clear. For an inside cut, start from an open pocket or hole.",
       "facing": "Facing",
       "drilling": "Hole pattern",
       "bore": "Helical bore",
@@ -21,6 +23,10 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "profileShape": "Shape",
+      "profileSide": "Cut side",
+      "profileDirection": "Direction",
+      "profileDiameter": "Profile diameter",
       "sizeX": "Size X",
       "sizeY": "Size Y",
       "origin": "X0 Y0 at",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "Bolt circle radius"
     },
     "option": {
+      "profileCircle": "Circle",
+      "profileRectangle": "Rectangle",
+      "profileOutside": "Outside",
+      "profileInside": "Inside",
+      "clockwise": "Clockwise",
+      "counterclockwise": "Counterclockwise",
       "lowerLeft": "Lower-left corner",
       "lowerRight": "Lower-right corner",
       "upperLeft": "Upper-left corner",
@@ -75,6 +87,10 @@
       "g83": "G83 peck"
     },
     "check": {
+      "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
+      "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
+      "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",
+      "profileLeadRoom": "The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.",
       "positive": "{label} must be more than zero.",
       "count": "{label} must be a whole number from 1 to {max}.",
       "chooseTool": "Choose a tool from the tool table.",

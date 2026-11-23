@@ -13,6 +13,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "contour": "轮廓",
+      "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "facing": "平面铣",
       "drilling": "孔阵列",
       "bore": "螺旋镗孔",
@@ -21,6 +23,10 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "profileShape": "形状",
+      "profileSide": "切削侧",
+      "profileDirection": "方向",
+      "profileDiameter": "轮廓直径",
       "sizeX": "X 尺寸",
       "sizeY": "Y 尺寸",
       "origin": "X0 Y0 位置",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
+      "profileCircle": "圆形",
+      "profileRectangle": "矩形",
+      "profileOutside": "外侧",
+      "profileInside": "内侧",
+      "clockwise": "顺时针",
+      "counterclockwise": "逆时针",
       "lowerLeft": "左下角",
       "lowerRight": "右下角",
       "upperLeft": "左上角",
@@ -75,6 +87,10 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
+      "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
+      "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",
+      "profileLeadRoom": "刀具和进刀路径无法容纳在此轮廓内。请使用较小的刀具或扩大轮廓。",
       "positive": "{label}必须大于零。",
       "count": "{label}必须是 1 到 {max} 之间的整数。",
       "chooseTool": "请从刀具表中选择刀具。",

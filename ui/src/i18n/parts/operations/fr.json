@@ -13,6 +13,8 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "contour": "Contour",
+      "contourSetup": "Dégagez l’entrée. Pour une coupe intérieure, partez d’une poche ouverte ou d’un trou.",
       "facing": "Surfaçage",
       "drilling": "Motif de perçage",
       "bore": "Alésage hélicoïdal",
@@ -21,6 +23,10 @@
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre."
     },
     "label": {
+      "profileShape": "Forme",
+      "profileSide": "Côté de coupe",
+      "profileDirection": "Sens",
+      "profileDiameter": "Diamètre du contour",
       "sizeX": "Dimension X",
       "sizeY": "Dimension Y",
       "origin": "Position de X0 Y0",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "Rayon du cercle de perçage"
     },
     "option": {
+      "profileCircle": "Cercle",
+      "profileRectangle": "Rectangle",
+      "profileOutside": "Extérieur",
+      "profileInside": "Intérieur",
+      "clockwise": "Horaire",
+      "counterclockwise": "Antihoraire",
       "lowerLeft": "Coin inférieur gauche",
       "lowerRight": "Coin inférieur droit",
       "upperLeft": "Coin supérieur gauche",
@@ -75,6 +87,10 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "profilePrecision": "Vérifiez les dimensions et les avances. Chaque passe doit respecter la précision du programme. Maximum 2 000 passes.",
+      "profileCorner": "Le rayon de coin doit être positif ou nul et inférieur à la moitié du plus petit côté.",
+      "profileInsideCorner": "Le rayon d’un coin intérieur doit dépasser le rayon de l’outil ({radius}).",
+      "profileLeadRoom": "L’outil et son entrée ne tiennent pas dans le contour. Utilisez un outil plus petit ou un contour plus grand.",
       "positive": "{label} : la valeur doit être supérieure à zéro.",
       "count": "{label} : entrez un nombre entier de 1 à {max}.",
       "chooseTool": "Choisissez un outil dans la table d’outils.",

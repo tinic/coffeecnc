@@ -13,6 +13,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "contour": "Contorno",
+      "contourSetup": "Deixe a entrada livre. Para um corte interior, comece numa bolsa aberta ou num furo.",
       "facing": "Facejamento",
       "drilling": "Padrão de furos",
       "bore": "Mandrilagem helicoidal",
@@ -21,6 +23,10 @@
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
+      "profileShape": "Forma",
+      "profileSide": "Lado de corte",
+      "profileDirection": "Sentido",
+      "profileDiameter": "Diâmetro do contorno",
       "sizeX": "Dimensão X",
       "sizeY": "Dimensão Y",
       "origin": "X0 Y0 em",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "Raio do círculo de furos"
     },
     "option": {
+      "profileCircle": "Círculo",
+      "profileRectangle": "Retângulo",
+      "profileOutside": "Exterior",
+      "profileInside": "Interior",
+      "clockwise": "Horário",
+      "counterclockwise": "Anti-horário",
       "lowerLeft": "Canto inferior esquerdo",
       "lowerRight": "Canto inferior direito",
       "upperLeft": "Canto superior esquerdo",
@@ -75,6 +87,10 @@
       "g83": "G83 picagem"
     },
     "check": {
+      "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
+      "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
+      "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",
+      "profileLeadRoom": "A ferramenta e a sua entrada não cabem no contorno. Use uma ferramenta mais pequena ou um contorno maior.",
       "positive": "{label}: tem de ser maior do que zero.",
       "count": "{label}: tem de ser um número inteiro de 1 a {max}.",
       "chooseTool": "Escolha uma ferramenta da tabela de ferramentas.",

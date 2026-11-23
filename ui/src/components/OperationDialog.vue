@@ -159,7 +159,7 @@ const fieldGroups = computed(() => [
             <template v-for="field in group.fields" :key="`${chosen}-${field.key}-${field.label}`">
               <div v-if="field.type === 'choice'" class="entry">
                 <span class="label">{{ t(field.label) }}</span>
-                <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
+                <select v-if="field.control === 'select' || field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
                   <option v-for="[value, text] in field.options" :key="value" :value="value">{{ t(text) }}</option>
                 </select>
                 <div v-else class="segmented" role="group" :aria-label="t(field.label)">

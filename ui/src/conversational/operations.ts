@@ -3,12 +3,13 @@
 
 import { parseNumericExpression } from '../numeric-expression'
 import { bore } from './bore'
+import { contour } from './contour'
 import { drilling } from './drilling'
 import { facing, origins, type Origin } from './facing'
 import { circularPocket, rectangularPocket } from './pocket'
 import { number, unitName, type Common, type Generated, type LabelKey, type OperationsKey, type Unit } from './program'
 
-export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket'
+export type OperationId = 'facing' | 'drilling' | 'bore' | 'circular-pocket' | 'rectangular-pocket' | 'contour'
 
 /** `length` is a size or depth, `coordinate` may be negative; both in the program's unit. */
 export type NumberKind = 'length' | 'coordinate' | 'feed' | 'rpm' | 'percent' | 'angle' | 'count'
@@ -27,7 +28,7 @@ interface FieldBase {
 }
 export type Field =
   | (FieldBase & { type: 'number'; kind: NumberKind })
-  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[] })
+  | (FieldBase & { type: 'choice'; options: readonly (readonly [string, OptionKey])[]; control?: 'select' })
 
 export interface Operation {
   id: OperationId
@@ -87,6 +88,8 @@ const size = (value: number, unit: Unit): string => `${number(value, unit)}${uni
 
 const grid = (values: Values): boolean => values['pattern'] === 'grid'
 const circle = (values: Values): boolean => values['pattern'] === 'circle'
+const rectangularProfile = (values: Values): boolean => values['shape'] === 'rectangle'
+const circularProfile = (values: Values): boolean => !rectangularProfile(values)
 
 export const operations: readonly Operation[] = [
   {
@@ -191,6 +194,41 @@ export const operations: readonly Operation[] = [
       height: v.num('height'), cornerRadius: v.num('cornerRadius'), stepover: v.num('stepover'), depth: v.num('depth'),
       depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed') }),
     name: (v, unit) => `rectangular-pocket-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}`, // i18n-ignore
+  },
+  {
+    id: 'contour',
+    title: 'operations.operation.contour',
+    note: 'operations.operation.contourSetup',
+    fields: [
+      { type: 'choice', key: 'shape', label: 'operations.label.profileShape',
+        options: [['circle', 'operations.option.profileCircle'], ['rectangle', 'operations.option.profileRectangle']] },
+      { type: 'choice', key: 'side', label: 'operations.label.profileSide',
+        options: [['outside', 'operations.option.profileOutside'], ['inside', 'operations.option.profileInside']] },
+      { type: 'choice', key: 'direction', label: 'operations.label.profileDirection', control: 'select',
+        options: [['cw', 'operations.option.clockwise'], ['ccw', 'operations.option.counterclockwise']] },
+      num('x', 'operations.label.centreX', 'coordinate'), num('y', 'operations.label.centreY', 'coordinate'),
+      num('diameter', 'operations.label.profileDiameter', 'length', circularProfile),
+      num('width', 'operations.label.sizeX', 'length', rectangularProfile),
+      num('height', 'operations.label.sizeY', 'length', rectangularProfile),
+      num('corner', 'operations.label.cornerRadius', 'length', rectangularProfile),
+      num('depth', 'operations.label.depth', 'length'),
+      num('depthPerPass', 'operations.label.depthPerPass', 'length'),
+      ...feeds(true),
+    ],
+    defaults: (unit) => pick(unit,
+      { shape: 'circle', side: 'outside', direction: 'cw', x: 0, y: 0, diameter: 40, width: 50, height: 40,
+        corner: 5, depth: 3, depthPerPass: 1, ...speeds.mm },
+      { shape: 'circle', side: 'outside', direction: 'cw', x: 0, y: 0, diameter: 1.5, width: 2, height: 1.5,
+        corner: 0.2, depth: 0.12, depthPerPass: 0.04, ...speeds.inch }),
+    generate: (v, common) => contour({ ...common, x: v.num('x'), y: v.num('y'),
+      inside: v.text('side') === 'inside', clockwise: v.text('direction') === 'cw',
+      depth: v.num('depth'), depthPerPass: v.num('depthPerPass'), plungeFeed: v.num('plungeFeed'),
+      ...(v.text('shape') === 'rectangle'
+        ? { shape: 'rectangle', width: v.num('width'), height: v.num('height'), corner: v.num('corner') }
+        : { shape: 'circle', diameter: v.num('diameter') }) }),
+    name: (v, unit) => v.text('shape') === 'rectangle'
+      ? `contour-${number(v.num('width'), unit)}x${size(v.num('height'), unit)}` // i18n-ignore
+      : `contour-${size(v.num('diameter'), unit)}`, // i18n-ignore
   },
 ]
 

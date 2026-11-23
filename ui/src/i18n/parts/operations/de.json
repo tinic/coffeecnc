@@ -13,6 +13,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "contour": "Kontur",
+      "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "facing": "Planfräsen",
       "drilling": "Bohrbild",
       "bore": "Helix-Ausdrehen",
@@ -21,6 +23,10 @@
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
+      "profileShape": "Form",
+      "profileSide": "Schnittseite",
+      "profileDirection": "Richtung",
+      "profileDiameter": "Konturdurchmesser",
       "sizeX": "Größe X",
       "sizeY": "Größe Y",
       "origin": "Lage von X0 Y0",
@@ -62,6 +68,12 @@
       "boltCircleRadius": "Lochkreisradius"
     },
     "option": {
+      "profileCircle": "Kreis",
+      "profileRectangle": "Rechteck",
+      "profileOutside": "Außen",
+      "profileInside": "Innen",
+      "clockwise": "Im Uhrzeigersinn",
+      "counterclockwise": "Gegen den Uhrzeigersinn",
       "lowerLeft": "Ecke unten links",
       "lowerRight": "Ecke unten rechts",
       "upperLeft": "Ecke oben links",
@@ -75,6 +87,10 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "profilePrecision": "Prüfen Sie Abmessungen und Vorschübe. Jeder Durchgang muss mit der Programmgenauigkeit darstellbar sein. Maximal 2.000 Durchgänge.",
+      "profileCorner": "Der Eckenradius muss mindestens null und kleiner als die halbe kürzere Seite sein.",
+      "profileInsideCorner": "Der innere Eckenradius muss größer als der Werkzeugradius ({radius}) sein.",
+      "profileLeadRoom": "Werkzeug und Anfahrweg passen nicht in die Kontur. Wählen Sie ein kleineres Werkzeug oder eine größere Kontur.",
       "positive": "{label} muss größer als null sein.",
       "count": "{label} muss eine ganze Zahl von 1 bis {max} sein.",
       "chooseTool": "Wählen Sie ein Werkzeug aus der Werkzeugtabelle.",

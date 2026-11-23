@@ -171,12 +171,13 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes + 1);
   if (!content)
     return std::unexpected(content.error());
-  if (!*content)
+  const auto& file = *content;
+  if (!file)
     return std::unexpected("The program no longer exists.");
-  const std::string& bytes = (*content)->bytes;
+  const std::string& bytes = file->bytes;
   // A change after this comparison and before the rename is not caught: a small window, as for
   // replace_line.
-  if ((*content)->more || program_stamp(bytes) != stamp)
+  if (file->more || program_stamp(bytes) != stamp)
     return std::unexpected(
         "The program file changed since it was opened. Open it again to edit it.");
   const auto end = bytes.find_first_of("\r\n");

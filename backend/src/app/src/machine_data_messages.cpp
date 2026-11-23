@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace coffeecnc {
@@ -26,12 +28,13 @@ auto encode_backup_written(const BackupWritten& written) -> std::string {
 
 auto encode_restore_summary(const RestoreSummary& summary) -> std::string {
   auto files = Json::array();
-  for (const auto& file : summary.files)
-    files.push_back({{"role", file.role},
-                     {"name", file.name},
-                     {"target", file.target},
-                     {"change", file.change},
-                     {"bytes", file.bytes}});
+  std::ranges::transform(summary.files, std::back_inserter(files), [](const auto& file) -> Json {
+    return {{"role", file.role},
+            {"name", file.name},
+            {"target", file.target},
+            {"change", file.change},
+            {"bytes", file.bytes}};
+  });
   return dump(Json{{"type", "restore_summary"},
                    {"path", summary.path},
                    {"token", summary.token},

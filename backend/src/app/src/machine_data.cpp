@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <format>
+#include <iterator>
 #include <set>
 #include <utility>
 
@@ -114,8 +115,9 @@ auto manifest_json(const std::optional<std::string>& machine_id, std::int64_t cr
                    const std::vector<Source>& sources,
                    const std::vector<std::pair<std::string, std::string>>& left_out) -> Json {
   auto files = Json::array();
-  for (const auto& source : sources)
-    files.push_back({{"role", source.role}, {"name", source.name}, {"path", source.path}});
+  std::ranges::transform(sources, std::back_inserter(files), [](const Source& source) -> Json {
+    return {{"role", source.role}, {"name", source.name}, {"path", source.path}};
+  });
   auto not_included = Json::array();
   for (const auto& [path, reason] : left_out)
     not_included.push_back({{"path", path}, {"reason", reason}});
@@ -205,9 +207,11 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
     sources.push_back(
         {"parameters", "parameters/" + base_name(paths_.parameter_file), paths_.parameter_file});
   if (!paths_.data_directory.empty())
-    for (const auto name : data_file_names)
-      sources.push_back({"data", "data/" + std::string(name),
-                         paths_.data_directory + '/' + std::string(name)});
+    std::ranges::transform(data_file_names, std::back_inserter(sources),
+                           [&](std::string_view name) -> Source {
+                             return {"data", "data/" + std::string(name),
+                                     paths_.data_directory + '/' + std::string(name)};
+                           });
 
   const auto now = clock_();
   std::vector<ArchiveEntry> entries(1);
@@ -423,8 +427,6 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   const auto plan_content = files.read(plan_file, std::size_t{1024} * 1024);
   if (!plan_content)
     return std::unexpected(plan_content.error());
-  if (!*plan_content)
-    return 0;
   struct Replacement {
     std::string role;
     std::string name;

@@ -252,8 +252,10 @@ fnv() {
   printf '%016x' "$hash"
 }
 # Staged now, by page 1: a plan staged more than 2 minutes before the helper starts is refused.
-printf '{"version":3,"machine_id":"restore-data","staged":%s,"page":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
-  "$(date +%s%3N)" "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
+# Plan version 4 also carries the boot ID and the boot clock (/proc/uptime is CLOCK_BOOTTIME).
+printf '{"version":4,"machine_id":"restore-data","staged":%s,"boot_id":"%s","booted":%s,"page":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
+  "$(date +%s%3N)" "$(cat /proc/sys/kernel/random/boot_id)" "$(awk '{printf "%d", $1 * 1000}' /proc/uptime)" \
+  "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
 # Review #274, 6: a parent of PID 1 tells nothing about LinuxCNC: refused, the plan is left.
 run --apply-restore "$data" --after 1
 [ "$code" = 1 ] && said 'coffeecnc: restore=not_written reason=the parent process is 1' &&

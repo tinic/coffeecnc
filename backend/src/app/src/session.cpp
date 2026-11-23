@@ -1341,6 +1341,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   auto inputs = *original.source.inputs;
   inputs.tools = fresh.source.inputs->tools;
   inputs.raw_tools = fresh.source.inputs->raw_tools;
+  // The helper seeds slot zero from the original spindle tool. The live slot now holds M6's tool.
+  std::erase_if(inputs.raw_tools, [](const auto& entry) { return entry.index == 0; });
   auto replay = restart_engine_->compute(inputs, [&] { return !maintain(); });
   if (!maintain() || replay.cancelled || !replay.program_snapshot ||
       *replay.program_snapshot != *original.source.program_snapshot)

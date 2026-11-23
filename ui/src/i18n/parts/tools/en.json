@@ -146,6 +146,7 @@
       "measure": "Measure and review restart",
       "measureHint": "With the tool installed, stop the program and measure its length. Review the restart before starting again.",
       "measuring": "Measuring the tool. The program will stay stopped.",
+      "measureNote": "Confirming continues the program. Measuring moves the tool to the setter and leaves the program stopped.",
       "continueNote": "The program continues at once when you confirm. Stop, in the run bar, ends the program instead."
     },
     "setter": {

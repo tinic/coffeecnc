@@ -163,10 +163,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
       c.requested_tool = view->tool_change_request->tool;
       c.tool_request = view->tool_change_request->generation;
       // Readahead waits at M6; currentLine and motionLine can still refer to preceding motion.
-      if (c.mode == TaskMode::automatic && task.readLine > 0) {
+      if (c.mode == TaskMode::automatic && task.readLine > 0)
         c.tool_change_line = task.readLine;
-        c.tool_change_position = xyz(motion.traj.position);
-      }
     }
     out.spindle_actual_rpm = view->spindle_rpm;
     out.spindle_at_speed = view->spindle_at_speed;
@@ -191,6 +189,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.commanded_position = xyz(motion.traj.position);
   std::ranges::transform(out.commanded_position, out.commanded_position.begin(),
                          [mm](double coordinate) { return coordinate * mm; });
+  if (c.tool_change_line)
+    c.tool_change_position = out.commanded_position;
   out.wcs = task.g5x_index;
   out.rotation_xy = task.rotation_xy;
   out.velocity = motion.traj.current_vel * mm * seconds_per_minute;

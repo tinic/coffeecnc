@@ -2996,9 +2996,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
                             std::chrono::seconds{45}); !accepted(done))
         return done;
-      const auto lifted = read();
-      if (!idle(lifted) || !restart_at_z(lifted, clearance, config.motion_tolerances.restart_position_mm))
-        return failed("The machine did not reach the confirmed Z clearance.");
+      // The trajectory reports completion before the individual joints can report in-position.
+      if (auto lifted = wait(settle_timeout, [&](const EMC_STAT& raw) {
+            const auto settled = to_status(raw, config, impl_->hal, impl_->status.link());
+            return idle(settled) &&
+                   restart_at_z(settled, clearance, config.motion_tolerances.restart_position_mm);
+          }, "The machine did not reach the confirmed Z clearance.");
+          !accepted(lifted))
+        return lifted;
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
           return sent;

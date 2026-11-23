@@ -146,6 +146,7 @@
       "measure": "Mesurer et vérifier la reprise",
       "measureHint": "Une fois l’outil en place, arrêtez le programme et mesurez sa longueur. Vérifiez la reprise avant de redémarrer.",
       "measuring": "Mesure de l’outil en cours. Le programme reste à l’arrêt.",
+      "measureNote": "La confirmation reprend le programme. La mesure déplace l’outil vers le palpeur et laisse le programme à l’arrêt.",
       "continueNote": "Le programme reprend dès votre confirmation. Le bouton d’arrêt de la barre d’exécution termine plutôt le programme."
     },
     "setter": {

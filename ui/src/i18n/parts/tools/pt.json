@@ -146,6 +146,7 @@
       "measure": "Medir e rever o reinício",
       "measureHint": "Com a ferramenta montada, pare o programa e meça o seu comprimento. Reveja o reinício antes de arrancar.",
       "measuring": "A medir a ferramenta. O programa permanece parado.",
+      "measureNote": "Confirmar retoma o programa. Medir desloca a ferramenta até ao apalpador e deixa o programa parado.",
       "continueNote": "O programa continua logo que confirmar. O botão de paragem na barra de execução termina antes o programa."
     },
     "setter": {

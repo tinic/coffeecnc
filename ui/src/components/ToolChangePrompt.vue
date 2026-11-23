@@ -71,6 +71,7 @@ const spindle = computed(() => panel.status?.spindle.direction ?? 'stopped')
       <p class="hint">
         <template v-if="measuring">{{ t('tools.change.measuring') }}</template>
         <template v-else-if="linkBlock">{{ t('tools.change.cannotConfirm', { reason: linkBlock }) }}</template>
+        <template v-else-if="measure">{{ t('tools.change.measureNote') }}</template>
         <template v-else>{{ t('tools.change.continueNote') }}</template>
       </p>
     </section>

@@ -146,6 +146,7 @@
       "measure": "Medir y revisar el reinicio",
       "measureHint": "Con la herramienta instalada, detenga el programa y mida su longitud. Revise el reinicio antes de arrancar.",
       "measuring": "Midiendo la herramienta. El programa seguirá detenido.",
+      "measureNote": "Confirmar reanuda el programa. Medir mueve la herramienta al medidor y deja el programa detenido.",
       "continueNote": "El programa continúa en cuanto usted confirma. El botón de parada de la barra de ejecución termina el programa en su lugar."
     },
     "setter": {

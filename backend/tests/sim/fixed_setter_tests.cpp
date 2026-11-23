@@ -815,11 +815,22 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
       throw std::runtime_error(reply.dump());
   };
   accepted({{"type", "ready"}});
-  require(wait([&] { return reading.status.link == Link::live; }, 4s), "M6 simulation is live");
+  require(wait([&] {
+    const auto pins = shared.view(HalShared::Clock::now());
+    return reading.status.link == Link::live && pins && pins->watchdog_ok && !pins->jog_stop_high;
+  }, 4s), "M6 simulation is live with a serviced watchdog");
   accepted({{"type", "fixed_setter"}, {"action", "touch_off"}, {"tool", 98},
             {"x", -12}, {"y", -18}, {"z", 22}});
   accepted({{"type", "mdi"}, {"text", "M61 Q1 G43 H1"}});
+  require(wait([&] {
+    return reading.status.tool.in_spindle == 1 && reading.status.interp == InterpState::idle;
+  }, 4s), "T1 is loaded before opening the program");
   accepted({{"type", "mdi"}, {"text", "G92.1 G10 L2 P1 X0 Y0 Z-40 R0"}});
+  require(wait([&] {
+    const auto latest = mailbox.latest();
+    return latest && latest->status.controller.interp == InterpState::idle &&
+           std::abs(latest->status.g5x[2] + 40) < 0.01;
+  }, 4s), "the programmed work origin is set");
   accepted({{"type", "mdi"}, {"text", "G53 G0 X2 Y3 Z30"}});
   require(wait([&] {
     return reading.status.interp == InterpState::idle &&

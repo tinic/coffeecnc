@@ -11,6 +11,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "check:step": "node scripts/check-step-import.js",
+    "check:controls": "node scripts/check-controls.js",
     "check": "vue-tsc --noEmit && eslint . --max-warnings=0 && vitest run"
   },
   "dependencies": {

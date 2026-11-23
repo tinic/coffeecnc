@@ -184,7 +184,7 @@ async function save(): Promise<void> {
           </div>
           <p class="hint">{{ t('status.settings.safeZHint', { value: defaultSafeZ, margin: limitMarginMm }) }}</p>
         </div>
-        <details class="shift-note"><summary>{{ t('status.settings.shiftTitle') }}</summary><p>{{ t('status.settings.shiftText') }}</p></details>
+        <details class="shift-note"><summary class="list-row">{{ t('status.settings.shiftTitle') }}</summary><p>{{ t('status.settings.shiftText') }}</p></details>
       </section>
     </div>
     <template #footer>
@@ -220,7 +220,7 @@ legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-we
 .safe-z { margin-top: 12px; }.safe-z-actions { display: flex; gap: 8px; margin-top: 6px; }.safe-z-actions .btn { min-height: 44px; }
 .speed-entry { display: flex; align-items: center; gap: 12px; }.speed-entry input { width: 100%; min-width: 0; height: 44px; font-size: 20px; }.speed-entry > span { min-width: 48px; font-size: 13px; color: var(--text-dim); }
 .wcs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }.wcs-grid label { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; border-radius: var(--control-radius); cursor: pointer; font-size: 13px; }.wcs-grid input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
-.shift-note { border-top: 1px solid var(--line); padding-top: 4px; font-size: 13px; }.shift-note summary { font-weight: 500; min-height: 28px; padding-block: 0; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+.shift-note { border-top: 1px solid var(--line); padding-top: 4px; font-size: 13px; }.shift-note summary { display: flex; align-items: center; font-weight: 500; min-height: 32px; padding: 0 6px; }.shift-note p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
 .tool-reference { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .save-state { flex: 1; min-width: 0; align-self: center; color: var(--text-dim); font-size: 12px; }.save-state p { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns: 1fr; } }

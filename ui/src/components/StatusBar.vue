@@ -163,7 +163,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
     </div>
   </section>
   <section class="message-area" :aria-label="t('status.statusBar.messages')">
-    <div class="message-band" :class="messageTone">
+    <div class="message-band" :class="[messageTone, { 'tinted-band': messageTone === 'error' || messageTone === 'lift-warning' }]">
       <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ messageTone === 'error' || messageTone === 'lift-warning' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>

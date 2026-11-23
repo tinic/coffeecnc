@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions">
+    <div v-if="!dragging && (picked > 0 || edits?.canUndo || edits?.message)" class="line-actions bar-surface">
       <button v-tooltip="picked ? t('program.ncText.clearSelection') : t('program.ncText.dismissActions')" class="btn clear-line" type="button" :aria-label="picked ? t('program.ncText.clearSelected') : t('program.ncText.dismissActions')" @click="closeActions">
         <AppIcon name="close" />
       </button>
@@ -499,13 +499,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 6px;
   padding: 8px 16px 10px;
-  background: var(--bar);
-}
-/* The edit bar is one tone step from the code, and its buttons one step from the bar. */
-.line-actions > .btn, .line-actions > details > summary.btn {
-  --control: var(--bar-control);
-  --control-hover: color-mix(in srgb, var(--bar-control) 82%, var(--bar));
-  --control-active: color-mix(in srgb, var(--bar-control) 55%, var(--bar));
 }
 .line-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }

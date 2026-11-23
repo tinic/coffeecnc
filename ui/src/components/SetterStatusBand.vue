@@ -7,7 +7,7 @@ defineProps<{ line: SetterStatusLine }>()
 </script>
 
 <template>
-  <div class="setter-band" :class="[line.level, { empty: !line.text }]" role="status" aria-live="polite">
+  <div class="setter-band" :class="[line.level, { empty: !line.text, 'tinted-band': line.level === 'blocked' }]" role="status" aria-live="polite">
     <span v-if="line.text" class="setter-label" aria-hidden="true">{{ line.level === 'blocked' ? '!' : line.level === 'done' ? '✓' : 'i' }}</span>
     <p v-if="line.text" v-tooltip="translateMessage(line.text)">{{ translateMessage(line.text) }}</p>
     <slot name="actions" />

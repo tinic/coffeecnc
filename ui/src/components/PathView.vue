@@ -327,9 +327,9 @@ function wheel(event: WheelEvent): void {
 
 const colours = {
   light: { travel: '#778a9a', rapid: '#667989', executed: '#064fc4', marker: '#a35910', outdated: '#687782',
-    picked: '#c2410c', halo: '#ffffff', axes: ['#a34040', '#2e7651', '#375eb0'] },
+    picked: '#d9480f', halo: '#ffffff', axes: ['#a34040', '#2e7651', '#375eb0'] },
   dark: { travel: '#7f95a7', rapid: '#8b9dae', executed: '#84bbff', marker: '#ffbd61', outdated: '#8996a3',
-    picked: '#ff8f5c', halo: '#1c242d', axes: ['#f28c87', '#83cea4', '#91b8ff'] },
+    picked: '#ff8a4c', halo: '#1c242d', axes: ['#f28c87', '#83cea4', '#91b8ff'] },
 } as const
 
 function drawGrid(): void {
@@ -449,20 +449,30 @@ function draw(): void {
     const highlight = props.highlight
     if (highlight && highlight.first > 0) {
       // The picked lines on top of everything, outlined so they read over the planned path.
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+      context.beginPath()
+      for (const segment of preview.segments) {
+        if (segment.line < highlight.first || segment.line > highlight.last) continue
+        const p = segment.points
+        for (let i = 0; i + 2 < p.length; i += 3) {
+          const [x, y] = at([p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
+          if (i === 0) context.moveTo(x, y)
+          else context.lineTo(x, y)
+          left = Math.min(left, x)
+          top = Math.min(top, y)
+          right = Math.max(right, x)
+          bottom = Math.max(bottom, y)
+        }
+      }
+      // A short move is a few pixels long: a ring around it shows where it is.
+      if (right >= left && Math.hypot(right - left, bottom - top) < 16) {
+        context.moveTo((left + right) / 2 + 10, (top + bottom) / 2)
+        context.arc((left + right) / 2, (top + bottom) / 2, 10, 0, 2 * Math.PI)
+      }
       for (const [width, colour] of [[6, palette.halo], [3, palette.picked]] as const) {
         context.lineWidth = width
         context.strokeStyle = colour
         context.globalAlpha = width === 6 ? 0.85 : 1
-        context.beginPath()
-        for (const segment of preview.segments) {
-          if (segment.line < highlight.first || segment.line > highlight.last) continue
-          const p = segment.points
-          for (let i = 0; i + 2 < p.length; i += 3) {
-            const [x, y] = at([p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
-            if (i === 0) context.moveTo(x, y)
-            else context.lineTo(x, y)
-          }
-        }
         context.stroke()
       }
       context.globalAlpha = 1

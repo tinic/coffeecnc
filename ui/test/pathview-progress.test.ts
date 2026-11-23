@@ -160,7 +160,7 @@ describe('path view pointers', () => {
     await flushPromises()
     const halo = strokes.findIndex((stroke) => stroke.lineWidth === 6 && stroke.strokeStyle === '#ffffff')
     expect(halo).toBeGreaterThan(0)
-    expect(strokes[halo + 1]).toEqual({ lineWidth: 3, strokeStyle: '#c2410c' })
+    expect(strokes[halo + 1]).toEqual({ lineWidth: 3, strokeStyle: '#d9480f' })
     // After every move of the path: the planned moves are the first three strokes.
     expect(strokes.slice(0, 3).every((stroke) => stroke.lineWidth === 1.55)).toBe(true)
   })

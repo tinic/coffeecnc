@@ -41,6 +41,10 @@ void wire_formats() {
   request.block_delete = true;
   request.wcs = 9;
   request.tool_change_at_g30 = true;
+  request.known_systems = 0b100000011;
+  request.saved_g30 = true;
+  request.remapped = {"m6", "g88.1"};
+  request.stop_line = 12;
   request.tool_change_position = Vec3{1, 2, 3};
   request.max_points = 77;
   request.chord_tolerance = 0.005;
@@ -50,6 +54,8 @@ void wire_formats() {
   require(parsed && *parsed == request, "A request is read as it was written");
   require(!parse_request("something else\n") && !parse_request("") &&
               !parse_request(write_request(request) + "wcs 12\n") &&
+              !parse_request(write_request(request) + "known_systems 512\n") &&
+              !parse_request(write_request(request) + "stop_line 3\n") &&
               !parse_request(write_request(request) + "unknown 1\n"),
           "Another header, an empty text, a bad value and an unknown key are refused");
 
@@ -164,23 +170,45 @@ void hostile_results() {
 
 void blocks_refused_by_their_text() {
   const auto refused = [](std::string_view line) -> bool { return refused_block(line).has_value(); };
-  require(refused("#1=5") && refused("g1 x#1") && refused("G1 X#<a>") && refused("x[##2]") &&
-              refused("O100 CALL [1]") && refused("o<a b> call [1] [2]") && refused("o[1+2] call") &&
-              refused("g[28]") && refused("G28") && refused("g 2 8") && refused("G28.0 X1") &&
-              refused("G30") && refused("G92.3") && refused("N10 G28") && refused("/G28"),
-          "Blocks with parameters, computed words and saved positions");
+  require(refused("o[1+2] call") && refused("N10 o[1] call") && refused("g[28]") &&
+              refused("g#1 x1") && refused("G92.3") && refused("N10 G92.3") && refused("/G92.3") &&
+              refused("G1 X#<_task>") && refused("o1 if [#<_task> EQ 0]"),
+          "Computed words, G92.3 and #<_task>");
   require(!refused("G1 X1 Y2") && !refused("G28.1") && !refused("G30.1") && !refused("G92.1") &&
               !refused("G2 X8 I3") && !refused("G280") && !refused("o100 call") &&
               !refused("o<g28> call") && !refused("o100 if [1 GT 0]") && !refused("(#1) G1 X1") &&
               !refused("G1 X1 ; #1") && !refused("") && !refused("%") && !refused("M2") &&
-              !refused("G3 X1 Y1 R[2+3]") && !refused("o1 while [2 GE 1]"),
-          "Blocks without");
+              !refused("G3 X1 Y1 R[2+3]") && !refused("o1 while [2 GE 1]") &&
+              !refused("#1=5") && !refused("g1 x#1") && !refused("G1 X#<a>") && !refused("x[##2]") &&
+              !refused("O100 CALL [1]") && !refused("o<a b> call [1] [2]") && !refused("G28") &&
+              !refused("G30 X1") && !refused("G1 X#<_tasks>"),
+          "Blocks the interpreter is followed in: parameters, calls with arguments, G28, G30");
+  require(saved_position_move("G28") == 28 && saved_position_move("g 2 8") == 28 &&
+              saved_position_move("G28.0 X1") == 28 && saved_position_move("N10 G28") == 28 &&
+              saved_position_move("/G28") == 28 && saved_position_move("G91 G30 Z0") == 30 &&
+              saved_position_move("G280") == 0 && saved_position_move("o<g28> call") == 0 &&
+              saved_position_move("G28.1") == 0 && saved_position_move("(G28) G1 X1") == 0 &&
+              saved_position_move("G1 X[28]") == 0,
+          "Moves to a saved position");
+  const std::vector<std::string> remapped{"m6", "t", "g88.1"};
+  require(remapped_use("T1 M6", remapped) == "M6" && remapped_use("M[2*3]", remapped) == "M6" &&
+              remapped_use("T2", remapped) == "T" && remapped_use("G88.1 X1", remapped) == "G88.1" &&
+              !remapped_use("M61 Q1", remapped) && !remapped_use("G88 X1", remapped) &&
+              !remapped_use("o100 call", remapped) && !remapped_use("S100 M3", remapped) &&
+              !remapped_use("(T1 M6)", remapped) && !remapped_use("G1 X[abs[-1]]", remapped) &&
+              !remapped_use("T1 M6", {}),
+          "Remapped codes in a block");
+  require(uses_parameters("G1 X#1\n") && uses_parameters("G1 X1\n#<a>=1") &&
+              !uses_parameters("G1 X1\n(#1) ; #2\n") && !uses_parameters(""),
+          "Whether a text uses parameters");
   require(refused("(py,x)") && refused("(PYRUN,x)") && refused("( pyreload)") &&
               refused(";py,x") && refused("  ;PY,x") && refused("; py ,x") && refused("(Logopen,f)") &&
               refused("(LOG,x)") && refused("(logclose)") && refused("(probeopen f)") &&
-              refused("(PROBECLOSE)") && refused("(msg, #1)") && refused("(DEBUG,#<_x>)") &&
-              refused("(print,#1)") && refused("(abort,#1)") && refused("G1 X1 (comment) (py,x)"),
+              refused("(PROBECLOSE)") && refused("G1 X1 (comment) (py,x)"),
           "Comments the interpreter acts on");
+  require(!refused("(msg, #1)") && !refused("(DEBUG,#<_x>)") && !refused("(print,#1)") &&
+              !refused("(abort,#1)"),
+          "Comments that expand parameters only print them");
   require(!refused("(msg, hello)") && !refused("(debug,x)") && !refused("(PRINT,x)") &&
               !refused("(pyramid)") && !refused("(logic)") && !refused("(py without a comma)") &&
               !refused("(the log, see below)") && !refused("; a python note") &&

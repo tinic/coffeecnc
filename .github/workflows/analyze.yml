@@ -27,7 +27,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config git ca-certificates clang-tidy cppcheck \
+            build-essential cmake ninja-build pkg-config git ca-certificates clang-tidy cppcheck file \
             libboost-dev libgtk-3-dev libwebkit2gtk-4.1-dev linuxcnc-uspace-dev nlohmann-json3-dev
 
       - uses: actions/setup-node@v4

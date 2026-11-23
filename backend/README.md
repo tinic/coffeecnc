@@ -23,6 +23,7 @@ Run inside `backend/`. Requires CMake 3.25+, Ninja and a C++23 compiler (Clang o
 | `dev` | `cmake --preset dev && cmake --build --preset dev && ctest --preset dev` | Debug build, warnings are errors |
 | `asan` | same with `asan` | AddressSanitizer and UndefinedBehaviorSanitizer |
 | `tsan` | same with `tsan` | ThreadSanitizer. On hosts with high ASLR entropy: `setarch -R ctest --preset tsan` |
+| `msan` | `tests/sanitizers/build_msan_libcxx.sh clang++ $PWD/build/msan-libcxx` once, then as `dev` | MemorySanitizer with origins, Clang 20 or later, against an instrumented libc++ of the same LLVM release; without the adapter and the shell |
 | `analyze` | same with `analyze` | clang-tidy and cppcheck; configuration fails if either is missing |
 | `package` | `cmake --preset package && cmake --build --preset package && cpack --preset package` | Release build without development paths; the Debian package |
 
@@ -65,13 +66,15 @@ Launch: `[DISPLAY] DISPLAY = coffeecnc` in the machine's INI file; LinuxCNC star
 | `linuxcnc_sim_runner` | `linuxcnc` | `tests/sim/run.sh` ends every process after a timeout, SIGTERM and SIGHUP, and fails a program that prints `exit=0` and then exits 7, dies of a signal, or prints a failure and exits 0; a program that prints nothing and exits 0 passes; about 110 s. SIGINT is handled by the same trap but not tested: bash starts a background job with it ignored |
 | `coffeecnc_cli` | | Command line and start-up refusals of the executable; no LinuxCNC, no display |
 | `panel_bundle`, `panel_stamp` | | Build `ui/dist` from this checkout; the stamp checker refuses a changed source, a changed bundle and an unbuilt source |
-| `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 229 checks, about 32 s each, with a paired STEP sample over a computed preview. Not registered in the `tsan` preset |
+| `linuxcnc_shell_mm`, `linuxcnc_shell_inch` | `linuxcnc` | The application with the real panel under Xvfb as LinuxCNC's DISPLAY program: 229 checks, about 32 s each, with a paired STEP sample over a computed preview |
 | `text_file` | | The bounded file reader: bound, block edges, missing file, directory |
 | `xvfb_wrapper` | | `tests/shell/under_xvfb.sh`: an early exit, a program gone after its checks and a failed check are nonzero exits |
 | `install_tree`, `package_deb` | | The installed layout; the package's control fields, dependencies and contents; no build-host path in an installed-only build |
 | `linuxcnc_installed_prefix_start`, `linuxcnc_installed_package_start` | `linuxcnc` | The installed executable as DISPLAY program without overrides: names its own panel and helper, a preview becomes ready, SIGTERM leaves no process |
 | `linuxcnc_machine_g0759`, `linuxcnc_machine_g0759_start` | `linuxcnc` | A machine's own INI and HAL files with the hardware simulated (`run.sh -m <INI> -s <hardware HAL>`); E-stop request and external input, sampled. Skipped without `COFFEECNC_MACHINES_DIRECTORY` |
-| `linuxcnc_coffeecnc_start` | `linuxcnc` | The executable starts, shows the panel, and SIGTERM ends it and LinuxCNC with no process left. Not registered in the `tsan` preset |
+| `linuxcnc_coffeecnc_start` | `linuxcnc` | The executable starts, shows the panel, and SIGTERM ends it and LinuxCNC with no process left |
+
+CI (`.github/workflows/sanitizers.yml`) builds `asan`, `tsan` and `msan` on every pull request and push to `main` and runs `ctest -LE linuxcnc` in each; a sanitizer report fails the job. Sanitizer suppressions and what each preset leaves out: [backend limits](../docs/backend-rules.md#limits-of-the-current-state).
 
 `ctest --preset dev -LE linuxcnc` skips the simulation tests; they exist only where the adapter builds. One LinuxCNC runs per host: `run.sh` holds an exclusive lock (`~/ai/coffeecnc-sim-runner-<uid>.lock`, else under `/tmp`) from before it touches the run directory until it exits, waits for it at most `-w` seconds (300), then prints `sim=refused reason=locked` and exits 123; on acquiring it prints `sim=locked ... at=<epoch seconds>`; it sets `XDG_DATA_HOME` to the run directory, takes `-i <machine-id>` for the simulation profile and `-k` to keep the data of the run before, and with `-m` refuses (122) a machine INI whose `DATA_DIRECTORY` is outside the run directory; under the lock it refuses (125) while another LinuxCNC runs and never cleans one up. `-n` assembles without the lock. Each simulation test runs in `build/<preset>/sim/<CTest name>/`. `run.sh` goes by how the DISPLAY program really ended (`display.status`: exit code or signal) and prints `printed_exit=` and `child_status=`. Keep the logs of a failing run before re-running (`build/sim-history/<commit>/<preset>/`, with `Testing/Temporary/LastTest.log`). Simulation output is one `check=<name> result=pass|fail detail=…` line per check. A shell test first checks that `ui/dist` was built from the `ui/` sources of the checkout (`tests/sim/check-panel-stamp.mjs`).
 

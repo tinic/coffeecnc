@@ -5,12 +5,25 @@ if(NOT TARGET coffeecnc_shell OR NOT TARGET coffeecnc_linuxcnc)
   return()
 endif()
 
+# GCC warns under ThreadSanitizer (-Wtsan, an error with -Werror) that it does not model
+# std::atomic_thread_fence, which Boost.Asio calls in detail/std_fenced_block.hpp and
+# detail/atomic_count.hpp. Each io_context here runs on one thread only (the server's has
+# concurrency hint 1, the test client's is the test's own): those fences order nothing between
+# threads of this program. Only that warning is off, only for the sources that include Asio.
+set(COFFEECNC_ASIO_OPTIONS "")
+if("thread" IN_LIST COFFEECNC_SANITIZERS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(COFFEECNC_ASIO_OPTIONS -Wno-tsan)
+endif()
+set(COFFEECNC_ASIO_OPTIONS "${COFFEECNC_ASIO_OPTIONS}" CACHE INTERNAL
+  "Compile options of sources that include Boost.Asio")
+
 add_library(coffeecnc_application application.cpp config_check.cpp remote_server.cpp)
 # GCC 14 diagnoses inlined Boost.Asio executor/reactor code at -O3, even in SYSTEM headers.
 # Boost's exception locations also retain __FILE__. Keep those independent of the host path.
 set_property(SOURCE remote_server.cpp APPEND PROPERTY COMPILE_OPTIONS
   "$<$<CXX_COMPILER_ID:GNU>:-Wno-null-dereference>"
-  "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fmacro-prefix-map=${COFFEECNC_BOOST_INCLUDE_DIR}/boost=boost>")
+  "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fmacro-prefix-map=${COFFEECNC_BOOST_INCLUDE_DIR}/boost=boost>"
+  ${COFFEECNC_ASIO_OPTIONS})
 target_include_directories(coffeecnc_application SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
 target_include_directories(coffeecnc_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(coffeecnc_application PUBLIC cxx_std_23)
@@ -31,11 +44,8 @@ target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linux
   PRIVATE coffeecnc_project_options resolv)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
-# LeakSanitizer's suppressions are looked up in the executable: the file is a source of every
-# program that opens the window, and is empty outside AddressSanitizer builds.
-set(COFFEECNC_LSAN_SUPPRESSIONS "${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.cpp"
-  CACHE INTERNAL "Source with the LeakSanitizer suppressions of the window's libraries")
-add_executable(coffeecnc main.cpp ${COFFEECNC_LSAN_SUPPRESSIONS})
+# COFFEECNC_SANITIZER_SUPPRESSIONS: set in src/shell, a source of every program that opens the window.
+add_executable(coffeecnc main.cpp ${COFFEECNC_SANITIZER_SUPPRESSIONS})
 target_link_libraries(coffeecnc PRIVATE coffeecnc_application coffeecnc_project_options)
 coffeecnc_enable_analyzers(coffeecnc)
 

@@ -1,0 +1,176 @@
+# Builds the backend with each sanitizer preset and runs the portable tests (`ctest -LE linuxcnc`)
+# on Debian 13 (trixie), as the release build does. Any sanitizer report fails the job: the
+# presets compile with -fno-sanitize-recover=all, and the options below abort on the first one.
+#
+# asan: AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer, with LinuxCNC and the
+#   GTK/WebKit shell. tsan: ThreadSanitizer, the same build. msan: MemorySanitizer with an
+#   instrumented libc++, without LinuxCNC and the shell (their libraries are not instrumented).
+#
+# The tests labelled `linuxcnc` are not run here: each starts LinuxCNC in simulation under the
+# host's lock, one at a time (about an hour for the set), and LinuxCNC's realtime layer needs
+# a privileged host. They are run under the asan preset on the development host.
+name: Sanitizers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1
+  UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+  TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+  MSAN_OPTIONS: halt_on_error=1:print_stats=0
+
+jobs:
+  linuxcnc:
+    name: ${{ matrix.preset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan, tsan]
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+      # --init reaps orphans, as the release build needs for the preview engine tests.
+      # seccomp=unconfined: ThreadSanitizer needs ASLR off (setarch -R, a personality(2) value
+      # Docker's default profile refuses): the runner's kernel has 32 bits of mmap entropy.
+      options: --init --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same LinuxCNC packages as the release build (.github/workflows/release.yml).
+      - name: Configure the LinuxCNC APT repository
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates gnupg
+          # LinuxCNC Archive Signing Key <emcboard@linuxcnc.org>
+          gpg --batch --keyserver hkps://keyserver.ubuntu.com \
+            --recv-keys 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927
+          gpg --batch --export 0CE3E44425B11F871BBCC6F5E43B5A8E78CC2927 > /usr/share/keyrings/linuxcnc.gpg
+          echo "deb [signed-by=/usr/share/keyrings/linuxcnc.gpg] https://www.linuxcnc.org/ trixie base 2.9-uspace" \
+            > /etc/apt/sources.list.d/linuxcnc.list
+          echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+          reachable=0
+          for attempt in 1 2 3 4; do
+            apt-get update
+            if apt-cache policy linuxcnc-uspace | grep -q 'linuxcnc.org trixie'; then
+              reachable=1
+              break
+            fi
+            sleep $((attempt * 10))
+          done
+          echo "LINUXCNC_ORG=$reachable" >> "$GITHUB_ENV"
+          [ "$reachable" = 1 ] || echo "linuxcnc.org trixie index not loaded: using the cached packages"
+
+      # The release build's cache of the LinuxCNC packages.
+      - uses: actions/cache/restore@v4
+        with:
+          path: linuxcnc-cache
+          key: linuxcnc-trixie-amd64-v1-${{ github.run_id }}
+          restore-keys: linuxcnc-trixie-amd64-v1-
+
+      - name: Build tools and LinuxCNC
+        run: |
+          set -eu
+          # xvfb, xauth: the window tests. bubblewrap: remote_server_dns, which skips where the
+          # container refuses a hostname namespace.
+          tools="git build-essential cmake ninja-build pkg-config dpkg-dev file xvfb xauth bubblewrap
+            libgtk-3-dev libwebkit2gtk-4.1-dev nlohmann-json3-dev libboost-dev"
+          if [ "$LINUXCNC_ORG" = 1 ]; then
+            apt-get install -y --no-install-recommends $tools linuxcnc-uspace-dev
+          else
+            ls linuxcnc-cache/linuxcnc-uspace_*.deb linuxcnc-cache/linuxcnc-uspace-dev_*.deb
+            apt-get install -y --no-install-recommends $tools ./linuxcnc-cache/*.deb
+          fi
+          dpkg-query -W -f='linuxcnc-uspace ${Version}\n' linuxcnc-uspace
+          gcc --version | head -1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Panel
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build
+        working-directory: backend
+        run: |
+          set -eu
+          cmake --preset ${{ matrix.preset }} -DCOFFEECNC_LINUXCNC=ON -DCOFFEECNC_SHELL=ON
+          cmake --build --preset ${{ matrix.preset }}
+
+      - name: Portable tests
+        working-directory: backend
+        run: |
+          set -eu
+          run=
+          if [ "${{ matrix.preset }}" = tsan ]; then run="setarch -R"; fi
+          $run ctest --preset ${{ matrix.preset }} -LE linuxcnc --output-on-failure
+
+  msan:
+    name: msan
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+      options: --init
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build tools
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl gnupg git cmake \
+            ninja-build python3 nlohmann-json3-dev
+          # Clang 22 from apt.llvm.org: Debian's clang 19 comes with a libc++ that has no
+          # std::from_chars for floating point (libc++ 20 added it), which the app layer uses.
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor > /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/trixie/ llvm-toolchain-trixie-22 main" \
+            > /etc/apt/sources.list.d/llvm.list
+          apt-get update
+          apt-get install -y --no-install-recommends clang-22 libclang-rt-22-dev
+          ln -sf /usr/bin/clang-22 /usr/local/bin/clang
+          ln -sf /usr/bin/clang++-22 /usr/local/bin/clang++
+          echo "CLANG_VERSION=$(clang++ -dumpversion)" >> "$GITHUB_ENV"
+
+      # libc++ and libc++abi of the same LLVM release, instrumented for MemorySanitizer. Built
+      # once per clang version.
+      - id: libcxx
+        uses: actions/cache@v4
+        with:
+          path: backend/build/msan-libcxx
+          key: msan-libcxx-trixie-${{ env.CLANG_VERSION }}-${{ hashFiles('backend/tests/sanitizers/build_msan_libcxx.sh') }}
+
+      - if: steps.libcxx.outputs.cache-hit != 'true'
+        name: Instrumented libc++
+        working-directory: backend
+        run: |
+          JOBS=$(nproc) tests/sanitizers/build_msan_libcxx.sh clang++ \
+            "$PWD/build/msan-libcxx" "$RUNNER_TEMP/msan-libcxx-work"
+
+      - name: Build
+        working-directory: backend
+        run: |
+          set -eu
+          cmake --preset msan
+          cmake --build --preset msan
+
+      - name: Portable tests
+        working-directory: backend
+        run: ctest --preset msan -LE linuxcnc --output-on-failure

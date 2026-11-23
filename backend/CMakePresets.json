@@ -10,6 +10,18 @@
     },
     {"name": "asan", "inherits": "dev", "cacheVariables": {"COFFEECNC_SANITIZERS": "address;undefined"}},
     {"name": "tsan", "inherits": "dev", "cacheVariables": {"COFFEECNC_SANITIZERS": "thread"}},
+    {
+      "name": "msan",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g -O1",
+        "COFFEECNC_SANITIZERS": "memory",
+        "COFFEECNC_MSAN_LIBCXX": "${sourceDir}/build/msan-libcxx",
+        "COFFEECNC_LINUXCNC": "OFF",
+        "COFFEECNC_SHELL": "OFF"
+      }
+    },
     {"name": "analyze", "inherits": "dev", "cacheVariables": {"COFFEECNC_ENABLE_ANALYZERS": true}},
     {"name": "package", "inherits": "dev", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "COFFEECNC_DEVELOPMENT_PATHS": false}}
   ],
@@ -17,6 +29,7 @@
     {"name": "dev", "configurePreset": "dev"},
     {"name": "asan", "configurePreset": "asan"},
     {"name": "tsan", "configurePreset": "tsan"},
+    {"name": "msan", "configurePreset": "msan"},
     {"name": "analyze", "configurePreset": "analyze"},
     {"name": "package", "configurePreset": "package"}
   ],
@@ -24,6 +37,7 @@
     {"name": "dev", "configurePreset": "dev", "output": {"outputOnFailure": true}},
     {"name": "asan", "configurePreset": "asan", "output": {"outputOnFailure": true}},
     {"name": "tsan", "configurePreset": "tsan", "output": {"outputOnFailure": true}},
+    {"name": "msan", "configurePreset": "msan", "output": {"outputOnFailure": true}},
     {"name": "analyze", "configurePreset": "analyze", "output": {"outputOnFailure": true}},
     {"name": "package", "configurePreset": "package", "output": {"outputOnFailure": true}}
   ],

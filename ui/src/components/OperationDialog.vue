@@ -38,6 +38,7 @@ const values = reactive(Object.fromEntries(operations.map((op) => {
 })) as Record<OperationId, Values>)
 const entered = computed(() => values[chosen.value])
 const fields = computed(() => visibleFields(operation.value, entered.value))
+const operationNote = computed(() => operation.value.note?.(entered.value))
 
 const tools = computed(() => [...panel.toolTable?.tools ?? []].sort((a, b) => a.number - b.number))
 const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
@@ -127,10 +128,14 @@ function numberUnit(field: Field): string {
   return field.type === 'number' ? unitOf(field.kind, unit) : ''
 }
 const cutFields = new Set(['feed', 'plungeFeed', 'rpm', 'clearance'])
-const fieldGroups = computed(() => [
-  { label: t('operations.dialog.toolAndFeeds'), includesTool: true, fields: fields.value.filter((field) => cutFields.has(field.key)) },
-  { label: t('operations.dialog.geometry'), includesTool: false, fields: fields.value.filter((field) => !cutFields.has(field.key)) },
-])
+const pocket = computed(() => fields.value.some((field) => field.key === 'entry'))
+const fieldGroups = computed(() => {
+  return [
+    { label: t('operations.dialog.toolAndFeeds'), includesTool: true, fields: fields.value.filter((field) => cutFields.has(field.key)) },
+    { label: pocket.value ? t('operations.dialog.pocketOptions') : t('operations.dialog.geometry'),
+      includesTool: false, fields: fields.value.filter((field) => !cutFields.has(field.key)) },
+  ]
+})
 </script>
 
 <template>
@@ -145,10 +150,10 @@ const fieldGroups = computed(() => [
         </button>
       </nav>
       <div class="form">
-        <p v-if="operation.note" class="operation-note">{{ t(operation.note) }}</p>
+        <p v-if="operationNote" class="operation-note">{{ t(operationNote) }}</p>
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
-          <div class="fields" :class="{ cutting: group.includesTool }">
+          <div class="fields" :class="{ cutting: group.includesTool, pocket: pocket && !group.includesTool }">
             <label v-if="group.includesTool" class="entry tool-entry">
               <span class="label">{{ t('operations.dialog.tool') }}</span>
               <select v-model.number="toolNumber" class="field" :aria-label="t('operations.dialog.tool')" :disabled="saving">
@@ -159,7 +164,7 @@ const fieldGroups = computed(() => [
             <template v-for="field in group.fields" :key="`${chosen}-${field.key}-${field.label}`">
               <div v-if="field.type === 'choice'" class="entry">
                 <span class="label">{{ t(field.label) }}</span>
-                <select v-if="field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
+                <select v-if="field.select || field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
                   <option v-for="[value, text] in field.options" :key="value" :value="value">{{ t(text) }}</option>
                 </select>
                 <div v-else class="segmented" role="group" :aria-label="t(field.label)">
@@ -217,6 +222,8 @@ const fieldGroups = computed(() => [
 .form legend { width: 100%; margin-bottom: 7px; padding: 5px 0 0; border-top: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; }
 .fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
 .fields.cutting { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.fields.pocket { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.fields.pocket .number-field:has(.field-unit) input { padding-right: 44px; }
 .tool-entry { grid-column: span 2; }
 .number-field { position: relative; min-width: 0; }
 .number-field:has(.field-unit) input { padding-right: 62px; }
@@ -231,5 +238,5 @@ p.errors { padding: 0; }
 .file strong, .where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file strong { font-size: 13px; font-weight: 500; }
 .where { margin-top: 2px; color: var(--text-dim); }
-@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .operation-editor { grid-template-columns: 150px minmax(0, 1fr); gap: 12px; }.fields, .fields.cutting, .fields.pocket { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>

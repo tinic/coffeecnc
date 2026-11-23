@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometry, entry and walls",
       "title": "New operation",
       "operations": "Operation",
       "tool": "Tool",
@@ -13,6 +14,7 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "inclinedEntry": "Use an end mill rated for the selected entry.",
       "facing": "Facing",
       "drilling": "Hole pattern",
       "bore": "Helical bore",
@@ -21,6 +23,12 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "entryFeed": "Entry feed",
+      "pocketEntry": "Entry",
+      "entryAngle": "Maximum entry angle",
+      "pocketWalls": "Walls",
+      "wallStock": "Wall stock",
+      "pocketCoolant": "Coolant",
       "sizeX": "Size X",
       "sizeY": "Size Y",
       "origin": "X0 Y0 at",
@@ -62,6 +70,16 @@
       "boltCircleRadius": "Bolt circle radius"
     },
     "option": {
+      "plunge": "Plunge",
+      "helix": "Helical",
+      "ramp": "Linear ramp",
+      "toSize": "To size",
+      "leaveStock": "Leave stock",
+      "finishWalls": "Finish each layer",
+      "coolantOff": "Off",
+      "coolantFlood": "Flood",
+      "coolantMist": "Mist",
+      "coolantBoth": "Mist and flood",
       "lowerLeft": "Lower-left corner",
       "lowerRight": "Lower-right corner",
       "upperLeft": "Upper-left corner",
@@ -75,6 +93,12 @@
       "g83": "G83 peck"
     },
     "check": {
+      "wallStockNonnegative": "Wall stock must be zero or greater.",
+      "wallStockPrecision": "Wall stock is too small for this program’s coordinate precision.",
+      "entryAngle": "The entry angle must be greater than 0° and less than 90°.",
+      "entryPrecision": "The entry path or angle is too small for this program’s coordinate precision.",
+      "pocketTooManyMoves": "The pocket would produce too many moves. Increase the depth per pass, stepover, or entry angle.",
+      "wallStockFits": "Wall stock leaves too little room for the tool.",
       "positive": "{label} must be more than zero.",
       "count": "{label} must be a whole number from 1 to {max}.",
       "chooseTool": "Choose a tool from the tool table.",

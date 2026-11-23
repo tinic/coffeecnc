@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Géométrie, entrée et parois",
       "title": "Nouvelle opération",
       "operations": "Opération",
       "tool": "Outil",
@@ -13,6 +14,7 @@
       "notSaved": "Le programme n’a pas été enregistré."
     },
     "operation": {
+      "inclinedEntry": "Utilisez une fraise adaptée au mode d’entrée choisi.",
       "facing": "Surfaçage",
       "drilling": "Motif de perçage",
       "bore": "Alésage hélicoïdal",
@@ -21,6 +23,12 @@
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre."
     },
     "label": {
+      "entryFeed": "Avance d’entrée",
+      "pocketEntry": "Entrée",
+      "entryAngle": "Angle d’entrée maximal",
+      "pocketWalls": "Parois",
+      "wallStock": "Surépaisseur des parois",
+      "pocketCoolant": "Arrosage",
       "sizeX": "Dimension X",
       "sizeY": "Dimension Y",
       "origin": "Position de X0 Y0",
@@ -62,6 +70,16 @@
       "boltCircleRadius": "Rayon du cercle de perçage"
     },
     "option": {
+      "plunge": "Plongée",
+      "helix": "Hélicoïdale",
+      "ramp": "Rampe linéaire",
+      "toSize": "À la cote",
+      "leaveStock": "Laisser une surépaisseur",
+      "finishWalls": "Finir chaque couche",
+      "coolantOff": "Arrêt",
+      "coolantFlood": "Arrosage abondant",
+      "coolantMist": "Brouillard",
+      "coolantBoth": "Brouillard et arrosage",
       "lowerLeft": "Coin inférieur gauche",
       "lowerRight": "Coin inférieur droit",
       "upperLeft": "Coin supérieur gauche",
@@ -75,6 +93,12 @@
       "g83": "G83 débourrage"
     },
     "check": {
+      "wallStockNonnegative": "La surépaisseur des parois doit être positive ou nulle.",
+      "wallStockPrecision": "La surépaisseur est trop faible pour la précision des coordonnées du programme.",
+      "entryAngle": "L’angle d’entrée doit être supérieur à 0° et inférieur à 90°.",
+      "entryPrecision": "La trajectoire ou l’angle d’entrée est trop faible pour la précision des coordonnées du programme.",
+      "pocketTooManyMoves": "La poche générerait trop de mouvements. Augmentez la profondeur par passe, le pas latéral ou l’angle d’entrée.",
+      "wallStockFits": "La surépaisseur laisse trop peu de place pour l’outil.",
       "positive": "{label} : la valeur doit être supérieure à zéro.",
       "count": "{label} : entrez un nombre entier de 1 à {max}.",
       "chooseTool": "Choisissez un outil dans la table d’outils.",

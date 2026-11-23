@@ -65,6 +65,27 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState bore{};
+  bore.center_diameter = 16;
+  bore.measured = SetterState::Measured{
+      .id = 5,
+      .wcs = 2,
+      .axes = "XY",
+      .work = {4.0, -2.0, std::nullopt},
+      .machine = std::array{9.0, -5.0, 6.0},
+      .faces = {{ProbeDirection::x_plus, {12.0, -2.0, -6.0}, {17.0, -5.0, 6.0}}}};
+  const auto measured = Json::parse(encode_result(42, CommandOutcome::accepted, "", bore)).at("setter");
+  require(measured.at("measured") ==
+                  Json{{"measurement_id", 5},
+                       {"wcs", 2},
+                       {"axes", "XY"},
+                       {"work", {{"x", 4.0}, {"y", -2.0}}},
+                       {"machine", {9.0, -5.0, 6.0}},
+                       {"faces", Json::array({{{"direction", "x_plus"},
+                                               {"work", {12.0, -2.0, -6.0}},
+                                               {"machine", {17.0, -5.0, 6.0}}}})}} &&
+              !measured.contains("material"),
+          "A measure-only result reports the point and faces in work and machine millimetres");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

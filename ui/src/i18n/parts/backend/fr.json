@@ -374,6 +374,8 @@
       "loadCuttingTool": "Chargez un outil de coupe avant de vérifier sa longueur.",
       "measureEdgeAgain": "Mesurez de nouveau l’arête avant d’appliquer la rotation.",
       "frameChanged": "Le repère pièce ou l’outil a changé. Mesurez de nouveau l’arête.",
+      "probeFeatureAgain": "Palpez à nouveau l’élément avant d’appliquer la mesure.",
+      "measuredFrameChanged": "Le repère pièce ou l’outil a changé. Palpez à nouveau l’élément.",
       "rotationCancelled": "La rotation a été annulée avant l’écriture du système pièce.",
       "rotationCommand": "Impossible de construire la commande de rotation pièce.",
       "rotationUnverified": "Impossible de vérifier la rotation appliquée. Vérifiez le système pièce actif.",

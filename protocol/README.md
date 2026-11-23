@@ -21,9 +21,9 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
-| `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
-| `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
-| `apply_angle` | `tool` and `measurement_id` |
+| `apply_measurement` | `tool` and the `measurement_id` of a `measure_only` result |
+
+Every action from `material` to `angle` except `ball` takes an optional `measure_only: true`. The probe then moves as usual but writes no offset. The result has no `setter.material` and has `setter.measured`: `wcs`, `axes` (`X`, `Y`, `Z`, `XY`; empty for an angle), `work` (the measured point, only its measured axes, in the work system at the time of the probe), `machine` (the same point in machine XYZ: an axis not measured at the start, Z of an XY feature at the probing depth), `faces` (each probed surface point: `direction`, `work` and `machine` XYZ; the ball-centre contact moved one ball radius along the travel) and, except for an angle, `measurement_id`. `apply_measurement` sets those axes as the original action would have. The controller accepts the ID once, in the same operator session, work frame and tool, and forgets it when another probe action begins.
 
 All wire lengths are in millimetres. The reference tool teaches the setter. Another tool positions at the taught XY, probes and saves the offset in one command. A successful result includes `setter.calibration` (machine setter X, Y and effective trigger-plane Z, or null) and `setter.measurement` (null or the result of the completed cycle with `calibration` as a boolean, `tool`, `contact` XYZ, `value`, `previous_length` and `stopping_distance`). Stopping distance is the downward travel from first contact to settled machine Z. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 

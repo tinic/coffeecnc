@@ -316,7 +316,7 @@ describe('capability-aware controls', () => {
     expect(nav.map((button) => button.text())).toEqual(['Manual', 'Machine', 'Tools', 'Touch off'])
     await nav[3]?.trigger('click')
     expect(wrapper.get('.em-nav [aria-current]').text()).toBe('Touch off')
-    expect(wrapper.findAll('.material-probe button').map((button) => button.text())).toEqual(['Z top', 'X−', 'X+', 'Y−', 'Y+', 'Features…', 'Calibrate ball…'])
+    expect(wrapper.findAll('.material-probe button').map((button) => button.text())).toEqual(['Z top', 'X−', 'X+', 'Y−', 'Y+', 'Features…', 'Calibrate ball…', 'Measure only'])
     expect(wrapper.find('.wcs-values').exists()).toBe(true)
     expect(wrapper.text()).toContain('Stop jog')
     expect(wrapper.get('.stop-button').text()).toBe('Stop')

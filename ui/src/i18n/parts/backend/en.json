@@ -374,6 +374,8 @@
       "loadCuttingTool": "Load a cutting tool before checking its length.",
       "measureEdgeAgain": "Measure the edge again before applying rotation.",
       "frameChanged": "The work frame or tool changed. Measure the edge again.",
+      "probeFeatureAgain": "Probe the feature again before applying the measurement.",
+      "measuredFrameChanged": "The work frame or tool changed. Probe the feature again.",
       "rotationCancelled": "Rotation was cancelled before writing the work system.",
       "rotationCommand": "Could not build the work rotation command.",
       "rotationUnverified": "Could not verify the applied rotation. Check the active work system.",

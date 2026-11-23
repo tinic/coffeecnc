@@ -5,7 +5,8 @@ import { vTooltip } from '../tooltip'
 // tool position the machine reports, the active work origin and the machine travel.
 //
 // It is a picture only. Dragging, zooming and the view buttons change the camera and nothing
-// else; no gesture on it sends a command.
+// else; no gesture on it sends a command. A tap picks the move under the finger and reports its
+// source line, and the moves of highlighted lines are drawn on top: this links it to the text.
 import { computed, defineAsyncComponent, type ComputedRef, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -33,12 +34,22 @@ import type { Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
+import { buildPickIndex, isTap, pickSegment } from '../path-pick'
 import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-preview'
 import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 import { translateMessage } from '../i18n/messages'
 
 const { t } = useI18n()
+
+const props = defineProps<{
+  /** Source lines whose moves are drawn highlighted, inclusive; null for none. */
+  highlight?: { first: number; last: number } | null
+}>()
+const emit = defineEmits<{
+  /** A tap on the path: the source line of the move under it, or 0 for a tap beside the path. */
+  pick: [line: number]
+}>()
 
 const modelError = ref('')
 
@@ -236,6 +247,10 @@ watch([drawn, size, modelPoints, probeFixture], () => {
 
 const pointers = new Map<number, Screen>()
 let pinch = 0
+/** The gesture in progress: a tap until the pointer moves past the slop or a second one comes. */
+let gesture: { start: Screen; tap: boolean } | null = null
+/** Built on the first tap after the path changes; drawing does not need it. */
+const pickIndex = computed(() => buildPickIndex(drawn.value?.segments ?? []))
 
 function local(event: PointerEvent | WheelEvent): Screen {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
@@ -244,7 +259,10 @@ function local(event: PointerEvent | WheelEvent): Screen {
 
 function pointerDown(event: PointerEvent): void {
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  pointers.set(event.pointerId, local(event))
+  const at = local(event)
+  if (pointers.size === 0) gesture = { start: at, tap: event.button === 0 && !event.shiftKey }
+  else if (gesture !== null) gesture.tap = false
+  pointers.set(event.pointerId, at)
   pinch = 0
 }
 
@@ -254,6 +272,11 @@ function pointerMove(event: PointerEvent): void {
     return
   }
   const now = local(event)
+  if (gesture?.tap === true && pointers.size === 1) {
+    // A finger shifts a little during a tap; only a larger movement starts a drag.
+    if (isTap(gesture.start, now)) return
+    gesture.tap = false
+  }
   pointers.set(event.pointerId, now)
   autoFit.value = false
   const dx = now[0] - before[0]
@@ -281,8 +304,18 @@ function pointerMove(event: PointerEvent): void {
 }
 
 function pointerUp(event: PointerEvent): void {
-  pointers.delete(event.pointerId)
+  const tracked = pointers.delete(event.pointerId)
   pinch = 0
+  if (pointers.size > 0) return
+  const tap = tracked && event.type === 'pointerup' && gesture?.tap === true
+  gesture = null
+  if (tap) emit('pick', pickAt(local(event)))
+}
+
+/** The source line of the move nearest to `at` on the screen, or 0. */
+function pickAt(at: Screen): number {
+  if (drawn.value === null) return 0
+  return pickSegment(pickIndex.value, camera.value, at, size.value.width, size.value.height)?.line ?? 0
 }
 
 function wheel(event: WheelEvent): void {
@@ -294,9 +327,9 @@ function wheel(event: WheelEvent): void {
 
 const colours = {
   light: { travel: '#778a9a', rapid: '#667989', executed: '#064fc4', marker: '#a35910', outdated: '#687782',
-    axes: ['#a34040', '#2e7651', '#375eb0'] },
+    picked: '#c2410c', halo: '#ffffff', axes: ['#a34040', '#2e7651', '#375eb0'] },
   dark: { travel: '#7f95a7', rapid: '#8b9dae', executed: '#84bbff', marker: '#ffbd61', outdated: '#8996a3',
-    axes: ['#f28c87', '#83cea4', '#91b8ff'] },
+    picked: '#ff8f5c', halo: '#1c242d', axes: ['#f28c87', '#83cea4', '#91b8ff'] },
 } as const
 
 function drawGrid(): void {
@@ -413,6 +446,27 @@ function draw(): void {
     }
     context.globalAlpha = 1
     context.setLineDash([])
+    const highlight = props.highlight
+    if (highlight && highlight.first > 0) {
+      // The picked lines on top of everything, outlined so they read over the planned path.
+      for (const [width, colour] of [[6, palette.halo], [3, palette.picked]] as const) {
+        context.lineWidth = width
+        context.strokeStyle = colour
+        context.globalAlpha = width === 6 ? 0.85 : 1
+        context.beginPath()
+        for (const segment of preview.segments) {
+          if (segment.line < highlight.first || segment.line > highlight.last) continue
+          const p = segment.points
+          for (let i = 0; i + 2 < p.length; i += 3) {
+            const [x, y] = at([p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
+            if (i === 0) context.moveTo(x, y)
+            else context.lineTo(x, y)
+          }
+        }
+        context.stroke()
+      }
+      context.globalAlpha = 1
+    }
   }
 
   const work = workFrame.value
@@ -491,7 +545,8 @@ function schedule(): void {
 }
 
 watch([camera, size, drawn, current, executed, travelBox, workFrame, toolTip, live,
-  tools, theme, showMachine, probeFixture, visibleTool, modelError], schedule)
+  tools, theme, showMachine, probeFixture, visibleTool, modelError,
+  (): number => props.highlight?.first ?? 0, (): number => props.highlight?.last ?? 0], schedule)
 
 let observer: ResizeObserver | null = null
 

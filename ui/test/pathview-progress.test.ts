@@ -117,4 +117,51 @@ describe('path view pointers', () => {
     await nextTick()
     expect(iso?.attributes('aria-pressed')).toBe('false')
   })
+
+  it('reports the line of a tapped move, and not for a drag or a pinch', async () => {
+    await show(running(0, 0))
+    const canvas = wrapper?.find('canvas.toolpath-canvas')
+    if (!canvas || !wrapper) throw new Error('No canvas')
+    const iso = wrapper.findAll('button').find((button) => button.text() === 'Iso')
+    const pointer = (type: string, pointerId: number, x: number, y: number): void => {
+      const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true })
+      Object.defineProperty(event, 'pointerId', { value: pointerId })
+      canvas.element.dispatchEvent(event)
+    }
+    // The fitted path is centred: the middle of the canvas is on the move of line 2.
+    pointer('pointerdown', 1, 400, 250)
+    pointer('pointermove', 1, 404, 253)
+    pointer('pointerup', 1, 404, 253)
+    expect(wrapper.emitted('pick')).toEqual([[2]])
+    expect(iso?.attributes('aria-pressed')).toBe('true')
+    // Beside the path: no move.
+    pointer('pointerdown', 1, 20, 20)
+    pointer('pointerup', 1, 20, 20)
+    expect(wrapper.emitted('pick')?.at(-1)).toEqual([0])
+    // A drag orbits and picks nothing.
+    pointer('pointerdown', 1, 400, 250)
+    pointer('pointermove', 1, 460, 250)
+    pointer('pointerup', 1, 400, 250)
+    await nextTick()
+    expect(iso?.attributes('aria-pressed')).toBe('false')
+    // Two fingers that hardly move are a pinch, not a tap.
+    pointer('pointerdown', 1, 400, 250)
+    pointer('pointerdown', 2, 420, 250)
+    pointer('pointerup', 2, 420, 250)
+    pointer('pointerup', 1, 400, 250)
+    expect(wrapper.emitted('pick')).toHaveLength(2)
+  })
+
+  it('draws the moves of highlighted lines on top', async () => {
+    await show(running(0, 0))
+    expect(strokes.filter((stroke) => stroke.lineWidth === 3)).toEqual([])
+    strokes = []
+    await wrapper?.setProps({ highlight: { first: 2, last: 3 } })
+    await flushPromises()
+    const halo = strokes.findIndex((stroke) => stroke.lineWidth === 6 && stroke.strokeStyle === '#ffffff')
+    expect(halo).toBeGreaterThan(0)
+    expect(strokes[halo + 1]).toEqual({ lineWidth: 3, strokeStyle: '#c2410c' })
+    // After every move of the path: the planned moves are the first three strokes.
+    expect(strokes.slice(0, 3).every((stroke) => stroke.lineWidth === 1.55)).toBe(true)
+  })
 })

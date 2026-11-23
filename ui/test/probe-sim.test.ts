@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CommandBody, CommandResult, FromMachine, ProbeDirection, Vec3 } from '../src/protocol'
 import { SimMachine } from '../src/sim/machine'
+import { toWork } from '../src/sim/gcode'
 import { applyScene } from '../src/sim/scenes'
 
 type MovingProbe = Extract<CommandBody, { type: 'fixed_setter'; x: number }>
@@ -161,6 +162,60 @@ describe('browser probe scene', () => {
       expect(sim.status().offsets.rotation_xy).toBeCloseTo(3)
       expect(result(send(request))?.outcome).toBe('failed')
     })
+
+  it('aligns to the slanted block, measures no turn left and probes its corner in the rotated axes', () => {
+    const { sim, cycle, send, result } = scene('angle')
+    const move = (x: number, y: number, z: number): void => {
+      const id = send({ type: 'mdi', text: `G53 G0 X${String(x)} Y${String(y)} Z${String(z)}` })
+      sim.advanceUntil(() => result(id) !== undefined && sim.status().interp === 'idle' && sim.status().motion.in_position, 30_000)
+    }
+    const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+    const measured = cycle({ action: 'angle', direction: 'y_plus', spacing: 50 })
+    const id = measured.setter?.edge_rotation?.measurement_id
+    if (id === undefined) throw new Error('Missing rotation offer')
+    const applied = result(send({ type: 'fixed_setter', action: 'apply_angle', tool: 99, measurement_id: id }))
+    expect(applied?.outcome).toBe('accepted')
+    expect(applied?.setter?.edge_angle).toBeCloseTo(3)
+    expect(sim.status().offsets.rotation_xy).toBeCloseTo(3)
+    move(x, y, z)
+    const again = cycle({ action: 'angle', direction: 'y_plus', spacing: 50 })
+    expect(again.setter?.edge_angle).toBeCloseTo(0)
+    expect(again.setter?.edge_rotation?.rotation).toBeCloseTo(3)
+    // Over the slanted block 5 mm inside its front-left corner, above the top.
+    const [centreX, centreY] = [255, 85]
+    const turn = (u: number, v: number): [number, number] => {
+      const a = 3 * Math.PI / 180
+      return [centreX + u * Math.cos(a) - v * Math.sin(a), centreY + u * Math.sin(a) + v * Math.cos(a)]
+    }
+    const [sx, sy] = turn(-35, -25)
+    move(sx, sy, z + 12)
+    expect(cycle({ action: 'corner', x_direction: 'x_plus', y_direction: 'y_plus' }).setter?.material?.axis).toBe('XY')
+    const [cx, cy] = turn(-40, -30)
+    const work = toWork(sim.modal, [cx, cy, 0])
+    expect(Math.abs(work[0])).toBeLessThan(0.05)
+    expect(Math.abs(work[1])).toBeLessThan(0.05)
+    expect(sim.status().offsets.rotation_xy).toBeCloseTo(3)
+  })
+
+  it.each([7.5, -30])('finds the bore and boss centres along work axes rotated %s°', (degrees) => {
+    for (const [setup, centre, diameter] of [['bore', [155, 108], 19.96], ['boss', [235, 170], 24.04]] as const) {
+      const { sim, cycle } = scene(setup)
+      sim.modal.rotations[0] = degrees
+      const measured = cycle(setup === 'bore' ? { action: 'bore' } : { action: 'boss', diameter: 24 })
+      expect(measured.setter?.center_diameter).toBeCloseTo(diameter)
+      expect(sim.status().offsets.g5x[0]).toBeCloseTo(centre[0])
+      expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
+      expect(sim.status().offsets.rotation_xy).toBe(degrees)
+    }
+  })
+
+  it('refuses a ball calibration in a rotated work system', () => {
+    const { sim, submit, result } = scene('ball')
+    sim.modal.rotations[0] = 7.5
+    const id = submit({ action: 'ball', gauge_width: 24 })
+    sim.advanceUntil(() => result(id) !== undefined, 30_000)
+    expect(result(id)?.reason).toContain('without rotation')
+  })
 
   it('calibrates the ruby ball and updates the table read by the panel', () => {
     const { sim, out, cycle } = scene('ball')

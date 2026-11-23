@@ -733,7 +733,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     bool ok = after.wcs == 2 && std::abs(after.rotation_xy - degrees) < 1e-9 &&
               after.g92 == initial.g92 && after.tool_offset == initial.tool_offset &&
               std::abs(after.g5x[2] - initial.g5x[2]) < 1e-6 && std::abs(machine()[2] - 20) < 0.03;
-    std::string line = std::format("result action={} rotation={}", expected.name, degrees);
+    std::string line = std::format("fact=rotated_probe action={} rotation={}", expected.name, degrees);
     for (std::size_t i = 0; i < 2; ++i) {
       const double want = expected.origin[i].value_or(kept[i]);
       ok = ok && std::abs(measured[i] - want) < 0.03;
@@ -793,13 +793,22 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
 
   // The travel check is on the machine endpoint: 1 mm inside the Y limit, the +X work axis
   // leaves it although the X search alone would not.
-  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", s > 0 ? 249 : -249));
+  // Two moves: each settles within the 6 s wait at 30 mm/s.
+  const double edge_y = s > 0 ? 249 : -249;
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y));
   const auto writes = port.writes().size();
   const auto origin = port.status().g5x;
   const auto outside = port.fixed_setter({SetterAction::bore, 99, machine()}, epoch, {});
+  std::cout << std::format("fact=rotated_probe action=travel start_y={} endpoint_y={:.4f} "
+                           "limit_y={} writes={}",
+                           edge_y, edge_y + 20 * s, s > 0 ? 250 : -250,
+                           port.writes().size() - writes)
+            << std::endl;
   require(!outside && outside.error().contains("outside the configured travel") &&
               port.writes().size() == writes && port.status().g5x == origin,
           outside ? "expected a travel refusal" : outside.error());
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi("G21 G90 G53 G0 X0 Y0 Z20");
 
   // Edge angle: the edge turns atan(0.05) from the work axis, measured from the rotated axes.
@@ -825,7 +834,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto measured = port.fixed_setter(request, epoch, {});
     if (!measured)
       throw std::runtime_error(std::format("angle at {}°: {}", rotation, measured.error()));
-    std::cout << std::format("result action=angle edge={} rotation={:.4f} angle_expected={:.4f} "
+    std::cout << std::format("fact=rotated_probe action=angle edge={} rotation={:.4f} angle_expected={:.4f} "
                              "angle_measured={:.4f} apply_expected={:.4f} apply_offered={:.4f}",
                              direction == ProbeDirection::y_plus ? "front" : "left", rotation,
                              expected, measured->edge_angle_deg.value_or(none), rotation + expected,
@@ -848,7 +857,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       {.action = SetterAction::apply_angle, .tool = 99, .edge_measurement = front.edge_rotation->id},
       epoch, {});
   const auto turned = port.status();
-  std::cout << std::format("result action=apply_angle rotation_expected={:.4f} rotation_measured={:.4f}",
+  std::cout << std::format("fact=rotated_probe action=apply_angle rotation_expected={:.4f} rotation_measured={:.4f}",
                            degrees + residual, turned.rotation_xy)
             << std::endl;
   require(applied && applied->edge_angle_deg &&

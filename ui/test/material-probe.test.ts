@@ -199,7 +199,25 @@ describe('edge angle', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'angle', direction: 'y_plus', spacing: 50,
       tool: 99, x: 0, y: 0, z: 0 })
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: -0.1 } })
-    expect(fixture.get('.setter-band.done p').text()).toBe('Front edge turns −0.100° (0.087 mm over 50 mm).')
+    expect(fixture.get('.setter-band.done p').text()).toBe('Front edge turns −0.100° from the work X axis (0.087 mm over 50 mm).')
+  })
+  it('in a rotated work system offers the present rotation plus the measured turn', async () => {
+    if (!panel.status) throw new Error('Missing machine status')
+    panel.status.offsets.wcs = 2
+    panel.status.offsets.rotation_xy = 7.5
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    const fixture = await probe('Edge angle…')
+    await fixture.get('.start-probe').trigger('click')
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      edge_angle: 0.25, edge_rotation: { wcs: 2, measurement_id: 9, rotation: 7.75 } } })
+    expect(fixture.get('.setter-band.done p').text()).toContain('Front edge turns +0.250° from the work X axis')
+    await probe('Apply rotation…')
+    expect(fixture.get('[role="dialog"]').text()).toContain(
+      'Turn the G55 XY axes +0.250° about its stored origin. Its rotation changes from +7.500° to +7.750°.')
+    await probe('Apply rotation')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'apply_angle', tool: 99, measurement_id: 9 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: 7.75 } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Work rotation set to +7.750°.')
   })
   it('selects the left edge and applies the recorded rotation only after confirmation', async () => {
     if (!panel.status) throw new Error('Missing machine status')

@@ -1117,9 +1117,10 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {failed(taken.error().error.line, taken.error().error.text), false, {}};
     taken->wcs = wcs;
     const auto manifest = std::make_shared<const Manifest>(std::move(*taken));
-    const auto saved =
-        saved_in(manifest->parameters ? stored_parameters(*manifest->parameters)
-                                      : std::map<int, double>{});
+    const auto& parameter_bytes = manifest->parameters;
+    const auto saved = saved_in(parameter_bytes.has_value()
+                                    ? stored_parameters(parameter_bytes.value())
+                                    : std::map<int, double>{});
     request.known_systems = saved.systems;
     request.saved_g28 = saved.g28;
     request.saved_g30 = saved.g30;

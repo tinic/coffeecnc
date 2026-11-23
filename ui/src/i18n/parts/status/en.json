@@ -124,7 +124,8 @@
       "messages": "Machine messages",
       "messageLog": "Message log",
       "dismissTip": "Dismiss this message; keep it in the message log",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "estopButton": "E-STOP"
     },
     "machineBlock": {
       "connecting": "No status from the machine yet",

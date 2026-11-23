@@ -366,7 +366,8 @@
       "recessStart": "Fahren Sie die Kugel im Tippbetrieb unter die Oberkante in die simulierte Vertiefung, frei vom Boden.",
       "gaugeStart": "Starten Sie über dem simulierten Kalibriernormal.",
       "bossStart": "Starten Sie über dem simulierten Zapfen.",
-      "setLoadedLength": "Setzen Sie die Länge des eingewechselten Werkzeugs, bevor Sie sie prüfen."
+      "setLoadedLength": "Setzen Sie die Länge des eingewechselten Werkzeugs, bevor Sie sie prüfen.",
+      "browserSimulator": "Browser-Simulator"
     },
     "bridge": {
       "noController": "CoffeeCNC kann keine Verbindung zu seiner nativen Steuerung herstellen. Starten Sie die Anwendung neu.",

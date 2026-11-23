@@ -173,7 +173,7 @@ function remove(): void {
 .details { min-width: 0; overflow: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 8px; }
 .tool-fields, .dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
 .tool-fields { grid-template-columns: 1fr 1fr 1.8fr; }.tool-fields.adding { grid-template-columns: .7fr 1fr 1fr 1.6fr; }
-.entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }.entry .field { width: 100%; min-width: 0; min-height: 44px; }
+.entry { display: flex; flex-direction: column; justify-content: flex-end; gap: 5px; min-width: 0; }.entry .label { overflow-wrap: anywhere; hyphens: auto; }.entry .field { width: 100%; min-width: 0; min-height: 44px; }
 .shape-heading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; gap: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
 .shape-heading .btn { min-height: 44px; }
 .hint, .feedback { margin: 0; font-size: 12px; line-height: 1.4; }.feedback { color: var(--warn); }.spacer { flex: 1; }

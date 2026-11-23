@@ -124,7 +124,8 @@
       "messages": "Mensagens da máquina",
       "messageLog": "Registo de mensagens",
       "dismissTip": "Dispensar esta mensagem; fica no registo de mensagens",
-      "dismiss": "Dispensar"
+      "dismiss": "Dispensar",
+      "estopButton": "PARAGEM DE EMERGÊNCIA"
     },
     "machineBlock": {
       "connecting": "Ainda sem estado da máquina",

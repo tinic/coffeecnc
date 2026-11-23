@@ -258,7 +258,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .touched :deep(svg) { width: 22px; height: 22px; stroke-width: 3; }
 .tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 480px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -291,7 +291,8 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .heading > .history { margin-left: auto; }
 .offset-history + .history { margin-left: 0; }
 .heading > .tool-history { width: 44px; padding: 0; }
-.table table { table-layout: fixed; }
+.table table { table-layout: auto; }
+.table th { white-space: nowrap; }
 .tool-column { width: 52px; }th.touched-column { width: 56px; text-align: center; }.touched-cell { text-align: center; }.dimension-column { width: 92px; }.load-column { width: 144px; }
 .tool-row { cursor: pointer; }
 .tool-row:not(.loaded):hover td, .tool-row.selected:not(.loaded) td { background: var(--accent-soft); }
@@ -299,7 +300,7 @@ const historyFilter = ref<HistoryFilter | null>(startDialog === 'history' ? 'all
 .tool-number { width: 100%; min-height: 44px; padding: 0; background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-weight: 700; text-align: right; }
 .tool-number:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .offset-row.editable { cursor: pointer; }.offset-row.editable:hover td { background: var(--accent-soft); }.offset-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.load-tool, .edit-tool { width: 64px; min-height: 44px; }
+.load-tool, .edit-tool { min-width: 64px; min-height: 44px; padding-inline: 8px; white-space: nowrap; }
 
 .scroll {
   flex: 1;
@@ -367,6 +368,9 @@ tr.loaded td {
   min-height: 44px;
 }
 .actions .chip + .btn { margin-left: 8px; }
+
+.tools > .offsets { width: max-content; min-width: 480px; max-width: 600px; }
+.offsets .select, .offsets .actions .btn { white-space: nowrap; }
 
 .offsets td:first-child {
   font-weight: 600;

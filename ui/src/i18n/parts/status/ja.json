@@ -124,7 +124,8 @@
       "messages": "機械メッセージ",
       "messageLog": "メッセージログ",
       "dismissTip": "このメッセージを閉じます。メッセージログには残ります",
-      "dismiss": "閉じる"
+      "dismiss": "閉じる",
+      "estopButton": "非常停止"
     },
     "machineBlock": {
       "connecting": "機械からの状態はまだありません",

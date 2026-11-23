@@ -366,7 +366,8 @@
       "recessStart": "Leve a esfera com jog para dentro do rebaixo simulado, abaixo do seu topo e afastada do fundo.",
       "gaugeStart": "Comece por cima do padrão de calibração simulado.",
       "bossStart": "Comece por cima do ressalto simulado.",
-      "setLoadedLength": "Defina o comprimento da ferramenta carregada antes de o verificar."
+      "setLoadedLength": "Defina o comprimento da ferramenta carregada antes de o verificar.",
+      "browserSimulator": "simulador no navegador"
     },
     "bridge": {
       "noController": "O CoffeeCNC não consegue ligar-se ao seu controlador nativo. Reinicie a aplicação.",

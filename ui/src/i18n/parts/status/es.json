@@ -124,7 +124,8 @@
       "messages": "Mensajes de la máquina",
       "messageLog": "Registro de mensajes",
       "dismissTip": "Descartar este mensaje; se conserva en el registro de mensajes",
-      "dismiss": "Descartar"
+      "dismiss": "Descartar",
+      "estopButton": "PARADA DE EMERGENCIA"
     },
     "machineBlock": {
       "connecting": "Aún no hay estado de la máquina",

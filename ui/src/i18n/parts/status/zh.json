@@ -124,7 +124,8 @@
       "messages": "机床消息",
       "messageLog": "消息日志",
       "dismissTip": "关闭此消息；它仍保留在消息日志中",
-      "dismiss": "关闭"
+      "dismiss": "关闭",
+      "estopButton": "急停"
     },
     "machineBlock": {
       "connecting": "尚未收到机床状态",

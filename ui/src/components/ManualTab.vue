@@ -716,6 +716,7 @@ function coolant(which: 'flood' | 'mist'): void {
   overflow-y: auto;
 }
 .jogbtn { touch-action: none; }
+.stopjog { white-space: normal; line-height: 1.15; text-align: center; overflow-wrap: anywhere; hyphens: auto; padding-inline: 4px; }
 .jog-parameters, .steps, .jog-speed { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .jog-parameters { gap: 6px; }
 .jog-speed input { width: 100%; min-height: 44px; margin: 0; }
@@ -727,7 +728,7 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .line > .label {
-  width: 44px;
+  min-width: 44px;
   flex: none;
 }
 
@@ -759,6 +760,11 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 
 .homestate {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.1;
+  text-align: center;
+  overflow-wrap: anywhere;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -877,14 +883,15 @@ function coolant(which: 'flood' | 'mist'): void {
   font-size: 13px;
 }
 .wcs-values { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; font-size: 11px; color: var(--text-dim); }.wcs-values > span { white-space: nowrap; }.wcs-values strong { color: var(--text); font-weight: 400; }
-.utilities { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
-.utilities h2 { grid-column: 1 / -1; }
-.utilities .sensor-feedback, .utilities .spindle-status { grid-column: 1 / -1; }
+.utilities { display: flex; flex-flow: row wrap; align-content: start; column-gap: 14px; }
+.utilities > :not(.line) { flex: 1 0 100%; }
+.utilities > .line { flex: 1 0 auto; }
+.utilities > .line.coolant { flex: 0 0 auto; }
+.utilities .line .btn { white-space: nowrap; }
 .utilities .sensor-feedback { margin-top: 0; }
 .utilities .line { gap: 6px; }
 .utilities .line .btn { padding: 0 10px; font-size: 12px; }
 .utilities .line > .label { width: auto; }
-@media (max-width: 1150px) { .utilities { grid-template-columns: 1fr; } }
 @media (max-height: 760px) {
   .jog { gap: 4px; padding-block: 8px; }
   .homes { gap: 4px; }

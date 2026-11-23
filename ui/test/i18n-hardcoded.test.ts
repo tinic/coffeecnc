@@ -28,7 +28,7 @@ const visibleAttributes = new Set(['title', 'aria-label', 'aria-description', 'p
   'data-numeric-effect', 'data-numeric-label', 'data-numeric-title'])
 
 /** Units, axis letters, G/M words, keys and similar technical tokens shown as they are. */
-const technical = /^(?:[A-Z]{1,4}\d*(?:\.\d+)?|[GMTSFHDPQRIJKLN]\d+(?:\.\d+)?|mm|in|inch|rpm|RPM|mm\/min|in\/min|ipm|deg|°|%|[XYZABCUVW]|[XYZ]{2,3}|G5[4-9](?:\.[1-3])?|G9[0-4]|MDI|NC|STEP|WCS|OK|ID|E-stop|E-STOP|CoffeeCNC|LinuxCNC|HAL|INI|NML|DRO|CAM|USB)$/
+const technical = /^(?:[A-Z]{1,4}\d*(?:\.\d+)?|[GMTSFHDPQRIJKLN]\d+(?:\.\d+)?|mm|in|inch|rpm|RPM|mm\/min|in\/min|ipm|deg|°|%|[XYZABCUVW]|[XYZ]{2,3}|G5[4-9](?:\.[1-3])?|G9[0-4]|MDI|NC|STEP|WCS|OK|ID|CoffeeCNC|LinuxCNC|HAL|INI|NML|DRO|CAM|USB)$/
 
 function words(text: string): boolean {
   const trimmed = text.replace(/\s+/g, ' ').trim()

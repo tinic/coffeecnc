@@ -39,6 +39,8 @@ const touchBlock = computed(() => props.readOnly || panel.tab !== 'manual' ? t('
   : basis.value !== 'work' ? t('manual.dro.switchToWorkPosition') : mdiBlock.value === null ? null : translateMessage(mdiBlock.value))
 const shifted = computed(() => reported.value?.offsets.g92.some((v) => v !== 0) ?? false)
 const tool = computed(() => reported.value?.tool.in_spindle)
+// A longer translation ends in an ellipsis in the fixed column; the tooltip has all of it.
+const toolHeading = computed(() => !live.value ? t('manual.dro.lastReportedTool') : tool.value === 0 ? t('manual.dro.noToolLoaded') : t('manual.dro.activeTool'))
 const compensation = computed(() => reported.value?.active_codes.find((code) => /^G(?:43(?:\.[12])?|49)$/.test(code)) ?? '—')
 const toolLength = computed(() => reported.value?.offsets.tool[2])
 function openQuick(axis: AxisStatus, operation: 'zero' | 'half'): void {
@@ -133,7 +135,7 @@ watch([axes, touchBlock], () => {
       </div>
     </div>
     <div class="active-tool" :class="{ stale: !live }" :aria-label="t('manual.dro.activeToolGroup')">
-      <span class="tool-heading">{{ !live ? t('manual.dro.lastReportedTool') : tool === 0 ? t('manual.dro.noToolLoaded') : t('manual.dro.activeTool') }}</span>
+      <span v-tooltip="toolHeading" class="tool-heading">{{ toolHeading }}</span>
       <strong class="mono">{{ tool === undefined ? '—' : `T${tool}` }} <span v-if="tool !== undefined">· {{ compensation }}</span></strong>
       <span class="tool-length">{{ t('manual.dro.length') }} <span class="mono">{{ toolLength === undefined ? '—' : formatLength(toolLength, unit) }}</span> {{ unit === 'inch' ? 'in' : 'mm' }}</span>
     </div>
@@ -180,7 +182,7 @@ watch([axes, touchBlock], () => {
 .units button { width: 44px; height: 48px; border: 1px solid transparent; border-radius: 6px; background: none; font-size: 16px; color: var(--text-dim); cursor: pointer; }
 .units button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }
-.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
+.tool-heading, .tool-length { color: var(--text-dim); font-size: 11px; }.tool-heading { overflow: hidden; text-overflow: ellipsis; }.active-tool strong { font-size: 14px; font-weight: 500; }.active-tool.stale strong { color: var(--text-faint); }
 .distrust .number { color: var(--text-faint); }.unavailable { flex: 1; color: var(--text-dim); }
 @media (max-height: 820px) { .dro { min-height: 70px; padding-block: 8px; margin-bottom: 8px; } }
 @media (max-height: 760px) { .dro { padding-block: 4px; }.axis { height: 52px; }.units button { height: 44px; }.basis-toggle { min-height: 52px; } }

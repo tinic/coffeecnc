@@ -366,7 +366,8 @@
       "recessStart": "Jog the ball into the simulated recess below its top and clear of the floor.",
       "gaugeStart": "Start above the simulated calibration gauge.",
       "bossStart": "Start above the simulated boss.",
-      "setLoadedLength": "Set the loaded tool’s length before checking it."
+      "setLoadedLength": "Set the loaded tool’s length before checking it.",
+      "browserSimulator": "browser simulator"
     },
     "bridge": {
       "noController": "CoffeeCNC cannot connect to its native controller. Restart the application.",

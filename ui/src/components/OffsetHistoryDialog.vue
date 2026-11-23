@@ -145,7 +145,7 @@ p { margin: 0; line-height: 1.45; }
 .bar .btn { min-height: 44px; padding: 0 14px; font-size: 13px; }
 .storage { margin-left: auto; color: var(--warn); font-size: 12px; text-align: right; }
 .entries { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.entry { display: grid; grid-template-columns: 9ch minmax(140px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.entry { flex: none; display: grid; grid-template-columns: 9ch minmax(140px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .when { font-size: 13px; color: var(--text-dim); }
 .what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .what strong { font-size: 15px; }

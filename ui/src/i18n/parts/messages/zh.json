@@ -366,7 +366,8 @@
       "recessStart": "请将测球点动到模拟凹槽内、低于其顶面且离开底面的位置。",
       "gaugeStart": "请从模拟校准规上方开始。",
       "bossStart": "请从模拟凸台上方开始。",
-      "setLoadedLength": "检查前请先设置当前刀具的长度。"
+      "setLoadedLength": "检查前请先设置当前刀具的长度。",
+      "browserSimulator": "浏览器模拟器"
     },
     "bridge": {
       "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。",

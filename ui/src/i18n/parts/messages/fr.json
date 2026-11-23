@@ -366,7 +366,8 @@
       "recessStart": "Amenez la bille en jog dans la cavité simulée, sous son bord supérieur et sans toucher le fond.",
       "gaugeStart": "Partez au-dessus de l’étalon de calibrage simulé.",
       "bossStart": "Partez au-dessus du tenon simulé.",
-      "setLoadedLength": "Définissez la longueur de l’outil chargé avant de la vérifier."
+      "setLoadedLength": "Définissez la longueur de l’outil chargé avant de la vérifier.",
+      "browserSimulator": "simulateur dans le navigateur"
     },
     "bridge": {
       "noController": "CoffeeCNC ne peut pas se connecter à son contrôleur natif. Redémarrez l’application.",

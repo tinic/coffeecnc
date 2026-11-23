@@ -124,7 +124,8 @@
       "messages": "Maschinenmeldungen",
       "messageLog": "Meldungsprotokoll",
       "dismissTip": "Diese Meldung ausblenden; sie bleibt im Meldungsprotokoll",
-      "dismiss": "Ausblenden"
+      "dismiss": "Ausblenden",
+      "estopButton": "NOT-HALT"
     },
     "machineBlock": {
       "connecting": "Noch kein Status von der Maschine",

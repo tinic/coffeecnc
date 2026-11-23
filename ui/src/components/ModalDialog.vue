@@ -28,7 +28,7 @@ onBeforeUnmount(() => {
         <header>
           <h2>{{ title }}</h2>
           <slot name="header" />
-          <button v-tooltip="t('common.close')" :disabled="closeDisabled" :aria-label="t('common.close')" class="btn quiet square" type="button" @click="emit('close')">
+          <button v-tooltip="t('common.close')" :disabled="closeDisabled" :aria-label="t('common.close')" class="btn square" type="button" @click="emit('close')">
             <AppIcon name="close" />
           </button>
         </header>

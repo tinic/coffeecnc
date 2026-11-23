@@ -353,6 +353,10 @@ tr.loaded td {
   background: var(--go-soft);
 }
 
+tr.loaded:not(.selected) td:first-child {
+  box-shadow: inset 3px 0 var(--go);
+}
+
 .actions {
   text-align: right;
 }

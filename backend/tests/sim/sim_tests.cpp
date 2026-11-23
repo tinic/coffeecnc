@@ -5232,10 +5232,10 @@ void offset_history(Rig& rig) {
         return sent.first + (sent.second.empty() ? "" : " " + sent.second);
       };
       const auto tool_length = [&](int number) -> double {
-        for (const auto& candidate : loaded_tools(table->read_raw(), rig.config.millimetres_per_unit))
-          if (candidate.tool.number == number)
-            return candidate.tool.length;
-        return std::numeric_limits<double>::quiet_NaN();
+        const auto tools = loaded_tools(table->read_raw(), rig.config.millimetres_per_unit);
+        const auto found = std::ranges::find_if(
+            tools, [number](const auto& candidate) -> bool { return candidate.tool.number == number; });
+        return found == tools.end() ? std::numeric_limits<double>::quiet_NaN() : found->tool.length;
       };
       const auto restore_length = [&](const std::optional<HistoryEntry>& of, bool awaits)
           -> std::pair<std::string, std::optional<HistoryEntry>> {
@@ -5272,15 +5272,15 @@ void offset_history(Rig& rig) {
       const double t2 = tool_length(2);
       const auto loaded = line("M61 Q1 G43 H1");
       const auto before_write = last_id();
-      const auto wrote = line(std::format("G10 L1 P1 Z{:.4f}", longer));
+      const auto set_length = line(std::format("G10 L1 P1 Z{:.4f}", longer));
       const auto written = awaited(before_write, HistoryField::length);
       const auto applied = line("G43 H1");
       // `follows` is asked before each check: its detail is the state it saw.
       const bool written_followed = follows(longer, longer);
       check("history_tool_length_of_the_loaded_tool",
-            loaded == "accepted" && wrote == "accepted" && applied == "accepted" && written &&
+            loaded == "accepted" && set_length == "accepted" && applied == "accepted" && written &&
                 written->target == HistoryTarget::tool && written->number == 1 && written_followed,
-            std::format("{} {} {} {} {}", loaded, wrote, applied,
+            std::format("{} {} {} {} {}", loaded, set_length, applied,
                         written ? change_text(*written) : "none", seen));
 
       const auto [g43, r1] = restore_length(written, true);

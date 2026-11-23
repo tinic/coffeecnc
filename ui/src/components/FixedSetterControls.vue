@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch, watchEffect } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 
 import { allHomed, findTool, homingActive, mdiBlock, onResult, panel, send } from '../machine'
 import { useCardFeedback } from '../card-feedback'
@@ -12,6 +14,7 @@ import type { ProbeGuideTarget } from '../probe-guide'
 import { touchProbeLoaded } from '../tool-models'
 
 const props = defineProps<{ limits: FixedSetterLimits }>()
+const { t } = useI18n()
 type Request = Extract<CommandBody, { type: 'fixed_setter' }>
 
 const state = setterState
@@ -32,20 +35,20 @@ const machineReason = computed(() => machineBlock(panel))
 const localBlock = computed(() => {
   if (machineReason.value !== null) return null
   if (mdiBlock.value !== null) return mdiBlock.value
-  if (position.value === null) return 'Waiting for the machine position'
+  if (position.value === null) return t('tools.setter.waitingPosition')
   const s = status.value
-  if (s?.wait.kind === 'tool_change' || tool.value <= 0) return 'Finish loading a tool'
+  if (s?.wait.kind === 'tool_change' || tool.value <= 0) return t('tools.setter.finishLoading')
   const rpm = s?.spindle.actual_rpm
-  if (rpm === null || rpm === undefined || rpm >= 1 || s?.spindle.direction !== 'stopped') return 'Wait for the spindle to stop'
-  if (!s.motion.in_position) return 'Wait for the axes to stop'
+  if (rpm === null || rpm === undefined || rpm >= 1 || s?.spindle.direction !== 'stopped') return t('tools.setter.waitSpindle')
+  if (!s.motion.in_position) return t('tools.setter.waitAxes')
   return null
 })
-const teachFirst = computed(() => `Teach the setter with T${String(props.limits.reference_tool)} or a touched-off tool first`)
+const teachFirst = computed(() => t('tools.setter.teachFirst', { number: props.limits.reference_tool }))
 const checkBlock = computed(() => {
-  if (touchProbeLoaded.value) return 'Load a cutting tool before checking its length'
+  if (touchProbeLoaded.value) return t('tools.setter.loadCutter')
   if (!state.value?.calibration) return teachFirst.value
   const loaded = findTool(tool.value)
-  if (loaded === null || (loaded.length === 0 && !touchedOff(tool.value))) return 'Set the loaded tool’s length before checking it'
+  if (loaded === null || (loaded.length === 0 && !touchedOff(tool.value))) return t('tools.setter.setLengthFirst')
   return null
 })
 const { line: feedback, allow } = useCardFeedback(
@@ -66,16 +69,16 @@ const summary = computed(() => {
     const loaded = findTool(result.tool)
     if (loaded === null || Math.abs(loaded.length - result.previous_length) > 1e-6) return ''
     const difference = formatLength(Math.abs(result.value - result.previous_length), panel.unit)
-    return `${toolLabel(result.tool)} passed · ${difference} ${panel.unit === 'inch' ? 'in' : 'mm'} from table`
+    return t('tools.setter.passed', { tool: toolLabel(result.tool), difference, unit: panel.unit === 'inch' ? 'in' : 'mm' })
   }
   // The length itself is in the tool table: only confirm what happened.
-  return result.calibration ? 'Setter taught' : `${toolLabel(result.tool)} measured`
+  return result.calibration ? t('tools.setter.taught') : t('tools.setter.measured', { tool: toolLabel(result.tool) })
 })
 
 const line = computed((): SetterStatusLine => {
-  if (running.value) return { text: pending.value?.action === 'check' ? 'Checking length…' : 'Touching off…', level: 'busy' }
+  if (running.value) return { text: pending.value?.action === 'check' ? t('tools.setter.checking') : t('tools.setter.touching'), level: 'busy' }
   if (feedback.value.level === 'blocked') return feedback.value
-  if (error.value !== null) return { text: error.value, level: 'blocked' }
+  if (error.value !== null) return { text: translateMessage(error.value), level: 'blocked' }
   if (summary.value) return { text: summary.value, level: 'done' }
   return feedback.value
 })
@@ -95,7 +98,7 @@ function refresh(): void {
 
 function startBlock(action: 'touch_off' | 'check'): string | null {
   const operation = action === 'check' ? checkBlock.value : null
-  return machineReason.value ?? (pending.value ? 'Waiting for setter status' : localBlock.value) ?? operation ??
+  return machineReason.value ?? (pending.value ? t('tools.setter.waitingStatus') : localBlock.value) ?? operation ??
     (!teaching.value && !state.value?.calibration ? teachFirst.value : null)
 }
 const guide = shallowRef<Extract<ProbeGuideTarget, { kind: 'teach' | 'measure' | 'check' }> | null>(null)
@@ -108,7 +111,7 @@ const guideBlocked = computed((): string | null => {
   const block = startBlock(target.kind === 'check' ? 'check' : 'touch_off')
   if (block !== null) return block
   return target.kind !== 'check' && (target.kind === 'teach') !== teaching.value
-    ? 'The setter setup changed. Reopen the guide.' : null
+    ? t('tools.setter.setupChanged') : null
 })
 function openCheck(): void {
   error.value = null
@@ -136,7 +139,7 @@ const removeListener = onResult((command, result) => {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
     if (motion) {
       error.value = result.reason || (command.action === 'check'
-        ? 'The machine did not confirm the tool check.' : 'The machine did not confirm the tool measurement.')
+        ? t('tools.setter.checkNotConfirmed') : t('tools.setter.measureNotConfirmed'))
       refresh()
     }
     return
@@ -154,10 +157,10 @@ onBeforeUnmount(() => {
 <template>
   <div class="setter-controls">
     <div class="setter-action">
-      <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">Stop setter</button>
+      <button v-if="running" class="btn danger" type="button" @click="send({ type: 'abort' })">{{ t('tools.setter.stop') }}</button>
       <template v-else>
-        <button v-if="limits.check_tolerance_mm !== undefined" class="btn check-length" type="button" @click="openCheck">Check length</button>
-        <button class="btn primary" type="button" @click="openTouchOff">Touch off</button>
+        <button v-if="limits.check_tolerance_mm !== undefined" class="btn check-length" type="button" @click="openCheck">{{ t('tools.setter.checkLength') }}</button>
+        <button class="btn primary" type="button" @click="openTouchOff">{{ t('tools.setter.touchOff') }}</button>
       </template>
     </div>
   </div>

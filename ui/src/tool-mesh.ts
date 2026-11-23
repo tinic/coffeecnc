@@ -69,7 +69,7 @@ export class ToolMesh {
     const { body, inserts, screws } = faceMillGeometry(diameter, length)
     this.addMesh(body, this.darkSteel, 'head', head)
     for (const insert of inserts) this.addMesh(insert, this.cutting, 'insert', head)
-    for (const screw of screws) this.addMesh(screw, this.darkSteel, 'insert screw', head)
+    for (const screw of screws) this.addMesh(screw, this.darkSteel, 'insert screw', head) // i18n-ignore
     this.group.add(head)
   }
 
@@ -131,7 +131,7 @@ export class ToolMesh {
     const colours = new Float32Array((profile.parameters.segments + 1) * finishes.length)
     for (let i = 0; i < colours.length; i += finishes.length) colours.set(finishes, i)
     profile.setAttribute('color', new Float32BufferAttribute(colours, 3))
-    this.addMesh(profile, this.housing, 'probe housing')
+    this.addMesh(profile, this.housing, 'probe housing') // i18n-ignore
     if (showShank) this.addMesh(this.lathe(shankProfile(d.shankDiameter / 2, bodyEnd, bodyEnd + d.shankDiameter)), this.shank, 'shank')
   }
 

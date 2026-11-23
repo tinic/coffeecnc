@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { panel } from '../machine'
 import type { Tool } from '../protocol'
 import { holderLabel } from '../tool-holder'
-import { resolveToolModel, toolDimensionError, toolFamilies, toolIdentity } from '../tool-model'
+import { resolveToolModel, toolDimensionError, toolFamilyName, toolIdentity } from '../tool-model'
 import { defaultToolName, savedProbe, toolModels } from '../tool-models'
 import { formatLength, toolLabel } from '../units'
 import ModalDialog from './ModalDialog.vue'
@@ -11,6 +12,7 @@ import ModalDialog from './ModalDialog.vue'
 // Look at a tool without editing it: the 3D preview and its table values.
 const ToolModelCanvas = defineAsyncComponent(() => import('./ToolModelCanvas.vue'))
 const props = defineProps<{ tool: Tool }>()
+const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 const unit = computed(() => panel.unit === 'inch' ? 'in' : 'mm')
 const model = computed(() => {
@@ -23,23 +25,23 @@ const model = computed(() => {
   const resolved = resolveToolModel(tool, assignment, toolModels.defaults)
   return resolved !== null && toolDimensionError(resolved.family, resolved.dimensions) === null ? resolved : null
 })
-const kind = computed(() => toolFamilies.find((family) => family.id === model.value?.family)?.name ?? 'No preview shape')
+const kind = computed(() => model.value === null ? t('tools.shared.noPreviewShape') : toolFamilyName(model.value.family))
 const probe = computed(() => model.value?.family === 'touch-probe')
 </script>
 
 <template>
   <ModalDialog :title="`${toolLabel(tool.number)} ${tool.comment || defaultToolName(tool.number)}`" size="large" contained expanded @close="emit('close')">
     <div class="tool-preview">
-      <div class="preview"><ToolModelCanvas v-if="model !== null" :model="model" /><p v-else class="hint">No preview shape for this tool.</p></div>
+      <div class="preview"><ToolModelCanvas v-if="model !== null" :model="model" /><p v-else class="hint">{{ t('tools.preview.noShape') }}</p></div>
       <dl class="values">
-        <dt>Type</dt><dd>{{ kind }}</dd>
-        <template v-if="model?.holder"><dt>Holder</dt><dd>{{ holderLabel(model.holder) }}</dd></template>
-        <dt>Length</dt><dd class="mono">{{ formatLength(tool.length, panel.unit) }} {{ unit }}</dd>
-        <dt>{{ probe ? 'Ball diameter' : 'Diameter' }}</dt><dd class="mono">{{ formatLength(tool.diameter, panel.unit) }} {{ unit }}</dd>
-        <dt>Pocket</dt><dd class="mono">{{ tool.pocket }}</dd>
+        <dt>{{ t('tools.preview.type') }}</dt><dd>{{ kind }}</dd>
+        <template v-if="model?.holder"><dt>{{ t('tools.shared.holder') }}</dt><dd>{{ holderLabel(model.holder) }}</dd></template>
+        <dt>{{ t('tools.preview.length') }}</dt><dd class="mono">{{ formatLength(tool.length, panel.unit) }} {{ unit }}</dd>
+        <dt>{{ probe ? t('tools.dimension.ballDiameter') : t('tools.dimension.diameter') }}</dt><dd class="mono">{{ formatLength(tool.diameter, panel.unit) }} {{ unit }}</dd>
+        <dt>{{ t('tools.preview.pocket') }}</dt><dd class="mono">{{ tool.pocket }}</dd>
       </dl>
     </div>
-    <template #footer><span class="spacer"></span><button class="btn primary" type="button" @click="emit('close')">Close</button></template>
+    <template #footer><span class="spacer"></span><button class="btn primary" type="button" @click="emit('close')">{{ t('common.close') }}</button></template>
   </ModalDialog>
 </template>
 

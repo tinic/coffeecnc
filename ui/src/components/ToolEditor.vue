@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { linkBlock, panel, send } from '../machine'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
 import type { Tool } from '../protocol'
 import { sameTool, saveTool } from '../save-tool'
-import { holderChoices, type ToolHolder } from '../tool-holder'
-import { dimensionKeys, pointedTool, readToolDimensions, resolveToolModel, shapeOverrides, toolDimensionError, toolFamilies, toolIdentity,
-  type DimensionKey, type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
+import { holderChoices, holderLabel, type ToolHolder } from '../tool-holder'
+import { dimensionKeys, pointedTool, readToolDimensions, resolveToolModel, shapeOverrides, toolDimensionError, toolFamilies, toolFamilyName, toolIdentity,
+  type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
 import { savedProbe, toolModelSettings, toolModels } from '../tool-models'
 import { parseLength, parseNumber, toDisplay } from '../units'
 import ModalDialog from './ModalDialog.vue'
 
 const ToolModelCanvas = defineAsyncComponent(() => import('./ToolModelCanvas.vue'))
+const { t } = useI18n()
 const props = defineProps<{ tool: Tool | null }>()
 const emit = defineEmits<{ close: [] }>()
 const unit = panel.unit
@@ -40,8 +43,8 @@ const parsed = computed((): Tool | null => {
   return { number, pocket: original.value?.pocket ?? number, length, diameter, comment: form.comment.trim() }
 })
 const current = computed(() => panel.toolTable?.tools.find((tool) => tool.number === original.value?.number))
-const block = computed(() => linkBlock.value ?? (panel.hello !== hello ? 'The machine connection changed. Reopen this editor.'
-  : panel.status?.interp !== 'idle' ? 'Stop execution before editing the tool.'
+const block = computed(() => linkBlock.value ?? (panel.hello !== hello ? t('tools.editor.connectionChanged')
+  : panel.status?.interp !== 'idle' ? t('tools.editor.stopExecution')
     : null))
 const probe = props.tool === null ? undefined : savedProbe(props.tool.number)
 // The machine's touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL) opens as a touch probe.
@@ -53,13 +56,12 @@ const saved = props.tool === null ? undefined : toolModels.assignments.get(props
 const savedModel = props.tool === null ? null : resolveToolModel(props.tool, saved, toolModels.defaults)
 const family = ref<ToolFamily | 'none'>(savedModel?.family ?? ((props.tool?.diameter ?? 0) > 0 ? 'end-mill' : 'none'))
 const holder = ref<ToolHolder | ''>(savedModel?.holder ?? '')
-const fields: { key: Exclude<DimensionKey, 'diameter'>; label: string }[] = [
-  { key: 'shankDiameter', label: 'Shank diameter' }, { key: 'cuttingLength', label: 'Cutting length' },
-  { key: 'overallLength', label: 'Overall length' }, { key: 'stickout', label: 'Stick-out' },
-  { key: 'tipAngle', label: 'Tip angle' },
-  { key: 'bodyDiameter', label: 'Body diameter' }, { key: 'bodyLength', label: 'Body length' },
-  { key: 'stylusLength', label: 'Stylus length' },
-]
+const labels = {
+  shankDiameter: 'tools.dimension.shankDiameter', cuttingLength: 'tools.dimension.cuttingLength',
+  overallLength: 'tools.dimension.overallLength', stickout: 'tools.dimension.stickout', tipAngle: 'tools.dimension.tipAngle',
+  bodyDiameter: 'tools.dimension.bodyDiameter', bodyLength: 'tools.dimension.bodyLength', stylusLength: 'tools.dimension.stylusLength',
+} as const
+const fields = (Object.keys(labels) as (keyof typeof labels)[]).map((key) => ({ key }))
 const visibleFields = computed(() => {
   const kind = family.value
   if (kind === 'none') return []
@@ -98,7 +100,7 @@ const shapeError = computed(() => model.value === null ? null : toolDimensionErr
 const modelBlock = computed(() => {
   if (saving.value) return null
   if (family.value === 'touch-probe' && !panel.simulated && toolModels.storage === 'session_only')
-    return 'Touch probes require saved tool models for this machine.'
+    return t('tools.modelState.probeNeedsStorage')
   return toolModelSettings.block(modelContext)
 })
 const replaces = computed(() => original.value === null && panel.toolTable?.tools.some((tool) => tool.number === parsed.value?.number))
@@ -107,7 +109,7 @@ async function save(): Promise<void> {
   const preview = model.value
   if (saving.value) return
   // Save is always offered: a press either saves or says what stops it.
-  const reason = tool === null ? 'Check the tool number, length and diameter.' : block.value ?? modelBlock.value ?? shapeError.value
+  const reason = tool === null ? t('tools.editor.checkFields') : block.value ?? modelBlock.value ?? shapeError.value
   if (tool === null || reason !== null) { feedback.value = reason ?? ''; return }
   saving.value = true; feedback.value = ''
   // A row changed elsewhere since this editor opened is written over with this one.
@@ -125,7 +127,7 @@ async function save(): Promise<void> {
     preview === null ? {} : shapeOverrides(preview.dimensions), modelContext, preview?.holder ?? null)
   saving.value = false
   if (result.saved) { if (isOpen()) emit('close') }
-  else feedback.value = `${tableWritten ? 'Tool details saved. Preview settings could not be saved. ' : ''}${result.reason}`
+  else feedback.value = tableWritten ? t('tools.editor.previewNotSaved', { reason: translateMessage(result.reason) }) : result.reason
 }
 function remove(): void {
   if (original.value === null || block.value !== null || panel.status?.tool.in_spindle === original.value.number) return
@@ -134,34 +136,34 @@ function remove(): void {
 </script>
 
 <template>
-  <ModalDialog v-if="deleting" key="delete" :title="`Remove tool ${form.number}?`" size="small" expanded fresh-gesture @close="deleting = false">
-    <p>Remove T{{ form.number }} from the tool table? Programs that call it will stop with an error.</p>
-    <template #footer><button class="btn" type="button" @click="deleting = false">Cancel</button><button class="btn danger" type="button" :disabled="block !== null || panel.status?.tool.in_spindle === original?.number" @click="remove">Remove tool</button></template>
+  <ModalDialog v-if="deleting" key="delete" :title="t('tools.editor.removeTitle', { number: form.number })" size="small" expanded fresh-gesture @close="deleting = false">
+    <p>{{ t('tools.editor.removeConfirm', { number: form.number }) }}</p>
+    <template #footer><button class="btn" type="button" @click="deleting = false">{{ t('common.cancel') }}</button><button class="btn danger" type="button" :disabled="block !== null || panel.status?.tool.in_spindle === original?.number" @click="remove">{{ t('tools.editor.removeTool') }}</button></template>
   </ModalDialog>
-  <ModalDialog v-else key="edit" :title="original === null ? 'Add tool' : `Edit tool ${form.number}`" size="large" contained expanded @close="emit('close')">
+  <ModalDialog v-else key="edit" :title="original === null ? t('tools.editor.addTitle') : t('tools.editor.editTitle', { number: form.number })" size="large" contained expanded @close="emit('close')">
     <div class="tool-editor">
-      <div class="preview"><ToolModelCanvas v-if="model !== null && shapeError === null" :model="model" /><p v-else class="hint">{{ family === 'none' ? 'Choose a preview shape.' : 'Enter valid dimensions to preview the tool.' }}</p></div>
+      <div class="preview"><ToolModelCanvas v-if="model !== null && shapeError === null" :model="model" /><p v-else class="hint">{{ family === 'none' ? t('tools.editor.choosePreviewShape') : t('tools.shared.enterValidDimensions') }}</p></div>
       <div class="details">
         <div class="tool-fields" :class="{ adding: original === null }">
-          <label v-if="original === null" class="entry"><span class="label">Tool number</span><input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="original !== null || saving" /></label>
-          <label class="entry"><span class="label">Length, {{ unit }}</span><input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
-          <label class="entry"><span class="label">{{ family === 'touch-probe' ? 'Ball diameter' : 'Diameter' }}, {{ unit }}</span><input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
-          <label class="entry description-entry"><span class="label">Description</span><input v-model="form.comment" class="field" type="text" :disabled="saving" /></label>
+          <label v-if="original === null" class="entry"><span class="label">{{ t('tools.editor.toolNumber') }}</span><input v-model="form.number" v-numeric="'integer'" class="field mono" type="text" inputmode="numeric" :disabled="original !== null || saving" /></label>
+          <label class="entry"><span class="label">{{ t('tools.shared.labelUnit', { label: t('tools.editor.length'), unit }) }}</span><input v-model="form.length" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
+          <label class="entry"><span class="label">{{ t('tools.shared.labelUnit', { label: family === 'touch-probe' ? t('tools.dimension.ballDiameter') : t('tools.dimension.diameter'), unit }) }}</span><input v-model="form.diameter" v-numeric :data-numeric-unit="unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label>
+          <label class="entry description-entry"><span class="label">{{ t('tools.editor.description') }}</span><input v-model="form.comment" class="field" type="text" :disabled="saving" /></label>
         </div>
         <div class="shape-heading">
-          <label class="entry type-entry"><span class="label">Preview shape</span><select v-model="family" class="field" aria-label="Tool type" :disabled="saving" @change="resetShape"><option value="none">No preview shape</option><option v-for="kind in toolFamilies" :key="kind.id" :value="kind.id">{{ kind.name }}</option></select></label>
-          <label class="entry"><span class="label">Holder</span><select v-model="holder" class="field" aria-label="Holder" :disabled="saving || family === 'none'"><option value="">None</option><option v-for="choice in holderChoices" :key="choice.id" :value="choice.id">{{ choice.label }}</option></select></label>
-          <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">Use template</button>
+          <label class="entry type-entry"><span class="label">{{ t('tools.editor.previewShape') }}</span><select v-model="family" class="field" :aria-label="t('tools.editor.toolType')" :disabled="saving" @change="resetShape"><option value="none">{{ t('tools.shared.noPreviewShape') }}</option><option v-for="kind in toolFamilies" :key="kind.id" :value="kind.id">{{ toolFamilyName(kind.id) }}</option></select></label>
+          <label class="entry"><span class="label">{{ t('tools.shared.holder') }}</span><select v-model="holder" class="field" :aria-label="t('tools.shared.holder')" :disabled="saving || family === 'none'"><option value="">{{ t('tools.editor.none') }}</option><option v-for="choice in holderChoices" :key="choice.id" :value="choice.id">{{ holderLabel(choice.id) }}</option></select></label>
+          <button v-if="family !== 'none'" class="btn quiet" type="button" :disabled="saving" @click="resetShape">{{ t('tools.editor.useTemplate') }}</button>
         </div>
         <template v-if="family !== 'none'">
-          <p v-if="family === 'touch-probe'" class="diameter-source hint">Ball diameter {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} from above · Length to ball bottom<span v-if="original === null && suggestedProbe"> · Configured T{{ suggestedProbe }}</span></p>
-          <p v-else class="diameter-source hint">Cutting diameter: {{ parsed === null ? '—' : text(parsed.diameter) }} {{ unit }} · from Diameter above</p>
-          <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ field.label }}, {{ field.key === 'tipAngle' ? '°' : unit }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
+          <p v-if="family === 'touch-probe'" class="diameter-source hint">{{ t('tools.editor.probeDiameterSource', { diameter: parsed === null ? '—' : text(parsed.diameter), unit }) }}<span v-if="original === null && suggestedProbe"> · {{ t('tools.editor.configuredProbe', { number: suggestedProbe }) }}</span></p>
+          <p v-else class="diameter-source hint">{{ t('tools.editor.cutterDiameterSource', { diameter: parsed === null ? '—' : text(parsed.diameter), unit }) }}</p>
+          <div class="dimensions"><label v-for="field in visibleFields" :key="field.key" class="entry"><span class="label">{{ t('tools.shared.labelUnit', { label: t(labels[field.key]), unit: field.key === 'tipAngle' ? '°' : unit }) }}</span><input v-model="shape[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving" /></label></div>
         </template>
       </div>
     </div>
-    <p v-if="feedback || block || modelBlock || shapeError || replaces || saving" class="feedback" role="status">{{ feedback || block || modelBlock || shapeError || (replaces ? `Tool ${form.number} exists. Saving replaces it.` : '') || 'Saving… Closing does not cancel a submitted save.' }}</p>
-    <template #footer><button v-if="original !== null" class="btn danger" type="button" :disabled="saving || block !== null || panel.status?.tool.in_spindle === original.number" @click="deleting = true">Delete</button><span class="spacer"></span><button class="btn" type="button" @click="emit('close')">{{ saving ? 'Close' : 'Cancel' }}</button><button class="btn primary" type="button" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save tool' }}</button></template>
+    <p v-if="feedback || block || modelBlock || shapeError || replaces || saving" class="feedback" role="status">{{ translateMessage(feedback) || block || modelBlock || shapeError || (replaces ? t('tools.editor.replaces', { number: form.number }) : '') || t('tools.editor.savingNote') }}</p>
+    <template #footer><button v-if="original !== null" class="btn danger" type="button" :disabled="saving || block !== null || panel.status?.tool.in_spindle === original.number" @click="deleting = true">{{ t('common.delete') }}</button><span class="spacer"></span><button class="btn" type="button" @click="emit('close')">{{ saving ? t('common.close') : t('common.cancel') }}</button><button class="btn primary" type="button" :disabled="saving" @click="save">{{ saving ? t('common.saving') : t('tools.editor.saveTool') }}</button></template>
   </ModalDialog>
 </template>
 

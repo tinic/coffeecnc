@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { translateMessage } from '../i18n/messages'
 import { panel } from '../machine'
 import { vNumeric } from '../numeric-input'
 import type { Tool } from '../protocol'
 import { dimensionKeys, factoryToolDefaults, pointedTool, readToolDimensions, resolveToolModel, setToolDefault,
-  shapeOverrides, toolDimensionError, toolFamilies, toolIdentity,
+  shapeOverrides, toolDimensionError, toolFamilies, toolFamilyName, toolIdentity,
   type DimensionKey, type ToolDimensions, type ToolFamily, type ToolModel } from '../tool-model'
 import { toolModelSettings, toolModels } from '../tool-models'
 import { parseNumericExpression } from '../numeric-expression'
@@ -12,6 +14,7 @@ import { fromDisplay, toDisplay } from '../units'
 import ModalDialog from './ModalDialog.vue'
 
 const ToolModelCanvas = defineAsyncComponent(() => import('./ToolModelCanvas.vue'))
+const { t } = useI18n()
 const props = defineProps<{ tool: Tool | null }>()
 const emit = defineEmits<{ close: [] }>()
 const defaultsMode = props.tool === null
@@ -21,14 +24,14 @@ const saveError = ref('')
 let open = true
 onBeforeUnmount(() => { open = false })
 const saveBlock = computed(() => saving.value ? null : toolModelSettings.block(editContext) ??
-  (props.tool !== null && !panel.simulated && panel.link !== 'live' ? 'A current matching tool table is required. Wait for the machine connection.' : null))
+  (props.tool !== null && !panel.simulated && panel.link !== 'live' ? t('tools.modelDialog.tableRequired') : null))
 const scope = computed(() => {
   switch (toolModels.storage) {
-    case 'browser': return defaultsMode ? 'Family defaults are saved in this browser.' : 'Tool assignments last for this page session.'
-    case 'available': return `Save keeps these models for machine ${panel.hello?.machine_id ?? ''}. Restored assignments require a matching tool-table row.`
-    case 'session_only': return 'Changes last until this page closes.'
-    case 'loading': return 'Waiting for this machine’s tool model settings.'
-    case 'unavailable': return 'Saved tool models are unavailable.'
+    case 'browser': return defaultsMode ? t('tools.modelDialog.scopeBrowserDefaults') : t('tools.modelDialog.scopeBrowserSession')
+    case 'available': return t('tools.modelDialog.scopeAvailable', { machine: panel.hello?.machine_id ?? '' })
+    case 'session_only': return t('tools.modelDialog.scopeSessionOnly')
+    case 'loading': return t('tools.modelDialog.scopeLoading')
+    case 'unavailable': return t('tools.modelDialog.scopeUnavailable')
   }
 })
 const unit = panel.unit // Keep an open editor's unit stable.
@@ -36,16 +39,14 @@ const identity = props.tool === null ? '' : toolIdentity(props.tool)
 const saved = props.tool === null ? undefined : toolModels.assignments.get(props.tool.number)
 const family = ref<ToolFamily>(saved?.identity === identity ? saved.family : 'end-mill')
 const custom = ref<boolean>(saved?.identity === identity && Object.keys(saved.overrides).length > 0)
-const fields: { key: DimensionKey; label: string }[] = [
-  { key: 'diameter', label: defaultsMode ? 'Reference diameter' : 'Cutting diameter' },
-  { key: 'shankDiameter', label: 'Shank diameter' },
-  { key: 'cuttingLength', label: 'Cutting length' },
-  { key: 'overallLength', label: 'Overall length' },
-  { key: 'stickout', label: 'Stick-out' },
-  { key: 'tipAngle', label: 'Included tip angle' },
-  { key: 'bodyDiameter', label: 'Body diameter' }, { key: 'bodyLength', label: 'Body length' },
-  { key: 'stylusLength', label: 'Stylus length' },
-]
+const labels = {
+  diameter: defaultsMode ? 'tools.dimension.referenceDiameter' : 'tools.dimension.cuttingDiameter',
+  shankDiameter: 'tools.dimension.shankDiameter', cuttingLength: 'tools.dimension.cuttingLength',
+  overallLength: 'tools.dimension.overallLength', stickout: 'tools.dimension.stickout',
+  tipAngle: 'tools.dimension.includedTipAngle', bodyDiameter: 'tools.dimension.bodyDiameter',
+  bodyLength: 'tools.dimension.bodyLength', stylusLength: 'tools.dimension.stylusLength',
+} as const
+const fields = (Object.keys(labels) as DimensionKey[]).map((key) => ({ key }))
 const visibleFields = computed(() => {
   const keys = dimensionKeys(family.value)
   return fields.filter(({ key }) => keys.includes(key) && (key !== 'tipAngle' || pointedTool(family.value)))
@@ -80,7 +81,7 @@ const model = computed((): ToolModel => ({ family: family.value,
   dimensions: !defaultsMode && !custom.value && baseline.value !== null ? baseline.value.dimensions : dimensions.value,
   nominalDiameter: baseline.value?.nominalDiameter ?? true, customized: custom.value }))
 const error = computed(() => toolDimensionError(family.value, model.value.dimensions))
-const changedTool = computed(() => props.tool !== null && !panel.toolTable?.tools.some((t) => toolIdentity(t) === identity))
+const changedTool = computed(() => props.tool !== null && !panel.toolTable?.tools.some((row) => toolIdentity(row) === identity))
 watch(family, (_current, previous) => {
   // Preserve valid edits while browsing family defaults; invalid drafts are not stored.
   if (defaultsMode) {
@@ -121,40 +122,40 @@ async function clearAssignment(): Promise<void> {
 </script>
 
 <template>
-  <ModalDialog :title="defaultsMode ? 'Tool shape templates' : `T${tool?.number} · preview model`" size="large" contained expanded @close="emit('close')">
+  <ModalDialog :title="defaultsMode ? t('tools.modelDialog.templatesTitle') : t('tools.modelDialog.modelTitle', { number: tool?.number ?? '' })" size="large" contained expanded @close="emit('close')">
     <div class="editor">
       <div class="settings">
-        <label class="entry"><span class="label">Tool family</span>
-          <select v-model="family" class="field" :disabled="saving"><option v-for="f in toolFamilies" :key="f.id" :value="f.id">{{ f.name }}</option></select>
+        <label class="entry"><span class="label">{{ t('tools.modelDialog.toolFamily') }}</span>
+          <select v-model="family" class="field" :disabled="saving"><option v-for="f in toolFamilies" :key="f.id" :value="f.id">{{ toolFamilyName(f.id) }}</option></select>
         </label>
-        <p v-if="defaultsMode" class="hint explanation">{{ family === 'touch-probe' ? 'Probe dimensions stay fixed when the ball diameter changes.' : 'Lengths scale from the reference diameter to each tool’s table diameter. Tip angle stays fixed.' }}</p>
+        <p v-if="defaultsMode" class="hint explanation">{{ family === 'touch-probe' ? t('tools.modelDialog.probeScaling') : t('tools.modelDialog.cutterScaling') }}</p>
         <template v-else>
-          <label class="check"><input v-model="custom" type="checkbox" :disabled="saving" />Override dimensions for this tool</label>
-          <p class="hint explanation">{{ model.nominalDiameter ? 'No table diameter: using the family’s nominal diameter.' : 'Cutting diameter comes from the tool table.' }} {{ custom ? 'Overrides are absolute dimensions.' : 'Other lengths use the family’s scaled defaults.' }}</p>
+          <label class="check"><input v-model="custom" type="checkbox" :disabled="saving" />{{ t('tools.modelDialog.override') }}</label>
+          <p class="hint explanation">{{ model.nominalDiameter ? t('tools.modelDialog.nominalDiameter') : t('tools.modelDialog.tableDiameter') }} {{ custom ? t('tools.modelDialog.overridesAbsolute') : t('tools.modelDialog.scaledDefaults') }}</p>
         </template>
         <div class="dimensions">
           <label v-for="field in visibleFields" :key="field.key" class="entry">
-            <span class="label">{{ field.key === 'diameter' && family === 'touch-probe' ? 'Ball diameter' : field.label }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
+            <span class="label">{{ field.key === 'diameter' && family === 'touch-probe' ? t('tools.dimension.ballDiameter') : t(labels[field.key]) }} <span class="hint">{{ field.key === 'tipAngle' ? '°' : unit }}</span></span>
             <input v-model="form[field.key]" v-numeric :data-numeric-unit="field.key === 'tipAngle' ? '°' : unit" class="field mono" type="text" inputmode="decimal" :disabled="saving || !defaultsMode && (!custom || field.key === 'diameter')" />
           </label>
         </div>
-        <p class="hint explanation">{{ family === 'touch-probe' ? 'Stylus length runs from the top of the ball to the bottom of the housing.' : 'Stick-out runs from the tip to the holder face. These dimensions are independent of the LinuxCNC Z offset.' }}</p>
-        <p class="scope hint">{{ scope }} Simplified envelopes; flutes, inserts and holder geometry are not represented.</p>
+        <p class="hint explanation">{{ family === 'touch-probe' ? t('tools.modelDialog.stylusExplanation') : t('tools.modelDialog.stickoutExplanation') }}</p>
+        <p class="scope hint">{{ scope }} {{ t('tools.modelDialog.simplified') }}</p>
       </div>
       <div class="preview">
         <ToolModelCanvas v-if="error === null" :model="model" />
-        <div v-else class="invalid hint">Enter valid dimensions to preview the tool.</div>
+        <div v-else class="invalid hint">{{ t('tools.shared.enterValidDimensions') }}</div>
       </div>
     </div>
     <p v-if="saveError || saveBlock || changedTool || error || saving" class="feedback" :class="saving ? 'hint' : 'blocked'" role="status">
-      {{ saveError || saveBlock || (changedTool ? 'The tool table changed. Close this editor and reopen the current tool.' : error) || 'Saving… Closing this editor does not cancel the save.' }}
+      {{ translateMessage(saveError) || saveBlock || (changedTool ? t('tools.modelDialog.tableChanged') : error) || t('tools.modelDialog.savingNote') }}
     </p>
     <template #footer>
-      <button v-if="defaultsMode" class="btn quiet" type="button" :disabled="saving" @click="reset">Reset this family</button>
-      <button v-else class="btn quiet" type="button" :disabled="saving || changedTool || saveBlock !== null" @click="clearAssignment">Clear model</button>
+      <button v-if="defaultsMode" class="btn quiet" type="button" :disabled="saving" @click="reset">{{ t('tools.modelDialog.resetFamily') }}</button>
+      <button v-else class="btn quiet" type="button" :disabled="saving || changedTool || saveBlock !== null" @click="clearAssignment">{{ t('tools.modelDialog.clearModel') }}</button>
       <span class="spacer"></span>
-      <button class="btn" type="button" @click="emit('close')">{{ saving ? 'Close' : 'Cancel' }}</button>
-      <button class="btn primary" type="button" :disabled="saving || error !== null || changedTool || saveBlock !== null" @click="save">{{ saving ? 'Saving…' : defaultsMode ? 'Save defaults' : 'Save preview model' }}</button>
+      <button class="btn" type="button" @click="emit('close')">{{ saving ? t('common.close') : t('common.cancel') }}</button>
+      <button class="btn primary" type="button" :disabled="saving || error !== null || changedTool || saveBlock !== null" @click="save">{{ saving ? t('common.saving') : defaultsMode ? t('tools.modelDialog.saveDefaults') : t('tools.modelDialog.saveModel') }}</button>
     </template>
   </ModalDialog>
 </template>

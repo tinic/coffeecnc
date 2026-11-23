@@ -383,7 +383,7 @@ async function showFailure(): Promise<void> {
 .scene-title { display: flex; align-items: center; gap: 8px; font-size: var(--type-body); font-weight: 600; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
 .program-check, .breakpoint-chip { min-height: var(--touch); padding: 5px 10px; white-space: nowrap; font-size: var(--type-sm); }
-.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); box-shadow: inset 0 -2px var(--warn); opacity: 1; }
+.breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }

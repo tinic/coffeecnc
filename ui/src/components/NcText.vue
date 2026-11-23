@@ -479,7 +479,7 @@ onBeforeUnmount(() => {
 
 .row.picked {
   background: var(--accent-soft);
-  box-shadow: inset 4px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .row.picked .number {
@@ -498,9 +498,14 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  padding: 6px 16px 10px;
-  border-top: 2px solid var(--accent);
-  background: var(--panel-raised);
+  padding: 8px 16px 10px;
+  background: var(--bar);
+}
+/* The edit bar is one tone step from the code, and its buttons one step from the bar. */
+.line-actions > .btn, .line-actions > details > summary.btn {
+  --control: var(--bar-control);
+  --control-hover: color-mix(in srgb, var(--bar-control) 82%, var(--bar));
+  --control-active: color-mix(in srgb, var(--bar-control) 55%, var(--bar));
 }
 .line-actions .btn { padding-inline: 10px; white-space: nowrap; }
 .line-actions .clear-line, .line-actions .delete-line, .line-actions .undo-line { min-width: 44px; }
@@ -524,8 +529,9 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 16px;
   bottom: 12px;
-  --button-edge: var(--accent);
-  background: var(--panel-raised);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
 }
 .follow-count { width: 7ch; min-width: 7ch; text-align: right; }
 </style>

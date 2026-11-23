@@ -8,13 +8,14 @@
   --bg: #eef1f3; --bg-sunken: #e4e9ed; --panel: #fbfcfd; --panel-raised: #fff;
   --preview-backdrop: radial-gradient(ellipse at 45% 32%, #f8fafc, #e5ecf1 64%, #d4dfe7);
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #fbfcfd, #e8edf1 78%, #e2e8ed);
-  --control: #e3e9ee; --control-edge: #75828e; --control-hover: #dfe7ee; --control-active: #d1dce6;
+  --control: #ccd5dd; --control-hover: #c3cdd6; --control-active: #b6c2cd; --field: #d8dfe5;
+  --bar: #c3ccd5; --bar-control: #fff;
   --line: #dce1e5; --line-strong: #dce1e5;
   --text: #20272c; --text-dim: #465662; --text-faint: #5c6b76;
   --dro-zero-opacity: .24;
-  --accent: #245bb0; --accent-soft: #e1edfc; --on-accent: #fff;
-  --go: #187957; --go-soft: #e8f5ef; --go-action: #187957; --warn: #805410; --warn-soft: #fff5df;
-  --stop: #a92d34; --stop-soft: #fff0f0;
+  --accent: #245bb0; --accent-soft: #c9ddf7; --on-accent: #fff;
+  --go: #0f6649; --go-soft: #c3e6d4; --go-action: #0d6243; --on-go: #fff; --warn: #805410; --warn-soft: #f6dca6;
+  --stop: #a92d34; --stop-soft: #f8d2d2;
   --gcode-rapid: #495b6a; --gcode-cut: #1e5ca7; --gcode-modal: #5a4ca0; --gcode-x: #8f3d4c;
   --gcode-y: #28644a; --gcode-z: #365791; --gcode-argument: #57646e; --gcode-rate: #6c527e;
   --gcode-tool: #7a5130; --gcode-spindle: #32686b; --gcode-stop: #9a2637; --gcode-comment: #596671;
@@ -45,40 +46,43 @@
   --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;
   --preview-backdrop: radial-gradient(ellipse at 46% 32%, #303943, #1c242d 75%, #171e26);
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #3b4652, #252e37 60%, #1c232b);
-  --control: #30373e; --control-edge: #7f8b97; --control-hover: #343c43; --control-active: #404951;
+  --control: #3a434c; --control-hover: #434d57; --control-active: #4e5964; --field: #31383f;
+  --bar: #30373e; --bar-control: #48515b;
   --line: #343a40; --line-strong: #3d444b;
   --text: #edf0f2; --text-dim: #aeb9c3; --text-faint: #98a6b1;
   --accent: #81b4ff; --accent-soft: #283c56; --on-accent: #102237;
-  --go: #78d7b3; --go-soft: #233c34; --go-action: #277a57;
+  --go: #78d7b3; --go-soft: #233c34; --go-action: #5fcf9c; --on-go: #0d2a1e;
   --gcode-rapid: #b2bcc6; --gcode-cut: #9ec6ff; --gcode-modal: #b9a9f4; --gcode-x: #edabb1;
   --gcode-y: #a5d8bb; --gcode-z: #9ab9e5; --gcode-argument: #a9bacb; --gcode-rate: #cab4e8;
   --gcode-tool: #dfbf9a; --gcode-spindle: #98d2d1; --gcode-stop: #ff9a9f; --gcode-comment: #abb6c1;
   --gcode-message: #bbc6ce; --gcode-flow: #bdbdec; --gcode-parameter: #b4bed7; --gcode-expression: #cfb6d3;
-  --warn: #e4b466; --warn-soft: #3b3222; --stop: #f28d8d; --stop-soft: #412b2e;
+  --warn: #e4b466; --warn-soft: #4a3b22; --stop: #f28d8d; --stop-soft: #4d2d31;
 }
 
 :is(:root, .theme-sample)[data-theme='sandstone'] {
   --bg: #f3e9d9; --bg-sunken: #ece0cf; --panel: #fff8ed; --panel-raised: #fffbf5;
   --preview-backdrop: radial-gradient(ellipse at 46% 34%, #fff7e9, #e9d8b9 80%, #e1cca8);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #fffaf1, #e9d9bc 82%, #e4cfae);
-  --control: #ece0ce; --control-edge: #84725f; --control-hover: #ebd9c2; --control-active: #e4ccb1;
+  --control: #dccab0; --control-hover: #d4c0a3; --control-active: #cab595; --field: #e6d8c4;
+  --bar: #d6c3a6; --bar-control: #fffbf5;
   --line: #ddc9a9; --line-strong: #cbb38d;
   --text: #30271f; --text-dim: #635242; --text-faint: #77614e;
-  --accent: #865033; --accent-soft: #f2e1cd;
-  --go: #236947; --go-soft: #e1edda; --go-action: #236947; --warn: #825515; --warn-soft: #f9e8c0;
-  --stop: #a6323b; --stop-soft: #f9e2df;
+  --accent: #865033; --accent-soft: #efd6bb;
+  --go: #236947; --go-soft: #c9e0bf; --go-action: #1b5e3e; --on-go: #fff; --warn: #825515; --warn-soft: #f0d59f;
+  --stop: #a6323b; --stop-soft: #f3cfc9;
 }
 
 :is(:root, .theme-sample)[data-theme='harbor'] {
   --bg: #101e2d; --bg-sunken: #122234; --panel: #1a2e42; --panel-raised: #213951;
   --preview-backdrop: radial-gradient(ellipse at 47% 34%, #27445d, #142c40 80%, #102437);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #355470, #1b354c 80%, #12293c);
-  --control: #223e56; --control-edge: #819ab1; --control-hover: #25445d; --control-active: #2e4f69;
+  --control: #31495f; --control-hover: #36506a; --control-active: #3f5c78; --field: #2b4155;
+  --bar: #2a4258; --bar-control: #3f5b75;
   --line: #34526c; --line-strong: #476581;
   --text: #eef7ff; --text-dim: #b2cadc; --text-faint: #91adc4;
-  --accent: #7dc0ff; --accent-soft: #234765; --on-accent: #102237;
-  --go: #8de1b7; --go-soft: #21463e; --go-action: #2c7e60; --warn: #ffd18c; --warn-soft: #4c3928;
-  --stop: #ff9e9e; --stop-soft: #48293c;
+  --accent: #7dc0ff; --accent-soft: #1d4a73; --on-accent: #102237;
+  --go: #8de1b7; --go-soft: #21463e; --go-action: #6fdcaa; --on-go: #0d2a1e; --warn: #ffd18c; --warn-soft: #57412b;
+  --stop: #ff9e9e; --stop-soft: #632f4a;
 }
 
 *,
@@ -123,10 +127,10 @@ select {
   color: var(--text-dim);
 }
 
+/* Controls have no outline. A control is a filled surface one clear tone step from the surface it
+   sits on; the label, the fill and the pressed tone make it read as clickable. */
 .btn, .choice {
-  --button-edge: var(--control-edge);
   background: var(--control);
-  box-shadow: inset 0 -2px var(--button-edge);
 }
 
 .btn {
@@ -137,7 +141,7 @@ select {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 14px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--control-radius);
   font-weight: 500;
   white-space: nowrap;
@@ -153,7 +157,6 @@ select {
 .choice:active:not(:disabled),
 .btn.held {
   background: var(--control-active);
-  box-shadow: inset 0 -1px var(--button-edge);
 }
 
 .btn:focus-visible,
@@ -164,8 +167,7 @@ input:focus-visible {
 
 .btn:disabled {
   color: var(--text-faint);
-  background: transparent;
-  box-shadow: none;
+  background: color-mix(in srgb, var(--control) 35%, transparent);
   cursor: not-allowed;
 }
 
@@ -174,23 +176,19 @@ input:focus-visible {
 .btn[aria-pressed='true'],
 details[open] > summary.btn,
 .choice:not(:disabled):is([aria-current='page'], [aria-pressed='true'], .selected) {
-  --button-edge: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
-  box-shadow: inset 0 -2px var(--button-edge);
 }
 
 .btn.primary:not(:disabled) {
-  --button-edge: color-mix(in srgb, var(--accent) 62%, #000);
   background: var(--accent);
   color: var(--on-accent);
 }
 
 .btn.go:not(:disabled) {
-  --button-edge: color-mix(in srgb, var(--go-action) 62%, #000);
   background: var(--go-action);
-  color: #fff;
+  color: var(--on-go);
   font-weight: 700;
 }
 
@@ -203,13 +201,11 @@ details[open] > summary.btn,
 }
 
 .btn.warning:not(:disabled) {
-  --button-edge: var(--warn);
   background: var(--warn-soft);
   color: var(--warn);
 }
 
 .btn.danger:not(:disabled) {
-  --button-edge: var(--stop);
   background: var(--stop-soft);
   color: var(--stop);
 }
@@ -226,15 +222,14 @@ details[open] > summary.btn,
 
 .segmented {
   display: inline-flex;
+  gap: 2px;
 }
 
 .segmented .btn {
   border-radius: 0;
-  margin-left: -1px;
 }
 
 .segmented .btn:first-child {
-  margin-left: 0;
   border-radius: var(--control-radius) 0 0 var(--control-radius);
 }
 
@@ -270,16 +265,16 @@ details[open] > summary.btn,
 .field {
   min-height: var(--touch);
   padding: 0 12px;
-  border: 1px solid var(--control-edge);
+  border: 0;
   border-radius: var(--control-radius);
-  background: var(--bg-sunken);
+  background: var(--field);
   user-select: text;
   -webkit-user-select: text;
 }
 
 .field:disabled {
   color: var(--text-faint);
-  border-color: var(--line);
+  background: color-mix(in srgb, var(--field) 45%, transparent);
 }
 
 .chip {

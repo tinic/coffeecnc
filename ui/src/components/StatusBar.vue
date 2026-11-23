@@ -189,7 +189,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }
 .disconnected { color: var(--stop); }.disconnected .dot { background: var(--stop); }
 .theme { font-size: var(--type-lg); }
-.estop { --button-edge: #74131b; gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; color: #fff; font-size: 17px; font-weight: 700; }
+.estop { gap: 9px; flex: none; min-width: 132px; height: 48px; padding: 0 15px; background: #b9202b; color: #fff; font-size: 17px; font-weight: 700; }
 .estop:hover:not(:disabled) { background: #a51924; }.estop:active:not(:disabled) { background: #941822; }.estop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .estop :deep(svg) { width: 22px; height: 22px; }
 .machine-controls { display: flex; align-items: center; gap: 12px; flex: none; }.power-control { min-width: 152px; min-height: 48px; font-size: var(--type-md); }
@@ -209,7 +209,6 @@ h1 { margin: 0; font-size: var(--type-lg); line-height: 1.2; letter-spacing: -.3
 .modal-codes { max-width: 180px; font-size: var(--type-sm); text-align: right; }
 .message-area { flex: none; height: 58px; margin: 0 24px 12px; }
 .message-band { display: flex; align-items: center; gap: 12px; height: 100%; padding: 5px 10px; border-radius: 9px; background: var(--panel); }
-.message-band.info, .message-band.machine-message { box-shadow: inset 4px 0 var(--accent); }
 .message-band.error { color: var(--stop); background: var(--stop-soft); box-shadow: inset 5px 0 var(--stop); }
 .message-band.lift-warning { color: var(--warn); background: var(--warn-soft); box-shadow: inset 5px 0 var(--warn); }
 .message-band.empty { color: var(--text-dim); background: transparent; }

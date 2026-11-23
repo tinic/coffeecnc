@@ -560,6 +560,13 @@
     "jogStop": {
       "watchdog": "Jog arrêté par le chien de garde HAL : le signal de vie de CoffeeCNC s’est interrompu plus longtemps que le délai du chien de garde.",
       "probeContact": "Jog arrêté : contact du palpeur"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} n’est pas installé : il n’est pas dans le chemin de recherche ({path}).",
+      "alreadyOpen": "{name} est déjà ouvert.",
+      "notStarted": "{name} n’a pas pu être démarré.",
+      "notStartedBecause": "{name} n’a pas pu être démarré : {error}.",
+      "cannotStart": "Les outils HAL ne peuvent pas être démarrés ici."
     }
   }
 }

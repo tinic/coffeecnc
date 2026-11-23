@@ -527,6 +527,13 @@ auto check_configuration(const Options& options) -> int {
   std::cout << "\n  Macros                       "
             << (config->macros.empty() ? std::string("off  ([COFFEECNC] MACRO = <label> | <MDI block>)")
                                        : std::format("{}  ({})", config->macros.size(), macro_labels));
+  std::string diagnostic_labels;
+  for (const auto& signal : config->diagnostics)
+    diagnostic_labels += std::format("{}{}", diagnostic_labels.empty() ? "" : ", ", signal.label);
+  std::cout << "\n  Diagnostic signals           "
+            << (config->diagnostics.empty()
+                    ? std::string("none  ([COFFEECNC] DIAGNOSTIC = <label> | <HAL signal or pin>)")
+                    : std::format("{}  ({})", config->diagnostics.size(), diagnostic_labels));
   std::cout << "\nSee /usr/share/coffeecnc/coffeecnc.ini.example for every key.\n";
   return hal.postgui_error ? 1 : 0;
 }

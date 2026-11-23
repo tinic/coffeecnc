@@ -148,7 +148,8 @@
       "previousStopAxis": "{axis} 上一次的点动停止未得到确认：{detail}",
       "directoryNotSent": "无法发送目录：{detail}",
       "mdiTooLong": "MDI 需要一个程序段，且不超过 254 字节。",
-      "jogStopFailed": "{axis} 的点动停止失败：{detail}"
+      "jogStopFailed": "{axis} 的点动停止失败：{detail}",
+      "noDiagnostics": "HAL 诊断不属于此会话。"
     },
     "request": {
       "nestingLimit": "请求嵌套超出限制。",
@@ -276,7 +277,10 @@
         "saveToolPreviewModel": "保存刀具预览模型",
         "saveSettings": "保存设置",
         "toolModels": "刀具模型",
-        "settings": "设置"
+        "settings": "设置",
+        "openDiagnostics": "打开诊断",
+        "closeDiagnostics": "关闭诊断",
+        "startHalTool": "启动 {tool}"
       }
     },
     "sim": {
@@ -378,7 +382,8 @@
       "gaugeStart": "请从模拟校准规上方开始。",
       "bossStart": "请从模拟凸台上方开始。",
       "setLoadedLength": "检查前请先设置当前刀具的长度。",
-      "browserSimulator": "浏览器模拟器"
+      "browserSimulator": "浏览器模拟器",
+      "noHalTools": "浏览器模拟器没有 HAL 工具：它在没有 LinuxCNC 的情况下运行。"
     },
     "bridge": {
       "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。",

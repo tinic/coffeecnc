@@ -560,6 +560,13 @@
     "jogStop": {
       "watchdog": "HAL ウォッチドッグによりジョグが停止しました。CoffeeCNC のハートビートがウォッチドッグのタイムアウトより長く止まりました。",
       "probeContact": "ジョグ停止：プローブ接触"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} はインストールされていません。検索パス（{path}）にありません。",
+      "alreadyOpen": "{name} はすでに開いています。",
+      "notStarted": "{name} を起動できませんでした。",
+      "notStartedBecause": "{name} を起動できませんでした：{error}。",
+      "cannotStart": "ここでは HAL ツールを起動できません。"
     }
   }
 }

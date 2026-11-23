@@ -1216,6 +1216,8 @@ export class SimMachine {
       case 'start_restart':
         return this.startRestart(command.plan_id)
       case 'tool_changed': {
+        if (command.measure_request !== undefined)
+          return reject('Measuring during a program tool change is unavailable.')
         const exec = this.exec
         if (exec?.active?.kind !== 'tool_change') {
           return reject('No tool change is pending')

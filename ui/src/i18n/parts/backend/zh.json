@@ -1,5 +1,29 @@
 {
   "backend": {
+    "toolChangeMeasurement": {
+      "unavailable": "程序换刀期间无法测量。",
+      "requiresToolAndSetter": "需要刀具表中登记的切削刀具和固定对刀仪。",
+      "controllerUnavailable": "控制器不可用。",
+      "verifyStationaryChange": "无法验证程序换刀状态或停止位置。",
+      "pendingChangeNotCleared": "LinuxCNC 未清除待处理的换刀请求。",
+      "idleMdi": "LinuxCNC 未进入空闲 MDI 模式以测量刀具。",
+      "tableChanged": "登记已装刀具前，刀具表已更改。",
+      "millChanged": "登记已装刀具前，铣床状态已更改。",
+      "registrationFailed": "无法登记已装刀具。",
+      "registrationUnconfirmed": "LinuxCNC 未确认已装刀具。",
+      "needsProgramCheck": "在 M6 处测量需要先完整检查正在运行的程序。",
+      "noMotionAfterChange": "此次换刀后没有经过验证的续跑移动。",
+      "notVerifiedM6": "无法验证原始 M6 程序段。",
+      "skipUnsupported": "续跑会跳过换刀、停止或不受支持的程序段。",
+      "teachFirst": "在程序换刀时测量前，请先标定固定对刀仪。",
+      "dataChangedBeforeMeasure": "测量前程序或刀具数据已更改。",
+      "stoppedBeforeMeasure": "程序已停止，刀具尚未测量。",
+      "noMeasurement": "LinuxCNC 未测得刀具长度。",
+      "measuredCancelled": "刀具已测量。续跑准备已取消。",
+      "measuredCheckUnavailable": "刀具已测量。更新后的程序检查不可用。",
+      "measuredSourceChanged": "刀具已测量。续跑源程序已更改。",
+      "measuredNoRestart": "刀具已测量。下一次移动没有经过验证的续跑方案。"
+    },
     "operatorSettings": {
       "missingFields": "设置中有缺失或未知的字段。",
       "tooLarge": "设置超过 16 KiB。",

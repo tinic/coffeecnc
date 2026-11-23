@@ -1,5 +1,29 @@
 {
   "backend": {
+    "toolChangeMeasurement": {
+      "unavailable": "La mesure pendant un changement d’outil du programme est indisponible.",
+      "requiresToolAndSetter": "Il faut un outil de coupe dans la table et un palpeur d’outil fixe.",
+      "controllerUnavailable": "La commande est indisponible.",
+      "verifyStationaryChange": "Impossible de vérifier le changement d’outil du programme ou sa position à l’arrêt.",
+      "pendingChangeNotCleared": "LinuxCNC n’a pas annulé le changement d’outil en attente.",
+      "idleMdi": "LinuxCNC n’est pas passé en MDI au repos pour mesurer l’outil.",
+      "tableChanged": "La table d’outils a changé avant l’enregistrement de l’outil monté.",
+      "millChanged": "L’état de la fraiseuse a changé avant l’enregistrement de l’outil monté.",
+      "registrationFailed": "Impossible d’enregistrer l’outil monté.",
+      "registrationUnconfirmed": "LinuxCNC n’a pas confirmé l’outil monté.",
+      "needsProgramCheck": "La mesure à M6 exige une vérification complète du programme en cours.",
+      "noMotionAfterChange": "Aucun déplacement vérifié ne permet de reprendre après ce changement d’outil.",
+      "notVerifiedM6": "Impossible de vérifier le bloc M6 d’origine.",
+      "skipUnsupported": "La reprise ignorerait un changement d’outil, un arrêt ou un bloc non pris en charge.",
+      "teachFirst": "Étalonnez le palpeur d’outil fixe avant de mesurer lors d’un changement d’outil du programme.",
+      "dataChangedBeforeMeasure": "Le programme ou les données d’outil ont changé avant la mesure.",
+      "stoppedBeforeMeasure": "Le programme s’est arrêté avant que l’outil puisse être mesuré.",
+      "noMeasurement": "LinuxCNC n’a pas mesuré la longueur de l’outil.",
+      "measuredCancelled": "Outil mesuré. La préparation de la reprise a été annulée.",
+      "measuredCheckUnavailable": "Outil mesuré. La vérification actualisée du programme est indisponible.",
+      "measuredSourceChanged": "Outil mesuré. Le programme source de la reprise a changé.",
+      "measuredNoRestart": "Outil mesuré. Aucune reprise vérifiée au prochain déplacement."
+    },
     "operatorSettings": {
       "missingFields": "Les réglages comportent des champs manquants ou inconnus.",
       "tooLarge": "Les réglages dépassent 16 KiB.",

@@ -12,12 +12,12 @@ import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 import { translateMessage } from '../i18n/messages'
 
-const props = defineProps<{ line: number; section: string }>()
+const props = defineProps<{ line: number; section: string; prepared?: RestartPlan }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 
 const status = reported
-const plan = shallowRef<RestartPlan | null>(null)
+const plan = shallowRef<RestartPlan | null>(props.prepared ?? null)
 const request = shallowRef<CommandBody | null>(null)
 const failure = ref('')
 const started = ref(false)
@@ -75,10 +75,12 @@ const removeListener = onResult((command, result) => {
 })
 
 // A plan holds for the program and machine state it was made for; plan again when they change.
-watch(() => status.value?.preview_context, (context, before) => {
-  if (context !== before && !started.value && request.value?.type !== 'start_restart') planRestart()
-})
-planRestart()
+if (!props.prepared) {
+  watch(() => status.value?.preview_context, (context, before) => {
+    if (context !== before && !started.value && request.value?.type !== 'start_restart') planRestart()
+  })
+  planRestart()
+}
 onBeforeUnmount(removeListener)
 
 const startBlock = computed((): string | null => {
@@ -142,7 +144,7 @@ const steps = computed((): string[] => {
 
 <template>
   <ModalDialog :title="t('program.restartDialog.title', { line })" size="large" fresh-gesture @close="close">
-    <p class="context"><span>{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
+    <p class="context"><span v-if="section">{{ section }}</span><code v-if="lineText" class="mono">{{ lineText }}</code></p>
     <p v-if="failure" class="failure" role="alert"><AppIcon name="warning" />{{ translateMessage(failure) }}</p>
     <p v-else-if="plan === null" class="note" role="status">{{ t('program.restartDialog.planningRestart') }}</p>
     <div v-if="plan" class="plan">
@@ -164,7 +166,7 @@ const steps = computed((): string[] => {
     </div>
     <template #footer>
       <button class="btn" type="button" @click="close">{{ request?.type === 'start_restart' ? t('program.restartDialog.stop') : t('common.cancel') }}</button>
-      <button v-if="failure && request === null" class="btn" type="button" @click="planRestart">{{ t('program.restartDialog.planAgain') }}</button>
+      <button v-if="failure && request === null && !prepared" class="btn" type="button" @click="planRestart">{{ t('program.restartDialog.planAgain') }}</button>
       <button
         v-tooltip="request ? undefined : startBlock ?? t('program.restartDialog.startTooltip')"
         class="btn primary" type="button" :disabled="startBlock !== null" @click="start"

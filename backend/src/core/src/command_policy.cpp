@@ -443,6 +443,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         } else if constexpr (std::is_same_v<T, ToolChanged>) {
           if (s.machine != MachineState::on || !s.requested_tool || *s.requested_tool < 0)
             return reject("No manual tool change is awaiting confirmation.");
+          if (c.measure_request &&
+              (*c.measure_request != s.tool_request || *s.requested_tool == 0 ||
+               s.mode != TaskMode::automatic || !s.tool_change_line || s.breakpoint_program ||
+               s.spindle_active || !s.in_position))
+            return reject("The program tool change or its stationary position could not be verified.");
           return allow(); // Tool 0 may be requested to unload the spindle.
         }
         return reject("Unsupported command.");

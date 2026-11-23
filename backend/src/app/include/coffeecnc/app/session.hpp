@@ -330,6 +330,7 @@ private:
     RestartSource source;
     PreviewComputation::Watch files_changed;
     std::optional<std::uint64_t> tool_request;
+    CheckedPreview measured_run{}; // original program replayed with the new tool table
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
@@ -366,6 +367,7 @@ private:
                                   const ControllerState& state) -> Stage;
   [[nodiscard]] auto start_restart(const Queued& request, StartRestart command) -> Stage;
   [[nodiscard]] auto resume_restart(const Queued& request, const ControllerState& state) -> Stage;
+  [[nodiscard]] auto measure_tool_change(Queued& request, const ControllerState& state) -> Stage;
   [[nodiscard]] auto send_restart(const Queued& request, const PreparedRestart& restart,
                                   bool after_change) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
@@ -401,6 +403,7 @@ private:
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.
   std::string verified_probe_program_;
+  CheckedPreview started_program_; // worker-owned exact source of a checked AUTO start
   std::uint64_t pages_{};
   JogLease::Time status_at_{};
   // Goes up with every stop decision.

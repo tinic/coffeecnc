@@ -138,7 +138,7 @@ auto command(const Json& object) -> Command {
   const auto type = string(object, "type");
   // Commands with no body still reject stray fields (for example an unsupported run-from-line).
   if (type == "ready" || type == "jog_stop_all" || type == "pause" || type == "resume" ||
-      type == "step" || type == "abort" || type == "tool_changed" || type == "quit") {
+      type == "step" || type == "abort" || type == "quit") {
     fields(object, {"id", "type"});
     if (type == "ready")
       return Ready{};
@@ -152,8 +152,12 @@ auto command(const Json& object) -> Command {
       return Resume{};
     if (type == "step")
       return Step{};
-    if (type == "abort")
-      return Abort{};
+    return Abort{};
+  }
+  if (type == "tool_changed") {
+    fields(object, {"id", "type"}, {"measure_request"});
+    if (object.contains("measure_request"))
+      return ToolChanged{positive_id(object, "measure_request")};
     return ToolChanged{};
   }
   if (type == "set_machine") {

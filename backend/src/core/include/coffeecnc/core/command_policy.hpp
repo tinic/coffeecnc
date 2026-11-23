@@ -77,6 +77,9 @@ struct ControllerState {
   // Which request of the controller `requested_tool` is: another request, also one for the same
   // tool, has another number. A confirmation names it, so that it cannot answer a later request.
   std::uint64_t tool_request{};
+  // Physical line in the original AUTO program waiting for the manual tool change.
+  std::optional<int> tool_change_line{};
+  std::array<double, 3> tool_change_position{}; // commanded machine XYZ at that line, in mm
   // Protocol values are millimetres; composed G-code must be written in this unit.
   LengthUnit program_units{LengthUnit::mm};
   std::string program_file;
@@ -246,7 +249,9 @@ struct SetTool {
 struct RemoveTool {
   int number;
 };
-struct ToolChanged {};
+struct ToolChanged {
+  std::optional<std::uint64_t> measure_request{};
+};
 // Writes back the earlier values of one offset history entry (OffsetHistoryStore).
 struct RestoreOffset {
   std::uint64_t entry{};

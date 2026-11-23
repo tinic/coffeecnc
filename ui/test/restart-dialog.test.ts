@@ -59,6 +59,22 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
 describe('restart dialog', () => {
+  it('reviews the plan prepared at M6 without planning again from the setter position', async () => {
+    wrapper = mount(RestartDialog, {
+      props: { line: plan.line, section: '', prepared: plan }, attachTo: document.body,
+      global: { stubs: { teleport: true } },
+    })
+    const status = new SimMachine({ emit: (): void => undefined }).status()
+    wire.receive({ ...status, seq: 500, machine: 'on', preview_context: 3 })
+    await nextTick()
+    expect(wire.send).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('G43 H2')
+    button('Cycle start').click()
+    expect(wire.send.mock.calls.map(([command]) => command)).toEqual([
+      expect.objectContaining({ type: 'start_restart', plan_id: plan.plan_id }),
+    ])
+  })
+
   it('stops the machine when the start is closed before its answer', async () => {
     await started()
     button('Stop').click()

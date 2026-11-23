@@ -271,6 +271,7 @@
         "editTool": "Edit tool {tool}",
         "removeTool": "Remove tool {tool}",
         "confirmToolChange": "Confirm tool change",
+        "measureToolDuringChange": "Measure tool during change",
         "saveToolModelDefaults": "Save tool model defaults",
         "saveToolPreviewModel": "Save tool preview model",
         "saveSettings": "Save settings",

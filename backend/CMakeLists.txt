@@ -385,6 +385,7 @@ if(BUILD_TESTING)
         target_include_directories(coffeecnc_remote_server_tests SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
         target_link_libraries(coffeecnc_remote_server_tests PRIVATE coffeecnc_application
           coffeecnc_project_options nlohmann_json::nlohmann_json)
+        target_compile_options(coffeecnc_remote_server_tests PRIVATE ${COFFEECNC_ASIO_OPTIONS})
         coffeecnc_enable_analyzers(coffeecnc_remote_server_tests)
         add_test(NAME remote_server COMMAND coffeecnc_remote_server_tests ${PROJECT_BINARY_DIR})
         set_tests_properties(remote_server PROPERTIES TIMEOUT 20)

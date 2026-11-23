@@ -819,7 +819,6 @@ function coolant(which: 'flood' | 'mist'): void {
 }
 .mdi > .setter-band, .utilities > .setter-band { margin-block: 0; }
 .work-system { margin-top: auto; }
-.probe-side .work-system { margin-top: 0; }
 .side > .probe-card { gap: 12px; padding: 14px; }
 .probe-contact { color: var(--warn); }
 .modes .btn { min-width: 0; padding: 0 16px; font-size: 13px; }

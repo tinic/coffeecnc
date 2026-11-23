@@ -38,14 +38,24 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.unstubAllGlobals() })
 
-async function probe(label: string): Promise<VueWrapper> {
-  const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 }, global })
-  const button = fixture.findAll('button').find((entry) => entry.text() === label)
+function findButton(fixture: VueWrapper, label: string): ReturnType<VueWrapper['findAll']>[number] | undefined {
+  return fixture.findAll('button').find((entry) => entry.text() === label || entry.attributes('aria-label') === label)
+}
+async function selectAction(fixture: VueWrapper, label: string): Promise<void> {
+  let button = findButton(fixture, label)
+  if (!button) {
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    button = findButton(fixture, label)
+  }
   if (!button) throw new Error(`Missing ${label}`)
   expect(button.attributes('disabled')).toBeUndefined()
+  await button.trigger('click')
+}
+async function probe(label: string): Promise<VueWrapper> {
+  const fixture = wrapper ??= mount(MaterialProbeControls, { props: { tool: 99 }, global })
   const wasOpen = fixture.findComponent(ProbeGuideDialog).exists()
   const before = vi.mocked(send).mock.calls.length
-  await button.trigger('click')
+  await selectAction(fixture, label)
   if (!wasOpen && fixture.findComponent(ProbeGuideDialog).exists()) {
     expect(send).toHaveBeenCalledTimes(before)
     if (!fixture.find('.dimension input').exists()) await fixture.get('.start-probe').trigger('click')
@@ -74,23 +84,30 @@ const cornerCases: [string, 'x_minus' | 'x_plus', 'y_minus' | 'y_plus', string][
 ]
 
 describe('probe setup guides', () => {
-  it.each([...faces.map(([label]) => label), ...cornerCases.map(([label]) => label),
+  it.each([...faces.map(([label]) => label), ...cornerCases.map(([label]) => 'Outside corner ' + label),
     'Bore centre', 'Boss centre…', 'Edge angle…', 'Calibrate ball…'])('opens and closes %s without any motion', async (label) => {
     wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
-    const button = wrapper.findAll('button').find(entry => entry.text() === label)
-    if (!button) throw new Error(`Missing ${label}`)
-    await button.trigger('click')
+    await selectAction(wrapper, label)
     expect(wrapper.get('[role="dialog"] .instruction').text()).toContain('Jog here first')
     expect(send).not.toHaveBeenCalled()
     await wrapper.get('[role="dialog"] header button[aria-label="Close"]').trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(send).not.toHaveBeenCalled()
   })
+  it('keeps the basic features on machines without the extended probing capability', async () => {
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await wrapper.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    expect(wrapper.get('.feature-options').text()).toContain('Bore centre')
+    expect(wrapper.get('.feature-options').text()).toContain('Outside corner')
+    expect(wrapper.get('.feature-options').text()).not.toContain('Inside corner')
+    expect(wrapper.get('.feature-options').text()).not.toContain('Rectangular pocket')
+    expect(send).not.toHaveBeenCalled()
+  })
 })
 
 describe('corner probe workflow', () => {
   it.each(cornerCases)('probes the %s corner from over the part and sets X0 and Y0', async (label, x, y, name) => {
-    const fixture = await probe(label)
+    const fixture = await probe('Outside corner ' + label)
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'corner', x_direction: x, y_direction: y,
       tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe(`Probing the ${name}…`)
@@ -101,7 +118,7 @@ describe('corner probe workflow', () => {
 
   it('asks for a measured probe first, since the corner goes below Z0', async () => {
     setterState.value = { calibration: [0, 0, -10], measurement: null, measured_tools: [98] }
-    const fixture = await probe('X− Y−')
+    const fixture = await probe('Outside corner X− Y−')
     expect(send).not.toHaveBeenCalled()
     expect(fixture.get('.setter-band.blocked p').text()).toBe('Touch off T99 and probe Z top before probing a corner.')
   })

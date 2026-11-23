@@ -18,8 +18,13 @@ set(COFFEECNC_ASIO_OPTIONS "${COFFEECNC_ASIO_OPTIONS}" CACHE INTERNAL
   "Compile options of sources that include Boost.Asio")
 
 add_library(coffeecnc_application application.cpp config_check.cpp remote_server.cpp)
+# GCC 14 diagnoses inlined Boost.Asio executor/reactor code at -O3, even in SYSTEM headers.
+# Boost's exception locations also retain __FILE__. Keep those independent of the host path.
+set_property(SOURCE remote_server.cpp APPEND PROPERTY COMPILE_OPTIONS
+  "$<$<CXX_COMPILER_ID:GNU>:-Wno-null-dereference>"
+  "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fmacro-prefix-map=${COFFEECNC_BOOST_INCLUDE_DIR}/boost=boost>"
+  ${COFFEECNC_ASIO_OPTIONS})
 target_include_directories(coffeecnc_application SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
-set_source_files_properties(remote_server.cpp PROPERTIES COMPILE_OPTIONS "${COFFEECNC_ASIO_OPTIONS}")
 target_include_directories(coffeecnc_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(coffeecnc_application PUBLIC cxx_std_23)
 # Where a development build finds the panel when none is installed beside it.
@@ -36,7 +41,7 @@ if(TARGET coffeecnc_preview)
   add_dependencies(coffeecnc_application coffeecnc_preview)
 endif()
 target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linuxcnc coffeecnc_shell
-  PRIVATE coffeecnc_project_options)
+  PRIVATE coffeecnc_project_options resolv)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
 # COFFEECNC_SANITIZER_SUPPRESSIONS: set in src/shell, a source of every program that opens the window.

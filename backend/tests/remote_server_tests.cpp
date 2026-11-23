@@ -13,7 +13,10 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
+
+#include <unistd.h>
 
 namespace {
 namespace net = boost::asio;
@@ -78,15 +81,19 @@ auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
   throw std::runtime_error("The current status did not arrive.");
 }
 
-void test(const std::filesystem::path& root) {
+void test(const std::filesystem::path& root, std::string_view discovered,
+          std::string_view nonlocal) {
   const auto assets = root / "remote-server-assets";
   std::filesystem::create_directories(assets);
   std::ofstream(assets / "index.html") << "<title>Remote test panel</title>";
   std::ofstream(root / "remote-server-private.txt") << "outside the panel";
-  RemoteServer server{assets.string(), 0};
+  const std::array aliases{std::string{"shop.mill.example"}, std::string{"Friendly.Example."}};
+  RemoteServer server{assets.string(), 0, aliases};
   // Only the test constructs a server with port zero, to get a free TCP port.
   const auto port = server.port();
-  const auto host = "127.0.0.1:" + std::to_string(port);
+  const auto suffix = ":" + std::to_string(port);
+  const auto host = "127.0.0.1" + suffix;
+  const auto alias = aliases.front() + suffix;
   net::io_context io;
   const auto home = get(io, port, http::verb::get, "/", host);
   require(home.result() == http::status::temporary_redirect && home[http::field::location] == "/view",
@@ -100,8 +107,40 @@ void test(const std::filesystem::path& root) {
   require(get(io, port, http::verb::get, "/%2e%2e/remote-server-private.txt", host).result() ==
               http::status::forbidden,
           "Requests stay within the built panel assets.");
-  require(get(io, port, http::verb::get, "/view", "external.example").result() == http::status::forbidden,
-          "The Host must name the actual listener address.");
+  for (const auto& name : {alias, "FRIENDLY.Example." + suffix, "localhost" + suffix})
+    require(get(io, port, http::verb::get, "/view", name).result() == http::status::ok,
+            "A configured alias or the loopback hostname can open the viewer.");
+
+  std::array<char, 256> hostname{};
+  require(gethostname(hostname.data(), hostname.size() - 1) == 0, "Read the system hostname.");
+  const std::string machine{hostname.data()};
+  const auto short_name = machine.substr(0, machine.find('.'));
+  for (const auto& name : {machine, short_name, short_name + ".local"})
+    require(get(io, port, http::verb::get, "/view", name + suffix).result() == http::status::ok,
+            "The hostname, short name and .local name can open the viewer.");
+
+  for (const auto& name : {"external.example" + suffix, "shop.mill.example.external" + suffix,
+                           std::string{"shop.mill.example:0"}, aliases.front()})
+    require(get(io, port, http::verb::get, "/view", name).result() == http::status::forbidden,
+            "The Host must name an allowed host on the listener port.");
+  require(get(io, port, http::verb::get, "/feed", alias, "http://friendly.example" + suffix).result() ==
+              http::status::forbidden,
+          "A separately allowed alias does not grant cross-origin feed access.");
+
+  // A DNS fixture can supply two search results, one local and one on a different machine.
+  if (!discovered.empty()) {
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    auto status = http::status::forbidden;
+    do {
+      status = get(io, port, http::verb::get, "/view", std::string(discovered) + suffix).result();
+      if (status != http::status::ok)
+        std::this_thread::sleep_for(30ms);
+    } while (status != http::status::ok && std::chrono::steady_clock::now() < deadline);
+    require(status == http::status::ok, "A DNS search name that resolves locally is allowed.");
+    require(get(io, port, http::verb::get, "/view", std::string(nonlocal) + suffix).result() ==
+                http::status::forbidden,
+            "A DNS search name that resolves off-machine is rejected.");
+  }
   require(get(io, port, http::verb::get, "/feed", host, "http://external.example").result() ==
               http::status::forbidden,
           "A different browser origin cannot subscribe.");
@@ -123,7 +162,7 @@ void test(const std::filesystem::path& root) {
       std::string(R"({"type":"message","text":"Controller message"})")};
   server.notifications(runtime);
   Viewer first{io}, second{io};
-  connect(first, port, host);
+  connect(first, port, discovered.empty() ? alias : std::string(discovered) + suffix);
   connect(second, port, host);
   const auto snapshot = read(first);
   require(snapshot == read(second) && snapshot.size() == 6 &&
@@ -164,7 +203,8 @@ void test(const std::filesystem::path& root) {
 
 auto main(int argc, char** argv) -> int {
   try {
-    test(argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path());
+    test(argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path(),
+         argc == 4 ? argv[2] : "", argc == 4 ? argv[3] : "");
     std::cout << "remote_server: all passed\n";
     return 0;
   } catch (const std::exception& error) {

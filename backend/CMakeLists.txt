@@ -382,6 +382,9 @@ if(BUILD_TESTING)
         RESOURCE_LOCK linuxcnc TIMEOUT 700 SKIP_RETURN_CODE 77)
       if(TARGET coffeecnc)
         add_executable(coffeecnc_remote_server_tests tests/remote_server_tests.cpp)
+        # The Beast test instantiates the same Asio code as remote_server.cpp.
+        set_property(SOURCE tests/remote_server_tests.cpp APPEND PROPERTY COMPILE_OPTIONS
+          "$<$<CXX_COMPILER_ID:GNU>:-Wno-null-dereference>")
         target_include_directories(coffeecnc_remote_server_tests SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
         target_link_libraries(coffeecnc_remote_server_tests PRIVATE coffeecnc_application
           coffeecnc_project_options nlohmann_json::nlohmann_json)
@@ -389,6 +392,9 @@ if(BUILD_TESTING)
         coffeecnc_enable_analyzers(coffeecnc_remote_server_tests)
         add_test(NAME remote_server COMMAND coffeecnc_remote_server_tests ${PROJECT_BINARY_DIR})
         set_tests_properties(remote_server PROPERTIES TIMEOUT 20)
+        add_test(NAME remote_server_dns COMMAND sh ${PROJECT_SOURCE_DIR}/tests/remote_server_dns.sh
+          $<TARGET_FILE:coffeecnc_remote_server_tests> ${PROJECT_BINARY_DIR})
+        set_tests_properties(remote_server_dns PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77)
 
         set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.

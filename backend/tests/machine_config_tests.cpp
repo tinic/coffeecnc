@@ -591,6 +591,15 @@ void remote_viewer_port() {
     const auto refused = load(with(enabled, "REMOTE_PORT = 8787", std::string("REMOTE_PORT = ") + invalid));
     require(!refused && has(refused.error(), "REMOTE_PORT"), "An invalid LAN port is rejected");
   }
+  const auto aliases = load(with(enabled, "REMOTE_PORT = 8787",
+      "REMOTE_PORT = 8787\nREMOTE_HOSTS = Mill.example.local., spare.example.local MILL.EXAMPLE.LOCAL\n"));
+  require(aliases && aliases->remote_hosts == std::vector<std::string>{"mill.example.local", "spare.example.local"},
+          "LAN aliases are normalized and deduplicated");
+  for (const auto* invalid : {"http://mill.example", "mill.example:8787", "mill.example/view"}) {
+    const auto refused = load(with(enabled, "REMOTE_PORT = 8787",
+        std::string("REMOTE_PORT = 8787\nREMOTE_HOSTS = ") + invalid + "\n"));
+    require(!refused && has(refused.error(), "REMOTE_HOSTS"), "An alias must be a bare hostname");
+  }
 }
 
 void fixed_setter_is_explicit_and_bounded() {

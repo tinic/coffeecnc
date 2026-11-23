@@ -613,7 +613,9 @@ void restore_spindle_tool(Rig& rig) {
   const auto saved = [&] {
     std::ifstream input(file);
     int tool = -1;
-    return input >> tool ? tool : -1;
+    if (!(input >> tool))
+      return -1;
+    return tool;
   };
   if (rig.config.limits.homing_required) {
     check("startup_waits_for_homing",
@@ -3771,7 +3773,7 @@ void air_cuts(Rig& rig) {
     }
     // Start the tool-change program with T98 so it actually requests both exchanges.
     const auto start_tool = sample.exchanges > 0 ? 98 : 1;
-    const auto mdi = [&](std::string_view block) -> bool {
+    const auto send_mdi = [&](std::string_view block) -> bool {
       const auto sent = rig.send(std::format(R"("type":"mdi","text":"{}")", block));
       const bool done = sent.accepted() && rig.pump_until(10s, [&]() -> bool {
         const auto s = rig.status();
@@ -3782,10 +3784,10 @@ void air_cuts(Rig& rig) {
         check(sample_name + "_setup_mdi", false, std::format("{}: {}", block, sent.text()));
       return done;
     };
-    if (!mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X{} Y{} Z{} R0", origin[0], origin[1],
+    if (!send_mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X{} Y{} Z{} R0", origin[0], origin[1],
                          origin[2])) ||
-        !mdi(std::format("M61 Q{} G43 H{}", start_tool, start_tool)) || !mdi("G0 Z30") ||
-        !mdi("G0 X0 Y0"))
+        !send_mdi(std::format("M61 Q{} G43 H{}", start_tool, start_tool)) || !send_mdi("G0 Z30") ||
+        !send_mdi("G0 X0 Y0"))
       return;
     const auto start = rig.status();
     const bool at_start = start.controller.tool_in_spindle == start_tool &&
@@ -3879,7 +3881,7 @@ void restart_cuts(Rig& rig) {
   rig.restart_preview = &preview;
   rig.restart_engine = &engine;
   rig.start();
-  const auto mdi = [&](std::string_view text) {
+  const auto send_mdi = [&](std::string_view text) {
     const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", text));
     return result.accepted() && rig.pump_until(10s, [&] {
       const auto s = rig.status();
@@ -3890,8 +3892,8 @@ void restart_cuts(Rig& rig) {
   const bool setup =
       rig.send(R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6.35,"comment":"End mill"})").accepted() &&
       rig.send(R"("type":"set_tool","tool":{"number":98,"pocket":98,"length":25.4,"diameter":6.35,"comment":"Reference"})").accepted() &&
-      mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z{} R0", origin_z)) &&
-      mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0");
+      send_mdi(std::format("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z{} R0", origin_z)) &&
+      send_mdi("M61 Q1 G43 H1") && send_mdi("G0 Z20") && send_mdi("G0 X0 Y0");
   check("restart_setup", setup);
 
   std::uint64_t context = 0;
@@ -4001,13 +4003,13 @@ void restart_cuts(Rig& rig) {
           missing.text());
     approach("06-toolchange.ngc", 22, 98, true);
     if (failures == 0) {
-      const bool repositioned = mdi("M61 Q1 G43 H1") && mdi("G0 Z20") && mdi("G0 X0 Y0");
+      const bool repositioned = send_mdi("M61 Q1 G43 H1") && send_mdi("G0 Z20") && send_mdi("G0 X0 Y0");
       check("restart_pocket_setup", repositioned);
       if (repositioned)
         approach("03-pocket.ngc", 24, 1, false);
     }
     if (failures == 0) {
-      const bool repositioned = mdi("G43 H1") && mdi("G0 Z30") && mdi("G0 X0 Y0");
+      const bool repositioned = send_mdi("G43 H1") && send_mdi("G0 Z30") && send_mdi("G0 X0 Y0");
       const auto [approved, path] = plan("G21 G90 G17 G54 G94 G97 G40 G61\nG43 H1\n"
                                         "G0 Z30\nG1 X12 F600\nM30\n", 4);
       // The encoder changes after the operator has reviewed the plan. The trajectory's
@@ -4081,7 +4083,8 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
     const auto outcome = start(true, context);
     check(scenario,
           !report.errors.empty() && outcome.outcome == "rejected" &&
-              outcome.reason.find(reason) != std::string::npos && rig.port.writes() == trace,
+              outcome.reason.find(reason) != std::string::npos &&
+              std::ranges::equal(rig.port.writes(), trace),
           outcome.text());
   };
   refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit");
@@ -4350,10 +4353,10 @@ void paused_z_jog(Rig& rig) {
   };
   if (!at_pause("M5"))
     return;
-  const auto unhomed = rig.send(lift);
+  const auto lift_without_home = rig.send(lift);
   check("paused_z_requires_homing",
-        !unhomed.accepted() && unhomed.reason.find("Home all axes") != std::string::npos,
-        unhomed.text());
+        !lift_without_home.accepted() && lift_without_home.reason.find("Home all axes") != std::string::npos,
+        lift_without_home.text());
   rig.send(stop);
   for (const auto axis : {"x", "y", "z"}) {
     const auto homed = rig.send(std::format(R"("type":"home","axis":"{}")", axis));
@@ -4636,7 +4639,7 @@ void whole_job(Rig& rig) {
              status.value("interp", "") == "idle";
     });
   };
-  const auto mdi = [&](std::string_view block) {
+  const auto send_mdi = [&](std::string_view block) {
     const auto result = rig.send(std::format(R"("type":"mdi","text":"{}")", block));
     return result.accepted() && rig.pump_until(6s, [&] {
       const auto s = rig.status();
@@ -4664,8 +4667,8 @@ void whole_job(Rig& rig) {
     }
     const auto tool = rig.send(
         R"("type":"set_tool","tool":{"number":1,"pocket":1,"length":18.975,"diameter":6.35,"comment":"End mill"})");
-    const bool prepared = tool.accepted() && mdi("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z-50 R0") &&
-                          mdi("M61 Q1 G43 H1") && mdi("G0 Z30") && mdi("G0 X0 Y0") &&
+    const bool prepared = tool.accepted() && send_mdi("G21 G90 G54 G92.1 G10 L2 P1 X10 Y-8 Z-50 R0") &&
+                          send_mdi("M61 Q1 G43 H1") && send_mdi("G0 Z30") && send_mdi("G0 X0 Y0") &&
                           rig.send(R"("type":"set_override","which":"feed","value":2)").accepted();
     if (!require("job_fixture_at_start", prepared && distance(rig.status().work, {0, 0, 30}) < 0.01))
       return;
@@ -4905,15 +4908,15 @@ void gantry(Rig& rig) {
   rig.settle();
 
   // One Y motor unhomed: Y is not homed, X and Z are, and Y does not jog until it is homed again.
-  const bool unhomed = unhome_joint(2);
+  const bool joint_unhomed = unhome_joint(2);
   rig.pump_until(2s, [&]() -> bool { return !rig.snapshot().axes[1].homed; });
   const auto partly = rig.snapshot().axes;
   const auto refused = rig.send(hold_y);
   static_cast<void>(rig.send(release_y));
   check("gantry_y_homed_only_with_both_motors",
-        unhomed && !partly[1].homed && partly[0].homed && partly[2].homed && joint_homed(1) &&
+        joint_unhomed && !partly[1].homed && partly[0].homed && partly[2].homed && joint_homed(1) &&
             !joint_homed(2) && refused.outcome == "rejected" && refused.reason == y_refusal,
-        std::format("unhome={} x={} y={} z={} {}", unhomed, partly[0].homed, partly[1].homed,
+        std::format("unhome={} x={} y={} z={} {}", joint_unhomed, partly[0].homed, partly[1].homed,
                     partly[2].homed, refused.text()));
   const auto again = rig.send(R"("type":"home","axis":"y")");
   const bool rehomed = rig.pump_until(30s, [&]() -> bool { return all_homed(rig); });
@@ -4977,10 +4980,12 @@ public:
     for (const auto end = Clock::now() + 10s; Clock::now() < end;) {
       {
         const std::lock_guard lock{mutex_};
-        for (const auto& message : messages_)
-          if (message.at("type") == "result" && message.at("id") == id)
-            return {message.at("outcome").get<std::string>(),
-                    message.at("reason").get<std::string>()};
+        const auto message = std::ranges::find_if(messages_, [id](const Json& record) {
+          return record.at("type") == "result" && record.at("id") == id;
+        });
+        if (message != messages_.end())
+          return {message->at("outcome").get<std::string>(),
+                  message->at("reason").get<std::string>()};
       }
       std::this_thread::sleep_for(2ms);
     }
@@ -5381,7 +5386,7 @@ void machine_moves(Rig& rig) {
 
   // Save, move away, Go to with Z: the blocks goToPlan writes end at the saved position.
   for (const bool inch : {false, true}) {
-    const auto name = inch ? std::string_view("g20") : std::string_view("g21");
+    const auto units_code = inch ? std::string_view("g20") : std::string_view("g21");
     bool ready = clean() && block("G53 G0 X37.5 Y-12.25 Z-22.125") &&
                  block("G10 L2 P1 X12 Y-7 Z5 R30") && block("G43 H1") && block("G43.2 X4") &&
                  block("G92 X1 Y2 Z3") && block(units(inch));
@@ -5401,7 +5406,7 @@ void machine_moves(Rig& rig) {
       sent = sent && block(text);
     const auto at = position();
     const auto after = rig.status();
-    check(std::format("machine_moves_go_to_saved_{}", name),
+    check(std::format("machine_moves_go_to_saved_{}", units_code),
           sent && error(at, saved) <= 0.01 && tool[2] > 40 && near(tool[0], 4, 0.0001) &&
               after.tool_offset == tool &&
               after.controller.program_units == (inch ? LengthUnit::inch : LengthUnit::mm),

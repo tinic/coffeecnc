@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <deque>
+#include <iterator>
 #include <mutex>
 #include <string_view>
 #include <thread>
@@ -121,9 +122,8 @@ struct RemoteServer::Impl {
   auto notifications_after(std::uint64_t after) -> std::vector<Notification> {
     const std::scoped_lock lock{events_mutex};
     std::vector<Notification> result;
-    for (const auto& event : events)
-      if (event.sequence > after)
-        result.push_back(event);
+    std::ranges::copy_if(events, std::back_inserter(result),
+                         [after](const Notification& event) { return event.sequence > after; });
     return result;
   }
 

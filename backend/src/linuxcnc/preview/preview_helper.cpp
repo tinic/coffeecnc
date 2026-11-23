@@ -40,6 +40,7 @@
 #include "../src/program_watch.hpp"
 #include <coffeecnc/core/text_file.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <climits>
@@ -161,9 +162,7 @@ void halt(Halt how, const std::string& text) {
   flush_run();
   canon.halt = how;
   std::string clean = text;
-  for (auto& c : clean)
-    if (c == '\n' || c == '\r')
-      c = ' ';
+  std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r'; }, ' ');
   put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
                   canon.line, canon.elsewhere, clean));
 }
@@ -247,8 +246,8 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
   frame.available = true;
   for (const auto& point : {from, to}) {
     auto work = to_program(point);
-    for (auto& coordinate : work)
-      coordinate *= program_unit();
+    std::ranges::transform(work, work.begin(),
+                           [unit = program_unit()](double coordinate) { return coordinate * unit; });
     expand(frame.bounds, work);
   }
   if (feed) {
@@ -785,8 +784,8 @@ auto capture_restart(InterpBase& interp, const GCodes& codes) -> RestartPoint {
   std::array<double, ACTIVE_SETTINGS> settings{};
   interp.active_settings(settings.data());
   auto start = to_program(canon.end);
-  for (auto& coordinate : start)
-    coordinate *= program_unit();
+  std::ranges::transform(start, start.begin(),
+                         [unit = program_unit()](double coordinate) { return coordinate * unit; });
   const auto direction = canon.spindle == CANON_CLOCKWISE          ? coffeecnc::SpindleDirection::forward
                          : canon.spindle == CANON_COUNTERCLOCKWISE ? coffeecnc::SpindleDirection::reverse
                                                                   : coffeecnc::SpindleDirection::stopped;
@@ -900,8 +899,7 @@ auto run(const HelperRequest& request) -> int {
     if (const int index = find_index(request.tool_in_spindle); index > 0)
       canon.tools.at(0) = canon.tools.at(static_cast<std::size_t>(index));
   canon.selected_index = request.tool_prepared < 0 ? -1 : find_index(request.tool_prepared);
-  for (auto& function : USER_DEFINED_FUNCTION)
-    function = user_m_code;
+  std::ranges::fill(USER_DEFINED_FUNCTION, user_m_code);
 
   // Before the interpreter reads anything: no file it could read holds a comment that runs
   // Python or writes a file, or an O word that is not plainly a name. The interpreter acts on
@@ -914,8 +912,8 @@ auto run(const HelperRequest& request) -> int {
     std::vector<std::filesystem::path> files{request.program};
     std::error_code error;
     if (!request.subroutines.empty())
-      for (const auto& entry : std::filesystem::directory_iterator(request.subroutines, error))
-        files.push_back(entry.path());
+      std::ranges::transform(std::filesystem::directory_iterator(request.subroutines, error),
+                             std::back_inserter(files), &std::filesystem::directory_entry::path);
     if (error)
       return give_up("the directory of the subroutine files cannot be read");
     for (const auto& file : files) {

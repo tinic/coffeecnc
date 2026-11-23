@@ -123,6 +123,12 @@ select {
   color: var(--text-dim);
 }
 
+.btn, .choice {
+  --button-edge: var(--control-edge);
+  background: var(--control);
+  box-shadow: inset 0 -2px var(--button-edge);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -131,22 +137,23 @@ select {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 14px;
-  border: 1px solid var(--control-edge);
+  border: 1px solid transparent;
   border-radius: var(--control-radius);
-  background: var(--control);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
 }
 
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled), .choice:hover:not(:disabled) {
   background: var(--control-hover);
 }
 
 .btn:active:not(:disabled),
+.choice:active:not(:disabled),
 .btn.held {
   background: var(--control-active);
+  box-shadow: inset 0 -1px var(--button-edge);
 }
 
 .btn:focus-visible,
@@ -156,31 +163,32 @@ input:focus-visible {
 }
 
 .btn:disabled {
-  border-color: transparent;
   color: var(--text-faint);
   background: transparent;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
 /* The same mark identifies a selection in tabs, segmented controls and view switches. */
 .btn.on,
-details[open] > summary.btn:not(.quiet),
-.choice:not(:disabled):is([aria-current='page'], [aria-pressed='true']) {
-  border-color: var(--accent);
+.btn[aria-pressed='true'],
+details[open] > summary.btn,
+.choice:not(:disabled):is([aria-current='page'], [aria-pressed='true'], .selected) {
+  --button-edge: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
-  box-shadow: inset 0 -2px var(--accent);
+  box-shadow: inset 0 -2px var(--button-edge);
 }
 
 .btn.primary:not(:disabled) {
-  border-color: var(--accent);
+  --button-edge: color-mix(in srgb, var(--accent) 62%, #000);
   background: var(--accent);
   color: var(--on-accent);
 }
 
 .btn.go:not(:disabled) {
-  border-color: var(--go-action);
+  --button-edge: color-mix(in srgb, var(--go-action) 62%, #000);
   background: var(--go-action);
   color: #fff;
   font-weight: 700;
@@ -195,20 +203,19 @@ details[open] > summary.btn:not(.quiet),
 }
 
 .btn.warning:not(:disabled) {
-  border-color: var(--warn);
+  --button-edge: var(--warn);
   background: var(--warn-soft);
   color: var(--warn);
 }
 
 .btn.danger:not(:disabled) {
-  border-color: var(--stop);
+  --button-edge: var(--stop);
   background: var(--stop-soft);
   color: var(--stop);
 }
 
-.btn.quiet {
-  border-color: transparent;
-  background: transparent;
+.btn.quiet:not(:disabled, :hover, :active) {
+  background: var(--bg-sunken);
 }
 
 .btn.square {

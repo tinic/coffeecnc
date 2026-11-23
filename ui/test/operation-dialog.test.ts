@@ -108,6 +108,27 @@ describe('new operation dialog', () => {
     expect(save.text).toContain('G1 Z-1 F60')
   })
 
+  it('takes engraving text through the ordinary text field and requires an explicit tool', async () => {
+    await open()
+    button('Engraving').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    const label = input('Text')
+    expect(label.getAttribute('inputmode')).toBeNull()
+    expect(tool?.element.value).toBe('0')
+    label.value = 'part/07'
+    label.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/engrave-part-07.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No engraving program was saved')
+    expect(save.text).toContain('(Lettering: PART/07)')
+    expect(save.text).toContain('T2 M6\nG43 H2')
+  })
+
   it('requires a thread mill selection and saves internal threads through the normal program picker', async () => {
     await open()
     button('Internal thread milling').click()

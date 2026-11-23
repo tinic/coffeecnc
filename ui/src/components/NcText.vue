@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 16px;
   bottom: 12px;
-  border-color: var(--accent);
+  --button-edge: var(--accent);
   background: var(--panel-raised);
 }
 .follow-count { width: 7ch; min-width: 7ch; text-align: right; }

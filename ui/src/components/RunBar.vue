@@ -296,7 +296,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .main-action { width: 212px; }
 .more { position: relative; }.more-button { flex-direction: column; height: 48px; padding: 0 8px; font-size: var(--type-lg); line-height: 1; }
 /* Active options grow the button to the left only; Stop and the primary action stay put. */
-.more-button.active { gap: 3px; padding: 0 4px; border-color: var(--accent); background: var(--accent-soft); }
+.more-button.active { --button-edge: var(--accent); gap: 3px; padding: 0 4px; background: var(--accent-soft); }
 .more-button.active .dots { color: var(--accent); }
 .active-options { display: flex; gap: 3px; }
 .active-options small { padding: 1px 3px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--accent); background: var(--panel); white-space: nowrap; }

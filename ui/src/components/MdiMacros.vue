@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // Macros of the MDI card ([COFFEECNC] MACRO, #211): one button that opens the list. A macro runs
 // as one MDI block after a confirmation that shows it, under the rules of a typed block, and its
-// result goes to the MDI history. Nothing shows when the machine has no macros.
+// result goes to the MDI history. Nothing shows when the machine has no macros. The block is
+// fixed, so the confirmation already gives the native touch-probe refusal (Session::probe_block).
 import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { translateMessage } from '../i18n/messages'
 import { mdiBlock, panel, send } from '../machine'
 import type { Macro } from '../protocol'
+import { mdiProbeBlock } from '../sim/probe-code'
+import { touchProbeLoaded } from '../tool-models'
 import { vTooltip } from '../tooltip'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
@@ -24,9 +27,14 @@ function close(): void {
 
 watch(() => panel.hello, close, { flush: 'sync' })
 
+const block = computed(() => {
+  const macro = chosen.value
+  return mdiBlock.value ?? (macro === null ? null : mdiProbeBlock(macro.mdi, touchProbeLoaded.value) || null)
+})
+
 function run(): void {
   const macro = chosen.value
-  if (macro === null || mdiBlock.value !== null) return
+  if (macro === null || block.value !== null) return
   send({ type: 'mdi', text: macro.mdi })
   close()
 }
@@ -39,9 +47,10 @@ function run(): void {
     </button>
     <ModalDialog v-if="open && chosen === null" :title="t('manual.macros.title')" size="small" fresh-gesture @close="close">
       <div class="macros">
+        <!-- The list is replaced as a whole with the hello: its order is the key. -->
         <button
-          v-for="macro in macros"
-          :key="macro.label"
+          v-for="(macro, index) in macros"
+          :key="index"
           v-tooltip="macro.mdi"
           class="btn macro"
           type="button"
@@ -53,11 +62,11 @@ function run(): void {
     </ModalDialog>
     <ModalDialog v-if="open && chosen !== null" :title="t('manual.macros.runTitle', { label: chosen.label })" size="small" fresh-gesture @close="close">
       <p class="block mono">{{ chosen.mdi }}</p>
-      <p v-if="mdiBlock !== null" class="refusal" role="alert">{{ translateMessage(mdiBlock) }}</p>
+      <p v-if="block !== null" class="refusal" role="alert">{{ translateMessage(block) }}</p>
       <p v-else>{{ t('manual.macros.hint') }}</p>
       <template #footer>
         <button class="btn wide" type="button" @click="close">{{ t('common.cancel') }}</button>
-        <button v-tooltip="mdiBlock !== null ? translateMessage(mdiBlock) : t('manual.macros.runTip')" class="btn primary wide" type="button" :aria-disabled="mdiBlock !== null" @click="run">{{ t('manual.macros.run') }}</button>
+        <button v-tooltip="block !== null ? translateMessage(block) : t('manual.macros.runTip')" class="btn primary wide" type="button" :aria-disabled="block !== null" @click="run">{{ t('manual.macros.run') }}</button>
       </template>
     </ModalDialog>
   </template>

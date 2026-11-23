@@ -29,7 +29,7 @@ import { SimProbe, type ProbePlan } from './probe'
 import { SimOffsetHistory } from './offset-history'
 import { fieldAxis } from '../offset-history'
 import { demoProbe, demoProbeTools, demoSetter } from './probe-fixture'
-import { inspectProbeCode, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
+import { mdiProbeBlock, probeCodeBlock, probeCodeUnknown, probeLoadedReason } from './probe-code'
 import {
   InterpError,
   activeCodes,
@@ -1345,15 +1345,10 @@ export class SimMachine {
   private probeCode(mdi?: string): Rejection | null {
     if (!this.probe) return null
     if (mdi !== undefined) {
-      const block = inspectProbeCode(mdi)
-      if (block.relabelsTool && (block.changesTool || block.refusal !== ''))
-        return reject('Separate M61 from tool changes and spindle commands.')
-    }
-    if (this.toolInSpindle !== demoProbe) return null
-    if (mdi !== undefined) {
-      const reason = probeCodeBlock(mdi)
+      const reason = mdiProbeBlock(mdi, this.toolInSpindle === demoProbe)
       return reason === '' ? null : reject(reason)
     }
+    if (this.toolInSpindle !== demoProbe) return null
     if (this.modal.spindle !== 'stopped') return reject(probeLoadedReason)
     if (this.exec?.source === 'mdi') return reject(probeCodeUnknown)
     for (const line of this.program?.lines ?? []) {

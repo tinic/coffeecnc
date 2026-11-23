@@ -63,7 +63,7 @@ export function threadMill(c: ThreadMill): Generated {
     `Thread depth ${word(depth)}, lowest tool position Z-${word(lowest)}`, // i18n-ignore
   ])
   // Exact path keeps the lead-in clear and the programmed thread radius through each turn.
-  p.add('G61 G91.1', `G0 X${word(x)} Y${word(y)}`)
+  p.add('M70', 'G61 G91.1', `G0 X${word(x)} Y${word(y)}`)
 
   const xy = (px: number, py: number): string => `X${word(px)} Y${word(py)}`
   const arc = (px: number, py: number, z: number, i: number, j: number): void => {
@@ -87,5 +87,5 @@ export function threadMill(c: ThreadMill): Generated {
     arc(x, y, endZ + direction * leadTravel, (x - finalX) / 2, (y - finalY) / 2)
     p.rapidZ(c.clearance)
   }
-  return { text: p.end() }
+  return { text: p.end(false, ['M72']) }
 }

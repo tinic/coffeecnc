@@ -33,7 +33,7 @@
       "slotSetup": "Utilisez une fraise adaptée à l’entrée. Réglez la longueur pour que chaque extrémité ouverte coïncide avec le bord du brut. Laissez de la place au-delà pour l’outil.",
       "centreCutting": "Plonge verticalement au centre : utilisez une fraise deux tailles à coupe au centre.",
       "threadMill": "Fraisage de filetage intérieur",
-      "threadMillSetup": "Utilisez une fraise à fileter à profil unique et un trou prépercé. Vérifiez le dégagement de la fraise et de son col. Saisissez l’avance au centre de l’outil."
+      "threadMillSetup": "Utilisez une fraise à fileter à profil unique et un trou prépercé. Vérifiez le dégagement de la fraise et de son col. Saisissez l’avance au centre de l’outil. La profondeur définit le Z de la pointe. Tenez compte de la hauteur de la dent."
     },
     "label": {
       "profileShape": "Forme",

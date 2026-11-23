@@ -33,7 +33,7 @@
       "slotSetup": "Use uma fresa de topo adequada à entrada. Defina o comprimento para que cada extremidade aberta fique no bordo do material e deixe espaço para a ferramenta o ultrapassar.",
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro.",
       "threadMill": "Fresagem de rosca interna",
-      "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta."
+      "threadMillSetup": "Use uma fresa de roscar de perfil único e um furo pré-perfurado. Verifique a folga da fresa e do pescoço. Introduza o avanço no centro da ferramenta. A profundidade da rosca define o Z da ponta. Tenha em conta a altura do dente."
     },
     "label": {
       "profileShape": "Forma",

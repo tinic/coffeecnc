@@ -33,7 +33,7 @@
       "slotSetup": "Use an end mill rated for the entry. Set the length so each open end is at the stock edge, with room for the tool to travel past it.",
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre.",
       "threadMill": "Internal thread milling",
-      "threadMillSetup": "Use a single-form thread mill and a predrilled hole. Verify cutter and neck clearance. Enter the tool-centre feed."
+      "threadMillSetup": "Use a single-form thread mill and a predrilled hole. Verify cutter and neck clearance. Enter the tool-centre feed. Thread depth sets tool-tip Z. Allow for the cutter’s tooth height."
     },
     "label": {
       "profileShape": "Shape",

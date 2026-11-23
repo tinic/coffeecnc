@@ -405,11 +405,11 @@ describe('internal thread milling', () => {
 
   it('cuts ascending right-hand helices with one pitch per turn and a partial last turn', () => {
     const program = text(threadMill(metric))
-    expect(program).toContain('G61 G91.1\nG0 X10 Y-5')
+    expect(program).toContain('M70\nG61 G91.1\nG0 X10 Y-5')
     expect(program).toContain('G1 Z-4.125 F50\nG3 X11.625 Y-5 Z-3.75 I0.8125 J0 F60')
     expect(program).toContain('G3 X12 Y-5 Z-2.25 I-2 J0\nG3 X12 Y-5 Z-0.75 I-2 J0')
     expect(program).toContain('G3 X8 Y-5 Z0 I-2 J0\nG3 X10 Y-5 Z0.375 I1 J0')
-    expect(program).toContain('G0 Z5\nM5\nM2\n')
+    expect(program).toContain('G0 Z5\nM72\nM5\nM2\n')
     const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
     expect(preview.error).toBeNull()
     expect(preview.state).toBe('ready')

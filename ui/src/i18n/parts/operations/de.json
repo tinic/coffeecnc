@@ -33,7 +33,7 @@
       "slotSetup": "Verwenden Sie einen für die Eintauchbewegung geeigneten Schaftfräser. Wählen Sie die Länge so, dass jedes offene Ende an der Werkstückkante liegt und der Fräser darüber hinausfahren kann.",
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser.",
       "threadMill": "Innengewindefräsen",
-      "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben."
+      "threadMillSetup": "Einprofil-Gewindefräser und vorgebohrtes Loch verwenden. Freiraum für Schneide und Hals prüfen. Vorschub für die Werkzeugmitte eingeben. Die Gewindetiefe legt die Z-Position der Werkzeugspitze fest. Die Höhe des Schneidprofils berücksichtigen."
     },
     "label": {
       "profileShape": "Form",

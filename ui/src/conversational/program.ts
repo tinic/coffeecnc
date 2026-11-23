@@ -150,9 +150,10 @@ export class Program {
     this.rapidZ(this.c.clearance)
   }
 
-  /** Clear of the work, spindle off, program end. */
-  end(): string {
+  /** Clear of the work, optional coolant off, spindle off, program end. */
+  end(stopCoolant = false): string {
     if (this.lines.at(-1) !== `G0 Z${this.n(this.c.clearance)}`) this.rapidZ(this.c.clearance)
+    if (stopCoolant) this.add('M9')
     this.add('M5', 'M2')
     return `${this.lines.join('\n')}\n`
   }

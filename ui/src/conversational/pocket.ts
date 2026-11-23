@@ -135,7 +135,6 @@ function layers(p: Program, c: Pocket, entry: Entry, rings: () => void): void {
     rings()
     p.cut(`G1 ${xy(p, [c.x, c.y])}`, c.feed)
   }
-  if (c.coolant !== undefined && c.coolant !== 'off') p.add('M9')
 }
 
 function depthLine(p: Program, c: Pocket, entry: Entry): string {
@@ -190,7 +189,7 @@ export function circularPocket(c: CircularPocket): Generated {
     }
     finishStock(p, stock, finish, (inset) => { circle(radius - inset) })
   })
-  return { text: p.end() }
+  return { text: p.end(c.coolant !== undefined && c.coolant !== 'off') }
 }
 
 /**
@@ -270,5 +269,5 @@ export function rectangularPocket(c: RectangularPocket): Generated {
     for (let ring = 0; ring <= rings; ring += 1) contour(stock + inner * (rings - ring) / rings)
     finishStock(p, stock, finish, contour)
   })
-  return { text: p.end() }
+  return { text: p.end(c.coolant !== undefined && c.coolant !== 'off') }
 }

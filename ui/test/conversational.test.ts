@@ -430,7 +430,7 @@ describe('pocket entry and finishing', () => {
     expect(program).toContain('G3 X2.5 Y0 I-2.5 J0 Z-0.5')
     expect(program).toContain('G3 X9 Y0 I-9 J0\n(Finish walls)\nG1 X10 Y0\nG3 X10 Y0 I-10 J0')
     expect(program.match(/\(Finish walls\)/g)).toHaveLength(2)
-    expect(program.endsWith('M9\nG0 Z5\nM5\nM2\n')).toBe(true)
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
     expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
   })
 
@@ -439,6 +439,7 @@ describe('pocket entry and finishing', () => {
       ...setup, width: 20, height: 30, cornerRadius: 7, entry: 'ramp', entryAngle: 3, wallStock: 1, coolant: 'both',
     }))
     expect(program).toContain('M9\nM7\nM8\n\nG0 X0 Y-9\nG1 Z0 F200')
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
     expect(program).toContain('G1 X0 Y9 Z-0.5\nG1 X0 Y-9 Z-1')
     expect(program).not.toContain('(Finish walls)')
     const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
@@ -448,6 +449,12 @@ describe('pocket entry and finishing', () => {
     const y = feed.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 1))
     expect(Math.max(...x)).toBeCloseTo(4)
     expect(Math.max(...y)).toBeCloseTo(9)
+  })
+
+  it('forces coolant off before entry when the operator picks Off', () => {
+    const program = text(circularPocket({ ...setup, diameter: 30, coolant: 'off' }))
+    expect(program).toContain('G91.1\nM9\n\nG0 X0 Y0')
+    expect(program.match(/^M9$/gm)).toEqual(['M9'])
   })
 
   it('refuses stock that leaves no room and entry angles below the usable precision', () => {

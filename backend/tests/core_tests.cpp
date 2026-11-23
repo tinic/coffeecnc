@@ -546,7 +546,7 @@ void estop_request_results() {
 
 // What follows a G10 L1 of a tool length so that the offset in effect follows the table (#287).
 void tool_length_follow_up() {
-  const auto follows = [](int written, int loaded, std::array<double, 3> offset,
+  const auto follows = [](int written, int loaded, const std::array<double, 3>& offset,
                           std::optional<double> loaded_length) {
     return after_tool_length_write(written, loaded, {offset, loaded_length});
   };

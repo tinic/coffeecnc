@@ -343,9 +343,10 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
       {});
   require(!low && low.error().contains("above the top"), low ? "expected a refusal" : low.error());
 
-  // Ball calibration over a gauge: the ball centres touch at -9 and +9 mm. Declared 20.1 mm
-  // wide, the effective ball is 20.1 - 18 = 2.1 mm.
-  corner_window('x', -9, 9);
+  // Ball calibration over a 20 mm gauge with faces at -10 and +10 mm. Both faces are probed from
+  // outside, so a 2.1 mm effective ball touches with its centre 1.05 mm outside each face, at
+  // -11.05 and +11.05 mm. The centres are 22.1 mm apart: 22.1 - 20 = 2.1 mm.
+  corner_window('x', -11.05, 11.05);
   corner_window('y', -100, 100);
   corner_window('z', -100, 12);
   const auto gauge = [&](double width) {
@@ -357,7 +358,7 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
     request.gauge_width_mm = width;
     return port->fixed_setter(request, epoch, {});
   };
-  const auto calibrated = gauge(20.1);
+  const auto calibrated = gauge(20);
   require(calibrated && calibrated->ball_diameter && std::abs(*calibrated->ball_diameter - 2.1) < 0.02,
           calibrated ? std::format("the gauge measured the ball at {:.3f} mm",
                                    calibrated->ball_diameter.value_or(0))

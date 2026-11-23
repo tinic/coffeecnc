@@ -1,7 +1,7 @@
 import { reactive, ref, watch, type Ref } from 'vue'
 import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
-import { decodeOperatorPreferences, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
+import { decodeOperatorPreferences, decodeTheme, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
 import { decodeLanguage, t, type Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
@@ -9,6 +9,7 @@ const storageKey = 'coffeecnc.operator-settings.v1'
 // The language is kept apart from the settings, as on the machine (panel-language.json): earlier
 // versions refuse a settings document with a field they do not know.
 const languageKey = 'coffeecnc.panel-language.v1'
+const viewerKey = 'coffeecnc.viewer-appearance.v1'
 type SaveCommand = Extract<CommandBody, { type: 'set_operator_settings' }>
 export interface SettingsContext { hello: Hello | null; revision: number | null }
 export interface SettingsResult { saved: boolean; reason: string }
@@ -27,6 +28,7 @@ interface StartupPresentation {
   themeOverride?: PanelTheme | null
   language?: Ref<Language>
   languageOverride?: Language | null
+  viewer?: boolean
 }
 
 type PresentationChange = Partial<Pick<OperatorPreferences, 'program_layout' | 'theme' | 'language' | 'recent_programs'>>
@@ -47,7 +49,8 @@ export interface OperatorSettingsController {
 export function createOperatorSettingsState(panel: PanelState, connection: Pick<Panel, 'send' | 'onResult'>,
   browserStorage: () => Pick<Storage, 'getItem' | 'setItem'> = () => localStorage,
   presentation?: StartupPresentation): OperatorSettingsController {
-  const state = reactive<SettingsState>({ storage: panel.simulated ? 'browser' : 'loading', reason: '',
+  const viewer = presentation?.viewer === true
+  const state = reactive<SettingsState>({ storage: panel.simulated || viewer ? 'browser' : 'loading', reason: '',
     error: '', revision: null, saving: false, uncertain: false })
   if (panel.simulated) {
     try {
@@ -55,6 +58,13 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       panel.preferences = decodeOperatorPreferences(saved) ?? defaultOperatorPreferences()
       panel.preferences.language = decodeLanguage(browserStorage().getItem(languageKey)) ?? 'en'
     } catch { /* Browser demo can still run with session defaults. */ }
+  }
+  if (viewer) {
+    try {
+      const saved = JSON.parse(browserStorage().getItem(viewerKey) ?? 'null') as { theme?: unknown; language?: unknown } | null
+      panel.preferences.theme = decodeTheme(saved?.theme) ?? panel.preferences.theme
+      panel.preferences.language = decodeLanguage(saved?.language) ?? panel.preferences.language
+    } catch { /* The LAN screen works with session defaults when storage is blocked. */ }
   }
   const theme = presentation?.theme ?? ref<PanelTheme>('light')
   const layoutOverride = presentation?.layoutOverride ?? null
@@ -96,7 +106,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   stops.push(watch(() => panel.hello, (hello) => {
     if (pending !== null) finish(fail(t('status.settingsState.draftUnconfirmed')))
     state.error = ''; state.reason = ''; state.uncertain = false; state.revision = null
-    if (hello === null) { state.storage = 'loading'; return }
+    if (hello === null) { state.storage = viewer ? 'browser' : 'loading'; return }
     if (machineId !== hello.machine_id) {
       if (machineId !== undefined) {
         // A choice queued while disconnected belongs to the previous machine.
@@ -111,7 +121,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
       panel.startupSpindleRpm = 0
     }
     initialUnit = panel.unit; initialJog = panel.jogVelocity
-    if (panel.simulated) { state.storage = 'browser'; applyStartup(); return }
+    if (panel.simulated || viewer) { state.storage = 'browser'; applyStartup(); return }
     panel.preferences = defaultOperatorPreferences()
     panel.preferences.default_jog_velocity = Math.min(600, hello.max_jog_velocity)
     const capability: unknown = Reflect.get(hello, 'operator_settings_storage')
@@ -124,7 +134,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     } else state.storage = 'loading'
   }, { immediate: true, flush: 'sync' }))
   stops.push(watch(() => panel.operatorSettings, (snapshot) => {
-    if (panel.simulated || panel.hello?.operator_settings_storage !== 1) return
+    if (panel.simulated || viewer || panel.hello?.operator_settings_storage !== 1) return
     if (snapshot === null) { state.storage = 'loading'; state.revision = null; return }
     state.storage = snapshot.availability; state.reason = snapshot.reason; state.uncertain = false
     state.revision = snapshot.availability === 'available' ? snapshot.revision : null
@@ -158,6 +168,14 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (reason !== null) return Promise.resolve(fail(reason))
     const document = decodeOperatorPreferences(value)
     if (document === null) return Promise.resolve(fail(t('status.settingsState.checkValues')))
+    if (viewer) {
+      const appearance = { theme: document.theme, language: document.language }
+      Object.assign(panel.preferences, appearance)
+      try { browserStorage().setItem(viewerKey, JSON.stringify(appearance)) }
+      catch { return Promise.resolve(fail(t('status.settingsState.browserStorage'))) }
+      state.error = ''
+      return Promise.resolve({ saved: true, reason: '' })
+    }
     // The decoder drops a damaged list; a save must never drop the operator's positions that way.
     if (document.saved_positions.length !== value.saved_positions.length) {
       return Promise.resolve(fail(t('status.settingsState.checkPositions')))
@@ -193,6 +211,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     const patch = queuedPresentation
     queuedPresentation = {}
     if (state.storage === 'unavailable') return
+    if (viewer && patch.theme === undefined && patch.language === undefined) return
     const { program_layout: layout, theme: storedTheme, language: storedLanguage, recent_programs: recent } = panel.preferences
     if ((patch.program_layout ?? layout) === layout && (patch.theme ?? storedTheme) === storedTheme &&
         (patch.language ?? storedLanguage) === storedLanguage &&
@@ -229,7 +248,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     (): boolean => state.uncertain,
   ], flushPresentation, { flush: 'post' }))
 
-  stops.push(watch(() => panel.status?.program.file ?? null, (file) => {
+  if (!viewer) stops.push(watch(() => panel.status?.program.file ?? null, (file) => {
     if (file !== null && file !== panel.preferences.recent_programs[0]) rememberProgram(file)
   }))
 

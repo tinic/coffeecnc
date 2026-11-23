@@ -1,6 +1,8 @@
 #include "application.hpp"
 #include "remote_server.hpp"
 
+#include <coffeecnc/app/alarm_log.hpp>
+#include <coffeecnc/app/diagnostics_feed.hpp>
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
@@ -12,6 +14,7 @@
 #include <coffeecnc/app/tool_model_store.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
+#include <coffeecnc/linuxcnc/hal_diagnostics.hpp>
 #include <coffeecnc/linuxcnc/loaded_tools.hpp>
 #include <coffeecnc/linuxcnc/nml_panel_source.hpp>
 #include <coffeecnc/linuxcnc/nml_port.hpp>
@@ -20,6 +23,7 @@
 #include <coffeecnc/linuxcnc/preview_engine.hpp>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -258,6 +262,11 @@ auto preview_helper() -> std::string {
   return {};
 }
 
+auto unix_now() -> std::chrono::milliseconds {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch());
+}
+
 // An environment variable; empty when it is not set.
 auto environment(const char* name) -> std::optional<std::string> {
   const char* value = std::getenv(name);
@@ -481,7 +490,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(port.error());
     return 1;
   }
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(*config, &shared, &mailbox);
   if (!reader) {
     say(reader.error());
@@ -526,13 +535,29 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles model_files;
   LocalToolModelFiles progress_files;
   LocalToolModelFiles edit_files;
+  LocalToolModelFiles copy_files;
+  LocalToolModelFiles upload_files;
   LocalToolModelFiles history_files;
+  LocalToolModelFiles alarm_files;
+  // Every operator message and refusal posted to the page is also kept in the alarm log.
+  std::unique_ptr<AlarmLog> alarms;
   std::unique_ptr<ProgramProgress> progress;
   std::unique_ptr<OffsetHistoryStore> history;
   std::optional<ProgramWriter> program_writer;
+  ProgramWriter copy_writer{programs, copy_files};
+  ProgramWriter upload_writer{programs, upload_files};
   std::unique_ptr<ToolModelStore> models;
+  // The diagnostics view: HAL is read on the feed's thread, and only while a page watches. The
+  // pin-to-signal wiring is that thread's alone. The HAL tools get LinuxCNC's environment.
+  HalApiLookup hal_lookup;
+  HalToolLauncher launcher{environment("PATH").value_or("/usr/bin:/bin"),
+                            hal_tool_environment(config->ini_file)};
+  const auto diagnostic_rows = diagnostic_inputs(*config);
+  PinSignals wiring;
+  std::unique_ptr<DiagnosticsFeed> diagnostics;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
+  std::atomic<Runtime*> upload_runtime{};
   std::unique_ptr<RemoteServer> remote;
   PanelWindow window{{.ui_directory = *ui,
                       .windowed = options.windowed,
@@ -550,8 +575,12 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                                      std::chrono::milliseconds rendered_at) -> void {
                         if (!runtime)
                           return;
+                        if (alarms)
+                          alarms->request(page, json);
                         auto outcome = runtime->submit(page, json, rendered_at);
                         const bool ready = outcome.send_snapshots;
+                        if (alarms)
+                          alarms->posted(outcome.page, outcome.messages, unix_now());
                         window.post(outcome.page, std::move(outcome.messages));
                         if (ready && feed)
                           feed->page_ready(page);
@@ -568,29 +597,78 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     std::unique_ptr<PanelFeed>& feed;
     std::unique_ptr<Runtime>& runtime;
     std::unique_ptr<ToolModelStore>& models;
+    std::unique_ptr<RemoteServer>& remote;
+    std::unique_ptr<AlarmLog>& alarms;
+    std::unique_ptr<DiagnosticsFeed>& diagnostics;
     ~Shutdown() {
       window.close();
       feed.reset();
+      if (remote)
+        remote->stop();
       runtime.reset();
+      // It posts through the alarm log too.
+      diagnostics.reset();
+      if (models)
+        models->stop();
+      // What the others posted while they stopped is appended, under the data directory's
+      // lock, which the tool models hold until they are destroyed.
+      alarms.reset();
       models.reset();
     }
-  } shutdown{window, feed, runtime, models};
+  } shutdown{window, feed, runtime, models, remote, alarms, diagnostics};
+  // What the services post to the page, as the alarm log sees it too.
+  const auto post = [&window, &alarms](PageToken page, std::vector<std::string> messages) -> void {
+    if (alarms)
+      alarms->posted(page, messages, unix_now());
+    window.post(page, std::move(messages));
+  };
   if (config->remote_port != 0) {
     try {
-      remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts);
-      say(std::format("Read-only LAN screen on port {}.", remote->port()));
+      RemoteServer::Upload upload;
+      if (config->remote_upload) {
+        upload = [&](std::string_view name, std::string_view bytes, bool replace)
+            -> std::expected<void, std::string> {
+          auto* target = upload_runtime.load();
+          if (target == nullptr)
+            return std::unexpected("CoffeeCNC is starting.");
+          ProgramWriter::Publish publish;
+          if (replace) {
+            publish = [target](const std::string& path, const ProgramWriter::Commit& commit)
+                -> std::expected<void, std::string> {
+              return target->publish_program(path, commit);
+            };
+          }
+          if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
+            return std::unexpected(written.error());
+          return {};
+        };
+      }
+      remote = std::make_unique<RemoteServer>(*ui, config->remote_port, config->remote_hosts,
+                                              std::move(upload));
+      say(std::format("LAN screen on port {}.", remote->port()));
     } catch (const std::exception& error) {
       say(std::format("The LAN screen could not start: {}", error.what()));
     }
   }
   int code = 0;
   try {
-    models = std::make_unique<ToolModelStore>(
-        model_files, location,
+    // Its writer delivers only for a command or a snapshot, after the alarm log below exists.
+    models = std::make_unique<ToolModelStore>(model_files, location, post, config->limits);
+    // In the machine's data directory, next to the offset history, under the lock the tool
+    // models hold; without one, for this run only.
+    alarms = std::make_unique<AlarmLog>(
+        alarm_files,
+        location.availability == ToolModelAvailability::available ? location.directory : "",
+        location.availability == ToolModelAvailability::available ? "" : location.reason,
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
-        config->limits);
+        [store = models.get()]() -> std::optional<std::string> {
+          const auto held = store->held_location();
+          if (held.availability == ToolModelAvailability::available)
+            return std::nullopt;
+          return held.reason;
+        });
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
     // Next to the program progress, in the machine's data directory; without one, for this
     // session only.
@@ -602,29 +680,45 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             : location.reason);
     program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
+    diagnostics = std::make_unique<DiagnosticsFeed>(
+        DiagnosticsFeed::Source{
+            .begin = [&wiring]() -> void {
+              // Unknown wiring (halcmd failed) leaves every linked pin `live`.
+              wiring = pin_signals(halcmd_show("sig", "").value_or(""));
+            },
+            .read = [&]() -> Diagnostics {
+              return {read_diagnostics(diagnostic_rows, hal_lookup, wiring), launcher.states()};
+            },
+            .launch = [&launcher](HalTool tool) -> std::optional<std::string> {
+              return launcher.launch(tool);
+            }},
+        post);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
-        [&window, &remote](const Outcome& outcome) -> void {
+        [&window, &remote, &alarms](const Outcome& outcome) -> void {
+          if (alarms)
+            alarms->posted(outcome.page, outcome.messages, unix_now());
           window.post(outcome.page, outcome.messages);
           if (remote)
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get());
+        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(), &copy_writer);
+    upload_runtime.store(runtime.get());
     PanelFeed::Mirror mirror;
     if (remote) {
       mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,
-                         bool has_program) -> void {
-        remote->publish(messages, records, has_program);
+                         const Status& status, bool has_program) -> void {
+        remote->publish(messages, records, status, has_program);
       };
     }
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
-        source,
-        [&window](PageToken page, std::vector<std::string> messages) -> void {
-          window.post(page, std::move(messages));
+        source, post, &preview,
+        [&models, &alarms](PageToken page) -> void {
+          models->send_snapshot(page);
+          alarms->send_snapshot(page);
         },
-        &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)
       hooks.before_load(window, *config);

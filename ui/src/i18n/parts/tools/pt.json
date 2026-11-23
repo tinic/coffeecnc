@@ -7,6 +7,7 @@
       "tableChanged": "A tabela de ferramentas mudou. Selecione novamente a ferramenta.",
       "offsetsUnavailable": "Deslocamentos de {system} indisponíveis",
       "offsetsStale": "Últimos deslocamentos recebidos de {system}",
+      "offsetsUnconfirmed": "Deslocamentos de {system} lidos antes de o LinuxCNC executar código G pela última vez: podem ter mudado",
       "toolTable": "Tabela de ferramentas",
       "touchOffLengthHint": "Definir o comprimento da ferramenta carregada a partir da posição atual",
       "touchOffLength": "Tomar comprimento",
@@ -33,6 +34,8 @@
       "workOffsets": "Deslocamentos da origem da peça",
       "workOffsetsHint": "{unit} · origens, em coordenadas da máquina",
       "lastReported": "Últimos recebidos",
+      "unconfirmed": "Pode estar desatualizado",
+      "unconfirmedHint": "Os valores em itálico foram lidos antes de o LinuxCNC executar código G pela última vez e podem ter mudado. Após um programa, são confirmados pelo próximo jog ou comando MDI.",
       "historyHint": "Alterações aos deslocamentos da origem da peça e às ferramentas, com Restaurar",
       "history": "Histórico",
       "columnSystem": "Sistema",
@@ -143,6 +146,10 @@
       "spindleEmpty": "A árvore está vazia",
       "toolInSpindle": "A ferramenta está na árvore",
       "cannotConfirm": "{reason}: não é possível confirmar a troca.",
+      "measure": "Medir e rever o reinício",
+      "measureHint": "Com a ferramenta montada, pare o programa e meça o seu comprimento. Reveja o reinício antes de arrancar.",
+      "measuring": "A medir a ferramenta. O programa permanece parado.",
+      "measureNote": "Confirmar retoma o programa. Medir desloca a ferramenta até ao apalpador e deixa o programa parado.",
       "continueNote": "O programa continua logo que confirmar. O botão de paragem na barra de execução termina antes o programa."
     },
     "setter": {

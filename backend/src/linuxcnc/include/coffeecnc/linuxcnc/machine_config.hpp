@@ -77,6 +77,9 @@ struct MachineConfig {
   MotionTolerances motion_tolerances{};
   // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
   std::vector<Macro> macros{};
+  // [COFFEECNC] DIAGNOSTIC = <label> | <HAL signal or pin>, each occurrence in order; at most
+  // max_diagnostics. Extra rows of the diagnostics view, after LinuxCNC's own pins.
+  std::vector<DiagnosticSignal> diagnostics{};
   // Resolved and prepared by the application before connecting to LinuxCNC.
   std::string runtime_directory{};
   std::vector<std::string> remote_hosts{};
@@ -86,6 +89,8 @@ struct MachineConfig {
   std::optional<int> touch_probe_tool{};
   // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
   std::uint16_t remote_port{};
+  // [COFFEECNC] REMOTE_UPLOAD, off by default even when the LAN viewer is enabled.
+  bool remote_upload{};
   // [TRAJ] LINEAR_UNITS: the unit of every length in EMC_STAT and in jog commands.
   LengthUnit machine_units;
   // The only axes accepted: X, Y, Z, in the order of every per-axis array.

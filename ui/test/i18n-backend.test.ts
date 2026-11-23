@@ -23,12 +23,15 @@ const sources = import.meta.glob<string>([
   '../../backend/src/app/src/tool_model_store.cpp',
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/offset_history.cpp',
+  '../../backend/src/app/src/alarm_log.cpp',
   '../../backend/src/app/src/program_store.cpp',
   '../../backend/src/app/src/program_edit.cpp',
   '../../backend/src/app/src/file_system.cpp',
   '../../backend/src/app/src/preview.cpp',
   '../../backend/src/app/src/status_publisher.cpp',
   '../../backend/src/app/src/runtime.cpp',
+  '../../backend/src/app/src/diagnostics_feed.cpp',
+  '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/linuxcnc/src/nml_status.cpp',
@@ -229,7 +232,7 @@ describe('backend sentences', () => {
   const files = Object.entries(sources).map(([path, raw]) => [path.split('/').at(-1) ?? path, raw] as const)
 
   it('reads every listed source', () => {
-    expect(files.length).toBe(20)
+    expect(files.length).toBe(23)
   })
 
   for (const [file, raw] of files) {

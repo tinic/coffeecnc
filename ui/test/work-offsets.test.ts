@@ -109,6 +109,25 @@ describe('work offset availability in the operator table', () => {
     expect(wrapper.findAll('.offsets tbody td.num').every((cell) => cell.text() === '—')).toBe(true)
   })
 
+  it('shows inactive values that may be out of date in italics, with a reason', async () => {
+    if (panel.workOffsets === null) throw new Error('Missing fixture')
+    panel.workOffsets.systems = panel.workOffsets.systems.map((system) => ({
+      ...system, available: true, current: system.wcs === 2 || system.wcs === 4, offset: [system.wcs, 0, 0], rotation_xy: 0,
+    }))
+    wrapper = mount(ToolsTab)
+    const all = wrapper.findAll('.offsets tbody tr')
+    expect(all[0]?.classes()).toContain('unconfirmed')
+    expect(all[0]?.get('td:first-child').attributes('aria-label')).toBe('G54 offsets read before LinuxCNC last ran G-code: they may have changed')
+    expect(all[0]?.findAll('td.num').map((cell) => cell.text())).toEqual(['1.000', '0.000', '0.000'])
+    expect(all[1]?.classes()).not.toContain('unconfirmed')
+    expect(all[3]?.classes()).not.toContain('unconfirmed')
+    expect(wrapper.get('.unconfirmed-note').text()).toBe('May be out of date')
+    panel.workOffsets.systems = panel.workOffsets.systems.map((system) => ({ ...system, current: true }))
+    await nextTick()
+    expect(wrapper.find('.offsets tr.unconfirmed').exists()).toBe(false)
+    expect(wrapper.find('.unconfirmed-note').exists()).toBe(false)
+  })
+
   it('withholds duplicate, missing and nonfinite rows', () => {
     if (panel.workOffsets === null) throw new Error('Missing fixture')
     panel.workOffsets.systems = [

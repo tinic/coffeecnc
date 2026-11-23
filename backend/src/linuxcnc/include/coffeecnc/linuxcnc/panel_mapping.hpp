@@ -43,9 +43,22 @@ namespace coffeecnc {
                                    std::span<const LoadedTool> tools,
                                    std::uint64_t program_revision) -> Status;
 
-// G54 ... G59.3 as one reading knows them: the active system is available, with the offset
-// and rotation task reports; every other one is not, and holds zeros. With Link::down none is.
-[[nodiscard]] auto to_work_systems(const NmlStatus& reading) -> std::array<WorkSystem, 9>;
+// G54 ... G59.3 in the text of LinuxCNC's parameter file: lines `<number> <value>`, values in
+// machine units. System n is parameters 5201 + 20 n (X), + 1 (Y), + 2 (Z) and + 9 (the XY
+// rotation, degrees); its offset is given in millimetres. A system any of whose four
+// parameters is missing or not a finite number is not there; nor is any in a text longer than
+// max_parameter_file_bytes. Other lines are passed over.
+inline constexpr std::size_t max_parameter_file_bytes = std::size_t{1024} * 1024;
+[[nodiscard]] auto parameter_work_systems(std::string_view text, double millimetres_per_unit)
+    -> std::array<std::optional<WorkSystem>, 9>;
+
+// G54 ... G59.3 as one reading knows them. The active system is available, with the offset and
+// rotation task reports, current while the link is live. Every other one is what `saved` holds
+// for it (parameter_work_systems), current when `saved_current` and the link is live; else it
+// is not available and holds zeros. With Link::down none is available.
+[[nodiscard]] auto to_work_systems(const NmlStatus& reading,
+                                   const std::array<std::optional<WorkSystem>, 9>& saved = {},
+                                   bool saved_current = false) -> std::array<WorkSystem, 9>;
 
 } // namespace coffeecnc
 

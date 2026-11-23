@@ -14,7 +14,7 @@ import { useDrawnPreview } from '../drawn-preview'
 import { cycleTime, formatDuration, progressAt, remainingFrom, sectionSeconds, velocityLimits } from '../cycle-time'
 import { elapsedSeconds, runClock } from '../run-clock'
 import { machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointLines as checkedBreakpointLines, currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint } from '../program-breakpoint'
 import type { ProgramLayout } from '../store'
 import { formatVelocity, toolLabel, velocityUnit } from '../units'
@@ -170,11 +170,7 @@ const breakpointLine = computed(() => activeBreakpoint.value?.line ?? selectedBr
 const breakpointBlock = computed(() => machineBlock(panel, true) ??
   (homingRequired.value && !allHomed.value ? t('program.tab.notHomed') : null) ??
   (status.value?.interp !== 'idle' || !status.value.motion.in_position ? t('program.tab.stopToRun') : null))
-const breakpointLines = computed(() => {
-  const preview = checkedPreview.value
-  return new Set(canRestart.value && preview?.state === 'ready' && preview.check
-    ? preview.segments.map((segment) => segment.line) : [])
-})
+const breakpointLines = computed(() => canRestart.value ? checkedBreakpointLines(checkedPreview.value) : new Set<number>())
 const breakpointLabel = computed(() => activeBreakpoint.value?.reached
   ? t('program.tab.pausedBefore', { line: breakpointLine.value }) : t('program.tab.pauseBefore', { line: breakpointLine.value }))
 function chooseBreakpoint(line: number): void {
@@ -248,6 +244,33 @@ const removeEditListener = onResult((command, result) => {
 })
 onBeforeUnmount(removeEditListener)
 
+// The path view and the text select together. In Split the text holds the selection; in Preview
+// a tapped move shows its line in a chip, which opens the code at that line.
+const textSelection = ref<{ first: number; last: number } | null>(null)
+const pickedLine = ref(0)
+watch([(): string => panel.programLayout, (): number | undefined => panel.program?.revision], () => {
+  pickedLine.value = 0
+  textSelection.value = null
+})
+function textSelected(first: number, last: number): void {
+  textSelection.value = first > 0 ? { first, last } : null
+}
+const highlight = computed(() => panel.programLayout === 'path'
+  ? pickedLine.value > 0 ? { first: pickedLine.value, last: pickedLine.value } : null
+  : panel.programLayout === 'split' ? textSelection.value : null)
+const pickedText = computed(() => textCurrent.value ? program.value?.lines[lineInText(pickedLine.value) - 1] ?? null : null)
+function pathPicked(line: number): void {
+  if (panel.programLayout === 'split') text.value?.select(textCurrent.value ? lineInText(line) : 0)
+  else pickedLine.value = line
+}
+async function openPickedLine(): Promise<void> {
+  const line = lineInText(pickedLine.value)
+  if (line === 0) return
+  panel.programLayout = 'split'
+  await nextTick()
+  text.value?.select(line)
+}
+
 async function showFailure(): Promise<void> {
   if (failureLine.value === 0) return
   panel.programLayout = 'text'
@@ -263,7 +286,7 @@ async function showFailure(): Promise<void> {
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? t('program.tab.ncProgram') : t('program.tab.toolpathPreview') }}</span>
           <div class="scene-actions">
-            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
+            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" class="tone-control" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
           </div>
         </header>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>{{ t('program.tab.partial', { count: program.lines.length }) }}</span></div>
@@ -275,12 +298,19 @@ async function showFailure(): Promise<void> {
               :breakpoint-block="breakpointBlock"
               @restart="restartLine" @edit-rate="editRate" @breakpoint="chooseBreakpoint"
               @line-edit="lineEdits.apply" @undo-line-edit="lineEdits.undoLast" @dismiss-line-edit="lineEdits.dismiss"
+              @selection="textSelected"
             />
             <div v-else class="empty">{{ status?.program.file ? t('program.tab.waitingText') : t('program.tab.openToBegin') }}</div>
           </template>
-          <PathView v-if="panel.programLayout !== 'text'">
+          <PathView v-if="panel.programLayout !== 'text'" :highlight="highlight" @pick="pathPicked">
             <PartModel v-if="!readOnly" />
           </PathView>
+          <div v-if="panel.programLayout === 'path' && pickedText !== null" class="picked-line">
+            <button class="btn picked-open" type="button" :aria-label="t('program.tab.showLine', { line: pickedLine })" @click="openPickedLine">
+              <strong class="mono">{{ t('program.tab.line', { line: pickedLine }) }}</strong><span class="mono picked-code">{{ pickedText }}</span>
+            </button>
+            <button class="btn picked-close" type="button" :aria-label="t('program.ncText.clearSelected')" @click="pickedLine = 0"><AppIcon name="close" /></button>
+          </div>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic" role="status">
             <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
             <button v-if="failureLine > 0" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
@@ -347,33 +377,37 @@ async function showFailure(): Promise<void> {
 
 <style scoped>
 .program { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; }
-.workspace-card { display: grid; grid-template-columns: minmax(0, 1fr) 292px; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.workspace-card { display: grid; grid-template-columns: minmax(0, 1fr) 292px; flex: 1; min-height: 0; border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .scene { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
-.scene-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 4px; gap: 12px; flex: none; }
-.scene-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; }.scene-title :deep(svg) { width: 16px; }
+.scene-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 6px 12px 6px 18px; gap: 4px 12px; flex: none; }
+.scene-title { display: flex; align-items: center; gap: 8px; font-size: var(--type-body); font-weight: 600; }.scene-title :deep(svg) { width: 16px; }
 .scene-actions { display: flex; align-items: center; gap: 9px; }
-.program-check, .breakpoint-chip { min-height: 34px; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+.program-check, .breakpoint-chip { min-height: var(--touch); padding: 5px 10px; white-space: nowrap; font-size: var(--type-sm); }
 .breakpoint-chip, .breakpoint-chip:disabled { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); opacity: 1; }
 .breakpoint-chip :deep(.icon) { width: 13px; height: 13px; }
 .program-check :deep(.icon) { width: 14px; height: 14px; }
 .program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.program-check.ready { color: var(--go); }
-.program-check.blocked { color: var(--stop); }
-.program-check.review:not(.blocked) { color: var(--warn); }
-.view-switch { display: flex; gap: 2px; }.view-switch button { border: 0; border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--text-dim); background: none; cursor: pointer; }.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
+.program-check.ready { color: var(--go); background: var(--go-soft); }
+.program-check.blocked { color: var(--stop); background: var(--stop-soft); }
+.program-check.review:not(.blocked) { color: var(--warn); background: var(--warn-soft); }
+.view-switch { display: flex; align-items: center; gap: 3px; }
+.view-switch button { min-width: var(--touch); min-height: var(--touch); border: 0; border-radius: 7px; padding: 0 12px; font-size: var(--type-body); font-weight: 600; color: var(--text-dim); background: none; cursor: pointer; }
+.view-switch button:hover { background: var(--control-hover); }
+.view-switch button:active { background: var(--control-active); }
+.view-switch button[aria-pressed=true] { color: var(--accent); background: var(--panel); }
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
-.inspector { display: flex; flex-direction: column; min-height: 0; padding: 20px; border-left: 1px solid var(--line); overflow-y: auto; }
-.panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
+.inspector { display: flex; flex-direction: column; min-height: 0; }
+.panel-head { margin-bottom: 12px; }h2 { margin: 0; font-size: var(--type-md); font-weight: 600; letter-spacing: -.15px; }
 .sections { display: flex; flex-direction: column; gap: 5px; margin: 0 -8px 14px; }
-.section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; height: 36px; padding: 0 10px; font-size: 12px; }
+.section-row { display: flex; align-items: center; gap: 6px; }.section-row .section { flex: 1; min-width: 0; }.section-restart { flex: none; min-height: var(--touch); padding: 0 10px; font-size: var(--type-sm); }
 .section { display: flex; align-items: center; gap: 10px; min-height: 57px; padding: 10px 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
-.section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-dim); font-size: 11px; flex: none; }
-.section[aria-pressed=true] .section-number { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 4px; }.section-text strong { font-weight: 500; font-size: 13px; }.section-text small { font-size: 11px; color: var(--text-dim); }
-.context-note, .quiet { margin: 15px 0 0; font-size: 11px; color: var(--text-dim); }
+.section[aria-pressed=true] { background: var(--accent-soft); }.section-number { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-sunken); color: var(--text-dim); font-size: var(--type-sm); flex: none; }
+.section[aria-pressed=true] .section-number { background: var(--panel); color: var(--accent); }.section-text { display: flex; flex-direction: column; gap: 3px; }.section-text strong { font-weight: 600; font-size: var(--type-body); }.section-text small { font-size: var(--type-sm); color: var(--text-dim); }
+.context-note, .quiet { margin: 15px 0 0; font-size: var(--type-sm); color: var(--text-dim); }
 .status-row { flex: none; min-height: 20px; display: flex; justify-content: flex-end; align-items: center; gap: 20px; font-size: 12px; }
 .status-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-row > .mono { font-size: 11px; color: var(--text-dim); }
+.status-row > .mono { font-size: var(--type-sm); color: var(--text-dim); }
 .line-count { text-align: right; }
 .run-time { text-align: center; }
 .failure { display: flex; align-items: center; gap: 8px; padding: 8px 18px; color: var(--stop); font-size: 12px; }.failure button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; flex: none; }.failure span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -383,9 +417,16 @@ async function showFailure(): Promise<void> {
 /* The stop hint shares the bottom of the view with transient code actions. */
 .stopped-at { position: absolute; z-index: 1; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); font-size: 13px; box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .views:has(.line-actions, .follow) .stopped-at { display: none; }
+/* A tapped move's line, over the top right of the preview, where nothing else is drawn. */
+.picked-line { position: absolute; z-index: 1; top: 10px; right: 16px; display: flex; gap: 4px; max-width: min(60%, 520px); padding: 4px; border: 1px solid var(--accent); border-radius: 10px; background: var(--panel-raised); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.picked-line .btn { height: 36px; }
+.picked-open { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 10px; font-size: 12px; }
+.picked-open strong { flex: none; font-weight: 600; color: var(--accent); }
+.picked-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--text); }
+.picked-close { flex: none; min-width: 36px; padding: 0; }
 .stopped-at .btn { height: 36px; }.dismiss-stop { min-width: 36px; padding: 0; }
-@media (max-height: 850px) { .program { gap: 10px; }.inspector { padding: 14px 20px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
-.inspector { padding: 0; overflow: hidden; }
+@media (max-height: 850px) { .program { gap: 10px; }.section { min-height: 50px; }.context-note { margin-top: 10px; } }
+.inspector { overflow: hidden; }
 .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 20px; overflow-y: auto; }
 .inspector-body > * { flex-shrink: 0; }
 @media (max-height: 850px) { .inspector-body { padding: 14px 20px; } }

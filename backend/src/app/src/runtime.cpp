@@ -32,19 +32,24 @@ Runtime::Runtime(ControllerPort& port, StatusSource& status, SafetyOutputs& outp
                  const Limits& limits, const ProgramStore& programs, Sink sink,
                  ToolModelService* tool_models, Quit quit, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
-                 OffsetHistoryStore* history)
+                 OffsetHistoryStore* history, DiagnosticsService* diagnostics,
+                 ProgramWriter* copy_writer)
     : status_(status), outputs_(outputs), sink_(std::move(sink)), quit_(std::move(quit)),
       session_(port, limits, programs, tool_models, preview, restart_engine, program_writer,
-               history),
+               history, diagnostics, copy_writer != nullptr),
       control_([this]() -> void { control_loop(); }),
       status_thread_([this]() -> void { status_loop(); }),
-      worker_([this]() -> void { work_loop(); }) {}
+      worker_([this]() -> void { work_loop(); }),
+      copier_(copy_writer ? std::thread([this, copy_writer]() -> void { copy_loop(*copy_writer); })
+                          : std::thread{}) {}
 
 Runtime::~Runtime() {
   session_.close();
   closing_ = true;
   // The control thread keeps beating and holding the level while the worker stops the jogs.
   worker_.join();
+  if (copier_.joinable())
+    copier_.join();
   stop_status_ = true;
   status_thread_.join();
   stop_control_ = true;
@@ -64,6 +69,11 @@ auto Runtime::submit(PageToken page, std::string_view json, std::chrono::millise
 }
 
 auto Runtime::loaded_program() const -> std::string { return session_.loaded_program(); }
+
+auto Runtime::publish_program(const std::string& path, const Session::Publication& publish)
+    -> std::expected<void, std::string> {
+  return session_.publish_program(path, publish).get();
+}
 
 auto Runtime::timing() const -> Timing {
   return {control_periods_.load(), std::chrono::nanoseconds{longest_control_period_.load()}};
@@ -117,6 +127,12 @@ void Runtime::work_loop() {
       return;
     session_.wait_for_work(control_period);
   }
+}
+
+void Runtime::copy_loop(ProgramWriter& writer) {
+  while (const auto work = session_.copy_work(writer))
+    if (sink_ && !work->messages.empty())
+      sink_(*work);
 }
 
 } // namespace coffeecnc

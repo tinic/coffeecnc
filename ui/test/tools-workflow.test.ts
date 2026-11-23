@@ -1,5 +1,5 @@
 /* eslint-disable vue/one-component-per-file -- Separate mounted fixtures for tools and settings. */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import ToolsTab from '../src/components/ToolsTab.vue'
@@ -14,6 +14,13 @@ import type { ResultListener } from '../src/store'
 
 const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultListener>() }))
 
+// A dialog can close before its lazy renderer finishes loading. Resolve the module while this
+// fixture is alive, so its dependency imports cannot outlive the test environment.
+beforeAll(async () => { await import('../src/components/ToolModelCanvas.vue') })
+
+// The WebGL chunks must not load in the background (#279).
+vi.mock('../src/components/ProbeGuideCanvas.vue', () => import('./canvas-stub'))
+vi.mock('../src/components/ToolModelCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ hello: null, toolModels: null, simulated: true }) as typeof import('../src/machine').panel

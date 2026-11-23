@@ -2,13 +2,13 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 // Keep Stop available in every workspace. Touch-off needs no program setup controls.
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 
 import { allHomed, homingRequired, linkBlock, live, onResult, panel, reported, send } from '../machine'
 import { connectionBlock, interpreterBlock, machineBlock } from '../machine-block'
-import { currentProgramPreview, describeProgramCheck } from '../program-check'
+import { breakpointLines, currentProgramPreview, describeProgramCheck } from '../program-check'
 import { breakpointSelection, selectedBreakpoint, type BreakpointSelection } from '../program-breakpoint'
 import type { CommandBody, LengthUnit } from '../protocol'
 import { formatLength, formatPercent } from '../units'
@@ -61,7 +61,9 @@ onBeforeUnmount(onResult((command, result) => {
     command.breakpoint.line === selected?.line && command.breakpoint.text === selected.text)
     breakpointSelection.value = null
 }))
-const confirmation = ref<{ context: number; unit: LengthUnit; breakpoint: BreakpointSelection | null } | null>(null)
+// Shallow: the reviewed breakpoint is compared by identity with the current selection, and a
+// deep ref would hand back a reactive proxy of it that is never the same object.
+const confirmation = shallowRef<{ context: number; unit: LengthUnit; breakpoint: BreakpointSelection | null } | null>(null)
 const checkChanged = computed(() => confirmation.value !== null &&
   (checkedPreview.value?.context !== confirmation.value.context || panel.unit !== confirmation.value.unit ||
     breakpoint.value !== confirmation.value.breakpoint))
@@ -124,7 +126,14 @@ const startBlock = computed((): string | null => {
 const runBlock = computed(() => startBlock.value ?? interpreterBlock(status.value) ??
   (activeBreakpoint.value ? t('status.runBar.reopening') : null) ??
   ((panel.preview || breakpoint.value) && check.value === null ? t('status.runBar.checking') : null) ??
-  (breakpoint.value && checkedPreview.value?.state !== 'ready' ? t('status.runBar.breakpointCheck') : null))
+  (breakpoint.value ? breakpointBlock(breakpoint.value.line) : null))
+
+/** Why Run to line cannot start at `line`: a preview that ended early offers only its path. */
+function breakpointBlock(line: number): string | null {
+  const preview = checkedPreview.value
+  if (breakpointLines(preview).has(line)) return null
+  return preview?.state === 'failed' && preview.check ? t('status.runBar.breakpointPastPreview') : t('status.runBar.breakpointCheck')
+}
 
 const pauseBlock = computed((): string | null => {
   const s = status.value
@@ -276,7 +285,7 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 <style scoped>
 .runbar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap: 18px; align-items: center; flex: none; padding: 7px 24px; border-top: 1px solid var(--line); background: var(--panel); }
 .runbar.touch-off { grid-template-columns: 1fr; justify-items: end; }
-.command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: 13px; }
+.command-actions { display: flex; align-items: center; gap: 8px; }.command-actions > .btn { height: 48px; border-radius: 9px; font-size: var(--type-body); }
 .spindle-effect { margin: 0; line-height: 1.55; }
 .paused-z { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .paused-z-reading { display: flex; flex-direction: column; min-width: 0; margin-right: 6px; font-size: 12px; color: var(--text-dim); }
@@ -285,10 +294,10 @@ function option(which: 'optional_stop' | 'block_delete'): void {
 .stop-button { color: var(--stop); min-width: 88px; }
 /* Keep Stop and the Z buttons stationary when the primary caption changes. */
 .main-action { width: 212px; }
-.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 36px; height: 48px; font-size: 24px; line-height: 1; color: var(--text-dim); }
+.more { position: relative; }.more-button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: var(--touch); height: 48px; font-size: var(--type-lg); line-height: 1; color: var(--text-dim); }
 /* Active options grow the button to the left only; Stop and the primary action stay put. */
 .more-button.active { gap: 3px; padding: 0 4px; border-radius: 9px; background: var(--accent-soft); }
-.more-button.active .dots { font-size: 18px; color: var(--accent); }
+.more-button.active .dots { color: var(--accent); }
 .active-options { display: flex; gap: 3px; }
 .active-options small { padding: 1px 3px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--accent); background: var(--panel); white-space: nowrap; }
 .popover { bottom: calc(100% + 16px); right: -100px; width: min(430px, calc(100vw - 32px)); }

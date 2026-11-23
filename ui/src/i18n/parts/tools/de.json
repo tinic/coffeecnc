@@ -7,6 +7,7 @@
       "tableChanged": "Die Werkzeugtabelle hat sich geändert. Wählen Sie das Werkzeug erneut.",
       "offsetsUnavailable": "Verschiebungen von {system} nicht verfügbar",
       "offsetsStale": "Zuletzt gemeldete Verschiebungen von {system}",
+      "offsetsUnconfirmed": "Verschiebungen von {system} vor dem letzten G-Code-Lauf von LinuxCNC gelesen: sie können sich geändert haben",
       "toolTable": "Werkzeugtabelle",
       "touchOffLengthHint": "Länge des eingewechselten Werkzeugs aus seiner aktuellen Position setzen",
       "touchOffLength": "Länge antasten",
@@ -33,6 +34,8 @@
       "workOffsets": "Nullpunktverschiebungen",
       "workOffsetsHint": "{unit} · Nullpunkte, in Maschinenkoordinaten",
       "lastReported": "Zuletzt gemeldet",
+      "unconfirmed": "Möglicherweise veraltet",
+      "unconfirmedHint": "Kursive Werte wurden vor dem letzten G-Code-Lauf von LinuxCNC gelesen und können sich geändert haben. Nach einem Programm bestätigt sie das nächste Tippen oder der nächste MDI-Befehl.",
       "historyHint": "Änderungen an Nullpunktverschiebungen und Werkzeugen, mit Wiederherstellen",
       "history": "Verlauf",
       "columnSystem": "System",
@@ -143,6 +146,10 @@
       "spindleEmpty": "Spindel ist leer",
       "toolInSpindle": "Werkzeug ist in der Spindel",
       "cannotConfirm": "{reason}: Der Wechsel kann nicht bestätigt werden.",
+      "measure": "Messen und Wiederanlauf prüfen",
+      "measureHint": "Setzen Sie das Werkzeug ein. Das Programm hält an und die Werkzeuglänge wird gemessen. Prüfen Sie den Wiederanlauf vor dem Start.",
+      "measuring": "Werkzeug wird gemessen. Das Programm bleibt angehalten.",
+      "measureNote": "Bestätigen setzt das Programm fort. Beim Messen fährt das Werkzeug zum Taster und das Programm bleibt angehalten.",
       "continueNote": "Das Programm läuft sofort weiter, wenn Sie bestätigen. Die Stopp-Taste in der Ablaufleiste beendet stattdessen das Programm."
     },
     "setter": {

@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_CORE_COMMAND_POLICY_HPP
 #define COFFEECNC_CORE_COMMAND_POLICY_HPP
 
+#include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/fixed_setter.hpp>
 #include <coffeecnc/core/operator_settings.hpp>
 #include <coffeecnc/core/tool_models.hpp>
@@ -77,6 +78,9 @@ struct ControllerState {
   // Which request of the controller `requested_tool` is: another request, also one for the same
   // tool, has another number. A confirmation names it, so that it cannot answer a later request.
   std::uint64_t tool_request{};
+  // Physical line in the original AUTO program waiting for the manual tool change.
+  std::optional<int> tool_change_line{};
+  std::array<double, 3> tool_change_position{}; // commanded machine XYZ at that line, in mm
   // Protocol values are millimetres; composed G-code must be written in this unit.
   LengthUnit program_units{LengthUnit::mm};
   std::string program_file;
@@ -152,6 +156,13 @@ struct Mdi {
 struct ListDirectory {
   std::optional<std::string> path;
 };
+enum class ProgramFileOperation : std::uint8_t { create_folder, copy, rename, remove };
+// Copy uses the current file's name in Programs. Rename changes only its leaf name.
+struct ManageProgramFile {
+  ProgramFileOperation operation;
+  std::string path;
+  std::string name{};
+};
 struct OpenProgram {
   std::string path;
 };
@@ -221,6 +232,14 @@ struct SetWorkOffset {
   int wcs;
   std::array<double, 3> offset; // XYZ origin in machine coordinates, millimetres
 };
+// The XY rotation of one work system (G10 L2 P<wcs> R<degrees>); 0 clears it.
+inline constexpr double max_work_rotation = 360; // degrees, either way
+struct SetWorkRotation {
+  int wcs;
+  double degrees;
+};
+// Clears the G92/G52 shift (G92.1): one offset in LinuxCNC, #5211 ... #5219.
+struct ClearG92 {};
 // What the operator used to set the coordinate: only for the offset history.
 enum class TouchOrigin : std::uint8_t { typed, zero, half };
 struct TouchOff {
@@ -246,13 +265,23 @@ struct SetTool {
 struct RemoveTool {
   int number;
 };
-struct ToolChanged {};
+struct ToolChanged {
+  std::optional<std::uint64_t> measure_request{};
+};
 // Writes back the earlier values of one offset history entry (OffsetHistoryStore).
 struct RestoreOffset {
   std::uint64_t entry{};
 };
 // Switch the machine off (an E-stop stays set) and close CoffeeCNC; LinuxCNC then shuts down.
 struct Quit {};
+// The diagnostics view opens (`on`) or closes: HAL inputs are read and sent only while it is open.
+struct WatchDiagnostics {
+  bool on{};
+};
+// Start halshow, halmeter or halscope as a program of its own.
+struct LaunchHalTool {
+  HalTool tool{HalTool::halshow};
+};
 
 using Command =
     std::variant<Ready, SetMachine, Home, Jog, JogStep, JogStopAll, Mdi, ListDirectory, OpenProgram,
@@ -260,7 +289,8 @@ using Command =
                  SetProgramOption, SelectWcs, TouchOff, ToolTouchOff, SetTool, RemoveTool,
                  ToolChanged, SetToolModelDefaults, SetToolModelAssignment, Quit,
                  SetOperatorSettings, SetWorkOffset, FixedSetterRequest, PlanRestart, StartRestart,
-                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset>;
+                 EditProgram, JogPausedZ, SaveProgram, RestoreOffset, SetWorkRotation, ClearG92,
+                 WatchDiagnostics, LaunchHalTool, ManageProgramFile>;
 
 struct Decision {
   bool allowed{};

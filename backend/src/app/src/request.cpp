@@ -138,7 +138,7 @@ auto command(const Json& object) -> Command {
   const auto type = string(object, "type");
   // Commands with no body still reject stray fields (for example an unsupported run-from-line).
   if (type == "ready" || type == "jog_stop_all" || type == "pause" || type == "resume" ||
-      type == "step" || type == "abort" || type == "tool_changed" || type == "quit") {
+      type == "step" || type == "abort" || type == "quit") {
     fields(object, {"id", "type"});
     if (type == "ready")
       return Ready{};
@@ -152,8 +152,12 @@ auto command(const Json& object) -> Command {
       return Resume{};
     if (type == "step")
       return Step{};
-    if (type == "abort")
-      return Abort{};
+    return Abort{};
+  }
+  if (type == "tool_changed") {
+    fields(object, {"id", "type"}, {"measure_request"});
+    if (object.contains("measure_request"))
+      return ToolChanged{positive_id(object, "measure_request")};
     return ToolChanged{};
   }
   if (type == "set_machine") {
@@ -193,6 +197,18 @@ auto command(const Json& object) -> Command {
     if (field(object, "path").is_null())
       return ListDirectory{std::nullopt};
     return ListDirectory{string(object, "path")};
+  }
+  if (type == "manage_program_file") {
+    fields(object, {"id", "type", "operation", "path"}, {"name"});
+    const auto operation = choice<ProgramFileOperation>(
+        object, "operation", {{"create_folder", ProgramFileOperation::create_folder},
+                              {"copy", ProgramFileOperation::copy},
+                              {"rename", ProgramFileOperation::rename},
+                              {"remove", ProgramFileOperation::remove}});
+    if (object.contains("name") != (operation == ProgramFileOperation::rename))
+      throw InvalidRequest("A new file name is required for rename only.");
+    return ManageProgramFile{operation, string(object, "path"),
+                             object.contains("name") ? string(object, "name") : std::string{}};
   }
   if (type == "open_program") {
     fields(object, {"id", "type", "path"});
@@ -312,6 +328,25 @@ auto command(const Json& object) -> Command {
         throw InvalidRequest("Work offsets must be finite.");
     }
     return SetWorkOffset{integer(object, "wcs"), values};
+  }
+  if (type == "set_work_rotation") {
+    fields(object, {"id", "type", "wcs", "rotation_xy"});
+    return SetWorkRotation{integer(object, "wcs"), number(object, "rotation_xy")};
+  }
+  if (type == "clear_g92") {
+    fields(object, {"id", "type"});
+    return ClearG92{};
+  }
+  if (type == "watch_diagnostics") {
+    fields(object, {"id", "type", "on"});
+    return WatchDiagnostics{boolean(object, "on")};
+  }
+  if (type == "launch_hal_tool") {
+    fields(object, {"id", "type", "tool"});
+    return LaunchHalTool{choice<HalTool>(object, "tool",
+                                         {{hal_tool_name(HalTool::halshow), HalTool::halshow},
+                                          {hal_tool_name(HalTool::halmeter), HalTool::halmeter},
+                                          {hal_tool_name(HalTool::halscope), HalTool::halscope}})};
   }
   if (type == "tool_touch_off") {
     fields(object, {"id", "type", "value"});

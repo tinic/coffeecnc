@@ -1,5 +1,51 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "程序正在运行。",
+      "directorySync": "已保存到磁盘。目录同步失败。{detail}",
+      "manage": "管理程序文件",
+      "unavailable": "程序文件管理不可用。",
+      "nameForRename": "仅重命名时需要提供新文件名。",
+      "closing": "CoffeeCNC 正在关闭。",
+      "starting": "CoffeeCNC 正在启动。",
+      "busy": "正在上传另一个程序。",
+      "verify": "控制器离线时无法核实已加载的程序。",
+      "stop": "请先停止已加载的程序，再替换文件。",
+      "sameOrigin": "请在 CoffeeCNC 局域网界面上传文件。",
+      "choose": "请选择要上传的程序文件。",
+      "size": "程序超过 16 MiB。",
+      "text": "请上传程序文本文件。",
+      "uploadFailed": "无法保存上传的文件。",
+      "copySize": "文件超过 32 MiB。",
+      "nameTaken": "已有同名文件或文件夹。",
+      "missing": "文件或文件夹已不存在。",
+      "loaded": "请先打开其他程序，再移动或删除此项目。",
+      "oneName": "请输入单个文件名或文件夹名。"
+    },
+    "toolChangeMeasurement": {
+      "unavailable": "程序换刀期间无法测量。",
+      "requiresToolAndSetter": "需要刀具表中登记的切削刀具和固定对刀仪。",
+      "controllerUnavailable": "控制器不可用。",
+      "verifyStationaryChange": "无法验证程序换刀状态或停止位置。",
+      "pendingChangeNotCleared": "LinuxCNC 未清除待处理的换刀请求。",
+      "idleMdi": "LinuxCNC 未进入空闲 MDI 模式以测量刀具。",
+      "tableChanged": "登记已装刀具前，刀具表已更改。",
+      "millChanged": "登记已装刀具前，铣床状态已更改。",
+      "registrationFailed": "无法登记已装刀具。",
+      "registrationUnconfirmed": "LinuxCNC 未确认已装刀具。",
+      "needsProgramCheck": "在 M6 处测量需要先完整检查正在运行的程序。",
+      "noMotionAfterChange": "此次换刀后没有经过验证的续跑移动。",
+      "notVerifiedM6": "无法验证原始 M6 程序段。",
+      "skipUnsupported": "续跑会跳过换刀、停止或不受支持的程序段。",
+      "teachFirst": "在程序换刀时测量前，请先标定固定对刀仪。",
+      "dataChangedBeforeMeasure": "测量前程序或刀具数据已更改。",
+      "stoppedBeforeMeasure": "程序已停止，刀具尚未测量。",
+      "noMeasurement": "LinuxCNC 未测得刀具长度。",
+      "measuredCancelled": "刀具已测量。续跑准备已取消。",
+      "measuredCheckUnavailable": "刀具已测量。更新后的程序检查不可用。",
+      "measuredSourceChanged": "刀具已测量。续跑源程序已更改。",
+      "measuredNoRestart": "刀具已测量。下一次移动没有经过验证的续跑方案。"
+    },
     "operatorSettings": {
       "missingFields": "设置中有缺失或未知的字段。",
       "tooLarge": "设置超过 16 KiB。",
@@ -145,7 +191,12 @@
       "noSettingsStorage": "此会话不包含操作员设置存储。",
       "tooManySettingsChanges": "等待中的设置更改过多。",
       "settingsPageEnded": "此设置页面已结束。",
-      "tooManyChanges": "等待中的刀具模型更改过多。"
+      "tooManyChanges": "等待中的刀具模型更改过多。",
+      "fileNotOpenedAppend": "无法打开文件：{error}",
+      "fileNotWritten": "无法写入文件：{error}",
+      "fileNotSynchronised": "无法同步文件：{error}",
+      "fileNotClosed": "无法关闭文件：{error}",
+      "appendUnsupported": "此处无法向 {path} 追加内容"
     },
     "offsetHistory": {
       "nameNotString": "某个名称不是字符串",
@@ -154,8 +205,9 @@
       "counterRange": "某个计数器超出范围",
       "positionNotThree": "某个位置不是三个数字",
       "timeNotInteger": "某个时间不是整数",
-      "numberNotInteger": "某个数字不是整数",
+      "numberNotInteger": "某个数字不是小整数",
       "entryIncomplete": "某个条目不完整",
+      "changeWrongTarget": "某项更改与其目标不符",
       "cannotRead": "无法读取已保存的偏置历史（{detail}）。历史从空开始。",
       "fileTooLarge": "文件过大",
       "notVersion1": "不是版本 1",
@@ -241,6 +293,7 @@
       "cannotReadToolTable": "无法读取刀具表 {file}。",
       "cannotWriteToolTable": "无法写入刀具表 {file}。",
       "cannotReplaceToolTable": "无法替换刀具表 {file}。",
+      "lengthOffsetUnreadable": "无法读取当前生效的刀长补偿。",
       "toolTableNotLoaded": "刀具表文件 {file} 已更改，但在通知 LinuxCNC 加载之前请求已取消。",
       "cannotOpenChannels": "无法从 {file} 打开 LinuxCNC 的 NML 通道。",
       "restoreFromTable": "无法从刀具表恢复 T{tool}。",
@@ -408,6 +461,7 @@
       "stateChanged": "机床状态已改变。请查看新的程序检查结果。",
       "workOriginChanged": "工件零点已改变。请查看新的程序检查结果。",
       "restartContextChanged": "机床电源、程序或工件坐标系已改变。",
+      "restartSelectWcs": "此行在{wcs}中运行。请选择{wcs}，然后重新选择该行。",
       "remainStopped": "机床必须保持停止在预览所示的位置。",
       "removeProbe": "从指定行运行程序前请先取下接触式探针。",
       "restartSpindleLimit": "重启主轴转速超过机床限值。",
@@ -452,7 +506,9 @@
       "halNotServiced": "CoffeeCNC HAL 组件未在运行。",
       "toolChangeGone": "LinuxCNC 已不再等待该换刀。",
       "toolInSpindleNumber": "刀具 {tool} 在主轴上。",
-      "toolNotInTable": "刀具 {tool} 不在刀具表中。"
+      "toolNotInTable": "刀具 {tool} 不在刀具表中。",
+      "restartSynchFailed": "LinuxCNC 未为重启保存其参数。",
+      "restartParametersChanged": "审核重启后，机床保存的参数已更改。请重新选择该行。"
     },
     "previewEngine": {
       "cannotRead": "无法读取程序以生成预览，或程序大于 {size}。",
@@ -484,7 +540,12 @@
       "lineErrorStop": "第 {line} 行：{detail}。",
       "rotary": "旋转轴配置下不支持程序预览和从指定行重启。",
       "iniUnreadable": "无法读取机床的 INI 文件以生成预览。",
-      "remap": "此机床重映射了代码（[RS274NGC] REMAP）：预览无法跟随重映射的代码，因此不计算预览。",
+      "stopUnknownSystem": "在{wcs}中移动，而其偏置不在机床的参数文件中",
+      "stopG30ToolChange": "移动到 G30 位置（[EMCIO] TOOL_CHANGE_AT_G30）的换刀，而该位置不在机床的参数文件中",
+      "stopUndefinedParameter": "读取程序未设置的{name}：预览不知道其来自先前程序或 MDI 程序段的值",
+      "stopRemapped": "{code} 在此机床上已重映射（[RS274NGC] REMAP）：预览不知道它的作用",
+      "stopSavedPosition": "G{code} 移动到不在机床参数文件中的位置",
+      "stopTask": "读取参数 _task，它在机床上为 1，在预览中为 0：程序在两者中可能表现不同",
       "randomToolChanger": "此机床使用随机换刀装置：不计算预览。",
       "oWordCase": "此机床保留 O 字名称的大小写（[RS274NGC] NO_DOWNCASE_OWORD）：不计算预览。",
       "notInstalled": "未安装预览程序（coffeecnc-preview）。",
@@ -492,7 +553,13 @@
       "noDirectory": "无法为预览文件创建目录，或其路径含有解释器会展开的字符。",
       "filesNotWritten": "无法写入预览文件。",
       "toolChangeMoves": "配置的换刀会独立移动机床。",
-      "changedDuring": "在 {runs} 次计算期间，程序或其某个子程序文件每次都在磁盘上被更改：无预览。"
+      "changedDuring": "在 {runs} 次计算期间，程序或其某个子程序文件每次都在磁盘上被更改：无预览。",
+      "stopIniHal": "读取 INI 或 HAL 值（{names}），预览没有这些值",
+      "stopExists": "询问全局参数（{name}）是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
+      "stopExistsNamed": "在子程序之外询问 {name} 是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
+      "stopComputedParameter": "读取编号为计算所得的参数（#[...]、##）：预览不知道是哪一个参数，也不知道程序是否已设置它",
+      "stopReturnValue": "在程序的子程序返回之前读取 {name} 或 {other}：预览不知道其来自先前程序或 MDI 程序段的值",
+      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行"
     },
     "nmlStatus": {
       "pauseFirst": "点动 Z 前请先暂停正在运行的程序。",
@@ -532,6 +599,22 @@
     "jogStop": {
       "watchdog": "点动被 HAL 看门狗停止：CoffeeCNC 的心跳中断时间超过了看门狗超时。",
       "probeContact": "点动已停止：探针接触"
+    },
+    "alarmLog": {
+      "cannotRead": "无法读取报警日志 {file}：{detail}",
+      "notRotated": "无法轮换报警日志：{detail}",
+      "notSaved": "无法保存报警日志：{detail}",
+      "entriesLost": "部分报警日志条目无法保存。",
+      "keptForRun": "{directory} 中的报警日志仅在本次运行中保留：{detail}",
+      "inUse": "另一个 CoffeeCNC 正在使用它。",
+      "notLocked": "无法获取其锁：{detail}。"
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} 未安装：它不在搜索路径中（{path}）。",
+      "alreadyOpen": "{name} 已经打开。",
+      "notStarted": "无法启动 {name}。",
+      "notStartedBecause": "无法启动 {name}：{error}。",
+      "cannotStart": "此处无法启动 HAL 工具。"
     }
   }
 }

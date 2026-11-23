@@ -102,9 +102,13 @@ Set a port in the machine's INI file to enable the read-only screen when CoffeeC
 REMOTE_PORT = 8787
 ```
 
-From a device on the home LAN, open `http://<machine-hostname>:8787` or `http://<machine-ipv4>:8787`. The viewer shows live coordinates, machine state, the loaded program, its toolpath and messages. It serves up to eight viewers with HTTP and WebSocket, without sign-in. Leave the key out or set it to `0` to disable the listener.
+From a device on the home LAN, open `http://<machine-hostname>:8787`, `http://<machine-ipv4>:8787`, or `http://[<machine-ipv6>]:8787`. The viewer shows live coordinates, machine state, the loaded program, its toolpath and messages. It also previews a STEP file with the same base name beside the loaded program, up to 25 MiB. The gear opens theme and language settings for this browser. It serves up to eight simultaneous viewers with HTTP and WebSocket, without sign-in. Leave the key out or set it to `0` to disable the listener.
 
-The viewer accepts the machine's hostname, its short name and `<short-name>.local`, and names from the system DNS search domains that resolve to the machine. For a custom DNS alias, add `REMOTE_HOSTS = mill.example.local` under `[COFFEECNC]`. Separate multiple hostnames with spaces or commas and leave out the port.
+The viewer accepts the machine's hostname, its short name and `<short-name>.local`, and names from the system DNS search domains that resolve to the machine. It refreshes discovery after address changes such as a DHCP lease. For a custom DNS alias, add `REMOTE_HOSTS = mill.example.local` under `[COFFEECNC]`. Separate multiple hostnames with spaces or commas and leave out the port.
+
+On a trusted home LAN, add `REMOTE_UPLOAD = yes` under `[COFFEECNC]` to enable **Upload program** on the viewer. Browse for a file or drop it into the upload dialog. CoffeeCNC saves program text up to 16 MiB to `[DISPLAY] PROGRAM_PREFIX`. Replacing an existing file requires selecting **Replace existing file**. A running or paused program keeps its file. Open an uploaded program from the machine panel to review and run it.
+
+On the machine panel, open the program browser and choose **USB** to find a file. Its row menu can copy it to **Programs**. The browser can create folders, rename items and delete files or empty folders inside **Programs**. Open a different program before renaming or deleting the loaded file or its folder.
 
 ## Build from source
 

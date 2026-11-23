@@ -95,7 +95,17 @@ auto content_type_of(std::string_view file) -> std::string_view {
 
 auto is_panel_url(std::string_view url) -> bool { return path_of(url).has_value(); }
 
-auto resolve_program_part(std::string_view url, std::string_view loaded)
+auto program_upload_name(std::string_view encoded) -> std::optional<std::string> {
+  auto name = unescaped(encoded);
+  if (!name || name->empty() || name->front() == '.' ||
+      std::ranges::any_of(*name, [](unsigned char c) -> bool {
+        return c == '/' || c == '\\' || c < 0x20 || c == 0x7f;
+      }))
+    return {};
+  return name;
+}
+
+auto resolve_program_part(std::string_view url, std::string_view loaded, ProgramPartLinks links)
     -> std::optional<std::string> {
   if (path_of(url) != program_part_path)
     return {};
@@ -118,6 +128,11 @@ auto resolve_program_part(std::string_view url, std::string_view loaded)
   for (const auto* extension : {".step", ".stp", ".STEP", ".STP"}) {
     auto candidate = path;
     candidate.replace_extension(extension);
+    if (links == ProgramPartLinks::skip) {
+      if (std::filesystem::is_regular_file(std::filesystem::symlink_status(candidate, error)))
+        return candidate.string();
+      continue;
+    }
     if (!std::filesystem::is_regular_file(candidate, error))
       continue;
     auto canonical = std::filesystem::canonical(candidate, error);

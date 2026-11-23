@@ -5,7 +5,8 @@ import { vTooltip } from '../tooltip'
 // tool position the machine reports, the active work origin and the machine travel.
 //
 // It is a picture only. Dragging, zooming and the view buttons change the camera and nothing
-// else; no gesture on it sends a command.
+// else; no gesture on it sends a command. A tap picks the move under the finger and reports its
+// source line, and the moves of highlighted lines are drawn on top: this links it to the text.
 import { computed, defineAsyncComponent, type ComputedRef, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -33,12 +34,22 @@ import type { Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
+import { buildPickIndex, isTap, pickSegment } from '../path-pick'
 import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-preview'
 import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 import { translateMessage } from '../i18n/messages'
 
 const { t } = useI18n()
+
+const props = defineProps<{
+  /** Source lines whose moves are drawn highlighted, inclusive; null for none. */
+  highlight?: { first: number; last: number } | null
+}>()
+const emit = defineEmits<{
+  /** A tap on the path: the source line of the move under it, or 0 for a tap beside the path. */
+  pick: [line: number]
+}>()
 
 const modelError = ref('')
 
@@ -236,6 +247,10 @@ watch([drawn, size, modelPoints, probeFixture], () => {
 
 const pointers = new Map<number, Screen>()
 let pinch = 0
+/** The gesture in progress: a tap until the pointer moves past the slop or a second one comes. */
+let gesture: { start: Screen; tap: boolean } | null = null
+/** Built on the first tap after the path changes; drawing does not need it. */
+const pickIndex = computed(() => buildPickIndex(drawn.value?.segments ?? []))
 
 function local(event: PointerEvent | WheelEvent): Screen {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
@@ -244,7 +259,10 @@ function local(event: PointerEvent | WheelEvent): Screen {
 
 function pointerDown(event: PointerEvent): void {
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  pointers.set(event.pointerId, local(event))
+  const at = local(event)
+  if (pointers.size === 0) gesture = { start: at, tap: event.button === 0 && !event.shiftKey }
+  else if (gesture !== null) gesture.tap = false
+  pointers.set(event.pointerId, at)
   pinch = 0
 }
 
@@ -254,6 +272,11 @@ function pointerMove(event: PointerEvent): void {
     return
   }
   const now = local(event)
+  if (gesture?.tap === true && pointers.size === 1) {
+    // A finger shifts a little during a tap; only a larger movement starts a drag.
+    if (isTap(gesture.start, now)) return
+    gesture.tap = false
+  }
   pointers.set(event.pointerId, now)
   autoFit.value = false
   const dx = now[0] - before[0]
@@ -281,8 +304,20 @@ function pointerMove(event: PointerEvent): void {
 }
 
 function pointerUp(event: PointerEvent): void {
-  pointers.delete(event.pointerId)
+  const tracked = pointers.delete(event.pointerId)
   pinch = 0
+  if (pointers.size > 0) return
+  const at = local(event)
+  // The release point counts too: a pointer can travel without a final pointermove.
+  const tap = tracked && event.type === 'pointerup' && gesture?.tap === true && isTap(gesture.start, at)
+  gesture = null
+  if (tap) emit('pick', pickAt(at))
+}
+
+/** The source line of the move nearest to `at` on the screen, or 0. */
+function pickAt(at: Screen): number {
+  if (drawn.value === null) return 0
+  return pickSegment(pickIndex.value, camera.value, at, size.value.width, size.value.height)?.line ?? 0
 }
 
 function wheel(event: WheelEvent): void {
@@ -294,10 +329,14 @@ function wheel(event: WheelEvent): void {
 
 const colours = {
   light: { travel: '#778a9a', rapid: '#667989', executed: '#064fc4', marker: '#a35910', outdated: '#687782',
-    axes: ['#a34040', '#2e7651', '#375eb0'] },
+    picked: '#d9480f', halo: '#ffffff', axes: ['#a34040', '#2e7651', '#375eb0'] },
   dark: { travel: '#7f95a7', rapid: '#8b9dae', executed: '#84bbff', marker: '#ffbd61', outdated: '#8996a3',
-    axes: ['#f28c87', '#83cea4', '#91b8ff'] },
+    picked: '#ff8a4c', halo: '#1c242d', axes: ['#f28c87', '#83cea4', '#91b8ff'] },
 } as const
+const legendInk = computed(() => {
+  const dark = isDarkTheme(theme.value)
+  return { '--cut-sample': toolColour(0, dark), '--rapid-sample': colours[dark ? 'dark' : 'light'].rapid }
+})
 
 function drawGrid(): void {
   const element = grid.value
@@ -413,6 +452,37 @@ function draw(): void {
     }
     context.globalAlpha = 1
     context.setLineDash([])
+    const highlight = props.highlight
+    if (highlight && highlight.first > 0) {
+      // The picked lines on top of everything, outlined so they read over the planned path.
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+      context.beginPath()
+      for (const segment of preview.segments) {
+        if (segment.line < highlight.first || segment.line > highlight.last) continue
+        const p = segment.points
+        for (let i = 0; i + 2 < p.length; i += 3) {
+          const [x, y] = at([p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
+          if (i === 0) context.moveTo(x, y)
+          else context.lineTo(x, y)
+          left = Math.min(left, x)
+          top = Math.min(top, y)
+          right = Math.max(right, x)
+          bottom = Math.max(bottom, y)
+        }
+      }
+      // A short move is a few pixels long: a ring around it shows where it is.
+      if (right >= left && Math.hypot(right - left, bottom - top) < 16) {
+        context.moveTo((left + right) / 2 + 10, (top + bottom) / 2)
+        context.arc((left + right) / 2, (top + bottom) / 2, 10, 0, 2 * Math.PI)
+      }
+      for (const [width, colour] of [[6, palette.halo], [3, palette.picked]] as const) {
+        context.lineWidth = width
+        context.strokeStyle = colour
+        context.globalAlpha = width === 6 ? 0.85 : 1
+        context.stroke()
+      }
+      context.globalAlpha = 1
+    }
   }
 
   const work = workFrame.value
@@ -491,7 +561,8 @@ function schedule(): void {
 }
 
 watch([camera, size, drawn, current, executed, travelBox, workFrame, toolTip, live,
-  tools, theme, showMachine, probeFixture, visibleTool, modelError], schedule)
+  tools, theme, showMachine, probeFixture, visibleTool, modelError,
+  (): number => props.highlight?.first ?? 0, (): number => props.highlight?.last ?? 0], schedule)
 
 let observer: ResizeObserver | null = null
 
@@ -534,18 +605,18 @@ onBeforeUnmount(() => {
       <span v-if="banner.text" class="preview-banner" :class="banner.tone" role="status">{{ banner.text }}</span>
     </div>
     <div class="scene-bottom">
-      <div class="legend">
+      <div class="legend" :style="legendInk">
         <span v-if="probeFixture">{{ t('program.pathView.simulatedFixtures') }}</span>
         <span v-if="!probeFixture || drawn"><i class="feed"></i>{{ t('program.pathView.cut') }}</span>
         <span v-if="!probeFixture || drawn"><i class="rapid"></i>{{ t('program.pathView.rapid') }}</span>
         <label v-if="toolBody"><input v-model="showTool" type="checkbox" />{{ t('program.pathView.tool') }}</label>
       </div>
       <div class="views">
-        <button type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
-        <button type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
-        <button type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
-        <button v-tooltip="t('program.pathView.fit')" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
-        <button v-tooltip="t('program.pathView.travelTooltip')" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'iso'" @click="setView('iso')">{{ t('program.pathView.iso') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'top'" @click="setView('top')">{{ t('program.pathView.top') }}</button>
+        <button class="tone-control" type="button" :aria-pressed="view === 'front'" @click="setView('front')">{{ t('program.pathView.front') }}</button>
+        <button v-tooltip="t('program.pathView.fit')" class="tone-control" type="button" :aria-label="t('program.pathView.fit')" @click="fitButton('path')"><AppIcon name="fit" /></button>
+        <button v-tooltip="t('program.pathView.travelTooltip')" class="tone-control" type="button" @click="fitButton('machine')">{{ t('program.pathView.travel') }}</button>
         <slot />
       </div>
     </div>
@@ -553,15 +624,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.pathview { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.viewport { position: relative; height: calc(100% - 42px); background: var(--preview-backdrop); }
-.work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 22%, transparent 74%); }
+.pathview { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.viewport { position: relative; flex: 1; min-height: 0; background: var(--preview-backdrop); }
+.work-grid { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mask-image: radial-gradient(ellipse at center, #000 28%, transparent 83%); }
 .toolpath-canvas { position: relative; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
-.scene-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 42px; padding: 0 18px 8px; color: var(--text-dim); font-size: 10px; }
-.legend { display: flex; gap: 14px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--accent); }.legend .rapid { height: 0; border-top: 1px dashed var(--text-dim); background: none; }
-.legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-.views { display: flex; align-items: center; gap: 2px; }.views button { padding: 5px 7px; min-height: 30px; border: 0; border-radius: 6px; font-size: 10px; background: none; color: var(--text-dim); cursor: pointer; }.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); }.views :deep(svg) { display: block; width: 14px; height: 14px; }
-.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: 11px; color: var(--text-dim); }
+.scene-bottom { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; min-height: 52px; padding: 4px 12px; color: var(--text-dim); font-size: var(--type-sm); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }.legend span { display: flex; align-items: center; gap: 6px; }.legend i { width: 17px; height: 2px; background: var(--cut-sample); }.legend .rapid { height: 0; border-top: 1px dashed var(--rapid-sample); background: none; }
+.legend label { display: flex; align-items: center; gap: 4px; min-height: var(--touch); cursor: pointer; }
+.views { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: auto; }
+.views button { display: inline-flex; justify-content: center; align-items: center; min-width: var(--touch); min-height: var(--touch); padding: 0 9px; border: 0; border-radius: 7px; background: none; color: var(--text-dim); font-size: var(--type-body); cursor: pointer; }
+.views button:hover { background: var(--control-hover); }
+.views button:active { background: var(--control-active); }
+.views button[aria-pressed=true] { color: var(--accent); background: var(--panel); font-weight: 650; }
+.views :deep(svg) { display: block; width: 16px; height: 16px; }
+.banners, .preview-banner { position: absolute; left: 18px; max-width: calc(100% - 36px); pointer-events: none; font-size: var(--type-sm); color: var(--text-dim); }
 .banners { top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .preview-banner { bottom: 12px; }
 .banners span, .preview-banner { padding: 5px 8px; border-radius: 6px; background: var(--panel); }

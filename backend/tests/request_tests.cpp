@@ -84,6 +84,26 @@ void protocol_forms() {
       R"({"id":42,"type":"set_work_offset","wcs":2,"offset":[25.4,-50.8,0]})");
   require(origin.wcs == 2 && origin.offset == std::array<double, 3>{25.4, -50.8, 0},
           "Explicit system and XYZ machine origins in millimetres");
+  const auto rotation = body<SetWorkRotation>(
+      R"({"id":42,"type":"set_work_rotation","wcs":3,"rotation_xy":-12.5})");
+  require(rotation.wcs == 3 && rotation.degrees == -12.5, "Explicit system and XY rotation in degrees");
+  static_cast<void>(body<ClearG92>(R"({"id":42,"type":"clear_g92"})"));
+  // HAL diagnostics (#251): the view opens and closes; a HAL tool by its program name.
+  require(body<WatchDiagnostics>(R"({"id":42,"type":"watch_diagnostics","on":true})").on &&
+              !body<WatchDiagnostics>(R"({"id":42,"type":"watch_diagnostics","on":false})").on,
+          "Diagnostics watch on and off");
+  require(body<LaunchHalTool>(R"({"id":42,"type":"launch_hal_tool","tool":"halscope"})").tool ==
+                  HalTool::halscope &&
+              body<LaunchHalTool>(R"({"id":42,"type":"launch_hal_tool","tool":"halmeter"})")
+                      .tool == HalTool::halmeter &&
+              body<LaunchHalTool>(R"({"id":42,"type":"launch_hal_tool","tool":"halshow"})")
+                      .tool == HalTool::halshow,
+          "Each HAL tool by name");
+  rejected(R"({"id":42,"type":"launch_hal_tool","tool":"halcmd"})", 42);
+  rejected(R"({"id":42,"type":"launch_hal_tool","tool":"/usr/bin/halscope"})", 42);
+  rejected(R"({"id":42,"type":"launch_hal_tool"})", 42);
+  rejected(R"({"id":42,"type":"watch_diagnostics","on":1})", 42);
+  rejected(R"({"id":42,"type":"watch_diagnostics","on":true,"rate":50})", 42);
   const auto touch = body<TouchOff>(R"({"id":42,"type":"touch_off","axis":"z","value":-2.5})");
   require(touch.axis == Axis::z && touch.value == -2.5 && touch.origin == TouchOrigin::typed,
           "Touch-off value");
@@ -170,6 +190,12 @@ void strict_shapes() {
        R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,null,3]})",
        R"({"id":42,"type":"set_work_offset","wcs":1.5,"offset":[1,2,3]})",
        R"({"id":42,"type":"set_work_offset","wcs":1,"offset":[1,2,3],"rotation":90})",
+       R"({"id":42,"type":"set_work_rotation","wcs":1})",
+       R"({"id":42,"type":"set_work_rotation","wcs":1,"rotation_xy":"15"})",
+       R"({"id":42,"type":"set_work_rotation","wcs":1,"rotation_xy":null})",
+       R"({"id":42,"type":"set_work_rotation","wcs":1.5,"rotation_xy":15})",
+       R"({"id":42,"type":"set_work_rotation","wcs":1,"rotation_xy":15,"offset":[1,2,3]})",
+       R"({"id":42,"type":"clear_g92","wcs":1})",
        R"({"id":42,"type":"remove_tool","number":2147483648})",
        R"({"id":42,"type":"remove_tool","number":-2147483649})",
        R"({"id":42,"type":"set_tool","tool":[]})",

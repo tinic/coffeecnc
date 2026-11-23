@@ -1,0 +1,7 @@
+(Reads #3000 before it sets it: the value comes from an earlier run or from MDI)
+G21 G90 G17 G94
+G0 X0 Y0 Z5
+G1 Z-1 F300
+G1 X[10 + #3000] F800
+G0 Z5
+M30

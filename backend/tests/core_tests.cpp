@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -192,6 +193,61 @@ void work_origin_gates() {
   for (const double value : {std::numeric_limits<double>::infinity(),
                              std::numeric_limits<double>::quiet_NaN()})
     require(!policy.evaluate(SetWorkOffset{1, {0, value, 0}}, s).allowed, "No nonfinite origins");
+}
+
+// The XY rotation and the G92/G52 clear: the gates of the other offset edits.
+void rotation_and_shift_gates() {
+  CommandPolicy policy{simulator_limits()};
+  const Command rotate = SetWorkRotation{2, 15};
+  const Command clear = ClearG92{};
+  for (const auto& command : {rotate, clear}) {
+    auto s = ready();
+    const auto allowed = policy.evaluate(command, s);
+    require(allowed.allowed && allowed.required_mode == TaskMode::mdi,
+            "Rotation and shift clear use MDI");
+    for (int scenario = 0; scenario < 9; ++scenario) {
+      s = ready();
+      switch (scenario) {
+      case 0: s.link = Link::stale; break;
+      case 1: s.machine = MachineState::off; break;
+      case 2: s.machine = MachineState::estop; break;
+      case 3: s.interp = InterpState::reading; break;
+      case 4: s.interp = InterpState::paused; s.mode = TaskMode::automatic; break;
+      case 5: s.in_position = false; break;
+      case 6: s.requested_tool = 2; break;
+      case 7: s.axes[2].homing = true; break;
+      case 8: s.axes[2].homed = false; break;
+      default: std::unreachable();
+      }
+      require(!policy.evaluate(command, s).allowed,
+              std::format("Rotation and shift clear respect execution gates ({})", scenario));
+    }
+  }
+  const Limits unforced{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false};
+  auto unhomed = ready();
+  unhomed.axes[2].homed = false;
+  require(CommandPolicy{unforced}.evaluate(rotate, unhomed).allowed &&
+              CommandPolicy{unforced}.evaluate(clear, unhomed).allowed,
+          "Unhomed with NO_FORCE_HOMING, as the other offset edits");
+  auto rotary = ready();
+  rotary.rotary_axes[0].enabled = true;
+  rotary.rotary_axes[0].homed = true;
+  const auto refused = policy.evaluate(clear, rotary);
+  require(!refused.allowed && refused.reason.starts_with("On a machine with A, B or C axes") &&
+              policy.evaluate(rotate, rotary).allowed,
+          "G92.1 would clear an A shift the panel does not show: refused with A, B or C axes; "
+          "the rotation is not affected");
+  const auto s = ready();
+  require(policy.evaluate(SetWorkRotation{1, 0}, s).allowed &&
+              policy.evaluate(SetWorkRotation{9, -360}, s).allowed &&
+              policy.evaluate(SetWorkRotation{3, 360}, s).allowed,
+          "Zero and the full turn either way are rotations");
+  for (const int wcs : {0, 10})
+    require(!policy.evaluate(SetWorkRotation{wcs, 0}, s).allowed, "No implicit/invalid WCS");
+  for (const double degrees : {360.001, -400.0, std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::quiet_NaN()})
+    require(!policy.evaluate(SetWorkRotation{1, degrees}, s).allowed,
+            "No rotation beyond a full turn, none that is not finite");
 }
 // A machine LinuxCNC runs unhomed ([TRAJ] NO_FORCE_HOMING): execution is allowed, jog rules stay.
 void homing_capability() {
@@ -488,6 +544,32 @@ void estop_request_results() {
           "no status: failed, and says so");
 }
 
+// What follows a G10 L1 of a tool length so that the offset in effect follows the table (#287).
+void tool_length_follow_up() {
+  const auto follows = [](int written, int loaded, const std::array<double, 3>& offset,
+                          std::optional<double> loaded_length) {
+    return after_tool_length_write(written, loaded, {offset, loaded_length});
+  };
+  // The loaded tool's length in effect (G43 H<tool>): G43 H<tool> follows.
+  require(follows(3, 3, {0, 0, 48.2}, 48.2) == "G43 H3", "G43 of the loaded tool: G43 H3");
+  require(follows(3, 3, {0, 0, 48.2005}, 48.2) == "G43 H3",
+          "within 0.001 mm is the loaded tool's length");
+  require(follows(3, 3, {0, 0, -12.5}, -12.5) == "G43 H3", "a negative length");
+  // Another offset: another H, G43.1 with its own value, a G43.2 sum. It stays.
+  require(!follows(3, 3, {0, 0, 40}, 48.2), "another H: nothing");
+  require(!follows(3, 3, {0, 0, 88.2}, 48.2), "a G43.2 sum that contains the length: nothing");
+  require(!follows(3, 3, {0, 0, 48.202}, 48.2), "beyond 0.001 mm: nothing");
+  require(!follows(3, 3, {1, 0, 48.2}, 48.2), "an X offset (G43.1 X): nothing");
+  require(!follows(3, 3, {0, -1, 48.2}, 48.2), "a Y offset: nothing");
+  // No offset in effect (G49, or a zero length, which LinuxCNC reports as G49).
+  require(!follows(3, 3, {0, 0, 0}, 48.2), "G49: nothing");
+  require(!follows(3, 3, {0, 0, 0}, 0), "a zero length reads as G49: nothing");
+  require(!follows(3, 3, {0, 0, 48.2}, std::nullopt), "no row for the loaded tool: nothing");
+  // Another tool than the loaded one, or an empty spindle.
+  require(!follows(2, 3, {0, 0, 48.2}, 48.2), "another tool: nothing");
+  require(!follows(0, 0, {0, 0, 48.2}, 48.2), "empty spindle: nothing");
+}
+
 // Motion's refusal of a start under motion.jog-inhibit, as the port's reason carries it.
 void jog_inhibit_refusal() {
   require(is_jog_inhibit_refusal("Cannot jog while jog-inhibit is active."), "LinuxCNC's text");
@@ -569,6 +651,7 @@ auto main() -> int {
     reference_mark_homing();
     fixed_setter_homing();
     work_origin_gates();
+    rotation_and_shift_gates();
     paused_z_gates();
     homing_capability();
     axis_jog_ceilings();
@@ -582,6 +665,7 @@ auto main() -> int {
     jog_stop_attribution();
     jog_inhibit_refusal();
     estop_request_results();
+    tool_length_follow_up();
     std::cout << checks << " core behavior checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << "Check " << checks << " failed: " << error.what() << '\n';

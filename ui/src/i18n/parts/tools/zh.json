@@ -7,6 +7,7 @@
       "tableChanged": "刀具表已更改。请重新选择刀具。",
       "offsetsUnavailable": "{system} 偏置不可用",
       "offsetsStale": "{system} 最近一次报告的偏置",
+      "offsetsUnconfirmed": "{system} 偏置在 LinuxCNC 上次运行 G 代码之前读取，可能已更改",
       "toolTable": "刀具表",
       "touchOffLengthHint": "根据当前位置设定当前刀具的长度",
       "touchOffLength": "刀长对刀",
@@ -33,6 +34,8 @@
       "workOffsets": "工件坐标偏置",
       "workOffsetsHint": "{unit} · 原点，机床坐标",
       "lastReported": "最近报告值",
+      "unconfirmed": "可能已过时",
+      "unconfirmedHint": "斜体数值在 LinuxCNC 上次运行 G 代码之前读取，可能已更改。程序运行后，下一次点动或 MDI 命令会确认这些数值。",
       "historyHint": "工件坐标偏置和刀具的更改记录，可恢复",
       "history": "历史",
       "columnSystem": "坐标系",
@@ -143,6 +146,10 @@
       "spindleEmpty": "主轴已空",
       "toolInSpindle": "刀具已装入主轴",
       "cannotConfirm": "{reason}：无法确认换刀。",
+      "measure": "测量并检查续跑",
+      "measureHint": "装好刀具后，停止程序并测量刀具长度。再次启动前请检查续跑方案。",
+      "measuring": "正在测量刀具。程序将保持停止。",
+      "measureNote": "确认后程序会继续运行。测量会将刀具移至对刀仪，程序将保持停止。",
       "continueNote": "确认后程序立即继续。运行栏中的停止按钮则会结束程序。"
     },
     "setter": {

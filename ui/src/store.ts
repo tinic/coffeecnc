@@ -6,8 +6,10 @@ import { reactive } from 'vue'
 
 import type { Transport } from './bridge'
 import type {
+  AlarmLog,
   CommandBody,
   CommandResult,
+  Diagnostics,
   Directory,
   FromMachine,
   Hello,
@@ -41,6 +43,7 @@ export const answerTimeoutMs = 2000
  * approach. Until then the dialog keeps the request, and Stop still ends it.
  */
 export const restartTimeoutMs = 420_000
+const programFileTimeoutMs = 60_000
 const watchdogMs = 200
 const maxLogEntries = 500
 const maxMdiEntries = 50
@@ -89,6 +92,10 @@ export interface PanelState {
   workOffsets: WorkOffsets | null
   /** Null until the executable sends one; a peer without a history never does. */
   offsetHistory: OffsetHistory | null
+  /** What was told before this page was loaded; null until the executable sends it. */
+  alarmLog: AlarmLog | null
+  /** The last HAL reading, while the diagnostics view watches; null before the first. */
+  diagnostics: Diagnostics | null
   program: ProgramText | null
   preview: Preview | null
   directory: Directory | null
@@ -162,6 +169,8 @@ export function describeCommand(command: CommandBody): string {
       return `MDI ${command.text}`
     case 'list_directory':
       return 'List directory'
+    case 'manage_program_file':
+      return 'Manage program files'
     case 'open_program':
       return `Open ${command.path}`
     case 'run':
@@ -186,6 +195,10 @@ export function describeCommand(command: CommandBody): string {
       return `Select ${wcsName(command.wcs)}`
     case 'set_work_offset':
       return `Set ${wcsName(command.wcs)} XYZ origins`
+    case 'set_work_rotation':
+      return `Set ${wcsName(command.wcs)} XY rotation`
+    case 'clear_g92':
+      return 'Clear G92/G52 shift'
     case 'plan_restart':
       return `Plan restart at line ${String(command.line)}`
     case 'start_restart':
@@ -212,13 +225,17 @@ export function describeCommand(command: CommandBody): string {
     case 'remove_tool':
       return `Remove tool ${String(command.number)}`
     case 'tool_changed':
-      return 'Confirm tool change'
+      return command.measure_request === undefined ? 'Confirm tool change' : 'Measure tool during change'
     case 'set_tool_model_defaults':
       return 'Save tool model defaults'
     case 'set_tool_model_assignment':
       return 'Save tool preview model'
     case 'set_operator_settings':
       return 'Save settings'
+    case 'watch_diagnostics':
+      return command.on ? 'Open diagnostics' : 'Close diagnostics'
+    case 'launch_hal_tool':
+      return `Start ${command.tool}`
   }
 }
 
@@ -258,6 +275,8 @@ export function createPanel(options: PanelOptions): Panel {
     startupSpindleRpm: 0,
     workOffsets: null,
     offsetHistory: null,
+    alarmLog: null,
+    diagnostics: null,
     program: null,
     preview: null,
     directory: null,
@@ -359,6 +378,8 @@ export function createPanel(options: PanelOptions): Panel {
         state.toolModels = null
         state.toolTable = null
         state.offsetHistory = null
+        state.alarmLog = null
+        state.diagnostics = null
         if (message.protocol !== protocolVersion) {
           protocolError = `Protocol mismatch: the machine speaks version ${String(message.protocol)}, this panel version ${String(protocolVersion)}`
           // These snapshots belong to a protocol we can no longer interpret. Clearing hello
@@ -434,6 +455,12 @@ export function createPanel(options: PanelOptions): Panel {
       case 'offset_history':
         state.offsetHistory = message
         break
+      case 'alarm_log':
+        state.alarmLog = message
+        break
+      case 'diagnostics':
+        state.diagnostics = message
+        break
       case 'program':
         state.program = message
         break
@@ -479,8 +506,10 @@ export function createPanel(options: PanelOptions): Panel {
       if (command.type === 'abort' || command.type === 'set_machine' && command.state !== 'on') {
         state.motionStopRequest += 1
       }
-      const timeout = command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs : answerTimeoutMs
+      const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
+      const timeout = measureChange || command.type === 'fixed_setter' && command.action !== 'status'
+        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
+          : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })

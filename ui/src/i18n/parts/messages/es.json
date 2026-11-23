@@ -70,6 +70,9 @@
       "wcsRange": "El sistema de coordenadas de pieza debe estar entre G54 y G59.3.",
       "finishToolChangeOrigins": "Termine el cambio de herramienta antes de editar los orígenes de pieza.",
       "workOffsetInvalid": "Indique un sistema entre G54 y G59.3 y decalajes XYZ finitos.",
+      "rotationInvalid": "Indique G54 a G59.3 y una rotación XY de -360 a 360 grados.",
+      "finishToolChangeShift": "Termine el cambio de herramienta antes de borrar el desplazamiento G92/G52.",
+      "clearShiftRotary": "En una máquina con ejes A, B o C, borre el desplazamiento G92/G52 con G92.1 en MDI: también borra su desplazamiento.",
       "finishToolChangeRestore": "Termine el cambio de herramienta antes de restaurar decalajes.",
       "chooseHistoryEntry": "Elija una entrada del historial de decalajes.",
       "touchOffInvalid": "Eje o valor de toma de referencia no válido.",
@@ -145,7 +148,8 @@
       "previousStopAxis": "La parada de jog anterior en {axis} no está confirmada: {detail}",
       "directoryNotSent": "No se puede enviar la carpeta: {detail}",
       "mdiTooLong": "MDI requiere un único bloque de 254 bytes como máximo.",
-      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}"
+      "jogStopFailed": "Falló la parada de jog en {axis}: {detail}",
+      "noDiagnostics": "El diagnóstico HAL no forma parte de esta sesión."
     },
     "request": {
       "nestingLimit": "Se superó el límite de anidamiento de la solicitud.",
@@ -243,6 +247,8 @@
         "blockDelete": "Salto de bloque",
         "selectWcs": "Seleccionar {wcs}",
         "setWorkOrigins": "Fijar orígenes XYZ de {wcs}",
+        "setRotation": "Fijar la rotación XY de {wcs}",
+        "clearShift": "Borrar el desplazamiento G92/G52",
         "planRestart": "Planificar reinicio en la línea {line}",
         "restartProgram": "Reiniciar programa",
         "editLine": "Editar línea {line}",
@@ -266,11 +272,15 @@
         "editTool": "Editar herramienta {tool}",
         "removeTool": "Quitar herramienta {tool}",
         "confirmToolChange": "Confirmar cambio de herramienta",
+        "measureToolDuringChange": "Medir durante el cambio de herramienta",
         "saveToolModelDefaults": "Guardar valores predeterminados de modelos de herramienta",
         "saveToolPreviewModel": "Guardar modelo de vista previa de la herramienta",
         "saveSettings": "Guardar ajustes",
         "toolModels": "Modelos de herramienta",
-        "settings": "Ajustes"
+        "settings": "Ajustes",
+        "openDiagnostics": "Abrir el diagnóstico",
+        "closeDiagnostics": "Cerrar el diagnóstico",
+        "startHalTool": "Iniciar {tool}"
       }
     },
     "sim": {
@@ -295,6 +305,8 @@
         "selectWcs": "seleccionar un sistema de coordenadas",
         "touchOff": "tomar referencia",
         "setWorkOffsets": "fijar decalajes de origen de pieza",
+        "setRotation": "fijar una rotación XY",
+        "clearShift": "borrar el desplazamiento G92/G52",
         "touchOffTool": "tomar la longitud de la herramienta",
         "editToolTable": "editar la tabla de herramientas",
         "probe": "palpar",
@@ -331,6 +343,7 @@
       "notWcs": "{wcs} no es un sistema de coordenadas de pieza (1 a 9)",
       "touchOffNotNumber": "El valor de toma de referencia no es un número",
       "invalidWorkOffset": "Decalaje de origen de pieza no válido",
+      "invalidRotation": "Rotación XY no válida",
       "toolNotInTable": "La herramienta {tool} no está en la tabla de herramientas",
       "noToolChange": "No hay ningún cambio de herramienta pendiente",
       "setterSceneUnavailable": "El palpador de herramienta fijo no está disponible en esta escena del simulador.",
@@ -368,7 +381,8 @@
       "gaugeStart": "Empiece sobre el patrón de calibración simulado.",
       "bossStart": "Empiece sobre el saliente simulado.",
       "setLoadedLength": "Fije la longitud de la herramienta cargada antes de comprobarla.",
-      "browserSimulator": "simulador en el navegador"
+      "browserSimulator": "simulador en el navegador",
+      "noHalTools": "El simulador del navegador no tiene herramientas HAL: funciona sin LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación.",

@@ -2,7 +2,7 @@
 # Runs a program as the DISPLAY program of a real LinuxCNC on CoffeeCNC's simulated mill.
 # No hardware is involved: the HAL configuration loops commanded positions back as feedback.
 #
-#   run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-i machine-id] [-k] [-t seconds] [-w seconds]
+#   run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-c] [-i machine-id] [-k] [-t seconds] [-w seconds]
 #          [-d run-directory] [-n] <program> [arguments...]
 #   run.sh -m <machine INI file> -s <simulated hardware HAL file> [-k] [-t ...] [-d ...] [-n] <program> ...
 #
@@ -19,6 +19,7 @@
 # @RUN@ in an INI template is the run directory. With -i the sim profile, which names no
 # machine, gets `[COFFEECNC] MACHINE_ID = <machine-id>` and `DATA_DIRECTORY =
 # <run-directory>/coffeecnc-data` (the g0759 profile has its own).
+# With -c the sim profile moves to machine X2 Y3 Z30 mm before each manual tool exchange.
 #
 # The program and LinuxCNC run with HOME=<run-directory>/home, made empty for every run: the
 # loaded tool table ($HOME/.tool.mmap) is then this run's own, and an rs274 or LinuxCNC that
@@ -84,7 +85,8 @@ keep_data=
 identity=
 layer=
 lock_wait=300
-while getopts "p:u:t:d:nm:s:w:i:k" option; do
+change_position=
+while getopts "p:u:t:d:nm:s:w:i:kc" option; do
   case $option in
   w) lock_wait=$OPTARG ;;
   m) machine=$OPTARG ;;
@@ -95,6 +97,7 @@ while getopts "p:u:t:d:nm:s:w:i:k" option; do
   d) directory=$OPTARG ;;
   i) identity=$OPTARG ;;
   k) keep_data=1 ;;
+  c) change_position=yes ;;
   n) assemble_only=1 ;;
   *) exit 125 ;;
   esac
@@ -104,8 +107,8 @@ if [ $# -lt 1 ] || { [ "$units" != mm ] && [ "$units" != inch ]; } ||
   { [ "$profile" != sim ] && [ "$profile" != g0759 ] && [ "$profile" != gantry ] && [ "$profile" != rotary ]; } ||
   { [ "$profile" != sim ] && [ "$profile" != rotary ] && [ "$units" != mm ]; } ||
   { [ -n "$machine" ] && { [ ! -f "$machine" ] || [ ! -f "$layer" ]; }; } ||
-  { [ -n "$identity" ] && { [ "$profile" != sim ] || [ -n "$machine" ]; }; }; then
-  echo "usage: run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-i machine-id] [-k] [-t seconds]" \
+  { [ -n "$identity$change_position" ] && { [ "$profile" != sim ] || [ -n "$machine" ]; }; }; then
+  echo "usage: run.sh [-p sim|g0759|gantry|rotary] [-u mm|inch] [-c] [-i machine-id] [-k] [-t seconds]" \
     "[-d run-directory] [-n] <program> [arguments...]  (g0759 and gantry are millimetres only;" \
     "g0759 has its own machine ID), or" \
     "run.sh -m <machine INI file> -s <simulated hardware HAL file> ..." >&2
@@ -250,17 +253,20 @@ if [ -n "$machine" ]; then
 else
 # The run directory holds only generated files.
 perl -pe '
-  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; $rotary = shift eq "rotary"; }
+  BEGIN { $inch = shift eq "inch"; $display = shift; $run = shift; $rotary = shift eq "rotary"; $changer = shift eq "yes"; }
   if ($rotary) {
     s/^COORDINATES = X Y Z$/COORDINATES = X Y Z A B C/;
     s/^JOINTS = 3$/JOINTS = 6/;
     s/^(HALFILE = coffeecnc_sim_home[.]hal)$/$1\nHALFILE = coffeecnc_rotary_sim.hal/;
   }
+  if ($changer) {
+    s/^(\[EMCIO\])$/$1\nTOOL_CHANGE_POSITION = \@L:2\@ \@L:3\@ \@L:30\@/;
+  }
   s/\@UNITS\@/$inch ? "inch" : "mm"/ge;
   s/\@DISPLAY\@/$display/g;
   s/\@RUN\@/$run/g;
   s/\@L:([-0-9.]+)\@/$inch ? sprintf("%.6f", $1 \/ 25.4) : $1/ge;
-' "$units" "$directory/display.sh" "$directory" "$profile" "$here/coffeecnc_$template.ini.in" >"$directory/$ini" || exit 125
+' "$units" "$directory/display.sh" "$directory" "$profile" "$change_position" "$here/coffeecnc_$template.ini.in" >"$directory/$ini" || exit 125
 if [ "$profile" = rotary ]; then
   for axis in A B C; do
     printf '\n[AXIS_%s]\nMIN_LIMIT = -360\nMAX_LIMIT = 360\nMAX_VELOCITY = 120\nMAX_ACCELERATION = 600\n' "$axis"

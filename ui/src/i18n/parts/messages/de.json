@@ -70,6 +70,9 @@
       "wcsRange": "Das Werkstückkoordinatensystem muss G54 bis G59.3 sein.",
       "finishToolChangeOrigins": "Schließen Sie den Werkzeugwechsel ab, bevor Sie Werkstücknullpunkte bearbeiten.",
       "workOffsetInvalid": "Geben Sie G54 bis G59.3 und endliche XYZ-Verschiebungen an.",
+      "rotationInvalid": "Geben Sie G54 bis G59.3 und eine XY-Drehung von -360 bis 360 Grad an.",
+      "finishToolChangeShift": "Schließen Sie den Werkzeugwechsel ab, bevor Sie die G92/G52-Verschiebung löschen.",
+      "clearShiftRotary": "Löschen Sie auf einer Maschine mit A-, B- oder C-Achsen die G92/G52-Verschiebung mit G92.1 im MDI: Es löscht auch deren Verschiebung.",
       "finishToolChangeRestore": "Schließen Sie den Werkzeugwechsel ab, bevor Sie Verschiebungen wiederherstellen.",
       "chooseHistoryEntry": "Wählen Sie einen Eintrag aus dem Verschiebungsverlauf.",
       "touchOffInvalid": "Ungültige Achse oder ungültiger Wert für das Antasten.",
@@ -145,7 +148,8 @@
       "previousStopAxis": "Der vorherige Tipp-Stopp an {axis} ist nicht bestätigt: {detail}",
       "directoryNotSent": "Das Verzeichnis kann nicht gesendet werden: {detail}",
       "mdiTooLong": "MDI erfordert genau einen Satz mit höchstens 254 Bytes.",
-      "jogStopFailed": "Tipp-Stopp an {axis} fehlgeschlagen: {detail}"
+      "jogStopFailed": "Tipp-Stopp an {axis} fehlgeschlagen: {detail}",
+      "noDiagnostics": "Die HAL-Diagnose gehört nicht zu dieser Sitzung."
     },
     "request": {
       "nestingLimit": "Die Verschachtelungsgrenze der Anfrage ist überschritten.",
@@ -243,6 +247,8 @@
         "blockDelete": "Satzausblendung",
         "selectWcs": "{wcs} wählen",
         "setWorkOrigins": "XYZ-Nullpunkte von {wcs} setzen",
+        "setRotation": "XY-Drehung von {wcs} setzen",
+        "clearShift": "G92/G52-Verschiebung löschen",
         "planRestart": "Wiederanlauf ab Zeile {line} planen",
         "restartProgram": "Programm wieder anlaufen lassen",
         "editLine": "Zeile {line} bearbeiten",
@@ -266,11 +272,15 @@
         "editTool": "Werkzeug {tool} bearbeiten",
         "removeTool": "Werkzeug {tool} entfernen",
         "confirmToolChange": "Werkzeugwechsel bestätigen",
+        "measureToolDuringChange": "Werkzeug beim Wechsel messen",
         "saveToolModelDefaults": "Standardwerte der Werkzeugmodelle speichern",
         "saveToolPreviewModel": "Vorschaumodell des Werkzeugs speichern",
         "saveSettings": "Einstellungen speichern",
         "toolModels": "Werkzeugmodelle",
-        "settings": "Einstellungen"
+        "settings": "Einstellungen",
+        "openDiagnostics": "Diagnose öffnen",
+        "closeDiagnostics": "Diagnose schließen",
+        "startHalTool": "{tool} starten"
       }
     },
     "sim": {
@@ -295,6 +305,8 @@
         "selectWcs": "Koordinatensystem wählen",
         "touchOff": "Antasten",
         "setWorkOffsets": "Nullpunktverschiebungen setzen",
+        "setRotation": "eine XY-Drehung setzen",
+        "clearShift": "die G92/G52-Verschiebung löschen",
         "touchOffTool": "Werkzeuglänge antasten",
         "editToolTable": "Werkzeugtabelle bearbeiten",
         "probe": "Antasten",
@@ -331,6 +343,7 @@
       "notWcs": "{wcs} ist kein Werkstückkoordinatensystem (1 bis 9)",
       "touchOffNotNumber": "Der Antastwert ist keine Zahl",
       "invalidWorkOffset": "Ungültige Nullpunktverschiebung",
+      "invalidRotation": "Ungültige XY-Drehung",
       "toolNotInTable": "Werkzeug {tool} ist nicht in der Werkzeugtabelle",
       "noToolChange": "Es steht kein Werkzeugwechsel an",
       "setterSceneUnavailable": "Der Werkzeuglängensensor ist in dieser Simulator-Szene nicht verfügbar.",
@@ -368,7 +381,8 @@
       "gaugeStart": "Starten Sie über dem simulierten Kalibriernormal.",
       "bossStart": "Starten Sie über dem simulierten Zapfen.",
       "setLoadedLength": "Setzen Sie die Länge des eingewechselten Werkzeugs, bevor Sie sie prüfen.",
-      "browserSimulator": "Browser-Simulator"
+      "browserSimulator": "Browser-Simulator",
+      "noHalTools": "Der Browser-Simulator hat keine HAL-Werkzeuge: Er läuft ohne LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC kann keine Verbindung zu seiner nativen Steuerung herstellen. Starten Sie die Anwendung neu.",

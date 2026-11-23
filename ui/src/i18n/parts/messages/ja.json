@@ -70,6 +70,9 @@
       "wcsRange": "ワーク座標系は G54 から G59.3 の範囲で指定してください。",
       "finishToolChangeOrigins": "ワーク原点を編集する前に工具交換を完了してください。",
       "workOffsetInvalid": "G54 から G59.3 のいずれかと、有限の XYZ オフセットを指定してください。",
+      "rotationInvalid": "G54〜G59.3 と -360〜360 度の XY 回転を指定してください。",
+      "finishToolChangeShift": "G92/G52 シフトをクリアする前に工具交換を完了してください。",
+      "clearShiftRotary": "A、B、C 軸のある機械では、MDI で G92.1 を使って G92/G52 シフトをクリアしてください。これらの軸のシフトもクリアされます。",
       "finishToolChangeRestore": "オフセットを復元する前に工具交換を完了してください。",
       "chooseHistoryEntry": "オフセット履歴の項目を選択してください。",
       "touchOffInvalid": "原点設定の軸または値が無効です。",
@@ -145,7 +148,8 @@
       "previousStopAxis": "{axis} の前回のジョグ停止が確認されていません：{detail}",
       "directoryNotSent": "ディレクトリを送信できません：{detail}",
       "mdiTooLong": "MDI には 254 バイト以下のブロックが 1 つ必要です。",
-      "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}"
+      "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}",
+      "noDiagnostics": "HAL 診断はこのセッションにはありません。"
     },
     "request": {
       "nestingLimit": "要求の入れ子の上限を超えました。",
@@ -243,6 +247,8 @@
         "blockDelete": "ブロックスキップ",
         "selectWcs": "{wcs} を選択",
         "setWorkOrigins": "{wcs} の XYZ 原点を設定",
+        "setRotation": "{wcs} の XY 回転を設定",
+        "clearShift": "G92/G52 シフトをクリア",
         "planRestart": "{line} 行目からの再開を計画",
         "restartProgram": "プログラム再開",
         "editLine": "{line} 行目を編集",
@@ -266,11 +272,15 @@
         "editTool": "工具 {tool} を編集",
         "removeTool": "工具 {tool} を削除",
         "confirmToolChange": "工具交換を確認",
+        "measureToolDuringChange": "工具交換時に測定",
         "saveToolModelDefaults": "工具モデルの既定値を保存",
         "saveToolPreviewModel": "工具のプレビューモデルを保存",
         "saveSettings": "設定を保存",
         "toolModels": "工具モデル",
-        "settings": "設定"
+        "settings": "設定",
+        "openDiagnostics": "診断を開く",
+        "closeDiagnostics": "診断を閉じる",
+        "startHalTool": "{tool} を起動"
       }
     },
     "sim": {
@@ -295,6 +305,8 @@
         "selectWcs": "座標系を選択",
         "touchOff": "原点設定",
         "setWorkOffsets": "ワーク座標オフセットを設定",
+        "setRotation": "XY 回転を設定",
+        "clearShift": "G92/G52 シフトをクリア",
         "touchOffTool": "工具長を設定",
         "editToolTable": "工具テーブルを編集",
         "probe": "プロービング",
@@ -331,6 +343,7 @@
       "notWcs": "{wcs} はワーク座標系ではありません（1 から 9）",
       "touchOffNotNumber": "原点設定値が数値ではありません",
       "invalidWorkOffset": "ワーク座標オフセットが無効です",
+      "invalidRotation": "無効な XY 回転",
       "toolNotInTable": "工具 {tool} は工具テーブルにありません",
       "noToolChange": "保留中の工具交換はありません",
       "setterSceneUnavailable": "このシミュレーターのシーンではツールセッターは使用できません。",
@@ -368,7 +381,8 @@
       "gaugeStart": "シミュレーションの校正ゲージの上から開始してください。",
       "bossStart": "シミュレーションのボスの上から開始してください。",
       "setLoadedLength": "確認する前に装着工具の長さを設定してください。",
-      "browserSimulator": "ブラウザーシミュレーター"
+      "browserSimulator": "ブラウザーシミュレーター",
+      "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。"
     },
     "bridge": {
       "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。",

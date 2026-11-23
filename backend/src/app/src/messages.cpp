@@ -190,7 +190,10 @@ auto wait(Fields& fields, const Wait& w) -> Json {
         } else if constexpr (std::is_same_v<T, WaitPaused>) {
           return {{"kind", "paused"}};
         } else if constexpr (std::is_same_v<T, WaitToolChange>) {
-          return {{"kind", "tool_change"}, {"tool", kind.tool}};
+          Json result{{"kind", "tool_change"}, {"tool", kind.tool}};
+          if (kind.measure_request)
+            result["measure_request"] = *kind.measure_request;
+          return result;
         } else {
           static_assert(std::is_same_v<T, WaitDwell>, "Every wait needs a wire form.");
           return {{"kind", "dwell"},
@@ -262,6 +265,8 @@ auto encode_hello(const Hello& hello) -> Encoded {
     });
     message["macros"] = std::move(macros);
   }
+  if (hello.diagnostics)
+    message["diagnostics"] = true;
   if (hello.coolant)
     message["coolant"] = {{"flood", hello.coolant->flood}, {"mist", hello.coolant->mist}};
   if (const auto& setter = hello.fixed_setter)
@@ -436,7 +441,8 @@ auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded {
         {{"wcs", i + 1},
          {"offset", fields.vec(offsets.systems[i].offset, "systems.offset")},
          {"rotation_xy", fields.real(offsets.systems[i].rotation_xy, "systems.rotation_xy")},
-         {"available", offsets.systems[i].available}});
+         {"available", offsets.systems[i].available},
+         {"current", offsets.systems[i].available && offsets.systems[i].current}});
   return fields.finish({{"type", "work_offsets"},
                         {"revision", fields.count(offsets.revision, "revision")},
                         {"systems", std::move(systems)}});
@@ -536,11 +542,14 @@ auto encode_directory(const Directory& directory) -> Encoded {
                        {"bytes", fields.count(entry.bytes, "entries.bytes")},
                        {"modified", entry.modified}});
   }
-  return fields.finish({{"type", "directory"},
-                        {"path", directory.path},
-                        {"parent", nullable(directory.parent)},
-                        {"entries", std::move(entries)},
-                        {"truncated", directory.truncated}});
+  Json message{{"type", "directory"},
+               {"path", directory.path},
+               {"parent", nullable(directory.parent)},
+               {"entries", std::move(entries)},
+               {"truncated", directory.truncated}};
+  if (directory.writable.has_value())
+    message["writable"] = directory.writable.value_or(false);
+  return fields.finish(message);
 }
 
 auto history_name(HistorySource source) -> std::string_view {
@@ -633,6 +642,93 @@ auto encode_offset_history(const OffsetHistory& history) -> Encoded {
                         {"storage", history.saved ? "saved" : "session_only"},
                         {"reason", history.reason},
                         {"entries", std::move(entries)}});
+}
+
+auto diagnostic_name(DiagnosticRole role) -> std::string_view {
+  switch (role) {
+  case DiagnosticRole::min_limit:
+    return "min_limit";
+  case DiagnosticRole::max_limit:
+    return "max_limit";
+  case DiagnosticRole::home_switch:
+    return "home_switch";
+  case DiagnosticRole::amp_fault:
+    return "amp_fault";
+  case DiagnosticRole::estop_chain:
+    return "estop_chain";
+  case DiagnosticRole::estop_request:
+    return "estop_request";
+  case DiagnosticRole::probe:
+    return "probe";
+  case DiagnosticRole::spindle_on:
+    return "spindle_on";
+  case DiagnosticRole::spindle_at_speed:
+    return "spindle_at_speed";
+  case DiagnosticRole::spindle_speed_out:
+    return "spindle_speed_out";
+  case DiagnosticRole::spindle_speed_in:
+    return "spindle_speed_in";
+  case DiagnosticRole::spindle_fault:
+    return "spindle_fault";
+  case DiagnosticRole::configured:
+    return "configured";
+  }
+  return "configured";
+}
+
+auto diagnostic_name(DiagnosticState state) -> std::string_view {
+  switch (state) {
+  case DiagnosticState::missing:
+    return "missing";
+  case DiagnosticState::unwired:
+    return "unwired";
+  case DiagnosticState::undriven:
+    return "undriven";
+  case DiagnosticState::live:
+    return "live";
+  }
+  return "missing";
+}
+
+auto encode_diagnostics(const Diagnostics& diagnostics) -> Encoded {
+  Fields fields;
+  auto inputs = Json::array();
+  for (const auto& reading : diagnostics.inputs) {
+    const auto& input = reading.input;
+    // A float pin can hold anything: what is not a number is sent as no value, never refused.
+    const auto value = std::visit(
+        [](const auto& given) -> Json {
+          using T = std::decay_t<decltype(given)>;
+          if constexpr (std::is_same_v<T, bool>)
+            return given;
+          else if constexpr (std::is_same_v<T, double>)
+            return std::isfinite(given) ? Json(given) : Json(nullptr);
+          else
+            return nullptr;
+        },
+        reading.value);
+    Json row{{"role", diagnostic_name(input.role)},
+             {"name", input.name},
+             {"kind", reading.signal ? "signal" : "pin"},
+             {"state", diagnostic_name(reading.state)},
+             {"value", value}};
+    if (input.joint)
+      row["joint"] = *input.joint;
+    if (input.axis)
+      row["axis"] = std::string(1, *input.axis);
+    if (input.role == DiagnosticRole::configured)
+      row["label"] = input.label;
+    inputs.push_back(std::move(row));
+  }
+  auto tools = Json::array();
+  std::ranges::transform(diagnostics.tools, std::back_inserter(tools),
+                         [](const HalToolState& tool) -> Json {
+                           return {{"tool", hal_tool_name(tool.tool)},
+                                   {"available", tool.available},
+                                   {"open", tool.open}};
+                         });
+  return fields.finish(
+      {{"type", "diagnostics"}, {"inputs", std::move(inputs)}, {"tools", std::move(tools)}});
 }
 
 } // namespace coffeecnc

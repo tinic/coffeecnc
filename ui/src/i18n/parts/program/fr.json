@@ -1,6 +1,21 @@
 {
   "program": {
+    "upload": {
+      "title": "Téléverser un programme",
+      "choose": "Déposez un fichier ici ou sélectionnez-le",
+      "replace": "Remplacer le fichier existant",
+      "uploading": "Téléversement…",
+      "saved": "{name} a été enregistré dans Programmes.",
+      "failed": "Le programme n’a pas pu être téléversé."
+    },
     "fileBrowser": {
+      "newFolder": "Nouveau dossier",
+      "rename": "Renommer",
+      "name": "Nom",
+      "actions": "Actions pour {name}",
+      "copyToPrograms": "Copier dans Programmes",
+      "copied": "{name} a été copié dans Programmes.",
+      "deleteConfirm": "Supprimer {name} ?",
       "title": "Ouvrir un programme",
       "recentPrograms": "Programmes récents",
       "recent": "Récents",

@@ -166,6 +166,20 @@ void preview_context_follows_live_inputs() {
   require(sent.types.front() == "work_offsets" && sent.messages.front().at("revision") == 4,
           "A changed rotation of the active system too");
   context = sent.context();
+  // An inactive system read from the parameter file: a value is an input, whether it is
+  // known to be current is not.
+  r.work_systems.at(4) = WorkSystem{{1, 2, 3}, 0, true, false};
+  sent = compose(composer, r);
+  require(sent.context() == context + 1 && sent.messages.front().at("revision") == 5 &&
+              sent.messages.front().at("systems").at(4).at("current") == false,
+          "An inactive value read is an input");
+  context = sent.context();
+  r.work_systems.at(4).current = true;
+  sent = compose(composer, r);
+  require(sent.context() == context && sent.types.front() == "work_offsets" &&
+              sent.messages.front().at("revision") == 6 &&
+              sent.messages.front().at("systems").at(4).at("current") == true,
+          "Becoming current sends the work offsets again and leaves the preview context");
 
   // A tool table withheld from the panel (its file cannot be read) is still the machine's:
   // the rows it would show count, and the context stays.

@@ -7,6 +7,7 @@
       "tableChanged": "La tabla de herramientas ha cambiado. Seleccione de nuevo la herramienta.",
       "offsetsUnavailable": "Decalajes de {system} no disponibles",
       "offsetsStale": "Últimos decalajes recibidos de {system}",
+      "offsetsUnconfirmed": "Decalajes de {system} leídos antes de que LinuxCNC ejecutara código G por última vez: pueden haber cambiado",
       "toolTable": "Tabla de herramientas",
       "touchOffLengthHint": "Fijar la longitud de la herramienta cargada desde su posición actual",
       "touchOffLength": "Tomar longitud",
@@ -33,6 +34,8 @@
       "workOffsets": "Decalajes de origen de pieza",
       "workOffsetsHint": "{unit} · orígenes, en coordenadas de máquina",
       "lastReported": "Últimos recibidos",
+      "unconfirmed": "Puede estar desactualizado",
+      "unconfirmedHint": "Los valores en cursiva se leyeron antes de que LinuxCNC ejecutara código G por última vez y pueden haber cambiado. Tras un programa, los confirma el siguiente jog o comando MDI.",
       "historyHint": "Cambios en decalajes de origen de pieza y herramientas, con Restaurar",
       "history": "Historial",
       "columnSystem": "Sistema",
@@ -143,6 +146,10 @@
       "spindleEmpty": "El husillo está vacío",
       "toolInSpindle": "La herramienta está en el husillo",
       "cannotConfirm": "{reason}: no se puede confirmar el cambio.",
+      "measure": "Medir y revisar el reinicio",
+      "measureHint": "Con la herramienta instalada, detenga el programa y mida su longitud. Revise el reinicio antes de arrancar.",
+      "measuring": "Midiendo la herramienta. El programa seguirá detenido.",
+      "measureNote": "Confirmar reanuda el programa. Medir mueve la herramienta al medidor y deja el programa detenido.",
       "continueNote": "El programa continúa en cuanto usted confirma. El botón de parada de la barra de ejecución termina el programa en su lugar."
     },
     "setter": {

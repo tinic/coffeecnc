@@ -70,7 +70,7 @@ export function rig(): Rig {
       send({ type: 'set_machine', state: 'off' })
       send({ type: 'set_machine', state: 'on' })
       send({ type: 'home', axis: 'all' })
-      sim.advanceUntil((status) => status.axes.every((axis) => axis.homed), 60_000)
+      sim.advanceUntil((status) => [...status.axes, ...(status.rotary_axes ?? [])].every((axis) => axis.homed), 60_000)
     },
     load: (text: string): void => {
       files.set(testProgram, text)

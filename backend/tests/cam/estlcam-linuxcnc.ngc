@@ -1,0 +1,36 @@
+(Project plate)
+(Created by Estlcam version 12 build 12.125)
+(Machining time about 00:01:10 hours)
+(Required tools:)
+(6mm end mill)
+(3mm drill)
+G21
+G90
+G94
+F600
+S1500
+M03
+G00 Z5.0000
+G00 X0.0000 Y0.0000
+(No. 1: Part 1)
+G00 X-3.0000 Y-3.0000
+G01 Z-1.0000 F300
+G01 X23.0000 Y-3.0000 F600
+G01 X23.0000 Y23.0000
+G01 X-3.0000 Y23.0000
+G01 X-3.0000 Y-3.0000
+G00 Z5.0000
+M05
+(Change to tool 3mm drill)
+T2 M06
+G43 H2
+S1200
+M03
+G00 Z5.0000
+G00 X10.0000 Y10.0000
+G01 Z-4.0000 F150
+G00 Z5.0000
+G00 Z20.0000
+G00 X0.0000 Y0.0000
+M05
+M30

@@ -124,5 +124,25 @@ describe('the model beside the program', () => {
     expect(simulated).not.toHaveBeenCalled()
     ;(panel as { simulated?: boolean }).simulated = false
   })
+
+  it('asks the LAN server for the current program model and drops an obsolete download', async () => {
+    if (panel.status === null) throw new Error('Missing status')
+    const before = window.location.pathname
+    window.history.replaceState(null, '', '/view')
+    try {
+      panel.status.program.file = '/home/cnc/my part.ngc'
+      panel.status.program.revision = 7
+      let finish: (response: Response) => void = () => undefined
+      const request = vi.fn(() => new Promise<Response>((resolve) => { finish = resolve }))
+      const pending = loadProgramPart(request)
+      expect(request).toHaveBeenCalledWith('/program-part?revision=7&program=%2Fhome%2Fcnc%2Fmy%20part.ngc')
+      panel.status.program.revision++
+      finish({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(3)) } as Response)
+      await pending
+      expect(workers).toHaveLength(0)
+    } finally {
+      window.history.replaceState(null, '', before)
+    }
+  })
 })
 

@@ -337,9 +337,9 @@ describe('MDI', () => {
   it('fails with the interpreter error and leaves the machine where it was', () => {
     const r = rig()
     r.home()
-    expect(r.send({ type: 'mdi', text: 'G41 D1' })).toMatchObject({
+    expect(r.send({ type: 'mdi', text: 'G41 D999' })).toMatchObject({
       outcome: 'failed',
-      reason: 'D word is not supported by the simulator',
+      reason: 'G41: tool 999 needs a nonnegative diameter in the tool table',
     })
     expect(r.send({ type: 'mdi', text: 'G53 G0 Z50' })).toMatchObject({
       outcome: 'failed',
@@ -598,14 +598,14 @@ describe('program execution', () => {
   it('an interpreter error stops the running program with an operator error', () => {
     const r = rig()
     r.home()
-    r.load('G53 G0 X10\nG41 D2\nG53 G0 X20\nM2')
+    r.load('G53 G0 X10\nG41 D999\nG53 G0 X20\nM2')
     expect(r.preview()).toMatchObject({
       state: 'failed',
-      error: { line: 2, text: 'line 2: D word is not supported by the simulator' },
+      error: { line: 2, text: 'line 2: G41: tool 999 needs a nonnegative diameter in the tool table' },
     })
     expect(r.send({ type: 'run' }).outcome).toBe('accepted')
     r.finish()
-    expect(r.errors()).toEqual(['line 2: D word is not supported by the simulator'])
+    expect(r.errors()).toEqual(['line 2: G41: tool 999 needs a nonnegative diameter in the tool table'])
     expect(machinePosition(r.status())).toEqual([10, 0, 0])
   })
 
@@ -680,6 +680,54 @@ describe('the built-in programs', () => {
 })
 
 describe('offsets and tools', () => {
+  it('marks inactive systems not current after a program until the mode leaves auto, as the native adapter', () => {
+    const r = rig(); r.home()
+    const systems = (): { wcs: number; current?: boolean; offset: number[] }[] => {
+      const table = r.out.findLast((message) => message.type === 'work_offsets')
+      return table?.type === 'work_offsets' ? table.systems : []
+    }
+    r.send({ type: 'set_work_offset', wcs: 3, offset: [1, 2, 3] })
+    expect(systems().map((system) => system.current)).toEqual(Array(9).fill(true))
+    r.load('G10 L2 P3 X5\nG1 X10 F600\nM2')
+    r.send({ type: 'run' })
+    r.sim.advance(200)
+    expect(systems().map((system) => system.current)).toEqual([true, false, false, false, false, false, false, false, false])
+    r.finish()
+    expect(r.status().mode).toBe('auto')
+    expect(systems()[2]).toMatchObject({ current: false, offset: [5, 2, 3] })
+    r.send({ type: 'mdi', text: 'G54' }); r.finish()
+    expect(systems().map((system) => system.current)).toEqual(Array(9).fill(true))
+  })
+  it('sets and zeroes the XY rotation and clears G92/G52 as the native commands, refused while busy', () => {
+    const r = rig(); r.home()
+    r.send({ type: 'mdi', text: 'G53 G0 X100 Y50' }); r.finish()
+    r.send({ type: 'touch_off', axis: 'x', value: 0 }); r.send({ type: 'touch_off', axis: 'y', value: 0 })
+    expect(r.send({ type: 'set_work_rotation', wcs: 1, rotation_xy: 90 }).outcome).toBe('accepted')
+    expect(r.status().offsets.rotation_xy).toBe(90)
+    expect(r.status().offsets.g5x.slice(0, 2)).toEqual([100, 50])
+    r.send({ type: 'mdi', text: 'G53 G0 X100 Y60' }); r.finish()
+    // Rotated 90°, the work X axis points along machine +Y.
+    expect(work(r.status())[0]).toBeCloseTo(10, 6)
+    expect(work(r.status())[1]).toBeCloseTo(0, 6)
+    expect(r.send({ type: 'set_work_rotation', wcs: 3, rotation_xy: -12.5 }).outcome).toBe('accepted')
+    const table = r.out.findLast((message) => message.type === 'work_offsets')
+    expect(table?.type === 'work_offsets' ? table.systems[2]?.rotation_xy : null).toBe(-12.5)
+    expect(r.send({ type: 'set_work_rotation', wcs: 1, rotation_xy: 0 }).outcome).toBe('accepted')
+    expect(r.status().offsets.rotation_xy).toBe(0)
+    expect(r.send({ type: 'set_work_rotation', wcs: 1, rotation_xy: 400 }).reason).toBe('Invalid XY rotation')
+    r.send({ type: 'mdi', text: 'G92 X5 Y5' }); r.finish()
+    expect(r.status().offsets.g92).not.toEqual([0, 0, 0])
+    expect(r.send({ type: 'clear_g92' }).outcome).toBe('accepted')
+    expect(r.status().offsets.g92).toEqual([0, 0, 0])
+    const history = r.out.findLast((message) => message.type === 'offset_history')
+    expect(history?.type === 'offset_history' ? history.entries[0] : null).toMatchObject({ source: 'work_offset_table', target: 'g92' })
+    r.load('G1 X10 F100\nM2')
+    r.send({ type: 'run' })
+    r.sim.advance(200)
+    expect(r.send({ type: 'clear_g92' }).reason).toBe("Can't clear the G92/G52 shift while a program is running")
+    expect(r.send({ type: 'set_work_rotation', wcs: 1, rotation_xy: 5 }).reason).toBe("Can't set an XY rotation while a program is running")
+  })
+
   it('edits, copies and clears explicit XYZ origins without moving or changing modal context', () => {
     const r = rig(); r.home()
     r.send({ type: 'mdi', text: 'G10 L2 P2 R15' }); r.finish()
@@ -713,6 +761,7 @@ describe('offsets and tools', () => {
     expect(offsets?.type === 'work_offsets' ? offsets.systems[0] : null).toEqual({
       wcs: 1,
       available: true,
+      current: true,
       offset: [200, 60, -62.5],
       rotation_xy: 0,
     })

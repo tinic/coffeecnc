@@ -7,6 +7,7 @@
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
 
 #include <array>
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -60,6 +62,28 @@ protected:
   ToolModelService(ToolModelService&&) = default;
   auto operator=(const ToolModelService&) -> ToolModelService& = default;
   auto operator=(ToolModelService&&) -> ToolModelService& = default;
+};
+
+// Where the two diagnostics commands go: HAL readings on a thread of their own (HalDiagnostics).
+class DiagnosticsService {
+public:
+  DiagnosticsService() = default;
+  virtual ~DiagnosticsService() = default;
+
+  // Start (`on`) or stop sending `diagnostics` messages to `page`; a page watched before is no
+  // longer. Called with the session's mutex held: must not block or call the session.
+  virtual void watch(PageToken page, bool on) = 0;
+  // Starts the tool as a program of its own. A reason for the operator when it is not started.
+  // Called without the session's mutex: it may take as long as starting a process does.
+  [[nodiscard]] virtual auto launch(HalTool tool) -> std::optional<std::string> = 0;
+  // This page and every one before it has ended: nothing more is sent for them.
+  virtual void page_ended(PageToken page) = 0;
+
+protected:
+  DiagnosticsService(const DiagnosticsService&) = default;
+  DiagnosticsService(DiagnosticsService&&) = default;
+  auto operator=(const DiagnosticsService&) -> DiagnosticsService& = default;
+  auto operator=(DiagnosticsService&&) -> DiagnosticsService& = default;
 };
 
 // The caller's clocks, read once per call.
@@ -197,12 +221,18 @@ struct Work {
 //
 // `restore_offset` writes back the `before` values of an offset history entry through MDI:
 // G10 L2 for a work system, G52 for G92/G52, G10 L1 for a tool's length and radius. Refused for
-// an entry the history no longer holds or one with an unknown or removed value.
+// an entry the history no longer holds or one with an unknown or removed value. A length of the
+// tool in the spindle is applied again in the same request, as `after_tool_length_write` says:
+// `G43 H<tool>` after the G10 L1 when the loaded tool's length is in effect.
 //
 // `set_tool_model_defaults` and `set_tool_model_assignment` are answered by the tool-model
 // service, whatever the machine and the link are doing: they pass the page, ready and ID checks
 // in `submit` and are handed over there. They never wait in the request queues, so the worker
 // and the controller never see them. Without a service they are `rejected`.
+//
+// `watch_diagnostics` and `launch_hal_tool` are answered at once by the diagnostics service,
+// whatever the machine and the link are doing; without a service they are `rejected`. The
+// diagnostics of a page stop when it ends.
 //
 // No threads of its own and time passed in: every member is a step a test can take.
 class Session {
@@ -223,7 +253,8 @@ public:
   Session(ControllerPort& port, const Limits& limits, const ProgramStore& programs,
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
-          OffsetHistoryStore* history = nullptr);
+          OffsetHistoryStore* history = nullptr, DiagnosticsService* diagnostics = nullptr,
+          bool asynchronous_copies = false);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -249,6 +280,12 @@ public:
   // Any thread; does not wait for the controller.
   [[nodiscard]] auto loaded_program() const -> std::string;
 
+  // A disk worker has already written and synchronized a temporary program. Send only its
+  // atomic publication through the controller worker, serialized against program start.
+  using Publication = std::function<std::expected<void, std::string>()>;
+  [[nodiscard]] auto publish_program(std::string path, Publication publish)
+      -> std::future<std::expected<void, std::string>>;
+
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
   [[nodiscard]] auto control(Instant now, const ControlInput& input) -> bool;
@@ -257,6 +294,9 @@ public:
   // request. Blocks as long as the port does. The clock is read when messages are stamped. Also
   // collects the controller's operator messages for the page.
   [[nodiscard]] auto work(const Clock& clock) -> Work;
+
+  // On the disk thread, waits for one copy. A disengaged result means shutdown.
+  [[nodiscard]] auto copy_work(ProgramWriter& writer) -> std::optional<Outcome>;
 
   // Waits until there may be work, at most `timeout`.
   void wait_for_work(std::chrono::milliseconds timeout);
@@ -312,6 +352,17 @@ private:
     // A stop that is carried out even if its page is gone.
     bool stop{};
   };
+  struct ProgramPublication {
+    std::string path;
+    Publication publish;
+    std::promise<std::expected<void, std::string>> result;
+  };
+  struct ProgramCopy {
+    PageToken page;
+    RequestId id;
+    ManageProgramFile command;
+  };
+  void publish_program(ProgramPublication& request, const Clock& clock);
   enum class StageKind : std::uint8_t { reply, cancelled, blocked };
   struct Stage {
     StageKind kind{StageKind::reply};
@@ -329,6 +380,7 @@ private:
     RestartSource source;
     PreviewComputation::Watch files_changed;
     std::optional<std::uint64_t> tool_request;
+    CheckedPreview measured_run{}; // original program replayed with the new tool table
   };
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
@@ -365,6 +417,7 @@ private:
                                   const ControllerState& state) -> Stage;
   [[nodiscard]] auto start_restart(const Queued& request, StartRestart command) -> Stage;
   [[nodiscard]] auto resume_restart(const Queued& request, const ControllerState& state) -> Stage;
+  [[nodiscard]] auto measure_tool_change(Queued& request, const ControllerState& state) -> Stage;
   [[nodiscard]] auto send_restart(const Queued& request, const PreparedRestart& restart,
                                   bool after_change) -> Stage;
   [[nodiscard]] auto jog_step(Queued& request, const JogStep& command, const Decision& decision)
@@ -395,10 +448,12 @@ private:
   PreviewEngine* restart_engine_;
   ProgramWriter* program_writer_;
   OffsetHistoryStore* history_;
+  DiagnosticsService* diagnostics_;
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.
   std::string verified_probe_program_;
+  CheckedPreview started_program_; // worker-owned exact source of a checked AUTO start
   std::uint64_t pages_{};
   JogLease::Time status_at_{};
   // Goes up with every stop decision.
@@ -427,12 +482,16 @@ private:
   const CommandPolicy policy_;
   std::deque<Queued> stops_;
   std::deque<Queued> requests_;
+  std::optional<ProgramCopy> copy_;
+  std::optional<ProgramPublication> publication_;
   ControllerState status_;
   std::array<AxisJog, 3> jog_{};
   // Consecutive control periods that found the level low, up to settled_periods.
   int low_periods_{settled_periods};
   bool woken_{};
   bool closing_{};
+  bool copying_{};
+  const bool asynchronous_copies_;
   bool page_open_{};
   bool ready_{};
   bool watch_frames_{};

@@ -2,9 +2,10 @@
 // a copy of the modal state) and execution (line by line, as the simulated task reaches each line).
 //
 // Supported subset:
-//   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40, G53,
-//   G80 G81 G83 (absolute distance mode; X Y Z R Q, sticky Z R Q) G98 G99,
-//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91, G92, G94,
+//   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40 G41 G42, G53,
+//   Cutter compensation for absolute XY paths with tangent joins or outside corners only.
+//   G80 G81 G83 G85 G89 (absolute distance mode; X Y Z R Q P, sticky Z R Q P) G98 G99,
+//   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91 G91.1, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
 //   block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
@@ -15,6 +16,13 @@ export type AxisIndex = 0 | 1 | 2
 export const axisIndices: readonly AxisIndex[] = [0, 1, 2]
 const axisWords: readonly string[] = ['X', 'Y', 'Z']
 const mmPerInch = 25.4
+type XY = [number, number]
+
+interface CutterComp {
+  side: 1 | -1
+  radius: number
+  last: { end: Vec3; tangent: XY } | null
+}
 
 /** Everything the interpreter remembers between blocks. Lengths in mm, feed in mm/min. */
 export interface Modal {
@@ -28,11 +36,14 @@ export interface Modal {
   toolOffset: Vec3
   /** The H number of an active G43, or null under G49. A zero-length offset is still G43. */
   lengthTool: number | null
+  cutter: CutterComp | null
+  /** Programmed machine position after G40, until the first uncompensated straight move. */
+  cutterExit: Vec3 | null
   units: LengthUnit
   absolute: boolean
   motion: Motion
-  /** Sticky words of the drilling cycles, mm in work coordinates; Q is the peck. */
-  cycle: { z?: number; r?: number; q?: number }
+  /** Sticky cycle words. Lengths are work-coordinate mm and P is in seconds. */
+  cycle: { z?: number; r?: number; q?: number; p?: number }
   /** G98: retract to `cycleStartZ`, the Z before the cycles began; G99: to R. */
   retract: 98 | 99
   cycleStartZ: number
@@ -47,8 +58,9 @@ export interface Modal {
   tools: Tool[]
 }
 
-/** G0 to G3, G80 (no motion) and the drilling cycles G81 and G83. */
-export type Motion = 0 | 1 | 2 | 3 | 80 | 81 | 83
+/** G0 to G3, G80 (no motion) and axial canned cycles. */
+type CannedCycle = 81 | 83 | 85 | 89
+export type Motion = 0 | 1 | 2 | 3 | 80 | CannedCycle
 
 export type Op =
   | {
@@ -95,6 +107,8 @@ export function newModal(tools: Tool[]): Modal {
     g92: [0, 0, 0],
     toolOffset: [0, 0, 0],
     lengthTool: null,
+    cutter: null,
+    cutterExit: null,
     units: 'mm',
     absolute: true,
     motion: 1,
@@ -117,6 +131,8 @@ export function cloneModal(m: Modal): Modal {
     ...m,
     pos: [...m.pos],
     cycle: { ...m.cycle },
+    cutter: m.cutter ? { ...m.cutter } : null,
+    cutterExit: m.cutterExit === null ? null : [...m.cutterExit],
     offsets: m.offsets.map((o): Vec3 => [...o]),
     rotations: [...m.rotations],
     g92: [...m.g92],
@@ -187,6 +203,7 @@ export function activeCodes(m: Modal): string[] {
   if (!m.mist && !m.flood) {
     codes.push('M9')
   }
+  if (m.cutter !== null) codes.push(m.cutter.side === 1 ? 'G41' : 'G42')
   return codes
 }
 
@@ -202,7 +219,7 @@ interface Block {
 }
 
 const numberPattern = /^[+-]?(?:\d+\.?\d*|\.\d+)/
-const wordLetters = 'FGHIJKLMNPQRSTXYZ'
+const wordLetters = 'DFGHIJKLMNPQRSTXYZ'
 
 function parseBlock(raw: string, line: number, blockDelete: boolean): Block {
   const block: Block = { g: [], m: [], words: new Map(), comments: [], blank: true }
@@ -297,12 +314,17 @@ const gGroups: Readonly<Record<number, string>> = {
   800: 'motion',
   810: 'motion',
   830: 'motion',
+  850: 'motion',
+  890: 'motion',
   400: 'cutter radius compensation',
+  410: 'cutter radius compensation',
+  420: 'cutter radius compensation',
   980: 'canned cycle return',
   990: 'canned cycle return',
   40: 'non-modal',
   100: 'non-modal',
   920: 'non-modal',
+  921: 'non-modal',
   530: 'machine coordinates',
   170: 'plane',
   200: 'units',
@@ -320,6 +342,7 @@ const gGroups: Readonly<Record<number, string>> = {
   593: 'coordinate system',
   900: 'distance mode',
   910: 'distance mode',
+  911: 'arc distance mode',
   940: 'feed mode',
 }
 
@@ -498,6 +521,27 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   }
   const scale = m.units === 'inch' ? mmPerInch : 1
 
+  if (has(400) && m.cutter !== null) {
+    m.cutterExit = m.cutter.last === null ? null : toMachine(m, m.cutter.last.end)
+    m.cutter = null
+  }
+  if (has(410) || has(420)) {
+    const name = has(410) ? 'G41' : 'G42'
+    if (m.cutter !== null) throw new InterpError(line, `${name}: cutter compensation is already on`)
+    const d = word('D') ?? 0
+    const toolNumber = d === 0 ? m.tool : d
+    const diameter = toolNumber === 0 ? 0 : findTool(m, toolNumber)?.diameter
+    if (diameter === undefined || !Number.isFinite(diameter) || diameter < 0) {
+      throw new InterpError(line, `${name}: tool ${String(toolNumber)} needs a nonnegative diameter in the tool table`)
+    }
+    m.cutter = { side: has(410) ? 1 : -1, radius: diameter / 2, last: null }
+    m.cutterExit = null
+  }
+  if (m.cutter !== null && (has(530) || has(100) || has(920) || has(921) || has(430) || has(490)
+    || wcsCodes.some(has) || block.m.includes(6))) {
+    throw new InterpError(line, 'coordinate or tool changes with cutter compensation are not supported by the simulator')
+  }
+
   const feed = word('F')
   if (feed !== undefined) {
     if (feed < 0) {
@@ -604,9 +648,12 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     if (!any) {
       throw new InterpError(line, 'G92 needs at least one axis word')
     }
+  } else if (has(921)) {
+    // G92.1: the G92/G52 shift and what G92.3 would restore are zero.
+    m.g92 = [0, 0, 0]
   }
 
-  const explicit = ([0, 10, 20, 30, 800, 810, 830] as const).find((code) => has(code))
+  const explicit = ([0, 10, 20, 30, 800, 810, 830, 850, 890] as const).find((code) => has(code))
   if (explicit !== undefined && axesTaken) {
     throw new InterpError(
       line,
@@ -616,17 +663,18 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   if (explicit !== undefined) {
     const next = (explicit / 10) as Motion
     // G98 returns to the Z from before this series of cycles.
-    if (drilling(next) && !drilling(m.motion)) m.cycleStartZ = present[2]
-    if (!drilling(next)) m.cycle = {}
+    if (cannedCycle(next) && !cannedCycle(m.motion)) m.cycleStartZ = present[2]
+    if (!cannedCycle(next) || (next !== m.motion && (next === 85 || next === 89))) m.cycle = {}
     m.motion = next
   }
   const axisGiven = axisWords.some((letter) => block.words.has(letter))
   if (m.motion === 80 && axisGiven && !axesTaken) {
     throw new InterpError(line, 'G80: axis words without a motion code (G0 to G3)')
   }
-  if (drilling(m.motion) && !axesTaken && (axisGiven || explicit !== undefined)) {
+  if (cannedCycle(m.motion) && !axesTaken && (axisGiven || explicit !== undefined)) {
     if (has(530)) throw new InterpError(line, 'G53 cannot be used with a canned cycle')
-    ops.push(...drill(m, word, line, scale))
+    if (m.cutter !== null || m.cutterExit !== null) throw new InterpError(line, 'a canned cycle cannot follow cutter compensation')
+    ops.push(...axialCycle(m, word, line, scale))
   } else if (!axesTaken && (axisGiven || (explicit !== undefined && explicit >= 20 && explicit <= 30))) {
     const move = motion(m, block, word, used, line, scale, has(530))
     if (move !== null) {
@@ -652,6 +700,8 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     m.absolute = true
     m.motion = 1
     m.cycle = {}
+    m.cutter = null
+    m.cutterExit = null
     m.spindle = 'stopped'
     m.flood = false
     m.mist = false
@@ -660,25 +710,21 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   return { ops, blank: false }
 }
 
-function drilling(motion: Motion): motion is 81 | 83 {
-  return motion === 81 || motion === 83
+function cannedCycle(motion: Motion): motion is CannedCycle {
+  return motion === 81 || motion === 83 || motion === 85 || motion === 89
 }
 
 // LinuxCNC's G83 rapid back down to just above the last peck (G83_RAPID_DELTA, 0.010 inch).
 const peckClearance = 0.254
 
-/**
- * G81 or G83 at the X Y of this block (the present position for an axis not given): Z first to
- * R when below it, XY at the same height, Z to R, the drilling feed to Z (G83 in pecks of Q,
- * back to R between them), then out to R (G99) or the Z before the cycles (G98).
- */
-function drill(m: Modal, word: (letter: string) => number | undefined, line: number, scale: number): Op[] {
+/** Approach each hole through R and return to R (G99) or the initial Z (G98). */
+function axialCycle(m: Modal, word: (letter: string) => number | undefined, line: number, scale: number): Op[] {
   const name = `G${String(m.motion)}`
   if (!m.absolute) throw new InterpError(line, `${name} in incremental distance mode (G91) is not supported by the simulator`)
   if (m.feed <= 0) throw new InterpError(line, `cannot do ${name} with zero feed rate`)
-  const sticky = (letter: 'z' | 'r' | 'q'): number | undefined => {
+  const sticky = (letter: 'z' | 'r' | 'q' | 'p'): number | undefined => {
     const value = word(letter.toUpperCase())
-    if (value !== undefined) m.cycle[letter] = value * scale
+    if (value !== undefined) m.cycle[letter] = letter === 'p' ? value : value * scale
     return m.cycle[letter]
   }
   const x = word('X')
@@ -686,9 +732,11 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
   const z = sticky('z')
   const r = sticky('r')
   const q = m.motion === 83 ? sticky('q') : undefined
+  const dwell = m.motion === 89 ? sticky('p') : undefined
   if (z === undefined || r === undefined) throw new InterpError(line, `${name} needs Z and R words`)
   if (z > r) throw new InterpError(line, `${name}: Z ${String(z)} is above the R plane`)
   if (m.motion === 83 && (q === undefined || q <= 0)) throw new InterpError(line, 'G83 needs a positive Q word (peck depth)')
+  if (m.motion === 89 && (dwell === undefined || dwell < 0)) throw new InterpError(line, 'G89 needs a nonnegative P word (dwell)')
   const ops: Op[] = []
   let at = toWork(m, m.pos)
   const go = (to: Vec3, rapid: boolean): void => {
@@ -703,7 +751,7 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
   const hole: Vec3 = [x === undefined ? at[0] : x * scale, y === undefined ? at[1] : y * scale, at[2]]
   go(hole, true)
   go([hole[0], hole[1], r], true)
-  if (m.motion === 81 || q === undefined) {
+  if (q === undefined) {
     go([hole[0], hole[1], z], false)
   } else {
     for (let depth = r; depth > z;) {
@@ -713,7 +761,10 @@ function drill(m: Modal, word: (letter: string) => number | undefined, line: num
       if (depth > z) go([hole[0], hole[1], r], true)
     }
   }
-  go([hole[0], hole[1], m.retract === 98 ? Math.max(m.cycleStartZ, r) : r], true)
+  const clearZ = m.retract === 98 ? Math.max(m.cycleStartZ, r) : r
+  if (dwell !== undefined) ops.push({ kind: 'dwell', seconds: dwell })
+  if (m.motion === 85) go([hole[0], hole[1], r], false)
+  if (m.motion !== 85 || clearZ > r) go([hole[0], hole[1], clearZ], m.motion !== 89)
   return ops
 }
 
@@ -780,6 +831,61 @@ function g10(
   m.offsets[wcs - 1] = offset
 }
 
+function unitTangent(dx: number, dy: number): XY {
+  const length = Math.hypot(dx, dy)
+  return [dx / length, dy / length]
+}
+
+/** Offset an XY line or arc. A convex join only adds a roll around the shared corner. A
+ * concave join would trim the preceding block, which needs lookahead the simulator lacks. */
+function cutterPath(
+  m: Modal, comp: CutterComp, block: Block, used: Set<string>, line: number, scale: number,
+  actual: Vec3, start: Vec3, end: Vec3,
+): Vec3[] {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  const length = Math.hypot(dx, dy)
+  const arc = m.motion === 2 || m.motion === 3
+  if (!arc && length <= 1e-9) {
+    if (comp.last !== null) comp.last = { ...comp.last, end }
+    return [actual, [actual[0], actual[1], end[2]]]
+  }
+  if (comp.last === null && (arc || length <= comp.radius + 1e-9)) {
+    throw new InterpError(line, 'cutter compensation needs a straight XY lead-in longer than the cutter radius')
+  }
+
+  const clockwise = m.motion === 2
+  const direction = clockwise ? -1 : 1
+  const centre = arc ? arcCentre(block, used, line, start, end, clockwise, scale) : null
+  const tangent = (point: Vec3): XY => centre === null ? unitTangent(dx, dy)
+    : unitTangent(direction * (centre[1] - point[1]), direction * (point[0] - centre[0]))
+  if (centre !== null && Math.hypot(start[0] - centre[0], start[1] - centre[1]) <= direction * comp.side * comp.radius) {
+    throw new InterpError(line, 'cutter is too large for the compensated arc')
+  }
+  const shift = (point: Vec3, [tx, ty]: XY): Vec3 =>
+    [point[0] - ty * comp.side * comp.radius, point[1] + tx * comp.side * comp.radius, point[2]]
+  const incoming = tangent(start)
+  const outgoing = tangent(end)
+  const from = shift(start, incoming)
+  const to = shift(end, outgoing)
+  const path = centre === null ? [from, to] : arcPoints(from, to, centre, clockwise)
+  const previous = comp.last?.tangent
+  if (previous === undefined) path[0] = actual
+  else {
+    const cross = previous[0] * incoming[1] - previous[1] * incoming[0]
+    const dot = previous[0] * incoming[0] + previous[1] * incoming[1]
+    const turn = Math.atan2(cross, dot)
+    if (Math.abs(turn) >= Math.PI - 1e-6 || turn * comp.side > 1e-6) {
+      throw new InterpError(line, 'an inside corner with cutter compensation is not supported by the simulator; use a tangent arc')
+    }
+    if (m.motion !== 0 && Math.abs(turn) > 1e-6) {
+      path.unshift(...arcPoints(actual, from, [start[0], start[1]], turn < 0).slice(0, -1))
+    }
+  }
+  comp.last = { end, tangent: outgoing }
+  return path
+}
+
 function motion(
   m: Modal,
   block: Block,
@@ -790,7 +896,8 @@ function motion(
   machineCoordinates: boolean,
 ): Op | null {
   const name = `G${String(m.motion)}`
-  const start = toWork(m, m.pos)
+  const actual = toWork(m, m.pos)
+  const start = m.cutter?.last?.end ?? (m.cutterExit === null ? actual : toWork(m, m.cutterExit))
   const given: (number | undefined)[] = axisWords.map((letter) => word(letter))
   let endMachine: Vec3
   let end: Vec3
@@ -801,7 +908,7 @@ function motion(
     if (!m.absolute) {
       throw new InterpError(line, 'G53 cannot be used in incremental distance mode (G91)')
     }
-    endMachine = [...m.pos]
+    endMachine = [...(m.cutterExit ?? m.pos)]
     for (const axis of axisIndices) {
       const value = given[axis]
       if (value !== undefined) {
@@ -820,13 +927,25 @@ function motion(
     endMachine = toMachine(m, end)
   }
   const base = { kind: 'move' as const, line, tool: m.tool, toolOffset: [...m.toolOffset] as Vec3 }
+  if (m.motion !== 0 && m.feed <= 0) throw new InterpError(line, `cannot do ${name} with zero feed rate`)
+  if (m.cutterExit !== null) {
+    if (m.motion > 1) throw new InterpError(line, 'G40 must be followed by a straight move before an arc')
+    m.cutterExit = null
+  }
+  if (m.cutter !== null && m.cutter.radius > 0) {
+    if (!m.absolute) throw new InterpError(line, 'cutter compensation in G91 is not supported by the simulator')
+    const points = cutterPath(m, m.cutter, block, used, line, scale, actual, start, end)
+    const machinePoints = points.map((point) => toMachine(m, point))
+    machinePoints[0] = [...m.pos]
+    m.pos = machinePoints.at(-1) ?? m.pos
+    const rapid = m.motion === 0
+    return { ...base, motion: rapid ? 'rapid' : 'feed', shape: points.length > 2 ? 'arc' : 'linear',
+      feed: rapid ? 0 : m.feed, points: machinePoints }
+  }
   if (m.motion === 0) {
     const from: Vec3 = [...m.pos]
     m.pos = endMachine
     return { ...base, motion: 'rapid', shape: 'linear', feed: 0, points: [from, endMachine] }
-  }
-  if (m.feed <= 0) {
-    throw new InterpError(line, `cannot do ${name} with zero feed rate`)
   }
   if (m.motion === 1) {
     const from: Vec3 = [...m.pos]

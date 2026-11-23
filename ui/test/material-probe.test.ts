@@ -10,6 +10,8 @@ import { hello, SimMachine } from '../src/sim/machine'
 import type { ResultListener } from '../src/store'
 
 const { listeners } = vi.hoisted(() => ({ listeners: new Set<ResultListener>() }))
+// The guide's WebGL chunk must not load in the background (#279).
+vi.mock('../src/components/ProbeGuideCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { computed, reactive } = await import('vue')
   const panel = reactive({ status: null }) as typeof import('../src/machine').panel

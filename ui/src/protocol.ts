@@ -59,11 +59,14 @@ export interface Hello {
   touch_probe_tool?: number
   /** Program browser shortcuts (program directory, home, USB media); absent on older peers. */
   program_places?: { name: string; path: string }[]
+  program_upload?: boolean
   /**
    * `[COFFEECNC] MACRO = <label> | <MDI block>` in INI order, at most 12; absent when none is
    * configured. Each runs as one `mdi` command, under the same rules as a typed block.
    */
   macros?: Macro[]
+  /** `watch_diagnostics` and `launch_hal_tool` are served; absent on older peers and the LAN screen. */
+  diagnostics?: boolean
   /** True when no LinuxCNC is behind this session (browser simulator, or `--demo`). */
   simulated: boolean
   axes: AxisLetter[]
@@ -191,7 +194,7 @@ export type Wait =
   /** Paused: by the operator (feed hold) or by the program (M0, M1, M60). */
   | { kind: 'paused' }
   /** LinuxCNC asks for a manual tool change and waits for `tool_changed`. */
-  | { kind: 'tool_change'; tool: number }
+  | { kind: 'tool_change'; tool: number; measure_request?: number }
   | { kind: 'dwell'; seconds_left: number }
 
 export interface Status {
@@ -342,6 +345,10 @@ export interface WorkOffsets {
     /** False means the numeric fields are placeholders, not usable coordinates. Older peers
      * omit this field and supply a complete table. New senders always set it explicitly. */
     available?: boolean
+    /** False: a known value that the controller may have changed since it was read (an
+     * inactive system read from LinuxCNC's parameter file before the interpreter ran
+     * something). Older peers omit it: their values are taken as current. */
+    current?: boolean
   }[]
 }
 
@@ -389,6 +396,90 @@ export interface OffsetHistory {
   /** Why the history is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
   entries: HistoryEntry[]
+}
+
+/** One entry of the alarm log: an operator message, or a command result other than `accepted`. */
+export interface AlarmEntry {
+  /** The run of CoffeeCNC it was told in, from 1; a higher number is a later run. */
+  session: number
+  /** Milliseconds since the Unix epoch. */
+  time: number
+  level: 'error' | 'info'
+  text: string
+  /** A result's outcome; null for an operator message. */
+  outcome: Exclude<CommandResult['outcome'], 'accepted'> | null
+  /**
+   * The command as a panel sent it, without its id: null for an operator message or when it is
+   * not known, `{ type }` alone for a long one. An older panel may have sent it: read it defensively.
+   */
+  command: Record<string, unknown> | null
+}
+
+/**
+ * What the executable told before this page was loaded, oldest first, at most 500 entries: of
+ * earlier runs and of earlier pages of this run. Sent once after `hello`; what is told after it
+ * arrives as `message` and `result`.
+ */
+export interface AlarmLog {
+  type: 'alarm_log'
+  /** `saved`: kept in the machine's data directory; `session_only`: `reason` says why not. */
+  storage: 'saved' | 'session_only'
+  /** Why the log is not saved, or what went wrong reading or writing it; empty otherwise. */
+  reason: string
+  /** This run's session number. */
+  session: number
+  /** Lines of the saved log that could not be read. */
+  skipped: number
+  entries: AlarmEntry[]
+}
+
+/**
+ * What a row of the diagnostics view reads. The joint rows are LinuxCNC's `joint.N.*` inputs;
+ * `estop_chain` is `iocontrol.0.emc-enable-in` (true while the external chain is closed),
+ * `estop_request` is `iocontrol.0.user-enable-out` (true while LinuxCNC is out of E-stop);
+ * `configured` is a `[COFFEECNC] DIAGNOSTIC = <label> | <signal or pin>` line.
+ */
+export type DiagnosticRole = 'min_limit' | 'max_limit' | 'home_switch' | 'amp_fault' | 'estop_chain' | 'estop_request' |
+  'probe' | 'spindle_on' | 'spindle_at_speed' | 'spindle_speed_out' | 'spindle_speed_in' | 'spindle_fault' | 'configured'
+
+/**
+ * `missing`: HAL has no such pin or signal. `unwired`: a pin linked to no signal (it reads its own
+ * value, which `setp` sets). `undriven`: a signal, or a pin's signal, that nothing writes. `live`:
+ * something writes it.
+ */
+export type DiagnosticState = 'missing' | 'unwired' | 'undriven' | 'live'
+
+export interface DiagnosticInput {
+  role: DiagnosticRole
+  /** The joint rows only. */
+  joint?: number
+  /** Of a joint row: the axis letter the joint moves, `x` ... `c`. A gantry has two joints on one. */
+  axis?: string
+  /** The configured rows only: the INI label. */
+  label?: string
+  /** The HAL pin or signal read. */
+  name: string
+  kind: 'pin' | 'signal'
+  state: DiagnosticState
+  /** A bit, a number (float, s32 or u32), or null while missing or not a finite number. */
+  value: boolean | number | null
+}
+
+export type HalToolName = 'halshow' | 'halmeter' | 'halscope'
+
+export interface HalToolState {
+  tool: HalToolName
+  /** The program is installed. */
+  available: boolean
+  /** CoffeeCNC started it and it has not ended. */
+  open: boolean
+}
+
+/** HAL readings, about ten a second, while the page watches (`watch_diagnostics`). */
+export interface Diagnostics {
+  type: 'diagnostics'
+  inputs: DiagnosticInput[]
+  tools: HalToolState[]
 }
 
 /** An operator error or message from LinuxCNC, or from the executable itself. */
@@ -510,6 +601,8 @@ export interface Directory {
   entries: DirectoryEntry[]
   /** True when the listing omits entries because a resource limit was reached. */
   truncated?: boolean
+  /** The panel may manage local files in this directory. */
+  writable?: boolean
 }
 
 export type FromMachine =
@@ -522,6 +615,8 @@ export type FromMachine =
   | Preview
   | WorkOffsets
   | OffsetHistory
+  | AlarmLog
+  | Diagnostics
   | OperatorMessage
   | CommandResult
   | Directory
@@ -588,6 +683,10 @@ export interface ListDirectory extends CommandBase {
   /** Null for the program directory ([DISPLAY] PROGRAM_PREFIX). */
   path: string | null
 }
+export type ManageProgramFile = CommandBase & { type: 'manage_program_file'; path: string } & (
+  | { operation: 'create_folder' | 'copy' | 'remove' }
+  | { operation: 'rename'; name: string }
+)
 export interface OpenProgram extends CommandBase {
   type: 'open_program'
   path: string
@@ -685,6 +784,26 @@ export interface SetWorkOffset extends CommandBase {
   wcs: number
   offset: Vec3
 }
+/** Sets the XY rotation of one work system in degrees, -360 to 360, keeping its XYZ (G10 L2 R). */
+export interface SetWorkRotation extends CommandBase {
+  type: 'set_work_rotation'
+  wcs: number
+  rotation_xy: number
+}
+/** Clears the G92/G52 shift, one offset in LinuxCNC (G92.1). Recorded in the offset history. */
+export interface ClearG92 extends CommandBase {
+  type: 'clear_g92'
+}
+/** The diagnostics view opens (`on`) or closes: HAL is read and `diagnostics` sent only while it is open. */
+export interface WatchDiagnostics extends CommandBase {
+  type: 'watch_diagnostics'
+  on: boolean
+}
+/** Starts halshow, halmeter or halscope as a window of its own; refused when missing or already open. */
+export interface LaunchHalTool extends CommandBase {
+  type: 'launch_hal_tool'
+  tool: HalToolName
+}
 /** Sets the work offset so the axis reads `value` at its present position (G10 L20). */
 export interface TouchOff extends CommandBase {
   type: 'touch_off'
@@ -750,6 +869,8 @@ export interface RemoveTool extends CommandBase {
 /** The operator has put the requested tool in the spindle (answers `Wait.tool_change`). */
 export interface ToolChanged extends CommandBase {
   type: 'tool_changed'
+  /** Measure the installed tool at this exact request before reviewing a program restart. */
+  measure_request?: number
 }
 
 /** Replace all seven family defaults atomically, retaining the saved assignment catalog. */
@@ -787,6 +908,7 @@ export type ToMachine =
   | JogStopAll
   | Mdi
   | ListDirectory
+  | ManageProgramFile
   | OpenProgram
   | Run
   | Pause
@@ -814,6 +936,10 @@ export type ToMachine =
   | JogPausedZ
   | SaveProgram
   | RestoreOffset
+  | SetWorkRotation
+  | ClearG92
+  | WatchDiagnostics
+  | LaunchHalTool
 
 /** A command without its `id`, as callers build it. */
 export type CommandBody = ToMachine extends infer C ? (C extends ToMachine ? Omit<C, 'id'> : never) : never

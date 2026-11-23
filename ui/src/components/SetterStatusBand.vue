@@ -21,5 +21,5 @@ defineProps<{ line: SetterStatusLine }>()
 .setter-band.done { color: var(--go); }
 .setter-band.busy { color: var(--accent); }
 .setter-label { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-weight: 700; }
-.setter-band p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 16px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.setter-band p { flex: 1; min-width: 0; margin: 0; font-size: var(--type-body); line-height: 18px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>

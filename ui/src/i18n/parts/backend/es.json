@@ -1,5 +1,51 @@
 {
   "backend": {
+    "programFiles": {
+      "running": "El programa está en ejecución.",
+      "directorySync": "Guardado en disco. Falló la sincronización de la carpeta. {detail}",
+      "manage": "Gestionar archivos de programa",
+      "unavailable": "La gestión de archivos de programa no está disponible.",
+      "nameForRename": "Solo se requiere un nombre nuevo al cambiar el nombre.",
+      "closing": "CoffeeCNC se está cerrando.",
+      "starting": "CoffeeCNC se está iniciando.",
+      "busy": "Se está subiendo otro programa.",
+      "verify": "No se puede comprobar el programa cargado con el controlador desconectado.",
+      "stop": "Detenga el programa cargado antes de reemplazarlo.",
+      "sameOrigin": "Suba el archivo desde la pantalla LAN de CoffeeCNC.",
+      "choose": "Seleccione el archivo de programa que desea subir.",
+      "size": "El programa supera los 16 MiB.",
+      "text": "Suba un archivo de programa en formato de texto.",
+      "uploadFailed": "No se pudo guardar el archivo subido.",
+      "copySize": "El archivo supera los 32 MiB.",
+      "nameTaken": "Ya existe un archivo o una carpeta con ese nombre.",
+      "missing": "El archivo o la carpeta ya no existe.",
+      "loaded": "Abra otro programa antes de mover o eliminar este elemento.",
+      "oneName": "Introduzca solo un nombre de archivo o carpeta."
+    },
+    "toolChangeMeasurement": {
+      "unavailable": "No se puede medir durante un cambio de herramienta del programa.",
+      "requiresToolAndSetter": "Se necesita una herramienta de corte en la tabla y un medidor fijo.",
+      "controllerUnavailable": "El controlador no está disponible.",
+      "verifyStationaryChange": "No se pudo verificar el cambio de herramienta del programa o su posición de parada.",
+      "pendingChangeNotCleared": "LinuxCNC no canceló el cambio de herramienta pendiente.",
+      "idleMdi": "LinuxCNC no entró en MDI en reposo para medir la herramienta.",
+      "tableChanged": "La tabla de herramientas cambió antes de registrar la herramienta instalada.",
+      "millChanged": "El estado de la fresadora cambió antes de registrar la herramienta instalada.",
+      "registrationFailed": "No se pudo registrar la herramienta instalada.",
+      "registrationUnconfirmed": "LinuxCNC no confirmó la herramienta instalada.",
+      "needsProgramCheck": "La medición en M6 requiere una comprobación completa del programa en ejecución.",
+      "noMotionAfterChange": "No hay un movimiento verificado para reiniciar después de este cambio de herramienta.",
+      "notVerifiedM6": "No se pudo verificar el bloque M6 original.",
+      "skipUnsupported": "El reinicio omitiría un cambio de herramienta, una parada o un bloque incompatible.",
+      "teachFirst": "Calibre el medidor fijo antes de medir en un cambio de herramienta del programa.",
+      "dataChangedBeforeMeasure": "El programa o los datos de herramienta cambiaron antes de la medición.",
+      "stoppedBeforeMeasure": "El programa se detuvo antes de poder medir la herramienta.",
+      "noMeasurement": "LinuxCNC no midió la longitud de la herramienta.",
+      "measuredCancelled": "Herramienta medida. Se canceló la preparación del reinicio.",
+      "measuredCheckUnavailable": "Herramienta medida. La comprobación actualizada del programa no está disponible.",
+      "measuredSourceChanged": "Herramienta medida. El programa de origen para el reinicio cambió.",
+      "measuredNoRestart": "Herramienta medida. No hay un reinicio verificado en el siguiente movimiento."
+    },
     "operatorSettings": {
       "missingFields": "Faltan campos en los ajustes o hay campos desconocidos.",
       "tooLarge": "Los ajustes superan 16 KiB.",
@@ -145,7 +191,12 @@
       "noSettingsStorage": "El almacenamiento de ajustes del operador no forma parte de esta sesión.",
       "tooManySettingsChanges": "Hay demasiados cambios de ajustes en espera.",
       "settingsPageEnded": "Esta página de ajustes ha finalizado.",
-      "tooManyChanges": "Hay demasiados cambios de modelos de herramienta en espera."
+      "tooManyChanges": "Hay demasiados cambios de modelos de herramienta en espera.",
+      "fileNotOpenedAppend": "no se puede abrir el archivo: {error}",
+      "fileNotWritten": "no se puede escribir el archivo: {error}",
+      "fileNotSynchronised": "no se puede sincronizar el archivo: {error}",
+      "fileNotClosed": "no se puede cerrar el archivo: {error}",
+      "appendUnsupported": "no se puede añadir a {path} aquí"
     },
     "offsetHistory": {
       "nameNotString": "un nombre no es una cadena",
@@ -154,8 +205,9 @@
       "counterRange": "un contador está fuera de rango",
       "positionNotThree": "una posición no tiene tres números",
       "timeNotInteger": "una hora no es un entero",
-      "numberNotInteger": "un número no es un entero",
+      "numberNotInteger": "un número no es un entero pequeño",
       "entryIncomplete": "una entrada está incompleta",
+      "changeWrongTarget": "un cambio no pertenece a su destino",
       "cannotRead": "No se puede leer el historial de decalajes guardado ({detail}). El historial empieza vacío.",
       "fileTooLarge": "el archivo es demasiado grande",
       "notVersion1": "no es la versión 1",
@@ -241,6 +293,7 @@
       "cannotReadToolTable": "No se puede leer la tabla de herramientas {file}.",
       "cannotWriteToolTable": "No se puede escribir la tabla de herramientas {file}.",
       "cannotReplaceToolTable": "No se puede sustituir la tabla de herramientas {file}.",
+      "lengthOffsetUnreadable": "No se puede leer la compensación de longitud activa.",
       "toolTableNotLoaded": "Se modificó el archivo de tabla de herramientas {file}, pero la solicitud se canceló antes de indicar a LinuxCNC que lo cargara.",
       "cannotOpenChannels": "No se pueden abrir los canales NML de LinuxCNC desde {file}.",
       "restoreFromTable": "No se pudo restaurar T{tool} desde la tabla de herramientas.",
@@ -408,6 +461,7 @@
       "stateChanged": "El estado de la máquina ha cambiado. Revise una nueva comprobación del programa.",
       "workOriginChanged": "El origen de pieza ha cambiado. Revise una nueva comprobación del programa.",
       "restartContextChanged": "La alimentación de la máquina, el programa o el sistema de coordenadas de pieza han cambiado.",
+      "restartSelectWcs": "Esta línea se ejecuta en {wcs}. Seleccione {wcs} y vuelva a elegir la línea.",
       "remainStopped": "La máquina debe permanecer parada en la posición mostrada en la vista previa.",
       "removeProbe": "Retire el palpador antes de ejecutar un programa desde una línea.",
       "restartSpindleLimit": "La velocidad del husillo para el reinicio supera el límite de la máquina.",
@@ -452,7 +506,9 @@
       "halNotServiced": "El componente HAL de CoffeeCNC no se está atendiendo.",
       "toolChangeGone": "LinuxCNC ya no espera ese cambio de herramienta.",
       "toolInSpindleNumber": "La herramienta {tool} está en el husillo.",
-      "toolNotInTable": "La herramienta {tool} no está en la tabla de herramientas."
+      "toolNotInTable": "La herramienta {tool} no está en la tabla de herramientas.",
+      "restartSynchFailed": "LinuxCNC no guardó sus parámetros para el reinicio.",
+      "restartParametersChanged": "Los parámetros guardados de la máquina cambiaron después de revisar el reinicio. Vuelva a elegir la línea."
     },
     "previewEngine": {
       "cannotRead": "No se puede leer el programa para la vista previa, u ocupa más de {size}.",
@@ -484,7 +540,12 @@
       "lineErrorStop": "Línea {line}: {detail}.",
       "rotary": "La vista previa del programa y el reinicio en la línea no están disponibles en configuraciones con ejes rotativos.",
       "iniUnreadable": "No se puede leer el archivo INI de la máquina para la vista previa.",
-      "remap": "Esta máquina reasigna códigos ([RS274NGC] REMAP): la vista previa no puede seguir un código reasignado y no se calcula.",
+      "stopUnknownSystem": "se mueve en {wcs}, cuyos desplazamientos no están en el archivo de parámetros de la máquina",
+      "stopG30ToolChange": "un cambio de herramienta que va a la posición G30 ([EMCIO] TOOL_CHANGE_AT_G30), que no está en el archivo de parámetros de la máquina",
+      "stopUndefinedParameter": "lee {name}, que el programa no asigna: la vista previa no conoce su valor de un programa o bloque MDI anterior",
+      "stopRemapped": "{code} está reasignado en esta máquina ([RS274NGC] REMAP): la vista previa no sabe lo que hace",
+      "stopSavedPosition": "G{code} va a una posición que no está en el archivo de parámetros de la máquina",
+      "stopTask": "lee el parámetro _task, que vale 1 en la máquina y 0 en la vista previa: el programa puede actuar de forma distinta en cada uno",
       "randomToolChanger": "Esta máquina tiene un cambiador de herramientas aleatorio: no se calcula la vista previa.",
       "oWordCase": "Esta máquina conserva las mayúsculas y minúsculas de los nombres de palabras O ([RS274NGC] NO_DOWNCASE_OWORD): no se calcula la vista previa.",
       "notInstalled": "El programa de vista previa (coffeecnc-preview) no está instalado.",
@@ -492,7 +553,13 @@
       "noDirectory": "No se pudo crear un directorio para los archivos de la vista previa, o su ruta tiene caracteres que el intérprete expandiría.",
       "filesNotWritten": "No se pudieron escribir los archivos de la vista previa.",
       "toolChangeMoves": "El cambio de herramienta configurado mueve la máquina de forma independiente.",
-      "changedDuring": "El programa o uno de sus archivos de subrutinas cambió en el disco durante cada uno de los {runs} cálculos: sin vista previa."
+      "changedDuring": "El programa o uno de sus archivos de subrutinas cambió en el disco durante cada uno de los {runs} cálculos: sin vista previa.",
+      "stopIniHal": "lee un valor de INI o HAL ({names}), que la vista previa no tiene",
+      "stopExists": "pregunta si existe un parámetro global ({name}): en la máquina puede existir de un programa o bloque MDI anterior, lo que la vista previa no sabe",
+      "stopExistsNamed": "pregunta fuera de una subrutina si existe {name}: en la máquina puede existir de un programa o bloque MDI anterior, lo que la vista previa no sabe",
+      "stopComputedParameter": "lee un parámetro cuyo número se calcula (#[...], ##): la vista previa no sabe cuál es ni si el programa lo ha asignado",
+      "stopReturnValue": "lee {name} o {other} antes de que haya retornado una subrutina del programa: la vista previa no conoce su valor de un programa o bloque MDI anterior",
+      "stopDefinitionBlock": "una palabra O en una definición de subrutina pertenece a un bloque fuera de ella: la vista previa no sabe qué líneas se ejecutan"
     },
     "nmlStatus": {
       "pauseFirst": "Ponga en pausa el programa en ejecución antes de hacer jog en Z.",
@@ -532,6 +599,22 @@
     "jogStop": {
       "watchdog": "Jog detenido por el watchdog de HAL: el latido de CoffeeCNC se detuvo durante más tiempo que el límite del watchdog.",
       "probeContact": "Jog detenido: contacto del palpador"
+    },
+    "alarmLog": {
+      "cannotRead": "No se puede leer el registro de alarmas {file}: {detail}",
+      "notRotated": "No se pudo rotar el registro de alarmas: {detail}",
+      "notSaved": "No se pudo guardar el registro de alarmas: {detail}",
+      "entriesLost": "No se pudieron guardar algunas entradas del registro de alarmas.",
+      "keptForRun": "El registro de alarmas en {directory} se guarda solo durante esta ejecución: {detail}",
+      "inUse": "lo usa otro CoffeeCNC.",
+      "notLocked": "no se puede tomar su bloqueo: {detail}."
+    },
+    "halDiagnostics": {
+      "notInstalled": "{name} no está instalado: no está en la ruta de búsqueda ({path}).",
+      "alreadyOpen": "{name} ya está abierto.",
+      "notStarted": "No se pudo iniciar {name}.",
+      "notStartedBecause": "No se pudo iniciar {name}: {error}.",
+      "cannotStart": "Las herramientas HAL no se pueden iniciar aquí."
     }
   }
 }

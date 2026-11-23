@@ -7,6 +7,8 @@ import { emptyToolModelDocument } from '../src/tool-model-settings'
 import { toolModels } from '../src/tool-models'
 
 const native = vi.hoisted((): { receive: (message: FromMachine) => void; sent: ToMachine[] } => ({ receive: () => undefined, sent: [] }))
+// The tool model's WebGL chunk must not load in the background (#279).
+vi.mock('../src/components/ToolModelCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { createPanel } = await import('../src/store')
   const instance = createPanel({ transport: { simulated: false,

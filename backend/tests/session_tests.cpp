@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <expected>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -170,6 +171,11 @@ public:
   }
   auto remove_tool(int number, const Wanted&) -> ActionResult override {
     return record("remove_tool", std::to_string(number));
+  }
+  // Read by a restore of the loaded tool's length; not an action, so not recorded.
+  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+    return length_in_effect;
   }
 
 private:
@@ -634,6 +640,74 @@ void operator_settings_go_to_storage() {
           "Saving preferences issues no controller commands or reads");
 }
 
+class FakeDiagnostics final : public DiagnosticsService {
+public:
+  std::vector<std::pair<std::uint64_t, bool>> watches;
+  std::vector<HalTool> launched;
+  std::vector<std::uint64_t> ended;
+  std::optional<std::string> refusal;
+  void watch(PageToken page, bool on) override { watches.emplace_back(page.value, on); }
+  auto launch(HalTool tool) -> std::optional<std::string> override {
+    launched.push_back(tool);
+    return refusal;
+  }
+  void page_ended(PageToken page) override { ended.push_back(page.value); }
+};
+
+// #251: the diagnostics view's requests go to their service at once, in E-stop with the link
+// down, and never to the controller.
+void diagnostics_go_to_their_service() {
+  FakePort port;
+  port.state = ControllerState{};
+  const FakeFileSystem files;
+  const ProgramStore programs{files, program_directory};
+  FakeDiagnostics diagnostics;
+  Session session{port,    Limits{3000, 1.2, 0.5, 1.2, 24000}, programs, nullptr, nullptr,
+                  nullptr, nullptr,                            nullptr,  &diagnostics};
+  Driver driver{session, port};
+  RequestId id = 0;
+  const auto send = [&](PageToken page, std::string_view body) -> Json {
+    const auto outcome = driver.handle(page, std::format("{{\"id\":{},{}}}", ++id, body), at(0ms));
+    const auto found = results(outcome);
+    return found.size() == 1 ? found.front() : Json();
+  };
+  const auto page = driver.begin_page();
+  require(send(page, R"("type":"watch_diagnostics","on":true)").at("reason") == gate_reason &&
+              diagnostics.watches.empty(),
+          "Before ready the watch is rejected like any other request");
+  static_cast<void>(send(page, R"("type":"ready")"));
+  auto answer = send(page, R"("type":"watch_diagnostics","on":true)");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.watches == std::vector<std::pair<std::uint64_t, bool>>{{page.value, true}},
+          "The watch is accepted at once, in E-stop with the link down");
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "accepted" &&
+              diagnostics.launched == std::vector<HalTool>{HalTool::halscope},
+          "A HAL tool is started by the service");
+  diagnostics.refusal = "halscope is already open.";
+  answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
+  require(answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open.",
+          "The service's refusal is the result");
+  answer = send(page, R"("type":"watch_diagnostics","on":false)");
+  require(answer.at("outcome") == "accepted" && diagnostics.watches.back() ==
+                                                    std::pair<std::uint64_t, bool>{page.value, false},
+          "The watch ends");
+  require(port.calls.empty(), "Nothing reached the controller");
+  driver.end_page(page);
+  require(!diagnostics.ended.empty() && diagnostics.ended.back() == page.value,
+          "The end of the page ends its diagnostics");
+
+  Session without{port, Limits{3000, 1.2, 0.5, 1.2, 24000}, programs};
+  Driver plain{without, port};
+  const auto other = plain.begin_page();
+  static_cast<void>(plain.handle(other, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto refused = results(
+      plain.handle(other, R"({"id":2,"type":"launch_hal_tool","tool":"halshow"})", at(0ms)));
+  require(refused.size() == 1 && refused.front().at("outcome") == "rejected" &&
+              refused.front().at("reason") == "HAL diagnostics are not part of this session.",
+          "Without a service the requests are rejected");
+}
+
 void tool_model_commands_go_to_their_service() {
   FakePort port;
   const FakeFileSystem files;
@@ -1017,7 +1091,8 @@ void directory_listing() {
                                                         {"kind", "file"},
                                                         {"bytes", 9},
                                                         {"modified", 1700000123456}}}},
-                                                     {"truncated", false}},
+                                                     {"truncated", false},
+                                                     {"writable", true}},
           "A null path lists the program directory: " + listed.messages.at(0));
   require(Json::parse(listed.messages.at(1)) ==
               Json{{"type", "result"}, {"id", 2}, {"outcome", "accepted"}, {"reason", ""}},
@@ -1191,6 +1266,11 @@ void composed_mdi() {
   rig.port.script["mdi"] = {{}, {ActionStatus::timed_out, ""}};
   rig.expect(R"("type":"tool_touch_off","value":1)", "timed_out", "LinuxCNC did not answer.");
   rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "Both blocks belong to the one result");
+  // #277: an accepted command has no reason, even when a step of it came back with words.
+  rig.port.script["mdi"] = {{ActionStatus::accepted, "LinuxCNC did not acknowledge the command."},
+                            {}};
+  rig.accepted(R"("type":"tool_touch_off","value":1)");
+  rig.acted({"mdi G10 L10 P12 Z1", "mdi G43"}, "An accepted result carries no step's reason");
 
   rig.expect(R"("type":"touch_off","axis":"x","value":1e300)", "rejected",
              "MDI requires one block of at most 254 bytes.");
@@ -2339,10 +2419,130 @@ void offset_history() {
   rig.expect(std::format(R"("type":"restore_offset","entry":{})", zero.id), "rejected",
              "Wait for the interpreter and motion to become idle.");
   rig.acted({}, "A refused restore sends nothing");
+  rig.port.state.interp = InterpState::idle;
+
+  // The XY rotation from the offset editor: of an inactive system as written, of the active one
+  // as the status shows it; restored with G10 L2 R.
+  rig.accepted(R"("type":"set_work_rotation","wcs":4,"rotation_xy":30)");
+  rig.acted({"mdi G10 L2 P4 R30"}, "The rotation of an inactive system");
+  const auto rotated = newest();
+  require(rotated.source == HistorySource::work_offset_table && rotated.number == 4 &&
+              rotated.changes.size() == 1 && rotated.changes[0].field == HistoryField::rotation_xy &&
+              !rotated.changes[0].before && rotated.changes[0].after == 30,
+          "A rotation of an inactive system is recorded when it is written");
+  rig.clock += 10s;
+  auto turned = machine({10, 10, -21}, end_mill(50, 6));
+  observe(turned);
+  turned.status.offsets.rotation_xy = 15;
+  applies("mdi", turned);
+  rig.accepted(R"("type":"set_work_rotation","wcs":1,"rotation_xy":15)");
+  rig.acted({"mdi G10 L2 P1 R15"}, "The rotation of the active system");
+  const auto active_rotation = newest();
+  require(active_rotation.source == HistorySource::work_offset_table &&
+              active_rotation.number == 1 && active_rotation.changes.size() == 1 &&
+              active_rotation.changes[0].before == 0 && active_rotation.changes[0].after == 15,
+          "A rotation of the active system is recorded from the status");
+  applies("mdi", machine({10, 10, -21}, end_mill(50, 6)));
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", active_rotation.id));
+  rig.acted({"mdi G10 L2 P1 R0"}, "A rotation is restored with G10 L2 R");
+
+  // The G92/G52 clear: one entry of the offset editor, undone with G52.
+  rig.clock += 10s;
+  auto shift = machine({10, 10, -21}, end_mill(50, 6));
+  shift.status.offsets.g92 = {4, 9, 0};
+  observe(shift);
+  auto cleared = shift;
+  cleared.status.offsets.g92 = {0, 0, 0};
+  applies("mdi", cleared);
+  rig.accepted(R"("type":"clear_g92")");
+  rig.acted({"mdi G92.1"}, "G92.1 clears the shift");
+  const auto clear = newest();
+  require(clear.source == HistorySource::work_offset_table && clear.target == HistoryTarget::g92 &&
+              clear.changes.size() == 2 && clear.changes[0].before == 4 &&
+              clear.changes[0].after == 0 && clear.changes[1].before == 9,
+          "A clear of the shift is recorded with what it cleared");
+  applies("mdi", shift);
+  rig.accepted(std::format(R"("type":"restore_offset","entry":{})", clear.id));
+  rig.acted({"mdi G52 X[4+0/[#5210+[1 AND [#5213 EQ 0]"
+             " AND [#5214 EQ 0] AND [#5215 EQ 0] AND [#5216 EQ 0]]]] Y9"},
+            "and undone with G52");
 
   Rig plain;
   plain.expect(R"("type":"restore_offset","entry":1)", "rejected",
                "This CoffeeCNC keeps no offset history.");
+}
+
+// A restored length of the tool in the spindle is applied again in the same request when that
+// tool's length is in effect (#287): G43 H<tool> after the G10 L1, through the same MDI path.
+void tool_length_restore() {
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  OffsetHistoryStore history{files, ""};
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, &history};
+  rig.port.state.mode = TaskMode::mdi;
+  rig.port.state.tool_in_spindle = 3;
+  const auto reading = [](double length) -> PanelReading {
+    PanelReading seen;
+    seen.status.link = Link::live;
+    seen.status.offsets.wcs = 1;
+    seen.tool_table = {1, {{3, 3, length, 6, "End mill"}}};
+    return seen;
+  };
+  const auto observe = [&](PanelReading seen) -> void {
+    const auto now = at(rig.clock);
+    history.observe(seen, now.unix_time, now.monotonic);
+  };
+  observe(reading(48.2));
+  rig.port.during["mdi"] = [&]() -> void { observe(reading(50)); };
+  rig.accepted(R"("type":"mdi","text":"G10 L1 P3 Z50")");
+  const auto entry = history.snapshot()->entries.front();
+  require(entry.target == HistoryTarget::tool && entry.number == 3 &&
+              entry.changes.front().field == HistoryField::length,
+          "The length of the loaded tool is in the history");
+  rig.acted({"mdi G10 L1 P3 Z50"}, "The panel's MDI line");
+  const auto restore = std::format(R"("type":"restore_offset","entry":{})", entry.id);
+  const auto in_effect = [&](double offset_z) -> void {
+    rig.port.length_in_effect = ToolLengthInEffect{{0, 0, offset_z}, 50};
+  };
+
+  in_effect(50);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2", "mdi G43 H3"}, "G43 of the loaded tool is applied again");
+  rig.port.state.program_units = LengthUnit::inch;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z1.8976377952755907", "mdi G43 H3"},
+            "In inches: the length in inches, the same G43 H3");
+  rig.port.state.program_units = LengthUnit::mm;
+
+  in_effect(0);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "No offset in effect: G10 L1 only");
+  in_effect(40);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "The offset of another H stays: G10 L1 only");
+  in_effect(90);
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
+  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
+  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.acted({}, "An unreadable offset in effect sends nothing");
+  rig.port.state.tool_in_spindle = 2;
+  rig.accepted(restore);
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "Another tool in the spindle: G10 L1 only");
+  rig.port.state.tool_in_spindle = 3;
+
+  // A stop request after the G10 L1: G43 is not sent, and the result says so.
+  in_effect(50);
+  rig.port.during["mdi"] = [&]() -> void {
+    static_cast<void>(rig.session.submit(rig.page, R"({"id":900,"type":"abort"})", at(0ms)));
+  };
+  const auto found = results(rig.send(restore));
+  require(found.size() == 2 && found.front().at("outcome") == "failed" &&
+              found.front().at("reason") ==
+                  "The tool length was set, but a stop request cancelled the command before it "
+                  "was applied (G43 was not sent).",
+          "A stop between the blocks: G43 was not sent");
+  rig.acted({"mdi G10 L1 P3 Z48.2", "abort"}, "Only the G10 L1 and the abort are sent");
 }
 
 void exactly_one_result(std::uint32_t seed) {
@@ -2574,6 +2774,86 @@ void editor_saves_over_the_loaded_program() {
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }
 
+void uploads_do_not_replace_the_running_program() {
+  constexpr auto part = "/home/cnc/nc_files/part.ngc";
+  constexpr auto other = "/home/cnc/nc_files/other.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  port.state.program_file = part;
+  FakeFileSystem files;
+  files.file(part, "M2\n");
+  const ProgramStore programs{files, program_directory};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs};
+  const auto clock = [] { return at(0ms); };
+  int published = 0;
+  const auto publish = [&](std::string path) {
+    auto queued = session.publish_program(std::move(path), [&]() -> std::expected<void, std::string> {
+      ++published;
+      return {};
+    });
+    require(session.work(clock).status == WorkStatus::done, "The worker takes up publication");
+    return queued.get();
+  };
+
+  require(!publish(part), "An offline controller cannot verify a replacement");
+  for (const auto interp : {InterpState::reading, InterpState::paused}) {
+    port.state.interp = interp;
+    session.observe(port.state, clock().monotonic);
+    require(!publish(part), "The loaded file is protected during execution and pause");
+  }
+  port.state.interp = InterpState::idle;
+  port.state.requested_tool = 2;
+  session.observe(port.state, clock().monotonic);
+  require(!publish(part) && published == 0, "The loaded file is protected while an M6 waits");
+  require(publish(other).has_value() && port.calls.empty(), "Another file can be replaced without reopening during a run");
+  port.state.requested_tool.reset();
+  session.observe(port.state, clock().monotonic);
+  require(publish(part).has_value() && published == 2 &&
+              port.calls == Calls{std::string("open_program ") + part},
+          "An idle replacement reopens the pathname in LinuxCNC");
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
+  const auto failed = publish(part);
+  require(!failed && published == 3 &&
+              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+          "A failed reopen reports the successful disk publication");
+}
+
+void usb_copy_does_not_hold_the_command_worker() {
+  constexpr auto source = "/media/turo/USB/part.ngc";
+  constexpr auto destination = "/home/cnc/nc_files/part.ngc";
+  FakePort port;
+  port.state = homed_machine();
+  FakeFileSystem files;
+  files.file(source, "M2\n");
+  files.directory(program_directory);
+  const ProgramStore programs{files, "/", program_directory};
+  FakeDisk disk;
+  disk.files[source] = "M2\n";
+  FakeToolModelFiles writes{disk};
+  ProgramWriter writer{programs, writes};
+  const Limits limits{3000, 1.2, 0.5, 1.2, 24000};
+  Session session{port, limits, programs, nullptr, nullptr, nullptr, nullptr, nullptr,
+                  nullptr, true};
+  Driver driver{session, port};
+  const auto page = driver.begin_page();
+  static_cast<void>(driver.handle(page, R"({"id":1,"type":"ready"})", at(0ms)));
+  const auto pending = driver.handle(page,
+      R"({"id":2,"type":"manage_program_file","operation":"copy","path":"/media/turo/USB/part.ngc"})", at(0ms));
+  require(pending.messages.empty() && !disk.files.contains(destination),
+          "The command worker returns while the copy waits for the disk worker");
+  writes.during = [&](std::string_view step) {
+    if (step == "sync") {
+      const auto stopped = results(driver.handle(page, R"({"id":3,"type":"abort"})", at(0ms)));
+      require(stopped.size() == 1 && stopped.front().at("outcome") == "accepted",
+              "Stop can be handled while the copy synchronizes");
+    }
+  };
+  const auto copied = session.copy_work(writer);
+  require(copied && !copied->messages.empty() && disk.files.contains(destination),
+          "The disk worker publishes the copy and returns its result");
+}
+
 } // namespace
 
 // A failing run prints the seed of its random sequence; pass it as the only argument to repeat.
@@ -2583,12 +2863,15 @@ auto main(int argc, char** argv) -> int {
     seed = argc > 1 ? static_cast<std::uint32_t>(std::stoul(argv[1])) : std::random_device{}();
     stale_pages_are_dropped();
     editor_saves_over_the_loaded_program();
+    uploads_do_not_replace_the_running_program();
+    usb_copy_does_not_hold_the_command_worker();
     controller_messages_wait_for_ready();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();
     idle_maintenance_yields_to_an_operator_request();
     tool_model_commands_go_to_their_service();
+    diagnostics_go_to_their_service();
     touch_probe_blocks_spindle_commands_before_dispatch();
     pending_probe_tool_changes();
     operator_settings_go_to_storage();
@@ -2603,6 +2886,7 @@ auto main(int argc, char** argv) -> int {
     program_paths();
     composed_mdi();
     offset_history();
+    tool_length_restore();
     jog_presses_and_refreshes();
     jog_failures();
     late_jog_starts();

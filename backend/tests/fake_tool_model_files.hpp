@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <expected>
+#include <format>
 #include <functional>
 #include <map>
 #include <optional>
@@ -213,12 +214,13 @@ private:
       const auto slash = rest.find('/');
       const auto part = rest.substr(0, slash);
       if (part.empty() || part == "." || part == "..")
-        return root + '/' + relative + " is not a plain path";
+        return std::format("{}/{} is not a plain path", root, relative);
       rest.remove_prefix(slash == std::string_view::npos ? rest.size() : slash + 1);
-      at += '/' + std::string(part);
+      at += '/';
+      at += part;
       if (slash != std::string_view::npos && disk.links.contains(at))
-        return root + '/' + relative + " is reached through a symbolic link or is not beneath " +
-               root;
+        return std::format("{}/{} is reached through a symbolic link or is not beneath {}", root,
+                           relative, root);
     }
     return std::nullopt;
   }

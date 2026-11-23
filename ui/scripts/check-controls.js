@@ -318,9 +318,12 @@ async function main() {
   await server.listen()
   const base = server.resolvedUrls.local[0]
   const profile = `${scratch}profile`
-  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...(process.platform === 'linux' ? ['--no-sandbox'] : []), 'about:blank'], { stdio: 'ignore' })
+  const linux = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []
+  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...linux, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  let chromeLog = ''
+  chrome.stderr.on('data', (chunk) => { chromeLog = (chromeLog + String(chunk)).slice(-4000) })
   let port = null
-  for (let i = 0; i < 100 && port === null; i++) {
+  for (let i = 0; i < 300 && port === null && chrome.exitCode === null; i++) {
     await sleep(100)
     if (existsSync(`${profile}/DevToolsActivePort`)) port = Number((await readFile(`${profile}/DevToolsActivePort`, 'utf8')).split('\n')[0])
   }
@@ -329,7 +332,7 @@ async function main() {
   const cropsDir = option('--crops')
   if (cropsDir) await mkdir(cropsDir, { recursive: true })
   try {
-    if (port === null) throw new Error('Chrome did not start')
+    if (port === null) throw new Error(`Chrome did not start:\n${chromeLog}`)
     const pages = await Promise.all(Array.from({ length: tabs }, () => cdp(port)))
     const replay = option('--replay')
     if (replay) {

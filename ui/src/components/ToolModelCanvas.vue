@@ -106,6 +106,8 @@ onBeforeUnmount(() => {
   toolMesh.dispose()
   reflections.dispose(scene)
   renderer?.dispose(); renderer?.forceContextLoss()
+  // A resize callback already queued finds no renderer and returns (#279).
+  renderer = null
 })
 </script>
 

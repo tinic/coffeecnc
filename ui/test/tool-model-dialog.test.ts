@@ -7,6 +7,8 @@ import type { Tool } from '../src/protocol'
 import { factoryToolDefaults } from '../src/tool-model'
 import { toolModels } from '../src/tool-models'
 
+// The tool model's WebGL chunk must not load in the background (#279).
+vi.mock('../src/components/ToolModelCanvas.vue', () => import('./canvas-stub'))
 vi.mock('../src/machine', async () => {
   const { reactive } = await import('vue')
   return { panel: reactive({ simulated: true, unit: 'mm', toolTable: null, hello: null, toolModels: null }), send: vi.fn(), onResult: (): (() => void) => () => undefined }

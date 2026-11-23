@@ -30,14 +30,29 @@ const keysOf = new Map<string, string[]>()
 for (const [key, text] of plain) keysOf.set(text, [...(keysOf.get(text) ?? []), key])
 
 let wrapper: VueWrapper
+// The simulator ticks for the life of the page. Its ticks must end with this file: one after the
+// jsdom environment is gone re-reads window in step.ts's program watch and throws (#279).
+const intervals: number[] = []
 beforeAll(async () => {
   vi.stubGlobal('ResizeObserver', class { observe(): void { /* Fixed size. */ } disconnect(): void { /* Nothing. */ } })
   Element.prototype.scrollTo = (): void => undefined
+  const setInterval = window.setInterval.bind(window)
+  vi.spyOn(window, 'setInterval').mockImplementation((...args: Parameters<typeof window.setInterval>) => {
+    const id = setInterval(...args)
+    intervals.push(id)
+    return id
+  })
   wrapper = mount(App, { attachTo: document.body })
   start()
   await flushPromises()
 })
-afterAll(async () => { wrapper.unmount(); await setLanguage('en') })
+afterAll(async () => {
+  wrapper.unmount()
+  expect(intervals.length).toBeGreaterThan(0)
+  for (const id of intervals) window.clearInterval(id)
+  vi.restoreAllMocks()
+  await setLanguage('en')
+})
 
 /** Every text the page shows or labels on its own: element texts, text nodes, labels, titles. */
 function shownTexts(): Set<string> {

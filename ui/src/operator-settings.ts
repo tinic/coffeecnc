@@ -2,14 +2,32 @@ import type { LengthUnit, Vec3 } from './protocol'
 import { validMachineId } from './tool-model-settings'
 
 export type ProgramLayout = 'path' | 'text' | 'split'
-export type PanelTheme = 'light' | 'dark'
+export const panelThemes = ['light', 'dark', 'sandstone', 'harbor'] as const
+export type PanelTheme = typeof panelThemes[number]
+
+export const themeLabels: Record<PanelTheme, string> = {
+  light: 'Light', dark: 'Dark', sandstone: 'Sandstone', harbor: 'Harbor',
+}
+
+export function isDarkTheme(theme: PanelTheme): boolean {
+  return theme === 'dark' || theme === 'harbor'
+}
+
+export function alternateTheme(theme: PanelTheme): PanelTheme {
+  switch (theme) {
+    case 'light': return 'dark'
+    case 'dark': return 'light'
+    case 'sandstone': return 'harbor'
+    case 'harbor': return 'sandstone'
+  }
+}
 
 export function decodeProgramLayout(value: unknown): ProgramLayout | null {
   return value === 'path' || value === 'text' || value === 'split' ? value : null
 }
 
 export function decodeTheme(value: unknown): PanelTheme | null {
-  return value === 'light' || value === 'dark' ? value : null
+  return panelThemes.find((theme) => theme === value) ?? null
 }
 
 export interface OperatorPreferences {

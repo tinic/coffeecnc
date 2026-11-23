@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { panel } from '../machine'
+import { theme, themePreview } from '../appearance'
 import { limitMarginMm, safeZBlock } from '../manual-moves'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
-import type { OperatorPreferences } from '../operator-settings'
+import { panelThemes, themeLabels, type OperatorPreferences, type PanelTheme } from '../operator-settings'
 import type { OperatorSettingsController } from '../operator-settings-state'
 import { fromDisplay, toDisplay, velocityUnit, wcsNames } from '../units'
 import { vTooltip } from '../tooltip'
@@ -15,7 +16,17 @@ const props = defineProps<{ settings: OperatorSettingsController }>()
 const emit = defineEmits<{ close: [] }>()
 const templates = ref(false)
 let closed = false
-onBeforeUnmount(() => { closed = true })
+const selectedTheme = ref(theme.value)
+let themePreviewed = false
+function previewTheme(value: PanelTheme): void {
+  selectedTheme.value = value
+  themePreviewed = true
+  themePreview.value = value
+}
+onBeforeUnmount(() => {
+  closed = true
+  themePreview.value = null
+})
 const startupDisabled = computed(() => props.settings.state.saving || props.settings.state.storage === 'session_only')
 const context = props.settings.context()
 const unit = panel.unit
@@ -84,9 +95,12 @@ const storageLabel = computed(() => {
 })
 async function save(): Promise<void> {
   if (blocked.value !== null || invalid.value !== null || rpm.value === null || velocity.value === null || referenceHeight.value === null || safeZ.value === undefined) return
-  const result = await props.settings.save({ ...panel.preferences, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
+  const result = await props.settings.save({ ...panel.preferences,
+    theme: themePreviewed ? selectedTheme.value : panel.preferences.theme, startup_units: startupUnits.value, enabled_wcs: [...enabled.value],
     default_spindle_rpm: rpm.value, default_jog_velocity: velocity.value, tool_reference_height: referenceHeight.value, go_to_safe_z: safeZ.value }, context)
-  if (result.saved && !closed) emit('close')
+  if (!result.saved) return
+  if (themePreviewed) props.settings.chooseTheme(selectedTheme.value)
+  if (!closed) emit('close')
 }
 </script>
 
@@ -95,6 +109,16 @@ async function save(): Promise<void> {
   <ModalDialog v-else title="Settings" size="large" expanded @close="emit('close')">
     <div class="settings-grid">
       <section class="startup">
+        <fieldset class="theme-picker" :disabled="settings.state.saving || settings.state.storage === 'loading'">
+          <legend>Theme</legend>
+          <div class="theme-options">
+            <label v-for="option in panelThemes" :key="option" class="theme-option" :class="{ selected: selectedTheme === option }">
+              <input type="radio" name="panel-theme" :checked="selectedTheme === option" @change="previewTheme(option)" />
+              <span class="theme-sample" :data-theme="option" aria-hidden="true"></span>
+              <span>{{ themeLabels[option] }}</span>
+            </label>
+          </div>
+        </fieldset>
         <h3>At startup</h3>
         <p class="hint">{{ settings.state.storage === 'session_only' ? 'Startup defaults require saved settings.' : 'Applied next time CoffeeCNC opens.' }}</p>
         <fieldset :disabled="startupDisabled">
@@ -151,6 +175,15 @@ async function save(): Promise<void> {
 h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
 .hint { margin: 2px 0 4px; font-size: 12px; line-height: 1.35; color: var(--text-dim); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.theme-picker { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.theme-picker legend { font-size: 18px; font-weight: 600; }
+.theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.theme-option { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--control); }
+.theme-option.selected { border-color: var(--accent); background: var(--accent-soft); }
+.theme-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.theme-sample { flex: none; position: relative; width: 27px; height: 24px; border: 1px solid var(--line-strong); border-radius: 5px; }
+.theme-sample::before { content: ''; position: absolute; inset: 4px 4px 9px; background: var(--panel); border-radius: 2px; }
+.theme-sample::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 3px; background: var(--accent); border-radius: 2px; }
 legend, .speed-label { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
 .units { display: flex; width: 100%; margin-bottom: 12px; }.units .btn { min-height: 44px; flex: 1; white-space: nowrap; }.units .btn:first-child { flex: 1.8; }
 .safe-z { margin-top: 12px; }.safe-z-actions { display: flex; gap: 8px; margin-top: 6px; }.safe-z-actions .btn { min-height: 44px; }

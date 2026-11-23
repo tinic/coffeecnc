@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { Box3, OrthographicCamera, Scene, Vector3, WebGLRenderer } from 'three'
 import { theme } from '../appearance'
+import { isDarkTheme } from '../operator-settings'
 import { syncModelCamera } from '../model-camera'
 import { orbit, type Camera } from '../pathview'
 import { lightPreview, PreviewReflections } from '../preview-lighting'
@@ -53,7 +54,7 @@ function draw(): void {
   }
   camera.zoom = 0.93 / Math.max(x, y, 0.001)
   camera.updateProjectionMatrix()
-  toolMesh.setTheme(theme.value === 'dark')
+  toolMesh.setTheme(isDarkTheme(theme.value))
   const ratio = Math.min(window.devicePixelRatio, 2)
   if (renderer.getPixelRatio() !== ratio || canvas.value.width !== Math.floor(width * ratio)
     || canvas.value.height !== Math.floor(height * ratio)) {

@@ -38,6 +38,20 @@ void documents_and_limits() {
   require(encoded.has_value(), "File encodes");
   const auto decoded = decode_operator_settings_file(encoded.value_or(""));
   require(decoded && decoded->document == value.document, "Numeric preferences round trip exactly");
+  for (const auto& [theme, name] :
+       {std::pair{PanelTheme::sandstone, "sandstone"}, std::pair{PanelTheme::harbor, "harbor"}}) {
+    auto themed = value;
+    themed.document.theme = theme;
+    const auto saved_theme = encode_operator_settings_file(themed);
+    require(saved_theme.has_value(), "The selected palette can be stored");
+    const auto loaded_theme = decode_operator_settings_file(*saved_theme);
+    require(loaded_theme && loaded_theme->document == themed.document,
+            "Restoring a palette retains the whole preferences document");
+    const auto body = Json::parse(*saved_theme).at("document");
+    const auto requested_theme = decode_operator_preferences(body.dump());
+    require(body.at("theme") == name && requested_theme && requested_theme->theme == theme,
+            "The native settings command accepts the palette name");
+  }
   auto legacy = Json::parse(*encoded);
   legacy["document"].erase("tool_reference_height");
   legacy["document"].erase("program_layout");

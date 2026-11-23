@@ -2,7 +2,8 @@
 import { vTooltip } from '../tooltip'
 import { vPopover } from '../popover'
 import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
-import { theme } from '../appearance'
+import { theme, themePreview } from '../appearance'
+import { alternateTheme, isDarkTheme, themeLabels } from '../operator-settings'
 import { machineBlock } from '../machine-block'
 import { dismissNotice, live, onResult, panel, reported, send, toggleTheme } from '../machine'
 import type { CommandBody, Hello, Status } from '../protocol'
@@ -111,15 +112,15 @@ const subtitle = computed(() => {
 <template>
   <header class="em-top">
     <div class="em-brand">
-      <img v-show="theme === 'light'" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
-      <img v-show="theme === 'dark'" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
+      <img v-show="!isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
+      <img v-show="isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
     </div>
     <nav class="em-nav" aria-label="Workspace">
       <button v-for="[tab, label] in tabs" :key="tab" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
-      <button class="theme" type="button" :aria-label="`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`" @click="toggleTheme()">◐</button>
+      <button class="theme" type="button" :disabled="themePreview !== null" :aria-label="`Switch to ${themeLabels[alternateTheme(theme)]} theme`" @click="toggleTheme()">◐</button>
     </div>
   </header>
   <section class="jobbar">

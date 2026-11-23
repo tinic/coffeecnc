@@ -7,6 +7,7 @@ import {
   PlaneGeometry, RingGeometry, Scene, ShadowMaterial, Shape, Vector2, Vector3, WebGLRenderer,
 } from 'three'
 import { theme } from '../appearance'
+import { isDarkTheme } from '../operator-settings'
 import { brushedFinish } from '../brushed-finish'
 import { syncModelCamera } from '../model-camera'
 import { basis, orbit, type Camera } from '../pathview'
@@ -231,7 +232,7 @@ function setView(): void {
 }
 
 function applyTheme(): void {
-  const dark = theme.value === 'dark'
+  const dark = isDarkTheme(theme.value)
   stockMaterial.color.setHex(dark ? 0xaeb8c1 : 0xabb5bc)
   machinedTop.color.copy(stockMaterial.color)
   walls.color.setHex(dark ? 0x919fa9 : 0x929fa7)

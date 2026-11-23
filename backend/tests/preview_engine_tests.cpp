@@ -656,8 +656,48 @@ void parameters_and_saved_positions() {
   o = rig.preview(head + "o100 sub\no100 return [7]\no100 endsub\no100 call\nG1 X#<_value>\nM2\n");
   require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {7, 0, 0}),
           "#<_value> after a return of the program's own: " + text_of(o));
-  o = rig.preview(head + "#<_depth> = 2\no100 if [EXISTS[#<depth>]]\no100 endif\nG1 X2\nM2\n");
-  require(o.state == PreviewState::ready, "EXISTS of a local is the program's own: " + text_of(o));
+  o = rig.preview(head + "o100 sub\no101 if [EXISTS[#<depth>]]\nG1 Y1\no101 endif\no100 endsub\n"
+                         "o100 call\nG1 X2\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {2, 0, 0}),
+          "EXISTS of a local in a subroutine is the call's own: " + text_of(o));
+
+  // Re-review of #276, finding 1: a name without `_` set at call level 0 (in MDI or by an
+  // earlier program) lives on in task with the globals. After MDI `#<depth>=-12` task goes to
+  // Z-12 here; the preview's interpreter would take the branch and show Z-1.
+  o = rig.preview(head + "o100 if [EXISTS[#<depth>] EQ 0]\n#<depth>=-1\no100 endif\n"
+                         "G1 Z#<depth>\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
+              o.error->text.find("asks whether #<depth> exists outside a subroutine") !=
+                  std::string::npos &&
+              o.segments.size() == 1 && o.check && o.check->errors.empty(),
+          "EXISTS of a name outside a subroutine ends the preview at its line: " + text_of(o));
+  stops("#<seen> = EXISTS[#<depth>]", "asks whether #<depth> exists outside a subroutine");
+  o = rig.preview(head + "G1 Y5\nG1 X#<depth>\nG1 X2\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.error->line == 4 &&
+              o.error->text.find("reads #<depth>, which the program does not set") !=
+                  std::string::npos &&
+              o.segments.size() == 2 && o.check && o.check->errors.empty(),
+          "A name read outside a subroutine that the run has not set: a stop, not the "
+          "program's error: " + text_of(o));
+  o = rig.preview(head + "#<depth> = -3\nG1 Z#<depth>\nM2\n");
+  require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {1, 0, -3}),
+          "A name the program sets first, it may read: " + text_of(o));
+  // Both end in the subroutine, after its G1 Y1.
+  o = rig.preview(head + "o100 sub\nG1 Y1\nG1 X#<depth>\no100 endsub\no100 call\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.segments.size() == 2 &&
+              o.segments[1].line == 4 &&
+              o.error->text.find("not defined") != std::string::npos && o.check &&
+              !o.check->errors.empty(),
+          "In a subroutine a name without `_` is the call's own: undefined, it is the "
+          "program's error, as in task: " + text_of(o));
+  // Finding 2: the level of a line that cannot be read is the line's, not 0.
+  o = rig.preview(head + "o100 sub\nG1 Y1\nG1 X[10/#1]\no100 endsub\no100 call [0]\nM2\n");
+  require(o.state == PreviewState::failed && o.error && o.segments.size() == 2 &&
+              o.segments[1].line == 4 &&
+              o.error->text.find("reads #1") == std::string::npos && o.check &&
+              !o.check->errors.empty(),
+          "A subroutine's own #1 is known: dividing by it is the program's error: " +
+              text_of(o));
 
   // Findings 3 and 4: reads before writes, per line, for every numbered parameter.
   o = rig.preview(head + "o1 if [#3000 LT 0]\nG1 Z-10\no1 endif\nG1 X2\nM2\n");
@@ -706,12 +746,6 @@ void parameters_and_saved_positions() {
         "5161\t5.000000\n5162\t6.000000\n5163\t7.000000\n5181\t-1.000000\n5182\t-2.000000\n"
         "5183\t-3.000000\n5220\t1.000000\n5221\t0.000000\n5222\t0.000000\n5223\t0.000000\n"
         "5241\t100.000000\n5242\t0.000000\n5243\t0.000000\n");
-  o = rig.preview(head + "G1 X#<local_never_set>\nM2\n");
-  require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
-              o.error->text.find("not defined") != std::string::npos && o.check &&
-              !o.check->errors.empty(),
-          "A local named parameter lives in its program only: undefined, it is the program's "
-          "error, as in task: " + text_of(o));
   rig.inputs.restart_line = 3;
   o = rig.preview(head + "G1 Y5\nG1 X[10 + #3000]\nM2\n");
   require(!o.restart && o.state == PreviewState::failed && o.error &&

@@ -221,6 +221,10 @@ void blocks_refused_by_their_text() {
                 parameter_use("o1 if [#<_value_returned>]").returned &&
                 !parameter_use("G1 X#<_values>").returned,
             "A computed number and the return value");
+    require(parameter_use("o1 if [EXISTS [#<Depth>] AND EXISTS[#<b>]]").exists == "#<depth>" &&
+                parameter_use("#1 = exists[#<_a>]").exists.empty() &&
+                parameter_use("G1 X#<depth>").exists.empty(),
+            "The first name without `_` that EXISTS asks about");
     require(stored_parameters("5161\t1.5\n  31 2\nx 3\n0 1\n5220\n") ==
                 std::map<int, double>{{31, 2}, {5161, 1.5}},
             "A parameter file as the interpreter reads it");

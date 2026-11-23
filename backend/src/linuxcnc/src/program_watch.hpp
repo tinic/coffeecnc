@@ -66,12 +66,15 @@ namespace coffeecnc {
 //   sets      every `#n` of a `#n=` setting (a block that is not an O word block)
 //   computed  a parameter whose number is not plainly given: `#[...]`, `##n`, `#1.5`
 //   returned  a read of #<_value> or #<_value_returned>, which the last subroutine return set
+//   exists    the first parameter `EXISTS[#<name>]` asks about whose name does not begin with
+//             `_`, as `#<name>`; empty when there is none
 //   control   the line is an O word block; its O word: the name and its word ("if", "sub")
 struct ParameterUse {
   std::vector<int> reads;
   std::vector<int> sets;
   bool computed{};
   bool returned{};
+  std::string exists;
   bool control{};
   std::string name;
   std::string word;

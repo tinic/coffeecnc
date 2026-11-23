@@ -400,6 +400,10 @@ auto parameter_use(std::string_view line) -> ParameterUse {
       const auto end = text.find('>', at);
       const auto name = text.substr(at + 1, end == std::string_view::npos ? text.size() : end - at - 1);
       use.returned = use.returned || name == "_value" || name == "_value_returned";
+      // `#<_...>` in EXISTS is refused_block's.
+      if (use.exists.empty() && i >= 7 && text.substr(i - 7, 7) == "exists[" &&
+          !name.starts_with('_'))
+        use.exists = std::format("#<{}>", name);
       i = end == std::string_view::npos ? text.size() : end;
       continue;
     }

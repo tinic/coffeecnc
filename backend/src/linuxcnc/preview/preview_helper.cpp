@@ -37,7 +37,11 @@
 // And at the first line that reads what task may hold from an earlier program or MDI block:
 // a numbered parameter that neither the parameter file (the machine's, with the live values
 // written over it) nor this run has set, a parameter whose number is computed, and
-// #<_value>/#<_value_returned> before a subroutine has returned. Sets are tracked per call
+// #<_value>/#<_value_returned> before a subroutine has returned. Outside a subroutine also
+// EXISTS of any named parameter and a read of a named one this run has not defined: task
+// keeps the names set at call level 0 (in MDI or by an earlier program) with the globals,
+// in a table it never clears (interp_namedparams.cc:321). In a subroutine a name without `_`
+// is the call's own, and undefined it is the program's error. Sets are tracked per call
 // level as the interpreter keeps them: #1-#30 are the call's own in a subroutine and are
 // restored at its return. The interpreter reads a line's values when it reads the line and
 // sets its `#n=` when it executes it; a line it skips (a branch not taken, a subroutine
@@ -907,18 +911,23 @@ auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCod
   return {};
 }
 
-// The global parameter of the interpreter's "Named parameter #<name> not defined" (LinuxCNC
-// 2.9.4, interp_namedparams.cc:185), which is also its answer for #<_ini[...]> and #<_hal[...]>
-// while INI_VARS and HAL_PIN_VARS are off, as they are here. A global (`_` first) lives on in
-// task from one program to the next; a local one does not, and is the program's own error.
-auto undefined_parameter(std::string_view error) -> std::optional<std::string> {
-  constexpr std::string_view head = "Named parameter #<_";
+// The parameter of the interpreter's "Named parameter #<name> not defined" (LinuxCNC 2.9.4,
+// interp_namedparams.cc:185), which is also its answer for #<_ini[...]> and #<_hal[...]>
+// while INI_VARS and HAL_PIN_VARS are off, as they are here, when task may have it: a global
+// (`_` first) at any call level, and any name read outside a subroutine (`level` 0), which
+// task keeps from MDI and earlier programs with the globals. In a subroutine a name without
+// `_` is the call's own: undefined, it is the program's error, as in task.
+auto undefined_parameter(std::string_view error, int level) -> std::optional<std::string> {
+  constexpr std::string_view head = "Named parameter #<";
   constexpr std::string_view tail = "> not defined";
   const auto start = error.find(head);
   const auto end = error.find(tail);
   if (start == std::string_view::npos || end == std::string_view::npos || end < start)
     return {};
-  return std::string(error.substr(start + head.size() - 3, end - start - head.size() + 4));
+  const auto name = error.substr(start + head.size(), end - start - head.size());
+  if (level > 0 && !name.starts_with('_'))
+    return {};
+  return std::format("#<{}>", name);
 }
 
 // What the preview knows of the numbered parameters (#1-#5601) while the program runs: the
@@ -983,6 +992,11 @@ auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& para
     return "reads #<_value> or #<_value_returned> before a subroutine of the program has "
            "returned: its value from an earlier program or MDI block is not known to the "
            "preview";
+  if (level == 0 && !use.exists.empty())
+    return std::format("asks whether {} exists outside a subroutine: on the machine it can "
+                       "exist from an earlier program or MDI block, which the preview does not "
+                       "know",
+                       use.exists);
   const auto found = std::ranges::find_if(
       use.reads, [&](int number) { return !parameters.known(number, level); });
   if (found != use.reads.end())
@@ -1107,6 +1121,9 @@ auto run(const HelperRequest& request) -> int {
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
   int last_level = 0;
+  // The call level the next line is read at: the interpreter's after it executed the line
+  // before (a call, a return). A read error has left every subroutine already.
+  int line_level = 0;
   bool returned = false; // a subroutine has returned: #<_value> is this run's
   std::optional<Definition> definition;
   while (canon.halt == Halt::none && !ended) {
@@ -1140,9 +1157,8 @@ auto run(const HelperRequest& request) -> int {
         // `#<_hal[...]>` is not defined here: the reason is that it is a HAL value.
         halt(Halt::stop, *reason);
       else if (const auto unknown =
-                   unknown_read(coffeecnc::parameter_use(text.data()), parameters,
-                                interp->call_level(),
-                                returned || interp->call_level() < last_level))
+                   unknown_read(coffeecnc::parameter_use(text.data()), parameters, line_level,
+                                returned || line_level < last_level))
         // Its error may come from a value task has otherwise (`##1`, `[1/#3000]`).
         halt(Halt::stop, *unknown);
       else if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped))
@@ -1151,7 +1167,7 @@ auto run(const HelperRequest& request) -> int {
         halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
                                      "does is not known to the preview",
                                      *code));
-      else if (const auto name = undefined_parameter(why))
+      else if (const auto name = undefined_parameter(why, line_level))
         // Task may have it from an earlier program or MDI block: not the program's error.
         halt(Halt::stop, unknown_reason(*name));
       else
@@ -1251,6 +1267,7 @@ auto run(const HelperRequest& request) -> int {
       canon.restart_inherits_preparation = canon.selected_index >= 0;
     }
     result = interp->execute();
+    line_level = interp->call_level();
     // Executed (not skipped): its last canonical call is UPDATE_TAG, or it ended the program
     // or waits for the machine.
     const bool executed =

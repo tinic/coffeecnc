@@ -24,7 +24,7 @@ public:
   [[nodiscard]] auto port() const -> std::uint16_t;
   // One publisher supplies complete batches. Network clients only load immutable snapshots.
   void publish(std::span<const std::string> messages, std::span<const PanelRecord> records,
-               const ProgramText* program, Link link) noexcept;
+               const Status& status, bool has_program) noexcept;
   // The controller worker also emits notifications. Only message records are mirrored.
   void notifications(std::span<const std::string> messages) noexcept;
 

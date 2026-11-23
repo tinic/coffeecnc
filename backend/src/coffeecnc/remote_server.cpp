@@ -10,6 +10,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <cstddef>
 #include <deque>
 #include <iterator>
@@ -71,6 +72,12 @@ struct Snapshot {
 struct Notification {
   std::uint64_t sequence;
   Record json;
+};
+
+struct DiscoveredHost {
+  std::string query;
+  std::string name;
+  std::vector<address> local_addresses;
 };
 
 auto index(PanelRecord record) -> std::size_t { return static_cast<std::size_t>(record); }
@@ -201,8 +208,8 @@ struct RemoteServer::Impl {
   std::size_t clients{};
   std::size_t viewers{};
   std::vector<std::string> allowed_hosts;
-  std::vector<std::string> discovered_hosts;
-  std::vector<std::string> resolving_hosts;
+  std::vector<DiscoveredHost> discovered_hosts;
+  std::vector<DiscoveredHost> resolving_hosts;
   std::size_t pending_resolutions{};
   net::io_context io{1};
   tcp::resolver resolver{io};
@@ -265,7 +272,27 @@ private:
     // Never resolve the request's Host. Foreign DNS names must not be able to rebind to this origin.
     return (local_ip.is_v4() && *name == local_ip.to_string()) ||
            std::ranges::find(owner_.allowed_hosts, *name) != owner_.allowed_hosts.end() ||
-           std::ranges::find(owner_.discovered_hosts, *name) != owner_.discovered_hosts.end();
+           std::ranges::find(owner_.discovered_hosts, *name, &DiscoveredHost::name) !=
+               owner_.discovered_hosts.end();
+  }
+
+  struct FileTransfer {
+    explicit FileTransfer(http::response<http::file_body> response)
+        : message(std::move(response)), serializer(message) {}
+    http::response<http::file_body> message;
+    http::response_serializer<http::file_body> serializer;
+  };
+
+  void write_file(const std::shared_ptr<FileTransfer>& transfer) {
+    // The stream's timeout is per write. Progress keeps a slow LAN download alive.
+    socket_.expires_after(io_timeout);
+    http::async_write_some(socket_, transfer->serializer,
+      [self = shared_from_this(), transfer](Error error, std::size_t) -> void {
+        if (error || transfer->serializer.is_done())
+          self->close();
+        else
+          self->write_file(transfer);
+      });
   }
 
   template <class Body> void respond(http::response<Body> response, std::string_view host = {}) {
@@ -280,13 +307,17 @@ private:
           "connect-src 'self' ws://" + std::string(host) +
           "; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     }
-    socket_.expires_after(io_timeout);
-    auto outgoing = std::make_shared<http::response<Body>>(std::move(response));
-    http::async_write(socket_, *outgoing,
-      [self = shared_from_this(), outgoing](Error, std::size_t) -> void {
-        static_cast<void>(outgoing);
-        self->close();
-      });
+    if constexpr (std::same_as<Body, http::file_body>) {
+      write_file(std::make_shared<FileTransfer>(std::move(response)));
+    } else {
+      socket_.expires_after(io_timeout);
+      auto outgoing = std::make_shared<http::response<Body>>(std::move(response));
+      http::async_write(socket_, *outgoing,
+        [self = shared_from_this(), outgoing](Error, std::size_t) -> void {
+          static_cast<void>(outgoing);
+          self->close();
+        });
+    }
   }
 
   void refuse(http::status status) {
@@ -580,16 +611,29 @@ void RemoteServer::Impl::resolve_host(const std::string& query, bool search_cand
   // Use only the OS hostname and system DNS configuration as lookup input.
   ++pending_resolutions;
   resolver.async_resolve(query, "0", tcp::resolver::canonical_name,
-    [this, candidate = search_candidate ? query : std::string{}]
+    [this, query, search_candidate]
     (Error error, const tcp::resolver::results_type& entries) -> void {
-      if (!error) {
-        // Validate against the addresses held now, including DHCP changes since startup.
-        const auto local = local_ip_addresses();
-        if (std::ranges::any_of(entries, [&local](const auto& entry) {
-              return std::ranges::find(local, comparable(entry.endpoint().address())) != local.end();
-            }))
-          if (auto name = normalize_remote_host(candidate.empty() ? entries.begin()->host_name() : candidate))
-            resolving_hosts.push_back(std::move(*name));
+      // Validate against the addresses held now, including DHCP changes since startup.
+      const auto local = local_ip_addresses();
+      const auto is_local = [&local](const address& ip) -> bool {
+        return std::ranges::find(local, ip) != local.end();
+      };
+      if (error) {
+        const auto previous = std::ranges::find(discovered_hosts, query, &DiscoveredHost::query);
+        // A failed refresh doesn't supersede a successful lookup while one of its addresses
+        // still belongs to the machine. A new answer or a withdrawn address can revoke it.
+        if (previous != discovered_hosts.end() && std::ranges::any_of(previous->local_addresses, is_local))
+          resolving_hosts.push_back(*previous);
+      } else {
+        std::vector<address> matched;
+        for (const auto& entry : entries) {
+          const auto ip = comparable(entry.endpoint().address());
+          if (is_local(ip))
+            matched.push_back(ip);
+        }
+        if (!matched.empty())
+          if (auto name = normalize_remote_host(search_candidate ? query : entries.begin()->host_name()))
+            resolving_hosts.push_back({query, std::move(*name), std::move(matched)});
       }
       if (--pending_resolutions == 0) {
         discovered_hosts.swap(resolving_hosts);
@@ -621,8 +665,8 @@ RemoteServer::~RemoteServer() = default;
 auto RemoteServer::port() const -> std::uint16_t { return impl_->listening_port; }
 
 void RemoteServer::publish(std::span<const std::string> messages,
-                           std::span<const PanelRecord> records, const ProgramText* program,
-                           Link link) noexcept {
+                           std::span<const PanelRecord> records, const Status& status,
+                           bool has_program) noexcept {
   try {
     if (messages.size() != records.size())
       return;
@@ -643,10 +687,13 @@ void RemoteServer::publish(std::span<const std::string> messages,
         }
       }
     }
-    if (program == nullptr)
+    if (!has_program)
       impl_->staged.records[index(PanelRecord::program)].reset();
-    if (program != nullptr && link == Link::live)
-      impl_->staged.program = ProgramIdentity{program->file, program->revision};
+    // The viewer asks for the path in controller status. ProgramText may use a canonical
+    // spelling of the same file, such as a program directory reached through a symlink.
+    const auto& program_file = status.program.file;
+    if (has_program && status.link == Link::live && program_file)
+      impl_->staged.program = ProgramIdentity{*program_file, status.program.revision};
     else
       impl_->staged.program.reset();
     impl_->latest.store(std::make_shared<const Snapshot>(impl_->staged));

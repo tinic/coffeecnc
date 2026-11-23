@@ -16,6 +16,7 @@
 #include <thread>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <unistd.h>
 
@@ -84,6 +85,29 @@ auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
       return batch;
   }
   throw std::runtime_error("The current status did not arrive.");
+}
+
+void slow_model_download(net::io_context& io, std::uint16_t port, const std::string& host,
+                         const std::string& url, std::size_t size) {
+  tcp::socket socket{io};
+  socket.connect({net::ip::address_v4::loopback(), port});
+  socket.set_option(net::socket_base::receive_buffer_size(128 * 1024));
+  http::request<http::empty_body> request{http::verb::get, url, 11};
+  request.set(http::field::host, host);
+  http::write(socket, request);
+  beast::flat_buffer input;
+  http::response_parser<http::empty_body> header;
+  header.skip(true);
+  http::read_header(socket, input, header);
+  require(header.get().result() == http::status::ok && header.content_length() == size,
+          "The slow STEP viewer receives the full length in the header.");
+  std::vector<char> chunk(2uz * 1024 * 1024);
+  for (std::size_t received = input.size(); received < size;) {
+    // Slow, steady reads take longer than one five-second write deadline.
+    std::this_thread::sleep_for(900ms);
+    const auto count = std::min(chunk.size(), size - received);
+    received += net::read(socket, net::buffer(chunk.data(), count));
+  }
 }
 
 // True if the server ends the connection within `wait`. The viewer reads all updates
@@ -253,15 +277,32 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   if (!delayed.empty()) {
     require(wait_for_host(delayed, http::status::forbidden, 1s),
             "The address-change fixture starts with the name unapproved.");
+    // The shell binds this writable fixture to /etc/hosts inside the isolated namespace.
+    const auto hosts_file = root / "hosts";
+    const std::string workshop_entry = std::string(discovered) + ".";
+    std::string other_entries;
+    {
+      std::ifstream hosts(hosts_file);
+      for (std::string line; std::getline(hosts, line);)
+        if (!line.ends_with(workshop_entry))
+          other_entries += line + '\n';
+    }
+    require(!other_entries.empty(), "Read the DNS fixture.");
+    std::ofstream(hosts_file, std::ios::trunc) << other_entries;
     // The DNS script enables this case only in a private network namespace.
     require(std::system("ip address add 192.0.2.39/32 dev lo") == 0,
             "Assign the delayed IPv4 address.");
     require(wait_for_host(delayed, http::status::ok, 8s),
             "The server allows the new local DNS address without a restart.");
+    require(wait_for_host(discovered, http::status::ok, 1s),
+            "A lookup failure retains a name whose previously verified address is still local.");
+    std::ofstream(hosts_file, std::ios::app) << "192.0.2.36 " << workshop_entry << '\n';
     require(std::system("ip address del 192.0.2.39/32 dev lo") == 0,
             "Withdraw the delayed IPv4 address.");
     require(wait_for_host(delayed, http::status::forbidden, 8s),
             "The server retires the discovery after the local address is gone.");
+    require(wait_for_host(discovered, http::status::forbidden, 1s),
+            "A fresh answer pointing away from the machine retires the old discovery.");
   }
   require(get(io, port, http::verb::get, "/feed", host, "http://external.example").result() ==
               http::status::forbidden,
@@ -278,19 +319,30 @@ void test(const std::filesystem::path& root, std::string_view discovered,
       std::string(R"({"type":"preview","context":7})"),
       std::string(R"({"type":"status","seq":1,"preview_context":7})"),
       std::string(R"({"type":"message","text":"First message"})")};
-  const auto job = assets.parent_path() / "plate.ngc";
+  const auto programs = root / "programs-real";
+  const auto program_alias = root / "programs-link";
+  std::filesystem::create_directories(programs);
+  std::filesystem::remove(program_alias);
+  std::filesystem::create_directory_symlink(programs, program_alias);
+  const auto job = program_alias / "plate.ngc";
   std::ofstream(job) << "M2";
   std::ofstream(job.parent_path() / "plate.stp") << "ISO-10303-21;";
   // The sample test directories contain ordinary absolute paths.
   const auto part_url = "/program-part?revision=7&program=" + job.string();
   auto part = [&]() { return get(io, port, http::verb::get, part_url.c_str(), host); };
   require(part().result() == http::status::not_found, "No model is available before publication.");
-  const coffeecnc::ProgramText program{.revision = 7, .file = job.string(), .lines = {"M2"}, .stamp = ""};
-  server.publish(initial, records, &program, coffeecnc::Link::live);
+  coffeecnc::Status program_status;
+  program_status.link = coffeecnc::Link::live;
+  program_status.program.file = job.string();
+  program_status.program.revision = 7;
+  auto publication = initial;
+  publication[1] = Json{{"type", "program"}, {"file", (programs / "plate.ngc").string()},
+                        {"lines", {"M2"}}}.dump();
+  server.publish(publication, records, program_status, true);
   const auto model = part();
   require(model.result() == http::status::ok && model.body() == "ISO-10303-21;" &&
               model[http::field::content_type] == "model/step",
-          "The viewer downloads the live program's sibling STEP file.");
+          "The viewer downloads the STEP file using the raw controller path through a symlink.");
   const auto model_head = get(io, port, http::verb::head, part_url.c_str(), host);
   require(model_head.result() == http::status::ok && model_head.body().empty() &&
               model_head[http::field::content_length] == "13",
@@ -308,22 +360,27 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   std::filesystem::remove(job.parent_path() / "plate.stp");
   const auto sibling = job.parent_path() / "plate.step";
   std::filesystem::remove(sibling);
-  std::filesystem::create_symlink(job.parent_path() / "remote-server-private.txt", sibling);
+  std::filesystem::create_symlink(root / "remote-server-private.txt", sibling);
   require(part().result() == http::status::not_found, "The LAN route skips linked STEP files.");
   std::filesystem::remove(sibling);
   std::ofstream(sibling) << 'x';
   std::filesystem::resize_file(sibling, 25uz * 1024 * 1024 + 1);
   require(part().result() == http::status::payload_too_large, "The LAN route caps model size.");
+  constexpr auto slow_size = 20uz * 1024 * 1024;
+  std::filesystem::resize_file(sibling, slow_size);
+  slow_model_download(io, port, host, part_url, slow_size);
   std::ofstream(sibling, std::ios::trunc) << "ISO-10303-21;";
-  server.publish({}, {}, &program, coffeecnc::Link::stale);
+  program_status.link = coffeecnc::Link::stale;
+  server.publish({}, {}, program_status, true);
   require(part().result() == http::status::not_found, "Stale controller status withdraws the model.");
-  server.publish({}, {}, &program, coffeecnc::Link::live);
+  program_status.link = coffeecnc::Link::live;
+  server.publish({}, {}, program_status, true);
   const std::array runtime{
       std::string(R"({"type":"result","text":"not a notification"})"),
       std::string(R"({"type":"message","text":"Controller message"})")};
   server.notifications(runtime);
   Viewer first{io}, second{io};
-  connect(first, port, discovered.empty() ? alias : std::string(discovered) + suffix);
+  connect(first, port, alias);
   connect(second, port, host);
   const auto snapshot = read(first);
   require(snapshot == read(second) && snapshot.size() == 6 &&
@@ -355,7 +412,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
       std::string(R"({"type":"status","seq":2,"preview_context":8})")};
   constexpr std::array update{PanelRecord::preview, PanelRecord::status};
   const auto before = std::chrono::steady_clock::now();
-  server.publish(large, update, nullptr, coffeecnc::Link::live);
+  server.publish(large, update, program_status, false);
   require(part().result() == http::status::not_found, "Closing the program withdraws its model.");
   const auto latest = wait_for(second, "seq", 2);
   require(std::chrono::steady_clock::now() - before < 4s && latest.at(0).at("context") == 8,

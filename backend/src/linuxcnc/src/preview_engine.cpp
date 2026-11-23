@@ -737,7 +737,7 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
                        output.defect)};
   else if (output.end == HelperEnd::ok && well) {
     outcome.state = PreviewState::ready;
-    outcome.restart = std::move(output.restart);
+    outcome.restart = output.restart;
     outcome.restart_blocked = std::move(output.restart_blocked);
   }
   else if (output.end == HelperEnd::error && output.problem)

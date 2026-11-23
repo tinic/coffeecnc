@@ -136,7 +136,7 @@ void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
       refuse(request, not_found, "No model beside the program.");
     else {
       respond(request, ok, "application/octet-stream", G_INPUT_STREAM(stream),
-              static_cast<gint64>(g_file_info_get_size(info)));
+              g_file_info_get_size(info));
       g_object_unref(stream);
     }
     if (info != nullptr)
@@ -157,7 +157,7 @@ void on_scheme(WebKitURISchemeRequest* request, gpointer data) {
     refuse(request, not_found, "Not a file of the panel.");
   } else {
     respond(request, ok, asset->content_type, G_INPUT_STREAM(stream),
-            static_cast<gint64>(g_file_info_get_size(info)));
+            g_file_info_get_size(info));
     g_object_unref(stream);
   }
   if (info != nullptr)
@@ -313,8 +313,9 @@ void PanelWindow::Impl::receive(std::string_view raw) {
   const auto separator = body.find(':');
   std::int64_t milliseconds = 0;
   if (separator != std::string_view::npos) {
-    const auto* end = body.data() + separator;
-    const auto stamp = std::from_chars(body.data(), end, milliseconds);
+    const auto* begin = body.data();
+    const auto* end = begin + separator;
+    const auto stamp = std::from_chars(begin, end, milliseconds);
     if (stamp.ec == std::errc{} && stamp.ptr == end && milliseconds >= 0) {
       const auto frame = std::chrono::milliseconds{milliseconds};
       const auto text = body.substr(separator + 1);

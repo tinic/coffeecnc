@@ -220,7 +220,7 @@ private:
 // It never opens a second lock and never changes the tool-model document.
 class OperatorSettingsArchive {
 public:
-  OperatorSettingsArchive(ToolModelFiles& files, Limits limits);
+  OperatorSettingsArchive(ToolModelFiles& files, const Limits& limits);
   void open(ToolModelLocation location);
   [[nodiscard]] auto apply(const SetOperatorSettings& command) -> ToolModelReply;
   [[nodiscard]] auto settings() const -> const OperatorSettings& { return settings_; }
@@ -281,7 +281,7 @@ public:
   [[nodiscard]] auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<std::string> override;
   [[nodiscard]] auto submit_operator_settings(PageToken page, RequestId id,
-                                              SetOperatorSettings command)
+                                              SetOperatorSettings&& command)
       -> std::optional<std::string> override;
   void page_ended(PageToken page) override;
   [[nodiscard]] auto touch_probe_loaded(int tool_number) -> std::optional<bool> override;

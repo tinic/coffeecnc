@@ -293,14 +293,15 @@ void archive_and_restart() {
   owner.open();
   OperatorSettingsArchive archive{files, limits};
   archive.open(owner.shared_location());
-  require(archive.settings().revision == 0 &&
-              archive.settings().document->default_jog_velocity == 600,
+  const auto defaults = archive.settings();
+  require(defaults.revision == 0 && defaults.document && defaults.document->default_jog_velocity == 600,
           "Missing file gives factory defaults without writing a file");
   require(!disk.files.contains(file), "No file until explicit save");
   require(archive.apply(command()).outcome == CommandOutcome::accepted,
           "Save accepted after durable replacement");
-  require(archive.settings().revision == 1 &&
-              archive.settings().document->enabled_wcs == std::vector<int>{1, 9},
+  const auto saved_settings = archive.settings();
+  require(saved_settings.revision == 1 && saved_settings.document &&
+              saved_settings.document->enabled_wcs == std::vector<int>{1, 9},
           "New revision and sorted shortcuts");
   require(disk.files.at(location.directory + "/tool-models.json") == "corrupt models",
           "Operator save leaves a corrupt tool-model file alone");
@@ -339,7 +340,7 @@ void failures() {
     archive.open(owner.shared_location());
     require(archive.apply(command()).outcome == CommandOutcome::accepted, "Initial file saved");
     const auto saved = disk.files.at(file);
-    files.failures[step] = 1;
+    files.failures.emplace(step, 1);
     auto changed = command(1);
     changed.document.default_spindle_rpm = 2000;
     const auto reply = archive.apply(changed);
@@ -459,9 +460,10 @@ void host_file_restart() {
     owner.open();
     OperatorSettingsArchive settings{files, limits};
     settings.open(owner.shared_location());
-    require(settings.settings().revision == 1 &&
-                settings.settings().document->startup_units == StartupUnits::inch &&
-                settings.settings().document->default_jog_velocity == 88.9,
+    const auto restored = settings.settings();
+    require(restored.revision == 1 && restored.document &&
+                restored.document->startup_units == StartupUnits::inch &&
+                restored.document->default_jog_velocity == 88.9,
             "A fresh file handle and archive restore saved preferences");
     owner.close();
   }
@@ -494,7 +496,8 @@ void separate_language_file() {
   owner.open();
   OperatorSettingsArchive archive{files, limits};
   archive.open(owner.shared_location());
-  require(archive.settings().document->language == PanelLanguage::en, "English by default");
+  const auto& defaults = archive.settings().document;
+  require(defaults && defaults->language == PanelLanguage::en, "English by default");
   std::uint64_t revision = 0;
   for (const auto& [language, name] : languages) {
     auto chosen = command(revision);
@@ -505,8 +508,9 @@ void separate_language_file() {
                                  "The previous version reads the settings saved with " + name);
     OperatorSettingsArchive restarted{files, limits};
     restarted.open(owner.shared_location());
-    require(restarted.settings() == archive.settings() &&
-                restarted.settings().document->language == language,
+    const auto& restored = restarted.settings();
+    require(restored == archive.settings() && restored.document &&
+                restored.document->language == language,
             "A restart restores the language " + name);
   }
   const auto chosen = disk.files.at(language_path);
@@ -530,17 +534,19 @@ void separate_language_file() {
   disk.files[file] = older.dump();
   OperatorSettingsArchive upgraded{files, limits};
   upgraded.open(owner.shared_location());
-  require(upgraded.settings().document->theme == PanelTheme::harbor &&
-              upgraded.settings().document->language == PanelLanguage::ja,
+  const auto& upgraded_document = upgraded.settings().document;
+  require(upgraded_document && upgraded_document->theme == PanelTheme::harbor &&
+              upgraded_document->language == PanelLanguage::ja,
           "After a downgrade and upgrade, the settings and the language both remain");
   for (const auto& damaged :
        {std::string("corrupt"), std::string(R"({"machine_id":"OtherMill","language":"de"})")}) {
     disk.files[language_path] = damaged;
     OperatorSettingsArchive restarted{files, limits};
     restarted.open(owner.shared_location());
-    require(restarted.settings().availability == ToolModelAvailability::available &&
-                restarted.settings().document->language == PanelLanguage::en &&
-                restarted.settings().document->theme == PanelTheme::harbor,
+    const auto& restored = restarted.settings();
+    require(restored.availability == ToolModelAvailability::available && restored.document &&
+                restored.document->language == PanelLanguage::en &&
+                restored.document->theme == PanelTheme::harbor,
             "A damaged language file gives English and keeps the other settings");
   }
   // A failed language write after the settings file was replaced: uncertain, read back.
@@ -551,9 +557,10 @@ void separate_language_file() {
   auto german = command(failing.settings().revision);
   german.document.language = PanelLanguage::de;
   const auto reply = failing.apply(german);
+  const auto& failed_document = failing.settings().document;
   require(reply.outcome == CommandOutcome::failed && reply.snapshot &&
               reply.reason.find("uncertain") != std::string::npos &&
-              failing.settings().document->language == PanelLanguage::ja &&
+              failed_document && failed_document->language == PanelLanguage::ja &&
               disk.files.at(language_path) == chosen,
           "A failed language write reports uncertainty and shows the language on disk");
 }

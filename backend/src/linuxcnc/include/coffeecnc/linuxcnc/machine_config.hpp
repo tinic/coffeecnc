@@ -42,11 +42,7 @@ struct MachineConfig {
   std::string directory; // of the INI file; relative INI paths are relative to it
   std::string machine_name;
   std::string nml_file;
-  // [TRAJ] LINEAR_UNITS: the unit of every length in EMC_STAT and in jog commands.
-  LengthUnit machine_units;
   double millimetres_per_unit;
-  // The only axes accepted: X, Y, Z, in the order of every per-axis array.
-  std::array<Axis, 3> axes;
   // The joints of X, Y and Z, from [TRAJ] COORDINATES as trivkins assigns them: one each on a
   // mill (X Y Z: 0, 1, 2), two on a gantry axis (X Y Y Z: X 0, Y 1 and 2, Z 3).
   std::array<std::vector<int>, 3> axis_joints{{{0}, {1}, {2}}};
@@ -63,6 +59,37 @@ struct MachineConfig {
   // MAX_FORWARD_VELOCITY, else [DISPLAY] MAX_SPINDLE_0_SPEED.
   // Homing required unless [TRAJ] NO_FORCE_HOMING is above zero, as LinuxCNC's task reads it.
   Limits limits;
+  std::string tool_table; // [EMCIO] TOOL_TABLE, absolute; empty when not configured
+  // [RS274NGC] PARAMETER_FILE, absolute; empty when not configured. The interpreter keeps the
+  // work coordinate systems in it.
+  std::string parameter_file;
+  std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
+  std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
+  // Program browser shortcuts; filled by the application from PROGRAM_PREFIX and the session.
+  std::vector<ProgramPlace> program_places{};
+  // Explicit [COFFEECNC] MACHINE_ID and DATA_DIRECTORY are passed as written. A missing ID
+  // defaults to a filesystem-safe form of [EMC] MACHINE. They say where the data is saved (app layer:
+  // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.
+  std::optional<std::string> machine_id;
+  std::optional<std::string> data_directory;
+  std::optional<FixedSetterLimits> fixed_setter{};
+  std::optional<PausedZLimits> paused_z{};
+  MotionTolerances motion_tolerances{};
+  // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
+  std::vector<Macro> macros{};
+  // Resolved and prepared by the application before connecting to LinuxCNC.
+  std::string runtime_directory{};
+  std::vector<std::string> remote_hosts{};
+
+  // [COFFEECNC] TOUCH_PROBE_TOOL: the tool number HAL routes to the spindle touch probe. It is a
+  // touch probe whatever its saved tool model says (spindle lockout, default name).
+  std::optional<int> touch_probe_tool{};
+  // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
+  std::uint16_t remote_port{};
+  // [TRAJ] LINEAR_UNITS: the unit of every length in EMC_STAT and in jog commands.
+  LengthUnit machine_units;
+  // The only axes accepted: X, Y, Z, in the order of every per-axis array.
+  std::array<Axis, 3> axes;
   // Every joint has a [JOINT_n] HOME_SEQUENCE. LinuxCNC's "home all" homes only joints that have
   // one and reports nothing about the others, so without it axes are homed one by one.
   bool home_all_configured;
@@ -71,40 +98,14 @@ struct MachineConfig {
   // all on a request for one, each to its own switch (which squares a gantry), and ends them
   // together. Homing one joint of the axis alone would rack it.
   std::array<bool, 3> home_axis_configured{true, true, true};
+  // [COFFEECNC] MANUAL_TOOLCHANGE opts into connecting otherwise unlinked changer pins.
+  bool manual_tool_change{};
+  bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
   // [COFFEECNC] SPINDLE_RPM_SIGNAL, SPINDLE_AT_SPEED_SIGNAL, PROBE_SIGNAL: `yes` where the
   // machine's HAL files connect that pin of the coffeecnc component. Absent means not connected.
   HalSignals signals;
-  std::string tool_table; // [EMCIO] TOOL_TABLE, absolute; empty when not configured
-  // [RS274NGC] PARAMETER_FILE, absolute; empty when not configured. The interpreter keeps the
-  // work coordinate systems in it.
-  std::string parameter_file;
-  std::string postgui_halfile; // [HAL] POSTGUI_HALFILE, absolute; empty when not configured
-  // [COFFEECNC] MANUAL_TOOLCHANGE opts into connecting otherwise unlinked changer pins.
-  bool manual_tool_change{};
-  std::string program_prefix;  // [DISPLAY] PROGRAM_PREFIX, absolute; empty when not configured
-  // Program browser shortcuts; filled by the application from PROGRAM_PREFIX and the session.
-  std::vector<ProgramPlace> program_places{};
-  // Explicit [COFFEECNC] MACHINE_ID and DATA_DIRECTORY are passed as written. A missing ID
-  // defaults to a filesystem-safe form of [EMC] MACHINE. They say where the data is saved (app layer:
-  // resolve_tool_model_location). `hello` carries the ID only when valid_machine_id accepts it.
-  std::optional<std::string> machine_id;
   // Found in HAL once the post-GUI file is loaded; not read from the INI.
   std::optional<CoolantOutputs> coolant;
-  std::optional<std::string> data_directory;
-  std::optional<FixedSetterLimits> fixed_setter{};
-  // [COFFEECNC] TOUCH_PROBE_TOOL: the tool number HAL routes to the spindle touch probe. It is a
-  // touch probe whatever its saved tool model says (spindle lockout, default name).
-  std::optional<int> touch_probe_tool{};
-  bool remember_spindle_tool{}; // A nonrandom changer with a local tool table.
-  std::optional<PausedZLimits> paused_z{};
-  MotionTolerances motion_tolerances{};
-  // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
-  std::vector<Macro> macros{};
-  // Resolved and prepared by the application before connecting to LinuxCNC.
-  std::string runtime_directory{};
-  // [COFFEECNC] REMOTE_PORT, absent or zero disables the LAN viewer.
-  std::uint16_t remote_port{};
-  std::vector<std::string> remote_hosts{};
   [[nodiscard]] auto touched_off_file() const -> std::string;
 };
 

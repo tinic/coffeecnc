@@ -184,8 +184,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.task_failed = task.execState == EMC_TASK_EXEC_ERROR || s.status == RCS_ERROR;
   out.teleop = motion.traj.mode == EMC_TRAJ_MODE_TELEOP;
   out.commanded_position = xyz(motion.traj.position);
-  for (auto& coordinate : out.commanded_position)
-    coordinate *= mm;
+  std::ranges::transform(out.commanded_position, out.commanded_position.begin(),
+                         [mm](double coordinate) { return coordinate * mm; });
   out.wcs = task.g5x_index;
   out.rotation_xy = task.rotation_xy;
   out.velocity = motion.traj.current_vel * mm * seconds_per_minute;

@@ -40,6 +40,7 @@
 #include "../src/program_watch.hpp"
 #include <coffeecnc/core/text_file.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <climits>
@@ -49,6 +50,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -75,8 +77,8 @@ using coffeecnc::RestartPoint;
 using coffeecnc::Vec3;
 
 // Defined below for the interpreter; LinuxCNC's tooldata.hh declares it where it is installed.
-struct CANON_TOOL_TABLE tooldata_entry_init();
-int tooldata_find_index_for_tool(int number);
+auto tooldata_entry_init() -> CANON_TOOL_TABLE;
+auto tooldata_find_index_for_tool(int number) -> int;
 
 namespace {
 
@@ -84,53 +86,53 @@ enum class Halt : std::uint8_t { none, error, stop, cut };
 
 struct Canon {
   HelperRequest request;
-  CANON_UNITS length_units{CANON_UNITS_MM};
-  CANON_PLANE plane{CANON_PLANE_XY};
   Vec3 g5x{};
   Vec3 g92{};
   Vec3 tool_offset{};
   double rotation{}; // degrees
-  int g5x_index{1};
   Vec3 end{}; // the controlled point, machine coordinates, mm
-  int tool_in_spindle{};
-  int selected_index{-1};
   double feed{}; // mm/min
-  int feed_mode{}; // 0 per minute, 1 inverse time, 2 per revolution
   double spindle_rpm{};
-  CANON_DIRECTION spindle{CANON_STOPPED};
-  bool flood{};
-  bool mist{};
-  bool surface_speed{};
-  CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
-  int last_index{};
+  std::string elsewhere; // "name.ngc line 12: ", empty in the program itself
+  double open_rate{}; // mm/min of the run being collected; 0 for rapids and unknown feeds
+  std::vector<Vec3> points;
+  std::size_t written{};
+  std::optional<double> highest_tip_z;
+  coffeecnc::HelperOutput::ProgramFacts check;
 
+  CANON_UNITS length_units{CANON_UNITS_MM};
+  CANON_PLANE plane{CANON_PLANE_XY};
+  int g5x_index{1};
+  int tool_in_spindle{};
+  int selected_index{-1};
+  int feed_mode{}; // 0 per minute, 1 inverse time, 2 per revolution
+  CANON_DIRECTION spindle{CANON_STOPPED};
+  CANON_MOTION_MODE path_control{CANON_CONTINUOUS};
+  int last_index{};
   // The line of the program (the file the request names) being executed: the line the
   // interpreter is at while it reads that file, and while it is in a subroutine file the line
   // of the program that called out of it. `elsewhere` then says where it really is.
   int line{};
-  std::string elsewhere; // "name.ngc line 12: ", empty in the program itself
+  int open_line{};
+  int open_tool{};
+
+  bool flood{};
+  bool mist{};
+  bool surface_speed{};
   // Whether motion is written (not while the start state is being put in place).
   bool recording{};
   // The run of motion being collected.
   bool open{};
-  int open_line{};
   bool open_feed{};
-  double open_rate{}; // mm/min of the run being collected; 0 for rapids and unknown feeds
-  int open_tool{};
-  std::vector<Vec3> points;
-  std::size_t written{};
-  std::optional<double> highest_tip_z;
   bool moved_on_restart_line{};
   bool subroutine{};
   bool changed_tool_table{};
   bool used_output{};
   bool restart_inherits_preparation{};
   bool restart_needs_preparation{};
-  coffeecnc::HelperOutput::ProgramFacts check;
-
   Halt halt{Halt::none};
 };
 
@@ -160,9 +162,7 @@ void halt(Halt how, const std::string& text) {
   flush_run();
   canon.halt = how;
   std::string clean = text;
-  for (auto& c : clean)
-    if (c == '\n' || c == '\r')
-      c = ' ';
+  std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r'; }, ' ');
   put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
                   canon.line, canon.elsewhere, clean));
 }
@@ -246,8 +246,8 @@ void record_move(bool feed, const Vec3& from, const Vec3& to) {
   frame.available = true;
   for (const auto& point : {from, to}) {
     auto work = to_program(point);
-    for (auto& coordinate : work)
-      coordinate *= program_unit();
+    std::ranges::transform(work, work.begin(),
+                           [unit = program_unit()](double coordinate) { return coordinate * unit; });
     expand(frame.bounds, work);
   }
   if (feed) {
@@ -369,19 +369,19 @@ PythonModule builtin_modules[1] = {{nullptr, nullptr}}; // NOLINT: no modules fo
 USER_DEFINED_FUNCTION_TYPE USER_DEFINED_FUNCTION[USER_DEFINED_FUNCTION_NUM]; // NOLINT
 
 // The interpreter's view of the tool table: the helper's own.
-struct CANON_TOOL_TABLE tooldata_entry_init() {
+auto tooldata_entry_init() -> CANON_TOOL_TABLE {
   CANON_TOOL_TABLE entry{};
   entry.toolno = -1;
   entry.pocketno = -1;
   return entry;
 }
-toolidx_t tooldata_get(CANON_TOOL_TABLE* entry, int index) {
+auto tooldata_get(CANON_TOOL_TABLE* entry, int index) -> toolidx_t {
   if (entry == nullptr || !valid_index(index))
     return IDX_FAIL;
   *entry = canon.tools.at(static_cast<std::size_t>(index));
   return IDX_OK;
 }
-int tooldata_find_index_for_tool(int number) { return find_index(number); }
+auto tooldata_find_index_for_tool(int number) -> int { return find_index(number); }
 
 // ---- canonical functions: motion --------------------------------------------------------------
 
@@ -469,6 +469,8 @@ void RIGID_TAP(int, double x, double y, double z, double) {
     move(true, from);
 }
 
+// The interpreter calls the signature from canon.hh, including the by-value vector.
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
 void NURBS_FEED(int, std::vector<CONTROL_POINT>, unsigned int) {
   halt(Halt::stop, "a NURBS move (G5.2, G5.3): not computed by the preview");
 }
@@ -478,15 +480,15 @@ void STRAIGHT_PROBE(int, double, double, double, double, double, double, double,
   halt(Halt::stop, "a probe move (G38): where it ends depends on the machine");
 }
 
-int WAIT(int, int, int, double) {
+auto WAIT(int, int, int, double) -> int {
   halt(Halt::stop, "M66 waits for an input of the machine");
   return 0;
 }
-int GET_EXTERNAL_DIGITAL_INPUT(int, int def) {
+auto GET_EXTERNAL_DIGITAL_INPUT(int, int def) -> int {
   halt(Halt::stop, "reads an input of the machine (M66)");
   return def;
 }
-double GET_EXTERNAL_ANALOG_INPUT(int, double def) {
+auto GET_EXTERNAL_ANALOG_INPUT(int, double def) -> double {
   halt(Halt::stop, "reads an input of the machine (M66)");
   return def;
 }
@@ -562,71 +564,71 @@ void SET_TOOL_TABLE_ENTRY(int index, int number, EmcPose given, double diameter,
 }
 void RELOAD_TOOLDATA() {}
 void START_CHANGE() {}
-CANON_TOOL_TABLE GET_EXTERNAL_TOOL_TABLE(int index) {
+auto GET_EXTERNAL_TOOL_TABLE(int index) -> CANON_TOOL_TABLE {
   return valid_index(index) ? canon.tools.at(static_cast<std::size_t>(index))
                             : tooldata_entry_init();
 }
-int GET_EXTERNAL_TOOL_SLOT() { return find_index(canon.tool_in_spindle); }
-int GET_EXTERNAL_SELECTED_TOOL_SLOT() { return canon.selected_index; }
-int GET_EXTERNAL_TC_FAULT() { return 0; }
-int GET_EXTERNAL_TC_REASON() { return 0; }
+auto GET_EXTERNAL_TOOL_SLOT() -> int { return find_index(canon.tool_in_spindle); }
+auto GET_EXTERNAL_SELECTED_TOOL_SLOT() -> int { return canon.selected_index; }
+auto GET_EXTERNAL_TC_FAULT() -> int { return 0; }
+auto GET_EXTERNAL_TC_REASON() -> int { return 0; }
 
 // ---- canonical functions: what the interpreter asks ------------------------------------------
 
-double GET_EXTERNAL_POSITION_X() { return to_program(canon.end)[0]; }
-double GET_EXTERNAL_POSITION_Y() { return to_program(canon.end)[1]; }
-double GET_EXTERNAL_POSITION_Z() { return to_program(canon.end)[2]; }
-double GET_EXTERNAL_POSITION_A() { return 0; }
-double GET_EXTERNAL_POSITION_B() { return 0; }
-double GET_EXTERNAL_POSITION_C() { return 0; }
-double GET_EXTERNAL_POSITION_U() { return 0; }
-double GET_EXTERNAL_POSITION_V() { return 0; }
-double GET_EXTERNAL_POSITION_W() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_XOFFSET() { return canon.tool_offset[0] / program_unit(); }
-double GET_EXTERNAL_TOOL_LENGTH_YOFFSET() { return canon.tool_offset[1] / program_unit(); }
-double GET_EXTERNAL_TOOL_LENGTH_ZOFFSET() { return canon.tool_offset[2] / program_unit(); }
-double GET_EXTERNAL_TOOL_LENGTH_AOFFSET() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_BOFFSET() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_COFFSET() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_UOFFSET() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_VOFFSET() { return 0; }
-double GET_EXTERNAL_TOOL_LENGTH_WOFFSET() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_X() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_Y() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_Z() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_A() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_B() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_C() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_U() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_V() { return 0; }
-double GET_EXTERNAL_PROBE_POSITION_W() { return 0; }
-double GET_EXTERNAL_PROBE_VALUE() { return 0; }
-int GET_EXTERNAL_PROBE_TRIPPED_VALUE() { return 0; }
-double GET_EXTERNAL_LENGTH_UNITS() { return canon.request.units_per_mm; }
-double GET_EXTERNAL_ANGLE_UNITS() { return 1.0; }
-CANON_UNITS GET_EXTERNAL_LENGTH_UNIT_TYPE() { return canon.length_units; }
-CANON_PLANE GET_EXTERNAL_PLANE() { return canon.plane; }
-double GET_EXTERNAL_FEED_RATE() { return canon.feed / program_unit(); }
-double GET_EXTERNAL_TRAVERSE_RATE() { return 0; }
-double GET_EXTERNAL_SPEED(int) { return canon.spindle_rpm; }
-CANON_DIRECTION GET_EXTERNAL_SPINDLE(int) { return canon.spindle; }
-int GET_EXTERNAL_FLOOD() { return canon.flood; }
-int GET_EXTERNAL_MIST() { return canon.mist; }
-CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return canon.path_control; }
-double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return canon.path_tolerance / program_unit(); }
-double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() {
+auto GET_EXTERNAL_POSITION_X() -> double { return to_program(canon.end)[0]; }
+auto GET_EXTERNAL_POSITION_Y() -> double { return to_program(canon.end)[1]; }
+auto GET_EXTERNAL_POSITION_Z() -> double { return to_program(canon.end)[2]; }
+auto GET_EXTERNAL_POSITION_A() -> double { return 0; }
+auto GET_EXTERNAL_POSITION_B() -> double { return 0; }
+auto GET_EXTERNAL_POSITION_C() -> double { return 0; }
+auto GET_EXTERNAL_POSITION_U() -> double { return 0; }
+auto GET_EXTERNAL_POSITION_V() -> double { return 0; }
+auto GET_EXTERNAL_POSITION_W() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_XOFFSET() -> double { return canon.tool_offset[0] / program_unit(); }
+auto GET_EXTERNAL_TOOL_LENGTH_YOFFSET() -> double { return canon.tool_offset[1] / program_unit(); }
+auto GET_EXTERNAL_TOOL_LENGTH_ZOFFSET() -> double { return canon.tool_offset[2] / program_unit(); }
+auto GET_EXTERNAL_TOOL_LENGTH_AOFFSET() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_BOFFSET() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_COFFSET() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_UOFFSET() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_VOFFSET() -> double { return 0; }
+auto GET_EXTERNAL_TOOL_LENGTH_WOFFSET() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_X() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_Y() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_Z() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_A() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_B() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_C() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_U() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_V() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_POSITION_W() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_VALUE() -> double { return 0; }
+auto GET_EXTERNAL_PROBE_TRIPPED_VALUE() -> int { return 0; }
+auto GET_EXTERNAL_LENGTH_UNITS() -> double { return canon.request.units_per_mm; }
+auto GET_EXTERNAL_ANGLE_UNITS() -> double { return 1.0; }
+auto GET_EXTERNAL_LENGTH_UNIT_TYPE() -> CANON_UNITS { return canon.length_units; }
+auto GET_EXTERNAL_PLANE() -> CANON_PLANE { return canon.plane; }
+auto GET_EXTERNAL_FEED_RATE() -> double { return canon.feed / program_unit(); }
+auto GET_EXTERNAL_TRAVERSE_RATE() -> double { return 0; }
+auto GET_EXTERNAL_SPEED(int) -> double { return canon.spindle_rpm; }
+auto GET_EXTERNAL_SPINDLE(int) -> CANON_DIRECTION { return canon.spindle; }
+auto GET_EXTERNAL_FLOOD() -> int { return canon.flood; }
+auto GET_EXTERNAL_MIST() -> int { return canon.mist; }
+auto GET_EXTERNAL_MOTION_CONTROL_MODE() -> CANON_MOTION_MODE { return canon.path_control; }
+auto GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() -> double { return canon.path_tolerance / program_unit(); }
+auto GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() -> double {
   return canon.naivecam_tolerance / program_unit();
 }
-int GET_EXTERNAL_QUEUE_EMPTY() { return 1; }
-int GET_EXTERNAL_AXIS_MASK() { return 7; } // X, Y, Z
-int GET_EXTERNAL_FEED_OVERRIDE_ENABLE() { return 1; }
-int GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(int) { return 1; }
-int GET_EXTERNAL_ADAPTIVE_FEED_ENABLE() { return 0; }
-int GET_EXTERNAL_FEED_HOLD_ENABLE() { return 1; }
-int GET_EXTERNAL_OFFSET_APPLIED() { return 0; }
-EmcPose GET_EXTERNAL_OFFSETS() { return EmcPose{}; }
-bool GET_BLOCK_DELETE() { return canon.request.block_delete; }
-bool GET_OPTIONAL_PROGRAM_STOP() { return false; }
+auto GET_EXTERNAL_QUEUE_EMPTY() -> int { return 1; }
+auto GET_EXTERNAL_AXIS_MASK() -> int { return 7; } // X, Y, Z
+auto GET_EXTERNAL_FEED_OVERRIDE_ENABLE() -> int { return 1; }
+auto GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(int) -> int { return 1; }
+auto GET_EXTERNAL_ADAPTIVE_FEED_ENABLE() -> int { return 0; }
+auto GET_EXTERNAL_FEED_HOLD_ENABLE() -> int { return 1; }
+auto GET_EXTERNAL_OFFSET_APPLIED() -> int { return 0; }
+auto GET_EXTERNAL_OFFSETS() -> EmcPose { return EmcPose{}; }
+auto GET_BLOCK_DELETE() -> bool { return canon.request.block_delete; }
+auto GET_OPTIONAL_PROGRAM_STOP() -> bool { return false; }
 void GET_EXTERNAL_PARAMETER_FILE_NAME(char* name, int size) {
   if (name != nullptr && size > 0)
     std::snprintf(name, static_cast<std::size_t>(size), "%s", canon.request.parameters.c_str());
@@ -697,6 +699,9 @@ void stop_spindle(int spindle) {
     canon.spindle = CANON_STOPPED;
 }
 } // namespace
+// One of these declarations comes from canon.hh. Declare its alternate ABI signature too.
+void STOP_SPINDLE_TURNING(int spindle);
+void STOP_SPINDLE_TURNING(int spindle, int wait_for_atspeed);
 void STOP_SPINDLE_TURNING(int spindle) { stop_spindle(spindle); }
 void STOP_SPINDLE_TURNING(int spindle, int /*wait_for_atspeed*/) { stop_spindle(spindle); }
 void SPINDLE_RETRACT() {}
@@ -729,18 +734,20 @@ void TURN_PROBE_ON() {}
 void OPTIONAL_PROGRAM_STOP() {}
 void PROGRAM_END() {}
 void PROGRAM_STOP() {}
+namespace {
 void mark_output() {
   if (canon.request.restart_line && canon.line <= *canon.request.restart_line)
     canon.used_output = true;
 }
+} // namespace
 void SET_MOTION_OUTPUT_BIT(int) { mark_output(); }
 void CLEAR_MOTION_OUTPUT_BIT(int) { mark_output(); }
 void SET_AUX_OUTPUT_BIT(int) { mark_output(); }
 void CLEAR_AUX_OUTPUT_BIT(int) { mark_output(); }
 void SET_MOTION_OUTPUT_VALUE(int, double) { mark_output(); }
 void SET_AUX_OUTPUT_VALUE(int, double) { mark_output(); }
-int UNLOCK_ROTARY(int, int) { return 0; }
-int LOCK_ROTARY(int, int) { return 0; }
+auto UNLOCK_ROTARY(int, int) -> int { return 0; }
+auto LOCK_ROTARY(int, int) -> int { return 0; }
 void PLUGIN_CALL(int, const char*) {}
 void IO_PLUGIN_CALL(int, const char*) {}
 void UPDATE_TAG(StateTag) {}
@@ -777,8 +784,8 @@ auto capture_restart(InterpBase& interp, const GCodes& codes) -> RestartPoint {
   std::array<double, ACTIVE_SETTINGS> settings{};
   interp.active_settings(settings.data());
   auto start = to_program(canon.end);
-  for (auto& coordinate : start)
-    coordinate *= program_unit();
+  std::ranges::transform(start, start.begin(),
+                         [unit = program_unit()](double coordinate) { return coordinate * unit; });
   const auto direction = canon.spindle == CANON_CLOCKWISE          ? coffeecnc::SpindleDirection::forward
                          : canon.spindle == CANON_COUNTERCLOCKWISE ? coffeecnc::SpindleDirection::reverse
                                                                   : coffeecnc::SpindleDirection::stopped;
@@ -892,8 +899,7 @@ auto run(const HelperRequest& request) -> int {
     if (const int index = find_index(request.tool_in_spindle); index > 0)
       canon.tools.at(0) = canon.tools.at(static_cast<std::size_t>(index));
   canon.selected_index = request.tool_prepared < 0 ? -1 : find_index(request.tool_prepared);
-  for (auto& function : USER_DEFINED_FUNCTION)
-    function = user_m_code;
+  std::ranges::fill(USER_DEFINED_FUNCTION, user_m_code);
 
   // Before the interpreter reads anything: no file it could read holds a comment that runs
   // Python or writes a file, or an O word that is not plainly a name. The interpreter acts on
@@ -906,8 +912,8 @@ auto run(const HelperRequest& request) -> int {
     std::vector<std::filesystem::path> files{request.program};
     std::error_code error;
     if (!request.subroutines.empty())
-      for (const auto& entry : std::filesystem::directory_iterator(request.subroutines, error))
-        files.push_back(entry.path());
+      std::ranges::transform(std::filesystem::directory_iterator(request.subroutines, error),
+                             std::back_inserter(files), &std::filesystem::directory_entry::path);
     if (error)
       return give_up("the directory of the subroutine files cannot be read");
     for (const auto& file : files) {
@@ -1075,13 +1081,12 @@ auto run(const HelperRequest& request) -> int {
   return 0;
 }
 
-} // namespace
-
-auto main(int argc, char** argv) -> int {
+auto run_preview(int argc, char** argv) -> int {
   char* end = nullptr;
   const long descriptor = argc == 3 ? std::strtol(argv[2], &end, 10) : -1;
-  if (argc != 3 || end == argv[2] || *end != 0 || descriptor < 3 ||
-      (sink = fdopen(static_cast<int>(descriptor), "w")) == nullptr) {
+  if (argc == 3 && end != argv[2] && *end == 0 && descriptor >= 3 && descriptor <= INT_MAX)
+    sink = fdopen(static_cast<int>(descriptor), "w");
+  if (sink == nullptr) {
     std::fputs("usage: coffeecnc-preview <request file> <result descriptor, 3 or above>\n",
                stderr);
     return 2;
@@ -1101,4 +1106,18 @@ auto main(int argc, char** argv) -> int {
   const int code = run(*request);
   std::fflush(sink);
   std::_Exit(code);
+}
+
+} // namespace
+
+auto main(int argc, char** argv) -> int {
+  try {
+    return run_preview(argc, argv);
+  } catch (const std::exception& error) {
+    std::fprintf(stderr, "coffeecnc-preview: %s\n", error.what());
+    return 2;
+  } catch (...) {
+    std::fputs("coffeecnc-preview: interpreter failed\n", stderr);
+    return 2;
+  }
 }

@@ -1,11 +1,9 @@
 #include "remote_server.hpp"
 
-#include <boost/asio.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include <boost/beast/websocket.hpp>
+#include "viewer_boost.hpp"
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -74,9 +72,10 @@ auto read(Viewer& viewer) -> Json {
 auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
   for (int attempt = 0; attempt < 5; ++attempt) {
     const auto batch = read(viewer);
-    for (const auto& record : batch)
-      if (record.value(key, -1) == sequence)
-        return batch;
+    if (std::ranges::any_of(batch, [key, sequence](const Json& record) {
+          return record.value(key, -1) == sequence;
+        }))
+      return batch;
   }
   throw std::runtime_error("The current status did not arrive.");
 }
@@ -184,7 +183,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   connect(slow, port, host);
   slow.next_layer().set_option(net::socket_base::receive_buffer_size(1024));
   const std::array large{
-      std::string(R"({"type":"preview","context":8,"payload":")") + std::string(4 * 1024 * 1024, 'x') + "\"}",
+      std::string(R"({"type":"preview","context":8,"payload":")") + std::string(4uz * 1024 * 1024, 'x') + "\"}",
       std::string(R"({"type":"status","seq":2,"preview_context":8})")};
   constexpr std::array update{PanelRecord::preview, PanelRecord::status};
   const auto before = std::chrono::steady_clock::now();

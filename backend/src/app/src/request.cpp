@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <expected>
 #include <initializer_list>
@@ -56,10 +57,8 @@ void fields(const Json& object, std::initializer_list<std::string_view> names,
     throw InvalidRequest("Expected a JSON object.");
   for (const auto name : names)
     static_cast<void>(field(object, name));
-  auto expected = names.size();
-  for (const auto name : optional)
-    if (object.contains(name))
-      ++expected;
+  const auto present = std::ranges::count_if(optional, [&](auto name) { return object.contains(name); });
+  const auto expected = names.size() + static_cast<std::size_t>(present);
   if (object.size() != expected)
     throw InvalidRequest("Unexpected field in request.");
 }

@@ -944,16 +944,16 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   auto decision = policy_.evaluate(command, state);
   std::optional<CheckedPreview> verified;
   if (preview_ != nullptr && decision.allowed) {
-    if (const auto* run = std::get_if<Run>(&command)) {
+    if (const auto* run_command = std::get_if<Run>(&command)) {
       verified = preview_->checked_preview();
-      if (auto reason = check_program_start(request, *run, state, *verified); !reason.empty()) {
+      if (auto reason = check_program_start(request, *run_command, state, *verified); !reason.empty()) {
         if (!wanted(request))
           return cancelled();
         decision = {false, {}, std::move(reason), {}};
       }
     }
   } else if (decision.allowed) {
-    if (const auto* run = std::get_if<Run>(&command); run && run->breakpoint)
+    if (const auto* run_command = std::get_if<Run>(&command); run_command && run_command->breakpoint)
       decision = {false, {}, "A breakpoint needs a complete program check.", {}};
   }
   if (decision.allowed) {
@@ -1042,11 +1042,11 @@ auto Session::check_program_start(const Queued& request, const Run& command,
     return "Wait for the program check to finish.";
   if (command.preview_context && *command.preview_context != check.preview->context)
     return "The program check changed. Review the current results.";
-  const auto& report = check.preview->check;
-  if (report && !report->errors.empty())
-    return report->errors.front();
+  const auto& program_check = check.preview->check;
+  if (program_check && !program_check->errors.empty())
+    return program_check->errors.front();
   if (command.breakpoint) {
-    if (!check.source.program_snapshot || !check.files_changed || !report ||
+    if (!check.source.program_snapshot || !check.files_changed || !program_check ||
         check.preview->state != PreviewState::ready)
       return "A breakpoint needs a complete program check.";
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
@@ -1067,10 +1067,10 @@ auto Session::check_program_start(const Queued& request, const Run& command,
       return "The selected program line changed. Reopen the program and choose the line again.";
   }
   const bool units_mismatch =
-      report && command.display_units && std::ranges::any_of(report->units, [&](LengthUnit unit) {
+      program_check && command.display_units && std::ranges::any_of(program_check->units, [&](LengthUnit unit) {
         return unit != *command.display_units;
       });
-  if ((!report || !report->warnings.empty() || units_mismatch) && !command.confirmed)
+  if ((!program_check || !program_check->warnings.empty() || units_mismatch) && !command.confirmed)
     return "Review the program check warnings before starting.";
   if (check.files_changed && check.files_changed([&] { return !wanted(request); }))
     return "The program or tool data changed. Review the new program check.";
@@ -1088,8 +1088,10 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   if (!source.inputs || !source.program_snapshot ||
       source.inputs->program_file != state.program_file) {
     const auto shown = preview_->latest();
-    if (shown && shown->context == command.preview_context && shown->error)
-      return answer({CommandOutcome::rejected, shown->error->text});
+    if (shown && shown->context == command.preview_context) {
+      if (const auto& error = shown->error)
+        return answer({CommandOutcome::rejected, error->text});
+    }
     return answer({CommandOutcome::rejected, "Wait for an up-to-date program preview."});
   }
   auto inputs = *source.inputs;
@@ -1121,7 +1123,7 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   return result;
 }
 
-auto Session::send_restart(Queued& request, const PreparedRestart& restart, bool after_change)
+auto Session::send_restart(const Queued& request, const PreparedRestart& restart, bool after_change)
     -> Stage {
   const auto still = token(request);
   const auto cutting_tool = [&] {
@@ -1148,38 +1150,39 @@ auto Session::send_restart(Queued& request, const PreparedRestart& restart, bool
   return staged(std::move(result));
 }
 
-auto Session::start_restart(Queued& request, StartRestart command) -> Stage {
+auto Session::start_restart(const Queued& request, StartRestart command) -> Stage {
   if (!restart_ || restart_->tool_request || restart_->plan.plan_id != command.plan_id ||
       !wanted(restart_->owner))
     return answer({CommandOutcome::rejected, "Choose a line and review the restart plan again."});
-  auto restart = std::exchange(restart_, std::nullopt);
-  if (preview_->restart_source(restart->context).inputs != restart->source.inputs)
+  auto restart = std::move(*restart_);
+  restart_.reset();
+  if (preview_->restart_source(restart.context).inputs != restart.source.inputs)
     return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
-  auto check = restart->plan.point;
-  check.clearance_z = restart->programmed_clearance;
-  if (auto reason = port_.validate_restart(check, *restart->source.inputs); !reason.empty())
+  auto check = restart.plan.point;
+  check.clearance_z = restart.programmed_clearance;
+  if (auto reason = port_.validate_restart(check, *restart.source.inputs); !reason.empty())
     return answer({CommandOutcome::rejected, std::move(reason)});
-  if (check.clearance_z > restart->plan.point.clearance_z + 1e-6)
+  if (check.clearance_z > restart.plan.point.clearance_z + 1e-6)
     return answer({CommandOutcome::rejected, "The required clearance changed. Review a new plan."});
   cancel_jogs(nullptr);
   if (!wanted(request))
     return cancelled();
-  auto result = send_restart(request, *restart, false);
+  auto result = send_restart(request, restart, false);
   if (result.kind != StageKind::reply || result.reply.outcome != CommandOutcome::accepted ||
-      !restart->plan.needs_tool_change)
+      !restart.plan.needs_tool_change)
     return result;
   const auto pending = port_.snapshot();
-  if (pending.requested_tool != restart->plan.point.tool || !wanted(request)) {
+  if (pending.requested_tool != restart.plan.point.tool || !wanted(request)) {
     static_cast<void>(port_.abort());
     return answer({CommandOutcome::failed, "Restart stopped before the tool change was confirmed."});
   }
-  restart->owner = request;
-  restart->tool_request = pending.tool_request;
+  restart.owner = request;
+  restart.tool_request = pending.tool_request;
   restart_ = std::move(restart);
   return result;
 }
 
-auto Session::resume_restart(Queued& request, const ControllerState& state) -> Stage {
+auto Session::resume_restart(const Queued& request, const ControllerState& state) -> Stage {
   auto restart = std::exchange(restart_, std::nullopt);
   if (!restart || restart->tool_request != state.tool_request ||
       restart->plan.point.tool != state.requested_tool || !wanted(restart->owner))
@@ -1203,18 +1206,18 @@ auto Session::resume_restart(Queued& request, const ControllerState& state) -> S
 
 auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
   const auto* spindle = std::get_if<SetSpindle>(&command);
-  const auto* mdi = std::get_if<Mdi>(&command);
+  const auto* mdi_command = std::get_if<Mdi>(&command);
   const auto* setter = std::get_if<FixedSetterRequest>(&command);
   const bool check_tool = setter && setter->action == SetterAction::check;
   const bool program = std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command) ||
                        std::holds_alternative<Resume>(command);
   const bool confirms_probe_candidate = std::holds_alternative<ToolChanged>(command) &&
       state.requested_tool && !(restart_ && restart_->tool_request);
-  if (tool_models_ == nullptr || (!confirms_probe_candidate && !check_tool && !program && mdi == nullptr &&
+  if (tool_models_ == nullptr || (!confirms_probe_candidate && !check_tool && !program && mdi_command == nullptr &&
                                  (spindle == nullptr || spindle->direction == SpindleDirection::stopped)))
     return {};
-  if (mdi) {
-    const auto block = inspect_probe_code(mdi->text);
+  if (mdi_command) {
+    const auto block = inspect_probe_code(mdi_command->text);
     if (block.relabels_tool && (block.changes_tool || !block.refusal.empty()))
       return "Separate M61 from tool changes and spindle commands.";
   }
@@ -1239,8 +1242,8 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
   }
   if (check_tool)
     return "Load a cutting tool before checking its length.";
-  if (mdi != nullptr)
-    return std::string(probe_code_block(mdi->text));
+  if (mdi_command != nullptr)
+    return std::string(probe_code_block(mdi_command->text));
   if (spindle != nullptr || state.spindle_active)
     return probe_loaded_reason;
   if (std::holds_alternative<Resume>(command) && state.mode != TaskMode::automatic)
@@ -1613,11 +1616,12 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
         unstored += std::format(" AND [#{} EQ 0]", 5211 + i);
     block = "G52";
     for (std::size_t i = 0; i < 3; ++i) {
-      if (!values.at(i))
+      const auto& offset = values.at(i);
+      if (!offset)
         continue;
-      auto value = length(*values.at(i), state);
+      auto value = length(*offset, state);
       if (!unstored.empty())
-        value = "[" + value + "+0/[#5210+[1" + std::exchange(unstored, {}) + "]]]";
+        value = std::format("[{}+0/[#5210+[1{}]]]", value, std::exchange(unstored, {}));
       block += std::string(" ") + "XYZ"[i] + value;
     }
     break;

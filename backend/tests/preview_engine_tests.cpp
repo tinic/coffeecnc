@@ -172,11 +172,11 @@ void restart_checkpoints() {
   auto outcome = rig.compute().outcome;
   require(outcome.state == PreviewState::ready && outcome.restart,
           "Second pocket level: " + outcome.restart_blocked + " " + text_of(outcome));
-  const auto& pocket = *outcome.restart;
-  require(pocket.tool == 1 && pocket.h == 1 && pocket.wcs == 1 &&
-              near(pocket.spindle_rpm, 1500) && pocket.spindle_direction == SpindleDirection::forward &&
-              near(pocket.feed, 360) && near(pocket.clearance_z, 30) &&
-              near(pocket.start, {24, 20, 15}),
+  const auto& pocket = outcome.restart;
+  require(pocket && pocket->tool == 1 && pocket->h == 1 && pocket->wcs == 1 &&
+              near(pocket->spindle_rpm, 1500) && pocket->spindle_direction == SpindleDirection::forward &&
+              near(pocket->feed, 360) && near(pocket->clearance_z, 30) &&
+              near(pocket->start, {24, 20, 15}),
           "Pocket restart restores the modal state before the second depth block");
 
   rig.inputs.program_file = (samples / "air/06-toolchange.ngc").string();
@@ -246,12 +246,12 @@ void program_check_touched_lengths_and_travel() {
   write(rig.file(), "G20 G90 G17\nT2 M6\nG43 H2\nS1200 M3\nG1 X1 F10\nM5\nM2\n");
   auto result = rig.compute();
   require(result.outcome.check.has_value(), "The interpreter reports program check facts.");
-  const auto& check = *result.outcome.check;
-  require(check.errors.empty() && check.warnings.empty() && check.travel == TravelCheck::fits &&
-              check.tools == std::vector<ProgramToolCheck>{{2, ToolLengthCheck::touched_off}} &&
-              check.units == std::vector<LengthUnit>{LengthUnit::inch} &&
-              check.feed && near(check.feed->min, 254) &&
-              check.spindle == ProgramRange{1200, 1200},
+  const auto& check = result.outcome.check;
+  require(check && check->errors.empty() && check->warnings.empty() && check->travel == TravelCheck::fits &&
+              check->tools == std::vector<ProgramToolCheck>{{2, ToolLengthCheck::touched_off}} &&
+              check->units == std::vector<LengthUnit>{LengthUnit::inch} &&
+              check->feed && near(check->feed->min, 254) &&
+              check->spindle == ProgramRange{1200, 1200},
           "A touched-off zero length is valid. Feed is converted to mm/min.");
   write(marks, "reference 5\nT2 0\n");
   require(result.files_changed && result.files_changed({}),
@@ -1199,21 +1199,21 @@ void refusals_of_the_settings() {
       .directory = (rig.root / "config").string(),
       .machine_name = "Mill",
       .nml_file = {},
-      .machine_units = LengthUnit::inch,
       .millimetres_per_unit = 25.4,
-      .axes = {Axis::x, Axis::y, Axis::z},
       .travel = {Travel{0, 1}, Travel{0, 1}, Travel{0, 1}},
       .jog_increments = {},
       .limits = Limits{1500, {1500, 1500, 750}, 2.0, 0.5, 1.0, 1500, false},
-      .home_all_configured = false,
-      .signals = {},
       .tool_table = {},
       .parameter_file = (rig.root / "config" / "mill.var").string(),
       .postgui_halfile = {},
       .program_prefix = (rig.root / "nc").string(),
       .machine_id = {},
-      .coolant = {},
       .data_directory = {},
+      .machine_units = LengthUnit::inch,
+      .axes = {Axis::x, Axis::y, Axis::z},
+      .home_all_configured = false,
+      .signals = {},
+      .coolant = {},
   };
   write(config.ini_file, "[RS274NGC]\nPARAMETER_FILE = mill.var\nSUBROUTINE_PATH = ../subs:macros\n"
                          "RETAIN_G43 = 1\n[EMCIO]\nTOOL_CHANGE_POSITION = 1 2 3\n"

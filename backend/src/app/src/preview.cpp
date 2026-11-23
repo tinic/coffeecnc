@@ -88,7 +88,7 @@ void PreviewWorker::loop() {
     if (stop_)
       return;
     if (wanted_) {
-      const auto request = std::move(*wanted_);
+      auto request = std::move(*wanted_);
       wanted_.reset();
       waiting_ = false;
       lock.unlock();
@@ -130,6 +130,8 @@ void PreviewWorker::loop() {
       return stop_ || waiting_ || files_context != newest_;
     });
     lock.lock();
+    // Another thread can request revalidation while the mutex is released.
+    // cppcheck-suppress knownConditionTrueFalse
     if (files_context != newest_ || check != revalidation_)
       continue;
     if (changed) {

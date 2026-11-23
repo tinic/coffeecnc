@@ -67,14 +67,15 @@ const button = (view: VueWrapper, text: string): ReturnType<VueWrapper['get']> =
   return last
 }
 const band = (view: VueWrapper): string => view.get('.jog-status').text()
+const touchEvent = (type: string): Event => Object.assign(new Event(type, { bubbles: true, cancelable: true }),
+  { touches: [], changedTouches: [] })
 /** A tap on the touch screen: touchstart and pointerdown on press, the click on release. */
 async function tap(target: Element | { element: Node }): Promise<void> {
   const element = target instanceof Element ? target : target.element as Element
-  const touch = (type: string): Event => Object.assign(new Event(type, { bubbles: true, cancelable: true }), { touches: [], changedTouches: [] })
-  element.dispatchEvent(touch('touchstart'))
+  element.dispatchEvent(touchEvent('touchstart'))
   element.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true, cancelable: true }), { pointerType: 'touch' }))
   element.dispatchEvent(Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'touch' }))
-  element.dispatchEvent(touch('touchend'))
+  element.dispatchEvent(touchEvent('touchend'))
   element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   await nextTick()
 }
@@ -194,8 +195,8 @@ describe('saved positions in Manual', () => {
       const mouseDown = (): Event => Object.assign(new Event('pointerdown', { bubbles: true, cancelable: true }), { pointerType: 'mouse' })
       expect(field.dispatchEvent(mouseDown())).toBe(false)
       expect(field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(false)
-      field.dispatchEvent(new Event('touchstart', { bubbles: true }))
-      field.dispatchEvent(new Event('touchend', { bubbles: true }))
+      field.dispatchEvent(touchEvent('touchstart'))
+      field.dispatchEvent(touchEvent('touchend'))
       expect(field.dispatchEvent(mouseDown())).toBe(true)
       expect(field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(true)
       await typeName('Vise jaw')

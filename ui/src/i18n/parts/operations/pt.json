@@ -1,6 +1,7 @@
 {
   "operations": {
     "dialog": {
+      "pocketOptions": "Geometria, entrada e paredes",
       "reviewJob": "Rever trabalho",
       "toolChangeHeight": "Trocas de ferramenta no Z de máquina {z} {unit}",
       "job": "Trabalho",
@@ -19,6 +20,9 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "contour": "Contorno",
+      "contourSetup": "Deixe a entrada livre. Para um corte interior, comece numa bolsa aberta ou num furo.",
+      "inclinedEntry": "Use uma fresa de topo adequada à entrada escolhida.",
       "facing": "Facejamento",
       "drilling": "Padrão de furos",
       "bore": "Mandrilagem helicoidal",
@@ -29,6 +33,16 @@
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
+      "profileShape": "Forma",
+      "profileSide": "Lado de corte",
+      "profileDirection": "Sentido",
+      "profileDiameter": "Diâmetro do contorno",
+      "entryFeed": "Avanço de entrada",
+      "pocketEntry": "Entrada",
+      "entryAngle": "Ângulo máximo de entrada",
+      "pocketWalls": "Paredes",
+      "wallStock": "Sobremetal nas paredes",
+      "pocketCoolant": "Refrigerante",
       "sizeX": "Dimensão X",
       "sizeY": "Dimensão Y",
       "origin": "X0 Y0 em",
@@ -77,6 +91,22 @@
       "boltCircleRadius": "Raio do círculo de furos"
     },
     "option": {
+      "profileCircle": "Círculo",
+      "profileRectangle": "Retângulo",
+      "profileOutside": "Exterior",
+      "profileInside": "Interior",
+      "clockwise": "Horário",
+      "counterclockwise": "Anti-horário",
+      "plunge": "Mergulho vertical",
+      "helix": "Helicoidal",
+      "ramp": "Rampa linear",
+      "toSize": "À medida",
+      "leaveStock": "Deixar sobremetal",
+      "finishWalls": "Acabar cada camada",
+      "coolantOff": "Desligado",
+      "coolantFlood": "Inundação",
+      "coolantMist": "Névoa",
+      "coolantBoth": "Névoa e inundação",
       "lowerLeft": "Canto inferior esquerdo",
       "lowerRight": "Canto inferior direito",
       "upperLeft": "Canto superior esquerdo",
@@ -96,6 +126,16 @@
       "g83": "G83 picagem"
     },
     "check": {
+      "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
+      "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
+      "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",
+      "profileLeadRoom": "A ferramenta e a sua entrada não cabem no contorno. Use uma ferramenta mais pequena ou um contorno maior.",
+      "wallStockNonnegative": "O sobremetal nas paredes deve ser zero ou maior.",
+      "wallStockPrecision": "O sobremetal é demasiado pequeno para a precisão das coordenadas do programa.",
+      "entryAngle": "O ângulo de entrada deve ser maior que 0° e menor que 90°.",
+      "entryPrecision": "O percurso ou o ângulo de entrada é demasiado pequeno para a precisão das coordenadas do programa.",
+      "pocketTooManyMoves": "A bolsa geraria demasiados movimentos. Aumente a profundidade por passe, o passo lateral ou o ângulo de entrada.",
+      "wallStockFits": "O sobremetal nas paredes deixa pouco espaço para a ferramenta.",
       "jobToolChangeHeight": "Defina o Z seguro para «Ir para» acima da folga de todas as operações antes de guardar um trabalho com trocas de ferramenta.",
       "invalidJob": "Não foi possível compor o trabalho.",
       "jobTooLarge": "O programa excede o limite de gravação de 512 KiB.",

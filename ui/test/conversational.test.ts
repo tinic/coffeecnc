@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { bore } from '../src/conversational/bore'
+import { contour, type Contour } from '../src/conversational/contour'
 import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
@@ -215,6 +216,7 @@ T1 M6
 G43 H1
 S8000 M3
 G0 Z5
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 2)
@@ -248,6 +250,7 @@ T2 M6
 G43 H2
 S6000 M3
 G0 Z0.2
+G91.1
 
 G0 X0.5 Y-0.5
 (Layer 1 of 1)
@@ -274,6 +277,7 @@ T1 M6
 G43 H1
 S8000 M3
 G0 Z5
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 1)
@@ -315,6 +319,7 @@ T2 M6
 G43 H2
 S6000 M3
 G0 Z0.2
+G91.1
 
 G0 X0 Y0
 (Layer 1 of 1)
@@ -342,6 +347,51 @@ function text(generated: Generated): string {
 function errors(generated: Generated): string[] {
   return 'errors' in generated ? generated.errors : []
 }
+
+describe('contours', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+    { number: 2, pocket: 2, length: 40, diameter: 6.35, comment: '' },
+  ]
+  const circular = { ...mm, shape: 'circle', x: 10, y: 12, diameter: 40,
+    inside: false, clockwise: true, depth: 2, depthPerPass: 1, plungeFeed: 150 } as const satisfies Contour
+
+  it.each([[false, true, 'G41', 25], [true, true, 'G42', 15], [false, false, 'G42', 25], [true, false, 'G41', 15]] as const)(
+    'cuts a compensated circle (inside %s, clockwise %s)',
+    (inside, clockwise, compensation, radius) => {
+      const lines = splitLines(text(contour({ ...circular, inside, clockwise })))
+      expect(lines.filter((line) => line.startsWith(`${compensation} D1 G1`))).toHaveLength(2)
+      expect(lines.filter((line) => line.startsWith('G40 G0'))).toHaveLength(2)
+      const preview = previewProgram(newModal(tools), lines, false, 1)
+      expect(preview.error).toBeNull()
+      const circleLine = lines.findIndex((line) => line === `${clockwise ? 'G2' : 'G3'} X10 Y-8 I0 J20`) + 1
+      const points = preview.segments.find((s) => s.line === circleLine)?.points ?? []
+      expect(points.length).toBeGreaterThan(20)
+      for (let i = 0; i < points.length; i += 3) {
+        expect(Math.hypot((points[i] ?? NaN) - 10, (points[i + 1] ?? NaN) - 12)).toBeCloseTo(radius, 7)
+      }
+    },
+  )
+
+  it('previews a sharp outside rectangle and a rounded inside rectangle in inches', () => {
+    const template = { ...inch, shape: 'rectangle', x: 0.2, y: 0.4, width: 2, height: 1.5,
+      clockwise: true, depth: 0.1, depthPerPass: 0.05, plungeFeed: 8 } as const
+    for (const [inside, corner] of [[false, 0], [true, 0.2]] as const) {
+      const lines = splitLines(text(contour({ ...template, inside, corner })))
+      const preview = previewProgram(newModal(tools), lines, false, 1)
+      expect(preview.state).toBe('ready')
+      expect(preview.error).toBeNull()
+      expect(lines.at(-1)).toBe('M2')
+    }
+  })
+
+  it('refuses an inside contour without room to enter or with an undersized corner', () => {
+    expect(errors(contour({ ...circular, inside: true, diameter: 15 }))).toContain(
+      'The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.')
+    expect(errors(contour({ ...circular, shape: 'rectangle', inside: true, width: 40, height: 35, corner: 4 }))).toContain(
+      'An inside corner radius must be greater than the cutter radius (5).')
+  })
+})
 
 describe('slots and keyways', () => {
   const tools = [
@@ -483,6 +533,63 @@ describe('material removal', () => {
       }
     }
     expect(uncut).toEqual([])
+  })
+})
+
+describe('pocket entry and finishing', () => {
+  const setup = { ...mm, x: 0, y: 0, stepover: 50, depth: 2, depthPerPass: 1, plungeFeed: 200 }
+  const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
+
+  it('helices down, roughs inside the allowance and finishes at each layer', () => {
+    const program = text(circularPocket({
+      ...setup, diameter: 30, entry: 'helix', entryAngle: 3, wallStock: 1, finish: true, coolant: 'flood',
+    }))
+    expect(program).toContain('G91.1\nM9\nM8\n\nG0 X2.5 Y0\nG1 Z0 F200')
+    expect(program.match(/^G3 .* Z-/gm)).toHaveLength(4)
+    expect(program).toContain('G3 X2.5 Y0 I-2.5 J0 Z-0.5')
+    expect(program).toContain('G3 X9 Y0 I-9 J0\n(Finish walls)\nG1 X10 Y0\nG3 X10 Y0 I-10 J0')
+    expect(program.match(/\(Finish walls\)/g)).toHaveLength(2)
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('ramps along the longer axis and keeps the requested wall stock in a rough-only pocket', () => {
+    const program = text(rectangularPocket({
+      ...setup, width: 20, height: 30, cornerRadius: 7, entry: 'ramp', entryAngle: 3, wallStock: 1, coolant: 'both',
+    }))
+    expect(program).toContain('M9\nM7\nM8\n\nG0 X0 Y-9\nG1 Z0 F200')
+    expect(program.endsWith('G0 Z5\nM9\nM5\nM2\n')).toBe(true)
+    expect(program).toContain('G1 X0 Y9 Z-0.5\nG1 X0 Y-9 Z-1')
+    expect(program).not.toContain('(Finish walls)')
+    const preview = previewProgram(newModal(tools), splitLines(program), false, 1)
+    expect(preview.error).toBeNull()
+    const feed = preview.segments.filter((segment) => segment.kind === 'feed')
+    const x = feed.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 0))
+    const y = feed.flatMap((segment) => segment.points.filter((_, i) => i % 3 === 1))
+    expect(Math.max(...x)).toBeCloseTo(4)
+    expect(Math.max(...y)).toBeCloseTo(9)
+  })
+
+  it('forces coolant off before entry when the operator picks Off', () => {
+    const program = text(circularPocket({ ...setup, diameter: 30, coolant: 'off' }))
+    expect(program).toContain('G91.1\nM9\n\nG0 X0 Y0')
+    expect(program.match(/^M9$/gm)).toEqual(['M9'])
+  })
+
+  it('retracts and stops pocket coolant before lifting for the next tool in a job', () => {
+    const pocket = text(circularPocket({ ...setup, diameter: 30, coolant: 'flood' }))
+    const drill = (expected['gridMm'] ?? '').replace('T1 M6\nG43 H1', 'T2 M6\nG43 H2')
+    const job = text(chainOperations([{ tool: 1, text: pocket }, { tool: 2, text: drill }], 'mm', -0.5))
+    expect(job).toContain('G0 Z5\nM9\nM5\n\nG90 G53 G0 Z-0.5\n\n(Hole pattern')
+    expect(job.match(/^M2$/gm)).toEqual(['M2'])
+  })
+
+  it('refuses stock that leaves no room and entry angles below the usable precision', () => {
+    expect(errors(circularPocket({ ...setup, diameter: 20, wallStock: 5 }))).toContain('Wall stock leaves too little room for the tool.')
+    expect(errors(circularPocket({ ...setup, diameter: 20, entry: 'helix', entryAngle: 0.00001 })))
+      .toContain('The entry path or angle is too small for this program’s coordinate precision.')
+    expect(errors(rectangularPocket({ ...setup, width: 20, height: 30, cornerRadius: 0, entry: 'ramp', entryAngle: 90 })))
+      .toContain('The entry angle must be greater than 0° and less than 90°.')
   })
 })
 

@@ -2,7 +2,8 @@
 // a copy of the modal state) and execution (line by line, as the simulated task reaches each line).
 //
 // Supported subset:
-//   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40, G53,
+//   G0 G1 G2 G3 (I J or R, XY plane, helical Z allowed), G4 P, G17, G20 G21, G40 G41 G42, G53,
+//   Cutter compensation for absolute XY paths with tangent joins or outside corners only.
 //   G80 G81 G83 (absolute distance mode; X Y Z R Q, sticky Z R Q) G98 G99,
 //   G54 G55 G56 G57 G58 G59 G59.1 G59.2 G59.3, G10 L2 / L20 / L10, G43 [H] G49, G90 G91 G91.1, G92, G92.1, G94,
 //   F S T, M0 M1 M2 M30 M3 M4 M5 M6 M7 M8 M9, N line numbers, ( ) and ; comments, (MSG, text),
@@ -15,6 +16,13 @@ export type AxisIndex = 0 | 1 | 2
 export const axisIndices: readonly AxisIndex[] = [0, 1, 2]
 const axisWords: readonly string[] = ['X', 'Y', 'Z']
 const mmPerInch = 25.4
+type XY = [number, number]
+
+interface CutterComp {
+  side: 1 | -1
+  radius: number
+  last: { end: Vec3; tangent: XY } | null
+}
 
 /** Everything the interpreter remembers between blocks. Lengths in mm, feed in mm/min. */
 export interface Modal {
@@ -28,6 +36,9 @@ export interface Modal {
   toolOffset: Vec3
   /** The H number of an active G43, or null under G49. A zero-length offset is still G43. */
   lengthTool: number | null
+  cutter: CutterComp | null
+  /** Programmed machine position after G40, until the first uncompensated straight move. */
+  cutterExit: Vec3 | null
   units: LengthUnit
   absolute: boolean
   motion: Motion
@@ -95,6 +106,8 @@ export function newModal(tools: Tool[]): Modal {
     g92: [0, 0, 0],
     toolOffset: [0, 0, 0],
     lengthTool: null,
+    cutter: null,
+    cutterExit: null,
     units: 'mm',
     absolute: true,
     motion: 1,
@@ -117,6 +130,8 @@ export function cloneModal(m: Modal): Modal {
     ...m,
     pos: [...m.pos],
     cycle: { ...m.cycle },
+    cutter: m.cutter ? { ...m.cutter } : null,
+    cutterExit: m.cutterExit === null ? null : [...m.cutterExit],
     offsets: m.offsets.map((o): Vec3 => [...o]),
     rotations: [...m.rotations],
     g92: [...m.g92],
@@ -187,6 +202,7 @@ export function activeCodes(m: Modal): string[] {
   if (!m.mist && !m.flood) {
     codes.push('M9')
   }
+  if (m.cutter !== null) codes.push(m.cutter.side === 1 ? 'G41' : 'G42')
   return codes
 }
 
@@ -202,7 +218,7 @@ interface Block {
 }
 
 const numberPattern = /^[+-]?(?:\d+\.?\d*|\.\d+)/
-const wordLetters = 'FGHIJKLMNPQRSTXYZ'
+const wordLetters = 'DFGHIJKLMNPQRSTXYZ'
 
 function parseBlock(raw: string, line: number, blockDelete: boolean): Block {
   const block: Block = { g: [], m: [], words: new Map(), comments: [], blank: true }
@@ -298,6 +314,8 @@ const gGroups: Readonly<Record<number, string>> = {
   810: 'motion',
   830: 'motion',
   400: 'cutter radius compensation',
+  410: 'cutter radius compensation',
+  420: 'cutter radius compensation',
   980: 'canned cycle return',
   990: 'canned cycle return',
   40: 'non-modal',
@@ -500,6 +518,27 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   }
   const scale = m.units === 'inch' ? mmPerInch : 1
 
+  if (has(400) && m.cutter !== null) {
+    m.cutterExit = m.cutter.last === null ? null : toMachine(m, m.cutter.last.end)
+    m.cutter = null
+  }
+  if (has(410) || has(420)) {
+    const name = has(410) ? 'G41' : 'G42'
+    if (m.cutter !== null) throw new InterpError(line, `${name}: cutter compensation is already on`)
+    const d = word('D') ?? 0
+    const toolNumber = d === 0 ? m.tool : d
+    const diameter = toolNumber === 0 ? 0 : findTool(m, toolNumber)?.diameter
+    if (diameter === undefined || !Number.isFinite(diameter) || diameter < 0) {
+      throw new InterpError(line, `${name}: tool ${String(toolNumber)} needs a nonnegative diameter in the tool table`)
+    }
+    m.cutter = { side: has(410) ? 1 : -1, radius: diameter / 2, last: null }
+    m.cutterExit = null
+  }
+  if (m.cutter !== null && (has(530) || has(100) || has(920) || has(921) || has(430) || has(490)
+    || wcsCodes.some(has) || block.m.includes(6))) {
+    throw new InterpError(line, 'coordinate or tool changes with cutter compensation are not supported by the simulator')
+  }
+
   const feed = word('F')
   if (feed !== undefined) {
     if (feed < 0) {
@@ -631,6 +670,7 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
   }
   if (drilling(m.motion) && !axesTaken && (axisGiven || explicit !== undefined)) {
     if (has(530)) throw new InterpError(line, 'G53 cannot be used with a canned cycle')
+    if (m.cutter !== null || m.cutterExit !== null) throw new InterpError(line, 'a canned cycle cannot follow cutter compensation')
     ops.push(...drill(m, word, line, scale))
   } else if (!axesTaken && (axisGiven || (explicit !== undefined && explicit >= 20 && explicit <= 30))) {
     const move = motion(m, block, word, used, line, scale, has(530))
@@ -657,6 +697,8 @@ export function interpretLine(m: Modal, text: string, line: number, blockDelete:
     m.absolute = true
     m.motion = 1
     m.cycle = {}
+    m.cutter = null
+    m.cutterExit = null
     m.spindle = 'stopped'
     m.flood = false
     m.mist = false
@@ -785,6 +827,61 @@ function g10(
   m.offsets[wcs - 1] = offset
 }
 
+function unitTangent(dx: number, dy: number): XY {
+  const length = Math.hypot(dx, dy)
+  return [dx / length, dy / length]
+}
+
+/** Offset an XY line or arc. A convex join only adds a roll around the shared corner. A
+ * concave join would trim the preceding block, which needs lookahead the simulator lacks. */
+function cutterPath(
+  m: Modal, comp: CutterComp, block: Block, used: Set<string>, line: number, scale: number,
+  actual: Vec3, start: Vec3, end: Vec3,
+): Vec3[] {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  const length = Math.hypot(dx, dy)
+  const arc = m.motion === 2 || m.motion === 3
+  if (!arc && length <= 1e-9) {
+    if (comp.last !== null) comp.last = { ...comp.last, end }
+    return [actual, [actual[0], actual[1], end[2]]]
+  }
+  if (comp.last === null && (arc || length <= comp.radius + 1e-9)) {
+    throw new InterpError(line, 'cutter compensation needs a straight XY lead-in longer than the cutter radius')
+  }
+
+  const clockwise = m.motion === 2
+  const direction = clockwise ? -1 : 1
+  const centre = arc ? arcCentre(block, used, line, start, end, clockwise, scale) : null
+  const tangent = (point: Vec3): XY => centre === null ? unitTangent(dx, dy)
+    : unitTangent(direction * (centre[1] - point[1]), direction * (point[0] - centre[0]))
+  if (centre !== null && Math.hypot(start[0] - centre[0], start[1] - centre[1]) <= direction * comp.side * comp.radius) {
+    throw new InterpError(line, 'cutter is too large for the compensated arc')
+  }
+  const shift = (point: Vec3, [tx, ty]: XY): Vec3 =>
+    [point[0] - ty * comp.side * comp.radius, point[1] + tx * comp.side * comp.radius, point[2]]
+  const incoming = tangent(start)
+  const outgoing = tangent(end)
+  const from = shift(start, incoming)
+  const to = shift(end, outgoing)
+  const path = centre === null ? [from, to] : arcPoints(from, to, centre, clockwise)
+  const previous = comp.last?.tangent
+  if (previous === undefined) path[0] = actual
+  else {
+    const cross = previous[0] * incoming[1] - previous[1] * incoming[0]
+    const dot = previous[0] * incoming[0] + previous[1] * incoming[1]
+    const turn = Math.atan2(cross, dot)
+    if (Math.abs(turn) >= Math.PI - 1e-6 || turn * comp.side > 1e-6) {
+      throw new InterpError(line, 'an inside corner with cutter compensation is not supported by the simulator; use a tangent arc')
+    }
+    if (m.motion !== 0 && Math.abs(turn) > 1e-6) {
+      path.unshift(...arcPoints(actual, from, [start[0], start[1]], turn < 0).slice(0, -1))
+    }
+  }
+  comp.last = { end, tangent: outgoing }
+  return path
+}
+
 function motion(
   m: Modal,
   block: Block,
@@ -795,7 +892,8 @@ function motion(
   machineCoordinates: boolean,
 ): Op | null {
   const name = `G${String(m.motion)}`
-  const start = toWork(m, m.pos)
+  const actual = toWork(m, m.pos)
+  const start = m.cutter?.last?.end ?? (m.cutterExit === null ? actual : toWork(m, m.cutterExit))
   const given: (number | undefined)[] = axisWords.map((letter) => word(letter))
   let endMachine: Vec3
   let end: Vec3
@@ -806,7 +904,7 @@ function motion(
     if (!m.absolute) {
       throw new InterpError(line, 'G53 cannot be used in incremental distance mode (G91)')
     }
-    endMachine = [...m.pos]
+    endMachine = [...(m.cutterExit ?? m.pos)]
     for (const axis of axisIndices) {
       const value = given[axis]
       if (value !== undefined) {
@@ -825,13 +923,25 @@ function motion(
     endMachine = toMachine(m, end)
   }
   const base = { kind: 'move' as const, line, tool: m.tool, toolOffset: [...m.toolOffset] as Vec3 }
+  if (m.motion !== 0 && m.feed <= 0) throw new InterpError(line, `cannot do ${name} with zero feed rate`)
+  if (m.cutterExit !== null) {
+    if (m.motion > 1) throw new InterpError(line, 'G40 must be followed by a straight move before an arc')
+    m.cutterExit = null
+  }
+  if (m.cutter !== null && m.cutter.radius > 0) {
+    if (!m.absolute) throw new InterpError(line, 'cutter compensation in G91 is not supported by the simulator')
+    const points = cutterPath(m, m.cutter, block, used, line, scale, actual, start, end)
+    const machinePoints = points.map((point) => toMachine(m, point))
+    machinePoints[0] = [...m.pos]
+    m.pos = machinePoints.at(-1) ?? m.pos
+    const rapid = m.motion === 0
+    return { ...base, motion: rapid ? 'rapid' : 'feed', shape: points.length > 2 ? 'arc' : 'linear',
+      feed: rapid ? 0 : m.feed, points: machinePoints }
+  }
   if (m.motion === 0) {
     const from: Vec3 = [...m.pos]
     m.pos = endMachine
     return { ...base, motion: 'rapid', shape: 'linear', feed: 0, points: [from, endMachine] }
-  }
-  if (m.feed <= 0) {
-    throw new InterpError(line, `cannot do ${name} with zero feed rate`)
   }
   if (m.motion === 1) {
     const from: Vec3 = [...m.pos]

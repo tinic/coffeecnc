@@ -337,9 +337,9 @@ describe('MDI', () => {
   it('fails with the interpreter error and leaves the machine where it was', () => {
     const r = rig()
     r.home()
-    expect(r.send({ type: 'mdi', text: 'G41 D1' })).toMatchObject({
+    expect(r.send({ type: 'mdi', text: 'G41 D999' })).toMatchObject({
       outcome: 'failed',
-      reason: 'D word is not supported by the simulator',
+      reason: 'G41: tool 999 needs a nonnegative diameter in the tool table',
     })
     expect(r.send({ type: 'mdi', text: 'G53 G0 Z50' })).toMatchObject({
       outcome: 'failed',
@@ -598,14 +598,14 @@ describe('program execution', () => {
   it('an interpreter error stops the running program with an operator error', () => {
     const r = rig()
     r.home()
-    r.load('G53 G0 X10\nG41 D2\nG53 G0 X20\nM2')
+    r.load('G53 G0 X10\nG41 D999\nG53 G0 X20\nM2')
     expect(r.preview()).toMatchObject({
       state: 'failed',
-      error: { line: 2, text: 'line 2: D word is not supported by the simulator' },
+      error: { line: 2, text: 'line 2: G41: tool 999 needs a nonnegative diameter in the tool table' },
     })
     expect(r.send({ type: 'run' }).outcome).toBe('accepted')
     r.finish()
-    expect(r.errors()).toEqual(['line 2: D word is not supported by the simulator'])
+    expect(r.errors()).toEqual(['line 2: G41: tool 999 needs a nonnegative diameter in the tool table'])
     expect(machinePosition(r.status())).toEqual([10, 0, 0])
   })
 

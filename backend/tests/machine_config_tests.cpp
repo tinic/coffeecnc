@@ -610,13 +610,15 @@ void fixed_setter_is_explicit_and_bounded() {
                             "SETTER_MAX_TRAVEL_MM = 4\nSETTER_MAX_FEED_MM_MIN = 30\n"
                             "SETTER_XY_TOLERANCE_MM = 0.5\n");
   const auto setter = load(enabled);
-  const auto setter_limits = setter ? setter->fixed_setter : std::nullopt;
+  require(setter.has_value(), "The fixed setter INI loads");
+  const auto& setter_limits = setter->fixed_setter;
   require(setter_limits && near(setter_limits->travel_mm, 4) &&
               near(setter_limits->feed_mm_min, 30) && near(setter_limits->check_tolerance_mm, 0.1),
           "the configured fixed setter carries canonical travel and feed ceilings");
   const auto check = load(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
                                "SETTER_MAX_TRAVEL_MM = 4\nSETTER_CHECK_TOLERANCE_MM = 0.04"));
-  const auto check_limits = check ? check->fixed_setter : std::nullopt;
+  require(check.has_value(), "The fixed setter INI loads");
+  const auto& check_limits = check->fixed_setter;
   require(check_limits && near(check_limits->check_tolerance_mm, 0.04),
           "the tool check tolerance is configurable in millimetres");
   require(has(error(with(enabled, "SETTER_MAX_TRAVEL_MM = 4",
@@ -640,7 +642,8 @@ void fixed_setter_is_explicit_and_bounded() {
   const auto geometry = load(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90",
       "SETTER_MAX_TRAVEL_MM = 90\nTOUCH_PROBE_CORNER_REACH_MM = 9\n"
       "TOUCH_PROBE_CORNER_MARGIN_MM = 4\nTOUCH_PROBE_CLEARANCE_MM = 6\nTOUCH_PROBE_DEPTH_MM = 3"));
-  const auto geometry_limits = geometry ? geometry->fixed_setter : std::nullopt;
+  require(geometry.has_value(), "The fixed setter INI loads");
+  const auto& geometry_limits = geometry->fixed_setter;
   require(geometry_limits && geometry_limits->material_geometry == MaterialProbeGeometry{9, 4, 6, 3},
           "the configured external probe approach supplies all four distances");
   require(has(error(with(two_pass, "SETTER_MAX_TRAVEL_MM = 90", "SETTER_MAX_TRAVEL_MM = 30")),

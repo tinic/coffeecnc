@@ -236,6 +236,8 @@ auto panel_directory(const Options& options) -> std::expected<std::string, std::
   return error ? directory.string() : resolved.string();
 }
 
+namespace {
+
 // The preview helper: COFFEECNC_PREVIEW_HELPER when set, else the program beside this one,
 // else, in a build with COFFEECNC_DEVELOPMENT_PATHS, the one of the build tree this was built
 // in. Empty when there is none.
@@ -367,10 +369,10 @@ auto import_runtime_state(LocalToolModelFiles& files, const MachineConfig& confi
     const auto old = files.read(source, record.limit);
     if (!old)
       return std::unexpected(std::format("{}: {}", source, old.error()));
-    if (*old) {
-      if ((*old)->more)
+    if (const auto& content = *old) {
+      if (content->more)
         return std::unexpected(std::format("{} is too large to import", source));
-      if (const auto copied = store(target, (*old)->bytes); !copied)
+      if (const auto copied = store(target, content->bytes); !copied)
         return std::unexpected(std::format("{}: {}", target, copied.error()));
     }
   }
@@ -380,6 +382,8 @@ auto import_runtime_state(LocalToolModelFiles& files, const MachineConfig& confi
     return saved;
   return files.sync_directory(directory);
 }
+
+} // namespace
 
 auto run_application(const Options& options, const ApplicationHooks& hooks) -> int {
   auto config = load_machine_config(options.ini_file);

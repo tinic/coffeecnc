@@ -654,11 +654,11 @@ describe('the built-in programs', () => {
     expect(program?.type === 'program' ? program.lines.length : 0).toBe(93)
     expect(r.preview()).toMatchObject({
       state: 'failed',
-      error: { line: 10, text: 'line 10: G61 is not supported by the simulator' },
+      error: { line: 38, text: 'line 38: cutter compensation needs a straight XY lead-in longer than the cutter radius' },
     })
     r.send({ type: 'run' })
     r.finish()
-    expect(r.errors()).toEqual(['line 10: G61 is not supported by the simulator'])
+    expect(r.errors()).toEqual(['line 38: cutter compensation needs a straight XY lead-in longer than the cutter radius'])
   })
 
   it('lists the program directory and the samples below it', () => {
@@ -1013,7 +1013,7 @@ describe('scenes', () => {
     const error = scene('error')
     expect(error.status.interp).toBe('idle')
     expect(error.out.filter((message) => message.type === 'message')).toMatchObject([
-      { level: 'error', text: 'line 10: G61 is not supported by the simulator' },
+      { level: 'error', text: 'line 38: cutter compensation needs a straight XY lead-in longer than the cutter radius' },
     ])
     expect(scene('limit').out.filter((message) => message.type === 'message')).toMatchObject([
       { level: 'error', text: "Linear move on line 12 would exceed X's negative limit" },

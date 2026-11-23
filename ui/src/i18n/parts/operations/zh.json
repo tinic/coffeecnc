@@ -13,6 +13,7 @@
       "title": "新建加工",
       "operations": "加工",
       "tool": "刀具",
+      "chooseThreadMill": "选择螺纹铣刀",
       "noTools": "刀具表中没有刀具",
       "toolAndFeeds": "刀具与进给",
       "geometry": "几何参数",
@@ -36,7 +37,9 @@
       "rectangularPocket": "矩形型腔",
       "slot": "槽 / 键槽",
       "slotSetup": "请选用适合进刀方式的立铣刀。设置槽长，使开放端位于毛坯边缘，并在边缘之外留出刀具行程。",
-      "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
+      "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。",
+      "threadMill": "内螺纹铣削",
+      "threadMillSetup": "使用单齿螺纹铣刀和预钻底孔。确认刀刃和刀颈可以在孔内通过。输入刀具中心的进给速度。 螺纹深度设定刀尖的 Z 位置。请留出刀齿高度。"
     },
     "label": {
       "chamferWidth": "倒角宽度",
@@ -100,7 +103,14 @@
       "slotEntry": "进刀",
       "slotAngle": "最大斜坡角度",
       "slotEntryFeed": "进刀进给",
-      "boltCircleRadius": "分布圆半径"
+      "boltCircleRadius": "分布圆半径",
+      "threadMajor": "螺纹大径",
+      "threadPitch": "螺距",
+      "threadPilot": "预钻孔径",
+      "threadPilotDepth": "有效孔深",
+      "threadDepth": "螺纹深度",
+      "threadPasses": "径向走刀次数",
+      "threadHand": "螺纹旋向"
     },
     "option": {
       "g85": "铰孔 (G85)",
@@ -137,7 +147,9 @@
       "slotBoth": "两端开放",
       "slotRamp": "斜坡",
       "slotPlunge": "垂直",
-      "g83": "G83 啄钻"
+      "g83": "G83 啄钻",
+      "threadRight": "右旋",
+      "threadLeft": "左旋"
     },
     "check": {
       "chamferAngle": "刀具夹角必须大于 0° 且小于 180°。",
@@ -184,7 +196,11 @@
       "slotPrecision": "请增大进给、深度、退刀高度或每刀深度，使参数符合程序精度。",
       "slotRampRoom": "槽长不足以使用此进刀角度。请增大角度或选择垂直进刀。",
       "slotMoveCount": "槽加工会生成过多移动。请增大每刀深度或斜坡角度。",
-      "noHole": "没有要钻的孔。"
+      "noHole": "没有要钻的孔。",
+      "threadDiameters": "预钻孔径必须大于铣刀直径且小于螺纹大径。",
+      "threadPilotDepth": "孔的直筒段深度必须大于 {depth}。",
+      "threadPrecision": "请按程序精度检查螺距、安全高度、进给速度、主轴转速和尺寸。",
+      "threadTurns": "按此螺距，螺纹深度必须相当于 1 至 {max} 圈。"
     }
   }
 }

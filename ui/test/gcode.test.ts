@@ -155,6 +155,19 @@ describe('arcs', () => {
   })
 })
 
+describe('modal save and restore', () => {
+  it('restores the saved modes without moving or resetting the active motion code', () => {
+    const m = modal()
+    run(m, 'G55 G21 G90 G99 F60 S500 M3', 'G43 H1', 'M70',
+      'G54 G20 G91 G98 F2 S1000 M5', 'G49', 'G0 X0.1')
+    const position = [...m.pos]
+    expect(run(m, 'M72')).toEqual([])
+    expect(m).toMatchObject({ wcs: 2, units: 'mm', absolute: true, retract: 99,
+      feed: 60, speed: 500, spindle: 'forward', motion: 0, pos: position, lengthTool: 1, toolOffset: [0, 0, 50] })
+    expect(error(modal(), 'M72')).toContain('previously saved M70')
+  })
+})
+
 describe('hole finishing cycles', () => {
   it('G85 feeds out to R, then rapids to the G98 clearance plane', () => {
     const m = modal()
@@ -431,8 +444,8 @@ describe('preview', () => {
       return preview.error
     }
     expect(failure('gmoccapy_2_tools_with_cutter_radius_compensation.ngc')).toEqual({
-      line: 10,
-      text: 'line 10: G61 is not supported by the simulator',
+      line: 17,
+      text: 'line 17: requested tool 3 not found in the tool table',
     })
     expect(failure('gridprobe.ngc')).toEqual({
       line: 11,

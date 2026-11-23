@@ -49,7 +49,7 @@ const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
 const pickedTool = reactive<Partial<Record<OperationId, number>>>({})
 function suggestedTool(id: OperationId): number {
   // The tool table diameter cannot identify these cutters.
-  if (id === 'chamfer' || id === 'hole-finishing') return 0
+  if (id === 'thread-mill' || id === 'hole-finishing' || id === 'chamfer') return 0
   const cutting = tools.value.filter((tool) => tool.diameter > 0)
   const named = (wanted: RegExp, unwanted: RegExp): number | undefined =>
     cutting.find((tool) => wanted.test(tool.comment) && !unwanted.test(tool.comment))?.number
@@ -268,6 +268,7 @@ const fieldGroups = computed(() => {
               <span class="label">{{ t('operations.dialog.tool') }}</span>
               <select v-model.number="toolNumber" class="field" :aria-label="t('operations.dialog.tool')" :disabled="saving">
                 <option v-if="tools.length === 0" :value="0">{{ t('operations.dialog.noTools') }}</option>
+                <option v-else-if="chosen === 'thread-mill'" :value="0" disabled>{{ t('operations.dialog.chooseThreadMill') }}</option>
                 <option v-else-if="chosen === 'chamfer'" :value="0" disabled>{{ t('operations.dialog.chooseChamferMill') }}</option>
                 <option v-else-if="chosen === 'hole-finishing'" :value="0" disabled>{{ t('operations.dialog.chooseFinishTool') }}</option>
                 <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>

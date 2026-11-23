@@ -97,11 +97,13 @@ auto diagnostic_inputs(const MachineConfig& config) -> std::vector<DiagnosticInp
                                   Pin{DiagnosticRole::home_switch, "home-sw-in"},
                                   Pin{DiagnosticRole::amp_fault, "amp-fault-in"}};
   for (int joint = 0; joint < joints; ++joint)
-    for (const auto& pin : joint_pins)
-      inputs.push_back({.role = pin.role,
-                        .joint = joint,
-                        .axis = letter(joint),
-                        .name = std::format("joint.{}.{}", joint, pin.name)});
+    std::ranges::transform(joint_pins, std::back_inserter(inputs),
+                           [&](const Pin& pin) -> DiagnosticInput {
+                             return {.role = pin.role,
+                                     .joint = joint,
+                                     .axis = letter(joint),
+                                     .name = std::format("joint.{}.{}", joint, pin.name)};
+                           });
   constexpr std::array machine_pins{
       Pin{DiagnosticRole::estop_chain, "iocontrol.0.emc-enable-in"},
       Pin{DiagnosticRole::estop_request, "iocontrol.0.user-enable-out"},
@@ -111,11 +113,16 @@ auto diagnostic_inputs(const MachineConfig& config) -> std::vector<DiagnosticInp
       Pin{DiagnosticRole::spindle_speed_out, "spindle.0.speed-out"},
       Pin{DiagnosticRole::spindle_speed_in, "spindle.0.speed-in"},
       Pin{DiagnosticRole::spindle_fault, "spindle.0.amp-fault-in"}};
-  for (const auto& pin : machine_pins)
-    inputs.push_back({.role = pin.role, .name = pin.name});
-  for (const auto& signal : config.diagnostics)
-    inputs.push_back(
-        {.role = DiagnosticRole::configured, .label = signal.label, .name = signal.name});
+  std::ranges::transform(machine_pins, std::back_inserter(inputs),
+                         [](const Pin& pin) -> DiagnosticInput {
+                           return {.role = pin.role, .name = pin.name};
+                         });
+  std::ranges::transform(config.diagnostics, std::back_inserter(inputs),
+                         [](const DiagnosticSignal& signal) -> DiagnosticInput {
+                           return {.role = DiagnosticRole::configured,
+                                   .label = signal.label,
+                                   .name = signal.name};
+                         });
   return inputs;
 }
 
@@ -244,6 +251,7 @@ auto HalToolLauncher::launch(HalTool tool) -> std::optional<std::string> {
   std::vector<char*> envp;
   envp.reserve(environment.size() + 1);
   std::ranges::transform(environment, std::back_inserter(envp),
+                         // cppcheck-suppress constParameterReference
                          [](std::string& entry) -> char* { return entry.data(); });
   envp.push_back(nullptr);
 
@@ -284,10 +292,12 @@ auto HalToolLauncher::states() -> std::vector<HalToolState> {
   }
   std::vector<HalToolState> states;
   states.reserve(hal_tools.size());
-  for (const auto tool : hal_tools)
-    states.push_back({.tool = tool,
-                      .available = program(tool).has_value(),
-                      .open = open.at(static_cast<std::size_t>(tool))});
+  std::ranges::transform(hal_tools, std::back_inserter(states),
+                         [&](HalTool tool) -> HalToolState {
+                           return {.tool = tool,
+                                   .available = program(tool).has_value(),
+                                   .open = open.at(static_cast<std::size_t>(tool))};
+                         });
   return states;
 }
 

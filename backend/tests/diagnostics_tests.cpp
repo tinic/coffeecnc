@@ -122,9 +122,9 @@ void feed_reads_only_while_watched() {
   Posted posted;
   std::atomic<int> reads{0};
   std::atomic<int> begins{0};
-  std::vector<HalTool> launched;
   constexpr auto period = 20ms;
   {
+    std::vector<HalTool> launched;
     DiagnosticsFeed feed{
         {.begin = [&]() -> void { ++begins; },
          .read = [&]() -> Diagnostics {

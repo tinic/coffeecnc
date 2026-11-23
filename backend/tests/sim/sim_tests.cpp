@@ -5980,11 +5980,12 @@ void diagnostics_view(Rig& rig) {
     return received.empty() ? Json() : received.back();
   };
   const auto row = [](const Json& message, std::string_view name) -> Json {
-    if (message.is_object())
-      for (const auto& input : message.at("inputs"))
-        if (input.at("name") == name)
-          return input;
-    return {};
+    if (!message.is_object())
+      return {};
+    const auto& inputs = message.at("inputs");
+    const auto found = std::ranges::find_if(
+        inputs, [&](const Json& input) -> bool { return input.at("name") == name; });
+    return found == inputs.end() ? Json() : *found;
   };
   const auto shown = [](const Json& input) -> std::string {
     return input.is_null() ? std::string("none")

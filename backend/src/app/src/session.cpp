@@ -1305,9 +1305,12 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   const FixedSetterRequest measurement{SetterAction::touch_off, tool,
                                         {ready.axes[0].machine, ready.axes[1].machine, ready.axes[2].machine}};
   const auto measured = port_.fixed_setter(measurement, measurement_epoch, maintain);
-  if (!measured || !measured->measurement || measured->measurement->calibration)
-    return answer({CommandOutcome::failed, measured ? "LinuxCNC did not measure the tool length."
-                                                     : measured.error()});
+  if (!measured)
+    return answer({CommandOutcome::failed, measured.error()});
+  const auto& recorded = measured->measurement;
+  if (!recorded || recorded->calibration)
+    return answer({CommandOutcome::failed, "LinuxCNC did not measure the tool length."});
+  const auto length = recorded->value;
 
   Stage result;
   result.setter = *measured;
@@ -1315,7 +1318,6 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     result.reply = {CommandOutcome::failed, std::move(reason)};
     return result;
   };
-  const auto length = measured->measurement->value;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
   CheckedPreview fresh;
   for (;;) {

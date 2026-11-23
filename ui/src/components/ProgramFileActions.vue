@@ -39,7 +39,7 @@ onBeforeUnmount(onResult((command, result) => {
   request = null
   pending.value = false
   if (result.outcome === 'accepted') emit('done', command.operation)
-  else error.value = result.reason ? translateMessage(result.reason) : t('common.unavailable')
+  else error.value = result.reason ? translateMessage(result.reason, result.refusal) : t('common.unavailable')
 }))
 </script>
 

@@ -294,6 +294,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
+  messages.emplace_back(encode_result(
+      46, CommandOutcome::rejected, "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {},
+      RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
   const RestartPoint restart{.line = 25,

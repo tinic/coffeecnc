@@ -130,7 +130,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       state.uncertain = result.outcome === 'timed_out'
       const reason = result.outcome === 'timed_out'
         ? t('tools.modelState.noConfirmation')
-        : result.reason || t('tools.modelState.couldNotSave')
+        : translateMessage(result.reason, result.refusal) || t('tools.modelState.couldNotSave')
       finish(fail(reason))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {

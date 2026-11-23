@@ -11,6 +11,7 @@
 // by ", " (nml_port.cpp, withdraw). Every other placeholder (a path, a file or program name, a
 // tool, a G-code line, a number such as the latched probe value) is data and stays exactly as
 // it arrived, also when it is a catalog word such as "two".
+import type { RefusalMessage } from '../protocol'
 import { i18n, type Params } from './index'
 import backend from './parts/backend/en.json?raw'
 import panel from './parts/messages/en.json?raw'
@@ -22,6 +23,7 @@ interface Pattern { key: string; regex: RegExp; names: string[] }
 
 const exact = new Map<string, string>()
 const patterns: Pattern[] = []
+const argumentsByKey = new Map<string, string[]>()
 
 function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -30,9 +32,13 @@ function escape(text: string): string {
 function collect(prefix: string, value: unknown): void {
   if (typeof value === 'string') {
     const names: string[] = []
+    argumentsByKey.set(prefix, names)
     // vue-i18n literals such as {'@'} stand for their character.
     const english = value.replace(/\{'([^']*)'\}/g, '$1')
-    if (!/\{\w+\}/.test(english)) { exact.set(english, prefix); return }
+    if (!/\{\w+\}/.test(english)) {
+      exact.set(english, prefix)
+      return
+    }
     const regex = english.split(/(\{\w+\})/).map((part) => {
       const name = /^\{(\w+)\}$/.exec(part)?.[1]
       if (name === undefined) return escape(part)
@@ -60,16 +66,36 @@ export function matchMessage(text: string): { key: string; params: Params } | nu
     const params: Params = {}
     pattern.names.forEach((name, index) => {
       const value = match[index + 1] ?? ''
-      params[name] = lists.has(name) ? value.split(', ').map(translateMessage).join(i18n.global.t('common.listSeparator'))
-        : nested.has(name) ? translateMessage(value) : value
+      params[name] = translateArgument(name, value)
     })
     return { key: pattern.key, params }
   }
   return null
 }
 
+function translateArgument(name: string, value: string): string {
+  if (lists.has(name)) return value.split(', ').map((item) => translateMessage(item)).join(i18n.global.t('common.listSeparator'))
+  return nested.has(name) ? translateMessage(value) : value
+}
+
+function translateRefusal(message: RefusalMessage | undefined): string | undefined {
+  if (!message || typeof message.key !== 'string') return
+  const names = argumentsByKey.get(message.key)
+  const args: unknown = message.params
+  if (!names || typeof args !== 'object' || args === null || Array.isArray(args)) return
+  const params: Params = {}
+  for (const name of names) {
+    const value = (args as Record<string, unknown>)[name]
+    if (!Object.hasOwn(args, name) || typeof value !== 'string') return
+    params[name] = translateArgument(name, value)
+  }
+  return i18n.global.t(message.key as never, params)
+}
+
 /** `text` in the panel's language when it is a known sentence; otherwise unchanged. */
-export function translateMessage(text: string): string {
+export function translateMessage(text: string, refusal?: RefusalMessage): string {
+  const structured = translateRefusal(refusal)
+  if (structured !== undefined) return structured
   if (i18n.global.locale.value === 'en' || text === '') return text
   const match = matchMessage(text)
   // The key comes from the English catalog, so it exists in every language.

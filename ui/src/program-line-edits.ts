@@ -91,7 +91,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       unsubscribe()
       pending.value = false
       if (result.outcome !== 'accepted') {
-        feedback.value = { file: program.file, text: result.reason ? translateMessage(result.reason) : t('program.lineEdits.notSaved'), error: true }
+        feedback.value = { file: program.file, text: result.reason ? translateMessage(result.reason, result.refusal) : t('program.lineEdits.notSaved'), error: true }
         return
       }
       if (cut !== undefined) clipboard.value = cut

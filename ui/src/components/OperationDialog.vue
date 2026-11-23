@@ -184,12 +184,12 @@ const removeListener = onResult((command, result) => {
     if (result.outcome === 'accepted' && panel.directory !== null) {
       directory.value = panel.directory
       feedback.value = ''
-    } else feedback.value = result.reason ? translateMessage(result.reason) : t('operations.dialog.directoryUnreadable')
+    } else feedback.value = result.reason ? translateMessage(result.reason, result.refusal) : t('operations.dialog.directoryUnreadable')
   } else if (command === saveRequest) {
     saveRequest = null
     saving.value = false
     if (result.outcome !== 'accepted') {
-      feedback.value = result.reason ? translateMessage(result.reason) : t('operations.dialog.notSaved')
+      feedback.value = result.reason ? translateMessage(result.reason, result.refusal) : t('operations.dialog.notSaved')
       return
     }
     // Saved: open it as the current program; Program check and the preview follow.

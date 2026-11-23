@@ -40,7 +40,7 @@ const removeResultListener = onResult((command, result) => {
   if (result.outcome === 'accepted') {
     accepted.value = true
   } else {
-    error.value = result.reason
+    error.value = translateMessage(result.reason, result.refusal)
     unconfirmed.value = result.reason === ''
   }
 })

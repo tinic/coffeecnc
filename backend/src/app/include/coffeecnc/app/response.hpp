@@ -31,7 +31,8 @@ struct RestartPlan {
 // replaced, never rejected: a result must always be sent.
 [[nodiscard]] auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
                                  const std::optional<SetterState>& setter = {},
-                                 const std::optional<RestartPlan>& restart = {}) -> std::string;
+                                 const std::optional<RestartPlan>& restart = {},
+                                 const std::optional<RefusalMessage>& refusal = {}) -> std::string;
 
 // Wire text of an OperatorMessage. The time is since the Unix epoch.
 [[nodiscard]] auto encode_message(MessageLevel level, std::string_view text,

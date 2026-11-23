@@ -353,7 +353,8 @@ struct Rig {
     const auto outcome = send(body);
     require(outcome.messages.size() == 1, "Exactly one message for: " + std::string(body));
     auto result = Json::parse(outcome.messages.front());
-    require(result.at("type") == "result" && result.at("id") == id && result.size() == 4,
+    const auto expected_fields = result.contains("refusal") ? 5U : 4U;
+    require(result.at("type") == "result" && result.at("id") == id && result.size() == expected_fields,
             "The message is the result of: " + std::string(body));
     return result;
   }
@@ -809,7 +810,11 @@ void tool_model_commands_go_to_their_service() {
 
 void ready_gate() {
   Rig rig{false};
-  rig.expect(R"("type":"run")", "rejected", gate_reason);
+  const auto early = rig.result(R"("type":"run")");
+  require(early.at("outcome") == "rejected" && early.at("reason") == gate_reason &&
+              early.at("refusal").at("key") == "messages.session.panelNotLoaded" &&
+              early.at("refusal").at("params") == Json::object(),
+          "The ready gate sends a catalog key and its English reason.");
   rig.expect(R"("type":"abort")", "rejected", gate_reason);
   rig.expect(R"("type":"jog_stop_all")", "rejected", gate_reason);
   require(rig.port.calls.empty() && rig.port.snapshots == 0, "Nothing runs before ready");
@@ -940,8 +945,12 @@ void machine_capabilities() {
   rig.acted({"set_task_mode auto", "run"}, "An unhomed run is sent");
   rig.expect(R"("type":"jog","axis":"z","direction":1,"velocity":900,"held":true)", "rejected",
              "Jog velocity is above the Z axis limit of 750 mm/min.");
-  rig.expect(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)", "rejected",
-             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  const auto fast = rig.result(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)");
+  require(fast.at("outcome") == "rejected" &&
+              fast.at("reason") == "Jog velocity is above the Z axis limit of 750 mm/min." &&
+              fast.at("refusal") == Json{{"key", "messages.policy.jogVelocityAxisLimit"},
+                                         {"params", {{"axis", "Z"}, {"limit", "750"}}}},
+          "The worker forwards the policy refusal with its named arguments.");
   rig.acted({}, "A jog above its axis ceiling sends nothing");
   rig.accepted(R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":true)");
   rig.acted({"set_task_mode manual", "start_jog x 1 1500 joint"},
@@ -2663,7 +2672,12 @@ void exactly_one_result(std::uint32_t seed) {
     require(found.size() == 1, "Exactly one result for: " + wire);
     const auto& result = found.front();
     const auto verdict = result.at("outcome").get<std::string>();
-    require(result.at("id") == id && result.size() == 4, "The result carries the request's ID");
+    const auto refusal = result.find("refusal");
+    require(result.at("id") == id && result.size() == (refusal == result.end() ? 4U : 5U),
+            "The result carries the request's ID");
+    if (refusal != result.end())
+      require(verdict == "rejected" && refusal->at("key").is_string() && refusal->at("params").is_object(),
+              "Only a rejected result can carry a refusal key and arguments");
     require(verdict == "accepted" || verdict == "rejected" || verdict == "failed" ||
                 verdict == "timed_out",
             "The outcome is one of the protocol's four");

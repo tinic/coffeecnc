@@ -26,7 +26,7 @@ const removeListener = onResult((command, result) => {
   if (command !== request) return
   request = null
   starting.value = null
-  refusal.value = result.outcome === 'accepted' ? null : result.reason
+  refusal.value = result.outcome === 'accepted' ? null : translateMessage(result.reason, result.refusal)
 })
 
 const now = ref(Date.now())

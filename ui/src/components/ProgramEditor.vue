@@ -77,7 +77,7 @@ const removeListener = onResult((command, result) => {
     saveRequest = null
     if (result.outcome !== 'accepted') {
       saving.value = false
-      feedback.value = result.reason || t('program.editor.notSaved')
+      feedback.value = translateMessage(result.reason, result.refusal) || t('program.editor.notSaved')
       return
     }
     // Over the loaded program the machine opened it again; a new file is opened now.
@@ -89,7 +89,7 @@ const removeListener = onResult((command, result) => {
     openRequest = null
     saving.value = false
     if (result.outcome === 'accepted') emit('close')
-    else feedback.value = t('program.editor.savedNotOpened', { reason: result.reason ? translateMessage(result.reason) : t('program.editor.refused') })
+    else feedback.value = t('program.editor.savedNotOpened', { reason: result.reason ? translateMessage(result.reason, result.refusal) : t('program.editor.refused') })
   }
 })
 onBeforeUnmount(removeListener)

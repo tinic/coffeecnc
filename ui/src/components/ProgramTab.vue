@@ -240,7 +240,7 @@ const removeEditListener = onResult((command, result) => {
   if (command !== editRequest) return
   editRequest = null
   if (result.outcome === 'accepted') editing.value = null
-  else if (editing.value !== null) editing.value.error = result.reason ? translateMessage(result.reason) : t('program.tab.notSaved')
+  else if (editing.value !== null) editing.value.error = result.reason ? translateMessage(result.reason, result.refusal) : t('program.tab.notSaved')
 })
 onBeforeUnmount(removeEditListener)
 

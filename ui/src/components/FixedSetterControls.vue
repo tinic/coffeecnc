@@ -138,7 +138,7 @@ const removeListener = onResult((command, result) => {
   if (result.outcome !== 'accepted') {
     if (motion && result.outcome === 'timed_out') send({ type: 'abort' })
     if (motion) {
-      error.value = result.reason || (command.action === 'check'
+      error.value = translateMessage(result.reason, result.refusal) || (command.action === 'check'
         ? t('tools.setter.checkNotConfirmed') : t('tools.setter.measureNotConfirmed'))
       refresh()
     }

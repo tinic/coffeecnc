@@ -37,8 +37,11 @@ auto text(const Json& message) -> std::string {
 
 auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
                    const std::optional<SetterState>& setter,
-                   const std::optional<RestartPlan>& restart) -> std::string {
+                   const std::optional<RestartPlan>& restart,
+                   const std::optional<RefusalMessage>& refusal) -> std::string {
   Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
+  if (outcome == CommandOutcome::rejected && refusal)
+    message["refusal"] = {{"key", refusal->key}, {"params", refusal->params}};
   if (setter) {
     auto measurement = Json(nullptr);
     if (const auto& r = setter->measurement) {

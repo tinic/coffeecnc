@@ -6,6 +6,7 @@ import { reactive, watch } from 'vue'
 
 import { arrived, arrivalToleranceMm, moveToleranceMm, type GoToMove } from './manual-moves'
 import { t } from './i18n'
+import { translateMessage } from './i18n/messages'
 import type { CommandBody, Status } from './protocol'
 import type { ResultListener } from './store'
 
@@ -65,7 +66,7 @@ export function createMoveSequence(deps: {
 
   const stopResults = deps.onResult((sent, result) => {
     if (sent !== command || !state.running) return
-    if (result.outcome !== 'accepted') { end(result.reason || t('manual.sequence.refused')); return }
+    if (result.outcome !== 'accepted') { end(translateMessage(result.reason, result.refusal) || t('manual.sequence.refused')); return }
     accepted = true
     observe(deps.status())
   })

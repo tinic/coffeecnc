@@ -4,7 +4,7 @@
 // sentence fails here until it is catalogued in parts/messages (or parts/backend).
 import { describe, expect, it } from 'vitest'
 
-import { setLanguage } from '../src/i18n'
+import { i18n, setLanguage } from '../src/i18n'
 import { matchMessage, translateMessage } from '../src/i18n/messages'
 
 const native = import.meta.glob<string>([
@@ -56,7 +56,7 @@ const english = new Set<string>([
   'Invalid machine command limits',
 ])
 
-interface Literal { text: string; before: string }
+interface Literal { text: string; before: string; after: string }
 
 /** The string literals of C++ source, adjacent ones joined, comments skipped. */
 function cppLiterals(source: string): Literal[] {
@@ -77,8 +77,11 @@ function cppLiterals(source: string): Literal[] {
       end += 1
     }
     const last = literals.at(-1)
-    if (last !== undefined && source.slice(previousEnd, index).trim() === '') last.text += text
-    else literals.push({ text, before: source.slice(Math.max(0, index - 300), index) })
+    const after = source.slice(end + 1, end + 400)
+    if (last !== undefined && source.slice(previousEnd, index).trim() === '') {
+      last.text += text
+      last.after = after
+    } else literals.push({ text, before: source.slice(Math.max(0, index - 300), index), after })
     previousEnd = end + 1
     index = end + 1
   }
@@ -88,7 +91,10 @@ function cppLiterals(source: string): Literal[] {
 /** The operator sentences of one C++ file. */
 function nativeSentences(path: string, source: string): string[] {
   const sentences: string[] = []
-  for (const { text, before } of cppLiterals(source)) {
+  for (const { text, before, after } of cppLiterals(source)) {
+    // A keyed refusal carries separate English fallback text for older panels.
+    if (/^\s*,\s*RefusalMessage\{/.test(after) ||
+      before.trimEnd().endsWith('std::format(') && /^[^;]*\),\s*RefusalMessage\{/.test(after)) continue
     // Compile-time diagnostics.
     if (/static_assert\([^;"]*$/.test(before)) continue
     // Operator text starts with a capital and has words; G-code, field names and wire values do not.
@@ -162,6 +168,13 @@ describe('native and store sentences', () => {
     expect(sentences.filter((sentence) => matchMessage(sentence) === null)).toEqual([])
   })
 
+  it('keeps every native refusal key in the catalog', () => {
+    const keys = files.flatMap(([, source]) =>
+      [...source.matchAll(/RefusalMessage\{\s*"([^"]+)"/g)].map((match) => match[1] ?? ''))
+    expect(keys.length).toBeGreaterThan(50)
+    expect(keys.filter((key) => !i18n.global.te(key, 'en'))).toEqual([])
+  })
+
   it('keeps the allowlist to literals that exist', () => {
     const all = Object.values(native).join('\n')
     for (const text of english) expect(all).toContain(`"${text}"`)
@@ -174,6 +187,17 @@ describe('translateMessage', () => {
     expect(translateMessage('Load a program first.')).toBe('Laden Sie zuerst ein Programm.')
     await setLanguage('ja')
     expect(translateMessage('Load a program first.')).toBe('先にプログラムを読み込んでください。')
+  })
+
+  it('uses a refusal key first and falls back when metadata is unknown or incomplete', async () => {
+    await setLanguage('de')
+    const fallback = 'The older panel can show this as-is.'
+    expect(translateMessage(fallback, { key: 'messages.policy.jogVelocityAxisLimit', params: { axis: 'Z', limit: '750' } }))
+      .toBe('Die Tippgeschwindigkeit liegt über der Grenze der Z-Achse von 750 mm/min.')
+    expect(translateMessage(fallback, { key: 'messages.policy.jogVelocityAxisLimit', params: { axis: 'Z' } }))
+      .toBe(fallback)
+    expect(translateMessage('Load a program first.', { key: 'messages.future.newKey', params: {} }))
+      .toBe('Laden Sie zuerst ein Programm.')
   })
 
   it('keeps the numbers of a parameterised refusal', async () => {

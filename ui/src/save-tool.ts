@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { t } from './i18n'
+import { translateMessage } from './i18n/messages'
 import { onResult, panel, send } from './machine'
 import type { Tool } from './protocol'
 
@@ -27,7 +28,7 @@ export function saveTool(tool: Tool, signal: AbortSignal): Promise<string | null
     }
     stops.push(onResult((body, result) => {
       if (body !== command) return
-      if (result.outcome !== 'accepted') finish(result.reason || t('tools.save.couldNotSave'))
+      if (result.outcome !== 'accepted') finish(translateMessage(result.reason, result.refusal) || t('tools.save.couldNotSave'))
       else { accepted = true; check() }
     }))
     stops.push(watch([(): unknown => panel.toolTable, (): unknown => panel.hello, (): unknown => panel.link], check, { flush: 'sync' }))

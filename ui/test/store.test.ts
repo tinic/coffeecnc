@@ -306,6 +306,17 @@ describe('commands', () => {
 })
 
 describe('MDI history', () => {
+  it('keeps a structured refusal and the fallback in both the MDI history and message log', () => {
+    const { panel, receive } = rig()
+    const id = panel.send({ type: 'mdi', text: 'G0 X1' })
+    const reason = 'Home all configured axes first.'
+    const refusal = { key: 'messages.policy.homeAllFirst', params: {} }
+    receive({ type: 'result', id, outcome: 'rejected', reason, refusal })
+    expect(panel.state.mdi.at(-1)).toMatchObject({ reason, refusal })
+    expect(panel.state.notice).toMatchObject({ text: reason, refusal })
+    expect(panel.state.log.at(-1)).toMatchObject({ text: reason, refusal })
+  })
+
   it('records each command with its result', () => {
     const { panel, receive, pass } = rig()
     const ok = panel.send({ type: 'mdi', text: 'G0 X1' })

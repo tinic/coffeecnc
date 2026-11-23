@@ -54,7 +54,7 @@ const removeListener = onResult((command, result) => {
   if (command !== request.value) return
   request.value = null
   if (result.outcome !== 'accepted') {
-    failure.value = result.reason || t('program.restartDialog.notConfirmed')
+    failure.value = translateMessage(result.reason, result.refusal) || t('program.restartDialog.notConfirmed')
     if (command.type === 'start_restart') {
       plan.value = null
       // No answer does not mean nothing moves: stop what the machine may still be doing.

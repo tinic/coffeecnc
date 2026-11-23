@@ -4436,21 +4436,21 @@ void cam_programs(Rig& rig) {
                                                                                       : "unavailable";
   };
   const std::filesystem::path cam{COFFEECNC_CAM_SAMPLES_DIRECTORY};
-  for (const auto* name : {"fusion360-linuxcnc.ngc", "mastercam-linuxcnc.ngc",
+  for (const auto* sample : {"fusion360-linuxcnc.ngc", "mastercam-linuxcnc.ngc",
                            "sheetcam-linuxcnc.ngc", "estlcam-linuxcnc.ngc",
                            "parameters-subroutines.ngc", "several-work-offsets.ngc",
                            "unset-parameter.ngc"}) {
-    const auto text = read_text_file((cam / name).string(), 65536).value_or("");
+    const auto text = read_text_file((cam / sample).string(), 65536).value_or("");
     const auto o = load(text);
     fact("cam_program", std::format("sample={} state={} error_line={} error={} segments={} "
                                     "check_errors={}",
-                                    name, state(o), o.error ? o.error->line : 0,
+                                    sample, state(o), o.error ? o.error->line : 0,
                                     word(o.error ? o.error->text : "-"), o.segments.size(),
                                     o.check ? o.check->errors.size() : 0));
-    const bool expected = std::string_view(name) == "unset-parameter.ngc"
+    const bool expected = std::string_view(sample) == "unset-parameter.ngc"
                               ? o.state == PreviewState::failed && o.error && o.error->line == 5
                               : o.state == PreviewState::ready && o.check && o.check->errors.empty();
-    check("cam_program_preview", expected, std::format("{}: {}", name,
+    check("cam_program_preview", expected, std::format("{}: {}", sample,
                                                         o.error ? o.error->text : "-"));
   }
 

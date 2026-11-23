@@ -1346,8 +1346,9 @@ void cam_samples() {
   };
   require(at_line(29) != o.segments.end() && near(at_line(29)->points.back()[2], -50) &&
               at_line(41) != o.segments.end() && near(at_line(41)->points.front()[0], 210) &&
-              frames(o) == std::vector<int>{1, 2} && o.check->tools.size() == 2 &&
-              o.check->tools[0].tool == 1 && o.check->tools[1].tool == 2,
+              frames(o) == std::vector<int>{1, 2} && o.check.has_value() &&
+              o.check.value().tools.size() == 2 && o.check.value().tools[0].tool == 1 &&
+              o.check.value().tools[1].tool == 2,
           "Fusion 360: G28 lifts to the saved Z, the drill cycle runs in G55's saved offsets: " +
               text_of(o).substr(0, 600));
   o = run("several-work-offsets.ngc");

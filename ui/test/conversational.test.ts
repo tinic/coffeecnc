@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { bore } from '../src/conversational/bore'
+import { contour, type Contour } from '../src/conversational/contour'
 import { drilling, holes } from '../src/conversational/drilling'
 import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
@@ -345,6 +346,51 @@ function text(generated: Generated): string {
 function errors(generated: Generated): string[] {
   return 'errors' in generated ? generated.errors : []
 }
+
+describe('contours', () => {
+  const tools = [
+    { number: 1, pocket: 1, length: 50, diameter: 10, comment: '' },
+    { number: 2, pocket: 2, length: 40, diameter: 6.35, comment: '' },
+  ]
+  const circular = { ...mm, shape: 'circle', x: 10, y: 12, diameter: 40,
+    inside: false, clockwise: true, depth: 2, depthPerPass: 1, plungeFeed: 150 } as const satisfies Contour
+
+  it.each([[false, true, 'G41', 25], [true, true, 'G42', 15], [false, false, 'G42', 25], [true, false, 'G41', 15]] as const)(
+    'cuts a compensated circle (inside %s, clockwise %s)',
+    (inside, clockwise, compensation, radius) => {
+      const lines = splitLines(text(contour({ ...circular, inside, clockwise })))
+      expect(lines.filter((line) => line.startsWith(`${compensation} D1 G1`))).toHaveLength(2)
+      expect(lines.filter((line) => line.startsWith('G40 G0'))).toHaveLength(2)
+      const preview = previewProgram(newModal(tools), lines, false, 1)
+      expect(preview.error).toBeNull()
+      const circleLine = lines.findIndex((line) => line === `${clockwise ? 'G2' : 'G3'} X10 Y-8 I0 J20`) + 1
+      const points = preview.segments.find((s) => s.line === circleLine)?.points ?? []
+      expect(points.length).toBeGreaterThan(20)
+      for (let i = 0; i < points.length; i += 3) {
+        expect(Math.hypot((points[i] ?? NaN) - 10, (points[i + 1] ?? NaN) - 12)).toBeCloseTo(radius, 7)
+      }
+    },
+  )
+
+  it('previews a sharp outside rectangle and a rounded inside rectangle in inches', () => {
+    const template = { ...inch, shape: 'rectangle', x: 0.2, y: 0.4, width: 2, height: 1.5,
+      clockwise: true, depth: 0.1, depthPerPass: 0.05, plungeFeed: 8 } as const
+    for (const [inside, corner] of [[false, 0], [true, 0.2]] as const) {
+      const lines = splitLines(text(contour({ ...template, inside, corner })))
+      const preview = previewProgram(newModal(tools), lines, false, 1)
+      expect(preview.state).toBe('ready')
+      expect(preview.error).toBeNull()
+      expect(lines.at(-1)).toBe('M2')
+    }
+  })
+
+  it('refuses an inside contour without room to enter or with an undersized corner', () => {
+    expect(errors(contour({ ...circular, inside: true, diameter: 15 }))).toContain(
+      'The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.')
+    expect(errors(contour({ ...circular, shape: 'rectangle', inside: true, width: 40, height: 35, corner: 4 }))).toContain(
+      'An inside corner radius must be greater than the cutter radius (5).')
+  })
+})
 
 describe('conversational programs', () => {
   it.each(Object.keys(cases))('%s is the expected program', (name) => {

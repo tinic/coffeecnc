@@ -20,6 +20,8 @@
       "notSaved": "O programa não foi guardado."
     },
     "operation": {
+      "contour": "Contorno",
+      "contourSetup": "Deixe a entrada livre. Para um corte interior, comece numa bolsa aberta ou num furo.",
       "inclinedEntry": "Use uma fresa de topo adequada à entrada escolhida.",
       "facing": "Facejamento",
       "drilling": "Padrão de furos",
@@ -29,6 +31,10 @@
       "centreCutting": "Penetra na vertical no centro: use uma fresa de topo com corte ao centro."
     },
     "label": {
+      "profileShape": "Forma",
+      "profileSide": "Lado de corte",
+      "profileDirection": "Sentido",
+      "profileDiameter": "Diâmetro do contorno",
       "entryFeed": "Avanço de entrada",
       "pocketEntry": "Entrada",
       "entryAngle": "Ângulo máximo de entrada",
@@ -76,6 +82,12 @@
       "boltCircleRadius": "Raio do círculo de furos"
     },
     "option": {
+      "profileCircle": "Círculo",
+      "profileRectangle": "Retângulo",
+      "profileOutside": "Exterior",
+      "profileInside": "Interior",
+      "clockwise": "Horário",
+      "counterclockwise": "Anti-horário",
       "plunge": "Mergulho vertical",
       "helix": "Helicoidal",
       "ramp": "Rampa linear",
@@ -99,6 +111,10 @@
       "g83": "G83 picagem"
     },
     "check": {
+      "profilePrecision": "Verifique as dimensões e os avanços. Cada passe tem de ser representável com a precisão do programa. Máximo de 2000 passes.",
+      "profileCorner": "O raio do canto deve ser pelo menos zero e menor do que metade do lado mais curto.",
+      "profileInsideCorner": "O raio de um canto interior deve exceder o raio da ferramenta ({radius}).",
+      "profileLeadRoom": "A ferramenta e a sua entrada não cabem no contorno. Use uma ferramenta mais pequena ou um contorno maior.",
       "wallStockNonnegative": "O sobremetal nas paredes deve ser zero ou maior.",
       "wallStockPrecision": "O sobremetal é demasiado pequeno para a precisão das coordenadas do programa.",
       "entryAngle": "O ângulo de entrada deve ser maior que 0° e menor que 90°.",

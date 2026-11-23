@@ -20,6 +20,8 @@
       "notSaved": "The program was not saved."
     },
     "operation": {
+      "contour": "Contour",
+      "contourSetup": "Keep the lead-in clear. For an inside cut, start from an open pocket or hole.",
       "inclinedEntry": "Use an end mill rated for the selected entry.",
       "facing": "Facing",
       "drilling": "Hole pattern",
@@ -29,6 +31,10 @@
       "centreCutting": "Plunges straight down at the centre: use an end mill that cuts at its centre."
     },
     "label": {
+      "profileShape": "Shape",
+      "profileSide": "Cut side",
+      "profileDirection": "Direction",
+      "profileDiameter": "Profile diameter",
       "entryFeed": "Entry feed",
       "pocketEntry": "Entry",
       "entryAngle": "Maximum entry angle",
@@ -76,6 +82,12 @@
       "boltCircleRadius": "Bolt circle radius"
     },
     "option": {
+      "profileCircle": "Circle",
+      "profileRectangle": "Rectangle",
+      "profileOutside": "Outside",
+      "profileInside": "Inside",
+      "clockwise": "Clockwise",
+      "counterclockwise": "Counterclockwise",
       "plunge": "Plunge",
       "helix": "Helical",
       "ramp": "Linear ramp",
@@ -99,6 +111,10 @@
       "g83": "G83 peck"
     },
     "check": {
+      "profilePrecision": "Check the dimensions and feeds. Each pass must fit the program’s precision, with at most 2,000 passes.",
+      "profileCorner": "The corner radius must be at least zero and less than half the smaller side.",
+      "profileInsideCorner": "An inside corner radius must be greater than the cutter radius ({radius}).",
+      "profileLeadRoom": "The tool and its lead-in do not fit inside this profile. Use a smaller tool or a larger profile.",
       "wallStockNonnegative": "Wall stock must be zero or greater.",
       "wallStockPrecision": "Wall stock is too small for this program’s coordinate precision.",
       "entryAngle": "The entry angle must be greater than 0° and less than 90°.",

@@ -20,6 +20,8 @@
       "notSaved": "程序未保存。"
     },
     "operation": {
+      "contour": "轮廓",
+      "contourSetup": "请留出进刀空间。加工内轮廓时，请从已开口的型腔或孔开始。",
       "inclinedEntry": "请使用适合所选切入方式的立铣刀。",
       "facing": "平面铣",
       "drilling": "孔阵列",
@@ -29,6 +31,10 @@
       "centreCutting": "在中心垂直下刀：请使用可中心切削的平底立铣刀。"
     },
     "label": {
+      "profileShape": "形状",
+      "profileSide": "切削侧",
+      "profileDirection": "方向",
+      "profileDiameter": "轮廓直径",
       "entryFeed": "切入进给",
       "pocketEntry": "切入方式",
       "entryAngle": "最大切入角",
@@ -76,6 +82,12 @@
       "boltCircleRadius": "分布圆半径"
     },
     "option": {
+      "profileCircle": "圆形",
+      "profileRectangle": "矩形",
+      "profileOutside": "外侧",
+      "profileInside": "内侧",
+      "clockwise": "顺时针",
+      "counterclockwise": "逆时针",
       "plunge": "垂直下刀",
       "helix": "螺旋切入",
       "ramp": "直线斜坡",
@@ -99,6 +111,10 @@
       "g83": "G83 啄钻"
     },
     "check": {
+      "profilePrecision": "请检查尺寸和进给。每刀的参数都必须能以程序精度表示，最多 2000 刀。",
+      "profileCorner": "圆角半径必须大于或等于零，且小于短边长度的一半。",
+      "profileInsideCorner": "内轮廓圆角半径必须大于刀具半径（{radius}）。",
+      "profileLeadRoom": "刀具和进刀路径无法容纳在此轮廓内。请使用较小的刀具或扩大轮廓。",
       "wallStockNonnegative": "侧壁余量必须大于或等于零。",
       "wallStockPrecision": "侧壁余量小于程序坐标精度。",
       "entryAngle": "切入角必须大于 0° 且小于 90°。",

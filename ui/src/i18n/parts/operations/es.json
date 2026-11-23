@@ -20,6 +20,8 @@
       "notSaved": "El programa no se ha guardado."
     },
     "operation": {
+      "contour": "Contorno",
+      "contourSetup": "Deja libre la entrada. Para un corte interior, empieza desde un bolsillo abierto o un agujero.",
       "inclinedEntry": "Utilice una fresa de extremo apta para la entrada seleccionada.",
       "facing": "Planeado",
       "drilling": "Patrón de taladros",
@@ -29,6 +31,10 @@
       "centreCutting": "Penetra en vertical en el centro: use una fresa plana con corte al centro."
     },
     "label": {
+      "profileShape": "Forma",
+      "profileSide": "Lado de corte",
+      "profileDirection": "Sentido",
+      "profileDiameter": "Diámetro del contorno",
       "entryFeed": "Avance de entrada",
       "pocketEntry": "Entrada",
       "entryAngle": "Ángulo máximo de entrada",
@@ -76,6 +82,12 @@
       "boltCircleRadius": "Radio del círculo de taladros"
     },
     "option": {
+      "profileCircle": "Círculo",
+      "profileRectangle": "Rectángulo",
+      "profileOutside": "Exterior",
+      "profileInside": "Interior",
+      "clockwise": "Horario",
+      "counterclockwise": "Antihorario",
       "plunge": "Penetración vertical",
       "helix": "Helicoidal",
       "ramp": "Rampa lineal",
@@ -99,6 +111,10 @@
       "g83": "G83 picoteo"
     },
     "check": {
+      "profilePrecision": "Revisa las dimensiones y los avances. Cada pasada debe poder expresarse con la precisión del programa. Máximo 2000 pasadas.",
+      "profileCorner": "El radio de esquina debe ser mayor o igual a cero y menor que la mitad del lado más corto.",
+      "profileInsideCorner": "El radio de esquina interior debe ser mayor que el radio de la herramienta ({radius}).",
+      "profileLeadRoom": "La herramienta y su entrada no caben en el contorno. Usa una herramienta menor o un contorno mayor.",
       "wallStockNonnegative": "El sobrematerial en las paredes debe ser cero o mayor.",
       "wallStockPrecision": "El sobrematerial en las paredes es demasiado pequeño para la precisión de coordenadas del programa.",
       "entryAngle": "El ángulo de entrada debe ser mayor que 0° y menor que 90°.",

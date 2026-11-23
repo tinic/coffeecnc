@@ -20,6 +20,8 @@
       "notSaved": "Das Programm wurde nicht gespeichert."
     },
     "operation": {
+      "contour": "Kontur",
+      "contourSetup": "Halten Sie den Anfahrbereich frei. Beginnen Sie eine Innenkontur in einer offenen Tasche oder Bohrung.",
       "inclinedEntry": "Verwenden Sie einen Fräser, der für die gewählte Eintauchmethode ausgelegt ist.",
       "facing": "Planfräsen",
       "drilling": "Bohrbild",
@@ -29,6 +31,10 @@
       "centreCutting": "Taucht in der Mitte senkrecht ein: Verwenden Sie einen über Mitte schneidenden Schaftfräser."
     },
     "label": {
+      "profileShape": "Form",
+      "profileSide": "Schnittseite",
+      "profileDirection": "Richtung",
+      "profileDiameter": "Konturdurchmesser",
       "entryFeed": "Eintauchvorschub",
       "pocketEntry": "Eintauchmethode",
       "entryAngle": "Maximaler Eintauchwinkel",
@@ -76,6 +82,12 @@
       "boltCircleRadius": "Lochkreisradius"
     },
     "option": {
+      "profileCircle": "Kreis",
+      "profileRectangle": "Rechteck",
+      "profileOutside": "Außen",
+      "profileInside": "Innen",
+      "clockwise": "Im Uhrzeigersinn",
+      "counterclockwise": "Gegen den Uhrzeigersinn",
       "plunge": "Senkrecht",
       "helix": "Helix",
       "ramp": "Lineare Rampe",
@@ -99,6 +111,10 @@
       "g83": "G83 Tieflochbohren"
     },
     "check": {
+      "profilePrecision": "Prüfen Sie Abmessungen und Vorschübe. Jeder Durchgang muss mit der Programmgenauigkeit darstellbar sein. Maximal 2.000 Durchgänge.",
+      "profileCorner": "Der Eckenradius muss mindestens null und kleiner als die halbe kürzere Seite sein.",
+      "profileInsideCorner": "Der innere Eckenradius muss größer als der Werkzeugradius ({radius}) sein.",
+      "profileLeadRoom": "Werkzeug und Anfahrweg passen nicht in die Kontur. Wählen Sie ein kleineres Werkzeug oder eine größere Kontur.",
       "wallStockNonnegative": "Das Wandaufmaß muss null oder größer sein.",
       "wallStockPrecision": "Das Wandaufmaß ist für die Koordinatengenauigkeit des Programms zu klein.",
       "entryAngle": "Der Eintauchwinkel muss größer als 0° und kleiner als 90° sein.",

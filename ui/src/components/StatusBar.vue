@@ -124,7 +124,7 @@ const subtitle = computed(() => {
   </header>
   <section class="jobbar">
     <div class="job">
-      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-if="status?.program.file" v-tooltip="'Edit program'" class="open" type="button" aria-label="Edit program" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
+      <div class="title-row"><h1>{{ title }}</h1><template v-if="panel.tab === 'program'"><button v-tooltip="'Open program'" class="open" type="button" aria-label="Open program" :disabled="!live" @click="emit('open')"><AppIcon name="folder" /></button><button v-tooltip="'New operation'" class="open" type="button" aria-label="New operation" :disabled="!live" @click="emit('create')"><AppIcon name="plus" /></button><button v-tooltip="'Edit program'" class="open" type="button" aria-label="Edit program" :disabled="!live" @click="emit('edit')"><AppIcon name="edit" /></button></template></div>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
     <div class="machine-controls">

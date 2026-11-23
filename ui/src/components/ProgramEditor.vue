@@ -20,7 +20,7 @@ import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
 const props = defineProps<{ target: EditorTarget }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; newProgram: [folder: string] }>()
 
 // The program text the editor opened, once it matches the loaded program. It stays fixed while
 // the editor is open: a save names that file and its stamp.
@@ -61,7 +61,7 @@ function save(): void {
   saving.value = true
   const program = loaded.value
   saveRequest = savingAs.value || program === null
-    ? { type: 'save_program', path: `${folder.value === '/' ? '' : folder.value}/${fileName.value}`, text: text.value }
+    ? { type: 'save_program', path: folder.value === '' ? fileName.value : `${folder.value === '/' ? '' : folder.value}/${fileName.value}`, text: text.value }
     : { type: 'save_program', path: program.file, text: text.value, stamp: program.stamp }
   send(saveRequest)
 }
@@ -87,11 +87,19 @@ const removeListener = onResult((command, result) => {
 })
 onBeforeUnmount(removeListener)
 
-// Closing with unsaved changes asks once.
-const confirming = ref(false)
+// Closing, or starting a new program, with unsaved changes asks once.
+const confirming = ref<'close' | 'new' | null>(null)
+function leave(): void {
+  if (confirming.value === 'new') emit('newProgram', folder.value)
+  else emit('close')
+}
 function close(): void {
-  if (dirty.value && !saving.value && !confirming.value) confirming.value = true
-  else if (!confirming.value) emit('close')
+  if (dirty.value && !saving.value && confirming.value === null) confirming.value = 'close'
+  else if (confirming.value === null) emit('close')
+}
+function startNew(): void {
+  if (dirty.value) confirming.value = 'new'
+  else emit('newProgram', folder.value)
 }
 
 // The text area and what is drawn with it.
@@ -296,6 +304,7 @@ onBeforeUnmount(() => { observer?.disconnect() })
       <div class="editor-tools" role="toolbar" aria-label="Editor">
         <button v-tooltip="'Undo'" class="btn square" type="button" aria-label="Undo" :disabled="!canUndo || readOnly" @click="undo"><AppIcon name="undo" /></button>
         <button v-tooltip="'Redo'" class="btn square" type="button" aria-label="Redo" :disabled="!canRedo || readOnly" @click="redo"><AppIcon name="redo" /></button>
+        <button v-tooltip="'New program'" class="btn square" type="button" aria-label="New program" :disabled="saving" @click="startNew"><AppIcon name="plus" /></button>
         <span class="find">
           <AppIcon name="search" />
           <input v-model="query" class="field mono" type="search" aria-label="Find" placeholder="Find" autocomplete="off" spellcheck="false" @input="matchIndex = -1" @keydown.enter.prevent="findNext($event.shiftKey ? -1 : 1)" />
@@ -355,11 +364,11 @@ onBeforeUnmount(() => { observer?.disconnect() })
       </button>
     </template>
   </ModalDialog>
-  <ModalDialog v-if="confirming" title="Discard changes?" size="small" expanded @close="confirming = false">
+  <ModalDialog v-if="confirming" title="Discard changes?" size="small" expanded @close="confirming = null">
     <p class="confirm">The changes to {{ loaded ? baseName(loaded.file) : 'the new program' }} are not saved.</p>
     <template #footer>
-      <button class="btn" type="button" @click="confirming = false">Keep editing</button>
-      <button class="btn primary" type="button" @click="emit('close')">Discard changes</button>
+      <button class="btn" type="button" @click="confirming = null">Keep editing</button>
+      <button class="btn primary" type="button" @click="leave">Discard changes</button>
     </template>
   </ModalDialog>
 </template>

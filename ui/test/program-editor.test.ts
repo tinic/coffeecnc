@@ -227,6 +227,28 @@ describe('program editor', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('starts a new program from inside the editor, asking once about unsaved changes', async () => {
+    load()
+    await open()
+    button('New program').click()
+    expect(wrapper?.emitted('newProgram')).toEqual([[programDirectory]])
+    await type('M2\n')
+    button('New program').click()
+    await nextTick()
+    expect(text()).toContain('Discard changes?')
+    expect(wrapper?.emitted('newProgram')).toHaveLength(1)
+    button('Discard changes').click()
+    expect(wrapper?.emitted('newProgram')).toEqual([[programDirectory], [programDirectory]])
+    expect(wrapper?.emitted('close')).toBeUndefined()
+  })
+
+  it('names a new program relative to the program directory when no folder is known', async () => {
+    await open({ kind: 'new', folder: '', taken: [] })
+    await type('M2\n')
+    button('Save and open').click()
+    expect(sent().at(-1)).toMatchObject({ type: 'save_program', path: 'program.ngc', text: 'M2\n' })
+  })
+
   it('is read-only while a program runs or is paused, and says so in one line', async () => {
     load()
     await open()

@@ -21,7 +21,18 @@ import { operatorSettings, panel } from './machine'
 const logOpen = ref<boolean>(startDialog === 'log')
 const browsing = ref<boolean>(startDialog === 'open')
 const creating = ref<boolean>(startDialog === 'operation')
+// The one Edit program action: the loaded program, or a new one when none is loaded.
+function edit(): void {
+  editorTarget.value = panel.status?.program.file ? { kind: 'loaded' } : { kind: 'new', folder: '', taken: [] }
+}
+// Development: the editor waits for the scene's program text.
 if (startDialog === 'edit') editorTarget.value = { kind: 'loaded' }
+// New program, from inside the editor: a fresh editor in the same folder.
+const editorKey = ref(0)
+function newProgram(folder: string): void {
+  editorKey.value += 1
+  editorTarget.value = { kind: 'new', folder, taken: [] }
+}
 const quitOpen = ref(false)
 const settingsOpen = ref(false)
 const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? panel.status.wait.tool : null)
@@ -29,7 +40,7 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
 
 <template>
   <div class="app">
-    <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @edit="editorTarget = { kind: 'loaded' }" @quit="quitOpen = true" @settings="settingsOpen = true" />
+    <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @edit="edit" @quit="quitOpen = true" @settings="settingsOpen = true" />
     <div class="workspace">
       <DroPanel />
       <main class="middle">
@@ -40,9 +51,9 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
         <ToolChangePrompt v-if="toolChange !== null" :tool="toolChange" :class="{ 'with-status-row': panel.tab === 'program' }" />
         <div id="dialogs"></div>
         <LogDialog v-if="logOpen" @close="logOpen = false" />
-        <FileBrowser v-if="browsing" @close="browsing = false" @new-program="(folder, taken) => { browsing = false; editorTarget = { kind: 'new', folder, taken } }" />
+        <FileBrowser v-if="browsing" @close="browsing = false" />
         <OperationDialog v-if="creating" @close="creating = false" />
-        <ProgramEditor v-if="editorTarget" :target="editorTarget" @close="editorTarget = null" />
+        <ProgramEditor v-if="editorTarget" :key="editorKey" :target="editorTarget" @close="editorTarget = null" @new-program="newProgram" />
         <SettingsDialog v-if="settingsOpen" :settings="operatorSettings" @close="settingsOpen = false" />
         <QuitDialog v-if="quitOpen" @close="quitOpen = false" />
       </main>

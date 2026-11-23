@@ -34,6 +34,36 @@ export interface Common {
 /** The program text, or every reason there is none, in words for the operator. */
 export type Generated = { text: string } | { errors: string[] }
 
+const programEnd = 'M2'
+
+export interface ChainOperation {
+  tool: number
+  text: string
+}
+
+/** Joins complete generator outputs. The tool-change height is in program units, machine Z. */
+export function chainOperations(operations: readonly ChainOperation[], unit: Unit, toolChangeZ: number | null = null): Generated {
+  const end = `${programEnd}\n`
+  const toolBlock = (tool: number): string => `\nT${String(tool)} M6\n`
+  if (operations.length === 0 || operations.some(({ tool, text }) => !text.endsWith(`\n${end}`) || !text.includes(toolBlock(tool))))
+    return { errors: [t('operations.check.invalidJob')] }
+  const sections: string[] = []
+  let previousTool: number | undefined
+  for (const { tool, text } of operations) {
+    let section = text.slice(0, -end.length)
+    if (previousTool === tool) {
+      section = section.replace(toolBlock(tool), '\n')
+    } else if (previousTool !== undefined) {
+      if (toolChangeZ === null || !Number.isFinite(toolChangeZ))
+        return { errors: [t('operations.check.jobToolChangeHeight')] }
+      section = `G90 G53 G0 Z${number(toolChangeZ, unit)}\n\n${section}`
+    }
+    sections.push(section)
+    previousTool = tool
+  }
+  return { text: sections.join('\n') + end }
+}
+
 const decimals = (unit: Unit): number => (unit === 'inch' ? 4 : 3)
 
 /** A length or coordinate as written: fixed decimals for the unit, no trailing zeros, no -0. */
@@ -154,7 +184,7 @@ export class Program {
   end(stopCoolant = false): string {
     if (this.lines.at(-1) !== `G0 Z${this.n(this.c.clearance)}`) this.rapidZ(this.c.clearance)
     if (stopCoolant) this.add('M9')
-    this.add('M5', 'M2')
+    this.add('M5', programEnd)
     return `${this.lines.join('\n')}\n`
   }
 }

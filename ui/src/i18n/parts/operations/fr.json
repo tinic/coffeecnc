@@ -2,6 +2,12 @@
   "operations": {
     "dialog": {
       "pocketOptions": "Géométrie, entrée et parois",
+      "reviewJob": "Vérifier la tâche",
+      "toolChangeHeight": "Changements d’outil au Z machine {z} {unit}",
+      "job": "Tâche",
+      "addToJob": "Ajouter à la tâche",
+      "createJob": "Créer et ouvrir la tâche",
+      "removeOperation": "Retirer {name} de la tâche",
       "title": "Nouvelle opération",
       "operations": "Opération",
       "tool": "Outil",
@@ -99,6 +105,9 @@
       "entryPrecision": "La trajectoire ou l’angle d’entrée est trop faible pour la précision des coordonnées du programme.",
       "pocketTooManyMoves": "La poche générerait trop de mouvements. Augmentez la profondeur par passe, le pas latéral ou l’angle d’entrée.",
       "wallStockFits": "La surépaisseur laisse trop peu de place pour l’outil.",
+      "jobToolChangeHeight": "Réglez le Z sûr d’« Aller à » au-dessus du dégagement de chaque opération avant d’enregistrer une tâche avec changements d’outil.",
+      "invalidJob": "La tâche n’a pas pu être assemblée.",
+      "jobTooLarge": "Le programme dépasse la limite d’enregistrement de 512 Kio.",
       "positive": "{label} : la valeur doit être supérieure à zéro.",
       "count": "{label} : entrez un nombre entier de 1 à {max}.",
       "chooseTool": "Choisissez un outil dans la table d’outils.",

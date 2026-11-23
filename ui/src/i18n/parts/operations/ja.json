@@ -2,6 +2,12 @@
   "operations": {
     "dialog": {
       "pocketOptions": "寸法、進入、側面",
+      "reviewJob": "ジョブを確認",
+      "toolChangeHeight": "工具交換位置は機械座標の Z {z} {unit}",
+      "job": "ジョブ",
+      "addToJob": "ジョブに追加",
+      "createJob": "ジョブを作成して開く",
+      "removeOperation": "{name} をジョブから削除",
       "title": "新規加工",
       "operations": "加工",
       "tool": "工具",
@@ -99,6 +105,9 @@
       "entryPrecision": "進入経路または角度がプログラムの座標精度に対して小さすぎます。",
       "pocketTooManyMoves": "ポケットの動作数が多すぎます。切り込み深さ、ステップオーバー、または進入角度を大きくしてください。",
       "wallStockFits": "側面の取り代が大きく、工具が入りません。",
+      "jobToolChangeHeight": "工具交換を含むジョブを保存する前に、「移動」の安全 Z をすべての工程の退避高さより上に設定してください。",
+      "invalidJob": "ジョブを組み立てられませんでした。",
+      "jobTooLarge": "プログラムが保存上限の 512 KiB を超えています。",
       "positive": "{label}は 0 より大きい値にしてください。",
       "count": "{label}は 1 から {max} までの整数にしてください。",
       "chooseTool": "工具テーブルから工具を選択してください。",

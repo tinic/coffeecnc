@@ -2,6 +2,12 @@
   "operations": {
     "dialog": {
       "pocketOptions": "Geometria, entrada e paredes",
+      "reviewJob": "Rever trabalho",
+      "toolChangeHeight": "Trocas de ferramenta no Z de máquina {z} {unit}",
+      "job": "Trabalho",
+      "addToJob": "Adicionar ao trabalho",
+      "createJob": "Criar e abrir trabalho",
+      "removeOperation": "Remover {name} do trabalho",
       "title": "Nova operação",
       "operations": "Operação",
       "tool": "Ferramenta",
@@ -99,6 +105,9 @@
       "entryPrecision": "O percurso ou o ângulo de entrada é demasiado pequeno para a precisão das coordenadas do programa.",
       "pocketTooManyMoves": "A bolsa geraria demasiados movimentos. Aumente a profundidade por passe, o passo lateral ou o ângulo de entrada.",
       "wallStockFits": "O sobremetal nas paredes deixa pouco espaço para a ferramenta.",
+      "jobToolChangeHeight": "Defina o Z seguro para «Ir para» acima da folga de todas as operações antes de guardar um trabalho com trocas de ferramenta.",
+      "invalidJob": "Não foi possível compor o trabalho.",
+      "jobTooLarge": "O programa excede o limite de gravação de 512 KiB.",
       "positive": "{label}: tem de ser maior do que zero.",
       "count": "{label}: tem de ser um número inteiro de 1 a {max}.",
       "chooseTool": "Escolha uma ferramenta da tabela de ferramentas.",

@@ -2,6 +2,12 @@
   "operations": {
     "dialog": {
       "pocketOptions": "Geometrie, Eintauchen und Wände",
+      "reviewJob": "Auftrag prüfen",
+      "toolChangeHeight": "Werkzeugwechsel bei Maschinen-Z {z} {unit}",
+      "job": "Auftrag",
+      "addToJob": "Zum Auftrag hinzufügen",
+      "createJob": "Auftrag erstellen und öffnen",
+      "removeOperation": "{name} aus dem Auftrag entfernen",
       "title": "Neue Bearbeitung",
       "operations": "Bearbeitung",
       "tool": "Werkzeug",
@@ -99,6 +105,9 @@
       "entryPrecision": "Die Eintauchbahn oder der Winkel ist für die Koordinatengenauigkeit des Programms zu klein.",
       "pocketTooManyMoves": "Die Tasche würde zu viele Bewegungen erzeugen. Vergrößern Sie die Zustellung, den Bahnabstand oder den Eintauchwinkel.",
       "wallStockFits": "Das Wandaufmaß lässt zu wenig Platz für das Werkzeug.",
+      "jobToolChangeHeight": "Stellen Sie die sichere Z-Höhe für „Anfahren“ über die Freifahrhöhe aller Vorgänge, bevor Sie einen Auftrag mit Werkzeugwechseln speichern.",
+      "invalidJob": "Der Auftrag konnte nicht zusammengestellt werden.",
+      "jobTooLarge": "Das Programm überschreitet die Speichergrenze von 512 KiB.",
       "positive": "{label} muss größer als null sein.",
       "count": "{label} muss eine ganze Zahl von 1 bis {max} sein.",
       "chooseTool": "Wählen Sie ein Werkzeug aus der Werkzeugtabelle.",

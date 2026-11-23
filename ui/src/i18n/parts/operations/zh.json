@@ -11,6 +11,7 @@
       "title": "新建加工",
       "operations": "加工",
       "tool": "刀具",
+      "chooseThreadMill": "选择螺纹铣刀",
       "noTools": "刀具表中没有刀具",
       "toolAndFeeds": "刀具与进给",
       "geometry": "几何参数",

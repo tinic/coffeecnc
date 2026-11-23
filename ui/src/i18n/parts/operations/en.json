@@ -11,6 +11,7 @@
       "title": "New operation",
       "operations": "Operation",
       "tool": "Tool",
+      "chooseThreadMill": "Choose a thread mill",
       "noTools": "No tools in the tool table",
       "toolAndFeeds": "Tool and feeds",
       "geometry": "Geometry",

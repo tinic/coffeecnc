@@ -11,6 +11,7 @@
       "title": "Nueva operación",
       "operations": "Operación",
       "tool": "Herramienta",
+      "chooseThreadMill": "Selecciona una fresa de roscar",
       "noTools": "No hay herramientas en la tabla de herramientas",
       "toolAndFeeds": "Herramienta y avances",
       "geometry": "Geometría",

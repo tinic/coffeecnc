@@ -89,6 +89,27 @@ describe('new operation dialog', () => {
     expect(wrapper?.emitted('close')).toHaveLength(1)
   })
 
+  it('requires a thread mill selection and saves internal threads through the normal program picker', async () => {
+    await open()
+    button('Internal thread milling').click()
+    await nextTick()
+    const tool = wrapper?.get<HTMLSelectElement>('select[aria-label="Tool"]')
+    expect(tool?.element.value).toBe('0')
+    expect(button('Create and open').disabled).toBe(true)
+    await tool?.setValue('2')
+    button('Left-hand').click()
+    await nextTick()
+    button('Create and open').click()
+    const save = sent().at(-1)
+    expect(save).toMatchObject({ type: 'save_program', path: `${programDirectory}/thread-10mm-lh.ngc` })
+    if (save?.type !== 'save_program') throw new Error('No thread program was saved')
+    expect(save.text).toContain('T2 M6\nG43 H2')
+    expect(save.text).toContain('G1 Z0.375 F50\nG3 X1.625 Y0 Z0 I0.8125 J0 F60')
+    answer(save)
+    await nextTick()
+    expect(sent().at(-1)).toMatchObject({ type: 'open_program', path: save.path })
+  })
+
   it('queues snapshots in order, discards a queued item and saves the job only', async () => {
     await open(['job-facing-100x60mm.ngc'])
     button('Add to job').click()

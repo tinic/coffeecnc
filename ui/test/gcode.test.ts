@@ -404,8 +404,8 @@ describe('preview', () => {
       return preview.error
     }
     expect(failure('gmoccapy_2_tools_with_cutter_radius_compensation.ngc')).toEqual({
-      line: 10,
-      text: 'line 10: G61 is not supported by the simulator',
+      line: 17,
+      text: 'line 17: requested tool 3 not found in the tool table',
     })
     expect(failure('gridprobe.ngc')).toEqual({
       line: 11,

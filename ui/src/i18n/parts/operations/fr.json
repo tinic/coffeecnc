@@ -11,6 +11,7 @@
       "title": "Nouvelle opération",
       "operations": "Opération",
       "tool": "Outil",
+      "chooseThreadMill": "Choisir une fraise à fileter",
       "noTools": "Aucun outil dans la table d’outils",
       "toolAndFeeds": "Outil et avances",
       "geometry": "Géométrie",

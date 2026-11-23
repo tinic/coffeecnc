@@ -11,6 +11,7 @@
       "title": "新規加工",
       "operations": "加工",
       "tool": "工具",
+      "chooseThreadMill": "ねじ切りカッターを選択",
       "noTools": "工具テーブルに工具がありません",
       "toolAndFeeds": "工具と送り",
       "geometry": "形状",

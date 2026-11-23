@@ -9,6 +9,7 @@ This guide puts CoffeeCNC on a LinuxCNC machine that already runs with another d
 - A milling machine with X, Y and Z axes and `trivkins` (joint 0 is X, joint 1 is Y, joint 2 is Z).
 - A gantry router is also supported: two motors on one axis, for example `COORDINATES = X Y Y Z` with `KINEMATICS = trivkins coordinates=XYYZ` (`kinstype=both` is accepted). Give the two joints of the axis the same negative `HOME_SEQUENCE`, as pncconf does, so that they home and square together.
 - A screen of 1280 × 800 or larger. A touch screen is recommended.
+- Languages: choose English, French, German, Spanish, Portuguese, Chinese or Japanese in **Settings**. Chinese and Japanese need CJK fonts: the package recommends `fonts-noto-cjk`, which apt installs by default. If you install with `--no-install-recommends`, also run `sudo apt install fonts-noto-cjk`.
 
 ## 1. Install the package
 

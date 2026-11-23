@@ -24,6 +24,18 @@
   font-variant-numeric: tabular-nums;
   color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
 }
+/* DM Sans and IBM Plex Mono have no Chinese or Japanese glyphs. Those characters come from the
+   system's CJK fonts, chosen by the panel language so that Han characters take the Chinese or
+   Japanese forms: Noto Sans CJK (Debian fonts-noto-cjk, which the package recommends), else
+   Droid Sans Fallback (fonts-droid-fallback), else whatever fontconfig finds. */
+:root:lang(zh) {
+  --sans: 'DM Sans', 'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC', 'Droid Sans Fallback', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', 'Noto Sans Mono CJK SC', 'Noto Sans CJK SC', 'Droid Sans Fallback', monospace;
+}
+:root:lang(ja) {
+  --sans: 'DM Sans', 'Noto Sans CJK JP', 'Noto Sans JP', 'Source Han Sans JP', 'Droid Sans Fallback', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', 'Noto Sans Mono CJK JP', 'Noto Sans CJK JP', 'Droid Sans Fallback', monospace;
+}
 :is(:root, .theme-sample):is([data-theme='dark'], [data-theme='harbor']) {
   color-scheme: dark;
   --bg: #17191b; --bg-sunken: #1b1e21; --panel: #202326; --panel-raised: #282c30;

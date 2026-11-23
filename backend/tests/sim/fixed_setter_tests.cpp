@@ -831,13 +831,16 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
     return latest && latest->status.controller.interp == InterpState::idle &&
            std::abs(latest->status.g5x[2] + 40) < 0.01;
   }, 4s), "the programmed work origin is set");
-  // The inch fixture has an automatic change position, so M6 itself moves X4 Y6 Z35 to X2 Y3 Z30.
-  accepted({{"type", "mdi"}, {"text", scale == 1 ? "G53 G0 X2 Y3 Z30" : "G53 G0 X4 Y6 Z35"}});
-  const double start_x = scale == 1 ? 2 : 4;
-  require(wait([&] {
-    return reading.status.interp == InterpState::idle &&
-           reading.commanded_position && std::abs(reading.commanded_position->at(0) - start_x) < 0.01;
-  }, 5s), "the original program starts away from the setter");
+  const auto original_position = [&] {
+    // On the inch fixture M6 itself moves X4 Y6 Z35 to the configured X2 Y3 Z30.
+    accepted({{"type", "mdi"}, {"text", scale == 1 ? "G53 G0 X2 Y3 Z30" : "G53 G0 X4 Y6 Z35"}});
+    const double start_x = scale == 1 ? 2 : 4;
+    require(wait([&] {
+      return reading.status.interp == InterpState::idle && reading.status.motion.in_position &&
+             reading.commanded_position && std::abs(reading.commanded_position->at(0) - start_x) < 0.01;
+    }, 5s), "the original program starts away from the setter");
+  };
+  original_position();
 
   const auto begin_exchange = [&](std::string_view name, std::string_view program) {
     const auto path = config.program_prefix + "/" + std::string(name) + ".ngc";
@@ -902,6 +905,7 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
   }
   stop();
   set_t2(scale == 1 ? 40 : 38.1);
+  original_position();
 
   const auto generation = begin_exchange("measure-m6",
       "N10 G21 G90 G17 G54 G40 G49 G94\nN20 T2 M6\nN30 G43 H2\nN40 G0 Z25\n"

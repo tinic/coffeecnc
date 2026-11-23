@@ -2827,9 +2827,14 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
     return withdrawn();
   const auto table = impl_->read_tool_table();
   const auto length = table ? tool_z(*table, tool) : std::nullopt;
-  if (tool <= 0 || !config.fixed_setter || tool == config.fixed_setter->reference_tool ||
-      tool == config.touch_probe_tool || !length || !impl_->setter_calibration)
+  const auto& limits = config.fixed_setter;
+  const auto& calibration = impl_->setter_calibration;
+  if (tool <= 0 || !limits || tool == limits->reference_tool ||
+      tool == config.touch_probe_tool || !length || !calibration)
     return failed("A cutting tool in the tool table and a fixed setter are required.");
+  const auto setter_plane = calibration->plane;
+  const double setter_clearance = calibration->clearance_z;
+  const bool retract_to_setter_clearance = limits->clearance_mm > 0;
   const auto* raw = impl_->stat();
   if (raw == nullptr)
     return failed("The controller is unavailable.");
@@ -2844,11 +2849,10 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   // and actual position are checked again before the operator is offered a restart.
   auto nominal = point;
   auto at_setter = before;
-  const auto& calibration = *impl_->setter_calibration;
   at_setter.commanded_position = {
-      calibration.plane[0], calibration.plane[1],
-      config.fixed_setter->clearance_mm > 0 ? calibration.clearance_z
-                                          : std::max(calibration.clearance_z, before.commanded_position[2])};
+      setter_plane[0], setter_plane[1],
+      retract_to_setter_clearance ? setter_clearance
+                                  : std::max(setter_clearance, before.commanded_position[2])};
   at_setter.tool_offset = point.tool_offset;
   if (auto reason = check_restart_approach(nominal, at_setter, config, length); !reason.empty())
     return failed(std::move(reason));

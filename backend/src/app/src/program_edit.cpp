@@ -13,6 +13,8 @@
 namespace coffeecnc {
 namespace {
 
+constexpr auto changed_program = "The program file changed since it was opened. Open it again to edit it.";
+
 struct Span {
   std::size_t begin{};
   std::size_t end{};
@@ -139,7 +141,9 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
 }
 
 auto ProgramWriter::write_over(const std::string& resolved, std::string_view bytes,
-                               std::string_view suffix) -> std::expected<void, std::string> {
+                               std::string_view suffix, std::optional<std::string_view> previous,
+                               const std::function<std::string()>& check_controller)
+    -> std::expected<void, std::string> {
   const auto slash = resolved.rfind('/');
   const std::string directory = resolved.substr(0, slash);
   const std::string temporary =
@@ -149,18 +153,33 @@ auto ProgramWriter::write_over(const std::string& resolved, std::string_view byt
     step = files_.write(bytes);
   if (step)
     step = files_.sync();
+  if (step && check_controller) {
+    if (auto reason = check_controller(); !reason.empty()) {
+      files_.discard(temporary);
+      return std::unexpected(std::move(reason));
+    }
+  }
+  if (step && previous) {
+    const auto current = files_.read(resolved, previous->size() + 1);
+    if (!current || !*current || (*current)->more || (*current)->bytes != *previous) {
+      files_.discard(temporary);
+      return std::unexpected(current ? std::string{changed_program} : current.error());
+    }
+  }
   if (step)
     step = files_.rename(temporary, resolved);
-  if (step)
-    step = files_.sync_directory(directory.empty() ? "/" : directory);
   if (!step) {
     files_.discard(temporary);
     return std::unexpected("The program could not be saved. " + step.error());
   }
+  if (auto durable = files_.sync_directory(directory.empty() ? "/" : directory); !durable)
+    return std::unexpected("The program was replaced, but its directory could not be synchronized. " +
+                           durable.error());
   return {};
 }
 
-auto ProgramWriter::replace(std::string_view path, std::string_view text, std::string_view stamp)
+auto ProgramWriter::replace(std::string_view path, std::string_view text, std::string_view stamp,
+                            const std::function<std::string()>& check_controller)
     -> std::expected<std::string, std::string> {
   auto resolved = programs_.resolve_program(path);
   if (!resolved)
@@ -175,11 +194,8 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
   if (!file)
     return std::unexpected("The program no longer exists.");
   const std::string& bytes = file->bytes;
-  // A change after this comparison and before the rename is not caught: a small window, as for
-  // replace_line.
   if (file->more || program_stamp(bytes) != stamp)
-    return std::unexpected(
-        "The program file changed since it was opened. Open it again to edit it.");
+    return std::unexpected(changed_program);
   const auto end = bytes.find_first_of("\r\n");
   const bool windows = end != std::string::npos && bytes.compare(end, 2, "\r\n") == 0;
   std::string converted;
@@ -191,8 +207,10 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
       converted += text[i];
     }
   }
-  if (auto written =
-          write_over(*resolved, windows ? std::string_view{converted} : text, ".coffeecnc-edit");
+  const std::string_view saved = windows ? std::string_view{converted} : text;
+  if (saved.size() > max_saved_program_bytes)
+    return std::unexpected("The program text with its line endings is longer than 512 KiB.");
+  if (auto written = write_over(*resolved, saved, ".coffeecnc-edit", bytes, check_controller);
       !written)
     return std::unexpected(written.error());
   return std::move(*resolved);

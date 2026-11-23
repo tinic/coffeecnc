@@ -1395,11 +1395,25 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             if (!loaded || *file != *loaded)
               return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
             return act(request, [&](const Wanted& still) -> ActionResult {
-              auto written = program_writer_->replace(*file, c.text, *c.stamp);
+              const auto check_controller = [&]() -> std::string {
+                if (!still())
+                  return "The save was cancelled before the program was replaced.";
+                const auto now = port_.snapshot();
+                if (const auto recheck = policy_.evaluate(request.command, now); !recheck.allowed)
+                  return recheck.reason;
+                const auto active = programs_.resolve_program(now.program_file);
+                if (!active || *active != *file)
+                  return "The loaded program changed before the save finished.";
+                return {};
+              };
+              auto written = program_writer_->replace(*file, c.text, *c.stamp, check_controller);
               if (!written)
                 return {ActionStatus::failed, written.error()};
               // LinuxCNC reads the new text only when the program is opened again.
-              return port_.open_program(*written, still);
+              auto reopened = port_.open_program(*written, still);
+              if (reopened.status != ActionStatus::accepted)
+                return {ActionStatus::failed, "Saved on disk, but not reopened. " + reopened.reason};
+              return reopened;
             });
           }
           // Through a link too: the file LinuxCNC has open is never written over.

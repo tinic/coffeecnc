@@ -187,7 +187,12 @@ void saves_over_a_program_with_its_stamp(const fs::path& base) {
   require(writer.replace(windows.string(), "G21\nG0 X1\r\nM2\n", program_stamp("G21\r\nM2\r\n"))
               .has_value(),
           "A program with CR LF line ends is saved");
-  require(read(windows) == "G21\r\nG0 X1\r\nM2\r\n", "Its line ends stay CR LF, none doubled");
+  const std::string windows_text = "G21\r\nG0 X1\r\nM2\r\n";
+  require(read(windows) == windows_text, "Its line ends stay CR LF, none doubled");
+  const auto too_large = writer.replace(windows.string(), std::string(max_saved_program_bytes, '\n'),
+                                       program_stamp(windows_text));
+  require(!too_large && read(windows) == windows_text,
+          "A text that exceeds the cap after restoring CR LF is refused before replacing the file");
 
   require(!writer.replace((root / "missing.ngc").string(), "M2\n", program_stamp("")),
           "A program that does not exist is refused");
@@ -196,7 +201,30 @@ void saves_over_a_program_with_its_stamp(const fs::path& base) {
   fs::remove_all(root);
 }
 
-// Every failing step of the write leaves the program as it was and no temporary file.
+void keeps_external_changes_during_sync() {
+  constexpr auto path = "/nc/part.ngc";
+  const std::string before = "G0 X1\nM2\n";
+  const std::string external = "G0 X9\nM2\n";
+  FakeFileSystem files;
+  files.file(path, before);
+  const ProgramStore programs{files, "/nc"};
+  FakeDisk disk;
+  disk.files[path] = before;
+  FakeToolModelFiles writes{disk};
+  writes.during = [&](std::string_view step) {
+    if (step == "sync")
+      disk.files[path] = external;
+  };
+  ProgramWriter writer{programs, writes};
+  const auto save = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
+  require(!save && save.error().starts_with("The program file changed"),
+          "The original is checked once more after the temporary file is synced");
+  require(disk.files.at(path) == external && writes.count("rename") == 0,
+          "The external writer's text remains on disk");
+  require(!disk.files.contains("/nc/.part.ngc.coffeecnc-edit"), "The refused save discards its temporary file");
+}
+
+// Failures before rename keep the original. A directory sync failure reports the replacement.
 void a_failed_save_keeps_the_program() {
   constexpr auto path = "/nc/part.ngc";
   const std::string before = "G0 X1\nM2\n";
@@ -210,11 +238,15 @@ void a_failed_save_keeps_the_program() {
     writes.failures[step] = 1;
     ProgramWriter writer{programs, writes};
     const auto saved = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
-    require(!saved && saved.error().starts_with("The program could not be saved."),
-            "A failed " + step + " is reported");
-    // After the rename the new text is in place; only its directory entry may not be durable.
-    if (step != "sync_directory")
+    if (step == "sync_directory") {
+      require(!saved && saved.error().starts_with("The program was replaced"),
+              "A directory sync failure reports that replacement already happened");
+      require(disk.files.at(path) == "G0 X2\nM2\n", "The new text is visible after the rename");
+    } else {
+      require(!saved && saved.error().starts_with("The program could not be saved."),
+              "A failed " + step + " is reported");
       require(disk.files.at(path) == before, "A failed " + step + " keeps the program");
+    }
     require(!disk.files.contains("/nc/.part.ngc.coffeecnc-edit"),
             "A failed " + step + " leaves no temporary file");
   }
@@ -227,6 +259,7 @@ auto main(int argc, char** argv) -> int {
   replaces_one_line_durably(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   creates_new_programs(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
   saves_over_a_program_with_its_stamp(argc > 1 ? fs::path{argv[1]} : fs::temp_directory_path());
+  keeps_external_changes_during_sync();
   a_failed_save_keeps_the_program();
   if (failures != 0)
     return EXIT_FAILURE;

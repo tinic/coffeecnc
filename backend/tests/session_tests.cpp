@@ -2546,11 +2546,32 @@ void editor_saves_over_the_loaded_program() {
   require(disk.files.at(part) == before && port.calls.empty(),
           "Nothing is written and nothing opened while refused");
 
+  writes.during = [&](std::string_view step) {
+    if (step == "sync")
+      port.state.interp = InterpState::reading;
+  };
+  const auto started = send(save(part, stamp));
+  require(started.at("outcome") == "failed" &&
+              started.at("reason") == "Stop the program before saving it." &&
+              disk.files.at(part) == before && port.calls.empty(),
+          "A program that starts during the temporary-file sync prevents replacement: " + started.dump());
+  writes.during = {};
+  port.state.interp = InterpState::idle;
+
   const auto saved = send(save(part, stamp));
   require(saved.at("outcome") == "accepted", "The save is accepted: " + saved.dump());
   require(disk.files.at(part) == "G0 X2\nM2\n", "The edited text is on disk");
   require(port.calls == Calls{"open_program /home/cnc/nc_files/part.ngc"},
           "The program is opened again, so the preview and the program check follow");
+
+  disk.files[part] = before;
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
+  const auto refused_reopen = send(save(part, stamp));
+  require(refused_reopen.at("outcome") == "failed" &&
+              refused_reopen.at("reason") ==
+                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              disk.files.at(part) == "G0 X2\nM2\n",
+          "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }
 
 } // namespace

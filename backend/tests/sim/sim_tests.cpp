@@ -5237,7 +5237,7 @@ void offset_history(Rig& rig) {
             return candidate.tool.length;
         return std::numeric_limits<double>::quiet_NaN();
       };
-      const auto restore = [&](const std::optional<HistoryEntry>& of, bool awaits)
+      const auto restore_length = [&](const std::optional<HistoryEntry>& of, bool awaits)
           -> std::pair<std::string, std::optional<HistoryEntry>> {
         rig.pump(OffsetHistoryStore::grace + 500ms);
         const auto before = last_id();
@@ -5282,14 +5282,14 @@ void offset_history(Rig& rig) {
             std::format("{} {} {} {} {}", loaded, wrote, applied,
                         written ? change_text(*written) : "none", seen));
 
-      const auto [g43, r1] = restore(written, true);
+      const auto [g43, r1] = restore_length(written, true);
       check("history_restore_applies_g43_again",
             g43 == "accepted" && r1 && r1->source == HistorySource::restore &&
                 follows(original, original),
             std::format("{} {} {}", g43, r1 ? change_text(*r1) : "none", seen));
 
       const auto inch = line("G20");
-      const auto [g43_inch, r2] = restore(r1, true);
+      const auto [g43_inch, r2] = restore_length(r1, true);
       const auto back_to_mm = line("G21");
       check("history_restore_applies_g43_again_in_inch",
             inch == "accepted" && g43_inch == "accepted" && back_to_mm == "accepted" && r2 &&
@@ -5298,21 +5298,21 @@ void offset_history(Rig& rig) {
                         r2 ? change_text(*r2) : "none", seen));
 
       const auto cancelled = line("G49");
-      const auto [g49, r3] = restore(r2, true);
+      const auto [g49, r3] = restore_length(r2, true);
       check("history_restore_without_offset_applies_none",
             cancelled == "accepted" && g49 == "accepted" && r3 && follows(original, 0) &&
                 std::ranges::contains(rig.status().active_codes, "G49"),
             std::format("{} {} {} {}", cancelled, g49, r3 ? change_text(*r3) : "none", seen));
 
       const auto other = line("G43 H2");
-      const auto [h2, r4] = restore(r3, true);
+      const auto [h2, r4] = restore_length(r3, true);
       check("history_restore_keeps_the_offset_of_another_h",
             other == "accepted" && h2 == "accepted" && r4 && follows(longer, t2),
             std::format("{} {} {} {}", other, h2, r4 ? change_text(*r4) : "none", seen));
 
       const auto own = line("G43 H1");
       const auto added = line("G43.2 H2");
-      const auto [additive, none] = restore(r4, false);
+      const auto [additive, none] = restore_length(r4, false);
       rig.pump(500ms);
       check("history_restore_refused_under_g43_2",
             own == "accepted" && added == "accepted" &&

@@ -257,8 +257,12 @@ const fieldGroups = computed(() => {
         <fieldset v-for="group in fieldGroups" :key="group.label">
           <legend>{{ group.label }}</legend>
           <div
-            class="fields" :class="{ cutting: group.includesTool, pocket: pocket && !group.includesTool,
-              chamfer: chosen === 'chamfer' && !group.includesTool }"
+            class="fields"
+            :class="{
+              cutting: group.includesTool,
+              pocket: pocket && !group.includesTool,
+              chamfer: chosen === 'chamfer' && !group.includesTool,
+            }"
           >
             <label v-if="group.includesTool" class="entry tool-entry">
               <span class="label">{{ t('operations.dialog.tool') }}</span>

@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "remote_server.hpp"
 
 #include <coffeecnc/app/file_system.hpp>
 #include <coffeecnc/app/offset_history.hpp>
@@ -526,6 +527,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   std::unique_ptr<ToolModelStore> models;
   std::unique_ptr<Runtime> runtime;
   std::unique_ptr<PanelFeed> feed;
+  std::unique_ptr<RemoteServer> remote;
   PanelWindow window{{.ui_directory = *ui,
                       .windowed = options.windowed,
                       .developer_tools = options.developer_tools},
@@ -567,6 +569,14 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
       models.reset();
     }
   } shutdown{window, feed, runtime, models};
+  if (config->remote_port != 0) {
+    try {
+      remote = std::make_unique<RemoteServer>(*ui, config->remote_port);
+      say(std::format("Read-only LAN screen on port {}.", remote->port()));
+    } catch (const std::exception& error) {
+      say(std::format("The LAN screen could not start: {}", error.what()));
+    }
+  }
   int code = 0;
   try {
     models = std::make_unique<ToolModelStore>(
@@ -588,9 +598,20 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     models->set_fixed_probe_tool(config->touch_probe_tool);
     runtime = std::make_unique<Runtime>(
         **port, **reader, control, config->limits, programs,
-        [&window](const Outcome& outcome) -> void { window.post(outcome.page, outcome.messages); },
+        [&window, &remote](const Outcome& outcome) -> void {
+          window.post(outcome.page, outcome.messages);
+          if (remote)
+            remote->notifications(outcome.messages);
+        },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
         &preview, &restart_engine, &*program_writer, history.get());
+    PanelFeed::Mirror mirror;
+    if (remote) {
+      mirror = [&remote](std::span<const std::string> messages, std::span<const PanelRecord> records,
+                         bool has_program) -> void {
+        remote->publish(messages, records, has_program);
+      };
+    }
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source,
@@ -598,7 +619,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
           window.post(page, std::move(messages));
         },
         &preview, [&models](PageToken page) -> void { models->send_snapshot(page); },
-        progress.get(), history.get());
+        progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)
       hooks.before_load(window, *config);
     window.run();

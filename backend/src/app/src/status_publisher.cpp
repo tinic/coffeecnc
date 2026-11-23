@@ -44,16 +44,19 @@ auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::u
   return context_;
 }
 
-auto StatusPublisher::publish(const PanelState& state, bool snapshots)
+auto StatusPublisher::publish(const PanelState& state, bool snapshots,
+                              std::vector<PanelRecord>* records)
     -> std::expected<std::vector<std::string>, std::string> {
   std::vector<std::string> messages;
   std::string error;
-  const auto add = [&messages, &error](std::string_view type, Encoded encoded) -> bool {
+  const auto add = [&](PanelRecord record, std::string_view type, Encoded encoded) -> bool {
     if (!encoded) {
       error = std::string(type) + ": " + encoded.error();
       return false;
     }
     messages.push_back(std::move(*encoded));
+    if (records != nullptr)
+      records->push_back(record);
     return true;
   };
   const bool tool_table = snapshots || tool_table_ != state.tool_table;
@@ -64,13 +67,13 @@ auto StatusPublisher::publish(const PanelState& state, bool snapshots)
   const bool program = state.program != nullptr && (snapshots || program_ != *state.program);
   const bool preview = snapshots || preview_ != state.preview;
 
-  if ((snapshots && !add("hello", encode_hello(state.hello))) ||
-      (tool_table && !add("tool_table", encode_tool_table(state.tool_table))) ||
-      (work_offsets && !add("work_offsets", encode_work_offsets(state.work_offsets))) ||
-      (history && !add("offset_history", encode_offset_history(*state.offset_history))) ||
-      (program && !add("program", encode_program(*state.program))) ||
-      (preview && !add("preview", encode_preview(state.preview))) ||
-      !add("status", encode_status(state.status, seq_ + 1)))
+  if ((snapshots && !add(PanelRecord::hello, "hello", encode_hello(state.hello))) ||
+      (tool_table && !add(PanelRecord::tool_table, "tool_table", encode_tool_table(state.tool_table))) ||
+      (work_offsets && !add(PanelRecord::work_offsets, "work_offsets", encode_work_offsets(state.work_offsets))) ||
+      (history && !add(PanelRecord::offset_history, "offset_history", encode_offset_history(*state.offset_history))) ||
+      (program && !add(PanelRecord::program, "program", encode_program(*state.program))) ||
+      (preview && !add(PanelRecord::preview, "preview", encode_preview(state.preview))) ||
+      !add(PanelRecord::status, "status", encode_status(state.status, seq_ + 1)))
     return std::unexpected(std::move(error));
 
   ++seq_;

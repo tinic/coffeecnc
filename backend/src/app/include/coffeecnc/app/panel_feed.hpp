@@ -16,6 +16,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -99,7 +100,8 @@ public:
   // since the last step. When one of them cannot be encoded the result is the reason, nothing
   // counts as sent and the same is due on the next step.
   [[nodiscard]] auto compose(const PanelReading& reading, PageToken page, bool ready_again,
-                             std::chrono::milliseconds unix_time)
+                             std::chrono::milliseconds unix_time,
+                             std::vector<PanelRecord>* records = nullptr)
       -> std::expected<std::vector<std::string>, std::string>;
   // A reading while no page is ready.
   void observe(const PanelReading& reading);
@@ -146,6 +148,8 @@ private:
 class PanelFeed {
 public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
+  // Nonblocking, on the publisher thread. Also receives readings while the local page reloads.
+  using Mirror = std::function<void(std::span<const std::string>, std::span<const PanelRecord>, bool)>;
   // Called on the publisher thread right after `hello` and the snapshots were handed to
   // `deliver` for that page: what must reach a page after its `hello` is sent from here.
   using SnapshotsSent = std::function<void(PageToken)>;
@@ -156,7 +160,7 @@ public:
   // The offset history, when there is one, sees every reading, also while no page is ready.
   PanelFeed(PanelSource& source, Deliver deliver, PreviewService* preview = nullptr,
             SnapshotsSent snapshots_sent = {}, ProgramProgress* progress = nullptr,
-            OffsetHistoryStore* history = nullptr);
+            OffsetHistoryStore* history = nullptr, Mirror mirror = {});
   // Joins the thread: returns when the reading in progress has returned. No reading is begun
   // after this was called; a feed that sleeps between two readings ends at once.
   ~PanelFeed();
@@ -178,6 +182,7 @@ private:
   PreviewService* preview_;
   ProgramProgress* progress_;
   OffsetHistoryStore* history_;
+  Mirror mirror_;
   std::mutex mutex_;
   std::condition_variable wake_;
   std::optional<PageToken> page_;

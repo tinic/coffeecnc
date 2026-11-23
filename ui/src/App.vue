@@ -12,6 +12,8 @@ import FileBrowser from './components/FileBrowser.vue'
 import OperationDialog from './components/OperationDialog.vue'
 import ProgramEditor from './components/ProgramEditor.vue'
 import NumericEntryDialog from './components/NumericEntryDialog.vue'
+import RemoteScreen from './components/RemoteScreen.vue'
+import { isRemoteScreen } from './bridge'
 import SettingsDialog from './components/SettingsDialog.vue'
 import QuitDialog from './components/QuitDialog.vue'
 import { startDialog } from './dialogs'
@@ -39,7 +41,8 @@ const toolChange = computed(() => panel.status?.wait.kind === 'tool_change' ? pa
 </script>
 
 <template>
-  <div class="app">
+  <RemoteScreen v-if="isRemoteScreen()" />
+  <div v-else class="app">
     <StatusBar @log="logOpen = true" @open="browsing = true" @create="creating = true" @edit="edit" @quit="quitOpen = true" @settings="settingsOpen = true" />
     <div class="workspace">
       <DroPanel />

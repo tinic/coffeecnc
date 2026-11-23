@@ -6,7 +6,7 @@ import { computed, watch, type ComputedRef } from 'vue'
 import { themeOverride, themePreference } from './appearance'
 import { alternateTheme, decodeProgramLayout } from './operator-settings'
 import { createOperatorSettingsState } from './operator-settings-state'
-import { createTransport } from './bridge'
+import { createTransport, isRemoteScreen } from './bridge'
 import { connectionBlock, machineBlock } from './machine-block'
 import { requiresHoming } from './machine-capabilities'
 import type { AxisStatus, CommandBody, RotaryAxisStatus, Status, Tool } from './protocol'
@@ -43,7 +43,9 @@ export const setSimulatorFault = instance.setSimulatorFault
 export function start(): void {
   const parameters = new URLSearchParams(window.location.search)
   const tab = tabs.find((candidate) => candidate === parameters.get('tab'))
-  if (tab !== undefined) {
+  if (isRemoteScreen()) {
+    panel.tab = 'program'
+  } else if (tab !== undefined) {
     panel.tab = tab
   } else if (panel.simulated && parameters.get('scene') === 'probe') {
     const setup = parameters.get('setup')

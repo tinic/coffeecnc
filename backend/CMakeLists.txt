@@ -381,6 +381,14 @@ if(BUILD_TESTING)
       set_tests_properties(linuxcnc_machine_g0759 PROPERTIES LABELS linuxcnc RUN_SERIAL TRUE
         RESOURCE_LOCK linuxcnc TIMEOUT 700 SKIP_RETURN_CODE 77)
       if(TARGET coffeecnc)
+        add_executable(coffeecnc_remote_server_tests tests/remote_server_tests.cpp)
+        target_include_directories(coffeecnc_remote_server_tests SYSTEM PRIVATE ${COFFEECNC_BOOST_INCLUDE_DIR})
+        target_link_libraries(coffeecnc_remote_server_tests PRIVATE coffeecnc_application
+          coffeecnc_project_options nlohmann_json::nlohmann_json)
+        coffeecnc_enable_analyzers(coffeecnc_remote_server_tests)
+        add_test(NAME remote_server COMMAND coffeecnc_remote_server_tests ${PROJECT_BINARY_DIR})
+        set_tests_properties(remote_server PROPERTIES TIMEOUT 20)
+
         set(paths_kind $<IF:$<BOOL:${COFFEECNC_DEVELOPMENT_PATHS}>,development,installed-only>)
         # The executable's command line and its start-up refusals. No LinuxCNC and no display.
         add_test(NAME coffeecnc_cli COMMAND ${PROJECT_SOURCE_DIR}/tests/shell/cli_tests.sh

@@ -92,6 +92,17 @@ npm run dev
 
 See [UI development and checks](ui/README.md).
 
+## View the machine on your LAN
+
+Set a port in the machine's INI file to enable the read-only screen when CoffeeCNC starts.
+
+```ini
+[COFFEECNC]
+REMOTE_PORT = 8787
+```
+
+From a device on the home LAN, open `http://<machine-ipv4>:8787`. The viewer shows live coordinates, machine state, the loaded program, its toolpath and messages. It serves up to eight viewers with HTTP and WebSocket, without sign-in. Use the machine's IPv4 address as the URL. Leave the key out or set it to `0` to disable the listener.
+
 ## Build from source
 
 The native application builds with CMake and packages as a Debian package for the controller. A `v*` tag builds and publishes the packages ([release workflow](.github/workflows/release.yml)). See [the backend build](backend/README.md) and [packaging](docs/packaging.md). The tests include LinuxCNC simulation scenarios for jogging, tool setting and probing.

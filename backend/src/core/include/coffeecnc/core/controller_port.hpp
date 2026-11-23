@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/command_policy.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -55,53 +56,35 @@ struct ActionResult {
   return {ActionStatus::failed, "LinuxCNC still reports machine on; E-stop was not confirmed."};
 }
 
-// The tool length offset the interpreter applies, as the controller reports it: G49 (none),
-// G43 (from the tool table), G43.1 (dynamic: from the block's own words) or G43.2 (additive:
-// one more offset on top of the one in effect).
-enum class LengthOffset : std::uint8_t { none, table, dynamic, additive };
-
+// The tool offset in effect and the table length of the tool in the spindle, as the controller
+// reports them. LinuxCNC reports G43 for any nonzero tool offset and G49 for none
+// (rs274ngc/interp_write.cc): G43.1 and G43.2 are not told apart from G43, and the H word of a
+// G43 is not reported. The values are all there is.
 struct ToolLengthInEffect {
-  LengthOffset mode{LengthOffset::none};
-  double offset_z{}; // mm, the Z offset applied
+  std::array<double, 3> offset{}; // mm, the X, Y, Z tool offset applied
   // mm, the tool table length of the tool in the spindle, when it has a row.
   std::optional<double> loaded_length;
 };
 
-// What must follow a G10 L1 that writes a new length for tool `written`, so that the offset in
-// effect follows the table. LinuxCNC applies a table length only at G43: G10 L1 alone changes
-// the table and leaves the offset in effect at the old length.
+// The MDI block that must follow a G10 L1 that writes a new length for tool `written`, so that
+// the offset in effect follows the table; none when nothing must. LinuxCNC applies a table
+// length only at G43: G10 L1 alone changes the table and leaves the offset in effect.
 //
-// Nothing follows when the tool is not the one in the spindle, under G49, under G43.1 (its
-// offset is the block's value, not a table length; it is kept) and under a G43 whose offset is
-// not the loaded tool's length (another H; that offset is kept). Under G43 with the loaded
-// tool's length, `G43 H<tool>` follows. Under G43.2 the parts of the offset cannot be told
-// apart, so it cannot be applied again: the write is refused before anything is sent.
-//
-// LinuxCNC does not report the H word of a G43: the offset is the loaded tool's when it equals
-// that tool's table length (within 0.001 mm). Another H with the same length is taken for it.
-struct LengthFollowUp {
-  std::optional<std::string> block; // MDI block to send after the G10 L1
-  std::string refusal;              // nonempty: send nothing
-};
+// `G43 H<tool>` follows when the tool is the one in the spindle and the offset in effect is its
+// table length: a nonzero Z equal to it within 0.001 mm, and no X or Y offset. Any other offset
+// is kept: G49 (zero), a G43 of another H, a G43.1 or G43.2 offset that is not that length. A
+// G43.1 or G43.2 offset, or a G43 of another H, that equals the length is taken for a G43 of the
+// loaded tool and follows the table. A zero length applied with G43 reads as G49 and is kept.
 [[nodiscard]] inline auto after_tool_length_write(int written, int loaded,
                                                   const ToolLengthInEffect& effect)
-    -> LengthFollowUp {
-  if (loaded <= 0 || written != loaded)
-    return {};
-  switch (effect.mode) {
-  case LengthOffset::none:
-  case LengthOffset::dynamic:
-    return {};
-  case LengthOffset::additive:
-    return {std::nullopt, "An additive tool length offset (G43.2) is in effect and cannot be "
-                          "applied again. Apply G43 or G49 first."};
-  case LengthOffset::table:
-    break;
-  }
+    -> std::optional<std::string> {
   constexpr double same_length = 0.001; // mm
-  if (!effect.loaded_length || !(std::abs(effect.offset_z - *effect.loaded_length) <= same_length))
-    return {};
-  return {"G43 H" + std::to_string(loaded), {}};
+  const auto zero = [](double value) { return std::abs(value) <= 1e-9; };
+  if (loaded <= 0 || written != loaded || !effect.loaded_length || zero(effect.offset[2]) ||
+      !zero(effect.offset[0]) || !zero(effect.offset[1]) ||
+      !(std::abs(effect.offset[2] - *effect.loaded_length) <= same_length))
+    return std::nullopt;
+  return "G43 H" + std::to_string(loaded);
 }
 
 // Asked by a port while it carries out an action: is the action still wanted? The session

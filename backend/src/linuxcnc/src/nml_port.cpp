@@ -3637,16 +3637,9 @@ auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::
   if (current.controller.link != Link::live)
     return std::unexpected(std::string("The tool length offset in effect cannot be read."));
   ToolLengthInEffect effect;
-  effect.offset_z = current.tool_offset[2];
-  const auto active = [&](std::string_view code) {
-    return std::ranges::contains(current.active_codes, code);
-  };
-  effect.mode = active("G43")     ? LengthOffset::table
-                : active("G43.1") ? LengthOffset::dynamic
-                : active("G43.2") ? LengthOffset::additive
-                                  : LengthOffset::none;
+  effect.offset = current.tool_offset;
   const int tool = current.controller.tool_in_spindle;
-  if (effect.mode != LengthOffset::table || tool <= 0)
+  if (tool <= 0)
     return effect;
   const auto table = impl_->read_tool_table();
   if (!table)

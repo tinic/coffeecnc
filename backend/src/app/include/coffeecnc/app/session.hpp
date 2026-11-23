@@ -199,7 +199,7 @@ struct Work {
 // G10 L2 for a work system, G52 for G92/G52, G10 L1 for a tool's length and radius. Refused for
 // an entry the history no longer holds or one with an unknown or removed value. A length of the
 // tool in the spindle is applied again in the same request, as `after_tool_length_write` says:
-// `G43 H<tool>` after the G10 L1 when the loaded tool's length is in effect; refused under G43.2.
+// `G43 H<tool>` after the G10 L1 when the loaded tool's length is in effect.
 //
 // `set_tool_model_defaults` and `set_tool_model_assignment` are answered by the tool-model
 // service, whatever the machine and the link are doing: they pass the page, ready and ID checks

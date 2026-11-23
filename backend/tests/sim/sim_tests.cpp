@@ -5275,51 +5275,54 @@ void offset_history(Rig& rig) {
       const auto wrote = line(std::format("G10 L1 P1 Z{:.4f}", longer));
       const auto written = awaited(before_write, HistoryField::length);
       const auto applied = line("G43 H1");
+      // `follows` is asked before each check: its detail is the state it saw.
+      const bool written_followed = follows(longer, longer);
       check("history_tool_length_of_the_loaded_tool",
             loaded == "accepted" && wrote == "accepted" && applied == "accepted" && written &&
-                written->target == HistoryTarget::tool && written->number == 1 &&
-                follows(longer, longer),
+                written->target == HistoryTarget::tool && written->number == 1 && written_followed,
             std::format("{} {} {} {} {}", loaded, wrote, applied,
                         written ? change_text(*written) : "none", seen));
 
       const auto [g43, r1] = restore_length(written, true);
+      const bool g43_followed = follows(original, original);
       check("history_restore_applies_g43_again",
-            g43 == "accepted" && r1 && r1->source == HistorySource::restore &&
-                follows(original, original),
+            g43 == "accepted" && r1 && r1->source == HistorySource::restore && g43_followed,
             std::format("{} {} {}", g43, r1 ? change_text(*r1) : "none", seen));
 
       const auto inch = line("G20");
       const auto [g43_inch, r2] = restore_length(r1, true);
       const auto back_to_mm = line("G21");
+      const bool inch_followed = follows(longer, longer);
       check("history_restore_applies_g43_again_in_inch",
             inch == "accepted" && g43_inch == "accepted" && back_to_mm == "accepted" && r2 &&
-                follows(longer, longer),
+                inch_followed,
             std::format("{} {} {} {} {}", inch, g43_inch, back_to_mm,
                         r2 ? change_text(*r2) : "none", seen));
 
       const auto cancelled = line("G49");
       const auto [g49, r3] = restore_length(r2, true);
+      const bool g49_kept = follows(original, 0);
       check("history_restore_without_offset_applies_none",
-            cancelled == "accepted" && g49 == "accepted" && r3 && follows(original, 0) &&
+            cancelled == "accepted" && g49 == "accepted" && r3 && g49_kept &&
                 std::ranges::contains(rig.status().active_codes, "G49"),
             std::format("{} {} {} {}", cancelled, g49, r3 ? change_text(*r3) : "none", seen));
 
       const auto other = line("G43 H2");
       const auto [h2, r4] = restore_length(r3, true);
+      const bool h2_kept = follows(longer, t2);
       check("history_restore_keeps_the_offset_of_another_h",
-            other == "accepted" && h2 == "accepted" && r4 && follows(longer, t2),
+            other == "accepted" && h2 == "accepted" && r4 && h2_kept,
             std::format("{} {} {} {}", other, h2, r4 ? change_text(*r4) : "none", seen));
 
+      // G43.2 adds T2's length to T1's: a sum that is not T1's length, kept as it is.
       const auto own = line("G43 H1");
       const auto added = line("G43.2 H2");
-      const auto [additive, none] = restore_length(r4, false);
-      rig.pump(500ms);
-      check("history_restore_refused_under_g43_2",
-            own == "accepted" && added == "accepted" &&
-                additive == "rejected An additive tool length offset (G43.2) is in effect and "
-                            "cannot be applied again. Apply G43 or G49 first." &&
-                !none && follows(longer, longer + t2),
-            std::format("{} {} {} {}", own, added, additive, seen));
+      const auto [additive, r5] = restore_length(r4, true);
+      const bool sum_kept = follows(original, longer + t2);
+      check("history_restore_keeps_a_g43_2_sum",
+            own == "accepted" && added == "accepted" && additive == "accepted" && r5 && sum_kept,
+            std::format("{} {} {} {} {}", own, added, additive, r5 ? change_text(*r5) : "none",
+                        seen));
 
       // Back to the start: T1's length, the tool and the offset.
       static_cast<void>(line("G49"));

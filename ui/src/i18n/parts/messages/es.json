@@ -91,7 +91,6 @@
       "cancelled": "Cancelado por una solicitud de parada antes de enviarse.",
       "modeChanged": "El modo se cambió, pero una solicitud de parada canceló el comando antes de enviarlo.",
       "toolLengthCancelled": "La longitud de herramienta se fijó, pero una solicitud de parada canceló el comando antes de aplicarlo (G43 no se envió).",
-      "toolLengthAdditive": "Hay una compensación de longitud aditiva (G43.2) activa que no se puede volver a aplicar. Aplique primero G43 o G49.",
       "jogStoppedBeforeStart": "El jog se detuvo antes de empezar.",
       "releaseJog": "Suelte el control de jog antes de volver a hacer jog.",
       "jogStopInProgress": "Hay una parada de jog en curso.",

@@ -2427,11 +2427,11 @@ void tool_length_restore() {
           "The length of the loaded tool is in the history");
   rig.acted({"mdi G10 L1 P3 Z50"}, "The panel's MDI line");
   const auto restore = std::format(R"("type":"restore_offset","entry":{})", entry.id);
-  const auto in_effect = [&](LengthOffset mode, double offset_z) -> void {
-    rig.port.length_in_effect = ToolLengthInEffect{mode, offset_z, 50};
+  const auto in_effect = [&](double offset_z) -> void {
+    rig.port.length_in_effect = ToolLengthInEffect{{0, 0, offset_z}, 50};
   };
 
-  in_effect(LengthOffset::table, 50);
+  in_effect(50);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2", "mdi G43 H3"}, "G43 of the loaded tool is applied again");
   rig.port.state.program_units = LengthUnit::inch;
@@ -2440,20 +2440,15 @@ void tool_length_restore() {
             "In inches: the length in inches, the same G43 H3");
   rig.port.state.program_units = LengthUnit::mm;
 
-  in_effect(LengthOffset::none, 0);
+  in_effect(0);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2"}, "No offset in effect: G10 L1 only");
-  in_effect(LengthOffset::table, 40);
+  in_effect(40);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2"}, "The offset of another H stays: G10 L1 only");
-  in_effect(LengthOffset::dynamic, 50);
+  in_effect(90);
   rig.accepted(restore);
-  rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.1 offset stays: G10 L1 only");
-  in_effect(LengthOffset::additive, 90);
-  rig.expect(restore, "rejected",
-             "An additive tool length offset (G43.2) is in effect and cannot be applied again. "
-             "Apply G43 or G49 first.");
-  rig.acted({}, "Under G43.2 nothing is sent");
+  rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
   rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
   rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
   rig.acted({}, "An unreadable offset in effect sends nothing");
@@ -2463,7 +2458,7 @@ void tool_length_restore() {
   rig.port.state.tool_in_spindle = 3;
 
   // A stop request after the G10 L1: G43 is not sent, and the result says so.
-  in_effect(LengthOffset::table, 50);
+  in_effect(50);
   rig.port.during["mdi"] = [&]() -> void {
     static_cast<void>(rig.session.submit(rig.page, R"({"id":900,"type":"abort"})", at(0ms)));
   };

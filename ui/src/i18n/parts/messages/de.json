@@ -91,7 +91,6 @@
       "cancelled": "Durch eine Stopp-Anfrage abgebrochen, bevor der Befehl gesendet wurde.",
       "modeChanged": "Die Betriebsart wurde gewechselt, aber eine Stopp-Anfrage hat den Befehl abgebrochen, bevor er gesendet wurde.",
       "toolLengthCancelled": "Die Werkzeuglänge wurde gesetzt, aber eine Stopp-Anfrage hat den Befehl abgebrochen, bevor er angewendet wurde (G43 wurde nicht gesendet).",
-      "toolLengthAdditive": "Eine additive Werkzeuglängenkorrektur (G43.2) ist aktiv und kann nicht erneut angewendet werden. Zuerst G43 oder G49 anwenden.",
       "jogStoppedBeforeStart": "Das Tippen wurde gestoppt, bevor es begann.",
       "releaseJog": "Lassen Sie die Tipptaste los, bevor Sie erneut tippen.",
       "jogStopInProgress": "Ein Tipp-Stopp läuft.",

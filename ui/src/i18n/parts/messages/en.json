@@ -91,7 +91,6 @@
       "cancelled": "Cancelled by a stop request before it was sent.",
       "modeChanged": "The mode was changed, but a stop request cancelled the command before it was sent.",
       "toolLengthCancelled": "The tool length was set, but a stop request cancelled the command before it was applied (G43 was not sent).",
-      "toolLengthAdditive": "An additive tool length offset (G43.2) is in effect and cannot be applied again. Apply G43 or G49 first.",
       "jogStoppedBeforeStart": "The jog was stopped before it started.",
       "releaseJog": "Release the jog control before jogging again.",
       "jogStopInProgress": "A jog stop is in progress.",

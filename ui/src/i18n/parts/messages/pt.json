@@ -91,7 +91,6 @@
       "cancelled": "Cancelado por um pedido de paragem antes de ser enviado.",
       "modeChanged": "O modo foi alterado, mas um pedido de paragem cancelou o comando antes de ser enviado.",
       "toolLengthCancelled": "O comprimento da ferramenta foi definido, mas um pedido de paragem cancelou o comando antes de ser aplicado (G43 não foi enviado).",
-      "toolLengthAdditive": "Está ativa uma compensação de comprimento aditiva (G43.2) que não pode ser aplicada de novo. Aplique primeiro G43 ou G49.",
       "jogStoppedBeforeStart": "O jog foi parado antes de começar.",
       "releaseJog": "Solte o comando de jog antes de voltar a fazer jog.",
       "jogStopInProgress": "Está em curso uma paragem de jog.",

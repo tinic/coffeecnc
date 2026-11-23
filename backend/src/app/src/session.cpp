@@ -1869,10 +1869,7 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
     const auto effect = port_.tool_length_in_effect();
     if (!effect)
       return answer({CommandOutcome::rejected, effect.error()});
-    auto next = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
-    if (!next.refusal.empty())
-      return answer({CommandOutcome::rejected, std::move(next.refusal)});
-    follow_up = std::move(next.block);
+    follow_up = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
   }
   const auto mark = history_->begin(HistorySource::restore, entry->id);
   auto restored = mdi(request, block);

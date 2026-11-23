@@ -48,6 +48,14 @@ struct Macro {
   friend auto operator==(const Macro&, const Macro&) -> bool = default;
 };
 
+// Qualified spindle 0 limits for G33.1, including the larger of both reversal overruns.
+struct RigidTapLimits {
+  double max_rpm;
+  double reversal_turns;
+  double max_z_feed_mm_min;
+  friend auto operator==(const RigidTapLimits&, const RigidTapLimits&) -> bool = default;
+};
+
 struct Hello {
   std::string machine_name;
   // No LinuxCNC is behind the session.
@@ -71,6 +79,7 @@ struct Hello {
   // Not known: the panel offers both.
   std::optional<CoolantOutputs> coolant;
   std::optional<double> max_spindle_rpm;
+  std::optional<RigidTapLimits> rigid_tap{};
   std::optional<FixedSetterLimits> fixed_setter{};
   // The tool HAL routes to the spindle touch probe, when the machine declares one.
   std::optional<int> touch_probe_tool{};

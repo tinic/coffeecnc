@@ -12,6 +12,7 @@ import { facing } from '../src/conversational/facing'
 import { operations, parse, uniqueName } from '../src/conversational/operations'
 import { circularPocket, rectangularPocket } from '../src/conversational/pocket'
 import { chainOperations, number, type Generated } from '../src/conversational/program'
+import { rigidTapping, type RigidTapping } from '../src/conversational/rigid-tapping'
 import { slot, type Slot } from '../src/conversational/slot'
 import { threadMill, type ThreadMill } from '../src/conversational/thread-mill'
 import { splitLines } from '../src/sim/files'
@@ -351,6 +352,34 @@ function errors(generated: Generated): string[] {
   return 'errors' in generated ? generated.errors : []
 }
 
+describe('rigid tapping', () => {
+  const setup = { ...mm, rpm: 300, rigidTap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 }, pattern: 'grid',
+    x: 4, y: 3, columns: 2, rows: 1, spacingX: 10, spacingY: 0, count: NaN, radius: NaN, startAngle: NaN,
+    depth: 4, pitch: 1, pilotDepth: 7, retract: 2 } as const satisfies RigidTapping
+
+  it('prepositions XY, taps only Z and rapids to clearance only after the synchronized return', () => {
+    const program = text(rigidTapping(setup))
+    expect(program).toContain('G90 G94 G97')
+    expect(program).toContain('M51 P0\nS300 M3\nG0 Z5\nG0 X4 Y3\nG0 Z2\nG33.1 Z-4 K1\nG0 Z5\nG0 X14 Y3')
+    expect(program).toContain('G33.1 Z-4 K1\nG0 Z5\nM51 P1\nM5\nM2')
+    const tools = [{ number: 1, pocket: 1, length: 0, diameter: 10, comment: '' }]
+    expect(previewProgram(newModal(tools), splitLines(program), false, 1).error).toBeNull()
+  })
+
+  it('uses configured limits in each unit and refuses an unqualified profile', () => {
+    const imperial = { ...setup, ...inch, rpm: 300, depth: 0.12, pitch: 1 / 28,
+      pilotDepth: 0.2, retract: 0.05 }
+    expect(text(rigidTapping(imperial))).toContain('G33.1 Z-0.12 K0.035714')
+    const { rigidTap, ...unqualified } = setup
+    expect(errors(rigidTapping(unqualified))[0]).toContain('no configured rigid tapping limits')
+    expect(errors(rigidTapping({ ...setup, rpm: rigidTap.max_rpm + 1 }))[0]).toContain('300 rpm')
+    expect(errors(rigidTapping({ ...setup, pitch: 3 }))[0]).toContain('750 mm/min')
+    expect(errors(rigidTapping({ ...imperial, pitch: 0.12 }))[0]).toContain('29.53 in/min')
+    expect(errors(rigidTapping({ ...setup, pilotDepth: 4.7 }))[0]).toContain('deeper than 5 mm')
+    expect(errors(rigidTapping({ ...setup, clearance: 2.5 }))[0]).toContain('at least 3 mm')
+  })
+})
+
 describe('reaming and boring', () => {
   const operation = operations.find((entry) => entry.id === 'hole-finishing')
   if (!operation) throw new Error('Missing ream / bore operation')
@@ -638,10 +667,10 @@ describe('conversational programs', () => {
 
   it('drills grid rows back and forth and the bolt circle counter-clockwise', () => {
     const grid = holes({ ...mm, pattern: 'grid', x: 0, y: 0, columns: 2, rows: 2, spacingX: 10, spacingY: 5, count: NaN, radius: NaN,
-      startAngle: NaN, cycle: 'G81', peck: NaN, depth: 1, retract: 1 })
+      startAngle: NaN })
     expect(grid).toEqual([[0, 0], [10, 0], [10, 5], [0, 5]])
     const circle = holes({ ...mm, pattern: 'circle', x: 0, y: 0, columns: NaN, rows: NaN, spacingX: NaN, spacingY: NaN, count: 4, radius: 10,
-      startAngle: 0, cycle: 'G81', peck: NaN, depth: 1, retract: 1 }).map(([x, y]) => [Math.round(x) + 0, Math.round(y) + 0])
+      startAngle: 0 }).map(([x, y]) => [Math.round(x) + 0, Math.round(y) + 0])
     expect(circle).toEqual([[10, 0], [0, 10], [-10, 0], [0, -10]])
   })
 })
@@ -831,7 +860,8 @@ describe('dialog entries', () => {
         if (op.id === 'engraving') values['label'] = 'A1'
         const parsed = parse(op, values, unit)
         const generated = op.generate(parsed, { unit, tool: { number: 2, diameter: unit === 'inch' ? 0.25 : 6, comment: '' },
-          rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance') })
+          rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance'),
+          rigidTap: { max_rpm: 300, reversal_turns: 1, max_z_feed_mm_min: 750 } })
         expect(errors(generated), `${op.id} ${unit}`).toEqual([])
       }
   })

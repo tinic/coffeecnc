@@ -14,6 +14,12 @@ DISPLAY = coffeecnc
 # [SPINDLE_0] MAX_FORWARD_VELOCITY is taken, then [DISPLAY] MAX_SPINDLE_0_SPEED; with none of
 # the three coffeecnc does not start.
 MAX_SPINDLE_RPM = 1500
+# Optional right-hand rigid tapping on spindle 0. Before setting both keys, qualify signed
+# encoder feedback, index, at-speed, and commanded reversal on this machine. Measure the larger
+# overrun in spindle revolutions at both reversals throughout the enabled range. CoffeeCNC
+# requires spindle override off during G33.1. K multiplies the overrun to give axial clearance.
+# RIGID_TAP_MAX_RPM = ...
+# RIGID_TAP_REVERSAL_TURNS = ...
 # Optional verified physical envelope for Program check. Each row is machine X Y Z in mm.
 # Keep LinuxCNC's [AXIS_*] limits in effect separately. Without verified travel on a
 # no-force-homing profile, CoffeeCNC reports physical travel as unverified.

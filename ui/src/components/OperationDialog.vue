@@ -25,6 +25,8 @@ const { t } = useI18n()
 // numbers are in that unit, so it stays fixed while the dialog is open.
 const unit: Unit = panel.unit
 const chosen = ref<OperationId>('facing')
+const availableOperations = computed(() =>
+  operations.filter((op) => op.id !== 'rigid-tap' || panel.hello?.rigid_tap !== undefined))
 const operation = computed((): Operation => {
   const found = operations.find((candidate) => candidate.id === chosen.value)
   if (found === undefined) throw new Error(`Unknown operation ${chosen.value}`)
@@ -34,8 +36,10 @@ const maxRpm = panel.hello?.max_spindle_rpm
 const presetRpm = panel.preferences.default_spindle_rpm
 const values = reactive(Object.fromEntries(operations.map((op) => {
   const entered = op.defaults(unit)
-  const rpm = presetRpm > 0 ? presetRpm : Number(entered['rpm'])
-  entered['rpm'] = String(maxRpm !== undefined && maxRpm > 0 ? Math.min(rpm, maxRpm) : rpm)
+  const rpm = presetRpm > 0 && op.id !== 'rigid-tap' ? presetRpm : Number(entered['rpm'])
+  const tappingRpm = panel.hello?.rigid_tap?.max_rpm
+  const ceiling = op.id === 'rigid-tap' && tappingRpm !== undefined ? Math.floor(tappingRpm) : maxRpm
+  entered['rpm'] = String(ceiling !== undefined && ceiling > 0 ? Math.min(rpm, ceiling) : rpm)
   return [op.id, entered]
 })) as Record<OperationId, Values>)
 const entered = computed(() => values[chosen.value])
@@ -49,7 +53,7 @@ const spindle = computed(() => panel.status?.tool.in_spindle ?? 0)
 const pickedTool = reactive<Partial<Record<OperationId, number>>>({})
 function suggestedTool(id: OperationId): number {
   // The tool table diameter cannot identify these cutters.
-  if (id === 'thread-mill' || id === 'hole-finishing' || id === 'chamfer' || id === 'engraving') return 0
+  if (id === 'thread-mill' || id === 'hole-finishing' || id === 'chamfer' || id === 'engraving' || id === 'rigid-tap') return 0
   const cutting = tools.value.filter((tool) => tool.diameter > 0)
   const named = (wanted: RegExp, unwanted: RegExp): number | undefined =>
     cutting.find((tool) => wanted.test(tool.comment) && !unwanted.test(tool.comment))?.number
@@ -72,6 +76,7 @@ const generated = computed(() => {
   const selected = tool.value
   const common: Common = {
     unit, rpm: parsed.num('rpm'), feed: parsed.num('feed'), clearance: parsed.num('clearance'),
+    ...(panel.hello?.rigid_tap ? { rigidTap: panel.hello.rigid_tap } : {}),
     tool: { number: selected?.number ?? 0, diameter: selected ? toDisplay(selected.diameter, unit) : NaN, comment: selected?.comment ?? '' },
   }
   return { result: operation.value.generate(parsed, common), base: operation.value.name(parsed, unit), tool: common.tool.number, clearance: common.clearance }
@@ -215,7 +220,7 @@ const fieldGroups = computed(() => {
       <aside class="sidebar">
         <nav class="operations" :aria-label="t('operations.dialog.operations')">
           <button
-            v-for="op in operations" :key="op.id" class="btn operation" type="button"
+            v-for="op in availableOperations" :key="op.id" class="btn operation" type="button"
             :class="{ on: !reviewing && chosen === op.id }" :aria-pressed="!reviewing && chosen === op.id"
             :disabled="saving" @click="selectOperation(op.id)"
           >
@@ -273,6 +278,7 @@ const fieldGroups = computed(() => {
                 <option v-else-if="chosen === 'chamfer'" :value="0" disabled>{{ t('operations.dialog.chooseChamferMill') }}</option>
                 <option v-else-if="chosen === 'engraving'" :value="0" disabled>{{ t('operations.dialog.chooseEngravingTool') }}</option>
                 <option v-else-if="chosen === 'hole-finishing'" :value="0" disabled>{{ t('operations.dialog.chooseFinishTool') }}</option>
+                <option v-else-if="chosen === 'rigid-tap'" :value="0" disabled>{{ t('operations.dialog.chooseTap') }}</option>
                 <option v-for="row in tools" :key="row.number" :value="row.number">{{ toolText(row.number, row.diameter, row.comment) }}</option>
               </select>
             </label>

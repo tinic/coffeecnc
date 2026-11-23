@@ -234,6 +234,26 @@ void spindle_ceiling() {
           "a standard key of zero is an error");
 }
 
+void rigid_tapping_limits() {
+  constexpr std::string_view spindle = "MAX_SPINDLE_RPM = 1500\n";
+  const auto make = [&](std::string_view keys) -> std::string {
+    return with(std::string(g0759), spindle, std::string(spindle) + std::string(keys));
+  };
+  require(!load(std::string(g0759)).value().rigid_tap, "Rigid tapping is absent by default");
+  const auto configured = load(make("RIGID_TAP_MAX_RPM = 300\nRIGID_TAP_REVERSAL_TURNS = 1.2\n"));
+  require(configured && configured->rigid_tap == RigidTapLimits{300, 1.2, 750},
+          "Both tapping limits enable the capability with the Z-axis feed ceiling");
+  const auto capped = load(with(make("RIGID_TAP_MAX_RPM = 300\nRIGID_TAP_REVERSAL_TURNS = 1.2\n"),
+                                "MAX_LINEAR_VELOCITY = 25.00\n",
+                                "MAX_LINEAR_VELOCITY = 10.00\n"));
+  require(capped && capped->rigid_tap == RigidTapLimits{300, 1.2, 600},
+          "The trajectory ceiling can further limit tapping feed");
+  require(has(error(make("RIGID_TAP_MAX_RPM = 300\n")), "REVERSAL_TURNS"),
+          "The reversal allowance cannot be omitted");
+  require(has(error(make("RIGID_TAP_MAX_RPM = 1600\nRIGID_TAP_REVERSAL_TURNS = 1\n")),
+              "spindle ceiling"), "The tapping limit cannot exceed the spindle ceiling");
+}
+
 void homing() {
   constexpr std::string_view key = "NO_FORCE_HOMING = 1\n";
   const auto required = [&](std::string_view line) -> bool {
@@ -915,6 +935,7 @@ auto main(int argc, char** argv) -> int {
     increments();
     g0759_shape();
     spindle_ceiling();
+    rigid_tapping_limits();
     homing();
     axes_and_joints();
     axis_ceilings();

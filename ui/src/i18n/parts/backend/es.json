@@ -514,6 +514,16 @@
       "restartParametersChanged": "Los parámetros guardados de la máquina cambiaron después de revisar el reinicio. Vuelva a elegir la línea."
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc línea {line}: {detail}",
+      "rigidTapUnavailable": "El roscado rígido G33.1 no está configurado en esta máquina.",
+      "rigidTapSpindle": "El roscado rígido no está configurado para este husillo",
+      "rigidTapDirection": "El roscado rígido requiere que el husillo gire en sentido horario (M3)",
+      "rigidTapOverride": "El roscado rígido requiere desactivar la corrección de velocidad del husillo (M51 P0)",
+      "rigidTapRpm": "El roscado rígido supera el límite configurado de velocidad fija del husillo",
+      "rigidTapZFeed": "El roscado rígido supera el límite de avance en Z configurado",
+      "rigidTapZOnly": "El roscado rígido requiere un movimiento descendente solo en Z",
+      "rigidTapAllowance": "El roscado rígido no tiene un margen de inversión válido",
+      "rigidTapRestart": "Ejecute el programa de roscado desde el inicio para establecer la corrección de velocidad del husillo.",
       "cannotRead": "No se puede leer el programa para la vista previa, u ocupa más de {size}.",
       "endsAtLine": "La vista previa termina en la línea {line}: {detail}.",
       "tooManySubroutines": "El programa llama a más de {limit} subrutinas distintas: sin vista previa.",

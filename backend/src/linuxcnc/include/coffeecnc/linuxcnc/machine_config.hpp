@@ -74,6 +74,8 @@ struct MachineConfig {
   std::optional<std::string> data_directory;
   std::optional<FixedSetterLimits> fixed_setter{};
   std::optional<PausedZLimits> paused_z{};
+  // Only present when both qualified [COFFEECNC] rigid-tapping limits are supplied.
+  std::optional<RigidTapLimits> rigid_tap{};
   MotionTolerances motion_tolerances{};
   // [COFFEECNC] MACRO = <label> | <MDI block>, each occurrence in order; see max_macros.
   std::vector<Macro> macros{};

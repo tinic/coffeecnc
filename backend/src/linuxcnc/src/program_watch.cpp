@@ -281,6 +281,26 @@ auto tenths_of(const Word& word) -> std::optional<long> {
 
 } // namespace
 
+auto first_rigid_tap_line(std::string_view text, const std::function<bool()>& cancelled)
+    -> std::optional<int> {
+  for (int number = 1; !text.empty(); ++number) {
+    if ((number - 1) % 1024 == 0 && cancelled && cancelled())
+      return {};
+    const auto end = text.find('\n');
+    const auto line = text.substr(0, end);
+    text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
+    if (line.find('3') == std::string_view::npos || line.find_first_of("Gg") == std::string_view::npos)
+      continue;
+    const auto block = bare_block(line);
+    const auto words = words_part(block);
+    if (words && std::ranges::any_of(words_of(*words), [](const Word& word) {
+          return word.letter == 'g' && tenths_of(word) == 331;
+        }))
+      return number;
+  }
+  return {};
+}
+
 auto refused_block(std::string_view line) -> std::optional<std::string> {
   // The comments first: an active one is not an ordinary comment, whatever it holds.
   if (auto reason = comment_refusal(line))

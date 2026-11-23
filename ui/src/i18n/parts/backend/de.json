@@ -514,6 +514,16 @@
       "restartParametersChanged": "Die gespeicherten Parameter der Maschine haben sich geändert, nachdem der Neustart geprüft wurde. Wählen Sie die Zeile erneut."
     },
     "previewEngine": {
+      "subroutineError": "{name}.ngc Zeile {line}: {detail}",
+      "rigidTapUnavailable": "G33.1 ist für diese Maschine nicht konfiguriert.",
+      "rigidTapSpindle": "Für diese Spindel ist kein starres Gewindebohren konfiguriert",
+      "rigidTapDirection": "Starres Gewindebohren erfordert Rechtslauf der Spindel (M3)",
+      "rigidTapOverride": "Starres Gewindebohren erfordert eine deaktivierte Spindelkorrektur (M51 P0)",
+      "rigidTapRpm": "Starres Gewindebohren überschreitet die konfigurierte Spindeldrehzahlgrenze",
+      "rigidTapZFeed": "Starres Gewindebohren überschreitet die konfigurierte Z-Vorschubgrenze",
+      "rigidTapZOnly": "Starres Gewindebohren erfordert eine Abwärtsbewegung nur in Z",
+      "rigidTapAllowance": "Für starres Gewindebohren ist kein gültiger Umkehrweg festgelegt",
+      "rigidTapRestart": "Starten Sie das Gewindebohrprogramm von Anfang an, damit die Spindelkorrektur gesetzt wird.",
       "cannotRead": "Das Programm kann für eine Vorschau nicht gelesen werden oder ist größer als {size}.",
       "endsAtLine": "Die Vorschau endet bei Zeile {line}: {detail}.",
       "tooManySubroutines": "Das Programm ruft mehr als {limit} verschiedene Unterprogramme auf: keine Vorschau.",

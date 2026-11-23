@@ -151,7 +151,26 @@ auto megabytes(std::size_t bytes) -> std::string {
 struct SnapshotFailure {
   bool cancelled{};
   PreviewError error;
+  bool blocks_run{};
 };
+
+auto unconfigured_tapping(const PreviewSettings& settings, std::string_view bytes,
+                          std::string_view subroutine, const Cancelled& cancelled)
+    -> std::optional<SnapshotFailure> {
+  if (settings.rigid_tap)
+    return {};
+  const auto line = first_rigid_tap_line(bytes, cancelled);
+  if (is_cancelled(cancelled))
+    return SnapshotFailure{true, {}};
+  if (!line)
+    return {};
+  const std::string reason = "G33.1 rigid tapping is not configured on this machine.";
+  return SnapshotFailure{
+      false, subroutine.empty() ? PreviewError{*line, std::format("Line {}: {}", *line, reason)}
+                                : PreviewError{0, std::format("{}.ngc line {}: {}",
+                                                              subroutine, *line, reason)},
+      true};
+}
 
 // The program and every subroutine file it reaches, read once each. Bounded before anything
 // is accumulated: bytes, files, and distinct called names, found or not. `cancelled` is asked
@@ -168,6 +187,8 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
     return refused(0, std::format("The program cannot be read for a preview, or is larger than "
                                   "{}.",
                                   megabytes(settings.max_input_bytes)));
+  if (auto tap = unconfigured_tapping(settings, *bytes, {}, cancelled))
+    return std::unexpected(std::move(*tap));
   // Nothing with a comment that runs Python or writes a file, or with an O word that is not
   // plainly a name, is given to the interpreter: it acts on some of them while it reads,
   // also in lines it never executes.
@@ -207,6 +228,8 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
         return refused(0, std::format("The program and its subroutine files cannot be read, or "
                                       "are larger than {} together: no preview.",
                                       megabytes(settings.max_input_bytes)));
+      if (auto tap = unconfigured_tapping(settings, *text, name, cancelled))
+        return std::unexpected(std::move(*tap));
       if (const auto forbidden = first_forbidden_line(*text))
         return refused(0, std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line,
                                       forbidden->what));
@@ -643,6 +666,15 @@ auto failed(int line, std::string text) -> PreviewOutcome {
   return outcome;
 }
 
+auto snapshot_rejection(const SnapshotFailure& failure) -> PreviewComputation {
+  if (failure.cancelled)
+    return {{}, true, {}};
+  auto outcome = failed(failure.error.line, failure.error.text);
+  if (failure.blocks_run)
+    outcome.check.emplace().errors.push_back(failure.error.text);
+  return {std::move(outcome), false, {}};
+}
+
 auto unavailable(std::string text) -> PreviewOutcome {
   PreviewOutcome outcome;
   outcome.state = PreviewState::unavailable;
@@ -835,6 +867,7 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
   settings.parameter_file = config.parameter_file;
   settings.units_per_mm = 1.0 / config.millimetres_per_unit;
   settings.max_spindle_rpm = config.limits.max_spindle_rpm;
+  settings.rigid_tap = config.rigid_tap;
   settings.tool_table = config.tool_table;
   if (config.fixed_setter) {
     settings.reference_tool = config.fixed_setter->reference_tool;
@@ -942,20 +975,26 @@ auto HelperPreviewEngine::file_lookups() const -> std::size_t { return *lookups_
 
 auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
                                   const std::function<bool()>& cancelled) -> PreviewComputation {
-  if (!settings_.refusal.empty())
-    return {unavailable(settings_.refusal), false, {}};
   if (!inputs.program_file)
-    return {unavailable({}), false, {}};
+    return {unavailable(settings_.refusal), false, {}};
   if (is_cancelled(cancelled))
     return {{}, true, {}};
+  const auto without_preview = [&](std::string reason) -> PreviewComputation {
+    if (!settings_.rigid_tap) {
+      const auto source = take_snapshot(settings_, *inputs.program_file, cancelled, lookups_);
+      if (!source && (source.error().cancelled || source.error().blocks_run))
+        return snapshot_rejection(source.error());
+    }
+    return {unavailable(std::move(reason)), false, {}};
+  };
+  if (!settings_.refusal.empty())
+    return without_preview(settings_.refusal);
   const int wcs = inputs.start.wcs;
   if (wcs < 1 || wcs > 9 || !inputs.systems.at(static_cast<std::size_t>(wcs - 1)).available)
-    return {unavailable("The offsets of the active work system are not known: no preview."),
-            false,
-            {}};
+    return without_preview("The offsets of the active work system are not known: no preview.");
   const auto start = start_state(inputs.start);
   if (!start)
-    return {unavailable(start.error()), false, {}};
+    return without_preview(start.error());
   HelperRequest request;
   request.units_per_mm = settings_.units_per_mm;
   request.position = inputs.start.position;
@@ -969,6 +1008,7 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   request.tool_change_position = settings_.tool_change_position;
   request.max_points = settings_.max_points;
   request.chord_tolerance = settings_.chord_tolerance;
+  request.rigid_tap = settings_.rigid_tap;
   request.codes = start->codes;
   // The tool length offset in effect, in the interpreter as much as in the canon: the
   // interpreter takes it off where it works in machine coordinates (G53, G28, G30).
@@ -1030,10 +1070,8 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
   std::shared_ptr<const CheckToolFiles> last_tools;
   for (int attempt = 1; attempt <= settings_.attempts; ++attempt) {
     auto taken = take_snapshot(settings_, *inputs.program_file, cancelled, lookups_);
-    if (!taken && taken.error().cancelled)
-      return {{}, true, {}};
     if (!taken)
-      return {failed(taken.error().error.line, taken.error().error.text), false, {}};
+      return snapshot_rejection(taken.error());
     taken->wcs = wcs;
     const auto manifest = std::make_shared<const Manifest>(std::move(*taken));
     const auto& parameter_bytes = manifest->parameters;

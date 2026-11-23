@@ -739,7 +739,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
 
 #ifdef COFFEECNC_PREVIEW_HELPER_BUILT
 void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
-                HalShared& shared, const NmlLoads& loads, const auto& mdi) {
+                HalShared& shared, NmlLoads& loads, const auto& mdi) {
   using Json = nlohmann::json;
   const auto scale = config.millimetres_per_unit;
   const double reference_length = scale == 1 ? 50 : 50.8;
@@ -749,7 +749,7 @@ void measure_m6(const MachineConfig& config, NmlPort& port, HalControl& control,
   mdi("G53 G0 X-12 Y-18 Z22");
   halcmd(std::format("setp sim-tool-setter.max {}", 10 / scale));
 
-  NmlStatusMailbox mailbox;
+  NmlStatusMailbox mailbox{&loads};
   auto reader = NmlStatusReader::connect(config, &shared, &mailbox);
   auto table = LoadedToolTable::attach(scale);
   require(reader.has_value() && table.has_value(), "M6 simulation has status and loaded tools");
